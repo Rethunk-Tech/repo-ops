@@ -24,4 +24,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
-      - run: pytest -q
+      - run: mypy src/repo_ops
+      - run: pytest -q --cov=src/repo_ops --cov-report=term-missing --cov-fail-under=15
+      - run: python -m pip install build && python -m build --wheel --sdist
+      - run: ls -l dist/

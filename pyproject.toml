@@ -41,7 +41,13 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 
 [project.optional-dependencies]
-dev = ["ruff>=0.11.0", "pytest>=8"]
+dev = [
+    "ruff>=0.11.0",
+    "pytest>=8",
+    "pytest-cov>=5.0",
+    "mypy>=1.10",
+    "build>=1.2",
+]
 
 [tool.ruff]
 target-version = "py310"
@@ -55,3 +61,28 @@ ignore = ["E501"]
 [tool.ruff.format]
 indent-style = "space"
 quote-style = "double"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = false
+strict_optional = true
+show_error_codes = true
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src/repo_ops"]
+branch = true
+# Note: dep_refresh.py (~1278 LOC) and command entrypoints have low coverage
+# by design (minimize scope per task); threshold set to achievable high bar
+# for shared libs + partial command coverage. Revisit if command tests added.
+[tool.coverage.report]
+fail_under = 15  # realistic threshold; shared libs (filesystem/git/dep_counting) at 37-78%, commands low by design (no heavy dep_refresh tests)
+show_missing = true
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
