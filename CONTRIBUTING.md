@@ -30,6 +30,13 @@ Thank you for your interest in repo-ops! This is a small Python package providin
 - Keep changes focused; this project favors minimal dependencies and simple, maintainable utilities.
 - Update `README.md` for user-facing changes and this file or `AGENTS.md` for process/tooling notes.
 
+## Commit Conventions
+
+- Follow [Conventional Commits](https://www.conventionalcommits.org/).
+- For agents and automation: use MCP `batch_commit` (see `AGENTS.md` for mandatory policy). Humans may use shell git or MCP.
+- Provide a why-focused body explaining the motivation for the change.
+- Keep commits small and thematic for easy review.
+
 ## Code Style
 
 - 4-space indentation (enforced via `.editorconfig`).
