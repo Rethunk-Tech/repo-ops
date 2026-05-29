@@ -1,7 +1,4 @@
-"""Lightweight tests for dep_refresh pure helpers and safety regressions.
-
-Monkeypatches subprocess via the run helper.
-"""
+"""Lightweight tests for upgrade ecosystem helpers and safety regressions."""
 
 from __future__ import annotations
 
@@ -11,7 +8,7 @@ from unittest.mock import patch
 
 # Import from the command module under test
 from repo_ops.core.version_utils import normalize_version, semver_tuple
-from repo_ops.upgrade.engine import _parse_requirements_lines
+from repo_ops.upgrade.ecosystems.python import _parse_requirements_lines
 
 
 def test_normalize_version_strips_prefixes():
@@ -32,7 +29,7 @@ def test_parse_requirements_lines_basic():
 
 def test_checkers_use_monkeypatched_run(monkeypatch):
     """Safety regression: ensure checkers can be exercised with mocked pm calls."""
-    from repo_ops.upgrade.engine import check_bun
+    from repo_ops.upgrade.ecosystems.node import check_bun
     from repo_ops.upgrade.models import Workspace
 
     calls: list[list[str]] = []
@@ -50,7 +47,7 @@ def test_checkers_use_monkeypatched_run(monkeypatch):
         git_repo=Path("/tmp"),
         label="",
     )
-    with patch("repo_ops.upgrade.engine.run", fake_run):
+    with patch("repo_ops.upgrade.ecosystems.node.run", fake_run):
         changes = check_bun(ws)
     assert len(changes) == 1
     assert changes[0].name == "foo"

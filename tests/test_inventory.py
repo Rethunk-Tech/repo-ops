@@ -1,4 +1,4 @@
-"""Lightweight unit tests for pure parsing/counting helpers in dep_counting.
+"""Lightweight unit tests for inventory counting helpers.
 
 These tests use in-memory strings/paths and avoid any real package manager
 invocation or large filesystem scans.
