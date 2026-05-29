@@ -11,7 +11,7 @@ repo-ops consolidates repository operations and dependency tools into a lightwei
 ## Highlights
 
 - `repo-dep-count`, `repo-dep-refresh`, and `repo-pushed-commits` as registered CLI tools
-- Src-layout package using hatchling; Python >= 3.10
+- Src-layout package using hatchling
 - Preserves existing command behavior while extracting shared helpers
 - Designed for Rethunk-Tech monorepo and sibling repository workflows
 
