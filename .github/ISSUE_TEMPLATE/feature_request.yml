@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest a new feature or enhancement for repo-ops
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! Describe the problem or use case this would solve.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Use Case
+      description: What problem are you trying to solve?
+      validations:
+        required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: Describe the feature or change you'd like
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: This is not a bug report (use bug report template)
+        - label: I am willing to contribute a PR
