@@ -52,3 +52,34 @@ def test_checkers_use_monkeypatched_run(monkeypatch):
     assert len(changes) == 1
     assert changes[0].name == "foo"
     assert any("bun" in c[0] for c in calls)
+
+
+def test_ecosystem_checker_and_applier_registry_keys():
+    from repo_ops.upgrade.ecosystems import APPLIERS, CHECKERS
+
+    expected = {
+        "bun",
+        "npm",
+        "pnpm",
+        "yarn",
+        "go",
+        "rust",
+        "uv",
+        "poetry",
+        "pip-tools",
+        "hatch",
+    }
+    assert expected == set(CHECKERS.keys())
+    assert set(APPLIERS.keys()) == expected
+
+
+def test_actions_discover_workflow_files_empty_without_github_dir(tmp_path):
+    from repo_ops.upgrade.actions import discover_workflow_files
+
+    assert discover_workflow_files(tmp_path) == []
+
+
+def test_remediations_pm_exec_prefix_yarn():
+    from repo_ops.upgrade.remediations import _pm_exec_prefix
+
+    assert _pm_exec_prefix("yarn") == ["yarn"]

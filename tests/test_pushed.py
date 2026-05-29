@@ -1,4 +1,4 @@
-"""Lightweight tests for pushed_commits helpers (no network, no real git pushes)."""
+"""Lightweight tests for repos-pushed helpers (no network, no real git pushes)."""
 
 from __future__ import annotations
 
