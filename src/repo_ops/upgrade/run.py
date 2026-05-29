@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import concurrent.futures
-import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -177,14 +176,11 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
 
     json_out = getattr(args, "json_out", False) or getattr(args, "json", False)
     if json_out:
-        payload = {
-            "roots": roots,
-            "mode": "apply" if apply else "plan",
-            "repos": [
-                b.to_json() for b in sorted(bundles.values(), key=lambda x: x.label)
-            ],
-        }
-        print(json.dumps(payload, indent=2))
+        report.print_json_report(
+            bundles,
+            roots=roots,
+            mode="apply" if apply else "plan",
+        )
     elif not args.quiet:
         top_n = getattr(args, "top", 10)
         report.print_human_report(

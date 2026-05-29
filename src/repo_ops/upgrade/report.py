@@ -1,10 +1,37 @@
-"""Human-readable upgrade reports."""
+"""Human-readable and JSON upgrade reports."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any, Literal
 
 from repo_ops.upgrade.models import RepoBundle
+
+UpgradeMode = Literal["plan", "apply"]
+
+
+def build_json_payload(
+    bundles: dict[Path, RepoBundle],
+    *,
+    roots: list[str],
+    mode: UpgradeMode,
+) -> dict[str, Any]:
+    return {
+        "roots": roots,
+        "mode": mode,
+        "repos": [b.to_json() for b in sorted(bundles.values(), key=lambda x: x.label)],
+    }
+
+
+def print_json_report(
+    bundles: dict[Path, RepoBundle],
+    *,
+    roots: list[str],
+    mode: UpgradeMode,
+) -> None:
+    payload = build_json_payload(bundles, roots=roots, mode=mode)
+    print(json.dumps(payload, indent=2))
 
 
 def print_human_report(
