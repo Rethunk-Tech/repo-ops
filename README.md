@@ -17,15 +17,14 @@ repo-ops consolidates repository operations and dependency tools into a lightwei
 
 ## Documentation
 
-| Document       | Purpose                                      |
-|----------------|----------------------------------------------|
-| `README.md`    | Orientation and links (this file)            |
-| `HUMANS.md`    | Installation, configuration, and usage       |
-| `AGENTS.md`    | AI/agent coordination and commit policies    |
-| `CONTRIBUTING.md` | Contributor guidelines and code style     |
-| `CHANGELOG.md` | Release history (Keep a Changelog style)     |
-| `CODE_OF_CONDUCT.md` | Community standards and enforcement     |
-| `LICENSE`      | MIT License                                  |
+| Document | Purpose |
+|----------|---------|
+| [Humans guide](HUMANS.md) | Installation, configuration, and usage |
+| [Agents guide](AGENTS.md) | AI/agent coordination and commit policies |
+| [Contributing](CONTRIBUTING.md) | Contributor guidelines and code style |
+| [Changelog](CHANGELOG.md) | Release history (Keep a Changelog style) |
+| [Code of conduct](CODE_OF_CONDUCT.md) | Community standards and enforcement |
+| [License](LICENSE) | MIT License |
 
 ## License
 

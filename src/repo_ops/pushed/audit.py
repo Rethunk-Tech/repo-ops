@@ -5,21 +5,7 @@ Uses remote-tracking reflog entries marked ``update by push`` (recorded on this
 machine when ``git push`` updates refs/remotes/*). Repos are discovered under
 configurable roots and deduplicated by ``git rev-parse --git-common-dir``.
 
-Usage:
-  pushed_commits_24h.py [root_dir ...]
-  pushed_commits_24h.py --hours 48
-  pushed_commits_24h.py --since 2026-05-26T00:00Z --until 2026-05-27T00:00Z
-  pushed_commits_24h.py --count-only
-  pushed_commits_24h.py --json
-  pushed_commits_24h.py --show-shas
-  pushed_commits_24h.py --show-messages
-
-Default roots:
-  /usr/local/src
-  ~/Projects
-  ~/Documents
-  ~/bastion-ai-helpers
-  ~/Apps
+Console entry point: ``repos-pushed`` (see ``--help`` for flags).
 """
 
 from __future__ import annotations
