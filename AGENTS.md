@@ -26,7 +26,7 @@ It uses hatchling for packaging, pytest for testing, and targets Python >= 3.10.
 
 - `src/repo_ops/core/` - shared constants, git, filesystem, process, CLI helpers
 - `src/repo_ops/inventory/` - dependency counting and `repos-inventory` scan logic
-- `src/repo_ops/upgrade/` - upgrade engine, models, plan/apply orchestration
+- `src/repo_ops/upgrade/` - upgrade subsystems (ecosystems, orchestration), models, plan/apply
 - `src/repo_ops/pushed/` - push reflog audit
 - `src/repo_ops/commands/` - optional dispatcher (`dispatch.py`)
 - `tests/` - test suite

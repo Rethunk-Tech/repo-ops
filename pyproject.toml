@@ -76,11 +76,10 @@ ignore_missing_imports = true
 [tool.coverage.run]
 source = ["src/repo_ops"]
 branch = true
-# Note: upgrade/engine.py (~1900 LOC) and CLI entrypoints have low coverage
-# by design (minimize scope per task); threshold set to achievable high bar
-# for shared libs + partial command coverage. Revisit if command tests added.
+# Note: upgrade/ecosystems/* and CLI entrypoints have low coverage by design;
+# threshold targets shared libs plus partial command coverage.
 [tool.coverage.report]
-fail_under = 15  # realistic threshold; shared libs (filesystem/git/dep_counting) at 37-78%, commands low by design (no heavy dep_refresh tests)
+fail_under = 15  # shared libs (filesystem/git/counting) higher; upgrade orchestration tested lightly
 show_missing = true
 skip_covered = true
 exclude_lines = [

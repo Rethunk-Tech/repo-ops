@@ -1,7 +1,4 @@
-"""Data classes for dep_refresh workspaces, results, and actions.
-
-Extracted from commands/dep_refresh.py under greenfield refactoring.
-"""
+"""Data classes for upgrade workspaces, results, and GitHub Actions bumps."""
 
 from __future__ import annotations
 

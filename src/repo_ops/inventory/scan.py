@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Count dependencies per project (direct + reachable versions + on-disk).
 
-Usage: repo-dep-count [root_dir ...]
+Usage: repos-inventory [root_dir ...]
 Defaults: standard local roots from constants.DEFAULT_ROOTS
 
 Columns:
@@ -23,6 +23,7 @@ import json
 from pathlib import Path
 
 from repo_ops.core.cli import (
+    add_flat_argument,
     add_json_argument,
     add_roots_argument,
     add_verbose_argument,
@@ -58,11 +59,7 @@ def main(argv: list[str] | None = None) -> None:
         metavar="KIND",
         help="Only show rows whose kinds include KIND (node/go/rust/py).",
     )
-    parser.add_argument(
-        "--flat",
-        action="store_true",
-        help="Treat each root as a single project (skip org/proj two-level walk).",
-    )
+    add_flat_argument(parser)
     parser.add_argument(
         "--no-cache",
         dest="no_cache",
