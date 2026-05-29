@@ -106,3 +106,18 @@ def test_count_rust_and_python_minimal(tmp_path: Path):
     d2, v2, tag = count_python(tmp_path)
     assert d2 >= 1
     assert "pyproject" in tag
+
+
+def test_go_cache_roundtrip_and_invalid(tmp_path: Path):
+    from repo_ops.dep_counting import load_go_cache, save_go_cache
+
+    cache_path = tmp_path / "cache.json"
+    data = {"k": {"direct": 1, "versions": ["x@1"]}}
+    save_go_cache(cache_path, data)
+    loaded = load_go_cache(cache_path)
+    assert loaded == data
+
+    # invalid json -> {}
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json")
+    assert load_go_cache(bad) == {}
