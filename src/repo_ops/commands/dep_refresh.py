@@ -49,6 +49,7 @@ from repo_ops import constants, process
 from repo_ops.filesystem import read_json_file, should_exclude
 from repo_ops.git import git_repo_for, repo_label
 from repo_ops.process import run, set_verbose
+from repo_ops.version_utils import normalize_version, semver_tuple
 
 _FAIL_FAST_EVENT = threading.Event()
 
@@ -210,18 +211,6 @@ class RepoBundle:
 def is_git_dirty(repo: Path) -> bool:
     proc = run(["git", "status", "--porcelain"], repo, timeout=30)
     return proc.returncode == 0 and bool(proc.stdout.strip())
-
-
-def normalize_version(v: str) -> str:
-    return re.sub(r"^[\^~>=<]+", "", v.strip()).split("-")[0]
-
-
-def semver_tuple(v: str) -> tuple[int, ...]:
-    parts: list[int] = []
-    for p in normalize_version(v).split("."):
-        m = re.match(r"(\d+)", p)
-        parts.append(int(m.group(1)) if m else 0)
-    return tuple(parts)
 
 
 # ---------- Node manager detection ----------
