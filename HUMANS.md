@@ -36,23 +36,20 @@ Run with `--help` for each tool's specific options. All tools expect to be invok
 
 ## Verification and Testing
 
-After install or changes:
-
-```bash
-pytest -q
-```
-
-For development with linting/formatting (Ruff):
+After install or changes (full dev verification):
 
 ```bash
 pip install -e ".[dev]"
 ruff check .
-ruff format .          # or `ruff format --check .` in CI
+ruff format --check .
+mypy src/repo_ops
+pytest -q --cov=src/repo_ops --cov-report=term-missing --cov-fail-under=15
+python -m build --wheel --sdist
 ```
 
-The test suite lives under `tests/` and is configured in `pyproject.toml` under `[tool.pytest.ini_options]`.
+The test suite lives under `tests/` and is configured in `pyproject.toml` under `[tool.pytest.ini_options]`. Coverage and mypy configs also live in `pyproject.toml`.
 
-CI runs ruff + pytest on push/PR to main; Dependabot maintains pip and GitHub Actions deps weekly.
+CI runs ruff, mypy, pytest+cov, and build on push/PR to main (matrix 3.10-3.12); Dependabot maintains pip and GitHub Actions deps weekly.
 
 ## Typical Roots
 
