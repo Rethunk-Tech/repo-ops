@@ -7,17 +7,14 @@ from collections.abc import Callable
 from repo_ops.upgrade.models import Change, Workspace, WorkspaceResult
 from repo_ops.upgrade.workspaces import corepack_prepare
 
-from . import go, python, rust
+from . import go, python, rust, yarn
 from .node import (
-    _check_yarn,
     apply_bun,
     apply_npm,
     apply_pnpm,
-    apply_yarn,
     check_bun,
     check_npm,
     check_pnpm,
-    check_yarn_snapshot,
     overrides_audit,
 )
 
@@ -25,7 +22,7 @@ CHECKERS: dict[str, Callable[[Workspace], list[Change]]] = {
     "bun": check_bun,
     "npm": check_npm,
     "pnpm": check_pnpm,
-    "yarn": _check_yarn,
+    "yarn": yarn.check_yarn,
     "go": go.check_go,
     "rust": rust.check_rust,
     "uv": python.check_uv,
@@ -36,7 +33,7 @@ CHECKERS: dict[str, Callable[[Workspace], list[Change]]] = {
 
 APPLIERS: dict[str, Callable[[Workspace], None]] = {
     "bun": apply_bun,
-    "yarn": apply_yarn,
+    "yarn": yarn.apply_yarn,
     "npm": apply_npm,
     "pnpm": apply_pnpm,
     "go": go.apply_go,
@@ -59,7 +56,7 @@ def check_workspace(ws: Workspace) -> WorkspaceResult:
             result.error = f"unsupported manager {ws.manager}"
             return result
         if ws.manager == "yarn":
-            changes, snap_overrides = check_yarn_snapshot(ws)
+            changes, snap_overrides = yarn.check_yarn_snapshot(ws)
             result.changes = changes
             result.overrides_audit = snap_overrides
         else:
