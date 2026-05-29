@@ -15,11 +15,8 @@ from repo_ops.upgrade.constants import (
 from repo_ops.upgrade.models import Change, Workspace
 from repo_ops.upgrade.workspaces import corepack_prepare
 
-from .node import (
-    diff_workspace_snapshots,
-    overrides_audit,
-    snapshot_workspace_files,
-)
+from .node import overrides_audit
+from .node_lockfiles import diff_workspace_snapshots, snapshot_workspace_files
 
 
 def _isolated_yarn_ignore(src: str, names: list[str]) -> set[str]:

@@ -9,10 +9,10 @@ from repo_ops.core.filesystem import should_exclude
 from repo_ops.core.process import run
 from repo_ops.upgrade import ecosystems, remediations
 from repo_ops.upgrade import verify as verify_mod
-from repo_ops.upgrade.ecosystems.node import (
+from repo_ops.upgrade.ecosystems.node import overrides_audit
+from repo_ops.upgrade.ecosystems.node_lockfiles import (
     collect_changes_after_apply,
     diff_workspace_snapshots,
-    overrides_audit,
     snapshot_workspace_files,
 )
 from repo_ops.upgrade.models import Workspace, WorkspaceResult
