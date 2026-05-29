@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 
-from repo_ops.constants import DEFAULT_ROOTS
-from repo_ops.process import set_verbose
+from repo_ops.core.constants import DEFAULT_ROOTS
+from repo_ops.core.process import set_verbose
 
 
 def parse_iso8601(value: str) -> datetime:
@@ -81,3 +81,65 @@ def wire_verbose(args: argparse.Namespace) -> None:
     """Wire parsed --verbose to process.set_verbose (call after parse_args)."""
     if getattr(args, "verbose", False):
         set_verbose(True)
+
+
+def add_upgrade_common_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    apply: bool,
+) -> None:
+    """Flags shared by repos-upgrade-plan and repos-upgrade-apply."""
+    add_roots_argument(parser)
+    add_json_argument(parser, dest="json_out")
+    add_flat_argument(parser)
+    add_verbose_argument(parser)
+    parser.add_argument(
+        "--filter",
+        choices=["node", "go", "rust", "py"],
+        dest="eco_filter",
+        help="Only process workspaces for this ecosystem.",
+    )
+    parser.add_argument("-q", "--quiet", action="store_true")
+    parser.add_argument("--jobs", type=int, default=8)
+    parser.add_argument("--fail-fast", action="store_true")
+    parser.add_argument("--allow-dirty", action="store_true")
+    parser.add_argument(
+        "--skip-actions",
+        action="store_true",
+        help="Skip GitHub Actions workflow pin audit (deps only).",
+    )
+    if apply:
+        parser.add_argument(
+            "--no-verify",
+            action="store_true",
+            help="Skip verify gates after apply.",
+        )
+        parser.add_argument(
+            "--skip-remediations",
+            default="",
+            metavar="IDS",
+            help="Comma-separated remediation ids to skip (biome_schema, ...).",
+        )
+        parser.add_argument(
+            "--verify-test",
+            action="store_true",
+            help="Run go test ./... during verify.",
+        )
+        parser.add_argument(
+            "--top",
+            type=int,
+            default=10,
+            help="Max changes shown per workspace in human output.",
+        )
+    else:
+        parser.add_argument(
+            "--only-outdated",
+            action="store_true",
+            help="Omit clean workspaces from human output.",
+        )
+        parser.add_argument(
+            "--top",
+            type=int,
+            default=10,
+            help="Max changes shown per workspace in human output.",
+        )

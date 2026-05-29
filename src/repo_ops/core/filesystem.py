@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from repo_ops.constants import EXCLUDE_PATH_FRAGMENTS
+from repo_ops.core.constants import EXCLUDE_PATH_FRAGMENTS
 
 try:
     import tomllib

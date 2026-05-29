@@ -6,9 +6,9 @@ import os
 import subprocess
 from pathlib import Path
 
-from repo_ops.constants import SKIP_DIRS
-from repo_ops.filesystem import should_exclude
-from repo_ops.git import git_common_dir
+from repo_ops.core.constants import SKIP_DIRS
+from repo_ops.core.filesystem import should_exclude
+from repo_ops.core.git import git_common_dir
 
 
 def discover_repos(roots: list[str]) -> dict[str, str]:
