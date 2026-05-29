@@ -34,14 +34,14 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from repo_ops.cli import (
+from repo_ops.core.cli import (
+    add_roots_argument,
     add_verbose_argument,
     parse_iso8601,
     wire_verbose,
 )
-from repo_ops.constants import DEFAULT_ROOTS
-from repo_ops.discovery import discover_repos
-from repo_ops.git import repo_label, run_git
+from repo_ops.core.discovery import discover_repos
+from repo_ops.core.git import repo_label, run_git
 
 PUSH_RE = re.compile(r"^([0-9a-f]{4,40})\s+.+?@\{(\d+)\}:\s+update by push(?:\s|\(|$)")
 
@@ -253,15 +253,12 @@ def print_report(
                 print(f"    {short}")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
+        prog="repos-pushed",
         description="Count commits pushed in a rolling window across local git repos.",
     )
-    parser.add_argument(
-        "roots",
-        nargs="*",
-        help="Directories to scan for git repositories (default: standard local roots)",
-    )
+    add_roots_argument(parser)
 
     def positive_hours(value: str) -> float:
         v = float(value)
@@ -327,7 +324,7 @@ def main() -> int:
         help="Emit machine-readable JSON",
     )
     add_verbose_argument(parser)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     wire_verbose(args)
 
     # --show-messages implies --show-shas; set once here to avoid repeated checks
@@ -387,7 +384,7 @@ def main() -> int:
             "" if effective_hours == 1 else "s"
         )
 
-    roots = args.roots or DEFAULT_ROOTS
+    roots = list(args.roots)
     all_commits, per_repo = collect_results(roots, filters)
 
     if args.json:
