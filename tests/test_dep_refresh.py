@@ -10,11 +10,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 # Import from the command module under test
-from repo_ops.commands.dep_refresh import (
-    _parse_requirements_lines,
-    normalize_version,
-    semver_tuple,
-)
+from repo_ops.commands.dep_refresh import _parse_requirements_lines
+from repo_ops.version_utils import normalize_version, semver_tuple
 
 
 def test_normalize_version_strips_prefixes():
