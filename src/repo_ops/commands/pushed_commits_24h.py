@@ -35,34 +35,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from repo_ops.cli import parse_iso8601
 from repo_ops.constants import DEFAULT_ROOTS
 from repo_ops.filesystem import should_exclude
 from repo_ops.git import git_common_dir, repo_label, run_git
 
 PUSH_RE = re.compile(r"^([0-9a-f]{4,40})\s+.+?@\{(\d+)\}:\s+update by push(?:\s|\(|$)")
-
-
-def parse_iso8601(value: str) -> datetime:
-    """Parse an ISO 8601 string into a timezone-aware UTC datetime.
-
-    Replaces trailing 'Z' with '+00:00' for Python < 3.11 compatibility
-    (fromisoformat only accepts 'Z' natively from 3.11+).
-    Rejects naive datetimes with an argparse-compatible error.
-    """
-    normalized = value.strip()
-    if normalized.endswith("Z"):
-        normalized = normalized[:-1] + "+00:00"
-    try:
-        dt = datetime.fromisoformat(normalized)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(
-            f"Invalid ISO 8601 datetime {value!r}: {exc}"
-        ) from exc
-    if dt.tzinfo is None or dt.utcoffset() is None:
-        raise argparse.ArgumentTypeError(
-            f"Datetime {value!r} has no timezone; use e.g. 2026-05-26T00:00Z or +00:00 suffix"
-        )
-    return dt.astimezone(timezone.utc)
 
 
 @dataclass
