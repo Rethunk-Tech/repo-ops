@@ -55,7 +55,7 @@ _FAIL_FAST_EVENT = threading.Event()
 try:
     import tomllib
 except ModuleNotFoundError:
-    import tomli as tomllib  # type: ignore
+    import tomli as tomllib
 
 # ---------- Constants (from shared) ----------
 SKIP_DIRS = constants.SKIP_DIRS
@@ -1941,7 +1941,7 @@ def main() -> int:
         all_wrs = [wr for bundle in bundles.values() for wr in bundle.workspaces]
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
             pending: list[WorkspaceResult] = list(all_wrs)
-            futures: dict[
+            futures: dict[  # type: ignore[no-redef]
                 concurrent.futures.Future[WorkspaceResult], WorkspaceResult
             ] = {}
             while pending or futures:
@@ -1951,8 +1951,8 @@ def main() -> int:
                     and not _FAIL_FAST_EVENT.is_set()
                 ):
                     wr = pending.pop(0)
-                    fut = pool.submit(_process_one, wr)
-                    futures[fut] = wr
+                    fut = pool.submit(_process_one, wr)  # type: ignore[arg-type]
+                    futures[fut] = wr  # type: ignore[assignment]
                 if not futures:
                     break
                 done, _ = concurrent.futures.wait(
@@ -1962,8 +1962,8 @@ def main() -> int:
                 for fut in done:
                     futures.pop(fut)
                     updated = fut.result()
-                    all_results.append(updated)
-                    if args.fail_fast and updated.status == "fail":
+                    all_results.append(updated)  # type: ignore[arg-type]
+                    if args.fail_fast and updated.status == "fail":  # type: ignore[attr-defined]
                         _FAIL_FAST_EVENT.set()
                         for pending_fut in list(futures):
                             pending_fut.cancel()

@@ -11,7 +11,7 @@ from repo_ops.constants import EXCLUDE_PATH_FRAGMENTS
 try:
     import tomllib
 except ModuleNotFoundError:
-    import tomli as tomllib  # type: ignore
+    import tomli as tomllib
 
 
 def should_exclude(path: str) -> bool:

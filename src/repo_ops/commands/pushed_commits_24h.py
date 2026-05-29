@@ -213,7 +213,7 @@ def pushed_commits_for_repo(repo: str, filters: Filters) -> dict[str, None]:
                 old_sha = entries[i + 1][1]
             else:
                 # Fix 1: oldest reflog entry — resolve pre-state via git log -g
-                old_sha = _reflog_pre_sha(repo, ref, new_sha)
+                old_sha = _reflog_pre_sha(repo, ref, new_sha)  # type: ignore[assignment]
                 if old_sha is None:
                     # No parent means this was the very first push; list all commits
                     old_sha = "--root"

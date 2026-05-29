@@ -11,6 +11,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 from repo_ops.constants import SKIP_DIRS
 from repo_ops.filesystem import read_json_file, read_toml_file
@@ -216,9 +217,10 @@ def _go_cache_key(mod: Path) -> str:
     return f"{mod.resolve()}|{m_ns}|{s_ns}"
 
 
-def load_go_cache(cache_path: Path) -> dict:
+def load_go_cache(cache_path: Path) -> dict[str, Any]:
     try:
-        return json.loads(cache_path.read_text(encoding="utf-8", errors="replace"))
+        data: Any = json.loads(cache_path.read_text(encoding="utf-8", errors="replace"))
+        return data if isinstance(data, dict) else {}
     except Exception:
         return {}
 
@@ -421,13 +423,18 @@ def find_manifests(root: Path):
             yield Path(dirpath), kinds
 
 
-def _make_row(name: str, proj: Path, go_tasks: list, go_cache: dict | None) -> dict:
+def _make_row(
+    name: str,
+    proj: Path,
+    go_tasks: list[tuple[dict, Path, dict | None]],
+    go_cache: dict | None,
+) -> dict[str, Any]:
     """Build a single project row dict, queuing Go tasks for parallel execution."""
-    row = {
+    row: dict[str, Any] = {
         "name": name,
-        "kinds": set(),
+        "kinds": set[str](),
         "direct": 0,
-        "versions": set(),
+        "versions": set[str](),
         "installed": 0,
         "edges": 0,
         "manifests": 0,
@@ -459,8 +466,10 @@ def _make_row(name: str, proj: Path, go_tasks: list, go_cache: dict | None) -> d
     return row
 
 
-def scan(root: Path, flat: bool = False, go_cache: dict | None = None) -> list[dict]:
-    rows = []
+def scan(
+    root: Path, flat: bool = False, go_cache: dict | None = None
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     go_tasks: list[tuple[dict, Path, dict | None]] = []
 
     if flat:
