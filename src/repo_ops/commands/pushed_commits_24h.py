@@ -34,7 +34,11 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
-from repo_ops.cli import parse_iso8601
+from repo_ops.cli import (
+    add_verbose_argument,
+    parse_iso8601,
+    wire_verbose,
+)
 from repo_ops.constants import DEFAULT_ROOTS
 from repo_ops.discovery import discover_repos
 from repo_ops.git import repo_label, run_git
@@ -322,7 +326,9 @@ def main() -> int:
         action="store_true",
         help="Emit machine-readable JSON",
     )
+    add_verbose_argument(parser)
     args = parser.parse_args()
+    wire_verbose(args)
 
     # --show-messages implies --show-shas; set once here to avoid repeated checks
     if args.show_messages:

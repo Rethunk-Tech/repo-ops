@@ -22,7 +22,12 @@ import argparse
 import json
 from pathlib import Path
 
-from repo_ops.cli import add_json_argument, add_roots_argument
+from repo_ops.cli import (
+    add_json_argument,
+    add_roots_argument,
+    add_verbose_argument,
+    wire_verbose,
+)
 from repo_ops.dep_counting import (
     _go_cache_path,
     _kind_matches,
@@ -63,7 +68,9 @@ def main():
         action="store_true",
         help="Bypass XDG Go module result cache.",
     )
+    add_verbose_argument(parser)
     args = parser.parse_args()
+    wire_verbose(args)
 
     cache_path = _go_cache_path()
     go_cache: dict | None = None

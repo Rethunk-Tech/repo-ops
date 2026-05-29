@@ -8,10 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from repo_ops.commands.pushed_commits_24h import (
-    PUSH_RE,
-    parse_iso8601,
-)
+from repo_ops.cli import parse_iso8601
+from repo_ops.commands.pushed_commits_24h import PUSH_RE
 from repo_ops.git import git_common_dir, repo_label
 
 
