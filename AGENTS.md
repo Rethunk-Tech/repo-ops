@@ -6,9 +6,11 @@ This document records conventions and coordination notes for AI coding agents (C
 
 repo-ops is a lightweight Python package (src layout) that consolidates repository operations and dependency tools for Rethunk-Tech into importable modules with console scripts:
 
-- repo-dep-count
-- repo-dep-refresh
-- repo-pushed-commits
+- repos-inventory
+- repos-upgrade-plan
+- repos-upgrade-apply
+- repos-pushed
+- repo-ops (optional dispatcher)
 
 It uses hatchling for packaging, pytest for testing, and targets Python >= 3.10. Metadata and entry points live in pyproject.toml.
 
@@ -22,7 +24,11 @@ It uses hatchling for packaging, pytest for testing, and targets Python >= 3.10.
 
 ## Layout and Files
 
-- `src/repo_ops/` - package source (importable modules and command implementations)
+- `src/repo_ops/core/` - shared constants, git, filesystem, process, CLI helpers
+- `src/repo_ops/inventory/` - dependency counting and `repos-inventory` scan logic
+- `src/repo_ops/upgrade/` - upgrade engine, models, plan/apply orchestration
+- `src/repo_ops/pushed/` - push reflog audit
+- `src/repo_ops/commands/` - optional dispatcher (`dispatch.py`)
 - `tests/` - test suite
 - `pyproject.toml` - single source of truth for build, scripts, pytest config, and metadata
 - `README.md` - user overview

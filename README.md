@@ -10,7 +10,7 @@ repo-ops consolidates repository operations and dependency tools into a lightwei
 
 ## Highlights
 
-- `repo-dep-count`, `repo-dep-refresh`, and `repo-pushed-commits` as registered CLI tools
+- `repos-inventory`, `repos-upgrade-plan`, `repos-upgrade-apply`, and `repos-pushed` console tools (plus optional `repo-ops` dispatcher)
 - Src-layout package using hatchling
 - Preserves existing command behavior while extracting shared helpers
 - Designed for Rethunk-Tech monorepo and sibling repository workflows

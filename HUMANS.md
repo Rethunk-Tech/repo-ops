@@ -22,17 +22,32 @@ For runtime use, the package can be installed via pip once published (version ma
 
 - Python >= 3.10
 - Git available on PATH (tools interact with local repositories)
-- No other runtime dependencies beyond the Python standard library and packaging metadata
+- Optional for upgrades: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, etc.) and `gh` / `actionlint` for GitHub Actions pin audits
 
 ## Usage
 
-The following console scripts are registered via `[project.scripts]` in `pyproject.toml`:
+Console scripts (see `[project.scripts]` in `pyproject.toml`):
 
-- `repo-dep-count` — counts dependencies in repository manifests (defaults to standard local roots from constants.DEFAULT_ROOTS)
-- `repo-dep-refresh` — refreshes dependency versions or lockfiles
-- `repo-pushed-commits` — reports commits pushed in the last 24 hours
+| Command | Purpose |
+|---------|---------|
+| `repos-inventory` | Read-only dependency footprint (direct, versions, on-disk sprawl) |
+| `repos-upgrade-plan` | Plan outdated deps, GitHub Actions pin drift, and remediations (no writes) |
+| `repos-upgrade-apply` | Apply dependency updates, Actions pin bumps, remediations, and verify gates |
+| `repos-pushed` | Commits pushed to remotes in a time window (local reflog) |
+| `repo-ops` | Optional dispatcher: `repo-ops inventory`, `plan`, `apply`, `pushed` |
 
-Run with `--help` for each tool's specific options. All tools expect to be invoked from within or pointed at valid git repository roots.
+All tools default to scanning [`DEFAULT_ROOTS`](src/repo_ops/core/constants.py) unless you pass explicit root directories.
+
+### Upgrade plan vs apply
+
+- **Plan** (`repos-upgrade-plan`) never mutates the tree. Exit code `1` when actionable drift exists (useful for CI).
+- **Apply** (`repos-upgrade-apply`) performs updates. Use `--no-verify` or `--skip-remediations` to narrow scope.
+
+GitHub Actions workflow pins are included in both plan and apply by default. Use `--skip-actions` for dependency-only runs.
+
+Legacy flags (`-y`, `--also-actions`, `--only-actions`) are removed; use `repos-upgrade-apply` instead of `-y` on plan.
+
+Run `--help` on each command for full options.
 
 ## Verification and Testing
 
@@ -49,10 +64,10 @@ python -m build --wheel --sdist
 
 The test suite lives under `tests/` and is configured in `pyproject.toml` under `[tool.pytest.ini_options]`. Coverage and mypy configs also live in `pyproject.toml`.
 
-CI runs ruff, mypy, pytest+cov, and build on push/PR to main (matrix 3.10-3.12); Dependabot maintains pip and GitHub Actions deps weekly.
+CI runs ruff, mypy, pytest+cov, and build on push/PR to `main` (matrix 3.10–3.12); Dependabot maintains pip and GitHub Actions deps weekly.
 
 ## Typical Roots
 
-These utilities are designed for use inside Rethunk-Tech repositories under `/usr/local/src/com.github/Rethunk-Tech/*`. They discover repository roots, filter paths, and parse Git/dependency metadata while preserving command output compatibility.
+These utilities scan local checkout trees under standard roots (`/usr/local/src`, `~/Projects`, etc.). They discover repository roots, filter paths, and parse Git/dependency metadata for Rethunk-Tech monorepo workflows.
 
 Pull requests and feedback welcome via the repository issues.
