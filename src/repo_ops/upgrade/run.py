@@ -10,11 +10,12 @@ from pathlib import Path
 from repo_ops.core.cli import wire_verbose
 from repo_ops.core.constants import DEFAULT_ROOTS
 from repo_ops.core.process import set_verbose
-from repo_ops.upgrade import engine
+from repo_ops.upgrade import actions, orchestration, report
+from repo_ops.upgrade import workspaces as workspace_discovery
 from repo_ops.upgrade.cli_args import build_upgrade_parser, reject_legacy_flags
 from repo_ops.upgrade.models import RepoBundle, Workspace, WorkspaceResult
 
-_FAIL_FAST_EVENT = engine._FAIL_FAST_EVENT
+_FAIL_FAST_EVENT = orchestration.FAIL_FAST_EVENT
 
 
 def _run_plan_parallel(
@@ -86,16 +87,16 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
             s.strip() for s in args.skip_remediations.split(",") if s.strip()
         }
 
-    workspaces: list[Workspace] = engine.discover_all(roots, flat=args.flat)
-    workspaces = engine.filter_workspaces(workspaces, args.eco_filter)
+    found: list[Workspace] = workspace_discovery.discover_all(roots, flat=args.flat)
+    found = orchestration.filter_workspaces(found, args.eco_filter)
 
-    bundles = engine.group_by_repo(workspaces, roots)
+    bundles = workspace_discovery.group_by_repo(found, roots)
 
     set_verbose(args.verbose)
     _FAIL_FAST_EVENT.clear()
 
     def _process_one(wr: WorkspaceResult) -> WorkspaceResult:
-        return engine.process_workspace(
+        return orchestration.process_workspace(
             wr,
             do_apply=apply,
             do_verify=apply and not args.no_verify,
@@ -169,7 +170,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
         for bundle in bundles.values():
             if apply and bundle.any_fail():
                 continue
-            bundle.actions = engine.scan_actions(bundle.git_repo, apply=apply)
+            bundle.actions = actions.scan_actions(bundle.git_repo, apply=apply)
 
     only_outdated = getattr(args, "only_outdated", False)
     if only_outdated:
@@ -192,7 +193,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
         print(json.dumps(payload, indent=2))
     elif not args.quiet:
         top_n = getattr(args, "top", 10)
-        engine.print_human_report(
+        report.print_human_report(
             bundles,
             dry_run=not apply,
             only_outdated=only_outdated,
