@@ -20,7 +20,7 @@ repo-ops consolidates repository operations and dependency tools into a lightwei
 | Document       | Purpose                                      |
 |----------------|----------------------------------------------|
 | `README.md`    | Orientation and links (this file)            |
-| `HUMANS.md`    | Installation, environment, and usage         |
+| `HUMANS.md`    | Installation, configuration, and usage       |
 | `AGENTS.md`    | AI/agent coordination and commit policies    |
 | `CONTRIBUTING.md` | Contributor guidelines and code style     |
 | `LICENSE`      | MIT License                                  |
