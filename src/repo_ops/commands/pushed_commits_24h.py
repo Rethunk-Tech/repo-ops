@@ -33,12 +33,11 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from repo_ops.cli import parse_iso8601
 from repo_ops.constants import DEFAULT_ROOTS
-from repo_ops.filesystem import should_exclude
-from repo_ops.git import git_common_dir, repo_label, run_git
+from repo_ops.discovery import discover_repos
+from repo_ops.git import repo_label, run_git
 
 PUSH_RE = re.compile(r"^([0-9a-f]{4,40})\s+.+?@\{(\d+)\}:\s+update by push(?:\s|\(|$)")
 
@@ -59,78 +58,6 @@ class RepoResult:
     path: str
     # dict preserves insertion order (chrono from rev-list --reverse) and deduplicates
     commits: dict[str, None] = field(default_factory=dict)
-
-
-def discover_repos(roots: list[str]) -> dict[str, str]:
-    """Map git-common-dir -> representative working tree path.
-
-    -L tells find to follow symlinks so that symlinked .git dirs are not missed.
-    Both sides of the dedup key are os.path.realpath-normalised so that a
-    symlinked repo and its canonical path map to the same key.
-    """
-    common_to_repo: dict[str, str] = {}
-    for root in roots:
-        root_path = Path(root)
-        if not root_path.is_dir():
-            continue
-        proc = subprocess.run(
-            [
-                "find",
-                "-L",
-                str(root_path),
-                "(",
-                "-name",
-                "node_modules",
-                "-o",
-                "-name",
-                "vendor",
-                "-o",
-                "-name",
-                "target",
-                "-o",
-                "-name",
-                ".cargo",
-                "-o",
-                "-name",
-                "pkg",
-                "-o",
-                "-name",
-                ".cache",
-                "-o",
-                "-name",
-                ".oh-my-zsh",
-                "-o",
-                "-name",
-                ".oh-my-bash",
-                ")",
-                "-prune",
-                "-o",
-                "-type",
-                "d",
-                "-name",
-                ".git",
-                "-print",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        if proc.returncode != 0:
-            continue
-        for git_dir in proc.stdout.splitlines():
-            if not git_dir:
-                continue
-            # realpath normalises symlinks so dedup keys match on both sides
-            repo = os.path.realpath(os.path.dirname(git_dir))
-            if should_exclude(repo):
-                continue
-            common = git_common_dir(repo)
-            if not common:
-                continue
-            prev = common_to_repo.get(common)
-            if prev is None or len(repo) < len(prev):
-                common_to_repo[common] = repo
-    return common_to_repo
 
 
 def _reflog_pre_sha(repo: str, ref: str, new_sha: str) -> str | None:
