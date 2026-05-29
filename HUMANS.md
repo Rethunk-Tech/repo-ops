@@ -52,7 +52,7 @@ ruff format .          # or `ruff format --check .` in CI
 
 The test suite lives under `tests/` and is configured in `pyproject.toml` under `[tool.pytest.ini_options]`.
 
-CI runs ruff + pytest on push/PR to main/master; Dependabot maintains pip and GitHub Actions deps weekly.
+CI runs ruff + pytest on push/PR to main; Dependabot maintains pip and GitHub Actions deps weekly.
 
 ## Typical Roots
 
