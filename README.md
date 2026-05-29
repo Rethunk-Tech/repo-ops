@@ -23,6 +23,8 @@ repo-ops consolidates repository operations and dependency tools into a lightwei
 | `HUMANS.md`    | Installation, configuration, and usage       |
 | `AGENTS.md`    | AI/agent coordination and commit policies    |
 | `CONTRIBUTING.md` | Contributor guidelines and code style     |
+| `CHANGELOG.md` | Release history (Keep a Changelog style)     |
+| `CODE_OF_CONDUCT.md` | Community standards and enforcement     |
 | `LICENSE`      | MIT License                                  |
 
 ## License
