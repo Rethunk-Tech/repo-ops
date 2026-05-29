@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "repo-ops"
-version = "0.2.0"
+version = "0.2.1"
 description = "Repository operations and dependency maintenance tools for Rethunk-Tech."
 readme = "README.md"
 requires-python = ">=3.10"
