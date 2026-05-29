@@ -48,3 +48,15 @@ Do not create top-level scripts; everything routes through the package and entry
 - When in doubt about scope or coordination, ask in the current session rather than guessing.
 
 These guidelines help keep parallel agent work efficient and the repository tidy.
+
+## Incremental Commits for Agents (from now on)
+
+From this point forward, every Task, subagent, or automation working in this repository **must commit incrementally** using MCP-only git operations:
+
+- **Tooling**: Use `batch_commit` and `git_status` from the `plugin-rethunk-git-rethunk-git` (or `user-rethunk-git`) MCP server. Never invoke shell `git commit`, `git add`, or equivalent unless the user has explicitly opted into shell-based git workflows for this session.
+- **Batching**: Small, thematic batches (e.g., one doc file or one logical change per commit). Verify with `pytest` (or equivalent) before committing.
+- **Messages**: Conventional Commits format. Subject line concise; body explains *why* the change was made (not just what).
+- **Pushing**: Always set `push: "never"` (default) unless the user specifically requests a push.
+- **Coordination**: Run `git status --short` (shell or MCP) before editing to detect concurrent work. Prefer reviewable history over large monolithic commits.
+
+This ensures safe parallel agent work and aligns with Rethunk good-version-control practices. Commit conventions details live in `CONTRIBUTING.md`.
