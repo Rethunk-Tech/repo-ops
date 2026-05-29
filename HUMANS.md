@@ -81,7 +81,13 @@ python -m build --wheel --sdist
 
 The test suite lives under `tests/` and is configured in `pyproject.toml` under `[tool.pytest.ini_options]`. Coverage and mypy configs also live in `pyproject.toml`.
 
-CI runs ruff, mypy, pytest+cov, and build on push/PR to `main` (matrix 3.10–3.12); Dependabot maintains pip and GitHub Actions deps weekly.
+CI runs ruff, mypy, pytest+cov, build, and strict doc-audit on push/PR to `main` (matrix 3.10–3.12); Dependabot maintains pip and GitHub Actions deps weekly.
+
+Doc governance uses the Rethunk tier split (README / HUMANS / AGENTS / CONTRIBUTING). Locally:
+
+```bash
+python3 scripts/doc_audit_gate.py --root .
+```
 
 ## Typical Roots
 

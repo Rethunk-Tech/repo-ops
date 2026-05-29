@@ -50,7 +50,7 @@ Do not create top-level scripts; everything routes through the package and entry
 
 - Run status checks and keep working tree clean.
 - .gitignore covers Python caches, venvs, build artifacts, coverage, IDE/OS noise, and local tool outputs.
-- No heavy CI, pre-commit, or lint configs unless explicitly requested; this is a small utility project.
+- CI runs ruff, mypy, pytest, build, and strict doc-audit (`scripts/doc_audit_gate.py`) on push/PR to `main`.
 - When in doubt about scope or coordination, ask in the current session rather than guessing.
 
 These guidelines help keep parallel agent work efficient and the repository tidy.
