@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Count dependencies per project (direct + reachable versions + on-disk).
 
-Usage: dep_count.py [root_dir ...]
-Default root: /usr/local/src/com.github
+Usage: repo-dep-count [root_dir ...]
+Defaults: standard local roots from constants.DEFAULT_ROOTS
 
 Columns:
   direct    Declared in manifest(s) (package.json / go.mod / Cargo.toml / pyproject)
@@ -22,6 +22,7 @@ import argparse
 import json
 from pathlib import Path
 
+from repo_ops.cli import add_json_argument, add_roots_argument
 from repo_ops.dep_counting import (
     _go_cache_path,
     _kind_matches,
@@ -36,19 +37,8 @@ def main():
         description="Count dependencies per project.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
-        "roots",
-        nargs="*",
-        default=["/usr/local/src/com.github"],
-        metavar="root_dir",
-        help="Root directories to scan (default: /usr/local/src/com.github)",
-    )
-    parser.add_argument(
-        "--json",
-        dest="json_out",
-        action="store_true",
-        help="Emit JSON instead of the human-readable table.",
-    )
+    add_roots_argument(parser)
+    add_json_argument(parser, dest="json_out")
     parser.add_argument(
         "--sort",
         choices=["name", "direct", "versions", "on-disk", "edges"],
