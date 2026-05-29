@@ -28,6 +28,7 @@ Remediation hooks (extensible):
   codegen            grpc/openapi deps → generate:proto / generate:openapi
   package_manager_pin  packageManager field stale → rewrite to tool version
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,9 +41,10 @@ import subprocess
 import sys
 import tempfile
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from repo_ops import constants, filesystem, git, process
 
@@ -64,12 +66,25 @@ TIMEOUT_APPLY = 600
 TIMEOUT_VERIFY = 900
 
 YARN_ISOLATED_COPY_SKIP = {
-    ".git", "node_modules", ".next", "dist", "build", "out", ".turbo",
-    ".cache", "coverage", ".nuxt", ".svelte-kit", ".dep_refresh_venv",
-    "venv", ".venv",
+    ".git",
+    "node_modules",
+    ".next",
+    "dist",
+    "build",
+    "out",
+    ".turbo",
+    ".cache",
+    "coverage",
+    ".nuxt",
+    ".svelte-kit",
+    ".dep_refresh_venv",
+    "venv",
+    ".venv",
 }
 YARN_ISOLATED_YARN_SKIP = {
-    "unplugged", "install-state.gz", "build-state.yml",
+    "unplugged",
+    "install-state.gz",
+    "build-state.yml",
 }
 
 GO_UPGRADE_RE = re.compile(r"\[([^\]]+)\]")
@@ -90,8 +105,13 @@ ACTION_ALLOWLIST: dict[str, str] = {
 }
 
 CODEGEN_TRIGGERS = (
-    "@grpc/", "grpc-tools", "@accility/protoc", "protobufjs",
-    "swagger-", "openapi-typescript", "@openapitools/",
+    "@grpc/",
+    "grpc-tools",
+    "@accility/protoc",
+    "protobufjs",
+    "swagger-",
+    "openapi-typescript",
+    "@openapitools/",
 )
 
 BIOME_PKG = "@biomejs/biome"
@@ -135,8 +155,7 @@ class WorkspaceResult:
             "manager": self.workspace.manager,
             "status": self.status,
             "changes": [
-                {"name": c.name, "from": c.from_ver, "to": c.to}
-                for c in self.changes
+                {"name": c.name, "from": c.from_ver, "to": c.to} for c in self.changes
             ],
             "overrides_audit": self.overrides_audit,
             "remediations": self.remediations,
@@ -280,7 +299,10 @@ def detect_node_manager(mdir: Path) -> tuple[str | None, str | None]:
     if pm_field:
         name, _ver = pm_field
         if lock_mgr and lock_mgr != name:
-            return name, f"WARN: packageManager={name} but lockfile implies {lock_mgr}; using packageManager"
+            return (
+                name,
+                f"WARN: packageManager={name} but lockfile implies {lock_mgr}; using packageManager",
+            )
         return name, None
     if lock_mgr:
         return lock_mgr, None
@@ -350,25 +372,29 @@ def discover_workspaces_in_root(root: Path, flat: bool) -> list[Workspace]:
         git = git_repo_for(mdir)
         if not git:
             return
-        found.append(Workspace(
-            path=mdir.resolve(),
-            ecosystem="node",
-            manager=mgr,
-            git_repo=git.resolve(),
-            label="",
-        ))
+        found.append(
+            Workspace(
+                path=mdir.resolve(),
+                ecosystem="node",
+                manager=mgr,
+                git_repo=git.resolve(),
+                label="",
+            )
+        )
 
     def consider_go(mdir: Path) -> None:
         if (mdir / "go.mod").exists():
             git = git_repo_for(mdir)
             if git:
-                found.append(Workspace(
-                    path=mdir.resolve(),
-                    ecosystem="go",
-                    manager="go",
-                    git_repo=git.resolve(),
-                    label="",
-                ))
+                found.append(
+                    Workspace(
+                        path=mdir.resolve(),
+                        ecosystem="go",
+                        manager="go",
+                        git_repo=git.resolve(),
+                        label="",
+                    )
+                )
 
     def consider_rust(mdir: Path) -> None:
         cargo = mdir / "Cargo.toml"
@@ -383,24 +409,32 @@ def discover_workspaces_in_root(root: Path, flat: bool) -> list[Workspace]:
             return
         git = git_repo_for(mdir)
         if git:
-            found.append(Workspace(
-                path=mdir.resolve(),
-                ecosystem="rust",
-                manager="rust",
-                git_repo=git.resolve(),
-                label="",
-            ))
+            found.append(
+                Workspace(
+                    path=mdir.resolve(),
+                    ecosystem="rust",
+                    manager="rust",
+                    git_repo=git.resolve(),
+                    label="",
+                )
+            )
 
     def consider_py(mdir: Path) -> None:
         pyp = mdir / "pyproject.toml"
-        if not (pyp.exists() or (mdir / "requirements.in").exists() or (mdir / "Pipfile").exists()):
+        if not (
+            pyp.exists()
+            or (mdir / "requirements.in").exists()
+            or (mdir / "Pipfile").exists()
+        ):
             return
         mgr: str | None = None
         if (mdir / "uv.lock").exists():
             mgr = "uv"
         elif (mdir / "poetry.lock").exists():
             mgr = "poetry"
-        elif (mdir / "requirements.in").exists() or (mdir / "requirements.txt").exists():
+        elif (mdir / "requirements.in").exists() or (
+            mdir / "requirements.txt"
+        ).exists():
             mgr = "pip-tools"
         elif pyp.exists():
             try:
@@ -414,13 +448,15 @@ def discover_workspaces_in_root(root: Path, flat: bool) -> list[Workspace]:
             return
         git = git_repo_for(mdir)
         if git:
-            found.append(Workspace(
-                path=mdir.resolve(),
-                ecosystem="py",
-                manager=mgr,
-                git_repo=git.resolve(),
-                label="",
-            ))
+            found.append(
+                Workspace(
+                    path=mdir.resolve(),
+                    ecosystem="py",
+                    manager=mgr,
+                    git_repo=git.resolve(),
+                    label="",
+                )
+            )
 
     seen_paths: set[Path] = set()
     if not root.is_dir() or should_exclude(str(root)):
@@ -466,7 +502,9 @@ def discover_all(roots: list[str], flat: bool) -> list[Workspace]:
     return all_ws
 
 
-def group_by_repo(workspaces: list[Workspace], roots: list[str]) -> dict[Path, RepoBundle]:
+def group_by_repo(
+    workspaces: list[Workspace], roots: list[str]
+) -> dict[Path, RepoBundle]:
     bundles: dict[Path, RepoBundle] = {}
     for ws in workspaces:
         if ws.git_repo not in bundles:
@@ -511,38 +549,46 @@ def overrides_audit(mdir: Path, manager: str) -> list[dict[str, str]]:
         val = pkg.get(key)
         if isinstance(val, dict):
             pins.update({str(k): str(v) for k, v in val.items()})
-    pnpm = (pkg.get("pnpm") or {})
+    pnpm = pkg.get("pnpm") or {}
     if isinstance(pnpm.get("overrides"), dict):
         pins.update({str(k): str(v) for k, v in pnpm["overrides"].items()})
 
     out: list[dict[str, str]] = []
     for name, pinned in pins.items():
         pkg_name = _override_package_name(name)
-        pinned_ver = normalize_version(pinned.split("@")[-1] if "@" in pinned else pinned)
+        pinned_ver = normalize_version(
+            pinned.split("@")[-1] if "@" in pinned else pinned
+        )
         resolved = _resolved_from_nm(mdir, pkg_name)
         if not resolved:
-            out.append({
-                "level": "warn",
-                "detail": f"OVERRIDE {name} pinned {pinned_ver} — not found in node_modules",
-            })
+            out.append(
+                {
+                    "level": "warn",
+                    "detail": f"OVERRIDE {name} pinned {pinned_ver} — not found in node_modules",
+                }
+            )
             continue
         res_norm = normalize_version(resolved)
         if semver_tuple(pinned_ver) > semver_tuple(res_norm):
-            out.append({
-                "level": "warn",
-                "detail": (
-                    f"OVERRIDE blocks upgrade: {name} pinned {pinned_ver} "
-                    f"but tree resolves {resolved}"
-                ),
-            })
+            out.append(
+                {
+                    "level": "warn",
+                    "detail": (
+                        f"OVERRIDE blocks upgrade: {name} pinned {pinned_ver} "
+                        f"but tree resolves {resolved}"
+                    ),
+                }
+            )
             continue
         if res_norm != pinned_ver:
-            out.append({
-                "level": "warn",
-                "detail": (
-                    f"OVERRIDE stale: {name} pinned {pinned_ver} but lock/tree has {resolved}"
-                ),
-            })
+            out.append(
+                {
+                    "level": "warn",
+                    "detail": (
+                        f"OVERRIDE stale: {name} pinned {pinned_ver} but lock/tree has {resolved}"
+                    ),
+                }
+            )
     return out
 
 
@@ -552,7 +598,9 @@ def overrides_audit(mdir: Path, manager: str) -> list[dict[str, str]]:
 def check_bun(ws: Workspace) -> list[Change]:
     proc = run(["bun", "outdated"], ws.path)
     if proc.returncode not in (0, 1):
-        raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "bun outdated failed")
+        raise RuntimeError(
+            proc.stderr.strip() or proc.stdout.strip() or "bun outdated failed"
+        )
     changes: list[Change] = []
     for line in proc.stdout.splitlines():
         parts = line.split()
@@ -584,11 +632,13 @@ def check_npm(ws: Workspace) -> list[Change]:
     changes: list[Change] = []
     for name, meta in data.items():
         if isinstance(meta, dict):
-            changes.append(Change(
-                name,
-                str(meta.get("current", "?")),
-                str(meta.get("latest", "?")),
-            ))
+            changes.append(
+                Change(
+                    name,
+                    str(meta.get("current", "?")),
+                    str(meta.get("latest", "?")),
+                )
+            )
     return changes
 
 
@@ -604,19 +654,23 @@ def check_pnpm(ws: Workspace) -> list[Change]:
             if isinstance(items, dict):
                 for name, meta in items.items():
                     if isinstance(meta, dict):
-                        changes.append(Change(
-                            name,
-                            str(meta.get("current", "?")),
-                            str(meta.get("latest", "?")),
-                        ))
+                        changes.append(
+                            Change(
+                                name,
+                                str(meta.get("current", "?")),
+                                str(meta.get("latest", "?")),
+                            )
+                        )
             elif isinstance(items, list):
                 for meta in items:
                     if isinstance(meta, dict) and meta.get("name"):
-                        changes.append(Change(
-                            str(meta["name"]),
-                            str(meta.get("current", "?")),
-                            str(meta.get("latest", "?")),
-                        ))
+                        changes.append(
+                            Change(
+                                str(meta["name"]),
+                                str(meta.get("current", "?")),
+                                str(meta.get("latest", "?")),
+                            )
+                        )
         except json.JSONDecodeError:
             pass
     return changes
@@ -745,10 +799,18 @@ def check_hatch(ws: Workspace) -> list[Change]:
         changes: list[Change] = []
         try:
             run(["uv", "venv", str(venv_dir)], ws.path, timeout=120)
-            run(["uv", "pip", "install", "-e", ".[dev]"], ws.path, timeout=300,
-                env={"VIRTUAL_ENV": str(venv_dir)})
-            proc = run(["uv", "pip", "list", "--outdated"], ws.path, timeout=120,
-                       env={"VIRTUAL_ENV": str(venv_dir)})
+            run(
+                ["uv", "pip", "install", "-e", ".[dev]"],
+                ws.path,
+                timeout=300,
+                env={"VIRTUAL_ENV": str(venv_dir)},
+            )
+            proc = run(
+                ["uv", "pip", "list", "--outdated"],
+                ws.path,
+                timeout=120,
+                env={"VIRTUAL_ENV": str(venv_dir)},
+            )
             for line in proc.stdout.splitlines()[2:]:
                 parts = line.split()
                 if len(parts) >= 3:
@@ -783,13 +845,19 @@ def _diff_lock_text(before: str, after: str) -> list[Change]:
                 name = f"@{parts[1]}" if len(parts) > 2 else hdr
             else:
                 name = hdr.split("@")[0]
-            changes.append(Change(name, "?" if hdr not in b_map else "prior", "updated"))
+            changes.append(
+                Change(name, "?" if hdr not in b_map else "prior", "updated")
+            )
     return changes[:50]
 
 
 NODE_LOCKFILES = (
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-    "bun.lock", "bun.lockb", "package.json",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "bun.lock",
+    "bun.lockb",
+    "package.json",
 )
 PY_LOCKFILES = ("uv.lock", "requirements.txt", "poetry.lock")
 GO_LOCKFILES = ("go.sum", "go.mod")
@@ -827,8 +895,12 @@ def _pkg_json_dep_changes(before: bytes, after: bytes) -> list[Change]:
         b_sec = (b_pkg.get(section) or {}) if isinstance(b_pkg, dict) else {}
         a_sec = (a_pkg.get(section) or {}) if isinstance(a_pkg, dict) else {}
         for name in set(b_sec) | set(a_sec):
-            bv = normalize_version(str(b_sec.get(name, ""))) if b_sec.get(name) else None
-            av = normalize_version(str(a_sec.get(name, ""))) if a_sec.get(name) else None
+            bv = (
+                normalize_version(str(b_sec.get(name, ""))) if b_sec.get(name) else None
+            )
+            av = (
+                normalize_version(str(a_sec.get(name, ""))) if a_sec.get(name) else None
+            )
             if bv != av and av:
                 changes.append(Change(name, bv or "?", av))
     return changes
@@ -859,7 +931,12 @@ def diff_workspace_snapshots(
                 if c.name not in seen:
                     seen.add(c.name)
                     changes.append(c)
-        elif path.name in ("package-lock.json", "pnpm-lock.yaml", "uv.lock", "requirements.txt"):
+        elif path.name in (
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "uv.lock",
+            "requirements.txt",
+        ):
             if path.name not in seen:
                 seen.add(path.name)
                 changes.append(Change(path.name, "changed", "changed"))
@@ -900,7 +977,12 @@ def collect_changes_after_apply(ws: Workspace) -> list[Change]:
     except ValueError:
         rel = ws.path
     rel_s = str(rel)
-    lock_names = list(NODE_LOCKFILES) + list(PY_LOCKFILES) + list(GO_LOCKFILES) + list(RUST_LOCKFILES)
+    lock_names = (
+        list(NODE_LOCKFILES)
+        + list(PY_LOCKFILES)
+        + list(GO_LOCKFILES)
+        + list(RUST_LOCKFILES)
+    )
     proc = run(
         ["git", "diff", "--name-only", "--", *lock_names],
         repo,
@@ -929,7 +1011,11 @@ def collect_changes_after_apply(ws: Workspace) -> list[Change]:
                         if name in ("dependencies", "devDependencies"):
                             continue
                         changes.append(Change(name, "?", normalize_version(ver)))
-            elif fname.endswith(".lock") or fname in ("go.sum", "go.mod", "requirements.txt"):
+            elif fname.endswith(".lock") or fname in (
+                "go.sum",
+                "go.mod",
+                "requirements.txt",
+            ):
                 changes.append(Change(fname, "changed", "updated"))
         if changes:
             return changes
@@ -960,7 +1046,9 @@ def check_yarn_snapshot(ws: Workspace) -> tuple[list[Change], list[dict[str, str
         pkg_path = mdir / "package.json"
         pkg_before = before_snap.get(pkg_path, b"")
         pkg_after = after_snap.get(pkg_path, b"")
-        if pkg_before != pkg_after and not any(c.name == "package.json" for c in changes):
+        if pkg_before != pkg_after and not any(
+            c.name == "package.json" for c in changes
+        ):
             changes.append(Change("package.json", "changed", "changed"))
         snapshot_overrides = overrides_audit(mdir, "yarn")
     return changes, snapshot_overrides
@@ -1137,7 +1225,6 @@ def _find_biome_configs(mdir: Path) -> list[Path]:
         p = mdir / name
         if p.exists():
             configs.append(p)
-    pkg = read_json_file(mdir / "package.json") or {}
     for pattern in yarn_workspace_members(mdir) or []:
         if "*" not in pattern:
             sub = mdir / pattern
@@ -1231,7 +1318,11 @@ def apply_biome(ws: Workspace, ctx: dict[str, Any]) -> bool:
 def _playwright_version_changed(ws: Workspace, ctx: dict[str, Any]) -> bool:
     for c in ctx.get("changes", []):
         if c.name == PLAYWRIGHT_PKG or PLAYWRIGHT_PKG in c.name:
-            if c.from_ver not in ("?", "changed", "prior") and c.to not in ("?", "changed", "updated"):
+            if c.from_ver not in ("?", "changed", "prior") and c.to not in (
+                "?",
+                "changed",
+                "updated",
+            ):
                 return normalize_version(c.from_ver) != normalize_version(c.to)
             return True
     return False
@@ -1249,7 +1340,13 @@ def _playwright_missing_browsers(ws: Workspace) -> bool:
     combined = (proc.stdout + proc.stderr).lower()
     return any(
         tok in combined
-        for tok in ("download", "installing", "missing", "will download", "needs install")
+        for tok in (
+            "download",
+            "installing",
+            "missing",
+            "will download",
+            "needs install",
+        )
     )
 
 
@@ -1349,7 +1446,9 @@ def apply_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> bool:
 
 REMEDIATIONS: list[Remediation] = [
     Remediation("biome_schema", detect_biome, report_biome, apply_biome),
-    Remediation("playwright_browsers", detect_playwright, report_playwright, apply_playwright),
+    Remediation(
+        "playwright_browsers", detect_playwright, report_playwright, apply_playwright
+    ),
     Remediation("codegen", detect_codegen, report_codegen, apply_codegen),
     Remediation("package_manager_pin", detect_pm_pin, report_pm_pin, apply_pm_pin),
 ]
@@ -1389,7 +1488,9 @@ def run_remediations(
                 lines = rem.report(result.workspace, ctx)
                 entry["detail"] = "; ".join(lines)
                 if apply:
-                    entry["status"] = "applied" if rem.apply(result.workspace, ctx) else "fail"
+                    entry["status"] = (
+                        "applied" if rem.apply(result.workspace, ctx) else "fail"
+                    )
                     if entry["status"] == "fail":
                         result.status = "fail"
                 else:
@@ -1449,7 +1550,9 @@ def _verify_hatch_fast(ws: Workspace) -> str | None:
             return (proc.stderr or proc.stdout).strip() or "uv run test failed"
         return None
     if "pytest" in dev or (ws.path / "tests").is_dir():
-        proc = run(["uv", "run", "pytest", "-q", "--co", "-q"], ws.path, timeout=TIMEOUT_VERIFY)
+        proc = run(
+            ["uv", "run", "pytest", "-q", "--co", "-q"], ws.path, timeout=TIMEOUT_VERIFY
+        )
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "uv run pytest failed"
         return None
@@ -1549,8 +1652,7 @@ def discover_workflow_files(repo: Path) -> list[Path]:
     if not wf_dir.is_dir():
         return []
     return sorted(
-        p for p in wf_dir.iterdir()
-        if p.suffix in (".yml", ".yaml") and p.is_file()
+        p for p in wf_dir.iterdir() if p.suffix in (".yml", ".yaml") and p.is_file()
     )
 
 
@@ -1578,33 +1680,39 @@ def action_latest_tag(action: str) -> str | None:
 
 def scan_actions(repo: Path, apply: bool) -> list[ActionBump]:
     if not shutil.which("actionlint"):
-        print("WARN: actionlint not on PATH; skipping action validation", file=sys.stderr)
+        print(
+            "WARN: actionlint not on PATH; skipping action validation", file=sys.stderr
+        )
     bumps: list[ActionBump] = []
     for wf in discover_workflow_files(repo):
         text = wf.read_text(encoding="utf-8", errors="replace")
         if shutil.which("actionlint"):
             proc = run(["actionlint", str(wf)], repo, timeout=60)
             if proc.returncode != 0:
-                bumps.append(ActionBump(
-                    workflow=str(wf.relative_to(repo)),
-                    action="(actionlint)",
-                    pin="",
-                    latest="",
-                    status="fail",
-                    detail=proc.stderr.strip() or proc.stdout.strip(),
-                ))
+                bumps.append(
+                    ActionBump(
+                        workflow=str(wf.relative_to(repo)),
+                        action="(actionlint)",
+                        pin="",
+                        latest="",
+                        status="fail",
+                        detail=proc.stderr.strip() or proc.stdout.strip(),
+                    )
+                )
                 continue
         for m in USES_RE.finditer(text):
             action, pin = m.group(1), m.group(2)
             if pin.startswith("sha") or re.fullmatch(r"[0-9a-f]{7,40}", pin):
-                bumps.append(ActionBump(
-                    workflow=str(wf.relative_to(repo)),
-                    action=action,
-                    pin=pin,
-                    latest=pin,
-                    status="ok",
-                    detail="SHA-pinned; report only",
-                ))
+                bumps.append(
+                    ActionBump(
+                        workflow=str(wf.relative_to(repo)),
+                        action=action,
+                        pin=pin,
+                        latest=pin,
+                        status="ok",
+                        detail="SHA-pinned; report only",
+                    )
+                )
                 continue
             latest = action_latest_tag(action)
             if not latest:
@@ -1657,7 +1765,9 @@ def process_workspace(
         try:
             apply_workspace(ws)
             after_snap = snapshot_workspace_files(ws.path, ws.manager)
-            result.changes = diff_workspace_snapshots(before_snap, after_snap, ws.manager)
+            result.changes = diff_workspace_snapshots(
+                before_snap, after_snap, ws.manager
+            )
             if not result.changes:
                 result.changes = collect_changes_after_apply(ws)
             if ws.ecosystem == "node":
@@ -1726,11 +1836,15 @@ def print_human_report(
                 print(f"    {oa.get('detail', oa)}")
             for rem in wr.remediations:
                 if rem.get("status") != "ok" or rem.get("detail"):
-                    print(f"    [{rem.get('id')}] {rem.get('detail') or rem.get('status')}")
+                    print(
+                        f"    [{rem.get('id')}] {rem.get('detail') or rem.get('status')}"
+                    )
         if also_actions and repo.actions:
             print("  Actions:")
             for ab in repo.actions:
-                print(f"    {ab.workflow}: {ab.action}@{ab.pin} → {ab.latest} [{ab.status}]")
+                print(
+                    f"    {ab.workflow}: {ab.action}@{ab.pin} → {ab.latest} [{ab.status}]"
+                )
         print()
 
 
@@ -1740,11 +1854,19 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("roots", nargs="*", help="Root directories to scan")
-    parser.add_argument("-y", "--yes", action="store_true", help="Apply updates and remediations")
-    parser.add_argument("--no-verify", action="store_true", help="Skip verify gates after apply")
+    parser.add_argument(
+        "-y", "--yes", action="store_true", help="Apply updates and remediations"
+    )
+    parser.add_argument(
+        "--no-verify", action="store_true", help="Skip verify gates after apply"
+    )
     parser.add_argument("--json", action="store_true", help="JSON report")
-    parser.add_argument("--filter", choices=["node", "go", "rust", "py"], dest="eco_filter")
-    parser.add_argument("--only-outdated", action="store_true", help="Omit clean workspaces")
+    parser.add_argument(
+        "--filter", choices=["node", "go", "rust", "py"], dest="eco_filter"
+    )
+    parser.add_argument(
+        "--only-outdated", action="store_true", help="Omit clean workspaces"
+    )
     parser.add_argument("-q", "--quiet", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--jobs", type=int, default=8)
@@ -1754,12 +1876,18 @@ def main() -> int:
     parser.add_argument("--only-actions", action="store_true")
     parser.add_argument("--flat", action="store_true")
     parser.add_argument("--allow-dirty", action="store_true")
-    parser.add_argument("--verify-test", action="store_true", help="Run go test ./... in verify")
-    parser.add_argument("--top", type=int, default=10, help="Max changes shown per workspace")
+    parser.add_argument(
+        "--verify-test", action="store_true", help="Run go test ./... in verify"
+    )
+    parser.add_argument(
+        "--top", type=int, default=10, help="Max changes shown per workspace"
+    )
     args = parser.parse_args()
 
     roots = [str(Path(r).expanduser()) for r in (args.roots or DEFAULT_ROOTS)]
-    skip_remediations = {s.strip() for s in args.skip_remediations.split(",") if s.strip()}
+    skip_remediations = {
+        s.strip() for s in args.skip_remediations.split(",") if s.strip()
+    }
 
     workspaces: list[Workspace] = []
     if not args.only_actions:
@@ -1789,7 +1917,8 @@ def main() -> int:
                     continue
                 if git not in common:
                     common[git] = RepoBundle(
-                        git_repo=git, label=repo_label(git, roots),
+                        git_repo=git,
+                        label=repo_label(git, roots),
                     )
         bundles = common
 
@@ -1824,7 +1953,9 @@ def main() -> int:
             pending_bundles: list[RepoBundle] = [
                 bundle for bundle in bundles.values() if bundle.workspaces
             ]
-            futures: dict[concurrent.futures.Future[list[WorkspaceResult]], RepoBundle] = {}
+            futures: dict[
+                concurrent.futures.Future[list[WorkspaceResult]], RepoBundle
+            ] = {}
             while pending_bundles or futures:
                 while (
                     pending_bundles
@@ -1854,7 +1985,9 @@ def main() -> int:
         all_wrs = [wr for bundle in bundles.values() for wr in bundle.workspaces]
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
             pending: list[WorkspaceResult] = list(all_wrs)
-            futures: dict[concurrent.futures.Future[WorkspaceResult], WorkspaceResult] = {}
+            futures: dict[
+                concurrent.futures.Future[WorkspaceResult], WorkspaceResult
+            ] = {}
             while pending or futures:
                 while (
                     pending
@@ -1896,7 +2029,8 @@ def main() -> int:
     if args.only_outdated:
         for bundle in bundles.values():
             bundle.workspaces = [
-                wr for wr in bundle.workspaces
+                wr
+                for wr in bundle.workspaces
                 if wr.changes or wr.status != "ok" or wr.remediations
             ]
 
@@ -1904,7 +2038,9 @@ def main() -> int:
         payload = {
             "roots": roots,
             "dry_run": not args.yes,
-            "repos": [b.to_json() for b in sorted(bundles.values(), key=lambda x: x.label)],
+            "repos": [
+                b.to_json() for b in sorted(bundles.values(), key=lambda x: x.label)
+            ],
         }
         print(json.dumps(payload, indent=2))
     elif not args.quiet:

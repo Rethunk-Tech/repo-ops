@@ -15,11 +15,11 @@ Columns:
             includes nested duplicates from version conflicts).
   manifests Number of manifest files found (depth ≥ 1).
 """
+
 from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 from repo_ops.dep_counting import (
@@ -37,31 +37,40 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "roots", nargs="*", default=["/usr/local/src/com.github"],
+        "roots",
+        nargs="*",
+        default=["/usr/local/src/com.github"],
         metavar="root_dir",
         help="Root directories to scan (default: /usr/local/src/com.github)",
     )
     parser.add_argument(
-        "--json", dest="json_out", action="store_true",
+        "--json",
+        dest="json_out",
+        action="store_true",
         help="Emit JSON instead of the human-readable table.",
     )
     parser.add_argument(
-        "--sort", choices=["name", "direct", "versions", "on-disk", "edges"],
+        "--sort",
+        choices=["name", "direct", "versions", "on-disk", "edges"],
         default="name",
         help="Sort column: name (asc), others descending. Default: name.",
     )
     parser.add_argument(
-        "--filter", dest="filter_kind",
+        "--filter",
+        dest="filter_kind",
         choices=["node", "go", "rust", "py"],
         metavar="KIND",
         help="Only show rows whose kinds include KIND (node/go/rust/py).",
     )
     parser.add_argument(
-        "--flat", action="store_true",
+        "--flat",
+        action="store_true",
         help="Treat each root as a single project (skip org/proj two-level walk).",
     )
     parser.add_argument(
-        "--no-cache", dest="no_cache", action="store_true",
+        "--no-cache",
+        dest="no_cache",
+        action="store_true",
         help="Bypass XDG Go module result cache.",
     )
     args = parser.parse_args()
@@ -102,37 +111,60 @@ def main():
         td = tv = ti = te = 0
         json_rows = []
         for r in all_rows:
-            json_rows.append({
-                "name": r["name"],
-                "kinds": sorted(r["kinds"]),
-                "direct": r["direct"],
-                "versions": r["versions_n"],
-                "on_disk": r["installed"],
-                "edges": r["edges"],
-            })
-            td += r["direct"]; tv += r["versions_n"]
-            ti += r["installed"]; te += r["edges"]
-        print(json.dumps({
-            "rows": json_rows,
-            "totals": {"direct": td, "versions": tv, "on_disk": ti, "edges": te},
-            "scanned_roots": scanned_roots,
-        }, indent=2))
+            json_rows.append(
+                {
+                    "name": r["name"],
+                    "kinds": sorted(r["kinds"]),
+                    "direct": r["direct"],
+                    "versions": r["versions_n"],
+                    "on_disk": r["installed"],
+                    "edges": r["edges"],
+                }
+            )
+            td += r["direct"]
+            tv += r["versions_n"]
+            ti += r["installed"]
+            te += r["edges"]
+        print(
+            json.dumps(
+                {
+                    "rows": json_rows,
+                    "totals": {
+                        "direct": td,
+                        "versions": tv,
+                        "on_disk": ti,
+                        "edges": te,
+                    },
+                    "scanned_roots": scanned_roots,
+                },
+                indent=2,
+            )
+        )
         return
 
     name_w = max((len(r["name"]) for r in all_rows), default=40)
     kind_w = min(40, max((len(r["kinds_s"]) for r in all_rows), default=10))
     header = f"{'project'.ljust(name_w)}  {'kinds'.ljust(kind_w)}  mans  direct  versions  on-disk    edges"
-    print(header); print("-" * len(header))
+    print(header)
+    print("-" * len(header))
     td = tv = ti = te = tm = 0
     for r in all_rows:
         k = r["kinds_s"]
-        if len(k) > kind_w: k = k[:kind_w-1] + "…"
-        print(f"{r['name'].ljust(name_w)}  {k.ljust(kind_w)}  "
-              f"{r['manifests']:>4}  {r['direct']:>6}  {r['versions_n']:>8}  {r['installed']:>7}  {r['edges']:>7}")
-        td += r["direct"]; tv += r["versions_n"]; ti += r["installed"]
-        te += r["edges"]; tm += r["manifests"]
+        if len(k) > kind_w:
+            k = k[: kind_w - 1] + "…"
+        print(
+            f"{r['name'].ljust(name_w)}  {k.ljust(kind_w)}  "
+            f"{r['manifests']:>4}  {r['direct']:>6}  {r['versions_n']:>8}  {r['installed']:>7}  {r['edges']:>7}"
+        )
+        td += r["direct"]
+        tv += r["versions_n"]
+        ti += r["installed"]
+        te += r["edges"]
+        tm += r["manifests"]
     print("-" * len(header))
-    print(f"{'TOTAL'.ljust(name_w)}  {''.ljust(kind_w)}  {tm:>4}  {td:>6}  {tv:>8}  {ti:>7}  {te:>7}")
+    print(
+        f"{'TOTAL'.ljust(name_w)}  {''.ljust(kind_w)}  {tm:>4}  {td:>6}  {tv:>8}  {ti:>7}  {te:>7}"
+    )
 
 
 if __name__ == "__main__":

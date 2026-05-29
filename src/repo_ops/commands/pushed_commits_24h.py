@@ -21,6 +21,7 @@ Default roots:
   ~/bastion-ai-helpers
   ~/Apps
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,9 +39,7 @@ from repo_ops.constants import DEFAULT_ROOTS
 from repo_ops.filesystem import should_exclude
 from repo_ops.git import git_common_dir, repo_label, run_git
 
-PUSH_RE = re.compile(
-    r"^([0-9a-f]{4,40})\s+.+?@\{(\d+)\}:\s+update by push(?:\s|\(|$)"
-)
+PUSH_RE = re.compile(r"^([0-9a-f]{4,40})\s+.+?@\{(\d+)\}:\s+update by push(?:\s|\(|$)")
 
 
 def parse_iso8601(value: str) -> datetime:
@@ -98,17 +97,41 @@ def discover_repos(roots: list[str]) -> dict[str, str]:
             continue
         proc = subprocess.run(
             [
-                "find", "-L", str(root_path),
-                "(", "-name", "node_modules",
-                "-o", "-name", "vendor",
-                "-o", "-name", "target",
-                "-o", "-name", ".cargo",
-                "-o", "-name", "pkg",
-                "-o", "-name", ".cache",
-                "-o", "-name", ".oh-my-zsh",
-                "-o", "-name", ".oh-my-bash",
-                ")", "-prune",
-                "-o", "-type", "d", "-name", ".git", "-print",
+                "find",
+                "-L",
+                str(root_path),
+                "(",
+                "-name",
+                "node_modules",
+                "-o",
+                "-name",
+                "vendor",
+                "-o",
+                "-name",
+                "target",
+                "-o",
+                "-name",
+                ".cargo",
+                "-o",
+                "-name",
+                "pkg",
+                "-o",
+                "-name",
+                ".cache",
+                "-o",
+                "-name",
+                ".oh-my-zsh",
+                "-o",
+                "-name",
+                ".oh-my-bash",
+                ")",
+                "-prune",
+                "-o",
+                "-type",
+                "d",
+                "-name",
+                ".git",
+                "-print",
             ],
             capture_output=True,
             text=True,
@@ -164,9 +187,7 @@ def pushed_commits_for_repo(repo: str, filters: Filters) -> dict[str, None]:
     # dict preserves insertion order (chrono from rev-list --reverse) and deduplicates
     commits: dict[str, None] = {}
     refs = [
-        line
-        for line in proc.stdout.splitlines()
-        if line and not line.endswith("/HEAD")
+        line for line in proc.stdout.splitlines() if line and not line.endswith("/HEAD")
     ]
 
     for ref in refs:
@@ -221,7 +242,9 @@ def pushed_commits_for_repo(repo: str, filters: Filters) -> dict[str, None]:
     return commits
 
 
-def collect_results(roots: list[str], filters: Filters) -> tuple[dict[str, None], list[RepoResult]]:
+def collect_results(
+    roots: list[str], filters: Filters
+) -> tuple[dict[str, None], list[RepoResult]]:
     common_to_repo = discover_repos(roots)
     per_repo: list[RepoResult] = []
     all_commits: dict[str, None] = {}
@@ -449,7 +472,9 @@ def main() -> int:
     if args.since is not None or args.until is not None:
         window_desc = f"{since_dt.isoformat()} to {until_dt.isoformat()}"
     else:
-        window_desc = f"{effective_hours:g} hour" + ("" if effective_hours == 1 else "s")
+        window_desc = f"{effective_hours:g} hour" + (
+            "" if effective_hours == 1 else "s"
+        )
 
     roots = args.roots or DEFAULT_ROOTS
     all_commits, per_repo = collect_results(roots, filters)
@@ -472,8 +497,7 @@ def main() -> int:
             if args.show_messages:
                 repo_subs = subjects.get(r.path, {})
                 entry["commits_detail"] = [
-                    {"sha": sha, "subject": repo_subs.get(sha, "")}
-                    for sha in r.commits
+                    {"sha": sha, "subject": repo_subs.get(sha, "")} for sha in r.commits
                 ]
             return entry
 

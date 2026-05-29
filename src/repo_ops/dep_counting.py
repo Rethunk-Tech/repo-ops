@@ -16,20 +16,22 @@ from repo_ops.constants import SKIP_DIRS
 from repo_ops.filesystem import read_json_file, read_toml_file
 from repo_ops.process import run
 
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib  # type: ignore
-
-
 # ---------- Node ----------
+
 
 def parse_package_json_direct(p: Path) -> int:
     d = read_json_file(p)
     if not d:
         return 0
-    return sum(len(d.get(k) or {}) for k in
-               ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"))
+    return sum(
+        len(d.get(k) or {})
+        for k in (
+            "dependencies",
+            "devDependencies",
+            "peerDependencies",
+            "optionalDependencies",
+        )
+    )
 
 
 def versions_npm_lock(p: Path) -> set[str]:
@@ -47,11 +49,13 @@ def versions_npm_lock(p: Path) -> set[str]:
             ver = meta.get("version") or "?"
             out.add(f"{name}@{ver}")
         return out
+
     # v1 fallback
     def walk(node):
         for name, meta in node.items():
             out.add(f"{name}@{meta.get('version', '?')}")
             walk(meta.get("dependencies") or {})
+
     walk(d.get("dependencies") or {})
     return out
 
@@ -66,7 +70,12 @@ def versions_yarn_lock(p: Path) -> set[str]:
         header = None
         version = None
         for line in lines:
-            if header is None and line and not line.startswith(" ") and not line.startswith("#"):
+            if (
+                header is None
+                and line
+                and not line.startswith(" ")
+                and not line.startswith("#")
+            ):
                 header = line.rstrip(":").strip()
             m = re.match(r'^\s+version[:\s]+["\']?([^"\']+)["\']?', line)
             if m:
@@ -113,14 +122,20 @@ def versions_bun_lock(p: Path) -> set[str]:
         m = re.search(r'"packages"\s*:\s*\{', txt)
         if not m:
             return out
-        for m2 in re.finditer(r'\[\s*"([^"]+@[^"]+)"', txt[m.end():]):
+        for m2 in re.finditer(r'\[\s*"([^"]+@[^"]+)"', txt[m.end() :]):
             out.add(m2.group(1))
         return out
     out = set()
     for key, val in (d.get("packages") or {}).items():
-        if "@" in key and not key.startswith("@") or (key.startswith("@") and key.count("@") >= 2):
+        if (
+            "@" in key
+            and not key.startswith("@")
+            or (key.startswith("@") and key.count("@") >= 2)
+        ):
             out.add(key)
-        elif isinstance(val, list) and val and isinstance(val[0], str) and "@" in val[0]:
+        elif (
+            isinstance(val, list) and val and isinstance(val[0], str) and "@" in val[0]
+        ):
             out.add(val[0])
     return out
 
@@ -130,13 +145,17 @@ def count_node(mdir: Path) -> tuple[int, set[str], str]:
     versions: set[str] = set()
     lock = "none"
     if (mdir / "package-lock.json").exists():
-        versions = versions_npm_lock(mdir / "package-lock.json"); lock = "npm"
+        versions = versions_npm_lock(mdir / "package-lock.json")
+        lock = "npm"
     elif (mdir / "pnpm-lock.yaml").exists():
-        versions = versions_pnpm_lock(mdir / "pnpm-lock.yaml"); lock = "pnpm"
+        versions = versions_pnpm_lock(mdir / "pnpm-lock.yaml")
+        lock = "pnpm"
     elif (mdir / "bun.lock").exists():
-        versions = versions_bun_lock(mdir / "bun.lock"); lock = "bun"
+        versions = versions_bun_lock(mdir / "bun.lock")
+        lock = "bun"
     elif (mdir / "yarn.lock").exists():
-        versions = versions_yarn_lock(mdir / "yarn.lock"); lock = "yarn"
+        versions = versions_yarn_lock(mdir / "yarn.lock")
+        lock = "yarn"
     elif (mdir / "bun.lockb").exists():
         lock = "bun(bin)"
     return direct, versions, lock
@@ -157,10 +176,23 @@ def count_dep_edges(proj: Path) -> int:
     """Sum declared deps across EVERY package.json under proj (incl. node_modules)."""
     total = 0
     for dirpath, dirnames, filenames in os.walk(proj):
-        dirnames[:] = [d for d in dirnames
-                       if d not in (".git", ".next", "dist", "build", ".turbo",
-                                    ".cache", "target", "venv", ".venv",
-                                    ".claude")]
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d
+            not in (
+                ".git",
+                ".next",
+                "dist",
+                "build",
+                ".turbo",
+                ".cache",
+                "target",
+                "venv",
+                ".venv",
+                ".claude",
+            )
+        ]
         if "package.json" in filenames:
             total += parse_package_json_direct(Path(dirpath) / "package.json")
     return total
@@ -168,8 +200,11 @@ def count_dep_edges(proj: Path) -> int:
 
 # ---------- Go ----------
 
+
 def _go_cache_path() -> Path:
-    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".cache"
+    )
     return Path(base) / "dep_count" / "go-cache.json"
 
 
@@ -207,10 +242,12 @@ def _count_go_subprocess(mdir: Path) -> tuple[int, set[str]]:
         for line in mod.read_text(encoding="utf-8", errors="replace").splitlines():
             s = line.strip()
             if s.startswith("require ("):
-                in_req = True; continue
+                in_req = True
+                continue
             if in_req:
                 if s == ")":
-                    in_req = False; continue
+                    in_req = False
+                    continue
                 if s and not s.startswith("//") and "// indirect" not in s:
                     direct += 1
             elif s.startswith("require ") and "(" not in s and "// indirect" not in s:
@@ -223,10 +260,18 @@ def _count_go_subprocess(mdir: Path) -> tuple[int, set[str]]:
             if len(parts) == 2 and "@" in parts[1]:
                 versions.add(parts[1])
     proc = run(
-        ["go", "list", "-deps", "-test",
-         "-f", "{{if .Module}}{{.Module.Path}}@{{.Module.Version}}{{end}}",
-         "./..."],
-        cwd=mdir, timeout=90)
+        [
+            "go",
+            "list",
+            "-deps",
+            "-test",
+            "-f",
+            "{{if .Module}}{{.Module.Path}}@{{.Module.Version}}{{end}}",
+            "./...",
+        ],
+        cwd=mdir,
+        timeout=90,
+    )
     if proc.returncode == 0:
         for line in proc.stdout.splitlines():
             line = line.strip()
@@ -235,7 +280,9 @@ def _count_go_subprocess(mdir: Path) -> tuple[int, set[str]]:
     if not versions:
         gosum = mdir / "go.sum"
         if gosum.exists():
-            for line in gosum.read_text(encoding="utf-8", errors="replace").splitlines():
+            for line in gosum.read_text(
+                encoding="utf-8", errors="replace"
+            ).splitlines():
                 parts = line.split()
                 if len(parts) >= 2:
                     ver = parts[1].split("/")[0]
@@ -266,6 +313,7 @@ def count_go(mdir: Path, go_cache: dict | None = None) -> tuple[int, set[str]]:
 
 # ---------- Rust ----------
 
+
 def count_rust(mdir: Path) -> tuple[int, set[str]]:
     direct = 0
     cargo = mdir / "Cargo.toml"
@@ -295,6 +343,7 @@ def count_rust(mdir: Path) -> tuple[int, set[str]]:
 
 # ---------- Python ----------
 
+
 def count_python(mdir: Path) -> tuple[int, set[str], str]:
     direct = 0
     src_tags = []
@@ -314,13 +363,21 @@ def count_python(mdir: Path) -> tuple[int, set[str], str]:
             direct += len(poetry.get("dev-dependencies") or {})
             for group in (poetry.get("group") or {}).values():
                 direct += len((group or {}).get("dependencies") or {})
-    for reqname in ("requirements.txt", "requirements-dev.txt", "requirements-test.txt"):
+    for reqname in (
+        "requirements.txt",
+        "requirements-dev.txt",
+        "requirements-test.txt",
+    ):
         req = mdir / reqname
         if req.exists():
             src_tags.append(reqname.split(".")[0].replace("requirements", "req"))
-            direct += sum(1 for l in req.read_text(encoding="utf-8", errors="replace").splitlines()
-                          if l.strip() and not l.strip().startswith("#")
-                          and not l.strip().startswith("-"))
+            direct += sum(
+                1
+                for ln in req.read_text(encoding="utf-8", errors="replace").splitlines()
+                if ln.strip()
+                and not ln.strip().startswith("#")
+                and not ln.strip().startswith("-")
+            )
     versions: set[str] = set()
     for lockname in ("uv.lock", "poetry.lock"):
         lf = mdir / lockname
@@ -346,24 +403,35 @@ def count_python(mdir: Path) -> tuple[int, set[str], str]:
 
 # ---------- Walk ----------
 
+
 def find_manifests(root: Path):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         names = set(filenames)
         kinds = []
-        if "package.json" in names: kinds.append("node")
-        if "go.mod" in names: kinds.append("go")
-        if "Cargo.toml" in names: kinds.append("rust")
-        if names & {"pyproject.toml", "requirements.txt", "Pipfile"}: kinds.append("py")
+        if "package.json" in names:
+            kinds.append("node")
+        if "go.mod" in names:
+            kinds.append("go")
+        if "Cargo.toml" in names:
+            kinds.append("rust")
+        if names & {"pyproject.toml", "requirements.txt", "Pipfile"}:
+            kinds.append("py")
         if kinds:
             yield Path(dirpath), kinds
 
 
 def _make_row(name: str, proj: Path, go_tasks: list, go_cache: dict | None) -> dict:
     """Build a single project row dict, queuing Go tasks for parallel execution."""
-    row = {"name": name, "kinds": set(),
-           "direct": 0, "versions": set(), "installed": 0,
-           "edges": 0, "manifests": 0}
+    row = {
+        "name": name,
+        "kinds": set(),
+        "direct": 0,
+        "versions": set(),
+        "installed": 0,
+        "edges": 0,
+        "manifests": 0,
+    }
     row["edges"] = count_dep_edges(proj)
     for mdir, kinds in find_manifests(proj):
         row["manifests"] += 1
@@ -378,11 +446,13 @@ def _make_row(name: str, proj: Path, go_tasks: list, go_cache: dict | None) -> d
             row["kinds"].add("go")
         if "rust" in kinds:
             d, v = count_rust(mdir)
-            row["direct"] += d; row["versions"] |= v
+            row["direct"] += d
+            row["versions"] |= v
             row["kinds"].add("rust")
         if "py" in kinds:
             d, v, src = count_python(mdir)
-            row["direct"] += d; row["versions"] |= v
+            row["direct"] += d
+            row["versions"] |= v
             row["kinds"].add(f"py({src})")
     if not row["kinds"]:
         row["kinds"] = {"-"}
@@ -409,8 +479,10 @@ def scan(root: Path, flat: bool = False, go_cache: dict | None = None) -> list[d
 
     if go_tasks:
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-            future_to_row = {executor.submit(count_go, mdir, cache): row
-                             for row, mdir, cache in go_tasks}
+            future_to_row = {
+                executor.submit(count_go, mdir, cache): row
+                for row, mdir, cache in go_tasks
+            }
             for future in concurrent.futures.as_completed(future_to_row):
                 row = future_to_row[future]
                 try:

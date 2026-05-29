@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -74,9 +73,11 @@ def test_git_common_dir_monkeypatch(monkeypatch):
 
     def fake_run_git(repo, *args, **kwargs):
         calls.append((repo, args))
+
         class Fake:
             returncode = 0
             stdout = "/real/common\n"
+
         return Fake()
 
     monkeypatch.setattr("repo_ops.git.run_git", fake_run_git)

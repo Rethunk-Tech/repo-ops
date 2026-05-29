@@ -7,7 +7,9 @@ import subprocess
 from pathlib import Path
 
 
-def run_git(repo: Path | str, *args: str, timeout: int = 10) -> subprocess.CompletedProcess[str]:
+def run_git(
+    repo: Path | str, *args: str, timeout: int = 10
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", "-C", str(repo), *args],
         capture_output=True,
@@ -46,7 +48,11 @@ def repo_label(repo: Path | str, roots: list[str]) -> str:
         try:
             rel = repo_path.relative_to(root_path)
             if str(rel) == ".":
-                return f"~/{repo_path.relative_to(home)}" if repo_path.is_relative_to(home) else repo_path.name
+                return (
+                    f"~/{repo_path.relative_to(home)}"
+                    if repo_path.is_relative_to(home)
+                    else repo_path.name
+                )
             return str(rel)
         except ValueError:
             continue

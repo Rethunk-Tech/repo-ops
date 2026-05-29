@@ -2,19 +2,18 @@
 
 Monkeypatches subprocess via the run helper.
 """
+
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 # Import from the command module under test
 from repo_ops.commands.dep_refresh import (
+    _parse_requirements_lines,
     normalize_version,
     semver_tuple,
-    _parse_requirements_lines,
 )
 
 
@@ -36,15 +35,23 @@ def test_parse_requirements_lines_basic():
 
 def test_checkers_use_monkeypatched_run(monkeypatch):
     """Safety regression: ensure checkers can be exercised with mocked pm calls."""
-    from repo_ops.commands.dep_refresh import check_bun, Workspace
+    from repo_ops.commands.dep_refresh import Workspace, check_bun
 
     calls: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=600, env=None):
         calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout="Package  current  latest\nfoo 1.0 latest 1.1\n", stderr="")
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout="Package  current  latest\nfoo 1.0 latest 1.1\n", stderr=""
+        )
 
-    ws = Workspace(path=Path("/tmp"), ecosystem="node", manager="bun", git_repo=Path("/tmp"), label="")
+    ws = Workspace(
+        path=Path("/tmp"),
+        ecosystem="node",
+        manager="bun",
+        git_repo=Path("/tmp"),
+        label="",
+    )
     with patch("repo_ops.commands.dep_refresh.run", fake_run):
         changes = check_bun(ws)
     assert len(changes) == 1
