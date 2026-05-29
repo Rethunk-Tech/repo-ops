@@ -49,6 +49,23 @@ Legacy flags (`-y`, `--also-actions`, `--only-actions`) are removed; use `repos-
 
 Run `--help` on each command for full options.
 
+### Package layout (0.2.1+)
+
+Console scripts are registered in `pyproject.toml` and call domain `main()` functions directly (for example `repo_ops.upgrade.run:main_plan`). The optional `repo-ops` dispatcher lives under `repo_ops.commands.dispatch`.
+
+For programmatic use, prefer these import paths (there is no `repo_ops.upgrade.engine`):
+
+| Area | Module |
+|------|--------|
+| Upgrade entrypoints | `repo_ops.upgrade` (`run_upgrade`, `main_plan`, `main_apply`) |
+| Models | `repo_ops.upgrade.models` |
+| Workspace discovery | `repo_ops.upgrade.workspaces` (`discover_all`, `group_by_repo`) |
+| Ecosystem check/apply | `repo_ops.upgrade.ecosystems` (`check_workspace`, `apply_workspace`) |
+| GitHub Actions pins | `repo_ops.upgrade.actions` |
+| Inventory scan | `repo_ops.inventory.scan` |
+| Push audit | `repo_ops.pushed.audit` |
+| Shared helpers | `repo_ops.core.*` |
+
 ## Verification and Testing
 
 After install or changes (full dev verification):

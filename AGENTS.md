@@ -26,9 +26,9 @@ It uses hatchling for packaging, pytest for testing, and targets Python >= 3.10.
 
 - `src/repo_ops/core/` - shared constants, git, filesystem, process, CLI helpers
 - `src/repo_ops/inventory/` - dependency counting and `repos-inventory` scan logic
-- `src/repo_ops/upgrade/` - plan/apply (`run.py`), `orchestration`, `workspaces`, `actions`, `remediations`, `verify`, `report`, `constants`, `models`, `ecosystems/` (`node`, `yarn`, `go`, `rust`, `python`)
+- `src/repo_ops/upgrade/` - plan/apply (`run.py`), `orchestration` (`process_workspace`), `workspaces` (`discover_all`, `group_by_repo`), `actions`, `remediations`, `verify`, `report`, `constants`, `models`, `ecosystems/` (`node`, `node_lockfiles`, `yarn`, `go`, `rust`, `python`)
 - `src/repo_ops/pushed/` - push reflog audit
-- `src/repo_ops/commands/` - optional dispatcher (`dispatch.py`)
+- `src/repo_ops/commands/` - optional dispatcher only (`dispatch.py`); **`pyproject.toml` `[project.scripts]` points at domain `module:main`**, not `commands/*` shims
 - `tests/` - test suite
 - `pyproject.toml` - single source of truth for build, scripts, pytest config, and metadata
 - `README.md` - user overview
