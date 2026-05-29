@@ -18,7 +18,7 @@ def set_verbose(enabled: bool) -> None:
 def run(
     cmd: list[str],
     cwd: Path | str,
-    timeout: int,
+    timeout: int = 300,
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     if VERBOSE:

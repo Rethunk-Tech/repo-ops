@@ -37,7 +37,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import threading
@@ -46,9 +45,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from repo_ops import constants, filesystem, git, process
+from repo_ops import constants, process
+from repo_ops.filesystem import read_json_file, should_exclude
+from repo_ops.git import git_repo_for, repo_label
+from repo_ops.process import run, set_verbose
 
-_VERBOSE = False
 _FAIL_FAST_EVENT = threading.Event()
 
 try:
@@ -204,49 +205,6 @@ class RepoBundle:
 
 
 # ---------- Helpers ----------
-
-
-def should_exclude(path: str) -> bool:
-    return filesystem.should_exclude(path)
-
-
-def read_json_file(p: Path) -> dict | None:
-    return filesystem.read_json_file(p)
-
-
-# Note: process.run requires explicit timeout (shared API insufficient for default); kept local run wrapper for compatibility with existing call sites.
-def run(
-    cmd: list[str],
-    cwd: Path | str,
-    timeout: int = TIMEOUT_CHECK,
-    env: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    if _VERBOSE:
-        print(f"  $ {' '.join(cmd)}", file=sys.stderr, flush=True)
-    merged = os.environ.copy()
-    if env:
-        merged.update(env)
-    proc = subprocess.run(
-        cmd,
-        cwd=str(cwd),
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env=merged,
-    )
-    if _VERBOSE and proc.returncode != 0 and (proc.stderr or proc.stdout):
-        err = (proc.stderr or proc.stdout).strip()
-        if err:
-            print(f"  ! exit {proc.returncode}:\n{err}", file=sys.stderr, flush=True)
-    return proc
-
-
-def git_repo_for(path: Path) -> Path | None:
-    return git.git_repo_for(path)
-
-
-def repo_label(repo: Path, roots: list[str]) -> str:
-    return git.repo_label(repo, roots)
 
 
 def is_git_dirty(repo: Path) -> bool:
@@ -1475,7 +1433,7 @@ def run_remediations(
         entry: dict[str, Any] = {"id": rem.id, "status": "ok", "detail": ""}
         try:
             detected = rem.detect(result.workspace, ctx)
-            if _VERBOSE:
+            if process.VERBOSE:
                 print(
                     f"  remediation {rem.id}: detect={detected}",
                     file=sys.stderr,
@@ -1922,9 +1880,7 @@ def main() -> int:
                     )
         bundles = common
 
-    global _VERBOSE
-    _VERBOSE = args.verbose
-    process.set_verbose(args.verbose)
+    set_verbose(args.verbose)
     _FAIL_FAST_EVENT.clear()
 
     def _process_one(wr: WorkspaceResult) -> WorkspaceResult:
