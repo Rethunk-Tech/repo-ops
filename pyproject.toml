@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "repo-ops"
-version = "0.1.0"
+version = "0.2.0"
 description = "Repository operations and dependency maintenance tools for Rethunk-Tech."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,9 +32,11 @@ Issues = "https://github.com/Rethunk-Tech/repo-ops/issues"
 Changelog = "https://github.com/Rethunk-Tech/repo-ops/blob/main/CHANGELOG.md"
 
 [project.scripts]
-repo-dep-count = "repo_ops.commands.dep_count:main"
-repo-dep-refresh = "repo_ops.commands.dep_refresh:main"
-repo-pushed-commits = "repo_ops.commands.pushed_commits_24h:main"
+repos-inventory = "repo_ops.inventory.scan:main"
+repos-upgrade-plan = "repo_ops.upgrade.run:main_plan"
+repos-upgrade-apply = "repo_ops.upgrade.run:main_apply"
+repos-pushed = "repo_ops.pushed.audit:main"
+repo-ops = "repo_ops.commands.dispatch:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -74,7 +76,7 @@ ignore_missing_imports = true
 [tool.coverage.run]
 source = ["src/repo_ops"]
 branch = true
-# Note: dep_refresh.py (~1278 LOC) and command entrypoints have low coverage
+# Note: upgrade/engine.py (~1900 LOC) and CLI entrypoints have low coverage
 # by design (minimize scope per task); threshold set to achievable high bar
 # for shared libs + partial command coverage. Revisit if command tests added.
 [tool.coverage.report]
