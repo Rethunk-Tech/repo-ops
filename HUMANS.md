@@ -28,7 +28,7 @@ For runtime use, the package can be installed via pip once published (version ma
 
 The following console scripts are registered via `[project.scripts]` in `pyproject.toml`:
 
-- `repo-dep-count` — counts dependencies in repository manifests
+- `repo-dep-count` — counts dependencies in repository manifests (defaults to standard local roots from constants.DEFAULT_ROOTS)
 - `repo-dep-refresh` — refreshes dependency versions or lockfiles
 - `repo-pushed-commits` — reports commits pushed in the last 24 hours
 
