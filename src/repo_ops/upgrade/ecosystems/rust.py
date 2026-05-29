@@ -1,0 +1,26 @@
+"""Rust/Cargo upgrade check/apply."""
+
+from __future__ import annotations
+
+import re
+
+from repo_ops.core.process import run
+from repo_ops.upgrade.constants import TIMEOUT_APPLY
+from repo_ops.upgrade.models import Change, Workspace
+
+
+def check_rust(ws: Workspace) -> list[Change]:
+    proc = run(["cargo", "update", "--dry-run"], ws.path)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "cargo update --dry-run failed")
+    changes: list[Change] = []
+    for line in proc.stdout.splitlines():
+        m = re.search(r"Updating\s+(\S+)\s+v([\d.]+)\s+->\s+v([\d.]+)", line)
+        if m:
+            changes.append(Change(m.group(1), m.group(2), m.group(3)))
+    return changes
+
+def apply_rust(ws: Workspace) -> None:
+    proc = run(["cargo", "update"], ws.path, timeout=TIMEOUT_APPLY)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "cargo update failed")
