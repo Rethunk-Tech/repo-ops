@@ -31,8 +31,6 @@ Remediation hooks (extensible):
 
 from __future__ import annotations
 
-import argparse
-import concurrent.futures
 import json
 import os
 import re
@@ -45,18 +43,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from repo_ops import constants, process
-from repo_ops.dep_refresh_models import (
+from repo_ops.core import constants, process
+from repo_ops.core.filesystem import read_json_file, should_exclude
+from repo_ops.core.git import git_repo_for, repo_label
+from repo_ops.core.process import run
+from repo_ops.core.version_utils import normalize_version, semver_tuple
+from repo_ops.upgrade.models import (
     ActionBump,
     Change,
     RepoBundle,
     Workspace,
     WorkspaceResult,
 )
-from repo_ops.filesystem import read_json_file, should_exclude
-from repo_ops.git import git_repo_for, repo_label
-from repo_ops.process import run, set_verbose
-from repo_ops.version_utils import normalize_version, semver_tuple
 
 _FAIL_FAST_EVENT = threading.Event()
 
@@ -1676,10 +1674,10 @@ def print_human_report(
     dry_run: bool,
     only_outdated: bool,
     top_n: int,
-    also_actions: bool,
+    include_actions: bool,
 ) -> None:
-    mode = "dry-run" if dry_run else "apply"
-    print(f"dep_refresh ({mode})")
+    mode = "plan" if dry_run else "apply"
+    print(f"repos-upgrade-{mode}")
     print()
     for repo in sorted(bundles.values(), key=lambda b: b.label):
         print(f"## {repo.label}")
@@ -1710,7 +1708,7 @@ def print_human_report(
                     print(
                         f"    [{rem.get('id')}] {rem.get('detail') or rem.get('status')}"
                     )
-        if also_actions and repo.actions:
+        if include_actions and repo.actions:
             print("  Actions:")
             for ab in repo.actions:
                 print(
@@ -1719,213 +1717,3 @@ def print_human_report(
         print()
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Refresh local dependencies (dry-run by default).",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("roots", nargs="*", help="Root directories to scan")
-    parser.add_argument(
-        "-y", "--yes", action="store_true", help="Apply updates and remediations"
-    )
-    parser.add_argument(
-        "--no-verify", action="store_true", help="Skip verify gates after apply"
-    )
-    parser.add_argument("--json", action="store_true", help="JSON report")
-    parser.add_argument(
-        "--filter", choices=["node", "go", "rust", "py"], dest="eco_filter"
-    )
-    parser.add_argument(
-        "--only-outdated", action="store_true", help="Omit clean workspaces"
-    )
-    parser.add_argument("-q", "--quiet", action="store_true")
-    parser.add_argument("--verbose", action="store_true")
-    parser.add_argument("--jobs", type=int, default=8)
-    parser.add_argument("--fail-fast", action="store_true")
-    parser.add_argument("--skip-remediations", default="", metavar="IDS")
-    parser.add_argument("--also-actions", action="store_true")
-    parser.add_argument("--only-actions", action="store_true")
-    parser.add_argument("--flat", action="store_true")
-    parser.add_argument("--allow-dirty", action="store_true")
-    parser.add_argument(
-        "--verify-test", action="store_true", help="Run go test ./... in verify"
-    )
-    parser.add_argument(
-        "--top", type=int, default=10, help="Max changes shown per workspace"
-    )
-    args = parser.parse_args()
-
-    roots = [str(Path(r).expanduser()) for r in (args.roots or DEFAULT_ROOTS)]
-    skip_remediations = {
-        s.strip() for s in args.skip_remediations.split(",") if s.strip()
-    }
-
-    workspaces: list[Workspace] = []
-    if not args.only_actions:
-        workspaces = discover_all(roots, flat=args.flat)
-        workspaces = filter_workspaces(workspaces, args.eco_filter)
-
-    bundles = group_by_repo(workspaces, roots)
-
-    if args.only_actions:
-        common: dict[Path, RepoBundle] = {}
-        for r in roots:
-            root = Path(r).expanduser().resolve()
-            if not root.is_dir():
-                continue
-            candidates = [root]
-            for dirpath, dirnames, _filenames in os.walk(root):
-                dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-                if should_exclude(dirpath):
-                    dirnames.clear()
-                    continue
-                candidates.append(Path(dirpath))
-            for cand in candidates:
-                if not (cand / ".git").exists():
-                    continue
-                git = git_repo_for(cand)
-                if not git or should_exclude(str(git)):
-                    continue
-                if git not in common:
-                    common[git] = RepoBundle(
-                        git_repo=git,
-                        label=repo_label(git, roots),
-                    )
-        bundles = common
-
-    set_verbose(args.verbose)
-    _FAIL_FAST_EVENT.clear()
-
-    def _process_one(wr: WorkspaceResult) -> WorkspaceResult:
-        return process_workspace(
-            wr,
-            do_apply=args.yes,
-            do_verify=args.yes and not args.no_verify,
-            verify_test=args.verify_test,
-            skip_remediations=skip_remediations,
-            allow_dirty=args.allow_dirty,
-        )
-
-    def _process_repo(bundle: RepoBundle) -> list[WorkspaceResult]:
-        results: list[WorkspaceResult] = []
-        for wr in bundle.workspaces:
-            updated = _process_one(wr)
-            results.append(updated)
-            if args.fail_fast and updated.status == "fail":
-                _FAIL_FAST_EVENT.set()
-                break
-        return results
-
-    all_results: list[WorkspaceResult] = []
-    if args.yes:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-            pending_bundles: list[RepoBundle] = [
-                bundle for bundle in bundles.values() if bundle.workspaces
-            ]
-            futures: dict[
-                concurrent.futures.Future[list[WorkspaceResult]], RepoBundle
-            ] = {}
-            while pending_bundles or futures:
-                while (
-                    pending_bundles
-                    and len(futures) < args.jobs
-                    and not _FAIL_FAST_EVENT.is_set()
-                ):
-                    bundle = pending_bundles.pop(0)
-                    fut = pool.submit(_process_repo, bundle)
-                    futures[fut] = bundle
-                if not futures:
-                    break
-                done, _ = concurrent.futures.wait(
-                    futures.keys(),
-                    return_when=concurrent.futures.FIRST_COMPLETED,
-                )
-                for fut in done:
-                    futures.pop(fut)
-                    updated = fut.result()
-                    all_results.extend(updated)
-                    if args.fail_fast and any(r.status == "fail" for r in updated):
-                        _FAIL_FAST_EVENT.set()
-                        for pending_fut in list(futures):
-                            pending_fut.cancel()
-                        futures.clear()
-                        pending_bundles.clear()
-    else:
-        all_wrs = [wr for bundle in bundles.values() for wr in bundle.workspaces]
-        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-            pending: list[WorkspaceResult] = list(all_wrs)
-            futures: dict[  # type: ignore[no-redef]
-                concurrent.futures.Future[WorkspaceResult], WorkspaceResult
-            ] = {}
-            while pending or futures:
-                while (
-                    pending
-                    and len(futures) < args.jobs
-                    and not _FAIL_FAST_EVENT.is_set()
-                ):
-                    wr = pending.pop(0)
-                    fut = pool.submit(_process_one, wr)  # type: ignore[arg-type]
-                    futures[fut] = wr  # type: ignore[assignment]
-                if not futures:
-                    break
-                done, _ = concurrent.futures.wait(
-                    futures.keys(),
-                    return_when=concurrent.futures.FIRST_COMPLETED,
-                )
-                for fut in done:
-                    futures.pop(fut)
-                    updated = fut.result()
-                    all_results.append(updated)  # type: ignore[arg-type]
-                    if args.fail_fast and updated.status == "fail":  # type: ignore[attr-defined]
-                        _FAIL_FAST_EVENT.set()
-                        for pending_fut in list(futures):
-                            pending_fut.cancel()
-                        futures.clear()
-                        pending.clear()
-
-    for bundle in bundles.values():
-        path_to_result = {r.workspace.path: r for r in all_results}
-        bundle.workspaces = [
-            path_to_result.get(wr.workspace.path, wr) for wr in bundle.workspaces
-        ]
-
-    if args.also_actions or args.only_actions:
-        for bundle in bundles.values():
-            if bundle.any_fail() and not args.only_actions:
-                continue
-            bundle.actions = scan_actions(bundle.git_repo, apply=args.yes)
-
-    if args.only_outdated:
-        for bundle in bundles.values():
-            bundle.workspaces = [
-                wr
-                for wr in bundle.workspaces
-                if wr.changes or wr.status != "ok" or wr.remediations
-            ]
-
-    if args.json:
-        payload = {
-            "roots": roots,
-            "dry_run": not args.yes,
-            "repos": [
-                b.to_json() for b in sorted(bundles.values(), key=lambda x: x.label)
-            ],
-        }
-        print(json.dumps(payload, indent=2))
-    elif not args.quiet:
-        print_human_report(
-            bundles,
-            dry_run=not args.yes,
-            only_outdated=args.only_outdated,
-            top_n=args.top,
-            also_actions=args.also_actions or args.only_actions,
-        )
-
-    any_fail = any(
-        wr.status == "fail" for b in bundles.values() for wr in b.workspaces
-    ) or any(a.status == "fail" for b in bundles.values() for a in b.actions)
-    return 1 if any_fail else 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
