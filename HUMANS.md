@@ -52,6 +52,8 @@ ruff format .          # or `ruff format --check .` in CI
 
 The test suite lives under `tests/` and is configured in `pyproject.toml` under `[tool.pytest.ini_options]`.
 
+CI runs ruff + pytest on push/PR to main/master; Dependabot maintains pip and GitHub Actions deps weekly.
+
 ## Typical Roots
 
 These utilities are designed for use inside Rethunk-Tech repositories under `/usr/local/src/com.github/Rethunk-Tech/*`. They discover repository roots, filter paths, and parse Git/dependency metadata while preserving command output compatibility.
