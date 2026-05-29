@@ -12,6 +12,7 @@ try:
 except ModuleNotFoundError:
     import tomli as tomllib
 
+
 def _pyproject_dev_deps(ws: Workspace) -> set[str]:
     pyp = ws.path / "pyproject.toml"
     if not pyp.exists():

@@ -28,15 +28,9 @@ def _run_plan_parallel(
 ) -> list[WorkspaceResult]:
     all_results: list[WorkspaceResult] = []
     pending_wrs: list[WorkspaceResult] = list(all_wrs)
-    wr_futures: dict[
-        concurrent.futures.Future[WorkspaceResult], WorkspaceResult
-    ] = {}
+    wr_futures: dict[concurrent.futures.Future[WorkspaceResult], WorkspaceResult] = {}
     while pending_wrs or wr_futures:
-        while (
-            pending_wrs
-            and len(wr_futures) < jobs
-            and not _FAIL_FAST_EVENT.is_set()
-        ):
+        while pending_wrs and len(wr_futures) < jobs and not _FAIL_FAST_EVENT.is_set():
             wr = pending_wrs.pop(0)
             fut = pool.submit(process_one, wr)
             wr_futures[fut] = wr

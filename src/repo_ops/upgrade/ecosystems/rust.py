@@ -20,6 +20,7 @@ def check_rust(ws: Workspace) -> list[Change]:
             changes.append(Change(m.group(1), m.group(2), m.group(3)))
     return changes
 
+
 def apply_rust(ws: Workspace) -> None:
     proc = run(["cargo", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:

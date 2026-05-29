@@ -7,8 +7,7 @@ from pathlib import Path
 
 from repo_ops.core.filesystem import should_exclude
 from repo_ops.core.process import run
-from repo_ops.upgrade import ecosystems
-from repo_ops.upgrade import remediations
+from repo_ops.upgrade import ecosystems, remediations
 from repo_ops.upgrade import verify as verify_mod
 from repo_ops.upgrade.ecosystems.node import (
     collect_changes_after_apply,
@@ -21,9 +20,11 @@ from repo_ops.upgrade.models import Workspace, WorkspaceResult
 _FAIL_FAST_EVENT = threading.Event()
 FAIL_FAST_EVENT = _FAIL_FAST_EVENT
 
+
 def is_git_dirty(repo: Path) -> bool:
     proc = run(["git", "status", "--porcelain"], repo, timeout=30)
     return proc.returncode == 0 and bool(proc.stdout.strip())
+
 
 def process_workspace(
     result: WorkspaceResult,

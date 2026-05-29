@@ -10,6 +10,7 @@ from repo_ops.core.process import run
 from repo_ops.upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops.upgrade.models import Change, Workspace
 
+
 def _parse_requirements_lines(text: str) -> dict[str, str]:
     versions: dict[str, str] = {}
     for line in text.splitlines():
@@ -20,6 +21,7 @@ def _parse_requirements_lines(text: str) -> dict[str, str]:
         if m:
             versions[m.group(1).lower().replace("_", "-")] = m.group(2)
     return versions
+
 
 def check_uv(ws: Workspace) -> list[Change]:
     proc = run(["uv", "lock", "--upgrade", "--dry-run"], ws.path)
@@ -35,6 +37,7 @@ def check_uv(ws: Workspace) -> list[Change]:
         changes.append(Change("(lockfile)", "current", "upgraded"))
     return changes
 
+
 def check_poetry(ws: Workspace) -> list[Change]:
     if not shutil.which("poetry"):
         print(f"WARN {ws.path}: poetry not on PATH", file=sys.stderr)
@@ -48,6 +51,7 @@ def check_poetry(ws: Workspace) -> list[Change]:
         if m:
             changes.append(Change(m.group(1), m.group(2), m.group(3)))
     return changes
+
 
 def check_pip_tools(ws: Workspace) -> list[Change]:
     req_in = ws.path / "requirements.in"
@@ -94,6 +98,7 @@ def check_pip_tools(ws: Workspace) -> list[Change]:
             changes.append(Change(pkg, cur or "?", prop))
     return changes
 
+
 def check_hatch(ws: Workspace) -> list[Change]:
     if (ws.path / "uv.lock").exists():
         return check_uv(ws)
@@ -124,6 +129,7 @@ def check_hatch(ws: Workspace) -> list[Change]:
     print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
     return []
 
+
 def apply_uv(ws: Workspace) -> None:
     proc = run(["uv", "lock", "--upgrade"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
@@ -132,10 +138,12 @@ def apply_uv(ws: Workspace) -> None:
     if proc2.returncode != 0:
         raise RuntimeError(proc2.stderr.strip() or "uv sync failed")
 
+
 def apply_poetry(ws: Workspace) -> None:
     proc = run(["poetry", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "poetry update failed")
+
 
 def apply_pip_tools(ws: Workspace) -> None:
     req_in = ws.path / "requirements.in"
@@ -147,6 +155,7 @@ def apply_pip_tools(ws: Workspace) -> None:
     proc = run(args, ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pip-compile failed")
+
 
 def apply_hatch(ws: Workspace) -> None:
     if not (ws.path / "uv.lock").exists():
