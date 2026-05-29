@@ -7,7 +7,7 @@ invocation or large filesystem scans.
 import tempfile
 from pathlib import Path
 
-from repo_ops.dep_counting import (
+from repo_ops.inventory.counting import (
     count_python,
     count_rust,
     parse_package_json_direct,
@@ -109,7 +109,7 @@ def test_count_rust_and_python_minimal(tmp_path: Path):
 
 
 def test_go_cache_roundtrip_and_invalid(tmp_path: Path):
-    from repo_ops.dep_counting import load_go_cache, save_go_cache
+    from repo_ops.inventory.counting import load_go_cache, save_go_cache
 
     cache_path = tmp_path / "cache.json"
     data = {"k": {"direct": 1, "versions": ["x@1"]}}

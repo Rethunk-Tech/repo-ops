@@ -3,7 +3,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from repo_ops.discovery import discover_repos
+from repo_ops.core.discovery import discover_repos
 
 
 def test_discover_repos_skips_non_dirs_and_returns_dict():
@@ -20,7 +20,7 @@ def test_discover_repos_with_tmp_layout_and_monkeypatch(tmp_path: Path):
     def fake_git_common_dir(p):
         return str(Path(p).resolve())
 
-    with patch("repo_ops.discovery.git_common_dir", fake_git_common_dir):
+    with patch("repo_ops.core.discovery.git_common_dir", fake_git_common_dir):
         result = discover_repos([str(tmp_path)])
     # Contract: returns dict, does not crash; discovery may be 0 in constrained env
     assert isinstance(result, dict)

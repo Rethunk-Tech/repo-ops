@@ -4,7 +4,7 @@ import argparse
 
 import pytest
 
-from repo_ops.cli import parse_iso8601
+from repo_ops.core.cli import parse_iso8601
 
 
 def test_parse_iso8601_accepts_z_and_returns_utc():

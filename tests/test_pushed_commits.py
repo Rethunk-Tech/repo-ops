@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from repo_ops.cli import parse_iso8601
-from repo_ops.commands.pushed_commits_24h import PUSH_RE
-from repo_ops.git import git_common_dir, repo_label
+from repo_ops.core.cli import parse_iso8601
+from repo_ops.core.git import git_common_dir, repo_label
+from repo_ops.pushed.audit import PUSH_RE
 
 
 def test_parse_iso8601_valid_z_suffix():
@@ -78,7 +78,7 @@ def test_git_common_dir_monkeypatch(monkeypatch):
 
         return Fake()
 
-    monkeypatch.setattr("repo_ops.git.run_git", fake_run_git)
+    monkeypatch.setattr("repo_ops.core.git.run_git", fake_run_git)
     result = git_common_dir("/some/repo")
     assert result == "/real/common"
     assert len(calls) == 1
