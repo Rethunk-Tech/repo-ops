@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from repo_ops.constants import DEFAULT_ROOTS, EXCLUDE_PATH_FRAGMENTS
+from repo_ops.constants import DEFAULT_ROOTS
 from repo_ops.filesystem import should_exclude
 from repo_ops.git import git_common_dir, repo_label, run_git
 
