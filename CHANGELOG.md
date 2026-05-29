@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-29
+
+### Changed
+- JSON upgrade output moved to `upgrade/report.py` (`build_json_payload`, `print_json_report`).
+- Lockfile snapshot/diff helpers extracted to `upgrade/ecosystems/node_lockfiles.py`.
+
+### Added
+- HUMANS package-layout table for programmatic imports (0.2.1+).
+- Subsystem tests (actions, remediations, orchestration, report, inventory `--help`).
+- CLI `--help` smoke tests invoke domain `main()` directly (no PATH dependency).
+
 ## [0.2.1] - 2026-05-29
 
 ### Changed
