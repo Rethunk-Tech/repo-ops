@@ -42,6 +42,14 @@ After install or changes:
 pytest -q
 ```
 
+For development with linting/formatting (Ruff):
+
+```bash
+pip install -e ".[dev]"
+ruff check .
+ruff format .          # or `ruff format --check .` in CI
+```
+
 The test suite lives under `tests/` and is configured in `pyproject.toml` under `[tool.pytest.ini_options]`.
 
 ## Typical Roots

@@ -40,6 +40,7 @@ Thank you for your interest in repo-ops! This is a small Python package providin
 ## Code Style
 
 - 4-space indentation (enforced via `.editorconfig`).
+- PRs must pass `ruff check .` and `ruff format --check .`.
 - Follow existing patterns in the codebase for imports, error handling, and Git/subprocess usage.
 - Write or update tests for new behavior.
 

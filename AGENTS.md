@@ -34,7 +34,7 @@ Do not create top-level scripts; everything routes through the package and entry
 ## Development Practices for Agents
 
 - Use `pip install -e .` (or equivalent) for local development; avoid committing venv/ or build/ artifacts.
-- Verify changes with `pytest` before finalizing.
+- Verify changes with `pytest` before finalizing; run `ruff check .` and `ruff format --check .` before committing Python edits.
 - When adding CLI commands or features, register them in pyproject.toml and ensure tests cover behavior.
 - Keep diffs minimal and preserve existing command output/behavior during refactors.
 - Update relevant docs (README, CONTRIBUTING, AGENTS) when conventions or user-facing surfaces change.
