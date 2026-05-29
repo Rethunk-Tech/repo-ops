@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "repo-ops"
+version = "0.1.0"
+description = "Local repository operations and dependency maintenance tools."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Rethunk Tech" },
+]
+
+[project.scripts]
+repo-dep-count = "repo_ops.commands.dep_count:main"
+repo-dep-refresh = "repo_ops.commands.dep_refresh:main"
+repo-pushed-commits = "repo_ops.commands.pushed_commits_24h:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
