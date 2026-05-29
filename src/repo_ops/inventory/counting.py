@@ -13,9 +13,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from repo_ops.constants import SKIP_DIRS
-from repo_ops.filesystem import read_json_file, read_toml_file
-from repo_ops.process import run
+from repo_ops.core.constants import SKIP_DIRS
+from repo_ops.core.filesystem import read_json_file, read_toml_file
+from repo_ops.core.process import run
 
 # ---------- Node ----------
 

@@ -22,13 +22,13 @@ import argparse
 import json
 from pathlib import Path
 
-from repo_ops.cli import (
+from repo_ops.core.cli import (
     add_json_argument,
     add_roots_argument,
     add_verbose_argument,
     wire_verbose,
 )
-from repo_ops.dep_counting import (
+from repo_ops.inventory.counting import (
     _go_cache_path,
     _kind_matches,
     load_go_cache,
@@ -37,8 +37,9 @@ from repo_ops.dep_counting import (
 )
 
 
-def main():
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
+        prog="repos-inventory",
         description="Count dependencies per project.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -69,7 +70,7 @@ def main():
         help="Bypass XDG Go module result cache.",
     )
     add_verbose_argument(parser)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     wire_verbose(args)
 
     cache_path = _go_cache_path()
