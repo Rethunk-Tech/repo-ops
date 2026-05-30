@@ -8,9 +8,11 @@ import tempfile
 from pathlib import Path
 
 from repo_ops.inventory.counting import (
+    count_dep_edges,
     count_python,
     count_rust,
     parse_package_json_direct,
+    scan,
     versions_bun_lock,
     versions_npm_lock,
     versions_pnpm_lock,
@@ -106,6 +108,47 @@ def test_count_rust_and_python_minimal(tmp_path: Path):
     d2, v2, tag = count_python(tmp_path)
     assert d2 >= 1
     assert "pyproject" in tag
+
+
+def test_count_uv_lock_edges(tmp_path: Path):
+    (tmp_path / "uv.lock").write_text(
+        """[[package]]
+name = "root"
+version = "0.0.1"
+
+[[package]]
+name = "child"
+version = "1.0.0"
+dependencies = [
+    { name = "leaf-a" },
+    { name = "leaf-b" },
+]
+"""
+    )
+    assert count_dep_edges(tmp_path) == 2
+
+
+def test_count_pyproject_edges_without_lock(tmp_path: Path):
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\ndependencies = ["a", "b"]\n'
+    )
+    assert count_dep_edges(tmp_path) == 2
+
+
+def test_scan_python_edges_from_uv_lock(tmp_path: Path):
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    (tmp_path / "uv.lock").write_text(
+        """[[package]]
+name = "x"
+version = "0.0.1"
+dependencies = [
+    { name = "dep-one" },
+]
+"""
+    )
+    rows = scan(tmp_path, flat=True)
+    assert len(rows) == 1
+    assert rows[0]["edges"] == 1
 
 
 def test_go_cache_roundtrip_and_invalid(tmp_path: Path):

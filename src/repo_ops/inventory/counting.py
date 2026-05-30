@@ -174,7 +174,7 @@ def count_installed_node(mdir: Path) -> int:
 
 
 def count_dep_edges(proj: Path) -> int:
-    """Sum declared deps across EVERY package.json under proj (incl. node_modules)."""
+    """Sum dependency edges under proj (Node package.json + Python lock/manifests)."""
     total = 0
     for dirpath, dirnames, filenames in os.walk(proj):
         dirnames[:] = [
@@ -194,8 +194,21 @@ def count_dep_edges(proj: Path) -> int:
                 ".claude",
             )
         ]
-        if "package.json" in filenames:
-            total += parse_package_json_direct(Path(dirpath) / "package.json")
+        names = set(filenames)
+        mdir = Path(dirpath)
+        if "package.json" in names:
+            total += parse_package_json_direct(mdir / "package.json")
+        if "uv.lock" in names:
+            total += _count_uv_lock_edges(mdir / "uv.lock")
+        elif "poetry.lock" in names:
+            total += _count_poetry_lock_edges(mdir / "poetry.lock")
+        elif names & {
+            "pyproject.toml",
+            "requirements.txt",
+            "requirements-dev.txt",
+            "requirements-test.txt",
+        }:
+            total += _count_python_manifest_edges(mdir, names)
     return total
 
 
@@ -401,6 +414,78 @@ def count_python(mdir: Path) -> tuple[int, set[str], str]:
             versions.add(f"{name}@{ver}")
         break
     return direct, versions, "+".join(src_tags) or "none"
+
+
+_UV_LOCK_DEP = re.compile(r"^\s+\{ name =")
+
+
+def _count_uv_lock_edges(lock: Path) -> int:
+    """Count resolved dependency edges in a uv.lock file."""
+    return sum(
+        1
+        for ln in lock.read_text(encoding="utf-8", errors="replace").splitlines()
+        if _UV_LOCK_DEP.match(ln)
+    )
+
+
+def _count_poetry_lock_edges(lock: Path) -> int:
+    """Count dependency edges in poetry.lock [package.dependencies] sections."""
+    total = 0
+    in_deps = False
+    for line in lock.read_text(encoding="utf-8", errors="replace").splitlines():
+        s = line.strip()
+        if s in ("[package.dependencies]", "[package.dev-dependencies]"):
+            in_deps = True
+            continue
+        if s.startswith("[") and in_deps:
+            in_deps = False
+            continue
+        if in_deps and s and not s.startswith("#") and "=" in s:
+            total += 1
+    return total
+
+
+def _count_pyproject_direct_edges(pyp: Path) -> int:
+    """Declared direct deps from a single pyproject.toml (mirrors count_python)."""
+    direct = 0
+    d = read_toml_file(pyp)
+    if not d:
+        return 0
+    proj = d.get("project") or {}
+    direct += len(proj.get("dependencies") or [])
+    for group in (proj.get("optional-dependencies") or {}).values():
+        direct += len(group or [])
+    for group in (d.get("dependency-groups") or {}).values():
+        direct += len(group or [])
+    poetry = (d.get("tool") or {}).get("poetry") or {}
+    direct += len(poetry.get("dependencies") or {})
+    direct += len(poetry.get("dev-dependencies") or {})
+    for group in (poetry.get("group") or {}).values():
+        direct += len((group or {}).get("dependencies") or {})
+    return direct
+
+
+def _count_python_manifest_edges(mdir: Path, names: set[str]) -> int:
+    """Declared deps when no lockfile is present in this directory."""
+    total = 0
+    if "pyproject.toml" in names:
+        total += _count_pyproject_direct_edges(mdir / "pyproject.toml")
+    for reqname in (
+        "requirements.txt",
+        "requirements-dev.txt",
+        "requirements-test.txt",
+    ):
+        if reqname not in names:
+            continue
+        req = mdir / reqname
+        total += sum(
+            1
+            for ln in req.read_text(encoding="utf-8", errors="replace").splitlines()
+            if ln.strip()
+            and not ln.strip().startswith("#")
+            and not ln.strip().startswith("-")
+        )
+    return total
 
 
 # ---------- Walk ----------
