@@ -47,6 +47,32 @@ uv run repo-ops inventory --help
 
 `uv.lock` pins dev and build dependencies; use `uv sync --locked` in CI and before pushing.
 
+Editable tool install from your clone (picks up source changes without reinstalling):
+
+```bash
+uv tool install -e .
+```
+
+### Verify install
+
+After `uv tool install` (runtime or `-e` development):
+
+```bash
+uv tool list          # expect repo-ops 0.2.3+
+uv tool dir --bin     # ensure this directory is on PATH
+which repos-inventory
+```
+
+Optional read-only smoke checks on a single repo (replace the path with your checkout):
+
+```bash
+repos-inventory --flat /path/to/repo-ops
+repos-upgrade-plan --skip-actions /path/to/repo-ops
+repos-pushed --count-only /path/to/repo-ops
+```
+
+The optional `repo-ops` dispatcher mirrors these: `repo-ops inventory`, `plan`, and `pushed` accept the same flags after the subcommand.
+
 ## Environment
 
 - Python >= 3.10 (`.python-version` pins 3.12 for local/uv default)
@@ -66,6 +92,8 @@ Console scripts are declared in PEP 621 `[project.scripts]` in `pyproject.toml` 
 | `repo-ops` | Optional dispatcher: `repo-ops inventory`, `plan`, `apply`, `pushed` |
 
 All tools default to scanning [`DEFAULT_ROOTS`](src/repo_ops/core/constants.py) unless you pass explicit root directories.
+
+`--flat` treats each root as a single project (skips the org/proj two-level walk). It is available on `repos-inventory` and upgrade plan/apply, not on `repos-pushed`.
 
 ### Upgrade plan vs apply
 
@@ -110,7 +138,7 @@ uv build
 
 The test suite lives under `tests/` and is configured in `pyproject.toml` under `[tool.pytest.ini_options]`. Coverage and mypy configs also live in `pyproject.toml`.
 
-CI runs `uv sync --locked`, ruff, mypy, pytest+cov, `uv build`, and strict doc-audit on push/PR to `main` (matrix 3.10–3.12); Dependabot maintains pip and GitHub Actions deps weekly.
+CI runs `uv sync --locked`, ruff, mypy, pytest+cov, `uv build`, and strict doc-audit on push/PR to `main` (matrix 3.10–3.12); Dependabot maintains the uv lockfile and GitHub Actions weekly.
 
 Doc governance uses the Rethunk tier split (README / HUMANS / AGENTS / CONTRIBUTING). Locally:
 

@@ -18,7 +18,7 @@ Thank you for your interest in repo-ops! This is a small Python package providin
    uv run pytest
    ```
 
-3. CLI entry points are declared in PEP 621 `[project.scripts]` in `pyproject.toml` and run via `uv run <command>` or `uv tool install`.
+3. CLI entry points are declared in PEP 621 `[project.scripts]` in `pyproject.toml` and run via `uv run <command>`, `uv tool install`, or `uv tool install -e .` from a clone (see `HUMANS.md` for install verification).
 
 ## Development Notes
 
