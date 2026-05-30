@@ -4,15 +4,9 @@ This document records conventions and coordination notes for AI coding agents (C
 
 ## Project Overview
 
-repo-ops is a lightweight Python package (src layout) that consolidates repository operations and dependency tools for Rethunk-Tech into importable modules with console scripts:
+repo-ops is a lightweight Python package (src layout) that consolidates repository operations and dependency tools for Rethunk-Tech into importable modules with console scripts. It uses uv with the `uv_build` backend, a committed `uv.lock`, pytest for testing, and targets Python >= 3.10. PEP 621 `[project.scripts]` and metadata live in `pyproject.toml`.
 
-- repos-inventory
-- repos-upgrade-plan
-- repos-upgrade-apply
-- repos-pushed
-- repo-ops (optional dispatcher)
-
-It uses uv with the `uv_build` backend, a committed `uv.lock`, pytest for testing, and targets Python >= 3.10. PEP 621 `[project.scripts]` and metadata live in `pyproject.toml`.
+For command names, install paths, and usage flags, see [HUMANS.md](HUMANS.md).
 
 ## Coordination with Other Agents
 
@@ -35,23 +29,22 @@ It uses uv with the `uv_build` backend, a committed `uv.lock`, pytest for testin
 - `LICENSE`, `CONTRIBUTING.md`, `AGENTS.md` - hygiene and process docs
 - `.gitignore`, `.editorconfig` - editor/build hygiene
 
-Do not create top-level scripts; everything routes through the package and entry points.
+Programmatic import paths are listed in [HUMANS.md](HUMANS.md#package-layout-021). Do not create top-level scripts; everything routes through the package and entry points.
 
 ## Development Practices for Agents
 
-- Use `uv sync --group dev` for local development; avoid committing `.venv/`, `dist/`, or other build artifacts (`.venv` is uv-managed and gitignored).
-- Canonical user install is `uv tool install git+https://github.com/Rethunk-Tech/repo-ops.git` (see HUMANS.md).
-- Verify changes with `pytest` before finalizing; run `ruff check .` and `ruff format --check .` before committing Python edits.
-- When adding CLI commands or features, register them in pyproject.toml and ensure tests cover behavior.
+- Install, sync, and verification commands: [HUMANS.md](HUMANS.md) (Installation, Verification and Testing).
+- Avoid committing `.venv/`, `dist/`, or other build artifacts (`.venv` is uv-managed and gitignored).
+- Run the HUMANS verification suite (or at least `pytest` for code changes) before finalizing commits.
+- When adding CLI commands or features, register them in `pyproject.toml` and ensure tests cover behavior.
 - Keep diffs minimal and preserve existing command output/behavior during refactors.
-- Update relevant docs (README, CONTRIBUTING, AGENTS) when conventions or user-facing surfaces change.
+- Update tiered docs when user-facing surfaces change: `README.md` for orientation, `HUMANS.md` for install/usage, `CONTRIBUTING.md` for contributor workflow, this file for agent coordination.
 - Respect `.editorconfig` (4-space Python, LF, final newlines, etc.).
 
 ## Hygiene and Tooling
 
 - Run status checks and keep working tree clean.
-- .gitignore covers Python caches, venvs, build artifacts, coverage, IDE/OS noise, and local tool outputs.
-- CI runs ruff, mypy, pytest, build, and strict doc-audit (`scripts/doc_audit_gate.py`) on push/PR to `main`.
+- `.gitignore` covers Python caches, venvs, build artifacts, coverage, IDE/OS noise, and local tool outputs.
 - When in doubt about scope or coordination, ask in the current session rather than guessing.
 
 These guidelines help keep parallel agent work efficient and the repository tidy.
@@ -61,9 +54,9 @@ These guidelines help keep parallel agent work efficient and the repository tidy
 From this point forward, every Task, subagent, or automation working in this repository **must commit incrementally** using MCP-only git operations:
 
 - **Tooling**: Use `batch_commit` and `git_status` from the `plugin-rethunk-git-rethunk-git` (or `user-rethunk-git`) MCP server. Never invoke shell `git commit`, `git add`, or equivalent unless the user has explicitly opted into shell-based git workflows for this session.
-- **Batching**: Small, thematic batches (e.g., one doc file or one logical change per commit). Verify with `pytest` (or equivalent) before committing.
-- **Messages**: Conventional Commits format. Subject line concise; body explains *why* the change was made (not just what).
+- **Batching**: Small, thematic batches (e.g., one doc file or one logical change per commit). Verify before committing (see HUMANS verification).
+- **Messages and style**: Follow [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions) (Conventional Commits, why-focused body).
 - **Pushing**: Always set `push: "never"` (default) unless the user specifically requests a push.
 - **Coordination**: Run `git status --short` (shell or MCP) before editing to detect concurrent work. Prefer reviewable history over large monolithic commits.
 
-This ensures safe parallel agent work and aligns with Rethunk good-version-control practices. Commit conventions details live in `CONTRIBUTING.md`.
+This ensures safe parallel agent work and aligns with Rethunk good-version-control practices.

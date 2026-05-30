@@ -4,41 +4,28 @@ Thank you for your interest in repo-ops! This is a small Python package providin
 
 ## Quick Start for Contributors
 
-1. Install [uv](https://docs.astral.sh/uv/) and clone the repo (Python >= 3.10 required):
-
-   ```bash
-   git clone https://github.com/Rethunk-Tech/repo-ops.git
-   cd repo-ops
-   uv sync --group dev
-   ```
-
-2. Run the test suite:
-
-   ```bash
-   uv run pytest
-   ```
-
-3. CLI entry points are declared in PEP 621 `[project.scripts]` in `pyproject.toml` and run via `uv run <command>`, `uv tool install`, or `uv tool install -e .` from a clone (see `HUMANS.md` for install verification).
+1. Follow [HUMANS.md — Installation (Development)](HUMANS.md#development) to clone the repo and run `uv sync --group dev`.
+2. Run verification before opening a PR: [HUMANS.md — Verification and Testing](HUMANS.md#verification-and-testing) (at minimum `uv run pytest` for code changes).
+3. CLI entry points and command usage: [HUMANS.md — Usage](HUMANS.md#usage).
 
 ## Development Notes
 
-- Source layout uses the `src/` package structure.
-- Packaging uses the `uv_build` backend with a committed `uv.lock`.
+- Source layout uses the `src/` package structure; packaging uses `uv_build` with a committed `uv.lock` (details in HUMANS and `pyproject.toml`).
 - Add or modify console scripts by updating `[project.scripts]` and implementing the `main()` entry in the corresponding module.
 - Keep changes focused; this project favors minimal runtime dependencies and simple, maintainable utilities.
-- Update `README.md` for user-facing changes and this file or `AGENTS.md` for process/tooling notes.
+- Update `README.md` for user-facing orientation; update `HUMANS.md` for install/usage/verify changes; update this file or `AGENTS.md` for contributor or agent process notes.
 
 ## Commit Conventions
 
 - Follow [Conventional Commits](https://www.conventionalcommits.org/).
-- For agents and automation: use MCP `batch_commit` (see `AGENTS.md` for mandatory policy). Humans may use shell git or MCP.
+- For agents and automation: use MCP `batch_commit` per [AGENTS.md](AGENTS.md#incremental-commits-for-agents-from-now-on). Humans may use shell git or MCP.
 - Provide a why-focused body explaining the motivation for the change.
 - Keep commits small and thematic for easy review.
 
 ## Code Style
 
 - 4-space indentation (enforced via `.editorconfig`).
-- PRs must pass `uv run ruff check .` and `uv run ruff format --check .`.
+- PRs must pass the checks in [HUMANS.md — Verification and Testing](HUMANS.md#verification-and-testing) (`ruff`, `mypy`, `pytest`, etc.).
 - Follow existing patterns in the codebase for imports, error handling, and Git/subprocess usage.
 - Write or update tests for new behavior.
 
