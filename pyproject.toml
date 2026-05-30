@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.11.16,<0.12.0"]
+build-backend = "uv_build"
 
 [project]
 name = "repo-ops"
-version = "0.2.2"
+version = "0.2.3"
 description = "Repository operations and dependency maintenance tools for Rethunk-Tech."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,12 +25,14 @@ classifiers = [
   "Topic :: Software Development :: Version Control",
   "Topic :: Utilities",
 ]
+dependencies = []
 
 [project.urls]
 Repository = "https://github.com/Rethunk-Tech/repo-ops"
 Issues = "https://github.com/Rethunk-Tech/repo-ops/issues"
 Changelog = "https://github.com/Rethunk-Tech/repo-ops/blob/main/CHANGELOG.md"
 
+# PEP 621 console scripts (installed by uv tool / uv sync; run locally via uv run <name>)
 [project.scripts]
 repos-inventory = "repo_ops.inventory.scan:main"
 repos-upgrade-plan = "repo_ops.upgrade.run:main_plan"
@@ -38,23 +40,25 @@ repos-upgrade-apply = "repo_ops.upgrade.run:main_apply"
 repos-pushed = "repo_ops.pushed.audit:main"
 repo-ops = "repo_ops.commands.dispatch:main"
 
+[dependency-groups]
+dev = [
+  "ruff>=0.11.0",
+  "pytest>=8",
+  "pytest-cov>=5.0",
+  "mypy>=1.10",
+]
+
+[tool.uv]
+package = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 
-[project.optional-dependencies]
-dev = [
-    "ruff>=0.11.0",
-    "pytest>=8",
-    "pytest-cov>=5.0",
-    "mypy>=1.10",
-    "build>=1.2",
-]
-
 [tool.ruff]
 target-version = "py310"
 line-length = 88
-extend-exclude = [".git", "__pycache__", "build", "dist", ".venv", "venv"]
+extend-exclude = [".git", "__pycache__", "build", "dist", ".venv", "venv", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -83,7 +87,7 @@ fail_under = 15  # shared libs (filesystem/git/counting) higher; upgrade orchest
 show_missing = true
 skip_covered = true
 exclude_lines = [
-    "pragma: no cover",
-    "if __name__ == .__main__.:",
-    "if TYPE_CHECKING:",
+  "pragma: no cover",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
 ]
