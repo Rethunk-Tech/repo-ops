@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-05-29
+
+### Fixed
+- Discovery: find `.git` directories without pruning them away (fixes `repos-pushed` and shared repo discovery).
+- Inventory: count Python dependency edges from `uv.lock` and `pyproject.toml` lockfiles.
+
+### Changed
+- Documentation tier dedup: README defers install details; AGENTS and CONTRIBUTING each hold a single source per tier.
+
+### Added
+- HUMANS: document editable `uv tool` install and verification steps for contributors.
+- Tests covering repo discovery and `repos-pushed` regression for `.git` pruning.
+
 ## [0.2.3] - 2026-05-29
 
 ### Changed
@@ -68,6 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
+[0.2.4]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.2.2...v0.2.3
 [0.2.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Rethunk-Tech/repo-ops/compare/0000000...v0.1.0
