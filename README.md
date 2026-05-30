@@ -14,11 +14,11 @@ Local repository operations and dependency maintenance tools for Rethunk-Tech
 
 repo-ops packages four console workflows for scanning many local git checkouts under shared roots: dependency footprint reporting, read-only upgrade planning, apply-with-verify upgrades (including GitHub Actions pin bumps), and push-reflog audits.
 
-The tools share discovery, git, and subprocess helpers in `repo_ops.core`, expose domain logic under `inventory/`, `upgrade/`, and `pushed/`, and install as PEP 621 console scripts via `uv tool install` (see [HUMANS.md](HUMANS.md)). They target monorepo-style layouts where you maintain sibling org checkouts rather than a single application tree.
+The tools share discovery, git, and subprocess helpers in `repo_ops.core`, expose domain logic under `inventory/`, `upgrade/`, and `pushed/`, and ship as PEP 621 console scripts (install and usage: [HUMANS.md](HUMANS.md)). They target monorepo-style layouts where you maintain sibling org checkouts rather than a single application tree.
 
 ## Highlights
 
-- `repos-inventory`, `repos-upgrade-plan`, `repos-upgrade-apply`, and `repos-pushed` console tools (install with `uv tool install`; plus optional `repo-ops` dispatcher)
+- `repos-inventory`, `repos-upgrade-plan`, `repos-upgrade-apply`, and `repos-pushed` console tools, plus optional `repo-ops` dispatcher
 - Upgrade plan/apply includes GitHub Actions pin drift by default (`--skip-actions` to omit)
 - uv-locked src-layout package (`uv_build`); Python >= 3.10
 - Subsystem modules for ecosystems, remediations, verify gates, and workspace discovery
@@ -29,7 +29,7 @@ The tools share discovery, git, and subprocess helpers in `repo_ops.core`, expos
 | Document | Purpose |
 |----------|---------|
 | [Humans guide](HUMANS.md) | Installation, configuration, and usage |
-| [Agents guide](AGENTS.md) | AI/agent coordination and commit policies |
+| [Agents guide](AGENTS.md) | AI/agent layout, coordination, and invariants |
 | [Contributing](CONTRIBUTING.md) | Contributor guidelines and code style |
 | [Security](SECURITY.md) | Vulnerability reporting |
 | [Changelog](CHANGELOG.md) | Release history (Keep a Changelog style) |
