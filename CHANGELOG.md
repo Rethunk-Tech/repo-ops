@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-05-29
+
+### Fixed
+- CLI tables: shared column padding so headers align with data (`repos-inventory`, `repos-pushed`).
+- Inventory `--flat .`: use resolved directory name when `Path('.').name` is empty (Python 3.12+).
+
 ## [0.2.4] - 2026-05-29
 
 ### Fixed
