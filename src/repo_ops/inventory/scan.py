@@ -29,6 +29,7 @@ from repo_ops.core.cli import (
     add_verbose_argument,
     wire_verbose,
 )
+from repo_ops.core.table import column_width, format_cell, join_row
 from repo_ops.inventory.counting import (
     _go_cache_path,
     _kind_matches,
@@ -36,6 +37,64 @@ from repo_ops.inventory.counting import (
     save_go_cache,
     scan,
 )
+
+
+def _print_inventory_table(all_rows: list[dict]) -> None:
+    """Emit the human-readable inventory table."""
+    names = [r["name"] for r in all_rows]
+    kinds = [r["kinds_s"] for r in all_rows]
+    name_w = column_width(names, "project")
+    kind_w = column_width(kinds, "kinds", cap=40)
+
+    header_cells = [
+        format_cell("project", name_w),
+        format_cell("kinds", kind_w),
+        format_cell("mans", 4, align="right"),
+        format_cell("direct", 6, align="right"),
+        format_cell("versions", 8, align="right"),
+        format_cell("on-disk", 7, align="right"),
+        format_cell("edges", 7, align="right"),
+    ]
+    header = join_row(header_cells)
+    print(header)
+    print("-" * len(header))
+
+    td = tv = ti = te = tm = 0
+    for r in all_rows:
+        k = r["kinds_s"]
+        print(
+            join_row(
+                [
+                    format_cell(r["name"], name_w),
+                    format_cell(k, kind_w),
+                    format_cell(str(r["manifests"]), 4, align="right"),
+                    format_cell(str(r["direct"]), 6, align="right"),
+                    format_cell(str(r["versions_n"]), 8, align="right"),
+                    format_cell(str(r["installed"]), 7, align="right"),
+                    format_cell(str(r["edges"]), 7, align="right"),
+                ]
+            )
+        )
+        td += r["direct"]
+        tv += r["versions_n"]
+        ti += r["installed"]
+        te += r["edges"]
+        tm += r["manifests"]
+
+    print("-" * len(header))
+    print(
+        join_row(
+            [
+                format_cell("TOTAL", name_w),
+                format_cell("", kind_w),
+                format_cell(str(tm), 4, align="right"),
+                format_cell(str(td), 6, align="right"),
+                format_cell(str(tv), 8, align="right"),
+                format_cell(str(ti), 7, align="right"),
+                format_cell(str(te), 7, align="right"),
+            ]
+        )
+    )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -137,29 +196,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         return
 
-    name_w = max((len(r["name"]) for r in all_rows), default=40)
-    kind_w = min(40, max((len(r["kinds_s"]) for r in all_rows), default=10))
-    header = f"{'project'.ljust(name_w)}  {'kinds'.ljust(kind_w)}  mans  direct  versions  on-disk    edges"
-    print(header)
-    print("-" * len(header))
-    td = tv = ti = te = tm = 0
-    for r in all_rows:
-        k = r["kinds_s"]
-        if len(k) > kind_w:
-            k = k[: kind_w - 1] + "…"
-        print(
-            f"{r['name'].ljust(name_w)}  {k.ljust(kind_w)}  "
-            f"{r['manifests']:>4}  {r['direct']:>6}  {r['versions_n']:>8}  {r['installed']:>7}  {r['edges']:>7}"
-        )
-        td += r["direct"]
-        tv += r["versions_n"]
-        ti += r["installed"]
-        te += r["edges"]
-        tm += r["manifests"]
-    print("-" * len(header))
-    print(
-        f"{'TOTAL'.ljust(name_w)}  {''.ljust(kind_w)}  {tm:>4}  {td:>6}  {tv:>8}  {ti:>7}  {te:>7}"
-    )
+    _print_inventory_table(all_rows)
 
 
 if __name__ == "__main__":

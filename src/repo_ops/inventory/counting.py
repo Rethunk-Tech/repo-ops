@@ -551,6 +551,16 @@ def _make_row(
     return row
 
 
+def _flat_project_name(root: Path) -> str:
+    """Display name for --flat scans (Path('.').name is empty on Python 3.12+)."""
+    resolved = root.resolve()
+    name = resolved.name
+    if name and not name.startswith("."):
+        return name
+    parts = resolved.as_posix().rstrip("/").split("/")
+    return parts[-1] if parts and parts[-1] else str(resolved)
+
+
 def scan(
     root: Path, flat: bool = False, go_cache: dict | None = None
 ) -> list[dict[str, Any]]:
@@ -558,8 +568,9 @@ def scan(
     go_tasks: list[tuple[dict, Path, dict | None]] = []
 
     if flat:
-        if root.is_dir() and not root.name.startswith("."):
-            row = _make_row(root.name, root, go_tasks, go_cache)
+        if root.is_dir():
+            proj = root.resolve()
+            row = _make_row(_flat_project_name(root), proj, go_tasks, go_cache)
             rows.append(row)
     else:
         for org in sorted(root.iterdir()):

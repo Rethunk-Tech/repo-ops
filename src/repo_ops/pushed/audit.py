@@ -28,6 +28,7 @@ from repo_ops.core.cli import (
 )
 from repo_ops.core.discovery import discover_repos
 from repo_ops.core.git import repo_label, run_git
+from repo_ops.core.table import column_width, format_cell, join_row
 
 PUSH_RE = re.compile(r"^([0-9a-f]{4,40})\s+.+?@\{(\d+)\}:\s+update by push(?:\s|\(|$)")
 
@@ -206,16 +207,44 @@ def print_report(
         print("No pushes recorded in the window.")
         return
 
-    label_w = max(len(r.label) for r in per_repo[:top_n])
-    label_w = max(label_w, len("repo"))
-    print(f"Top {min(top_n, len(per_repo))} repos by pushed commits:")
-    print(f"{'commits'.rjust(7)}  {'repo'.ljust(label_w)}")
-    print("-" * (7 + 2 + label_w))
-    for row in per_repo[:top_n]:
-        print(f"{len(row.commits):>7}  {row.label.ljust(label_w)}")
+    shown = per_repo[:top_n]
+    labels = [r.label for r in shown]
+    commit_counts = [str(len(r.commits)) for r in shown]
     if len(per_repo) > top_n:
         other = sum(len(r.commits) for r in per_repo[top_n:])
-        print(f"{other:>7}  ({len(per_repo) - top_n} other repos)")
+        commit_counts.append(str(other))
+    commits_w = max(7, column_width(commit_counts, "commits"))
+    label_w = column_width(labels, "repo")
+    print(f"Top {min(top_n, len(per_repo))} repos by pushed commits:")
+    header = join_row(
+        [
+            format_cell("commits", commits_w, align="right"),
+            format_cell("repo", label_w),
+        ]
+    )
+    print(header)
+    print("-" * len(header))
+    for row in shown:
+        print(
+            join_row(
+                [
+                    format_cell(str(len(row.commits)), commits_w, align="right"),
+                    format_cell(row.label, label_w),
+                ]
+            )
+        )
+    if len(per_repo) > top_n:
+        print(
+            join_row(
+                [
+                    format_cell(str(other), commits_w, align="right"),
+                    format_cell(
+                        f"({len(per_repo) - top_n} other repos)",
+                        label_w,
+                    ),
+                ]
+            )
+        )
 
     if not show_shas:
         return
