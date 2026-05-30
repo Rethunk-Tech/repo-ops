@@ -11,7 +11,12 @@ import pytest
 from repo_ops.core.cli import parse_iso8601
 from repo_ops.core.discovery import discover_repos
 from repo_ops.core.git import git_common_dir, repo_label
-from repo_ops.pushed.audit import Filters, PUSH_RE, collect_results, pushed_commits_for_repo
+from repo_ops.pushed.audit import (
+    PUSH_RE,
+    Filters,
+    collect_results,
+    pushed_commits_for_repo,
+)
 
 
 def test_parse_iso8601_valid_z_suffix():
