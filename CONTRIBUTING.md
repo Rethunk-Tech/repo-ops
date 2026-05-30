@@ -4,30 +4,28 @@ Thank you for your interest in repo-ops! This is a small Python package providin
 
 ## Quick Start for Contributors
 
-1. Clone the repo and create a virtual environment (Python >= 3.10 required):
+1. Install [uv](https://docs.astral.sh/uv/) and clone the repo (Python >= 3.10 required):
 
    ```bash
    git clone https://github.com/Rethunk-Tech/repo-ops.git
    cd repo-ops
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -e .
+   uv sync --group dev
    ```
 
 2. Run the test suite:
 
    ```bash
-   pytest
+   uv run pytest
    ```
 
-3. The CLI entry points are defined in `pyproject.toml` under `[project.scripts]`.
+3. CLI entry points are declared in PEP 621 `[project.scripts]` in `pyproject.toml` and run via `uv run <command>` or `uv tool install`.
 
 ## Development Notes
 
 - Source layout uses the `src/` package structure.
-- Build is managed via `hatchling` (see `pyproject.toml`).
-- Add or modify console scripts by updating the `[project.scripts]` table and implementing the `main()` entry in the corresponding module.
-- Keep changes focused; this project favors minimal dependencies and simple, maintainable utilities.
+- Packaging uses the `uv_build` backend with a committed `uv.lock`.
+- Add or modify console scripts by updating `[project.scripts]` and implementing the `main()` entry in the corresponding module.
+- Keep changes focused; this project favors minimal runtime dependencies and simple, maintainable utilities.
 - Update `README.md` for user-facing changes and this file or `AGENTS.md` for process/tooling notes.
 
 ## Commit Conventions
@@ -40,7 +38,7 @@ Thank you for your interest in repo-ops! This is a small Python package providin
 ## Code Style
 
 - 4-space indentation (enforced via `.editorconfig`).
-- PRs must pass `ruff check .` and `ruff format --check .`.
+- PRs must pass `uv run ruff check .` and `uv run ruff format --check .`.
 - Follow existing patterns in the codebase for imports, error handling, and Git/subprocess usage.
 - Write or update tests for new behavior.
 

@@ -4,29 +4,58 @@ This document is the authoritative source for installation, environment setup, a
 
 ## Installation
 
-Requires Python >= 3.10.
+Requires [uv](https://docs.astral.sh/uv/) and Python >= 3.10.
 
-Clone and install in editable mode for development:
+### Runtime (recommended)
+
+Install the five console commands into an isolated tool environment (no project clone required):
+
+```bash
+uv tool install git+https://github.com/Rethunk-Tech/repo-ops.git
+```
+
+Ensure the tool bin directory is on your `PATH` (see `uv tool dir --bin`; uv documents shell hooks for this).
+
+After a release is published to PyPI:
+
+```bash
+uv tool install repo-ops
+```
+
+Upgrade an existing tool install:
+
+```bash
+uv tool upgrade repo-ops
+```
+
+### Development
+
+Clone the repository and sync the locked project environment:
 
 ```bash
 git clone https://github.com/Rethunk-Tech/repo-ops.git
 cd repo-ops
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
+uv sync --group dev
 ```
 
-For runtime use, the package can be installed via pip once published (version managed in `pyproject.toml`).
+Run commands through the project environment without a global install:
+
+```bash
+uv run repos-inventory --help
+uv run repo-ops inventory --help
+```
+
+`uv.lock` pins dev and build dependencies; use `uv sync --locked` in CI and before pushing.
 
 ## Environment
 
-- Python >= 3.10
+- Python >= 3.10 (`.python-version` pins 3.12 for local/uv default)
 - Git available on PATH (tools interact with local repositories)
 - Optional for upgrades: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, etc.) and `gh` / `actionlint` for GitHub Actions pin audits
 
 ## Usage
 
-Console scripts (see `[project.scripts]` in `pyproject.toml`):
+Console scripts are declared in PEP 621 `[project.scripts]` in `pyproject.toml` and installed by `uv tool install` or `uv sync`:
 
 | Command | Purpose |
 |---------|---------|
@@ -51,7 +80,7 @@ Run `--help` on each command for full options.
 
 ### Package layout (0.2.1+)
 
-Console scripts are registered in `pyproject.toml` and call domain `main()` functions directly (for example `repo_ops.upgrade.run:main_plan`). The optional `repo-ops` dispatcher lives under `repo_ops.commands.dispatch`.
+`[project.scripts]` maps each command to a domain `main()` (for example `repo_ops.upgrade.run:main_plan`). The optional `repo-ops` dispatcher lives under `repo_ops.commands.dispatch`. Packaging uses the `uv_build` backend; the project is uv-locked (`uv.lock`).
 
 For programmatic use, prefer these import paths (there is no `repo_ops.upgrade.engine`):
 
@@ -71,22 +100,22 @@ For programmatic use, prefer these import paths (there is no `repo_ops.upgrade.e
 After install or changes (full dev verification):
 
 ```bash
-pip install -e ".[dev]"
-ruff check .
-ruff format --check .
-mypy src/repo_ops
-pytest -q --cov=src/repo_ops --cov-report=term-missing --cov-fail-under=15
-python -m build --wheel --sdist
+uv sync --locked --group dev
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src/repo_ops
+uv run pytest -q --cov=src/repo_ops --cov-report=term-missing --cov-fail-under=15
+uv build
 ```
 
 The test suite lives under `tests/` and is configured in `pyproject.toml` under `[tool.pytest.ini_options]`. Coverage and mypy configs also live in `pyproject.toml`.
 
-CI runs ruff, mypy, pytest+cov, build, and strict doc-audit on push/PR to `main` (matrix 3.10–3.12); Dependabot maintains pip and GitHub Actions deps weekly.
+CI runs `uv sync --locked`, ruff, mypy, pytest+cov, `uv build`, and strict doc-audit on push/PR to `main` (matrix 3.10–3.12); Dependabot maintains pip and GitHub Actions deps weekly.
 
 Doc governance uses the Rethunk tier split (README / HUMANS / AGENTS / CONTRIBUTING). Locally:
 
 ```bash
-python3 scripts/doc_audit_gate.py --root .
+uv run python scripts/doc_audit_gate.py --root .
 ```
 
 ## Typical Roots

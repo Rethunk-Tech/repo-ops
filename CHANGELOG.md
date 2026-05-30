@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-05-29
+
+### Changed
+- Migrated packaging from hatchling to `uv_build`; project is uv-locked (`uv.lock`, `.python-version`).
+- Dev dependencies moved to `[dependency-groups] dev` (replacing `[project.optional-dependencies] dev`).
+- CI and contributor docs use `uv sync`, `uv run`, and `uv build` instead of pip/venv.
+
+### Added
+- Canonical install documented via `uv tool install` (git URL today; PyPI when published).
+- HUMANS installation section for runtime (`uv tool`) vs development (`uv sync`).
+
 ## [0.2.2] - 2026-05-29
 
 ### Changed

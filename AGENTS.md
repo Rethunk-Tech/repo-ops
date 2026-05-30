@@ -12,7 +12,7 @@ repo-ops is a lightweight Python package (src layout) that consolidates reposito
 - repos-pushed
 - repo-ops (optional dispatcher)
 
-It uses hatchling for packaging, pytest for testing, and targets Python >= 3.10. Metadata and entry points live in pyproject.toml.
+It uses uv with the `uv_build` backend, a committed `uv.lock`, pytest for testing, and targets Python >= 3.10. PEP 621 `[project.scripts]` and metadata live in `pyproject.toml`.
 
 ## Coordination with Other Agents
 
@@ -30,7 +30,7 @@ It uses hatchling for packaging, pytest for testing, and targets Python >= 3.10.
 - `src/repo_ops/pushed/` - push reflog audit
 - `src/repo_ops/commands/` - optional dispatcher only (`dispatch.py`); **`pyproject.toml` `[project.scripts]` points at domain `module:main`**, not `commands/*` shims
 - `tests/` - test suite
-- `pyproject.toml` - single source of truth for build, scripts, pytest config, and metadata
+- `pyproject.toml` / `uv.lock` - single source of truth for build, scripts, locked deps, pytest config, and metadata
 - `README.md` - user overview
 - `LICENSE`, `CONTRIBUTING.md`, `AGENTS.md` - hygiene and process docs
 - `.gitignore`, `.editorconfig` - editor/build hygiene
@@ -39,7 +39,8 @@ Do not create top-level scripts; everything routes through the package and entry
 
 ## Development Practices for Agents
 
-- Use `pip install -e .` (or equivalent) for local development; avoid committing venv/ or build/ artifacts.
+- Use `uv sync --group dev` for local development; avoid committing `.venv/`, `dist/`, or other build artifacts (`.venv` is uv-managed and gitignored).
+- Canonical user install is `uv tool install git+https://github.com/Rethunk-Tech/repo-ops.git` (see HUMANS.md).
 - Verify changes with `pytest` before finalizing; run `ruff check .` and `ruff format --check .` before committing Python edits.
 - When adding CLI commands or features, register them in pyproject.toml and ensure tests cover behavior.
 - Keep diffs minimal and preserve existing command output/behavior during refactors.
