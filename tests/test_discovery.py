@@ -13,14 +13,15 @@ def test_discover_repos_skips_non_dirs_and_returns_dict():
 
 
 def test_discover_repos_with_tmp_layout_and_monkeypatch(tmp_path: Path):
-    # Create a fake .git dir under tmp (may or may not be discovered depending on find + SKIP_DIRS)
     repo_dir = tmp_path / "myorg" / "myrepo"
     (repo_dir / ".git").mkdir(parents=True)
+    common = str((repo_dir / ".git").resolve())
 
     def fake_git_common_dir(p):
-        return str(Path(p).resolve())
+        return common
 
     with patch("repo_ops.core.discovery.git_common_dir", fake_git_common_dir):
         result = discover_repos([str(tmp_path)])
-    # Contract: returns dict, does not crash; discovery may be 0 in constrained env
     assert isinstance(result, dict)
+    assert common in result
+    assert result[common] == str(repo_dir.resolve())
