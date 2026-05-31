@@ -23,7 +23,7 @@ Use the **`repo-ops`** CLI for dependency and Actions maintenance. **Install, fl
 | Apply updates + verify | `repo-ops apply` |
 | Pushed-commit audit | `repo-ops pushed` |
 
-Default roots: [`DEFAULT_ROOTS`](https://github.com/Rethunk-Tech/repo-ops/blob/main/packages/repo-ops-core/src/repo_ops_core/constants.py). Pass checkout paths as trailing args to override. Common flags: `--flat`, `--filter ECO`, `--json`, `--skip-actions`, `--skip-remediations`, `--no-verify`.
+Default roots: [`DEFAULT_ROOTS`](https://github.com/Rethunk-Tech/repo-ops/blob/main/packages/repo-ops-core/src/repo_ops_core/constants.py). Pass checkout paths as trailing args to override. Common flags: `--flat`, `--filter ECO`, `--json`, `--log-file`, `--strict-exit`, `--skip-actions`, `--skip-remediations`, `--no-verify`.
 
 ## Workflow
 
@@ -37,9 +37,9 @@ For many repos under one parent root (e.g. `/usr/local/src/com.github`):
 
 | Step | Action |
 |------|--------|
-| 1. Plan | `repo-ops plan /path/to/root 2>plan.stderr \| tee plan.log` — or `plan --json … > plan.json 2>plan.stderr` |
+| 1. Plan | `repo-ops plan /path/to/root --log-file plan.log` — or `plan --json … > plan.json 2>plan.stderr` |
 | 2. Dirty trees | Read skips for `dirty git worktree`; commit/stash per repo or add `--allow-dirty` when intentional |
-| 3. Apply | `set -o pipefail` then `repo-ops apply /path/to/root 2>&1 \| tee apply.log` (`--log-file` is [#10](https://github.com/Rethunk-Tech/repo-ops/issues/10), not shipped yet) |
+| 3. Apply | `repo-ops apply /path/to/root --log-file apply.log` (footer: `failures:` / `exit_code:`). If piping: `set -o pipefail` then `2>&1 \| tee` |
 | 4. Submodules | Apply/push **children first**, parent submodule pointer commit **last** (git-push-order pattern; [#13](https://github.com/Rethunk-Tech/repo-ops/issues/13)) |
 | 5. Verify | Failed verify ≠ always bad deps — check env vars, flaky tests, local toolchain before reverting ([#9](https://github.com/Rethunk-Tech/repo-ops/issues/9)) |
 
