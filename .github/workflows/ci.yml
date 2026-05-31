@@ -16,40 +16,40 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          enable-cache: true
-      - name: Sync locked dependencies
-        run: uv sync --locked --group dev
-      - name: Import boundaries (workspace packages)
-        run: uv run python scripts/check_import_boundaries.py
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - name: Mypy (workspace packages)
-        run: |
-          uv run mypy \
-            packages/repo-ops-core/src \
-            packages/repo-ops-models/src \
-            packages/repo-ops-lockfiles/src \
-            packages/repo-ops-js/src \
-            packages/repo-ops-js-npm/src \
-            packages/repo-ops-js-pnpm/src \
-            packages/repo-ops-js-bun/src \
-            packages/repo-ops-js-yarn/src \
-            packages/repo-ops-go/src \
-            packages/repo-ops-rust/src \
-            packages/repo-ops-py/src \
-            packages/repo-ops-py-uv/src \
-            packages/repo-ops-py-poetry/src \
-            packages/repo-ops-py-pip-tools/src \
-            packages/repo-ops-py-hatch/src \
-            packages/repo-ops-upgrade/src \
-            packages/repo-ops-upgrade-remediations-js/src \
-            packages/repo-ops-inventory/src \
-            packages/repo-ops-pushed/src \
-            packages/repo-ops/src
-      - run: uv run pytest -q --cov --cov-report=term-missing --cov-fail-under=15
-      - run: uv build packages/repo-ops
-      - run: ls -l dist/
+    - uses: actions/checkout@v6.0.2
+    - uses: astral-sh/setup-uv@v8.1.0
+      with:
+        python-version: ${{ matrix.python-version }}
+        enable-cache: true
+    - name: Sync locked dependencies
+      run: uv sync --locked --group dev
+    - name: Import boundaries (workspace packages)
+      run: uv run python scripts/check_import_boundaries.py
+    - run: uv run ruff check .
+    - run: uv run ruff format --check .
+    - name: Mypy (workspace packages)
+      run: |
+        uv run mypy \
+          packages/repo-ops-core/src \
+          packages/repo-ops-models/src \
+          packages/repo-ops-lockfiles/src \
+          packages/repo-ops-js/src \
+          packages/repo-ops-js-npm/src \
+          packages/repo-ops-js-pnpm/src \
+          packages/repo-ops-js-bun/src \
+          packages/repo-ops-js-yarn/src \
+          packages/repo-ops-go/src \
+          packages/repo-ops-rust/src \
+          packages/repo-ops-py/src \
+          packages/repo-ops-py-uv/src \
+          packages/repo-ops-py-poetry/src \
+          packages/repo-ops-py-pip-tools/src \
+          packages/repo-ops-py-hatch/src \
+          packages/repo-ops-upgrade/src \
+          packages/repo-ops-upgrade-remediations-js/src \
+          packages/repo-ops-inventory/src \
+          packages/repo-ops-pushed/src \
+          packages/repo-ops/src
+    - run: uv run pytest -q --cov --cov-report=term-missing --cov-fail-under=15
+    - run: uv build packages/repo-ops
+    - run: ls -l dist/
