@@ -22,7 +22,7 @@ body:
     attributes:
       label: Environment
       description: Python version, OS, repo-ops version or commit
-      placeholder: "Python 3.12, Ubuntu 24.04, repo-ops 0.1.0"
+      placeholder: "Python 3.12, Ubuntu 24.04, repo-ops --version or git SHA"
   - type: textarea
     id: logs
     attributes:

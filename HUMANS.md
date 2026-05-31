@@ -73,7 +73,8 @@ Options: `--target cursor|claude|both`, `--force`, `--dry-run`. Do not install u
 ### Verify install
 
 ```bash
-uv tool list          # expect repo-ops 0.4.0+
+uv tool list          # expect repo-ops listed
+repo-ops --version
 uv tool dir --bin
 which repo-ops
 ```
