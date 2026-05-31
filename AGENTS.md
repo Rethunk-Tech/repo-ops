@@ -4,7 +4,7 @@ Conventions and coordination for AI coding agents (Cursor, Claude Code, etc.) an
 
 ## Project overview
 
-**uv workspace** (`packages/*`, version 0.3.4): repository operations and dependency tools for Rethunk-Tech. The installable meta package is `packages/repo-ops` (`repo-ops` on PyPI); the repo root is not installable (`package = false`). Console script **`repo-ops`** with subcommands `inventory`, `plan`, `apply`, `pushed`, and `install-skill`.
+**uv workspace** (`packages/*`, version 0.3.5): repository operations and dependency tools for Rethunk-Tech. The installable meta package is `packages/repo-ops` (`repo-ops` on PyPI); the repo root is not installable (`package = false`). Console script **`repo-ops`** with subcommands `inventory`, `plan`, `apply`, `pushed`, and `install-skill`.
 
 Install, usage flags, and verification: [HUMANS.md](HUMANS.md). Commit conventions: [CONTRIBUTING.md](CONTRIBUTING.md).
 

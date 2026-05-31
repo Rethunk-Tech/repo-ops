@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-05-31
+
+### Fixed
+
+- **Go mvs apply:** use `go get -u -t all` instead of `go get -u ./...` / `go get -t -u ./...` so transitives and indirects update in one step.
+
+### Changed
+
+- **Docs:** tier dedup (HUMANS install/usage/imports; AGENTS layout/process); install via `packages/repo-ops` and git `#subdirectory=packages/repo-ops`.
+
 ## [0.3.4] - 2026-05-31
 
 ### Fixed
@@ -143,7 +153,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.1...v0.3.2
