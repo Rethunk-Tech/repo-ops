@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation: separate `CLAUDE.md` pointer (was symlink to `AGENTS.md`); HUMANS package-layout anchor normalized; PR template defers verification to HUMANS.
+
 ## [0.2.5] - 2026-05-29
 
 ### Fixed
