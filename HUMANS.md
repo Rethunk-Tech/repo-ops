@@ -114,6 +114,41 @@ Default scan roots: [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_ops_core/c
 - **Apply** performs updates; `--no-verify`, `--skip-remediations`, or `--skip-actions` narrow scope.
 - Actions pins included by default; `--skip-actions` for dependency-only runs.
 
+### Bulk maintenance
+
+Use this flow when running `plan` / `apply` across many checkouts under a parent root (for example `/usr/local/src/com.github`).
+
+1. **Plan first, capture output.** Apply never substitutes for plan; always review drift before writes.
+
+   ```bash
+   repo-ops plan /path/to/parent/root 2>plan.stderr | tee plan.log
+   ```
+
+   Machine-readable plan (stdout is one JSON object when `--json` is set; discovery notes stay in `skipped` / `warnings`):
+
+   ```bash
+   repo-ops plan --json /path/to/parent/root > plan.json 2>plan.stderr
+   ```
+
+2. **Review dirty skips.** Plan/apply skip repos with uncommitted changes unless you intend otherwise. In plan JSON or human stderr, look for `dirty git worktree`. Per repo: commit, stash, or re-run with `--allow-dirty` when you accept applying on a dirty tree.
+
+3. **Apply with reliable logs.** Use `set -o pipefail` when piping apply output so a failed `repo-ops` does not look successful because `tee` exited 0:
+
+   ```bash
+   set -o pipefail
+   repo-ops apply /path/to/parent/root 2>&1 | tee apply.log
+   ```
+
+   [`--log-file`](https://github.com/Rethunk-Tech/repo-ops/issues/10) (pipefail-safe logging without shell options) is not implemented yet; use the pattern above until #10 ships.
+
+4. **Submodule umbrellas.** When a parent repo contains submodules (Bastion-style layouts), apply and push **child** checkouts first, then update the **parent** submodule pointer and commit that last. Same dependency-first idea as the git-push-order agent skill: children before parent pointer.
+
+5. **Verify failures are not always dependency regressions.** Apply runs ecosystem verify gates (build/test). Failures may be missing env vars (for example Next.js `build` needing secrets), flaky tests, or local toolchain gaps — not a bad bump. Inspect logs before reverting; see [#9](https://github.com/Rethunk-Tech/repo-ops/issues/9) for planned `--on-verify-fail` behavior.
+
+**See also (tracking issues):** [#9](https://github.com/Rethunk-Tech/repo-ops/issues/9) verify-fail policy · [#10](https://github.com/Rethunk-Tech/repo-ops/issues/10) apply exit codes / `--log-file` · [#11](https://github.com/Rethunk-Tech/repo-ops/issues/11) remediation apply reporting (closed) · [#12](https://github.com/Rethunk-Tech/repo-ops/issues/12) bun outdated JSON (closed) · [#13](https://github.com/Rethunk-Tech/repo-ops/issues/13) submodule umbrella workflow · [#14](https://github.com/Rethunk-Tech/repo-ops/issues/14) end-of-run roll-up · [#15](https://github.com/Rethunk-Tech/repo-ops/issues/15) optional post-apply commits · [#16](https://github.com/Rethunk-Tech/repo-ops/issues/16) plan `--json-out` artifact.
+
+Refresh the bundled agent skill after doc pulls: `repo-ops install-skill --force` (see [Agent skill](#agent-skill)).
+
 ### Go modules
 
 `REPO_OPS_GO_UPGRADE_MODE` (default `patch`) aligns plan and apply:
