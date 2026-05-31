@@ -121,6 +121,16 @@ def add_upgrade_common_arguments(
         help="Skip GitHub Actions workflow pin audit (deps only).",
     )
     parser.add_argument(
+        "--log-file",
+        metavar="PATH",
+        help="Write combined stdout/stderr transcript to PATH (no shell pipe needed).",
+    )
+    parser.add_argument(
+        "--strict-exit",
+        action="store_true",
+        help="Exit 1 when any workspace is skip or fail (default: fail only).",
+    )
+    parser.add_argument(
         "--top",
         type=int,
         default=10,

@@ -99,3 +99,38 @@ def print_human_report(
                 f"({summary['workflows_scanned']} workflow(s) scanned)"
             )
         print()
+
+
+def count_failures(bundles: dict[Path, RepoBundle]) -> int:
+    """Count workspace and Actions rows with status fail."""
+    n = 0
+    for bundle in bundles.values():
+        n += sum(1 for wr in bundle.workspaces if wr.status == "fail")
+        n += sum(1 for ab in bundle.actions if ab.status == "fail")
+    return n
+
+
+def count_workspace_skips(bundles: dict[Path, RepoBundle]) -> int:
+    return sum(
+        1
+        for bundle in bundles.values()
+        for wr in bundle.workspaces
+        if wr.status == "skip"
+    )
+
+
+def any_workspace_skip_or_fail(bundles: dict[Path, RepoBundle]) -> bool:
+    return any(
+        wr.status in ("fail", "skip")
+        for bundle in bundles.values()
+        for wr in bundle.workspaces
+    )
+
+
+def print_run_footer(*, failures: int, exit_code: int, skips: int | None = None) -> None:
+    """End-of-run summary for automation (human stdout)."""
+    print("---")
+    print(f"failures: {failures}")
+    if skips is not None and skips > 0:
+        print(f"skips: {skips}")
+    print(f"exit_code: {exit_code}")

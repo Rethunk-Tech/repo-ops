@@ -11,6 +11,7 @@ from repo_ops_core.cli import (
 )
 from repo_ops_core.constants import DEFAULT_ROOTS
 from repo_ops_core.parallel import run_bounded_pool
+from repo_ops_core.tee import tee_stdout_stderr
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 
 from repo_ops_upgrade import actions, orchestration, report
@@ -35,12 +36,28 @@ def _has_actionable_work(bundles: dict[Path, RepoBundle]) -> bool:
     return False
 
 
-def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
-    parser = build_upgrade_parser(apply=apply)
-    args = parser.parse_args(argv)
-    wire_verbose(args)
+def _resolve_exit_code(
+    bundles: dict[Path, RepoBundle],
+    *,
+    apply: bool,
+    strict_exit: bool,
+    has_actionable_work: bool,
+) -> int:
+    if strict_exit and report.any_workspace_skip_or_fail(bundles):
+        return 1
+    if report.count_failures(bundles) > 0:
+        return 1
+    if not apply and has_actionable_work:
+        return 1
+    return 0
 
-    roots = [str(Path(r).expanduser()) for r in (args.roots or DEFAULT_ROOTS)]
+
+def _run_upgrade_body(
+    *,
+    apply: bool,
+    args,
+    roots: list[str],
+) -> int:
     skip_remediations = set()
     if apply:
         skip_remediations = {
@@ -159,14 +176,33 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
             include_actions=not args.skip_actions,
         )
 
-    any_fail = any(
-        wr.status == "fail" for b in bundles.values() for wr in b.workspaces
-    ) or any(a.status == "fail" for b in bundles.values() for a in b.actions)
-    if any_fail:
-        return 1
-    if not apply and _has_actionable_work(bundles):
-        return 1
-    return 0
+    exit_code = _resolve_exit_code(
+        bundles,
+        apply=apply,
+        strict_exit=args.strict_exit,
+        has_actionable_work=_has_actionable_work(bundles),
+    )
+    if not json_out:
+        failures = report.count_failures(bundles)
+        skips = report.count_workspace_skips(bundles)
+        report.print_run_footer(
+            failures=failures,
+            exit_code=exit_code,
+            skips=skips if args.strict_exit else None,
+        )
+    return exit_code
+
+
+def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
+    parser = build_upgrade_parser(apply=apply)
+    args = parser.parse_args(argv)
+    wire_verbose(args)
+
+    roots = [str(Path(r).expanduser()) for r in (args.roots or DEFAULT_ROOTS)]
+    if args.log_file:
+        with tee_stdout_stderr(Path(args.log_file).expanduser()):
+            return _run_upgrade_body(apply=apply, args=args, roots=roots)
+    return _run_upgrade_body(apply=apply, args=args, roots=roots)
 
 
 def main_plan(argv: list[str] | None = None) -> int:
