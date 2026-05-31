@@ -13,6 +13,21 @@ from repo_ops_models import ActionBump
 from repo_ops_upgrade.constants import ACTION_ALLOWLIST, USES_RE
 
 
+def replace_action_pin_in_text(text: str, action: str, pin: str, latest: str) -> str:
+    """Replace one action pin only on matching ``uses:`` lines (never substring)."""
+    parts: list[str] = []
+    last = 0
+    for m in USES_RE.finditer(text):
+        parts.append(text[last : m.start()])
+        line = m.group(0)
+        if m.group(1) == action and m.group(2) == pin:
+            line = line.replace(f"{action}@{pin}", f"{action}@{latest}", 1)
+        parts.append(line)
+        last = m.end()
+    parts.append(text[last:])
+    return "".join(parts)
+
+
 def discover_workflow_files(repo: Path) -> list[Path]:
     wf_dir = repo / ".github" / "workflows"
     if not wf_dir.is_dir():
@@ -66,6 +81,7 @@ def scan_actions(repo: Path, apply: bool) -> list[ActionBump]:
                     )
                 )
                 continue
+        file_changed = False
         for m in USES_RE.finditer(text):
             action, pin = m.group(1), m.group(2)
             if pin.startswith("sha") or re.fullmatch(r"[0-9a-f]{7,40}", pin):
@@ -93,7 +109,8 @@ def scan_actions(repo: Path, apply: bool) -> list[ActionBump]:
                 )
                 bumps.append(bump)
                 if apply:
-                    new_text = text.replace(f"{action}@{pin}", f"{action}@{latest}", 1)
-                    wf.write_text(new_text, encoding="utf-8")
-                    text = new_text
+                    text = replace_action_pin_in_text(text, action, pin, latest)
+                    file_changed = True
+        if apply and file_changed:
+            wf.write_text(text, encoding="utf-8")
     return bumps
