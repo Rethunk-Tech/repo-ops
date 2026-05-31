@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from repo_ops_models import Workspace, WorkspaceResult
+from repo_ops_models import Workspace
 from repo_ops_upgrade import registry
 
 

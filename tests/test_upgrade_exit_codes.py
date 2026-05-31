@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops._register import register_all
-from repo_ops_models import Workspace, WorkspaceResult
+from repo_ops_models import WorkspaceResult
 from repo_ops_upgrade.run import main_apply, main_plan
 
 

@@ -15,8 +15,8 @@ from repo_ops_lockfiles.parsers import (
 )
 from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
-    restore_workspace_snapshot,
     resolved_version_from_node_modules,
+    restore_workspace_snapshot,
     snapshot_workspace_files,
 )
 

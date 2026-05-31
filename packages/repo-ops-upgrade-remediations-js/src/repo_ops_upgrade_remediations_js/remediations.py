@@ -31,7 +31,6 @@ from repo_ops_upgrade.constants import (
     TIMEOUT_APPLY,
 )
 
-
 ApplyResult = tuple[bool, str]
 
 

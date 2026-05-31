@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from repo_ops._register import register_all
 from repo_ops_upgrade import submodules
-from repo_ops_upgrade.run import main_apply, main_plan
+from repo_ops_upgrade.run import main_plan
 
 
 def _init_git_repo(path: Path) -> None:

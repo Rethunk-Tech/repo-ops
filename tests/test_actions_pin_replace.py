@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from repo_ops_upgrade.workflow_uses import PinReplacement, parse_uses_ref, update_workflow_pins
+from repo_ops_upgrade.workflow_uses import (
+    PinReplacement,
+    parse_uses_ref,
+    update_workflow_pins,
+)
 
 
 def test_parse_uses_ref_skips_prefix_of_longer_tag() -> None:
