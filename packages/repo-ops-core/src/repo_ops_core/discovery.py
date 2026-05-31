@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from repo_ops_core.constants import SKIP_DIRS
@@ -31,7 +32,7 @@ def discover_repos(roots: list[str]) -> dict[str, str]:
         else:
             prune_expr.extend(["-name", name])
     for root in roots:
-        root_path = Path(root)
+        root_path = Path(root).expanduser().resolve()
         if not root_path.is_dir():
             continue
         # Build find: prune SKIP_DIRS (not .git), match .git dirs, then prune .git
@@ -53,12 +54,16 @@ def discover_repos(roots: list[str]) -> dict[str, str]:
             ")",
             "-prune",
         ]
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            print(f"WARN: find timed out under {root_path}", file=sys.stderr)
+            continue
         if proc.returncode != 0:
             continue
         for git_dir in proc.stdout.splitlines():

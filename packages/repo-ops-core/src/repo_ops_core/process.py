@@ -21,6 +21,10 @@ def run(
     timeout: int = 300,
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    cwd_path = Path(cwd)
+    if not cwd_path.is_dir():
+        msg = f"cwd is not a directory: {cwd_path}"
+        raise FileNotFoundError(msg)
     if VERBOSE:
         print(f"  $ {' '.join(cmd)}", file=sys.stderr, flush=True)
     merged = os.environ.copy()
@@ -28,7 +32,7 @@ def run(
         merged.update(env)
     proc = subprocess.run(
         cmd,
-        cwd=str(cwd),
+        cwd=str(cwd_path),
         capture_output=True,
         text=True,
         timeout=timeout,

@@ -10,8 +10,12 @@ from pathlib import Path
 def run_git(
     repo: Path | str, *args: str, timeout: int = 10
 ) -> subprocess.CompletedProcess[str]:
+    repo_path = Path(repo)
+    if not repo_path.is_dir():
+        msg = f"git -C target is not a directory: {repo_path}"
+        raise FileNotFoundError(msg)
     return subprocess.run(
-        ["git", "-C", str(repo), *args],
+        ["git", "-C", str(repo_path), *args],
         capture_output=True,
         text=True,
         timeout=timeout,
