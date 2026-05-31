@@ -12,6 +12,7 @@ from repo_ops_upgrade.workflow_uses import (
     parse_uses_ref,
     parse_workflow_uses,
     update_workflow_pins,
+    workflow_roundtrip_text,
 )
 
 _CI_SNIPPET = """\
@@ -106,10 +107,13 @@ def test_scan_actions_discovers_checkout_list_item(tmp_path: Path) -> None:
             return "v6"
         return None
 
-    with patch(
-        "repo_ops_upgrade.actions.action_latest_tag",
-        side_effect=_latest,
-    ), patch("repo_ops_upgrade.actions.shutil.which", return_value=None):
+    with (
+        patch(
+            "repo_ops_upgrade.actions.action_latest_tag",
+            side_effect=_latest,
+        ),
+        patch("repo_ops_upgrade.actions.shutil.which", return_value=None),
+    ):
         bumps, scanned = scan_actions(tmp_path, apply=False)
     assert scanned == 1
     actions = {b.action for b in bumps}
@@ -131,10 +135,13 @@ def test_scan_actions_apply_no_stacked_suffix(tmp_path: Path) -> None:
         "      - uses: example/action@v3.19.0\n",
         encoding="utf-8",
     )
-    with patch(
-        "repo_ops_upgrade.actions.action_latest_tag",
-        return_value="v3.19.0",
-    ), patch("repo_ops_upgrade.actions.shutil.which", return_value=None):
+    with (
+        patch(
+            "repo_ops_upgrade.actions.action_latest_tag",
+            return_value="v3.19.0",
+        ),
+        patch("repo_ops_upgrade.actions.shutil.which", return_value=None),
+    ):
         scan_actions(tmp_path, apply=True)
     text = wf.read_text(encoding="utf-8")
     assert "v3.19.0.19.0" not in text
@@ -154,3 +161,30 @@ def test_parse_real_ci_workflow(repo_ops_workflows: Path) -> None:
     checkout = [p for p in pins if p.action == "actions/checkout"]
     assert checkout, "expected actions/checkout in repo ci.yml"
     assert checkout[0].pin == "v6.0.2"
+
+
+def test_workflow_roundtrip_preserves_ci_yaml(repo_ops_workflows: Path) -> None:
+    ci = repo_ops_workflows / "ci.yml"
+    original = ci.read_text(encoding="utf-8")
+    roundtripped = workflow_roundtrip_text(ci)
+    assert roundtripped == original
+
+
+def test_workflow_roundtrip_preserves_on_trigger(repo_ops_workflows: Path) -> None:
+    from repo_ops_upgrade.workflow_uses import _yaml_loader
+
+    data = _yaml_loader().load(repo_ops_workflows / "ci.yml")
+    assert "on" in data
+    on = data["on"]
+    assert "push" in on
+    assert "pull_request" in on
+    assert on["push"]["branches"] == ["main"]
+
+
+def test_update_workflow_pins_noop_minimal_diff(tmp_path: Path) -> None:
+    wf = tmp_path / "noop.yml"
+    text = _CI_SNIPPET
+    wf.write_text(text, encoding="utf-8")
+    changed = update_workflow_pins(wf, [])
+    assert not changed
+    assert wf.read_text(encoding="utf-8") == text

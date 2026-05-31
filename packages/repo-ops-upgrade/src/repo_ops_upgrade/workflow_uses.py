@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -103,7 +104,18 @@ def _yaml_loader() -> YAML:
     return yaml
 
 
-def parse_workflow_uses(path: Path, *, workflow_rel: str | None = None) -> list[UsesPin]:
+def workflow_roundtrip_text(path: Path) -> str:
+    """Load and dump a workflow file (for tests and no-op drift checks)."""
+    yaml = _yaml_loader()
+    data = yaml.load(path)
+    buf = StringIO()
+    yaml.dump(data, buf)
+    return buf.getvalue()
+
+
+def parse_workflow_uses(
+    path: Path, *, workflow_rel: str | None = None
+) -> list[UsesPin]:
     """Load workflow YAML and collect every ``uses:`` scalar (steps, jobs, etc.)."""
     rel = workflow_rel if workflow_rel is not None else path.name
     try:
