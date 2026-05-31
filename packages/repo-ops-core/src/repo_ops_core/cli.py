@@ -67,6 +67,16 @@ def add_json_argument(parser: argparse.ArgumentParser, dest: str = "json_out") -
     )
 
 
+def add_json_out_argument(parser: argparse.ArgumentParser) -> None:
+    """Add --json-out for plan/apply: write JSON artifact to PATH (requires --json)."""
+    parser.add_argument(
+        "--json-out",
+        metavar="PATH",
+        dest="json_report_path",
+        help="With --json: write the report to PATH (atomic). Stdout prints only the path.",
+    )
+
+
 def add_flat_argument(parser: argparse.ArgumentParser) -> None:
     """Add --flat flag (treat roots as single projects)."""
     parser.add_argument(
@@ -107,7 +117,8 @@ def add_upgrade_common_arguments(
 ) -> None:
     """Flags shared by repo-ops plan and repo-ops apply."""
     add_roots_argument(parser)
-    add_json_argument(parser, dest="json_out")
+    add_json_argument(parser, dest="json")
+    add_json_out_argument(parser)
     add_flat_argument(parser)
     add_verbose_argument(parser)
     add_eco_filter_argument(parser)

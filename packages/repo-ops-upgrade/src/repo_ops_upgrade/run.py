@@ -64,8 +64,9 @@ def _run_upgrade_body(
             s.strip() for s in args.skip_remediations.split(",") if s.strip()
         }
 
-    json_out = args.json_out
-    diagnostics = DiscoveryDiagnostics() if json_out else None
+    use_json = args.json
+    json_report_path = getattr(args, "json_report_path", None)
+    diagnostics = DiscoveryDiagnostics() if use_json else None
     found: list[Workspace] = workspace_discovery.discover_all(
         roots,
         flat=args.flat,
@@ -159,13 +160,24 @@ def _run_upgrade_body(
                 if wr.changes or wr.status != "ok" or wr.remediations
             ]
 
-    if json_out:
-        report.print_json_report(
-            bundles,
-            roots=roots,
-            mode="apply" if apply else "plan",
-            diagnostics=diagnostics,
-        )
+    if use_json:
+        mode = "apply" if apply else "plan"
+        if json_report_path:
+            written = report.write_json_report(
+                Path(json_report_path),
+                bundles,
+                roots=roots,
+                mode=mode,
+                diagnostics=diagnostics,
+            )
+            print(written)
+        else:
+            report.print_json_report(
+                bundles,
+                roots=roots,
+                mode=mode,
+                diagnostics=diagnostics,
+            )
     elif not args.quiet:
         top_n = getattr(args, "top", 10)
         report.print_human_report(
@@ -182,7 +194,7 @@ def _run_upgrade_body(
         strict_exit=args.strict_exit,
         has_actionable_work=_has_actionable_work(bundles),
     )
-    if not json_out:
+    if not use_json:
         failures = report.count_failures(bundles)
         skips = report.count_workspace_skips(bundles)
         report.print_run_footer(
@@ -196,6 +208,8 @@ def _run_upgrade_body(
 def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     parser = build_upgrade_parser(apply=apply)
     args = parser.parse_args(argv)
+    if getattr(args, "json_report_path", None) and not args.json:
+        parser.error("--json-out requires --json")
     wire_verbose(args)
 
     roots = [str(Path(r).expanduser()) for r in (args.roots or DEFAULT_ROOTS)]

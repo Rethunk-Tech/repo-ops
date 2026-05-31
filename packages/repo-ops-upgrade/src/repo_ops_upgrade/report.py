@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
@@ -43,6 +45,40 @@ def print_json_report(
         diagnostics=diagnostics,
     )
     print(json.dumps(payload, indent=2))
+
+
+def write_json_report(
+    path: Path,
+    bundles: dict[Path, RepoBundle],
+    *,
+    roots: list[str],
+    mode: UpgradeMode,
+    diagnostics: DiscoveryDiagnostics | None = None,
+) -> Path:
+    """Write one JSON document to path via temp file + rename. Returns resolved path."""
+    path = Path(path).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = build_json_payload(
+        bundles,
+        roots=roots,
+        mode=mode,
+        diagnostics=diagnostics,
+    )
+    text = json.dumps(payload, indent=2) + "\n"
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+        os.replace(tmp_path, path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    return path
 
 
 def print_human_report(
