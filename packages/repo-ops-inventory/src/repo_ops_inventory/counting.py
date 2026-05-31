@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.process import run
 from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
@@ -51,7 +52,8 @@ def count_installed_node(mdir: Path) -> int:
     if not nm.exists():
         return 0
     n = 0
-    for dirpath, _dn, filenames in os.walk(nm):
+    for dirpath, dirnames, filenames in os.walk(nm):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         if "package.json" in filenames and Path(dirpath) != nm:
             n += 1
     return n
