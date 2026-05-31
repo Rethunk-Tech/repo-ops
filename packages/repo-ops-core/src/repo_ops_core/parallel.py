@@ -44,12 +44,14 @@ def run_bounded_pool(
             return_when=concurrent.futures.FIRST_COMPLETED,
         )
         for fut in done:
-            futures.pop(fut)
+            if fut in futures:
+                futures.pop(fut)
             result = fut.result()
             results.append(result)
             if stop_on_result and stop_on_result(result):
                 for pending_fut in list(futures):
-                    pending_fut.cancel()
+                    if pending_fut not in done:
+                        pending_fut.cancel()
                 futures.clear()
                 pending.clear()
     return results
