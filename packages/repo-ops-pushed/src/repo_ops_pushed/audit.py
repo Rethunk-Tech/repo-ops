@@ -32,6 +32,7 @@ from repo_ops_core.git import repo_label, run_git
 from repo_ops_core.table import column_width, format_cell, join_row
 
 PUSH_RE = re.compile(r"^([0-9a-f]{4,40})\s+.+?@\{(\d+)\}:\s+update by push(?:\s|\(|$)")
+REFLOG_INDEX_RE = re.compile(r"@\{(\d+)\}")
 
 
 @dataclass
@@ -53,22 +54,35 @@ class RepoResult:
 
 
 def _reflog_pre_sha(repo: str, ref: str, new_sha: str) -> str | None:
-    """Return the SHA that ``ref`` pointed to immediately before ``new_sha``.
+    """Return the OID ``ref`` pointed to immediately before ``new_sha`` was recorded.
 
-    Uses ``git log -g`` which emits the *parent* (pre-state) SHA directly via
-    ``%P``, avoiding the off-by-one boundary problem of walking reflog pairs.
-    Falls back to the empty-tree SHA so the caller can still rev-list from the
-    very beginning of the branch.
+    Uses ``git rev-parse ref@{n+1}`` for the reflog entry at ``@{n}`` whose new tip
+    is ``new_sha``. Returns ``None`` when there is no prior reflog entry (first push).
     """
-    # git log -g --format="%H %P" walks the reflog and gives us both old+new
-    # %H = new (post-push) SHA, %P = parent in the reflog (pre-push SHA)
-    proc = run_git(repo, "log", "-g", "--format=%H %P", ref)
+    proc = run_git(repo, "reflog", "show", ref)
     if proc.returncode != 0:
         return None
     for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
         parts = line.split()
-        if len(parts) >= 1 and parts[0] == new_sha:
-            return parts[1] if len(parts) >= 2 else None
+        if not parts:
+            continue
+        tip = parts[0]
+        if tip != new_sha and not new_sha.startswith(tip):
+            continue
+        idx_match = REFLOG_INDEX_RE.search(line)
+        if not idx_match:
+            continue
+        n = int(idx_match.group(1))
+        pre = run_git(repo, "rev-parse", f"{ref}@{{{n + 1}}}")
+        if pre.returncode != 0 or not pre.stdout.strip():
+            return None
+        old = pre.stdout.strip()
+        if old == new_sha:
+            return None
+        return old
     return None
 
 

@@ -13,6 +13,7 @@ from repo_ops_core.git import git_common_dir, repo_label
 from repo_ops_pushed.audit import (
     PUSH_RE,
     Filters,
+    _reflog_pre_sha,
     collect_results,
     pushed_commits_for_repo,
 )
@@ -84,6 +85,74 @@ def test_discover_repos_finds_dot_git(tmp_path: Path):
     with patch("repo_ops_core.discovery.git_common_dir", fake_git_common_dir):
         found = discover_repos([str(tmp_path)])
     assert found[common] == str(repo_dir.resolve())
+
+
+def test_reflog_pre_sha_uses_rev_parse_parent(monkeypatch):
+    new_sha = "b" * 40
+    old_sha = "a" * 40
+    ref = "refs/remotes/origin/main"
+
+    def fake_run_git(repo, *args, **kwargs):
+        class Fake:
+            returncode = 0
+            stdout = ""
+
+        if args[:2] == ("reflog", "show"):
+            Fake.stdout = f"{new_sha} {ref}@{{0}}: update by push\n"
+        elif args[0] == "rev-parse":
+            Fake.stdout = f"{old_sha}\n"
+        return Fake()
+
+    monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
+    assert _reflog_pre_sha("/fake", ref, new_sha) == old_sha
+
+
+def test_reflog_pre_sha_first_push_returns_none(monkeypatch):
+    new_sha = "b" * 40
+    ref = "refs/remotes/origin/main"
+
+    def fake_run_git(repo, *args, **kwargs):
+        class Fake:
+            returncode = 0
+            stdout = ""
+
+        if args[:2] == ("reflog", "show"):
+            Fake.stdout = f"{new_sha} {ref}@{{0}}: update by push\n"
+        elif args[0] == "rev-parse":
+            Fake.returncode = 1
+        return Fake()
+
+    monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
+    assert _reflog_pre_sha("/fake", ref, new_sha) is None
+
+
+def test_pushed_commits_for_repo_first_push_uses_root(monkeypatch):
+    """Oldest push entry with no reflog parent lists all commits on the branch."""
+    now = 1_700_000_000
+    filters = Filters(since_unix=now - 3600, until_unix=now + 3600)
+    ref = "refs/remotes/origin/main"
+    new_sha = "b" * 40
+    commit_sha = "c" * 40
+
+    def fake_run_git(repo, *args, **kwargs):
+        class Fake:
+            returncode = 0
+            stdout = ""
+
+        if cmd := args:
+            if cmd[:2] == ("for-each-ref", "--format=%(refname)"):
+                Fake.stdout = f"{ref}\n"
+            elif cmd[:2] == ("reflog", "show"):
+                Fake.stdout = f"{new_sha} {ref}@{{{now}}}: update by push\n"
+            elif cmd[0] == "rev-parse":
+                Fake.returncode = 1
+            elif cmd[0] == "rev-list" and new_sha in cmd:
+                Fake.stdout = f"{commit_sha}\n"
+        return Fake()
+
+    monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
+    commits = pushed_commits_for_repo("/fake/repo", filters)
+    assert commit_sha in commits
 
 
 def test_pushed_commits_for_repo_from_push_reflog(monkeypatch):
