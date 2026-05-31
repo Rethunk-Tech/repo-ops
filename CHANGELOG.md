@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Bundled agent skill (`repo_ops/skills/repo-ops/SKILL.md`) and `repo-ops install-skill` to copy it into `~/.cursor/skills/repo-ops/` and `~/.claude/skills/repo-ops/` (`--target`, `--force`, `--dry-run`, `--home`, `--dest`).
+
 ## [0.3.0] - 2026-05-30
 
 ### Added

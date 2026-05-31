@@ -18,7 +18,7 @@ Install the `repo-ops` console script and use subcommands `inventory`, `plan`, `
 
 ## Highlights
 
-- Single `repo-ops` CLI with `inventory`, `plan`, `apply`, and `pushed` subcommands
+- Single `repo-ops` CLI with `inventory`, `plan`, `apply`, `pushed`, and `install-skill` (Cursor/Claude agent skill)
 - Upgrade plan/apply includes GitHub Actions pin drift by default (`--skip-actions` to omit)
 - uv-locked src-layout package (`uv_build`); Python >= 3.10
 - Subsystem modules for ecosystems, remediations, verify gates, and workspace discovery

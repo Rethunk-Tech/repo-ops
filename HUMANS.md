@@ -52,6 +52,27 @@ Editable tool install from your clone (picks up source changes without reinstall
 uv tool install -e .
 ```
 
+### Agent skill installation
+
+After installing the `repo-ops` tool, install the bundled agent skill so Cursor and Claude Code steer LLMs toward `repo-ops` for dependency inventory and upgrade workflows:
+
+```bash
+repo-ops install-skill
+```
+
+| Target | Install path |
+|--------|----------------|
+| Cursor (default with `--target both`) | `~/.cursor/skills/repo-ops/` |
+| Claude Code | `~/.claude/skills/repo-ops/` |
+
+Options:
+
+- `--target cursor|claude|both` — default `both`
+- `--force` — overwrite an existing skill directory
+- `--dry-run` — print planned paths without writing
+
+Do not install under `~/.cursor/skills-cursor/` (reserved for Cursor built-ins).
+
 ### Verify install
 
 After `uv tool install` (runtime or `-e` development):
