@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Literal
 
 from repo_ops_core.git import run_git
+from repo_ops_lockfiles.constants import (
+    GO_LOCKFILES,
+    NODE_LOCKFILES,
+    PY_LOCKFILES,
+    RUST_LOCKFILES,
+)
 from repo_ops_models import RepoBundle
 
 CommitMode = Literal["none", "conventional", "agent"]
@@ -66,6 +72,52 @@ def is_forbidden_commit_path(path: str) -> bool:
         return True
     lower_norm = norm.lower()
     return any(frag in lower_norm for frag in _FORBIDDEN_FRAGMENTS)
+
+
+def _lockfile_names_for_manager(manager: str) -> frozenset[str]:
+    if manager in ("yarn", "npm", "pnpm", "bun"):
+        return frozenset(NODE_LOCKFILES)
+    if manager in ("uv", "hatch", "pip-tools", "poetry"):
+        return frozenset(PY_LOCKFILES)
+    if manager == "go":
+        return frozenset(GO_LOCKFILES)
+    if manager == "rust":
+        return frozenset(RUST_LOCKFILES)
+    return frozenset()
+
+
+def upgrade_scoped_paths(bundle: RepoBundle, porcelain: list[str]) -> list[str]:
+    """Porcelain paths that belong to this upgrade (not unrelated dirty files)."""
+    wanted_names: set[str] = set()
+    prefixes: set[str] = set()
+    for wr in bundle.workspaces:
+        if not (wr.changes or wr.remediations):
+            continue
+        wanted_names.update(_lockfile_names_for_manager(wr.workspace.manager))
+        try:
+            rel = wr.workspace.path.resolve().relative_to(bundle.git_repo.resolve())
+        except ValueError:
+            rel = Path(".")
+        if rel != Path("."):
+            prefixes.add(str(rel).replace("\\", "/"))
+    for ab in bundle.actions:
+        if ab.workflow:
+            prefixes.add(ab.workflow.replace("\\", "/"))
+    scoped: list[str] = []
+    for path in porcelain:
+        norm = path.replace("\\", "/")
+        base = Path(norm).name
+        if base in wanted_names:
+            scoped.append(path)
+            continue
+        if norm.startswith(".github/workflows/"):
+            scoped.append(path)
+            continue
+        for prefix in prefixes:
+            if prefix == norm or norm.startswith(f"{prefix}/"):
+                scoped.append(path)
+                break
+    return scoped
 
 
 def porcelain_changed_paths(repo: Path) -> list[str]:
@@ -192,6 +244,16 @@ def plan_repo_commit(
     files = porcelain_changed_paths(repo)
     if not files:
         return CommitPlan(repo, bundle.label, "", skipped_reason="clean worktree")
+    if allow_dirty and _bundle_started_dirty(bundle):
+        scoped = upgrade_scoped_paths(bundle, files)
+        if not scoped:
+            return CommitPlan(
+                repo,
+                bundle.label,
+                "",
+                skipped_reason="no upgrade-scoped changes to commit (dirty worktree)",
+            )
+        files = scoped
     safe, blocked = filter_safe_paths(files)
     if blocked:
         return CommitPlan(

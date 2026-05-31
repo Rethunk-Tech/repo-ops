@@ -5,13 +5,12 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-
 from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
-from repo_ops_upgrade import post_apply_commit
 from repo_ops_upgrade import commit_agent_providers as providers
+from repo_ops_upgrade import post_apply_commit
 
 
 def _init_git_repo(path: Path) -> None:
@@ -74,6 +73,19 @@ def test_skips_verify_fail_by_default(tmp_path: Path) -> None:
         bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
     )
     assert plan.skipped_reason == "verify failed"
+
+
+def test_allow_dirty_scopes_commit_to_upgrade_paths(tmp_path: Path) -> None:
+    bundle = _bundle(tmp_path, started_dirty=True)
+    (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
+    (tmp_path / "wip.txt").write_text("unrelated", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
+    plan = post_apply_commit.plan_repo_commit(
+        bundle, mode="conventional", allow_dirty=True, commit_on_fail=False
+    )
+    assert plan.files == ["package-lock.json"]
+    assert "wip.txt" not in plan.files
 
 
 def test_skips_dirty_at_start_unless_allowed(tmp_path: Path) -> None:
