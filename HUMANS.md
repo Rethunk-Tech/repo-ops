@@ -174,7 +174,26 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
 
 5. **Verify failures are not always dependency regressions.** Apply runs ecosystem verify gates (build/test). Failures may be missing env vars (for example Next.js `build` needing secrets), flaky tests, or local toolchain gaps — not a bad bump. Inspect logs before reverting. Use `--on-verify-fail=revert` on bulk apply when you want failed workspaces rolled back automatically; default `keep` preserves changes for manual triage. JSON/human output sets `verify_fail_disposition` to `FAILED_WITH_CHANGES` or `FAILED_CLEAN`.
 
-**See also (tracking issues):** [#11](https://github.com/Rethunk-Tech/repo-ops/issues/11) remediation apply reporting (closed) · [#12](https://github.com/Rethunk-Tech/repo-ops/issues/12) bun outdated JSON (closed) · [#13](https://github.com/Rethunk-Tech/repo-ops/issues/13) submodule umbrella workflow · [#14](https://github.com/Rethunk-Tech/repo-ops/issues/14) end-of-run roll-up (closed) · [#15](https://github.com/Rethunk-Tech/repo-ops/issues/15) optional post-apply commits · [#16](https://github.com/Rethunk-Tech/repo-ops/issues/16) plan `--json-out` artifact (closed).
+6. **Optional post-apply commits.** After a green apply+verify pass, commit dependency changes in one shot per repo:
+
+   ```bash
+   repo-ops apply /path/to/root --commit=conventional --log-file apply.log
+   repo-ops apply /path/to/root --commit=agent --commit-dry-run
+   ```
+
+   | Flag | Meaning |
+   |------|---------|
+   | `--commit=none` | Default: no git commits (manual or MCP `batch_commit` in the IDE). |
+   | `--commit=conventional` | One `chore(deps): …` (or CI-themed) commit per repo via guarded local `git`. |
+   | `--commit=agent` | Draft the subject with the [Cursor SDK](https://cursor.com/docs/sdk/python) (`cursor-sdk`), then commit locally. Requires `CURSOR_API_KEY`. |
+   | `--commit-dry-run` | Print intended messages and file lists; no `git commit`. |
+   | `--commit-on-fail` | Also attempt commits when verify/apply failed (default: skip failed repos). |
+
+   **Guardrails:** skips repos that were dirty at start unless `--allow-dirty`; never stages `.env`, credential-like paths, or key material; fails closed when verify failed (unless `--commit-on-fail`). Install SDK support: `uv pip install 'repo-ops-upgrade[agent]'` or `pip install cursor-sdk` in the environment running `repo-ops`.
+
+   **IDE agents:** prefer MCP **rethunk-git** `batch_commit` with `push: "never"` when committing from Cursor/Claude; use `--commit=conventional` for headless bulk apply after `apply` logs are green.
+
+**See also (tracking issues):** [#11](https://github.com/Rethunk-Tech/repo-ops/issues/11) remediation apply reporting (closed) · [#12](https://github.com/Rethunk-Tech/repo-ops/issues/12) bun outdated JSON (closed) · [#13](https://github.com/Rethunk-Tech/repo-ops/issues/13) submodule umbrella workflow · [#14](https://github.com/Rethunk-Tech/repo-ops/issues/14) end-of-run roll-up (closed) · [#15](https://github.com/Rethunk-Tech/repo-ops/issues/15) optional post-apply commits (closed) · [#16](https://github.com/Rethunk-Tech/repo-ops/issues/16) plan `--json-out` artifact (closed).
 
 Refresh the bundled agent skill after doc pulls: `repo-ops install-skill --force` (see [Agent skill](#agent-skill)).
 
