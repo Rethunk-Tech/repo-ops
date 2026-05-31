@@ -52,6 +52,34 @@ def test_changes_from_go_list_json_patch_filter(tmp_path) -> None:
     assert changes[0].name == "example.com/a"
 
 
+def test_changes_from_go_list_json_pretty_printed(tmp_path) -> None:
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="go",
+        manager="go",
+        git_repo=tmp_path,
+        label="mod",
+    )
+    modules = [
+        {
+            "Path": "example.com/a",
+            "Version": "v1.2.3",
+            "Update": {"Path": "example.com/a", "Version": "v1.2.4"},
+        },
+        {
+            "Path": "example.com/b",
+            "Version": "v2.0.0",
+            "Update": {"Path": "example.com/b", "Version": "v2.1.0"},
+        },
+    ]
+    stdout = "\n".join(json.dumps(m, indent="\t") for m in modules)
+    proc = type("Proc", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
+    with patch("repo_ops_go.go.run", return_value=proc):
+        changes = _changes_from_go_list_json(ws, patch_only=False)
+    assert len(changes) == 2
+    assert {c.name for c in changes} == {"example.com/a", "example.com/b"}
+
+
 def test_explicit_go_get_targets(tmp_path) -> None:
     ws = Workspace(
         path=tmp_path,

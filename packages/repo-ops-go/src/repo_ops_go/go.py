@@ -31,11 +31,23 @@ def _is_patch_update(current: str, newer: str) -> bool:
 
 
 def _iter_go_list_modules(stdout: str) -> Iterator[dict]:
-    for line in stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        yield json.loads(line)
+    """Yield module dicts from ``go list -m -u -json`` stdout.
+
+    Go prints one JSON object per module. Objects may be compact (JSONL) or
+    pretty-printed across multiple lines; decode with a streaming decoder.
+    """
+    decoder = json.JSONDecoder()
+    idx = 0
+    text = stdout
+    length = len(text)
+    while idx < length:
+        while idx < length and text[idx].isspace():
+            idx += 1
+        if idx >= length:
+            break
+        obj, end = decoder.raw_decode(text, idx)
+        yield obj
+        idx = end
 
 
 def _changes_from_go_list_json(ws: Workspace, *, patch_only: bool) -> list[Change]:
