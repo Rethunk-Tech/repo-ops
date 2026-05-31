@@ -23,7 +23,7 @@ Use the **`repo-ops`** CLI for dependency and Actions maintenance. **Install, fl
 | Apply updates + verify | `repo-ops apply` |
 | Pushed-commit audit | `repo-ops pushed` |
 
-Default roots: [`DEFAULT_ROOTS`](https://github.com/Rethunk-Tech/repo-ops/blob/main/packages/repo-ops-core/src/repo_ops_core/constants.py). Pass checkout paths as trailing args to override. Common flags: `--flat`, `--filter ECO`, `--json`, `--json-out PATH` (with `--json`), `--submodules` (plan/apply JSON: `submodules: [{path, git_repo, parent}]`), `--submodule-order=children-first` (apply: child repos before parents), `--log-file`, `--strict-exit`, `--max-failures`, `--skip-actions`, `--skip-remediations`, `--no-verify`, `--on-verify-fail=revert|keep` (apply only; default `keep`), `--commit=none|conventional|agent`, `--commit-dry-run`, `--commit-on-fail` (apply only; agent needs `CURSOR_API_KEY` + `cursor-sdk`).
+Default roots: [`DEFAULT_ROOTS`](https://github.com/Rethunk-Tech/repo-ops/blob/main/packages/repo-ops-core/src/repo_ops_core/constants.py). Pass checkout paths as trailing args to override. Common flags: `--flat`, `--filter ECO`, `--json`, `--json-out PATH` (with `--json`), `--submodules` (plan/apply JSON: `submodules: [{path, git_repo, parent}]`), `--submodule-order=children-first` (apply: child repos before parents), `--log-file`, `--strict-exit`, `--max-failures`, `--skip-actions`, `--skip-remediations`, `--no-verify`, `--on-verify-fail=revert|keep` (apply only; default `keep`), `--commit=none|conventional|agent`, `--commit-dry-run`, `--commit-on-fail` (apply only; agent needs `CURSOR_API_KEY` + `repo-ops-upgrade[commit-agent-cursor]`; provider via `REPO_OPS_COMMIT_AGENT_PROVIDER`, default `cursor`).
 
 ## Workflow
 
@@ -42,7 +42,7 @@ For many repos under one parent root (e.g. `/usr/local/src/com.github`):
 | 3. Apply | `repo-ops apply /path/to/root --log-file apply.log` (footer: Summary roll-up, capped Failures, `failures:` / `exit_code:`). If piping: `set -o pipefail` then `2>&1 \| tee` |
 | 4. Submodules | `plan --submodules` / `apply --submodule-order=children-first --submodules`; push children first, parent pointer commit last ([git-push-order](https://github.com/Rethunk-Tech/repo-ops/blob/main/HUMANS.md#submodule-umbrellas-git-push-order); footer **Submodule pointers**) |
 | 5. Verify | Failed verify ≠ always bad deps — check env vars, flaky tests, local toolchain. Use `--on-verify-fail=revert` to roll back failed workspaces; JSON reports `verify_fail_disposition` (`FAILED_WITH_CHANGES` / `FAILED_CLEAN`) |
-| 6. Commit | In IDE: MCP `batch_commit` (`push: "never"`). Headless: `apply --commit=conventional` or `--commit=agent` (+ `CURSOR_API_KEY`); preview with `--commit-dry-run` |
+| 6. Commit | In IDE: MCP `batch_commit` (`push: "never"`). Headless: `apply --commit=conventional` or `--commit=agent` (+ optional `[commit-agent-cursor]`, `CURSOR_API_KEY`); preview with `--commit-dry-run` |
 
 Full prose and related-issue links: HUMANS — [Bulk maintenance](https://github.com/Rethunk-Tech/repo-ops/blob/main/HUMANS.md#bulk-maintenance).
 

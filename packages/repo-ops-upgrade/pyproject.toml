@@ -18,6 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+commit-agent-cursor = ["cursor-sdk>=0.1.0"]
 agent = ["cursor-sdk>=0.1.0"]
 
 [tool.uv.sources]

@@ -185,11 +185,11 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
    |------|---------|
    | `--commit=none` | Default: no git commits (manual or MCP `batch_commit` in the IDE). |
    | `--commit=conventional` | One `chore(deps): …` (or CI-themed) commit per repo via guarded local `git`. |
-   | `--commit=agent` | Draft the subject with the [Cursor SDK](https://cursor.com/docs/sdk/python) (`cursor-sdk`), then commit locally. Requires `CURSOR_API_KEY`. |
+   | `--commit=agent` | Draft the subject via a pluggable **commit-agent** provider (default: [Cursor SDK](https://cursor.com/docs/sdk/python)), then commit locally. Requires `CURSOR_API_KEY` and the optional cursor extra. |
    | `--commit-dry-run` | Print intended messages and file lists; no `git commit`. |
    | `--commit-on-fail` | Also attempt commits when verify/apply failed (default: skip failed repos). |
 
-   **Guardrails:** skips repos that were dirty at start unless `--allow-dirty`; never stages `.env`, credential-like paths, or key material; fails closed when verify failed (unless `--commit-on-fail`). Install SDK support: `uv pip install 'repo-ops-upgrade[agent]'` or `pip install cursor-sdk` in the environment running `repo-ops`.
+   **Commit-agent providers:** default `cursor` when `REPO_OPS_COMMIT_AGENT_PROVIDER` is unset. Additional providers can register via `repo_ops_upgrade.commit_agent_providers.register_commit_agent_provider`. **Guardrails:** skips repos that were dirty at start unless `--allow-dirty`; never stages `.env`, credential-like paths, or key material; fails closed when verify failed (unless `--commit-on-fail`). Install Cursor support: `uv pip install 'repo-ops-upgrade[commit-agent-cursor]'` (alias: `[agent]`).
 
    **IDE agents:** prefer MCP **rethunk-git** `batch_commit` with `push: "never"` when committing from Cursor/Claude; use `--commit=conventional` for headless bulk apply after `apply` logs are green.
 

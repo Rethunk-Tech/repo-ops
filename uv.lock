@@ -861,17 +861,21 @@ dependencies = [
 agent = [
     { name = "cursor-sdk" },
 ]
+commit-agent-cursor = [
+    { name = "cursor-sdk" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "cursor-sdk", marker = "extra == 'agent'", specifier = ">=0.1.0" },
+    { name = "cursor-sdk", marker = "extra == 'commit-agent-cursor'", specifier = ">=0.1.0" },
     { name = "repo-ops-core", editable = "packages/repo-ops-core" },
     { name = "repo-ops-js", editable = "packages/repo-ops-js" },
     { name = "repo-ops-lockfiles", editable = "packages/repo-ops-lockfiles" },
     { name = "repo-ops-models", editable = "packages/repo-ops-models" },
     { name = "repo-ops-upgrade-remediations-js", editable = "packages/repo-ops-upgrade-remediations-js" },
 ]
-provides-extras = ["agent"]
+provides-extras = ["commit-agent-cursor", "agent"]
 
 [[package]]
 name = "repo-ops-upgrade-remediations-js"

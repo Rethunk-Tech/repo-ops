@@ -216,8 +216,9 @@ def add_upgrade_common_arguments(
             metavar="MODE",
             help=(
                 "After apply: commit each repo where apply and verify succeeded. "
-                "conventional=local git; agent=Cursor SDK drafts the subject (needs "
-                "CURSOR_API_KEY and cursor-sdk)."
+                "conventional=local git; agent=commit-agent provider drafts the "
+                "subject (default cursor; needs CURSOR_API_KEY and optional "
+                "repo-ops-upgrade[commit-agent-cursor])."
             ),
         )
         parser.add_argument(
