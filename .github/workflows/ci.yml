@@ -53,5 +53,5 @@ jobs:
             packages/repo-ops-pushed/src \
             packages/repo-ops/src
       - run: uv run pytest -q --cov --cov-report=term-missing --cov-fail-under=15
-      - run: uv build -p repo-ops
+      - run: uv build packages/repo-ops
       - run: ls -l dist/

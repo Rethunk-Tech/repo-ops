@@ -5,7 +5,7 @@ Uses remote-tracking reflog entries marked ``update by push`` (recorded on this
 machine when ``git push`` updates refs/remotes/*). Repos are discovered under
 configurable roots and deduplicated by ``git rev-parse --git-common-dir``.
 
-Console entry point: ``repos-pushed`` (see ``--help`` for flags).
+Console entry point: ``repo-ops pushed`` (see ``--help`` for flags).
 """
 
 from __future__ import annotations
