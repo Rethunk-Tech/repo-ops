@@ -15,6 +15,7 @@ dependencies = [
   "repo-ops-lockfiles",
   "repo-ops-js",
   "repo-ops-upgrade-remediations-js",
+  "ruamel.yaml>=0.18",
 ]
 
 [project.optional-dependencies]

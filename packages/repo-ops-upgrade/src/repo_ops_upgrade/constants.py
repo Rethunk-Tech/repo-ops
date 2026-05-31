@@ -21,11 +21,6 @@ YARN_ISOLATED_YARN_SKIP = {
 
 GO_UPGRADE_RE = re.compile(r"\[([^\]]+)\]")
 
-USES_RE = re.compile(
-    r"^\s*uses:\s+([^\s@]+)@(v[\d.]+|[0-9a-f]{7,40})\s*$",
-    re.MULTILINE,
-)
-
 ACTION_ALLOWLIST: dict[str, str] = {
     "actions/checkout": "v4",
     "actions/setup-node": "v4",
