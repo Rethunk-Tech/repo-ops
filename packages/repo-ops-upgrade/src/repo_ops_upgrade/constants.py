@@ -10,9 +10,10 @@ TIMEOUT_CHECK = 600
 TIMEOUT_APPLY = 600
 TIMEOUT_VERIFY = 900
 
-# Yarn isolated snapshots: same walk exclusions plus upgrade temp venv.
-YARN_ISOLATED_COPY_SKIP = SKIP_DIRS | {".dep_refresh_venv"}
+# Yarn isolated snapshots: walk exclusions plus upgrade temp venv (keep `.yarn`).
+YARN_ISOLATED_COPY_SKIP = (SKIP_DIRS - {".yarn"}) | {".dep_refresh_venv"}
 YARN_ISOLATED_YARN_SKIP = {
+    "cache",
     "unplugged",
     "install-state.gz",
     "build-state.yml",
