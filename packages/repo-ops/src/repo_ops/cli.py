@@ -11,12 +11,14 @@ from repo_ops_pushed.audit import main as pushed_main
 from repo_ops_upgrade.run import main_apply, main_plan
 
 from repo_ops._register import register_all
+from repo_ops.install_skill import main as install_skill_main
 
 _HANDLERS: dict[str, Callable[[list[str] | None], int | None]] = {
     "inventory": inventory_main,
     "plan": main_plan,
     "apply": main_apply,
     "pushed": pushed_main,
+    "install-skill": install_skill_main,
 }
 
 
@@ -33,6 +35,7 @@ def main(argv: list[str] | None = None) -> int:
             "plan": "Upgrade plan: deps + Actions + remediations",
             "apply": "Apply upgrades",
             "pushed": "Pushed commits audit",
+            "install-skill": "Install Cursor/Claude agent skill for repo-ops",
         }[name]
         sub.add_parser(name, help=help_text)
 

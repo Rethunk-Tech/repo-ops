@@ -133,6 +133,7 @@ packages = [
   "repo_ops_upgrade_remediations_js",
   "repo_ops_inventory",
   "repo_ops_pushed",
+  "repo_ops",
 ]
 
 [tool.coverage.run]

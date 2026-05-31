@@ -1,0 +1,153 @@
+"""Install bundled repo-ops agent skill into Cursor and Claude Code homes."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import sys
+from pathlib import Path
+
+import repo_ops
+
+_SKILL_DIR_NAME = "repo-ops"
+_TARGETS = ("cursor", "claude", "both")
+
+
+def bundled_skill_dir() -> Path:
+    root = Path(repo_ops.__file__).resolve().parent
+    skill = root / "skills" / _SKILL_DIR_NAME
+    if not skill.is_dir():
+        msg = f"bundled skill not found at {skill}"
+        raise FileNotFoundError(msg)
+    return skill
+
+
+def resolve_home(home: Path | None) -> Path:
+    if home is not None:
+        return home.expanduser().resolve()
+    env = os.environ.get("REPO_OPS_HOME")
+    if env:
+        return Path(env).expanduser().resolve()
+    return Path.home()
+
+
+def destination_for(target: str, home: Path) -> Path:
+    if target == "cursor":
+        return home / ".cursor" / "skills" / _SKILL_DIR_NAME
+    if target == "claude":
+        return home / ".claude" / "skills" / _SKILL_DIR_NAME
+    msg = f"unknown target: {target}"
+    raise ValueError(msg)
+
+
+def destinations_for(target: str, home: Path) -> list[tuple[str, Path]]:
+    if target == "both":
+        return [
+            ("cursor", destination_for("cursor", home)),
+            ("claude", destination_for("claude", home)),
+        ]
+    return [(target, destination_for(target, home))]
+
+
+def install_one(
+    src: Path,
+    dest: Path,
+    *,
+    force: bool,
+    dry_run: bool,
+) -> int:
+    if dest.exists():
+        if not force:
+            print(f"skip {dest} (exists; use --force to overwrite)", file=sys.stderr)
+            return 1
+        if dry_run:
+            print(f"would remove {dest}")
+        else:
+            shutil.rmtree(dest)
+
+    if dry_run:
+        print(f"would install {src} -> {dest}")
+        return 0
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dest)
+    print(f"installed {dest}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="repo-ops install-skill",
+        description=(
+            "Install the bundled repo-ops agent skill for Cursor and/or Claude Code."
+        ),
+    )
+    parser.add_argument(
+        "--target",
+        choices=_TARGETS,
+        default="both",
+        help="where to install (default: both)",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite existing skill directories",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print planned installs without writing files",
+    )
+    parser.add_argument(
+        "--home",
+        type=Path,
+        metavar="DIR",
+        help="override home directory (also REPO_OPS_HOME env)",
+    )
+    parser.add_argument(
+        "--dest",
+        type=Path,
+        metavar="DIR",
+        help="install directly to this skill directory (testing; ignores --target layout)",
+    )
+    return parser
+
+
+def run_install(
+    *,
+    target: str,
+    force: bool,
+    dry_run: bool,
+    home: Path | None,
+    dest: Path | None,
+) -> int:
+    src = bundled_skill_dir()
+    if dest is not None:
+        dest_resolved = dest.expanduser().resolve()
+        code = install_one(src, dest_resolved, force=force, dry_run=dry_run)
+        return code
+
+    home_resolved = resolve_home(home)
+    codes: list[int] = []
+    for label, path in destinations_for(target, home_resolved):
+        code = install_one(src, path, force=force, dry_run=dry_run)
+        if code != 0 and not dry_run:
+            print(f"failed target {label}", file=sys.stderr)
+        codes.append(code)
+    return 1 if any(codes) else 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    return run_install(
+        target=args.target,
+        force=args.force,
+        dry_run=args.dry_run,
+        home=args.home,
+        dest=args.dest,
+    )
+
+
+if __name__ == "__main__":
+    sys.exit(main())
