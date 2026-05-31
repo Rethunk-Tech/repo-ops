@@ -106,9 +106,9 @@ Legacy flags (`-y`, `--also-actions`, `--only-actions`) are removed; use `repos-
 
 Run `--help` on each command for full options.
 
-### Package layout (0.2.1+)
+### Package layout
 
-`[project.scripts]` maps each command to a domain `main()` (for example `repo_ops.upgrade.run:main_plan`). The optional `repo-ops` dispatcher lives under `repo_ops.commands.dispatch`. Packaging uses the `uv_build` backend; the project is uv-locked (`uv.lock`).
+`[project.scripts]` maps each command to a domain `main()` (for example `repo_ops.upgrade.run:main_plan`). The optional `repo-ops` dispatcher lives under `repo_ops.commands.dispatch`. Packaging uses the `uv_build` backend; the project is uv-locked (`uv.lock`). Programmatic import paths below are current for **0.2.5** (introduced in 0.2.1).
 
 For programmatic use, prefer these import paths (there is no `repo_ops.upgrade.engine`):
 
