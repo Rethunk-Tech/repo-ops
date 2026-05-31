@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
@@ -44,7 +45,15 @@ def check_pnpm(ws: Workspace) -> list[Change]:
 
 
 def apply_pnpm(ws: Workspace) -> None:
-    proc = run(["pnpm", "update", "--latest", "-r"], ws.path, timeout=TIMEOUT_APPLY)
+    # Match npm conservative bumps (semver ranges) unless the user opts into latest.
+    cmd = ["pnpm", "update", "-r"]
+    if os.environ.get("REPO_OPS_PNPM_UPDATE_LATEST", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        cmd.append("--latest")
+    proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pnpm update failed")
     proc2 = run(["pnpm", "install"], ws.path, timeout=TIMEOUT_APPLY)
