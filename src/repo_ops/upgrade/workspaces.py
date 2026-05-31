@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
-from repo_ops.core.constants import SKIP_DIRS
-from repo_ops.core.filesystem import read_json_file, read_toml_file, should_exclude
+from repo_ops.core.filesystem import read_json_file, read_toml_file
 from repo_ops.core.git import git_repo_for, repo_label
 from repo_ops.core.process import run
+from repo_ops.core.walk import iter_scanned_dirs
 from repo_ops.upgrade.models import RepoBundle, Workspace, WorkspaceResult
 
 
@@ -183,6 +182,7 @@ def discover_workspaces_in_root(root: Path, flat: bool) -> list[Workspace]:
         if not (
             pyp.exists()
             or (mdir / "requirements.in").exists()
+            or (mdir / "requirements.txt").exists()
             or (mdir / "Pipfile").exists()
         ):
             return
@@ -215,15 +215,7 @@ def discover_workspaces_in_root(root: Path, flat: bool) -> list[Workspace]:
             )
 
     seen_paths: set[Path] = set()
-    if not root.is_dir() or should_exclude(str(root)):
-        return found
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        mdir = Path(dirpath)
-        if should_exclude(str(mdir)):
-            dirnames.clear()
-            continue
-        names = set(filenames)
+    for mdir, names in iter_scanned_dirs(root):
         key = mdir.resolve()
         if key in seen_paths:
             continue

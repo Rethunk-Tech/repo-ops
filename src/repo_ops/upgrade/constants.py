@@ -4,26 +4,14 @@ from __future__ import annotations
 
 import re
 
+from repo_ops.core.constants import SKIP_DIRS
+
 TIMEOUT_CHECK = 600
 TIMEOUT_APPLY = 600
 TIMEOUT_VERIFY = 900
 
-YARN_ISOLATED_COPY_SKIP = {
-    ".git",
-    "node_modules",
-    ".next",
-    "dist",
-    "build",
-    "out",
-    ".turbo",
-    ".cache",
-    "coverage",
-    ".nuxt",
-    ".svelte-kit",
-    ".dep_refresh_venv",
-    "venv",
-    ".venv",
-}
+# Yarn isolated snapshots: same walk exclusions plus upgrade temp venv.
+YARN_ISOLATED_COPY_SKIP = SKIP_DIRS | {".dep_refresh_venv"}
 YARN_ISOLATED_YARN_SKIP = {
     "unplugged",
     "install-state.gz",

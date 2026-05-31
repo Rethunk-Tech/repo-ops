@@ -13,9 +13,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from repo_ops.core.constants import SKIP_DIRS
 from repo_ops.core.filesystem import read_json_file, read_toml_file
 from repo_ops.core.process import run
+from repo_ops.core.walk import iter_scanned_dirs, manifest_kinds
 
 # ---------- Node ----------
 
@@ -492,20 +492,10 @@ def _count_python_manifest_edges(mdir: Path, names: set[str]) -> int:
 
 
 def find_manifests(root: Path):
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        names = set(filenames)
-        kinds = []
-        if "package.json" in names:
-            kinds.append("node")
-        if "go.mod" in names:
-            kinds.append("go")
-        if "Cargo.toml" in names:
-            kinds.append("rust")
-        if names & {"pyproject.toml", "requirements.txt", "Pipfile"}:
-            kinds.append("py")
+    for mdir, names in iter_scanned_dirs(root):
+        kinds = manifest_kinds(names)
         if kinds:
-            yield Path(dirpath), kinds
+            yield mdir, kinds
 
 
 def _make_row(
