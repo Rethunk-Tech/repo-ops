@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from repo_ops_core.discovery import discover_repos
 from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.git import git_repo_for, repo_label
 from repo_ops_core.walk import iter_scanned_dirs
@@ -16,6 +17,7 @@ from repo_ops_js.workspaces import (
 )
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 
+from repo_ops_upgrade.actions import discover_workflow_files
 
 # ---------- Workspace discovery ----------
 
@@ -156,7 +158,25 @@ def discover_workspaces_in_root(
             )
 
     seen_paths: set[Path] = set()
-    for mdir, names in iter_scanned_dirs(root):
+    if flat:
+        dir_iter: list[tuple[Path, set[str]]] = list(iter_scanned_dirs(root))
+    else:
+        dir_iter = []
+        if root.is_dir():
+            for org in sorted(root.iterdir()):
+                if not org.is_dir() or org.name.startswith("."):
+                    continue
+                for proj in sorted(org.iterdir()):
+                    if not proj.is_dir() or proj.name.startswith("."):
+                        continue
+                    proj_names = {
+                        p.name for p in proj.iterdir() if (proj / p.name).exists()
+                    }
+                    dir_iter.append((proj, proj_names))
+        if not dir_iter:
+            dir_iter = list(iter_scanned_dirs(root))
+
+    for mdir, names in dir_iter:
         key = mdir.resolve()
         if key in seen_paths:
             continue
@@ -214,4 +234,22 @@ def group_by_repo(
                 label=repo_label(ws.git_repo, roots),
             )
         bundles[ws.git_repo].workspaces.append(WorkspaceResult(workspace=ws))
+    return bundles
+
+
+def merge_action_only_bundles(
+    bundles: dict[Path, RepoBundle],
+    roots: list[str],
+) -> dict[Path, RepoBundle]:
+    """Add git repos that have workflows but no dependency workspaces."""
+    for repo_s in discover_repos(roots).values():
+        git_repo = Path(repo_s).resolve()
+        if git_repo in bundles:
+            continue
+        if not discover_workflow_files(git_repo):
+            continue
+        bundles[git_repo] = RepoBundle(
+            git_repo=git_repo,
+            label=repo_label(git_repo, roots),
+        )
     return bundles

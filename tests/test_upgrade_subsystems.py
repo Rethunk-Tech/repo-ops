@@ -65,6 +65,24 @@ def test_print_human_report_header(capsys) -> None:
     assert "repo-ops plan" in out
 
 
+def test_merge_action_only_bundles(tmp_path: Path) -> None:
+    import subprocess
+
+    from repo_ops_upgrade.discovery import merge_action_only_bundles
+
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "ci.yml").write_text(
+        "jobs:\n  x:\n    steps:\n      - uses: actions/checkout@v4\n",
+        encoding="utf-8",
+    )
+
+    bundles = merge_action_only_bundles({}, [str(tmp_path)])
+    assert tmp_path.resolve() in bundles
+    assert bundles[tmp_path.resolve()].workspaces == []
+
+
 def test_scan_actions_empty_repo(tmp_path: Path) -> None:
     from repo_ops_upgrade.actions import scan_actions
 
@@ -91,7 +109,6 @@ def test_actions_summary_in_json_and_human_report(tmp_path: Path) -> None:
     assert payload["repos"][0]["actions_summary"]["workflows_scanned"] == 1
 
     import io
-    import sys
 
     buf = io.StringIO()
     with patch("sys.stdout", buf):

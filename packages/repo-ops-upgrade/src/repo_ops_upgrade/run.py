@@ -14,7 +14,13 @@ from repo_ops_core.parallel import run_bounded_pool
 from repo_ops_core.tee import tee_stdout_stderr
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 
-from repo_ops_upgrade import actions, orchestration, post_apply_commit, report, submodules
+from repo_ops_upgrade import (
+    actions,
+    orchestration,
+    post_apply_commit,
+    report,
+    submodules,
+)
 from repo_ops_upgrade import discovery as workspace_discovery
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 
@@ -75,6 +81,8 @@ def _run_upgrade_body(
     found = orchestration.filter_workspaces(found, args.eco_filter)
 
     bundles = workspace_discovery.group_by_repo(found, roots)
+    if not args.skip_actions:
+        bundles = workspace_discovery.merge_action_only_bundles(bundles, roots)
 
     include_submodules = getattr(args, "submodules", False)
     submodule_order = getattr(args, "submodule_order", "discovery")
@@ -177,9 +185,17 @@ def _run_upgrade_body(
 
     for bundle in bundles.values():
         path_to_result = {r.workspace.path: r for r in all_results}
-        bundle.workspaces = [
-            path_to_result.get(wr.workspace.path, wr) for wr in bundle.workspaces
-        ]
+        updated: list[WorkspaceResult] = []
+        for wr in bundle.workspaces:
+            if wr.workspace.path in path_to_result:
+                updated.append(path_to_result[wr.workspace.path])
+            elif _FAIL_FAST.is_set():
+                wr.status = "skip"
+                wr.error = "fail-fast"
+                updated.append(wr)
+            else:
+                updated.append(wr)
+        bundle.workspaces = updated
 
     if not args.skip_actions:
         for bundle in bundles.values():
