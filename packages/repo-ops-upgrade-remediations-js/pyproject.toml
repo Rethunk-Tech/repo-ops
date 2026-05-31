@@ -23,5 +23,3 @@ repo-ops-models = { workspace = true }
 repo-ops-lockfiles = { workspace = true }
 repo-ops-js = { workspace = true }
 repo-ops-upgrade = { workspace = true }
-repo-ops-py = { workspace = true }
-repo-ops-py-uv = { workspace = true }
