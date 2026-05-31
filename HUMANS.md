@@ -179,7 +179,7 @@ After install or changes (full dev verification):
 
 ```bash
 uv sync --locked --group dev
-uv run python scripts/doc_audit_gate.py --root .
+# Doc governance: run the global doc-audit skill (~/.cursor/skills/doc-audit) on the repo root when Markdown tiers change.
 uv run python scripts/check_import_boundaries.py
 uv run ruff check .
 uv run ruff format --check .
@@ -195,7 +195,7 @@ CI runs `uv sync --locked`, doc-audit, import-boundary checks, ruff, mypy, pytes
 Doc governance uses the Rethunk tier split (README / HUMANS / AGENTS / CONTRIBUTING). Locally:
 
 ```bash
-uv run python scripts/doc_audit_gate.py --root .
+# Doc governance: run the global doc-audit skill (~/.cursor/skills/doc-audit) on the repo root when Markdown tiers change.
 ```
 
 ## Typical Roots
