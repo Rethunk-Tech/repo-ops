@@ -106,7 +106,11 @@ Subcommands (entry point in `packages/repo-ops`):
 
 Default scan roots: [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. `--flat` skips the org/proj two-level walk on `inventory` and upgrade `plan`/`apply` (not `pushed`).
 
-`--json` on every subcommand. For `plan`/`apply`, stdout is one JSON object unless `--json-out PATH` is set (then stdout prints only that path and the report is written to `PATH` atomically). JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to `node`, `go`, `rust`, or `py`.
+`--json` on every subcommand. For `plan`/`apply`, stdout is one JSON object unless `--json-out PATH` is set (then stdout prints only that path and the report is written to `PATH` atomically). JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to `node`, `go`, `rust`, or `py`. `--submodules` adds `submodules[]` to plan/apply JSON; `apply --submodule-order=children-first` processes child git repos before parent umbrellas when `.gitmodules` is present.
+
+### Submodule umbrellas (git-push-order)
+
+Umbrella repos (e.g. Bastion with many Go/Node submodules) need **children-first** apply/push: upgrade and push each submodule checkout, then commit the parent’s submodule pointer, then push the parent. `repo-ops` discovers submodule repos via `find .git` like any checkout; `--submodules` reads `.gitmodules` for explicit parent/child links. Aligns with the **git-push-order** skill (dependency-first push, no force unless asked). See [Bulk maintenance](#bulk-maintenance) step 4 for the full playbook.
 
 ### Plan vs apply
 
@@ -151,7 +155,22 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
 
    `--strict-exit` exits `1` when any workspace is `skip` or `fail` (default: `fail` only). Skipped dirty trees do not fail the run unless `--strict-exit` is set.
 
-4. **Submodule umbrellas.** When a parent repo contains submodules (Bastion-style layouts), apply and push **child** checkouts first, then update the **parent** submodule pointer and commit that last. Same dependency-first idea as the git-push-order agent skill: children before parent pointer.
+4. **Submodule umbrellas.** When a parent repo contains submodules (Bastion-style layouts), apply and push **child** checkouts first, then update the **parent** submodule pointer and commit that last. Same dependency-first idea as the [git-push-order](https://github.com/Rethunk-Tech/repo-ops/blob/main/HUMANS.md#submodule-umbrellas-git-push-order) agent skill (`~/.claude/skills/git-push-order/SKILL.md`): children before parent pointer.
+
+   ```bash
+   repo-ops plan --submodules --json --json-out plan.json /path/to/Bastion
+   repo-ops apply --submodule-order=children-first --submodules /path/to/Bastion --log-file apply.log
+   ```
+
+   Plan/apply JSON with `--submodules` adds top-level `submodules: [{path, git_repo, parent}]`. After apply, human output and JSON may include `submodule_pointer_hints` when a parent still has dirty submodule gitlinks (commit the parent after children are pushed).
+
+   **Bastion-style example** (umbrella with nested Go/Node submodules under one parent root):
+
+   1. `repo-ops plan --submodules --json-out bastion-plan.json /usr/local/src/com.github/Rethunk-Tech/Bastion` — review `submodules[]` and drift per repo.
+   2. `repo-ops apply --submodule-order=children-first --submodules /usr/local/src/com.github/Rethunk-Tech/Bastion --log-file bastion-apply.log` — children apply first; read **Submodule pointers** in the footer for parents needing a pointer commit.
+   3. Commit and push each **child** repo (MCP `git-push-order` or `batch_commit` with `push: "after"` on children first).
+   4. In the **parent**, stage updated submodule paths and commit (`git add path/to/submodule && git commit -m "chore: bump submodule pointers"`).
+   5. Push the parent last.
 
 5. **Verify failures are not always dependency regressions.** Apply runs ecosystem verify gates (build/test). Failures may be missing env vars (for example Next.js `build` needing secrets), flaky tests, or local toolchain gaps — not a bad bump. Inspect logs before reverting. Use `--on-verify-fail=revert` on bulk apply when you want failed workspaces rolled back automatically; default `keep` preserves changes for manual triage. JSON/human output sets `verify_fail_disposition` to `FAILED_WITH_CHANGES` or `FAILED_CLEAN`.
 
