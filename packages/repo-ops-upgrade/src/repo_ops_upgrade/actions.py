@@ -10,7 +10,6 @@ from pathlib import Path
 from repo_ops_core.process import run
 from repo_ops_models import ActionBump
 
-from repo_ops_upgrade.constants import ACTION_ALLOWLIST
 from repo_ops_upgrade.workflow_uses import (
     PinReplacement,
     WorkflowParseError,
@@ -29,8 +28,11 @@ def discover_workflow_files(repo: Path) -> list[Path]:
 
 
 def action_latest_tag(action: str) -> str | None:
-    if action in ACTION_ALLOWLIST:
-        return ACTION_ALLOWLIST[action]
+    """Return the latest release tag for a GitHub Action via ``gh api``.
+
+    Uses ``releases/latest``, then the newest tag. Requires ``gh`` on PATH;
+    returns ``None`` when unavailable or the API call fails.
+    """
     if not shutil.which("gh"):
         return None
     proc = run(

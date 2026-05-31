@@ -21,16 +21,6 @@ YARN_ISOLATED_YARN_SKIP = {
 
 GO_UPGRADE_RE = re.compile(r"\[([^\]]+)\]")
 
-ACTION_ALLOWLIST: dict[str, str] = {
-    "actions/checkout": "v4",
-    "actions/setup-node": "v4",
-    "actions/setup-go": "v5",
-    "actions/upload-artifact": "v4",
-    "actions/download-artifact": "v4",
-    "actions/cache": "v4",
-    "oven-sh/setup-bun": "v2",
-}
-
 CODEGEN_TRIGGERS = (
     "@grpc/",
     "grpc-tools",
