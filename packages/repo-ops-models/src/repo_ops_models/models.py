@@ -1,0 +1,88 @@
+"""Data classes for upgrade workspaces, results, and GitHub Actions bumps."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+
+@dataclass
+class Change:
+    name: str
+    from_ver: str
+    to: str
+
+
+@dataclass
+class Workspace:
+    path: Path
+    ecosystem: str
+    manager: str
+    git_repo: Path
+    label: str
+
+
+@dataclass
+class WorkspaceResult:
+    workspace: Workspace
+    status: str = "ok"
+    changes: list[Change] = field(default_factory=list)
+    overrides_audit: list[dict[str, str]] = field(default_factory=list)
+    remediations: list[dict[str, Any]] = field(default_factory=list)
+    error: str | None = None
+    verify_error: str | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "path": str(self.workspace.path),
+            "ecosystem": self.workspace.ecosystem,
+            "manager": self.workspace.manager,
+            "status": self.status,
+            "changes": [
+                {"name": c.name, "from": c.from_ver, "to": c.to} for c in self.changes
+            ],
+            "overrides_audit": self.overrides_audit,
+            "remediations": self.remediations,
+            "error": self.error,
+            "verify_error": self.verify_error,
+        }
+
+
+@dataclass
+class ActionBump:
+    workflow: str
+    action: str
+    pin: str
+    latest: str
+    status: str = "ok"
+    detail: str | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "workflow": self.workflow,
+            "action": self.action,
+            "pin": self.pin,
+            "latest": self.latest,
+            "status": self.status,
+            "detail": self.detail,
+        }
+
+
+@dataclass
+class RepoBundle:
+    git_repo: Path
+    label: str
+    workspaces: list[WorkspaceResult] = field(default_factory=list)
+    actions: list[ActionBump] = field(default_factory=list)
+
+    def any_fail(self) -> bool:
+        return any(w.status == "fail" for w in self.workspaces)
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "git_repo": str(self.git_repo),
+            "label": self.label,
+            "workspaces": [w.to_json() for w in self.workspaces],
+            "actions": [a.to_json() for a in self.actions],
+        }
