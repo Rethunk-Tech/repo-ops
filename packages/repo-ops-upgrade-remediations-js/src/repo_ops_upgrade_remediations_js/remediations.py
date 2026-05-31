@@ -17,6 +17,7 @@ from repo_ops_js.workspaces import (
     parse_package_manager,
     pm_exec_prefix,
     pm_run_prefix,
+    pm_version_argv,
     yarn_workspace_members,
 )
 from repo_ops_lockfiles.snapshots import (
@@ -230,7 +231,10 @@ def apply_codegen(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
 
 
 def _pm_runtime_version(name: str, ws: Workspace) -> str | None:
-    proc = run([name, "--version"], ws.path, timeout=30)
+    argv = pm_version_argv(name)
+    if not argv:
+        return None
+    proc = run(argv, ws.path, timeout=30)
     if proc.returncode != 0:
         return None
     return proc.stdout.strip().lstrip("v")

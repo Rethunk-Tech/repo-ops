@@ -7,6 +7,7 @@ from repo_ops_js.workspaces import (
     lockfile_manager,
     parse_package_manager,
     pm_exec_prefix,
+    pm_version_argv,
     pm_run_prefix,
     yarn_workspace_members,
 )
@@ -19,5 +20,6 @@ __all__ = [
     "parse_package_manager",
     "pm_exec_prefix",
     "pm_run_prefix",
+    "pm_version_argv",
     "yarn_workspace_members",
 ]

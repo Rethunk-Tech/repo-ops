@@ -7,6 +7,8 @@ from pathlib import Path
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 
+KNOWN_PACKAGE_MANAGERS = frozenset({"npm", "pnpm", "yarn", "bun"})
+
 
 def pm_exec_prefix(manager: str) -> list[str]:
     return {
@@ -31,7 +33,21 @@ def parse_package_manager(pkg: dict) -> tuple[str, str] | None:
     if not pm or "@" not in pm:
         return None
     name, ver = pm.split("@", 1)
-    return name.lower(), ver
+    name = name.strip().lower()
+    ver = ver.strip()
+    if not name or not ver:
+        return None
+    if name not in KNOWN_PACKAGE_MANAGERS:
+        return None
+    if "/" in name or "\\" in name or name.startswith("."):
+        return None
+    return name, ver
+
+
+def pm_version_argv(manager: str) -> list[str] | None:
+    if manager not in KNOWN_PACKAGE_MANAGERS:
+        return None
+    return [manager, "--version"]
 
 
 def lockfile_manager(mdir: Path) -> str | None:
