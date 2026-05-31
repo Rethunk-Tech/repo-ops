@@ -59,13 +59,14 @@ def action_latest_tag(action: str) -> str | None:
     return None
 
 
-def scan_actions(repo: Path, apply: bool) -> list[ActionBump]:
+def scan_actions(repo: Path, apply: bool) -> tuple[list[ActionBump], int]:
     if not shutil.which("actionlint"):
         print(
             "WARN: actionlint not on PATH; skipping action validation", file=sys.stderr
         )
+    workflows = discover_workflow_files(repo)
     bumps: list[ActionBump] = []
-    for wf in discover_workflow_files(repo):
+    for wf in workflows:
         text = wf.read_text(encoding="utf-8", errors="replace")
         if shutil.which("actionlint"):
             proc = run(["actionlint", str(wf)], repo, timeout=60)
@@ -113,4 +114,4 @@ def scan_actions(repo: Path, apply: bool) -> list[ActionBump]:
                     file_changed = True
         if apply and file_changed:
             wf.write_text(text, encoding="utf-8")
-    return bumps
+    return bumps, len(workflows)

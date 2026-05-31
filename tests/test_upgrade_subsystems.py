@@ -35,6 +35,7 @@ def test_build_json_payload_shape(tmp_path: Path) -> None:
     assert payload["skipped"] == []
     assert len(payload["repos"]) == 1
     assert payload["repos"][0]["label"] == "demo"
+    assert payload["repos"][0]["actions_summary"]["workflows_scanned"] == 0
 
 
 def test_print_human_report_header(capsys) -> None:
@@ -52,7 +53,42 @@ def test_print_human_report_header(capsys) -> None:
 def test_scan_actions_empty_repo(tmp_path: Path) -> None:
     from repo_ops_upgrade.actions import scan_actions
 
-    assert scan_actions(tmp_path, apply=False) == []
+    bumps, scanned = scan_actions(tmp_path, apply=False)
+    assert bumps == []
+    assert scanned == 0
+
+
+def test_actions_summary_in_json_and_human_report(tmp_path: Path) -> None:
+    from repo_ops_upgrade.report import build_json_payload, print_human_report
+
+    wf_dir = tmp_path / ".github" / "workflows"
+    wf_dir.mkdir(parents=True)
+    (wf_dir / "ci.yml").write_text(
+        "jobs:\n  x:\n    steps:\n      - uses: actions/checkout@v3\n",
+        encoding="utf-8",
+    )
+    bundle = RepoBundle(
+        git_repo=tmp_path,
+        label="demo",
+        actions_workflows_scanned=1,
+    )
+    payload = build_json_payload({tmp_path: bundle}, roots=["/tmp"], mode="plan")
+    assert payload["repos"][0]["actions_summary"]["workflows_scanned"] == 1
+
+    import io
+    import sys
+
+    buf = io.StringIO()
+    with patch("sys.stdout", buf):
+        print_human_report(
+            {tmp_path: bundle},
+            dry_run=True,
+            only_outdated=False,
+            top_n=10,
+            include_actions=True,
+        )
+    out = buf.getvalue()
+    assert "1 workflow(s) scanned" in out
 
 
 def test_run_remediations_no_detected(tmp_path: Path) -> None:

@@ -129,7 +129,9 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
         for bundle in bundles.values():
             if apply and bundle.any_fail():
                 continue
-            bundle.actions = actions.scan_actions(bundle.git_repo, apply=apply)
+            bundle.actions, bundle.actions_workflows_scanned = actions.scan_actions(
+                bundle.git_repo, apply=apply
+            )
 
     only_outdated = getattr(args, "only_outdated", False)
     if only_outdated:

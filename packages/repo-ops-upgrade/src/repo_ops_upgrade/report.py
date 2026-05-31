@@ -85,10 +85,17 @@ def print_human_report(
                     print(
                         f"    [{rem.get('id')}] {rem.get('detail') or rem.get('status')}"
                     )
-        if include_actions and repo.actions:
-            print("  Actions:")
-            for ab in repo.actions:
-                print(
-                    f"    {ab.workflow}: {ab.action}@{ab.pin} → {ab.latest} [{ab.status}]"
-                )
+        if include_actions:
+            summary = repo.actions_summary()
+            if repo.actions:
+                print("  Actions:")
+                for ab in repo.actions:
+                    print(
+                        f"    {ab.workflow}: {ab.action}@{ab.pin} → {ab.latest} [{ab.status}]"
+                    )
+            print(
+                "  Actions: "
+                f"{summary['bumps']} bump(s) "
+                f"({summary['workflows_scanned']} workflow(s) scanned)"
+            )
         print()

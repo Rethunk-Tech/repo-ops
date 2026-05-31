@@ -75,9 +75,27 @@ class RepoBundle:
     label: str
     workspaces: list[WorkspaceResult] = field(default_factory=list)
     actions: list[ActionBump] = field(default_factory=list)
+    actions_workflows_scanned: int = 0
 
     def any_fail(self) -> bool:
         return any(w.status == "fail" for w in self.workspaces)
+
+    def actions_summary(self) -> dict[str, int]:
+        bumps = 0
+        failures = 0
+        for ab in self.actions:
+            if ab.status == "fail":
+                failures += 1
+                continue
+            if ab.detail and "SHA-pinned" in (ab.detail or ""):
+                continue
+            if ab.pin != ab.latest:
+                bumps += 1
+        return {
+            "workflows_scanned": self.actions_workflows_scanned,
+            "bumps": bumps,
+            "failures": failures,
+        }
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -85,4 +103,5 @@ class RepoBundle:
             "label": self.label,
             "workspaces": [w.to_json() for w in self.workspaces],
             "actions": [a.to_json() for a in self.actions],
+            "actions_summary": self.actions_summary(),
         }
