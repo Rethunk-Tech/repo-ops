@@ -13,7 +13,7 @@ from repo_ops.upgrade.constants import TIMEOUT_APPLY
 from repo_ops.upgrade.models import Change, Workspace
 
 
-def _resolved_from_nm(mdir: Path, name: str) -> str | None:
+def resolved_version_from_node_modules(mdir: Path, name: str) -> str | None:
     candidates = [
         mdir / "node_modules" / name / "package.json",
     ]
@@ -53,7 +53,7 @@ def overrides_audit(mdir: Path, manager: str) -> list[dict[str, str]]:
         pinned_ver = normalize_version(
             pinned.split("@")[-1] if "@" in pinned else pinned
         )
-        resolved = _resolved_from_nm(mdir, pkg_name)
+        resolved = resolved_version_from_node_modules(mdir, pkg_name)
         if not resolved:
             out.append(
                 {

@@ -19,8 +19,10 @@ from repo_ops.upgrade.constants import (
     PLAYWRIGHT_PKG,
     TIMEOUT_APPLY,
 )
+from repo_ops.upgrade.ecosystems.node import resolved_version_from_node_modules
 from repo_ops.upgrade.models import Workspace, WorkspaceResult
 from repo_ops.upgrade.workspaces import (
+    parse_package_manager,
     pm_exec_prefix,
     pm_run_prefix,
     yarn_workspace_members,
@@ -51,10 +53,9 @@ def _find_biome_configs(mdir: Path) -> list[Path]:
 
 
 def _biome_installed_version(mdir: Path) -> str | None:
-    nm = mdir / "node_modules" / "@biomejs" / "biome" / "package.json"
-    d = read_json_file(nm)
-    if d:
-        return str(d.get("version", ""))
+    resolved = resolved_version_from_node_modules(mdir, BIOME_PKG)
+    if resolved:
+        return resolved
     pkg = read_json_file(mdir / "package.json") or {}
     for section in ("dependencies", "devDependencies"):
         ver = (pkg.get(section) or {}).get(BIOME_PKG)
@@ -202,25 +203,33 @@ def apply_codegen(ws: Workspace, ctx: dict[str, Any]) -> bool:
     return ok
 
 
-def detect_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> bool:
-    pkg = read_json_file(ws.path / "package.json") or {}
-    pm = (pkg.get("packageManager") or "").strip()
-    if not pm or "@" not in pm:
-        return False
-    name, pinned = pm.split("@", 1)
+def _pm_runtime_version(name: str, ws: Workspace) -> str | None:
     proc = run([name, "--version"], ws.path, timeout=30)
     if proc.returncode != 0:
+        return None
+    return proc.stdout.strip().lstrip("v")
+
+
+def detect_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> bool:
+    pkg = read_json_file(ws.path / "package.json") or {}
+    pm_field = parse_package_manager(pkg)
+    if not pm_field:
         return False
-    actual = proc.stdout.strip().lstrip("v")
+    name, pinned = pm_field
+    actual = _pm_runtime_version(name, ws)
+    if actual is None:
+        return False
     return normalize_version(pinned) != normalize_version(actual)
 
 
 def report_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
     pkg = read_json_file(ws.path / "package.json") or {}
+    pm_field = parse_package_manager(pkg)
+    if not pm_field:
+        return []
+    name, _pinned = pm_field
     pm = (pkg.get("packageManager") or "").strip()
-    name, pinned = pm.split("@", 1)
-    proc = run([name, "--version"], ws.path, timeout=30)
-    actual = proc.stdout.strip().lstrip("v") if proc.returncode == 0 else "?"
+    actual = _pm_runtime_version(name, ws) or "?"
     return [f"REMEDIATE package_manager_pin: {pm} → {name}@{actual}"]
 
 
@@ -229,14 +238,13 @@ def apply_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> bool:
     pkg = read_json_file(pkg_path)
     if not pkg:
         return False
-    pm = (pkg.get("packageManager") or "").strip()
-    if not pm or "@" not in pm:
+    pm_field = parse_package_manager(pkg)
+    if not pm_field:
         return False
-    name, _ = pm.split("@", 1)
-    proc = run([name, "--version"], ws.path, timeout=30)
-    if proc.returncode != 0:
+    name, _ = pm_field
+    actual = _pm_runtime_version(name, ws)
+    if actual is None:
         return False
-    actual = proc.stdout.strip().lstrip("v")
     pkg["packageManager"] = f"{name}@{actual}"
     pkg_path.write_text(json.dumps(pkg, indent=2) + "\n", encoding="utf-8")
     return True
