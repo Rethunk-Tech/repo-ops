@@ -15,6 +15,15 @@ GO_UPGRADE_MODE_ENV = "REPO_OPS_GO_UPGRADE_MODE"
 _GO_GET_BATCH = 40
 
 
+def _valid_go_get_target(target: str) -> bool:
+    """Reject module@version strings that could be parsed as go get flags."""
+    t = (target or "").strip()
+    if not t or t.startswith("-"):
+        return False
+    path = t.split("@", 1)[0]
+    return bool(path) and not path.startswith("-")
+
+
 def _go_upgrade_mode() -> str:
     mode = os.environ.get(GO_UPGRADE_MODE_ENV, "patch").strip().lower()
     if mode in ("patch", "explicit", "mvs"):
@@ -80,7 +89,9 @@ def _explicit_go_get_targets(ws: Workspace) -> list[str]:
         path = mod.get("Path") or update.get("Path")
         version = update.get("Version")
         if path and version:
-            targets.append(f"{path}@{version}")
+            spec = f"{path}@{version}"
+            if _valid_go_get_target(spec):
+                targets.append(spec)
     return targets
 
 
@@ -115,7 +126,7 @@ def apply_go(ws: Workspace) -> None:
         targets = _explicit_go_get_targets(ws)
         for i in range(0, len(targets), _GO_GET_BATCH):
             batch = targets[i : i + _GO_GET_BATCH]
-            proc = run(["go", "get", *batch], ws.path, timeout=TIMEOUT_APPLY)
+            proc = run(["go", "get", "--", *batch], ws.path, timeout=TIMEOUT_APPLY)
             if proc.returncode != 0:
                 raise RuntimeError(proc.stderr.strip() or "go get failed")
     else:

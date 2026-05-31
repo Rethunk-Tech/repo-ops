@@ -9,6 +9,7 @@ from repo_ops_go.go import (
     _changes_from_go_list_json,
     _explicit_go_get_targets,
     _is_patch_update,
+    _valid_go_get_target,
     apply_go,
 )
 from repo_ops_models import Workspace
@@ -120,6 +121,70 @@ def test_apply_go_patch_mode_runs_patch_all(tmp_path) -> None:
     ):
         apply_go(ws)
     assert ["go", "get", "-u=patch", "all"] in calls
+    assert ["go", "mod", "tidy"] in calls
+
+
+def test_valid_go_get_target_rejects_flag_like_paths() -> None:
+    assert _valid_go_get_target("example.com/foo@v1.0.1")
+    assert not _valid_go_get_target("-evil@v1.0.0")
+    assert not _valid_go_get_target("")
+
+
+def test_explicit_go_get_targets_skips_flag_like_modules(tmp_path) -> None:
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="go",
+        manager="go",
+        git_repo=tmp_path,
+        label="mod",
+    )
+    lines = [
+        json.dumps(
+            {
+                "Path": "-evil",
+                "Version": "v1.0.0",
+                "Update": {"Path": "-evil", "Version": "v9.9.9"},
+            }
+        ),
+        json.dumps(
+            {
+                "Path": "example.com/foo",
+                "Version": "v1.0.0",
+                "Update": {"Path": "example.com/foo", "Version": "v1.0.1"},
+            }
+        ),
+    ]
+    proc = type(
+        "Proc", (), {"returncode": 0, "stdout": "\n".join(lines), "stderr": ""}
+    )()
+    with patch("repo_ops_go.go.run", return_value=proc):
+        assert _explicit_go_get_targets(ws) == ["example.com/foo@v1.0.1"]
+
+
+def test_apply_go_explicit_mode_uses_get_separator(tmp_path) -> None:
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="go",
+        manager="go",
+        git_repo=tmp_path,
+        label="mod",
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout=0):
+        calls.append(cmd)
+        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    with (
+        patch.dict("os.environ", {"REPO_OPS_GO_UPGRADE_MODE": "explicit"}),
+        patch("repo_ops_go.go.run", side_effect=fake_run),
+        patch(
+            "repo_ops_go.go._explicit_go_get_targets",
+            return_value=["example.com/foo@v1.0.1"],
+        ),
+    ):
+        apply_go(ws)
+    assert ["go", "get", "--", "example.com/foo@v1.0.1"] in calls
     assert ["go", "mod", "tidy"] in calls
 
 
