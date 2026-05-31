@@ -51,3 +51,22 @@ def test_apply_workspace_still_calls_corepack_prepare(tmp_path: Path):
         registry.apply_workspace(ws)
 
     mock_prepare.assert_called_once_with("pnpm", tmp_path)
+
+
+def test_check_workspace_records_checker_failure(tmp_path: Path) -> None:
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="pnpm",
+        git_repo=tmp_path,
+        label="",
+    )
+
+    def boom(_ws: Workspace):
+        raise RuntimeError("pnpm outdated failed")
+
+    with patch.dict(registry.CHECKERS, {"pnpm": boom}, clear=False):
+        result = registry.check_workspace(ws)
+
+    assert result.status == "fail"
+    assert "pnpm outdated failed" in (result.error or "")

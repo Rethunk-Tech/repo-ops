@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 from repo_ops_js.overrides import overrides_audit
 from repo_ops_js.workspaces import corepack_prepare
 from repo_ops_models import Change, Workspace, WorkspaceResult
+
+logger = logging.getLogger(__name__)
 
 Checker = Callable[
     [Workspace], list[Change] | tuple[list[Change], list[dict[str, str]]]
@@ -41,9 +44,24 @@ def check_workspace(ws: Workspace) -> WorkspaceResult:
             result.changes = out
             if ws.ecosystem == "node":
                 result.overrides_audit = overrides_audit(ws.path, ws.manager)
-    except Exception as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
+        logger.warning(
+            "checker failed for %s at %s: %s",
+            ws.manager,
+            ws.path,
+            exc,
+            exc_info=True,
+        )
         result.status = "fail"
-        result.error = str(exc)
+        result.error = str(exc) or type(exc).__name__
+    except Exception as exc:
+        logger.exception(
+            "unexpected checker error for %s at %s",
+            ws.manager,
+            ws.path,
+        )
+        result.status = "fail"
+        result.error = str(exc) or type(exc).__name__
     return result
 
 
