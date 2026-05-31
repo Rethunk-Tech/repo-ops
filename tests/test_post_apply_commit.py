@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +11,7 @@ import pytest
 
 from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import post_apply_commit
+from repo_ops_upgrade import commit_agent_providers as providers
 
 
 def _init_git_repo(path: Path) -> None:
@@ -97,6 +99,7 @@ def test_agent_missing_api_key_skips(
     )
     assert plan.skipped_reason
     assert "CURSOR_API_KEY" in plan.skipped_reason
+    assert "commit-agent-cursor" in plan.skipped_reason
 
 
 def test_agent_drafts_message_when_mocked(tmp_path: Path) -> None:
@@ -105,24 +108,11 @@ def test_agent_drafts_message_when_mocked(tmp_path: Path) -> None:
     lock.write_text("{}", encoding="utf-8")
     subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
     bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
-    fake_result = MagicMock(status="ok", result="chore(deps): bump lockfile via agent")
-    fake_agent = MagicMock()
-    fake_agent.prompt.return_value = fake_result
-    with (
-        patch.dict("os.environ", {"CURSOR_API_KEY": "cursor_test_key"}),
-        patch.dict(
-            "sys.modules",
-            {
-                "cursor_sdk": MagicMock(
-                    Agent=MagicMock(prompt=fake_agent.prompt),
-                    AgentOptions=MagicMock,
-                    LocalAgentOptions=MagicMock,
-                )
-            },
-        ),
-        patch(
-            "repo_ops_upgrade.post_apply_commit.draft_message_with_agent",
-            return_value="chore(deps): bump lockfile via agent\n\nAutomated post-apply commit (Cursor SDK draft).",
+    with patch(
+        "repo_ops_upgrade.commit_agent_providers.draft_message_with_commit_agent",
+        return_value=(
+            "chore(deps): bump lockfile via agent\n\n"
+            "Automated post-apply commit (cursor commit-agent)."
         ),
     ):
         plan = post_apply_commit.plan_repo_commit(
@@ -151,3 +141,47 @@ def test_conventional_commit_writes(tmp_path: Path) -> None:
         check=True,
     )
     assert "chore(deps)" in log.stdout
+
+
+def test_post_apply_commit_import_does_not_load_cursor_sdk() -> None:
+    sys.modules.pop("cursor_sdk", None)
+    import importlib
+
+    importlib.reload(post_apply_commit)
+    assert "cursor_sdk" not in sys.modules
+
+
+def test_unknown_commit_agent_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(providers.COMMIT_AGENT_PROVIDER_ENV, "not-a-provider")
+    with pytest.raises(RuntimeError, match="Unknown commit agent provider"):
+        providers.resolve_commit_agent_provider()
+
+
+def test_default_provider_is_cursor() -> None:
+    providers._ensure_builtin_providers()
+    assert providers.commit_agent_provider_name() == "cursor"
+    provider = providers.resolve_commit_agent_provider()
+    assert provider.name == "cursor"
+
+
+def test_cursor_provider_missing_sdk_message(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle = _bundle(tmp_path)
+    monkeypatch.setenv("CURSOR_API_KEY", "test-key")
+    real_import = __import__
+
+    def _block_cursor_sdk(name: str, *args: object, **kwargs: object) -> object:
+        if name == "cursor_sdk" or name.startswith("cursor_sdk."):
+            raise ImportError("cursor-sdk not installed")
+        return real_import(name, *args, **kwargs)
+
+    sys.modules.pop("cursor_sdk", None)
+    with patch("builtins.__import__", side_effect=_block_cursor_sdk):
+        with pytest.raises(RuntimeError, match="commit-agent-cursor"):
+            providers.resolve_commit_agent_provider().draft_commit_message(
+                bundle, ["package-lock.json"]
+            )
