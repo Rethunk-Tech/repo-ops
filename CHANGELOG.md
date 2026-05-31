@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-31
+
+### Added
+
+- **CLI reliability:** `--log-file` for plan/apply transcripts; `--strict-exit` and verify-failure paths return reliable non-zero exit codes for CI and shell `pipefail`.
+- **Plan artifacts:** `--json-out` writes the full plan JSON atomically to a file (stdout contract unchanged).
+- **Run summary:** End-of-run roll-up footer with per-repo counts and a capped failure list; JSON reports include matching summary fields ([#14](https://github.com/Rethunk-Tech/repo-ops/issues/14)).
+- **Apply policy:** `--on-verify-fail` with `revert` (default keep) to roll back apply changes when verification fails.
+- **Submodules:** Discovery, `children-first` ordering via `--submodule-order`, and pointer hints in plan JSON ([#13](https://github.com/Rethunk-Tech/repo-ops/issues/13)).
+- **Post-apply commits:** `--commit=conventional|agent` with `--commit-dry-run` and `--commit-on-fail`; pluggable commit-agent providers (default Cursor SDK) behind optional `repo-ops-upgrade[commit-agent-cursor]` ([#15](https://github.com/Rethunk-Tech/repo-ops/issues/15)).
+- **GitHub Actions:** Workflow `uses:` pins discovered and updated via ruamel.yaml AST (no substring pin corruption); optional `gh api` resolution for latest action tags; plan/apply output reports workflows scanned.
+
+### Changed
+
+- **Breaking (install only):** Optional Cursor commit-agent extra is named `commit-agent-cursor` (`agent` remains an alias in `pyproject.toml`). Install: `uv pip install 'repo-ops-upgrade[commit-agent-cursor]'`.
+- Plan/apply JSON may include new summary, submodule, and Actions-scan fields; consumers should tolerate unknown keys.
+
+### Fixed
+
+- **Bun plan:** Prefer JSON `outdated` output and filter table junk from stdout parsing ([#12](https://github.com/Rethunk-Tech/repo-ops/issues/12)).
+- **JS remediations apply:** Report apply outcome text instead of repeating plan copy ([#11](https://github.com/Rethunk-Tech/repo-ops/issues/11)).
+
+### Docs
+
+- HUMANS and bundled skill: bulk-apply playbook, post-apply commit flags, MCP vs headless commit paths, Bastion submodule workflow, `--on-verify-fail`, summary footer, and `--json-out` usage.
+
 ## [0.3.5] - 2026-05-31
 
 ### Fixed
@@ -153,7 +179,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.5...v0.4.0
 [0.3.5]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.2...v0.3.3
