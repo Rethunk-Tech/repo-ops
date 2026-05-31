@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import configparser
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +26,34 @@ class SubmoduleLink:
             "git_repo": str(self.git_repo.resolve()),
             "parent": str(self.parent.resolve()),
         }
+
+
+def _find_gitmodules(root: Path, *, max_depth: int = 32) -> list[Path]:
+    """Walk for .gitmodules with depth limit and symlink-cycle guard."""
+    found: list[Path] = []
+    seen_roots: set[str] = set()
+    stack: list[tuple[Path, int]] = [(root, 0)]
+    while stack:
+        current, depth = stack.pop()
+        try:
+            real = os.path.realpath(current)
+        except OSError:
+            continue
+        if real in seen_roots:
+            continue
+        seen_roots.add(real)
+        if depth > max_depth:
+            continue
+        try:
+            entries = list(current.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.name == ".gitmodules" and entry.is_file():
+                found.append(entry)
+            elif entry.is_dir() and not entry.is_symlink():
+                stack.append((entry, depth + 1))
+    return sorted(found)
 
 
 def _parse_gitmodules_file(gitmodules_path: Path) -> list[tuple[str, str]]:
@@ -56,7 +85,7 @@ def discover_submodules_under_roots(roots: list[str], *, flat: bool) -> list[Sub
             gm = root / ".gitmodules"
             candidates = [gm] if gm.is_file() else []
         else:
-            candidates = sorted(root.rglob(".gitmodules"))
+            candidates = _find_gitmodules(root)
 
         for gitmodules_path in candidates:
             parent = git_repo_for(gitmodules_path.parent)

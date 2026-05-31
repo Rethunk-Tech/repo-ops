@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import subprocess
 import threading
 from pathlib import Path
 from typing import Literal
@@ -23,6 +25,8 @@ from repo_ops_upgrade.post_apply import (
     collect_changes_after_apply,
     revert_workspace_after_verify_fail,
 )
+
+logger = logging.getLogger(__name__)
 
 FAIL_FAST_EVENT = threading.Event()
 OnVerifyFail = Literal["keep", "revert"]
@@ -70,7 +74,7 @@ def process_workspace(
                 )
             if ws.ecosystem == "node":
                 result.overrides_audit = overrides_audit(ws.path, ws.manager)
-        except Exception as exc:
+        except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as exc:
             result.status = "fail"
             result.error = str(exc)
             return result
@@ -88,7 +92,8 @@ def process_workspace(
                 if on_verify_fail == "revert":
                     try:
                         revert_workspace_after_verify_fail(ws, before_snap)
-                    except Exception as exc:
+                    except (RuntimeError, OSError, ValueError) as exc:
+                        logger.warning("revert after verify fail failed: %s", exc)
                         prefix = result.error or ""
                         result.error = (
                             f"{prefix}; revert failed: {exc}".strip("; ")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
@@ -21,6 +22,8 @@ from repo_ops_lockfiles.snapshots import (
 from repo_ops_models import Change, Workspace
 
 from repo_ops_upgrade.registry import Checker
+
+logger = logging.getLogger(__name__)
 
 FAILED_WITH_CHANGES = "FAILED_WITH_CHANGES"
 FAILED_CLEAN = "FAILED_CLEAN"
@@ -87,8 +90,8 @@ def collect_changes_after_apply(
             if isinstance(out, tuple):
                 return out[0]
             return out
-        except Exception:
-            pass
+        except (RuntimeError, OSError, ValueError) as exc:
+            logger.debug("post-apply checker fallback failed for %s: %s", ws.path, exc)
     return []
 
 
