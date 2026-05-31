@@ -198,6 +198,19 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
 
 Refresh the bundled agent skill after doc pulls: `repo-ops install-skill --force` (see [Agent skill](#agent-skill)).
 
+### Ecosystem upgrade modes (plan and apply)
+
+| Ecosystem | Default behavior | Aggressive / latest opt-in |
+|-----------|------------------|----------------------------|
+| **npm** | `npm update` (semver ranges in manifests) | — |
+| **pnpm** | `pnpm update -r` (within ranges) | `REPO_OPS_PNPM_UPDATE_LATEST=1` → adds `--latest` |
+| **yarn** | `yarn up` (Berry, in-range bumps in isolated plan snapshots) | `REPO_OPS_YARN_UPDATE_LATEST=1` → `yarn up -R '*'` |
+| **go** | `REPO_OPS_GO_UPGRADE_MODE=patch` (default) | `explicit` or `mvs` (see below) |
+| **rust** | `cargo update --dry-run` / `cargo update` | — |
+| **python** | Manager-specific (`uv`, poetry, pip-tools, hatch) | See each plugin’s check/apply |
+
+**Repo discovery:** `find` does not follow symlinks by default. Pass `--follow-symlinks` on `plan`, `apply`, or `pushed` when symlinked `.git` dirs must be traversed (`find -L`). All commands validate `roots` as resolved existing directories (find predicates like `-name` are rejected).
+
 ### Go modules
 
 `REPO_OPS_GO_UPGRADE_MODE` (default `patch`) aligns plan and apply:
@@ -210,7 +223,7 @@ Refresh the bundled agent skill after doc pulls: `repo-ops install-skill --force
 
 ### Yarn (plan)
 
-Isolated snapshots copy `.yarn/releases/` (Berry) and `file:../…` siblings from `package.json`; skip `node_modules`, `.yarn/cache`, and other heavy dirs. Failed `yarn up` / `install` errors include a stderr tail in plan JSON `error`.
+Isolated snapshots copy `.yarn/releases/` (Berry) and `file:../…` siblings from `package.json`; skip `node_modules`, `.yarn/cache`, and other heavy dirs. Plan and apply use conservative `yarn up` unless `REPO_OPS_YARN_UPDATE_LATEST=1` (then `yarn up -R '*'`). Failed `yarn up` / `install` errors include a stderr tail in plan JSON `error`.
 
 Run `repo-ops <subcommand> --help` for all flags.
 
