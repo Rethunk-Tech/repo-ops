@@ -28,6 +28,7 @@ from repo_ops_core.cli import (
     add_json_argument,
     add_roots_argument,
     add_verbose_argument,
+    resolve_scan_roots,
     wire_verbose,
 )
 from repo_ops_core.table import column_width, format_cell, join_row
@@ -130,9 +131,10 @@ def main(argv: list[str] | None = None) -> None:
     if not args.no_cache:
         go_cache = load_go_cache(cache_path)
 
-    scanned_roots = [str(Path(r).resolve()) for r in args.roots]
+    roots = resolve_scan_roots(list(args.roots), parser)
+    scanned_roots = list(roots)
     all_rows = []
-    for r in args.roots:
+    for r in roots:
         all_rows.extend(scan(Path(r), flat=args.flat, go_cache=go_cache))
 
     if not args.no_cache and go_cache is not None:

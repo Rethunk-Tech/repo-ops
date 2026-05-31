@@ -21,10 +21,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from repo_ops_core.cli import (
+    add_follow_symlinks_argument,
     add_json_argument,
     add_roots_argument,
     add_verbose_argument,
     parse_iso8601,
+    resolve_scan_roots,
     wire_verbose,
 )
 from repo_ops_core.discovery import discover_repos
@@ -154,9 +156,12 @@ def pushed_commits_for_repo(repo: str, filters: Filters) -> dict[str, None]:
 
 
 def collect_results(
-    roots: list[str], filters: Filters
+    roots: list[str],
+    filters: Filters,
+    *,
+    follow_symlinks: bool = False,
 ) -> tuple[dict[str, None], list[RepoResult]]:
-    common_to_repo = discover_repos(roots)
+    common_to_repo = discover_repos(roots, follow_symlinks=follow_symlinks)
     per_repo: list[RepoResult] = []
     all_commits: dict[str, None] = {}
 
@@ -289,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Count commits pushed in a rolling window across local git repos.",
     )
     add_roots_argument(parser)
+    add_follow_symlinks_argument(parser)
 
     def positive_hours(value: str) -> float:
         v = float(value)
@@ -410,8 +416,13 @@ def main(argv: list[str] | None = None) -> int:
             "" if effective_hours == 1 else "s"
         )
 
-    roots = list(args.roots)
-    all_commits, per_repo = collect_results(roots, filters)
+    roots = resolve_scan_roots(list(args.roots), parser)
+    follow_symlinks = bool(getattr(args, "follow_symlinks", False))
+    all_commits, per_repo = collect_results(
+        roots,
+        filters,
+        follow_symlinks=follow_symlinks,
+    )
 
     if args.json_out:
         # Resolve subjects before serialising when --show-messages is set

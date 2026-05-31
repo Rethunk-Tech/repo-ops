@@ -12,10 +12,16 @@ from repo_ops_core.filesystem import should_exclude
 from repo_ops_core.git import git_common_dir
 
 
-def discover_repos(roots: list[str]) -> dict[str, str]:
+def discover_repos(
+    roots: list[str],
+    *,
+    follow_symlinks: bool = False,
+) -> dict[str, str]:
     """Map git-common-dir -> representative working tree path.
 
-    -L tells find to follow symlinks so that symlinked .git dirs are not missed.
+    By default ``find`` does not follow symlinks (safer for large monorepo trees).
+    Pass ``follow_symlinks=True`` (CLI ``--follow-symlinks``) to add ``-L`` so
+    symlinked ``.git`` metadata dirs are not missed.
     Both sides of the dedup key are os.path.realpath-normalised so that a
     symlinked repo and its canonical path map to the same key.
     Prunes directories in SKIP_DIRS except ``.git`` (we must match repo roots).
@@ -36,24 +42,27 @@ def discover_repos(roots: list[str]) -> dict[str, str]:
         if not root_path.is_dir():
             continue
         # Build find: prune SKIP_DIRS (not .git), match .git dirs, then prune .git
-        cmd = [
-            "find",
-            "-L",
-            str(root_path),
-            "(",
-            *prune_expr,
-            ")",
-            "-prune",
-            "-o",
-            "(",
-            "-type",
-            "d",
-            "-name",
-            ".git",
-            "-print",
-            ")",
-            "-prune",
-        ]
+        cmd = ["find"]
+        if follow_symlinks:
+            cmd.append("-L")
+        cmd.extend(
+            [
+                str(root_path),
+                "(",
+                *prune_expr,
+                ")",
+                "-prune",
+                "-o",
+                "(",
+                "-type",
+                "d",
+                "-name",
+                ".git",
+                "-print",
+                ")",
+                "-prune",
+            ]
+        )
         try:
             proc = subprocess.run(
                 cmd,

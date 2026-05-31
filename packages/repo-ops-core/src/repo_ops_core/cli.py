@@ -4,9 +4,23 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+from pathlib import Path
 
 from repo_ops_core.constants import DEFAULT_ROOTS
 from repo_ops_core.process import set_verbose
+
+_FIND_PREDICATE_TOKENS = frozenset(
+    {
+        "-name",
+        "-type",
+        "-prune",
+        "-print",
+        "-path",
+        "-links",
+        "-maxdepth",
+        "-mindepth",
+    }
+)
 
 ECO_FILTER_CHOICES = ("node", "go", "rust", "py")
 ECO_FILTER_HELP = (
@@ -20,9 +34,7 @@ def positive_int(value: str) -> int:
     try:
         n = int(value)
     except ValueError as exc:
-        raise argparse.ArgumentTypeError(
-            f"invalid int value: {value!r}"
-        ) from exc
+        raise argparse.ArgumentTypeError(f"invalid int value: {value!r}") from exc
     if n <= 0:
         raise argparse.ArgumentTypeError("--jobs must be a positive integer")
     return n
@@ -50,6 +62,53 @@ def parse_iso8601(value: str) -> datetime:
             f"Datetime {value!r} has no timezone; use e.g. 2026-05-26T00:00Z or +00:00 suffix"
         )
     return dt.astimezone(timezone.utc)
+
+
+def looks_like_find_predicate(value: str) -> bool:
+    """True when *value* resembles a find(1) predicate rather than a directory path."""
+    text = value.strip()
+    if not text:
+        return False
+    if text.startswith("-"):
+        return True
+    parts = text.split()
+    return any(part in _FIND_PREDICATE_TOKENS for part in parts)
+
+
+def resolve_scan_roots(
+    roots: list[str],
+    parser: argparse.ArgumentParser,
+) -> list[str]:
+    """Resolve roots to absolute paths; reject missing dirs and find-like tokens."""
+    resolved: list[str] = []
+    for raw in roots:
+        text = raw.strip()
+        if not text:
+            parser.error("root path must not be empty")
+        if looks_like_find_predicate(text):
+            parser.error(
+                f"root {text!r} looks like a find(1) predicate; "
+                "pass an existing directory path only"
+            )
+        path = Path(text).expanduser().resolve()
+        if not path.exists():
+            parser.error(f"root does not exist: {path}")
+        if not path.is_dir():
+            parser.error(f"root is not a directory: {path}")
+        resolved.append(str(path))
+    return resolved
+
+
+def add_follow_symlinks_argument(parser: argparse.ArgumentParser) -> None:
+    """Add --follow-symlinks for repo discovery via find -L."""
+    parser.add_argument(
+        "--follow-symlinks",
+        action="store_true",
+        help=(
+            "Follow symlinks when discovering git repos under roots (find -L). "
+            "Default: do not follow (safer for large trees)."
+        ),
+    )
 
 
 def add_roots_argument(
@@ -135,6 +194,7 @@ def add_upgrade_common_arguments(
     add_flat_argument(parser)
     add_verbose_argument(parser)
     add_eco_filter_argument(parser)
+    add_follow_symlinks_argument(parser)
     parser.add_argument("-q", "--quiet", action="store_true")
     parser.add_argument("--jobs", type=positive_int, default=8)
     parser.add_argument("--fail-fast", action="store_true")

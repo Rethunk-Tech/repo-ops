@@ -240,9 +240,11 @@ def group_by_repo(
 def merge_action_only_bundles(
     bundles: dict[Path, RepoBundle],
     roots: list[str],
+    *,
+    follow_symlinks: bool = False,
 ) -> dict[Path, RepoBundle]:
     """Add git repos that have workflows but no dependency workspaces."""
-    for repo_s in discover_repos(roots).values():
+    for repo_s in discover_repos(roots, follow_symlinks=follow_symlinks).values():
         git_repo = Path(repo_s).resolve()
         if git_repo in bundles:
             continue

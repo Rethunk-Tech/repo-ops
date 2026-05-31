@@ -7,6 +7,7 @@ from pathlib import Path
 
 from repo_ops_core.cli import (
     build_upgrade_parser,
+    resolve_scan_roots,
     wire_verbose,
 )
 from repo_ops_core.constants import DEFAULT_ROOTS
@@ -63,6 +64,7 @@ def _run_upgrade_body(
     apply: bool,
     args,
     roots: list[str],
+    follow_symlinks: bool = False,
 ) -> int:
     skip_remediations = set()
     if apply:
@@ -82,7 +84,11 @@ def _run_upgrade_body(
 
     bundles = workspace_discovery.group_by_repo(found, roots)
     if not args.skip_actions:
-        bundles = workspace_discovery.merge_action_only_bundles(bundles, roots)
+        bundles = workspace_discovery.merge_action_only_bundles(
+            bundles,
+            roots,
+            follow_symlinks=follow_symlinks,
+        )
 
     include_submodules = getattr(args, "submodules", False)
     submodule_order = getattr(args, "submodule_order", "discovery")
@@ -132,7 +138,9 @@ def _run_upgrade_body(
     all_results: list[WorkspaceResult] = []
     if apply:
         ordered_bundles = [
-            bundles[key] for key in bundle_order if key in bundles and bundles[key].workspaces
+            bundles[key]
+            for key in bundle_order
+            if key in bundles and bundles[key].workspaces
         ]
         pending_bundles = ordered_bundles
 
@@ -142,9 +150,7 @@ def _run_upgrade_body(
                 return True
             return False
 
-        children_first = submodule_order == "children-first" and bool(
-            submodule_links
-        )
+        children_first = submodule_order == "children-first" and bool(submodule_links)
         if children_first:
             for bundle in pending_bundles:
                 if _FAIL_FAST.is_set():
@@ -306,11 +312,22 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
         parser.error("--json-out requires --json")
     wire_verbose(args)
 
-    roots = [str(Path(r).expanduser()) for r in (args.roots or DEFAULT_ROOTS)]
+    roots = resolve_scan_roots(list(args.roots or DEFAULT_ROOTS), parser)
+    follow_symlinks = bool(getattr(args, "follow_symlinks", False))
     if args.log_file:
         with tee_stdout_stderr(Path(args.log_file).expanduser()):
-            return _run_upgrade_body(apply=apply, args=args, roots=roots)
-    return _run_upgrade_body(apply=apply, args=args, roots=roots)
+            return _run_upgrade_body(
+                apply=apply,
+                args=args,
+                roots=roots,
+                follow_symlinks=follow_symlinks,
+            )
+    return _run_upgrade_body(
+        apply=apply,
+        args=args,
+        roots=roots,
+        follow_symlinks=follow_symlinks,
+    )
 
 
 def main_plan(argv: list[str] | None = None) -> int:
