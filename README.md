@@ -14,7 +14,7 @@ Local repository operations and dependency maintenance tools for Rethunk-Tech
 
 repo-ops is a **uv workspace** of packages for scanning many local git checkouts under shared roots: dependency footprint reporting, read-only upgrade planning, apply-with-verify upgrades (including GitHub Actions pin bumps), and push-reflog audits.
 
-Install the `repo-ops` console script and use subcommands `inventory`, `plan`, `apply`, and `pushed` (see [HUMANS.md](HUMANS.md)). Shared helpers live in `repo_ops_core`; domain logic is split across `packages/repo-ops-*`.
+Install the `repo-ops` console script and use subcommands `inventory`, `plan`, `apply`, and `pushed` (see [HUMANS.md](HUMANS.md)). Upgrading from 0.2.x `repos-*` scripts: [HUMANS — Migration from 0.2.x](HUMANS.md#migration-from-02x). Shared helpers live in `repo_ops_core`; domain logic is split across `packages/repo-ops-*`.
 
 ## Highlights
 

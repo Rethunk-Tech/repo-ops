@@ -148,6 +148,8 @@ After install or changes (full dev verification):
 
 ```bash
 uv sync --locked --group dev
+uv run python scripts/doc_audit_gate.py --root .
+uv run python scripts/check_import_boundaries.py
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy packages/repo-ops-core/src packages/repo-ops-models/src packages/repo-ops-lockfiles/src packages/repo-ops-js/src packages/repo-ops-js-npm/src packages/repo-ops-js-pnpm/src packages/repo-ops-js-bun/src packages/repo-ops-js-yarn/src packages/repo-ops-go/src packages/repo-ops-rust/src packages/repo-ops-py/src packages/repo-ops-py-uv/src packages/repo-ops-py-poetry/src packages/repo-ops-py-pip-tools/src packages/repo-ops-py-hatch/src packages/repo-ops-upgrade/src packages/repo-ops-upgrade-remediations-js/src packages/repo-ops-inventory/src packages/repo-ops-pushed/src packages/repo-ops/src
@@ -157,7 +159,7 @@ uv build packages/repo-ops
 
 The test suite lives under `tests/` and is configured in `pyproject.toml` under `[tool.pytest.ini_options]`. Coverage and mypy configs also live in `pyproject.toml`.
 
-CI runs `uv sync --locked`, ruff, mypy, pytest+cov, `uv build`, and strict doc-audit on push/PR to `main` (matrix 3.10–3.12); Dependabot maintains the uv lockfile and GitHub Actions weekly.
+CI runs `uv sync --locked`, doc-audit, import-boundary checks, ruff, mypy, pytest+cov, and `uv build packages/repo-ops` on push/PR to `main` (matrix 3.10–3.12). Pushing a version tag (`v*`) runs [`.github/workflows/release.yml`](.github/workflows/release.yml) to build the wheel/sdist and attach them to the GitHub release. Dependabot maintains the uv lockfile and GitHub Actions weekly.
 
 Doc governance uses the Rethunk tier split (README / HUMANS / AGENTS / CONTRIBUTING). Locally:
 

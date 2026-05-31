@@ -1,6 +1,6 @@
 # Contributing to repo-ops
 
-Thank you for your interest in repo-ops! This is a small Python package providing local repository operations and dependency maintenance tools for Rethunk-Tech.
+Thank you for your interest in repo-ops! This is a **uv workspace** (`packages/*`) shipping the unified **`repo-ops`** CLI for local repository operations and dependency maintenance across Rethunk-Tech checkouts.
 
 ## Quick Start for Contributors
 
@@ -10,8 +10,8 @@ Thank you for your interest in repo-ops! This is a small Python package providin
 
 ## Development Notes
 
-- Source layout uses the `src/` package structure; packaging uses `uv_build` with a committed `uv.lock` (details in HUMANS and `pyproject.toml`).
-- Add or modify console scripts by updating `[project.scripts]` and implementing the `main()` entry in the corresponding module.
+- Workspace packages live under `packages/repo-ops-*` with per-package `src/` trees; the installable meta package is `packages/repo-ops` (`repo-ops` on PyPI). Packaging uses `uv_build` with a committed `uv.lock` (details in HUMANS and root `pyproject.toml`).
+- Add or modify CLI subcommands in `packages/repo-ops` (`repo_ops.cli`) and register ecosystem plugins via `repo_ops._register`; see [HUMANS.md — Migration from 0.2.x](HUMANS.md#migration-from-02x) if you encounter old `repos-*` script names.
 - Keep changes focused; this project favors minimal runtime dependencies and simple, maintainable utilities.
 - Update `README.md` for user-facing orientation; update `HUMANS.md` for install/usage/verify changes; update this file or `AGENTS.md` for contributor or agent process notes.
 
