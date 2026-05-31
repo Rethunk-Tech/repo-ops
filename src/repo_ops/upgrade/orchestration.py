@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import threading
-from pathlib import Path
 
 from repo_ops.core.filesystem import should_exclude
-from repo_ops.core.process import run
+from repo_ops.core.git import is_git_dirty
 from repo_ops.upgrade import ecosystems, remediations
 from repo_ops.upgrade import verify as verify_mod
 from repo_ops.upgrade.ecosystems.node import overrides_audit
@@ -18,11 +17,6 @@ from repo_ops.upgrade.ecosystems.node_lockfiles import (
 from repo_ops.upgrade.models import Workspace, WorkspaceResult
 
 FAIL_FAST_EVENT = threading.Event()
-
-
-def is_git_dirty(repo: Path) -> bool:
-    proc = run(["git", "status", "--porcelain"], repo, timeout=30)
-    return proc.returncode == 0 and bool(proc.stdout.strip())
 
 
 def process_workspace(

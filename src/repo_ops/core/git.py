@@ -40,6 +40,12 @@ def git_common_dir(repo: Path | str) -> str | None:
     return os.path.realpath(str(common))
 
 
+def is_git_dirty(repo: Path | str) -> bool:
+    """True when the worktree has any unstaged or uncommitted changes."""
+    proc = run_git(repo, "status", "--porcelain", timeout=30)
+    return proc.returncode == 0 and bool(proc.stdout.strip())
+
+
 def repo_label(repo: Path | str, roots: list[str]) -> str:
     repo_path = Path(repo).resolve()
     home = Path.home().resolve()
