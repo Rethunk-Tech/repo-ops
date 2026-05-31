@@ -152,4 +152,6 @@ def repo_ops_workflows() -> Path:
 
 def test_parse_real_ci_workflow(repo_ops_workflows: Path) -> None:
     pins = parse_workflow_uses(repo_ops_workflows / "ci.yml")
-    assert any(p.action == "actions/checkout" and p.pin == "v4" for p in pins)
+    checkout = [p for p in pins if p.action == "actions/checkout"]
+    assert checkout, "expected actions/checkout in repo ci.yml"
+    assert checkout[0].pin == "v6.0.2"
