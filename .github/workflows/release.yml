@@ -19,6 +19,8 @@ jobs:
         enable-cache: true
     - name: Sync locked dependencies
       run: uv sync --locked --group dev
+    - name: Run tests
+      run: uv run pytest -q
     - name: Build installable wheel and sdist
       run: uv build packages/repo-ops
     - name: List artifacts
