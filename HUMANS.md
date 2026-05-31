@@ -78,7 +78,7 @@ Do not install under `~/.cursor/skills-cursor/` (reserved for Cursor built-ins).
 After `uv tool install` (runtime or `-e` development):
 
 ```bash
-uv tool list          # expect repo-ops 0.3.1+
+uv tool list          # expect repo-ops 0.3.2+
 uv tool dir --bin     # ensure this directory is on PATH
 which repo-ops
 ```
@@ -155,7 +155,7 @@ gh search code "repos-inventory" --owner Rethunk-Tech
 gh search code "repo_ops.upgrade.ecosystems" --owner Rethunk-Tech
 ```
 
-### Package layout (uv workspace 0.3.1)
+### Package layout (uv workspace 0.3.2)
 
 The repo is a **uv workspace** under `packages/*`. Ecosystem plugins register checkers/appliers via `repo_ops._register.register_all()` before dispatch. Programmatic import paths:
 

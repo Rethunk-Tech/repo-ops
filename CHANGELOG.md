@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-05-30
+
+### Fixed
+
+- **GitHub Actions apply:** replace workflow pins only on matched `uses:` lines so shorter tags are not applied as substrings of longer pins (#5).
+- **Yarn plan:** isolated snapshots copy `.yarn/releases/` (Berry) and `file:../` sibling checkouts; failed `yarn up` / `install` errors include a stderr tail in plan JSON (#6).
+- **Go upgrades:** default `patch` mode aligns plan and apply (`go list -m -u -json` with patch filter; `go get -u=patch all` + tidy). Opt into `explicit` or legacy `mvs` via `REPO_OPS_GO_UPGRADE_MODE` (#7).
+
+### Changed
+
+- HUMANS.md documents Go upgrade modes and Yarn isolated-plan copy semantics.
+
 ## [0.3.1] - 2026-05-31
 
 ### Added
@@ -119,7 +131,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.2.5...v0.3.0
 [0.2.5]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.2.4...v0.2.5

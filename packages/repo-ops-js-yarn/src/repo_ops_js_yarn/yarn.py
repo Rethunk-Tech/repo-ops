@@ -27,8 +27,10 @@ _STDERR_TAIL_LINES = 12
 
 
 def _stderr_tail(proc) -> str:
-    combined = (proc.stderr or "") + ("\n" if proc.stderr and proc.stdout else "") + (
-        proc.stdout or ""
+    combined = (
+        (proc.stderr or "")
+        + ("\n" if proc.stderr and proc.stdout else "")
+        + (proc.stdout or "")
     )
     lines = [ln for ln in combined.strip().splitlines() if ln.strip()]
     if not lines:

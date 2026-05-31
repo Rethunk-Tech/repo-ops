@@ -43,7 +43,9 @@ def test_changes_from_go_list_json_patch_filter(tmp_path) -> None:
             }
         ),
     ]
-    proc = type("Proc", (), {"returncode": 0, "stdout": "\n".join(lines), "stderr": ""})()
+    proc = type(
+        "Proc", (), {"returncode": 0, "stdout": "\n".join(lines), "stderr": ""}
+    )()
     with patch("repo_ops_go.go.run", return_value=proc):
         changes = _changes_from_go_list_json(ws, patch_only=True)
     assert len(changes) == 1

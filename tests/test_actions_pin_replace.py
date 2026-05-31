@@ -11,8 +11,7 @@ from repo_ops_upgrade.actions import replace_action_pin_in_text, scan_actions
 def test_replace_action_pin_skips_prefix_of_longer_tag() -> None:
     text = "uses: 8398a7/action-slack@v3.19.0\n"
     assert (
-        replace_action_pin_in_text(text, "8398a7/action-slack", "v3", "v3.19.0")
-        == text
+        replace_action_pin_in_text(text, "8398a7/action-slack", "v3", "v3.19.0") == text
     )
 
 
