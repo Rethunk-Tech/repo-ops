@@ -4,7 +4,7 @@ This document records conventions and coordination notes for AI coding agents (C
 
 ## Project Overview
 
-repo-ops is a **uv workspace** (`packages/*`, version 0.3.3) of Python packages for repository operations and dependency tools for Rethunk-Tech. The installable meta package `repo-ops` exposes a single console script `repo-ops` with subcommands `inventory`, `plan`, `apply`, and `pushed`. It uses the `uv_build` backend, a committed `uv.lock`, pytest for testing, and targets Python >= 3.10.
+repo-ops is a **uv workspace** (`packages/*`, version 0.3.4) of Python packages for repository operations and dependency tools for Rethunk-Tech. The installable meta package `repo-ops` exposes a single console script `repo-ops` with subcommands `inventory`, `plan`, `apply`, and `pushed`. It uses the `uv_build` backend, a committed `uv.lock`, pytest for testing, and targets Python >= 3.10.
 
 For command names, install paths, and usage flags, see [HUMANS.md](HUMANS.md).
 
