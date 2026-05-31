@@ -10,21 +10,10 @@ from repo_ops.core.filesystem import read_json_file
 from repo_ops.core.process import run
 from repo_ops.core.version_utils import normalize_version, semver_tuple
 from repo_ops.upgrade.constants import TIMEOUT_APPLY
+from repo_ops.upgrade.ecosystems.node_lockfiles import (
+    resolved_version_from_node_modules,
+)
 from repo_ops.upgrade.models import Change, Workspace
-
-
-def resolved_version_from_node_modules(mdir: Path, name: str) -> str | None:
-    candidates = [
-        mdir / "node_modules" / name / "package.json",
-    ]
-    if name.startswith("@"):
-        scope, pkg = name.split("/", 1)
-        candidates.append(mdir / "node_modules" / scope / pkg / "package.json")
-    for p in candidates:
-        d = read_json_file(p)
-        if d and d.get("version"):
-            return str(d["version"])
-    return None
 
 
 def _override_package_name(name: str) -> str:

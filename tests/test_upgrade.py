@@ -86,7 +86,9 @@ def test_remediations_pm_exec_prefix_yarn():
 
 
 def test_resolved_version_from_node_modules_scoped(tmp_path):
-    from repo_ops.upgrade.ecosystems.node import resolved_version_from_node_modules
+    from repo_ops.upgrade.ecosystems.node_lockfiles import (
+        resolved_version_from_node_modules,
+    )
 
     pkg_dir = tmp_path / "node_modules" / "@biomejs" / "biome"
     pkg_dir.mkdir(parents=True)

@@ -19,7 +19,9 @@ from repo_ops.upgrade.constants import (
     PLAYWRIGHT_PKG,
     TIMEOUT_APPLY,
 )
-from repo_ops.upgrade.ecosystems.node import resolved_version_from_node_modules
+from repo_ops.upgrade.ecosystems.node_lockfiles import (
+    resolved_version_from_node_modules,
+)
 from repo_ops.upgrade.models import Workspace, WorkspaceResult
 from repo_ops.upgrade.workspaces import (
     parse_package_manager,
