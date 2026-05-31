@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -24,6 +25,22 @@ from repo_ops_upgrade.constants import (
 
 FILE_PROTOCOL_RE = re.compile(r"^file:(\.\./.+?)(?:#.*)?$")
 _STDERR_TAIL_LINES = 12
+_YARN_UPDATE_LATEST_ENV = "REPO_OPS_YARN_UPDATE_LATEST"
+
+
+def _yarn_update_latest_enabled() -> bool:
+    return os.environ.get(_YARN_UPDATE_LATEST_ENV, "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _yarn_up_cmd() -> list[str]:
+    """Conservative in-range bumps by default; ``yarn up -R '*'`` when latest is opted in."""
+    if _yarn_update_latest_enabled():
+        return ["yarn", "up", "-R", "*"]
+    return ["yarn", "up"]
 
 
 def _stderr_tail(proc) -> str:
@@ -166,13 +183,14 @@ def _copy_yarn_workspace_to_temp(ws: Workspace, temp_root: Path) -> Path:
 
 
 def check_yarn_snapshot(ws: Workspace) -> tuple[list[Change], list[dict[str, str]]]:
+    """Plan via isolated copy; conservative ``yarn up`` unless latest env is set."""
     changes: list[Change] = []
     snapshot_overrides: list[dict[str, str]] = []
     with tempfile.TemporaryDirectory(prefix="dep-refresh-yarn-") as td:
         mdir = _copy_yarn_workspace_to_temp(ws, Path(td))
         before_snap = snapshot_workspace_files(mdir, "yarn")
         corepack_prepare("yarn", mdir)
-        proc = run(["yarn", "up", "-R", "*"], mdir, timeout=TIMEOUT_APPLY)
+        proc = run(_yarn_up_cmd(), mdir, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             raise _command_failure("yarn up failed", proc)
         proc2 = run(["yarn", "install"], mdir, timeout=TIMEOUT_APPLY)
@@ -192,8 +210,9 @@ def check_yarn_snapshot(ws: Workspace) -> tuple[list[Change], list[dict[str, str
 
 
 def apply_yarn(ws: Workspace) -> None:
+    """Apply in workspace; matches check policy (see ``_yarn_up_cmd``)."""
     corepack_prepare("yarn", ws.path)
-    proc = run(["yarn", "up", "-R", "*"], ws.path, timeout=TIMEOUT_APPLY)
+    proc = run(_yarn_up_cmd(), ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise _command_failure("yarn up failed", proc)
     proc2 = run(["yarn", "install"], ws.path, timeout=TIMEOUT_APPLY)
