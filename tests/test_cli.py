@@ -21,6 +21,7 @@ _MAIN_HELP_TARGETS: list[tuple[str, str, list[str]]] = [
     ("repo_ops_upgrade.run", "main_apply", []),
     ("repo_ops_pushed.audit", "main", []),
     ("repo_ops.cli", "main", ["plan"]),
+    ("repo_ops.install_skill", "main", []),
 ]
 
 
@@ -67,5 +68,5 @@ def test_entrypoint_main_help(
 
 
 def test_repo_ops_dispatcher_subcommands_help() -> None:
-    for sub in ("inventory", "plan", "apply", "pushed"):
+    for sub in ("inventory", "plan", "apply", "pushed", "install-skill"):
         _call_main_help("repo_ops.cli", "main", [sub])
