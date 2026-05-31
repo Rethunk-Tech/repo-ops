@@ -12,16 +12,17 @@ Local repository operations and dependency maintenance tools for Rethunk-Tech
 
 ---
 
-repo-ops is a **uv workspace** of Python packages for scanning local git checkouts: dependency footprint, read-only upgrade planning, apply-with-verify upgrades (including GitHub Actions pins), and push-reflog audits.
+repo-ops is a **uv workspace** of Python packages for scanning local git checkouts: dependency footprint, read-only upgrade planning, apply-with-verify upgrades (including GitHub Actions pins), and push-reflog audits. Latest release: [0.5.0](CHANGELOG.md#050---2026-05-31) ([changelog](CHANGELOG.md)).
 
-Install and run the unified **`repo-ops`** CLI — see [HUMANS.md](HUMANS.md). Upgrading from 0.2.x `repos-*` entry points: [HUMANS — Migration from 0.2.x](HUMANS.md#migration-from-02x).
+Install and run the unified **`repo-ops`** CLI — [HUMANS.md](HUMANS.md). Operators on legacy `repos-*` entry points: [HUMANS — Migration from 0.2.x](HUMANS.md#migration-from-02x).
 
 ## Highlights
 
 - Single CLI: `inventory`, `plan`, `apply`, `pushed`, and `install-skill` (bundled agent skill for Cursor/Claude)
-- Upgrade plan/apply includes GitHub Actions pin drift by default (`--skip-actions` to omit)
-- uv-locked workspace (`uv_build`); Python >= 3.10
-- Ecosystem plugins (Node, Go, Rust, Python) with remediations and verify gates
+- Plan is read-only; apply runs ecosystem updates, optional Corepack for Node, and verify gates
+- GitHub Actions pin drift in plan/apply by default (`--skip-actions` to omit); actions-only repos (workflows, no manifests) included
+- Discovery: validated scan roots, optional `--follow-symlinks`, `--flat` and actions-only repos; conservative pnpm/yarn unless env opt-in (see HUMANS)
+- uv-locked workspace (`uv_build`); Python >= 3.10; ecosystem plugins (Node, Go, Rust, Python) with remediations
 - Built for Rethunk-Tech monorepo and sibling checkout trees under shared roots
 
 ## Documentation
