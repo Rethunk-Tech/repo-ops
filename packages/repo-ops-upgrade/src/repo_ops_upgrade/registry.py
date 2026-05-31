@@ -29,8 +29,6 @@ def get_checker(manager: str) -> Checker | None:
 def check_workspace(ws: Workspace) -> WorkspaceResult:
     result = WorkspaceResult(workspace=ws)
     try:
-        if ws.ecosystem == "node" and ws.manager != "yarn":
-            corepack_prepare(ws.manager, ws.path)
         checker = CHECKERS.get(ws.manager)
         if not checker:
             result.status = "skip"
