@@ -74,6 +74,12 @@ dependencies = [
     assert rows[0]["edges"] == 1
 
 
+def test_scan_non_flat_missing_root_returns_empty(tmp_path: Path):
+    missing = tmp_path / "no-such-root"
+    assert not missing.exists()
+    assert scan(missing, flat=False) == []
+
+
 def test_go_cache_roundtrip_and_invalid(tmp_path: Path):
     cache_path = tmp_path / "cache.json"
     data = {"k": {"direct": 1, "versions": ["x@1"]}}

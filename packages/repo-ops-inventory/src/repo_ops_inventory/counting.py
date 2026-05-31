@@ -447,6 +447,8 @@ def scan(
             row = _make_row(_flat_project_name(root), proj, go_tasks, go_cache)
             rows.append(row)
     else:
+        if not root.is_dir():
+            return rows
         for org in sorted(root.iterdir()):
             if not org.is_dir() or org.name.startswith("."):
                 continue
