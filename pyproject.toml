@@ -114,7 +114,6 @@ strict_optional = true
 show_error_codes = true
 ignore_missing_imports = true
 packages = [
-  "repo_ops",
   "repo_ops_core",
   "repo_ops_models",
   "repo_ops_lockfiles",
