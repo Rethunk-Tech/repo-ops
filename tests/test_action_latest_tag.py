@@ -28,6 +28,9 @@ def test_action_latest_tag_falls_back_to_tags() -> None:
 
 
 def test_action_latest_tag_no_gh() -> None:
+    from repo_ops_upgrade import actions as actions_mod
+
+    actions_mod._TAG_CACHE.clear()
     with patch("repo_ops_upgrade.actions.shutil.which", return_value=None):
         assert action_latest_tag("actions/checkout") is None
 

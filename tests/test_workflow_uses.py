@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from repo_ops_upgrade.actions import scan_actions
 from repo_ops_upgrade.workflow_uses import (
     PinReplacement,
@@ -100,7 +99,7 @@ def test_scan_actions_discovers_checkout_list_item(tmp_path: Path) -> None:
     wf_dir.mkdir(parents=True)
     (wf_dir / "ci.yml").write_text(_CI_SNIPPET, encoding="utf-8")
 
-    def _latest(action: str) -> str | None:
+    def _latest(action: str, **kwargs: object) -> str | None:
         if action == "actions/checkout":
             return "v6"
         if action == "astral-sh/setup-uv":

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -17,6 +18,8 @@ from repo_ops_upgrade.workflow_uses import (
     update_workflow_pins,
 )
 
+_TAG_CACHE: dict[str, str | None] = {}
+
 
 def discover_workflow_files(repo: Path) -> list[Path]:
     wf_dir = repo / ".github" / "workflows"
@@ -27,7 +30,7 @@ def discover_workflow_files(repo: Path) -> list[Path]:
     )
 
 
-def action_latest_tag(action: str) -> str | None:
+def action_latest_tag(action: str, *, cache: dict[str, str | None] | None = None) -> str | None:
     """Return the latest release tag for a GitHub Action via ``gh api``.
 
     Uses ``releases/latest``, then the newest tag. Requires ``gh`` on PATH;
@@ -35,20 +38,42 @@ def action_latest_tag(action: str) -> str | None:
     """
     if not shutil.which("gh"):
         return None
-    proc = run(
-        ["gh", "api", f"repos/{action}/releases/latest", "--jq", ".tag_name"],
-        Path.cwd(),
-        timeout=30,
-    )
-    if proc.returncode == 0 and proc.stdout.strip():
-        return proc.stdout.strip()
-    proc2 = run(
-        ["gh", "api", f"repos/{action}/tags", "--jq", ".[0].name"],
-        Path.cwd(),
-        timeout=30,
-    )
-    if proc2.returncode == 0 and proc2.stdout.strip():
-        return proc2.stdout.strip()
+    store = _TAG_CACHE if cache is None else cache
+    if action in store:
+        return store[action]
+    try:
+        proc = run(
+            ["gh", "api", f"repos/{action}/releases/latest", "--jq", ".tag_name"],
+            Path.cwd(),
+            timeout=30,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            store[action] = proc.stdout.strip()
+            return store[action]
+        proc2 = run(
+            ["gh", "api", f"repos/{action}/tags", "--jq", ".[0].name"],
+            Path.cwd(),
+            timeout=30,
+        )
+        if proc2.returncode == 0 and proc2.stdout.strip():
+            store[action] = proc2.stdout.strip()
+            return store[action]
+    except subprocess.TimeoutExpired:
+        print(f"WARN: gh api timed out for {action}", file=sys.stderr)
+    store[action] = None
+    return None
+
+
+def _run_actionlint(wf: Path, repo: Path) -> str | None:
+    """Return a lint error string, or None when lint passes or is unavailable."""
+    if not shutil.which("actionlint"):
+        return None
+    try:
+        proc = run(["actionlint", str(wf)], repo, timeout=60)
+    except subprocess.TimeoutExpired:
+        return "actionlint timed out"
+    if proc.returncode != 0:
+        return proc.stderr.strip() or proc.stdout.strip() or "actionlint failed"
     return None
 
 
@@ -59,22 +84,26 @@ def scan_actions(repo: Path, apply: bool) -> tuple[list[ActionBump], int]:
         )
     workflows = discover_workflow_files(repo)
     bumps: list[ActionBump] = []
+    tag_cache: dict[str, str | None] = {}
     for wf in workflows:
         rel = str(wf.relative_to(repo))
-        if shutil.which("actionlint"):
-            proc = run(["actionlint", str(wf)], repo, timeout=60)
-            if proc.returncode != 0:
-                bumps.append(
-                    ActionBump(
-                        workflow=rel,
-                        action="(actionlint)",
-                        pin="",
-                        latest="",
-                        status="fail",
-                        detail=proc.stderr.strip() or proc.stdout.strip(),
-                    )
+        lint_err = _run_actionlint(wf, repo)
+        if lint_err:
+            bumps.append(
+                ActionBump(
+                    workflow=rel,
+                    action="(actionlint)",
+                    pin="",
+                    latest="",
+                    status="fail",
+                    detail=lint_err,
                 )
-                continue
+            )
+            print(
+                f"WARN: {rel}: actionlint failed; pin bumps skipped for this workflow",
+                file=sys.stderr,
+            )
+            continue
         try:
             pins = parse_workflow_uses(wf, workflow_rel=rel)
         except WorkflowParseError as exc:
@@ -104,7 +133,7 @@ def scan_actions(repo: Path, apply: bool) -> tuple[list[ActionBump], int]:
                     )
                 )
                 continue
-            latest = action_latest_tag(action)
+            latest = action_latest_tag(action, cache=tag_cache)
             if not latest:
                 continue
             if pin != latest:
