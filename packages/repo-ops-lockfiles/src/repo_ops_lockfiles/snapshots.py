@@ -103,6 +103,21 @@ def _pkg_json_dep_changes(before: bytes, after: bytes) -> list[Change]:
     return changes
 
 
+def restore_workspace_snapshot(
+    mdir: Path,
+    before: dict[Path, bytes],
+    manager: str,
+) -> None:
+    """Restore lockfile/manifest bytes captured before apply."""
+    after = snapshot_workspace_files(mdir, manager)
+    for path in set(before) | set(after):
+        if path in before:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(before[path])
+        elif path.exists():
+            path.unlink()
+
+
 def diff_workspace_snapshots(
     before: dict[Path, bytes],
     after: dict[Path, bytes],

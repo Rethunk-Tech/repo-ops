@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
+from typing import Literal
 
 from repo_ops_core.filesystem import should_exclude
 from repo_ops_core.git import is_git_dirty
@@ -16,9 +18,14 @@ from repo_ops_upgrade_remediations_js import remediations
 
 from repo_ops_upgrade import registry as ecosystems
 from repo_ops_upgrade import verify as verify_mod
-from repo_ops_upgrade.post_apply import collect_changes_after_apply
+from repo_ops_upgrade.post_apply import (
+    classify_verify_fail_disposition,
+    collect_changes_after_apply,
+    revert_workspace_after_verify_fail,
+)
 
 FAIL_FAST_EVENT = threading.Event()
+OnVerifyFail = Literal["keep", "revert"]
 
 
 def process_workspace(
@@ -29,6 +36,7 @@ def process_workspace(
     verify_test: bool,
     skip_remediations: set[str],
     allow_dirty: bool,
+    on_verify_fail: OnVerifyFail = "keep",
 ) -> WorkspaceResult:
     ws = result.workspace
     if FAIL_FAST_EVENT.is_set():
@@ -41,6 +49,7 @@ def process_workspace(
         result.error = "excluded path"
         return result
 
+    before_snap: dict[Path, bytes] | None = None
     if do_apply:
         if is_git_dirty(ws.git_repo) and not allow_dirty:
             result.status = "skip"
@@ -74,6 +83,20 @@ def process_workspace(
         if verr:
             result.verify_error = verr
             result.status = "fail"
+            if before_snap is not None:
+                if on_verify_fail == "revert":
+                    try:
+                        revert_workspace_after_verify_fail(ws, before_snap)
+                    except Exception as exc:
+                        prefix = result.error or ""
+                        result.error = (
+                            f"{prefix}; revert failed: {exc}".strip("; ")
+                            if prefix
+                            else f"revert failed: {exc}"
+                        )
+                result.verify_fail_disposition = classify_verify_fail_disposition(
+                    ws, before_snap
+                )
 
     return result
 

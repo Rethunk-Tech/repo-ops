@@ -32,9 +32,10 @@ class WorkspaceResult:
     remediations: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
     verify_error: str | None = None
+    verify_fail_disposition: str | None = None
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "path": str(self.workspace.path),
             "ecosystem": self.workspace.ecosystem,
             "manager": self.workspace.manager,
@@ -47,6 +48,9 @@ class WorkspaceResult:
             "error": self.error,
             "verify_error": self.verify_error,
         }
+        if self.verify_fail_disposition is not None:
+            out["verify_fail_disposition"] = self.verify_fail_disposition
+        return out
 
 
 @dataclass

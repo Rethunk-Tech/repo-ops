@@ -172,6 +172,17 @@ def add_upgrade_common_arguments(
             action="store_true",
             help="Run go test ./... during verify.",
         )
+        parser.add_argument(
+            "--on-verify-fail",
+            choices=("keep", "revert"),
+            default="keep",
+            dest="on_verify_fail",
+            metavar="POLICY",
+            help=(
+                "When verify fails after apply: keep changes in the worktree (default) "
+                "or revert lockfiles and git-tracked paths under the workspace."
+            ),
+        )
     else:
         parser.add_argument(
             "--only-outdated",

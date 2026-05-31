@@ -13,9 +13,17 @@ from repo_ops_lockfiles.constants import (
     PY_LOCKFILES,
     RUST_LOCKFILES,
 )
+from repo_ops_lockfiles.snapshots import (
+    diff_workspace_snapshots,
+    restore_workspace_snapshot,
+    snapshot_workspace_files,
+)
 from repo_ops_models import Change, Workspace
 
 from repo_ops_upgrade.registry import Checker
+
+FAILED_WITH_CHANGES = "FAILED_WITH_CHANGES"
+FAILED_CLEAN = "FAILED_CLEAN"
 
 
 def collect_changes_after_apply(
@@ -82,3 +90,58 @@ def collect_changes_after_apply(
         except Exception:
             pass
     return []
+
+
+def _workspace_git_pathspec(ws: Workspace) -> str:
+    try:
+        rel = ws.path.resolve().relative_to(ws.git_repo.resolve())
+    except ValueError:
+        return "."
+    return "." if rel == Path(".") else str(rel)
+
+
+def workspace_has_apply_artifacts(
+    ws: Workspace,
+    before_snap: dict[Path, bytes],
+) -> bool:
+    """True when apply left lockfile/manifest or git changes under the workspace."""
+    after_snap = snapshot_workspace_files(ws.path, ws.manager)
+    if diff_workspace_snapshots(before_snap, after_snap, ws.manager):
+        return True
+    pathspec = _workspace_git_pathspec(ws)
+    proc = run(
+        ["git", "status", "--porcelain", "--", pathspec],
+        ws.git_repo,
+        timeout=60,
+    )
+    return proc.returncode == 0 and bool(proc.stdout.strip())
+
+
+def classify_verify_fail_disposition(
+    ws: Workspace,
+    before_snap: dict[Path, bytes],
+) -> str:
+    if workspace_has_apply_artifacts(ws, before_snap):
+        return FAILED_WITH_CHANGES
+    return FAILED_CLEAN
+
+
+def revert_workspace_after_verify_fail(
+    ws: Workspace,
+    before_snap: dict[Path, bytes],
+) -> None:
+    """Restore pre-apply lockfile snapshot and git-tracked paths under the workspace."""
+    restore_workspace_snapshot(ws.path, before_snap, ws.manager)
+    pathspec = _workspace_git_pathspec(ws)
+    diff_proc = run(
+        ["git", "diff", "--name-only", "--", pathspec],
+        ws.git_repo,
+        timeout=60,
+    )
+    if diff_proc.returncode == 0 and diff_proc.stdout.strip():
+        paths = [line.strip() for line in diff_proc.stdout.splitlines() if line.strip()]
+        run(
+            ["git", "checkout", "--", *paths],
+            ws.git_repo,
+            timeout=120,
+        )

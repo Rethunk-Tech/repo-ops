@@ -15,6 +15,7 @@ from repo_ops_lockfiles.parsers import (
 )
 from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
+    restore_workspace_snapshot,
     resolved_version_from_node_modules,
     snapshot_workspace_files,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "PY_LOCKFILES",
     "RUST_LOCKFILES",
     "diff_workspace_snapshots",
+    "restore_workspace_snapshot",
     "parse_package_json_direct",
     "resolved_version_from_node_modules",
     "snapshot_workspace_files",

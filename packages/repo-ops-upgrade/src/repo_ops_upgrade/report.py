@@ -177,6 +177,8 @@ def print_human_report(
                 print(f"    error: {wr.error}")
             if wr.verify_error:
                 print(f"    verify: {wr.verify_error}")
+            if wr.verify_fail_disposition:
+                print(f"    disposition: {wr.verify_fail_disposition}")
             for c in wr.changes[:top_n]:
                 print(f"    {c.name} {c.from_ver} → {c.to}")
             if len(wr.changes) > top_n:

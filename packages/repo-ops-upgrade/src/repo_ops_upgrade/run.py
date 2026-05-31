@@ -86,6 +86,7 @@ def _run_upgrade_body(
             verify_test=apply and args.verify_test,
             skip_remediations=skip_remediations,
             allow_dirty=args.allow_dirty,
+            on_verify_fail=getattr(args, "on_verify_fail", "keep"),
         )
 
     def _process_repo(bundle: RepoBundle) -> list[WorkspaceResult]:
