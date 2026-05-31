@@ -87,8 +87,10 @@ def build_json_payload(
     roots: list[str],
     mode: UpgradeMode,
     diagnostics: DiscoveryDiagnostics | None = None,
+    submodules: list[dict[str, str]] | None = None,
+    submodule_pointer_hints: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "roots": roots,
         "mode": mode,
         "summary": build_run_summary(bundles, diagnostics=diagnostics),
@@ -96,6 +98,11 @@ def build_json_payload(
         "skipped": list(diagnostics.skipped) if diagnostics else [],
         "repos": [b.to_json() for b in sorted(bundles.values(), key=lambda x: x.label)],
     }
+    if submodules is not None:
+        payload["submodules"] = submodules
+    if submodule_pointer_hints is not None:
+        payload["submodule_pointer_hints"] = submodule_pointer_hints
+    return payload
 
 
 def print_json_report(
@@ -104,12 +111,16 @@ def print_json_report(
     roots: list[str],
     mode: UpgradeMode,
     diagnostics: DiscoveryDiagnostics | None = None,
+    submodules: list[dict[str, str]] | None = None,
+    submodule_pointer_hints: list[dict[str, str]] | None = None,
 ) -> None:
     payload = build_json_payload(
         bundles,
         roots=roots,
         mode=mode,
         diagnostics=diagnostics,
+        submodules=submodules,
+        submodule_pointer_hints=submodule_pointer_hints,
     )
     print(json.dumps(payload, indent=2))
 
@@ -121,6 +132,8 @@ def write_json_report(
     roots: list[str],
     mode: UpgradeMode,
     diagnostics: DiscoveryDiagnostics | None = None,
+    submodules: list[dict[str, str]] | None = None,
+    submodule_pointer_hints: list[dict[str, str]] | None = None,
 ) -> Path:
     """Write one JSON document to path via temp file + rename. Returns resolved path."""
     path = Path(path).expanduser().resolve()
@@ -130,6 +143,8 @@ def write_json_report(
         roots=roots,
         mode=mode,
         diagnostics=diagnostics,
+        submodules=submodules,
+        submodule_pointer_hints=submodule_pointer_hints,
     )
     text = json.dumps(payload, indent=2) + "\n"
     fd, tmp_name = tempfile.mkstemp(
@@ -206,6 +221,31 @@ def print_human_report(
         print()
 
 
+def print_submodule_section(
+    submodules: list[dict[str, str]],
+    *,
+    pointer_hints: list[dict[str, str]] | None = None,
+) -> None:
+    """Human-readable submodule umbrella notes (plan/apply)."""
+    if not submodules and not pointer_hints:
+        return
+    print("Submodules")
+    for entry in submodules:
+        print(
+            f"  {entry['path']} → {entry['git_repo']} "
+            f"(parent {entry['parent']})"
+        )
+    if pointer_hints:
+        print()
+        print("Parent repos needing submodule pointer commit:")
+        for hint in pointer_hints:
+            paths = hint.get("paths", "")
+            print(f"  {hint['parent']}: {paths}")
+            if hint.get("hint"):
+                print(f"    {hint['hint']}")
+    print()
+
+
 def count_failures(bundles: dict[Path, RepoBundle]) -> int:
     """Count workspace and Actions rows with status fail."""
     n = 0
@@ -239,8 +279,18 @@ def print_run_footer(
     exit_code: int,
     max_failures: int = DEFAULT_MAX_FAILURE_LINES,
     show_skips: bool = False,
+    submodule_pointer_hints: list[dict[str, str]] | None = None,
 ) -> None:
     """End-of-run roll-up and automation lines (human stdout)."""
+    if submodule_pointer_hints:
+        print("---")
+        print("Submodule pointers")
+        for hint in submodule_pointer_hints:
+            paths = hint.get("paths", "")
+            print(f"  {hint['parent']}: {paths}")
+            if hint.get("hint"):
+                print(f"    {hint['hint']}")
+        print()
     print("---")
     print("Summary")
     rows = [

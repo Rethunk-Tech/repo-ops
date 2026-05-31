@@ -14,7 +14,7 @@ from repo_ops_core.parallel import run_bounded_pool
 from repo_ops_core.tee import tee_stdout_stderr
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 
-from repo_ops_upgrade import actions, orchestration, report
+from repo_ops_upgrade import actions, orchestration, report, submodules
 from repo_ops_upgrade import discovery as workspace_discovery
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 
@@ -76,6 +76,28 @@ def _run_upgrade_body(
 
     bundles = workspace_discovery.group_by_repo(found, roots)
 
+    include_submodules = getattr(args, "submodules", False)
+    submodule_order = getattr(args, "submodule_order", "discovery")
+    need_submodule_scan = include_submodules or (
+        apply and submodule_order == "children-first"
+    )
+    submodule_links: list[submodules.SubmoduleLink] = []
+    submodules_json: list[dict[str, str]] | None = None
+    if need_submodule_scan:
+        submodule_links = submodules.discover_submodules_under_roots(
+            roots,
+            flat=args.flat,
+        )
+        if include_submodules:
+            submodules_json = submodules.submodules_to_json(submodule_links)
+
+    bundle_order = list(bundles.keys())
+    if apply and submodule_order == "children-first" and submodule_links:
+        bundle_order = submodules.sort_bundles_children_first(
+            bundle_order,
+            submodule_links,
+        )
+
     _FAIL_FAST.clear()
 
     def _process_one(wr: WorkspaceResult) -> WorkspaceResult:
@@ -101,7 +123,10 @@ def _run_upgrade_body(
 
     all_results: list[WorkspaceResult] = []
     if apply:
-        pending_bundles = [bundle for bundle in bundles.values() if bundle.workspaces]
+        ordered_bundles = [
+            bundles[key] for key in bundle_order if key in bundles and bundles[key].workspaces
+        ]
+        pending_bundles = ordered_bundles
 
         def _repo_failed(batch: list[WorkspaceResult]) -> bool:
             if args.fail_fast and any(r.status == "fail" for r in batch):
@@ -109,16 +134,28 @@ def _run_upgrade_body(
                 return True
             return False
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-            for batch in run_bounded_pool(
-                pool,
-                pending_bundles,
-                _process_repo,
-                max_in_flight=args.jobs,
-                should_stop=_FAIL_FAST.is_set,
-                stop_on_result=_repo_failed,
-            ):
+        children_first = submodule_order == "children-first" and bool(
+            submodule_links
+        )
+        if children_first:
+            for bundle in pending_bundles:
+                if _FAIL_FAST.is_set():
+                    break
+                batch = _process_repo(bundle)
                 all_results.extend(batch)
+                if _repo_failed(batch):
+                    break
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
+                for batch in run_bounded_pool(
+                    pool,
+                    pending_bundles,
+                    _process_repo,
+                    max_in_flight=args.jobs,
+                    should_stop=_FAIL_FAST.is_set,
+                    stop_on_result=_repo_failed,
+                ):
+                    all_results.extend(batch)
     else:
         all_wrs = [wr for bundle in bundles.values() for wr in bundle.workspaces]
 
@@ -161,6 +198,19 @@ def _run_upgrade_body(
                 if wr.changes or wr.status != "ok" or wr.remediations
             ]
 
+    pointer_hints: list[dict[str, str]] | None = None
+    if submodule_links and (apply or include_submodules):
+        pointer_hints = submodules.parent_repos_needing_pointer_commit(
+            submodule_links,
+        )
+        if not pointer_hints:
+            pointer_hints = None
+
+    json_submodules = submodules_json if include_submodules else None
+    json_pointer_hints = pointer_hints if (apply and pointer_hints) else None
+    if include_submodules and pointer_hints and not apply:
+        json_pointer_hints = pointer_hints
+
     if use_json:
         mode = "apply" if apply else "plan"
         if json_report_path:
@@ -170,6 +220,8 @@ def _run_upgrade_body(
                 roots=roots,
                 mode=mode,
                 diagnostics=diagnostics,
+                submodules=json_submodules,
+                submodule_pointer_hints=json_pointer_hints,
             )
             print(written)
         else:
@@ -178,6 +230,8 @@ def _run_upgrade_body(
                 roots=roots,
                 mode=mode,
                 diagnostics=diagnostics,
+                submodules=json_submodules,
+                submodule_pointer_hints=json_pointer_hints,
             )
     elif not args.quiet:
         top_n = getattr(args, "top", 10)
@@ -188,6 +242,11 @@ def _run_upgrade_body(
             top_n=top_n,
             include_actions=not args.skip_actions,
         )
+        if include_submodules and submodules_json:
+            report.print_submodule_section(
+                submodules_json,
+                pointer_hints=pointer_hints,
+            )
 
     exit_code = _resolve_exit_code(
         bundles,
@@ -196,12 +255,16 @@ def _run_upgrade_body(
         has_actionable_work=_has_actionable_work(bundles),
     )
     if not use_json:
+        footer_hints = pointer_hints if apply else None
+        if include_submodules and pointer_hints and not apply:
+            footer_hints = pointer_hints
         report.print_run_footer(
             summary=report.build_run_summary(bundles, diagnostics=diagnostics),
             failures=report.collect_run_failures(bundles),
             exit_code=exit_code,
             max_failures=args.max_failures,
             show_skips=args.strict_exit,
+            submodule_pointer_hints=footer_hints,
         )
     return exit_code
 

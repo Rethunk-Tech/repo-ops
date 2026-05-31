@@ -189,6 +189,26 @@ def add_upgrade_common_arguments(
             action="store_true",
             help="Omit clean workspaces from human output.",
         )
+    parser.add_argument(
+        "--submodules",
+        action="store_true",
+        help=(
+            "Detect .gitmodules under roots; include submodules[] in JSON and "
+            "call out parent repos needing submodule pointer commits."
+        ),
+    )
+    if apply:
+        parser.add_argument(
+            "--submodule-order",
+            choices=("discovery", "children-first"),
+            default="discovery",
+            dest="submodule_order",
+            metavar="ORDER",
+            help=(
+                "Repo processing order when submodules exist: discovery (default) "
+                "or children-first (child git repos before parent umbrellas)."
+            ),
+        )
 
 
 def build_upgrade_parser(*, apply: bool) -> argparse.ArgumentParser:
