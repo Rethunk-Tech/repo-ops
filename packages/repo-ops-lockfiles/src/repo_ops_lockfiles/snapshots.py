@@ -146,8 +146,14 @@ def diff_workspace_snapshots(
         elif path.name in (
             "package-lock.json",
             "pnpm-lock.yaml",
+            "bun.lock",
+            "bun.lockb",
             "uv.lock",
+            "poetry.lock",
             "requirements.txt",
+            "go.mod",
+            "go.sum",
+            "Cargo.lock",
         ):
             if path.name not in seen:
                 seen.add(path.name)
