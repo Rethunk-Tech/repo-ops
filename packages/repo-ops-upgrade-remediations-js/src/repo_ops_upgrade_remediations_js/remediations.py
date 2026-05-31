@@ -31,12 +31,24 @@ from repo_ops_upgrade.constants import (
 )
 
 
+ApplyResult = tuple[bool, str]
+
+
 @dataclass
 class Remediation:
     id: str
     detect: Callable[[Workspace, dict[str, Any]], bool]
     report: Callable[[Workspace, dict[str, Any]], list[str]]
-    apply: Callable[[Workspace, dict[str, Any]], bool]
+    apply: Callable[[Workspace, dict[str, Any]], ApplyResult]
+
+
+def _stderr_tail(text: str, *, max_chars: int = 200) -> str:
+    s = (text or "").strip()
+    if not s:
+        return "non-zero exit"
+    if len(s) <= max_chars:
+        return s
+    return s[-max_chars:]
 
 
 def _find_biome_configs(mdir: Path) -> list[Path]:
@@ -102,9 +114,10 @@ def report_biome(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
     return lines
 
 
-def apply_biome(ws: Workspace, ctx: dict[str, Any]) -> bool:
+def apply_biome(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     prefix = pm_exec_prefix(ws.manager)
     ok = True
+    last_err = ""
     for cfg in _find_biome_configs(ws.path):
         cfg_dir = cfg.parent
         cmd = [*prefix, "biome", "migrate", "--write"]
@@ -113,7 +126,10 @@ def apply_biome(ws: Workspace, ctx: dict[str, Any]) -> bool:
         proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             ok = False
-    return ok
+            last_err = _stderr_tail(proc.stderr or proc.stdout or "")
+    if ok:
+        return True, "biome migrate --write (ok)"
+    return False, f"biome migrate --write (failed: {last_err})"
 
 
 def _playwright_version_changed(ws: Workspace, ctx: dict[str, Any]) -> bool:
@@ -168,10 +184,14 @@ def report_playwright(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
     return [f"REMEDIATE playwright: would run {ws.manager} exec playwright install"]
 
 
-def apply_playwright(ws: Workspace, ctx: dict[str, Any]) -> bool:
+def apply_playwright(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     prefix = pm_exec_prefix(ws.manager)
     proc = run([*prefix, "playwright", "install"], ws.path, timeout=TIMEOUT_APPLY)
-    return proc.returncode == 0
+    cmd = f"{ws.manager} exec playwright install"
+    if proc.returncode == 0:
+        return True, f"{cmd} (ok)"
+    err = _stderr_tail(proc.stderr or proc.stdout or "")
+    return False, f"{cmd} (failed: {err})"
 
 
 def detect_codegen(ws: Workspace, ctx: dict[str, Any]) -> bool:
@@ -193,16 +213,20 @@ def report_codegen(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
     return lines
 
 
-def apply_codegen(ws: Workspace, ctx: dict[str, Any]) -> bool:
+def apply_codegen(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     prefix = pm_run_prefix(ws.manager)
     ok = True
+    last_err = ""
     pkg = read_json_file(ws.path / "package.json") or {}
     for script in ("generate:proto", "generate:openapi"):
         if script in (pkg.get("scripts") or {}):
             proc = run([*prefix, script], ws.path, timeout=TIMEOUT_APPLY)
             if proc.returncode != 0:
                 ok = False
-    return ok
+                last_err = _stderr_tail(proc.stderr or proc.stdout or "")
+    if ok:
+        return True, f"{ws.manager} run codegen (ok)"
+    return False, f"{ws.manager} run codegen (failed: {last_err})"
 
 
 def _pm_runtime_version(name: str, ws: Workspace) -> str | None:
@@ -235,21 +259,21 @@ def report_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
     return [f"REMEDIATE package_manager_pin: {pm} → {name}@{actual}"]
 
 
-def apply_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> bool:
+def apply_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     pkg_path = ws.path / "package.json"
     pkg = read_json_file(pkg_path)
     if not pkg:
-        return False
+        return False, "packageManager pin (failed: missing package.json)"
     pm_field = parse_package_manager(pkg)
     if not pm_field:
-        return False
+        return False, "packageManager pin (failed: no packageManager field)"
     name, _ = pm_field
     actual = _pm_runtime_version(name, ws)
     if actual is None:
-        return False
+        return False, f"packageManager pin (failed: {name} --version)"
     pkg["packageManager"] = f"{name}@{actual}"
     pkg_path.write_text(json.dumps(pkg, indent=2) + "\n", encoding="utf-8")
-    return True
+    return True, f"packageManager → {name}@{actual} (ok)"
 
 
 REMEDIATIONS: list[Remediation] = [
@@ -293,15 +317,14 @@ def run_remediations(
                 files = _remediation_files(rem.id, result.workspace)
                 if files:
                     entry["files"] = files
-                lines = rem.report(result.workspace, ctx)
-                entry["detail"] = "; ".join(lines)
                 if apply:
-                    entry["status"] = (
-                        "applied" if rem.apply(result.workspace, ctx) else "fail"
-                    )
-                    if entry["status"] == "fail":
+                    ok, entry["detail"] = rem.apply(result.workspace, ctx)
+                    entry["status"] = "applied" if ok else "fail"
+                    if not ok:
                         result.status = "fail"
                 else:
+                    lines = rem.report(result.workspace, ctx)
+                    entry["detail"] = "; ".join(lines)
                     entry["status"] = "pending"
             else:
                 entry["status"] = "ok"
