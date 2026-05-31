@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-31
+
+### Added
+
+- **Discovery:** `--flat` mode and actions-only repositories (workflow pins without package manifests) participate in plan/apply scans.
+- **pip-tools apply:** `requirements.txt` updates via `uv pip compile` when a native pip-tools apply path is unavailable.
+- **Release CI:** Tag builds run `pytest` before uploading wheel/sdist artifacts.
+
+### Changed
+
+- **pnpm / yarn:** Default to conservative semver updates (aligned with npm); Yarn isolated plan/apply uses `yarn up` unless `REPO_OPS_YARN_UPDATE_LATEST=1`.
+- **Post-apply:** Lockfile snapshot diff detects more change kinds; post-apply commits are scoped on dirty worktrees; checker failures are logged instead of swallowed silently.
+- **GitHub Actions:** Actionlint noise reduced; `gh` tag lookups batched; apply skipped when the worktree is dirty.
+- **Docs:** Ecosystem upgrade modes, discovery flags, and tier docs no longer pin release versions in agent/human tiers.
+
+### Fixed
+
+- **Security / plan isolation:** Allowlist `packageManager` values; skip Corepack during plan check; Hatch plan checks use a temporary venv; `install-skill` rejects unsafe `--dest` paths; discovery validates cwd and scan roots; default `find` omits `-L` follow symlinks.
+- **Parallel apply:** Fail-fast batch exit no longer raises `KeyError` when a sibling repo stops early.
+- **CLI:** Reject non-positive `--jobs`.
+- **Bun:** Pass `--` before package update targets so flags are not swallowed.
+- **Go:** Harden explicit `go get` batches.
+- **Inventory:** Skip scan when a default root is missing; prune `SKIP_DIRS` inside `node_modules` dependency counts.
+- **pushed:** Resolve pre-push OID from reflog via `rev-parse`.
+- **Upgrade apply:** Narrow swallowed exceptions; guard submodule walks; submodule and Actions apply behavior on partially dirty trees.
+
+### Docs
+
+- HUMANS: Go/Bun/pnpm/Yarn upgrade modes, `--flat` / actions-only discovery, and conservative Yarn policy.
+
 ## [0.4.0] - 2026-05-31
 
 ### Added
@@ -179,7 +209,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.5...v0.4.0
 [0.3.5]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.3...v0.3.4
