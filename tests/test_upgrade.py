@@ -83,3 +83,21 @@ def test_remediations_pm_exec_prefix_yarn():
     from repo_ops.upgrade.workspaces import pm_exec_prefix
 
     assert pm_exec_prefix("yarn") == ["yarn"]
+
+
+def test_resolved_version_from_node_modules_scoped(tmp_path):
+    from repo_ops.upgrade.ecosystems.node import resolved_version_from_node_modules
+
+    pkg_dir = tmp_path / "node_modules" / "@biomejs" / "biome"
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "package.json").write_text(
+        '{"name":"@biomejs/biome","version":"2.0.0"}', encoding="utf-8"
+    )
+    assert resolved_version_from_node_modules(tmp_path, "@biomejs/biome") == "2.0.0"
+
+
+def test_is_git_dirty_clean_repo(tmp_path):
+    from repo_ops.core.git import is_git_dirty
+
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    assert is_git_dirty(tmp_path) is False

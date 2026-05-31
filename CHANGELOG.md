@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Shared CLI: `add_eco_filter_argument` and unified `--json` dest (`json_out`) on all commands; upgrade `--top` defined once for plan/apply.
+- `is_git_dirty` lives in `repo_ops.core.git` (upgrade orchestration imports it).
+- Node: `resolved_version_from_node_modules` shared by overrides audit and biome remediation; package-manager pin remediations use `parse_package_manager`.
 - Documentation: separate `CLAUDE.md` pointer (was symlink to `AGENTS.md`); HUMANS package-layout anchor normalized; PR template defers verification to HUMANS.
 
 ## [0.2.5] - 2026-05-29

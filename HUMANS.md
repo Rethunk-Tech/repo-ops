@@ -93,6 +93,8 @@ Console scripts are declared in PEP 621 `[project.scripts]` in `pyproject.toml` 
 
 All tools default to scanning [`DEFAULT_ROOTS`](src/repo_ops/core/constants.py) unless you pass explicit root directories.
 
+`--json` emits machine-readable output on every command (`repos-inventory`, upgrade plan/apply, `repos-pushed`). `--filter ECO` limits inventory rows or upgrade workspaces to one ecosystem (`node`, `go`, `rust`, `py`).
+
 `--flat` treats each root as a single project (skips the org/proj two-level walk). It is available on `repos-inventory` and upgrade plan/apply, not on `repos-pushed`.
 
 ### Upgrade plan vs apply
