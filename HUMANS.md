@@ -127,7 +127,7 @@ GitHub Actions workflow pins are included in both plan and apply by default. Use
 |------|------|-------|
 | `patch` (default) | `go list -m -u -json` filtered to same minor-line patch bumps | `go get -u=patch all`, then `go mod tidy` |
 | `explicit` | all `list -u` updates | batched `go get path@version` for each update, then tidy |
-| `mvs` | legacy `go list -u -m all` text | `go get -u ./...`, `go get -t -u ./...`, tidy |
+| `mvs` | legacy `go list -u -m all` text | `go get -u -t all`, then `go mod tidy` |
 
 **Yarn (plan)** — isolated snapshots copy `.yarn/releases/` (Berry) and any `file:../…` sibling checkouts referenced from `package.json`, while still skipping `node_modules`, `.yarn/cache`, and other heavy dirs. Failed `yarn up` / `install` errors include a stderr tail in the plan JSON `error` field.
 

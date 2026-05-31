@@ -121,3 +121,26 @@ def test_apply_go_patch_mode_runs_patch_all(tmp_path) -> None:
         apply_go(ws)
     assert ["go", "get", "-u=patch", "all"] in calls
     assert ["go", "mod", "tidy"] in calls
+
+
+def test_apply_go_mvs_mode_runs_get_u_t_all(tmp_path) -> None:
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="go",
+        manager="go",
+        git_repo=tmp_path,
+        label="mod",
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout=0):
+        calls.append(cmd)
+        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    with (
+        patch.dict("os.environ", {"REPO_OPS_GO_UPGRADE_MODE": "mvs"}),
+        patch("repo_ops_go.go.run", side_effect=fake_run),
+    ):
+        apply_go(ws)
+    assert ["go", "get", "-u", "-t", "all"] in calls
+    assert ["go", "mod", "tidy"] in calls

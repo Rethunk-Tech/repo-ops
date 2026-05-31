@@ -128,10 +128,9 @@ def apply_go(ws: Workspace) -> None:
 
 
 def _apply_go_mvs(ws: Workspace) -> None:
-    for args in (["go", "get", "-u", "./..."], ["go", "get", "-t", "-u", "./..."]):
-        proc = run(args, ws.path, timeout=TIMEOUT_APPLY)
-        if proc.returncode != 0:
-            raise RuntimeError(proc.stderr.strip() or f"{' '.join(args)} failed")
+    proc = run(["go", "get", "-u", "-t", "all"], ws.path, timeout=TIMEOUT_APPLY)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "go get -u -t all failed")
     proc = run(["go", "mod", "tidy"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "go mod tidy failed")
