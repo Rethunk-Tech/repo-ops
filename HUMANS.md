@@ -58,7 +58,7 @@ uv tool install -e .
 After `uv tool install` (runtime or `-e` development):
 
 ```bash
-uv tool list          # expect repo-ops 0.2.4+
+uv tool list          # expect repo-ops 0.2.5+
 uv tool dir --bin     # ensure this directory is on PATH
 which repos-inventory
 ```
