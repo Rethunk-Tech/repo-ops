@@ -107,6 +107,8 @@ def test_apply_log_file_captures_transcript(tmp_path: Path) -> None:
     transcript = log_path.read_text(encoding="utf-8")
     assert "exit_code: 1" in transcript
     assert "failures: 1" in transcript
+    assert "Summary" in transcript
+    assert "workspaces fail" in transcript
 
 
 def test_plan_log_file_includes_footer(tmp_path: Path, capsys) -> None:
@@ -175,3 +177,4 @@ def test_upgrade_parser_exposes_log_file_and_strict_exit() -> None:
         dests = {a.dest for a in parser._actions}
         assert "log_file" in dests
         assert "strict_exit" in dests
+        assert "max_failures" in dests
