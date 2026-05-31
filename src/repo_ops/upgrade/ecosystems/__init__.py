@@ -18,11 +18,15 @@ from .node import (
     overrides_audit,
 )
 
-CHECKERS: dict[str, Callable[[Workspace], list[Change]]] = {
+Checker = Callable[
+    [Workspace], list[Change] | tuple[list[Change], list[dict[str, str]]]
+]
+
+CHECKERS: dict[str, Checker] = {
     "bun": check_bun,
     "npm": check_npm,
     "pnpm": check_pnpm,
-    "yarn": yarn.check_yarn,
+    "yarn": yarn.check_yarn_snapshot,
     "go": go.check_go,
     "rust": rust.check_rust,
     "uv": python.check_uv,
@@ -55,12 +59,11 @@ def check_workspace(ws: Workspace) -> WorkspaceResult:
             result.status = "skip"
             result.error = f"unsupported manager {ws.manager}"
             return result
-        if ws.manager == "yarn":
-            changes, snap_overrides = yarn.check_yarn_snapshot(ws)
-            result.changes = changes
-            result.overrides_audit = snap_overrides
+        out = checker(ws)
+        if isinstance(out, tuple):
+            result.changes, result.overrides_audit = out
         else:
-            result.changes = checker(ws)
+            result.changes = out
             if ws.ecosystem == "node":
                 result.overrides_audit = overrides_audit(ws.path, ws.manager)
     except Exception as exc:

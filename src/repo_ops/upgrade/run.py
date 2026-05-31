@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import concurrent.futures
-from collections.abc import Callable
 from pathlib import Path
 
 from repo_ops.core.cli import (
@@ -12,46 +11,12 @@ from repo_ops.core.cli import (
     wire_verbose,
 )
 from repo_ops.core.constants import DEFAULT_ROOTS
+from repo_ops.core.parallel import run_bounded_pool
 from repo_ops.upgrade import actions, orchestration, report
 from repo_ops.upgrade import workspaces as workspace_discovery
 from repo_ops.upgrade.models import RepoBundle, Workspace, WorkspaceResult
 
 _FAIL_FAST = orchestration.FAIL_FAST_EVENT
-
-
-def _run_plan_parallel(
-    pool: concurrent.futures.ThreadPoolExecutor,
-    all_wrs: list[WorkspaceResult],
-    process_one: Callable[[WorkspaceResult], WorkspaceResult],
-    *,
-    jobs: int,
-    fail_fast: bool,
-) -> list[WorkspaceResult]:
-    all_results: list[WorkspaceResult] = []
-    pending_wrs: list[WorkspaceResult] = list(all_wrs)
-    wr_futures: dict[concurrent.futures.Future[WorkspaceResult], WorkspaceResult] = {}
-    while pending_wrs or wr_futures:
-        while pending_wrs and len(wr_futures) < jobs and not _FAIL_FAST.is_set():
-            wr = pending_wrs.pop(0)
-            fut = pool.submit(process_one, wr)
-            wr_futures[fut] = wr
-        if not wr_futures:
-            break
-        done, _ = concurrent.futures.wait(
-            wr_futures.keys(),
-            return_when=concurrent.futures.FIRST_COMPLETED,
-        )
-        for fut in done:
-            wr_futures.pop(fut)
-            updated = fut.result()
-            all_results.append(updated)
-            if fail_fast and updated.status == "fail":
-                _FAIL_FAST.set()
-                for pending_fut in list(wr_futures):
-                    pending_fut.cancel()
-                wr_futures.clear()
-                pending_wrs.clear()
-    return all_results
 
 
 def _has_actionable_work(bundles: dict[Path, RepoBundle]) -> bool:
@@ -111,47 +76,41 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
 
     all_results: list[WorkspaceResult] = []
     if apply:
+        pending_bundles = [bundle for bundle in bundles.values() if bundle.workspaces]
+
+        def _repo_failed(batch: list[WorkspaceResult]) -> bool:
+            if args.fail_fast and any(r.status == "fail" for r in batch):
+                _FAIL_FAST.set()
+                return True
+            return False
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-            pending_bundles: list[RepoBundle] = [
-                bundle for bundle in bundles.values() if bundle.workspaces
-            ]
-            futures: dict[
-                concurrent.futures.Future[list[WorkspaceResult]], RepoBundle
-            ] = {}
-            while pending_bundles or futures:
-                while (
-                    pending_bundles
-                    and len(futures) < args.jobs
-                    and not _FAIL_FAST.is_set()
-                ):
-                    bundle = pending_bundles.pop(0)
-                    fut = pool.submit(_process_repo, bundle)
-                    futures[fut] = bundle
-                if not futures:
-                    break
-                done, _ = concurrent.futures.wait(
-                    futures.keys(),
-                    return_when=concurrent.futures.FIRST_COMPLETED,
-                )
-                for fut in done:
-                    futures.pop(fut)
-                    updated = fut.result()
-                    all_results.extend(updated)
-                    if args.fail_fast and any(r.status == "fail" for r in updated):
-                        _FAIL_FAST.set()
-                        for pending_fut in list(futures):
-                            pending_fut.cancel()
-                        futures.clear()
-                        pending_bundles.clear()
+            for batch in run_bounded_pool(
+                pool,
+                pending_bundles,
+                _process_repo,
+                max_in_flight=args.jobs,
+                should_stop=_FAIL_FAST.is_set,
+                stop_on_result=_repo_failed,
+            ):
+                all_results.extend(batch)
     else:
         all_wrs = [wr for bundle in bundles.values() for wr in bundle.workspaces]
+
+        def _workspace_failed(wr: WorkspaceResult) -> bool:
+            if args.fail_fast and wr.status == "fail":
+                _FAIL_FAST.set()
+                return True
+            return False
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-            all_results = _run_plan_parallel(
+            all_results = run_bounded_pool(
                 pool,
                 all_wrs,
                 _process_one,
-                jobs=args.jobs,
-                fail_fast=args.fail_fast,
+                max_in_flight=args.jobs,
+                should_stop=_FAIL_FAST.is_set,
+                stop_on_result=_workspace_failed,
             )
 
     for bundle in bundles.values():

@@ -197,7 +197,10 @@ def collect_changes_after_apply(ws: Workspace) -> list[Change]:
     checker = CHECKERS.get(ws.manager)
     if checker:
         try:
-            return checker(ws)
+            out = checker(ws)
+            if isinstance(out, tuple):
+                return out[0]
+            return out
         except Exception:
             pass
     return []

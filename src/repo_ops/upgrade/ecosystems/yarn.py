@@ -70,11 +70,6 @@ def check_yarn_snapshot(ws: Workspace) -> tuple[list[Change], list[dict[str, str
     return changes, snapshot_overrides
 
 
-def check_yarn(ws: Workspace) -> list[Change]:
-    changes, _overrides = check_yarn_snapshot(ws)
-    return changes
-
-
 def apply_yarn(ws: Workspace) -> None:
     corepack_prepare("yarn", ws.path)
     proc = run(["yarn", "up", "-R", "*"], ws.path, timeout=TIMEOUT_APPLY)
