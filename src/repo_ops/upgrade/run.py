@@ -6,15 +6,18 @@ import concurrent.futures
 from collections.abc import Callable
 from pathlib import Path
 
-from repo_ops.core.cli import wire_verbose
+from repo_ops.core.cli import (
+    build_upgrade_parser,
+    reject_legacy_upgrade_flags,
+    wire_verbose,
+)
 from repo_ops.core.constants import DEFAULT_ROOTS
 from repo_ops.core.process import set_verbose
 from repo_ops.upgrade import actions, orchestration, report
 from repo_ops.upgrade import workspaces as workspace_discovery
-from repo_ops.upgrade.cli_args import build_upgrade_parser, reject_legacy_flags
 from repo_ops.upgrade.models import RepoBundle, Workspace, WorkspaceResult
 
-_FAIL_FAST_EVENT = orchestration.FAIL_FAST_EVENT
+_FAIL_FAST = orchestration.FAIL_FAST_EVENT
 
 
 def _run_plan_parallel(
@@ -29,7 +32,7 @@ def _run_plan_parallel(
     pending_wrs: list[WorkspaceResult] = list(all_wrs)
     wr_futures: dict[concurrent.futures.Future[WorkspaceResult], WorkspaceResult] = {}
     while pending_wrs or wr_futures:
-        while pending_wrs and len(wr_futures) < jobs and not _FAIL_FAST_EVENT.is_set():
+        while pending_wrs and len(wr_futures) < jobs and not _FAIL_FAST.is_set():
             wr = pending_wrs.pop(0)
             fut = pool.submit(process_one, wr)
             wr_futures[fut] = wr
@@ -44,7 +47,7 @@ def _run_plan_parallel(
             updated = fut.result()
             all_results.append(updated)
             if fail_fast and updated.status == "fail":
-                _FAIL_FAST_EVENT.set()
+                _FAIL_FAST.set()
                 for pending_fut in list(wr_futures):
                     pending_fut.cancel()
                 wr_futures.clear()
@@ -68,7 +71,7 @@ def _has_actionable_work(bundles: dict[Path, RepoBundle]) -> bool:
 
 
 def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
-    reject_legacy_flags(argv)
+    reject_legacy_upgrade_flags(argv)
     parser = build_upgrade_parser(apply=apply)
     args = parser.parse_args(argv)
     wire_verbose(args)
@@ -86,7 +89,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     bundles = workspace_discovery.group_by_repo(found, roots)
 
     set_verbose(args.verbose)
-    _FAIL_FAST_EVENT.clear()
+    _FAIL_FAST.clear()
 
     def _process_one(wr: WorkspaceResult) -> WorkspaceResult:
         return orchestration.process_workspace(
@@ -104,7 +107,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
             updated = _process_one(wr)
             results.append(updated)
             if args.fail_fast and updated.status == "fail":
-                _FAIL_FAST_EVENT.set()
+                _FAIL_FAST.set()
                 break
         return results
 
@@ -121,7 +124,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
                 while (
                     pending_bundles
                     and len(futures) < args.jobs
-                    and not _FAIL_FAST_EVENT.is_set()
+                    and not _FAIL_FAST.is_set()
                 ):
                     bundle = pending_bundles.pop(0)
                     fut = pool.submit(_process_repo, bundle)
@@ -137,7 +140,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
                     updated = fut.result()
                     all_results.extend(updated)
                     if args.fail_fast and any(r.status == "fail" for r in updated):
-                        _FAIL_FAST_EVENT.set()
+                        _FAIL_FAST.set()
                         for pending_fut in list(futures):
                             pending_fut.cancel()
                         futures.clear()
@@ -174,7 +177,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
                 if wr.changes or wr.status != "ok" or wr.remediations
             ]
 
-    json_out = getattr(args, "json_out", False) or getattr(args, "json", False)
+    json_out = args.json_out
     if json_out:
         report.print_json_report(
             bundles,

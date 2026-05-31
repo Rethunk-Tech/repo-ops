@@ -17,8 +17,7 @@ from repo_ops.upgrade.ecosystems.node_lockfiles import (
 )
 from repo_ops.upgrade.models import Workspace, WorkspaceResult
 
-_FAIL_FAST_EVENT = threading.Event()
-FAIL_FAST_EVENT = _FAIL_FAST_EVENT
+FAIL_FAST_EVENT = threading.Event()
 
 
 def is_git_dirty(repo: Path) -> bool:
@@ -36,7 +35,7 @@ def process_workspace(
     allow_dirty: bool,
 ) -> WorkspaceResult:
     ws = result.workspace
-    if _FAIL_FAST_EVENT.is_set():
+    if FAIL_FAST_EVENT.is_set():
         result.status = "skip"
         result.error = "fail-fast"
         return result
