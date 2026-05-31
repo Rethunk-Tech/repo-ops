@@ -37,6 +37,22 @@ def check_bun(ws: Workspace) -> list[Change]:
 
 
 def apply_bun(ws: Workspace) -> None:
-    proc = run(["bun", "update", "--latest"], ws.path, timeout=TIMEOUT_APPLY)
+    """Apply upgrades reported by ``check_bun`` without rewriting ranges to ``latest``."""
+    changes = check_bun(ws)
+    if not changes:
+        return
+    targets: list[str] = []
+    for ch in changes:
+        name = (ch.name or "").strip()
+        version = (ch.to or "").strip()
+        if not name or not version or version in ("?", "latest", "|"):
+            continue
+        targets.append(f"{name}@{version}")
+    if not targets:
+        proc = run(["bun", "update"], ws.path, timeout=TIMEOUT_APPLY)
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.strip() or "bun update failed")
+        return
+    proc = run(["bun", "update", *targets], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
