@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 import shutil
 import sys
+import tempfile
+from pathlib import Path
 
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
@@ -39,9 +41,9 @@ def check_hatch(ws: Workspace) -> list[Change]:
     if (ws.path / "uv.lock").exists():
         return _check_uv_lock(ws)
     if shutil.which("uv"):
-        venv_dir = ws.path / ".dep_refresh_venv"
         changes: list[Change] = []
-        try:
+        with tempfile.TemporaryDirectory(prefix="repo-ops-hatch-") as tmp:
+            venv_dir = Path(tmp) / "venv"
             run(["uv", "venv", str(venv_dir)], ws.path, timeout=120)
             run(
                 ["uv", "pip", "install", "-e", ".[dev]"],
@@ -59,8 +61,6 @@ def check_hatch(ws: Workspace) -> list[Change]:
                 parts = line.split()
                 if len(parts) >= 3:
                     changes.append(Change(parts[0], parts[1], parts[2]))
-        finally:
-            shutil.rmtree(venv_dir, ignore_errors=True)
         return changes
     print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
     return []
