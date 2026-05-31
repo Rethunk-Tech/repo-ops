@@ -106,7 +106,7 @@ Subcommands (entry point in `packages/repo-ops`):
 
 Default scan roots: [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. `--flat` skips the org/proj two-level walk on `inventory` and upgrade `plan`/`apply` (not `pushed`).
 
-`--json` on every subcommand. For `plan`/`apply`, stdout is one JSON object unless `--json-out PATH` is set (then stdout prints only that path and the report is written to `PATH` atomically). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to `node`, `go`, `rust`, or `py`.
+`--json` on every subcommand. For `plan`/`apply`, stdout is one JSON object unless `--json-out PATH` is set (then stdout prints only that path and the report is written to `PATH` atomically). JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to `node`, `go`, `rust`, or `py`.
 
 ### Plan vs apply
 
@@ -142,7 +142,7 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
    repo-ops apply /path/to/parent/root --log-file apply.log
    ```
 
-   Human and log output end with `failures:` and `exit_code:` lines for automation. When piping instead, use `set -o pipefail` so a failed `repo-ops` is not masked by `tee` exiting 0:
+   Human and log output end with a **Summary** roll-up (workspace ok/fail/skip, dirty skips, verify failures, actions bumps, discovery skipped), a capped **Failures** list (`--max-failures`, default 20), then `failures:` and `exit_code:` for automation. JSON mode includes the same counts under top-level `summary`. When piping instead, use `set -o pipefail` so a failed `repo-ops` is not masked by `tee` exiting 0:
 
    ```bash
    set -o pipefail
@@ -155,7 +155,7 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
 
 5. **Verify failures are not always dependency regressions.** Apply runs ecosystem verify gates (build/test). Failures may be missing env vars (for example Next.js `build` needing secrets), flaky tests, or local toolchain gaps — not a bad bump. Inspect logs before reverting; see [#9](https://github.com/Rethunk-Tech/repo-ops/issues/9) for planned `--on-verify-fail` behavior.
 
-**See also (tracking issues):** [#9](https://github.com/Rethunk-Tech/repo-ops/issues/9) verify-fail policy · [#11](https://github.com/Rethunk-Tech/repo-ops/issues/11) remediation apply reporting (closed) · [#12](https://github.com/Rethunk-Tech/repo-ops/issues/12) bun outdated JSON (closed) · [#13](https://github.com/Rethunk-Tech/repo-ops/issues/13) submodule umbrella workflow · [#14](https://github.com/Rethunk-Tech/repo-ops/issues/14) end-of-run roll-up · [#15](https://github.com/Rethunk-Tech/repo-ops/issues/15) optional post-apply commits · [#16](https://github.com/Rethunk-Tech/repo-ops/issues/16) plan `--json-out` artifact (closed).
+**See also (tracking issues):** [#9](https://github.com/Rethunk-Tech/repo-ops/issues/9) verify-fail policy · [#11](https://github.com/Rethunk-Tech/repo-ops/issues/11) remediation apply reporting (closed) · [#12](https://github.com/Rethunk-Tech/repo-ops/issues/12) bun outdated JSON (closed) · [#13](https://github.com/Rethunk-Tech/repo-ops/issues/13) submodule umbrella workflow · [#14](https://github.com/Rethunk-Tech/repo-ops/issues/14) end-of-run roll-up (closed) · [#15](https://github.com/Rethunk-Tech/repo-ops/issues/15) optional post-apply commits · [#16](https://github.com/Rethunk-Tech/repo-ops/issues/16) plan `--json-out` artifact (closed).
 
 Refresh the bundled agent skill after doc pulls: `repo-ops install-skill --force` (see [Agent skill](#agent-skill)).
 
