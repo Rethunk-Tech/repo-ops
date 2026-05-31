@@ -6,18 +6,29 @@ import os
 import sys
 from pathlib import Path
 
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib
-
-from repo_ops.core.filesystem import read_json_file, should_exclude
+from repo_ops.core.constants import SKIP_DIRS
+from repo_ops.core.filesystem import read_json_file, read_toml_file, should_exclude
 from repo_ops.core.git import git_repo_for, repo_label
 from repo_ops.core.process import run
-from repo_ops.upgrade.constants import (
-    SKIP_DIRS,
-)
 from repo_ops.upgrade.models import RepoBundle, Workspace, WorkspaceResult
+
+
+def pm_exec_prefix(manager: str) -> list[str]:
+    return {
+        "yarn": ["yarn"],
+        "bun": ["bun", "run"],
+        "pnpm": ["pnpm", "exec"],
+        "npm": ["npx", "--yes"],
+    }.get(manager, ["npx", "--yes"])
+
+
+def pm_run_prefix(manager: str) -> list[str]:
+    return {
+        "yarn": ["yarn", "run"],
+        "bun": ["bun", "run"],
+        "pnpm": ["pnpm", "run"],
+        "npm": ["npm", "run"],
+    }.get(manager, ["npm", "run"])
 
 
 def parse_package_manager(pkg: dict) -> tuple[str, str] | None:
@@ -152,10 +163,7 @@ def discover_workspaces_in_root(root: Path, flat: bool) -> list[Workspace]:
         if not cargo.exists():
             return
         lock = mdir / "Cargo.lock"
-        try:
-            d = tomllib.loads(cargo.read_text(encoding="utf-8", errors="replace"))
-        except Exception:
-            d = {}
+        d = read_toml_file(cargo) or {}
         if not lock.exists() and not d.get("workspace") and not d.get("package"):
             return
         git = git_repo_for(mdir)
@@ -188,13 +196,10 @@ def discover_workspaces_in_root(root: Path, flat: bool) -> list[Workspace]:
         ).exists():
             mgr = "pip-tools"
         elif pyp.exists():
-            try:
-                d = tomllib.loads(pyp.read_text(encoding="utf-8", errors="replace"))
-                build = (d.get("build-system") or {}).get("build-backend", "")
-                if "hatch" in build or (d.get("tool") or {}).get("hatch"):
-                    mgr = "hatch"
-            except Exception:
-                pass
+            d = read_toml_file(pyp) or {}
+            build = (d.get("build-system") or {}).get("build-backend", "")
+            if "hatch" in build or (d.get("tool") or {}).get("hatch"):
+                mgr = "hatch"
         if not mgr:
             return
         git = git_repo_for(mdir)

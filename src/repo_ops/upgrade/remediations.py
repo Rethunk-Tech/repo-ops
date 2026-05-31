@@ -10,9 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from repo_ops.core import process
 from repo_ops.core.filesystem import read_json_file
-from repo_ops.core.process import run
+from repo_ops.core.process import VERBOSE, run
 from repo_ops.core.version_utils import normalize_version, semver_tuple
 from repo_ops.upgrade.constants import (
     BIOME_PKG,
@@ -21,7 +20,11 @@ from repo_ops.upgrade.constants import (
     TIMEOUT_APPLY,
 )
 from repo_ops.upgrade.models import Workspace, WorkspaceResult
-from repo_ops.upgrade.workspaces import yarn_workspace_members
+from repo_ops.upgrade.workspaces import (
+    pm_exec_prefix,
+    pm_run_prefix,
+    yarn_workspace_members,
+)
 
 
 @dataclass
@@ -69,24 +72,6 @@ def _schema_version_from_config(p: Path) -> str | None:
     return m.group(1) if m else None
 
 
-def _pm_exec_prefix(manager: str) -> list[str]:
-    return {
-        "yarn": ["yarn"],
-        "bun": ["bun", "run"],
-        "pnpm": ["pnpm", "exec"],
-        "npm": ["npx", "--yes"],
-    }.get(manager, ["npx", "--yes"])
-
-
-def _pm_run_prefix(manager: str) -> list[str]:
-    return {
-        "yarn": ["yarn", "run"],
-        "bun": ["bun", "run"],
-        "pnpm": ["pnpm", "run"],
-        "npm": ["npm", "run"],
-    }.get(manager, ["npm", "run"])
-
-
 def detect_biome(ws: Workspace, ctx: dict[str, Any]) -> bool:
     if not _find_biome_configs(ws.path):
         return False
@@ -115,7 +100,7 @@ def report_biome(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
 
 
 def apply_biome(ws: Workspace, ctx: dict[str, Any]) -> bool:
-    prefix = _pm_exec_prefix(ws.manager)
+    prefix = pm_exec_prefix(ws.manager)
     ok = True
     for cfg in _find_biome_configs(ws.path):
         cfg_dir = cfg.parent
@@ -142,7 +127,7 @@ def _playwright_version_changed(ws: Workspace, ctx: dict[str, Any]) -> bool:
 
 
 def _playwright_missing_browsers(ws: Workspace) -> bool:
-    prefix = _pm_exec_prefix(ws.manager)
+    prefix = pm_exec_prefix(ws.manager)
     proc = run(
         [*prefix, "playwright", "install", "--dry-run"],
         ws.path,
@@ -181,7 +166,7 @@ def report_playwright(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
 
 
 def apply_playwright(ws: Workspace, ctx: dict[str, Any]) -> bool:
-    prefix = _pm_exec_prefix(ws.manager)
+    prefix = pm_exec_prefix(ws.manager)
     proc = run([*prefix, "playwright", "install"], ws.path, timeout=TIMEOUT_APPLY)
     return proc.returncode == 0
 
@@ -206,7 +191,7 @@ def report_codegen(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
 
 
 def apply_codegen(ws: Workspace, ctx: dict[str, Any]) -> bool:
-    prefix = _pm_run_prefix(ws.manager)
+    prefix = pm_run_prefix(ws.manager)
     ok = True
     pkg = read_json_file(ws.path / "package.json") or {}
     for script in ("generate:proto", "generate:openapi"):
@@ -288,7 +273,7 @@ def run_remediations(
         entry: dict[str, Any] = {"id": rem.id, "status": "ok", "detail": ""}
         try:
             detected = rem.detect(result.workspace, ctx)
-            if process.VERBOSE:
+            if VERBOSE:
                 print(
                     f"  remediation {rem.id}: detect={detected}",
                     file=sys.stderr,

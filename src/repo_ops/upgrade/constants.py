@@ -4,12 +4,6 @@ from __future__ import annotations
 
 import re
 
-from repo_ops.core import constants as core_constants
-
-SKIP_DIRS = core_constants.SKIP_DIRS
-EXCLUDE_PATH_FRAGMENTS = core_constants.EXCLUDE_PATH_FRAGMENTS
-DEFAULT_ROOTS = core_constants.DEFAULT_ROOTS
-
 TIMEOUT_CHECK = 600
 TIMEOUT_APPLY = 600
 TIMEOUT_VERIFY = 900

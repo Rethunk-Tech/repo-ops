@@ -2,25 +2,14 @@
 
 from __future__ import annotations
 
-from repo_ops.core.filesystem import read_json_file
+from repo_ops.core.filesystem import read_json_file, read_toml_file
 from repo_ops.core.process import run
 from repo_ops.upgrade.constants import TIMEOUT_VERIFY, YARN_PEER_WARN
 from repo_ops.upgrade.models import Workspace
-
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib
+from repo_ops.upgrade.workspaces import pm_run_prefix
 
 
-def _pyproject_dev_deps(ws: Workspace) -> set[str]:
-    pyp = ws.path / "pyproject.toml"
-    if not pyp.exists():
-        return set()
-    try:
-        d = tomllib.loads(pyp.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
-        return set()
+def _pyproject_dev_deps(d: dict) -> set[str]:
     dev: set[str] = set()
     opt = (d.get("project") or {}).get("optional-dependencies") or {}
     for vals in opt.values():
@@ -39,15 +28,11 @@ def _pyproject_dev_deps(ws: Workspace) -> set[str]:
 
 
 def _verify_hatch_fast(ws: Workspace) -> str | None:
-    pyp = ws.path / "pyproject.toml"
-    if not pyp.exists():
-        return None
-    try:
-        d = tomllib.loads(pyp.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
+    d = read_toml_file(ws.path / "pyproject.toml")
+    if not d:
         return None
     scripts = (d.get("project") or {}).get("scripts") or {}
-    dev = _pyproject_dev_deps(ws)
+    dev = _pyproject_dev_deps(d)
     if "test" in scripts:
         proc = run(["uv", "run", "test"], ws.path, timeout=TIMEOUT_VERIFY)
         if proc.returncode != 0:
@@ -103,13 +88,7 @@ def verify_node(ws: Workspace) -> str | None:
     if not script_name:
         return None
 
-    run_prefix = {
-        "yarn": ["yarn", "run"],
-        "bun": ["bun", "run"],
-        "pnpm": ["pnpm", "run"],
-        "npm": ["npm", "run"],
-    }.get(mgr, ["npm", "run"])
-    proc = run([*run_prefix, script_name], ws.path, timeout=TIMEOUT_VERIFY)
+    proc = run([*pm_run_prefix(mgr), script_name], ws.path, timeout=TIMEOUT_VERIFY)
     if proc.returncode != 0:
         return (proc.stderr or proc.stdout).strip() or f"{script_name} failed"
     return None
