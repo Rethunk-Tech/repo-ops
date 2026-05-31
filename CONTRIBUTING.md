@@ -12,14 +12,20 @@ Thank you for contributing. Orientation: [README.md](README.md). Install, usage,
 
 - Workspace members live under `packages/repo-ops-*` (`src/` per package). CLI and registration: `packages/repo-ops` (`repo_ops.cli`, `repo_ops._register`).
 - Old `repos-*` script names: [HUMANS — Migration from 0.2.x](HUMANS.md#migration-from-02x).
-- Doc tiers: README (orientation), HUMANS (install/usage/verify), AGENTS (agent layout/process), this file (commits/style).
+- Doc tiers: README (orientation + Documentation table), HUMANS (install/usage/verify/upgrade modes), AGENTS (layout/coordination/invariants), this file (commits/style/git for agents).
+
+## Git for agents
+
+- Use MCP **`batch_commit`** and **`git_status`** from `plugin-rethunk-git-rethunk-git` (or `user-rethunk-git`). No shell `git commit` / `git add` unless the user opts into shell git for the session.
+- **`workspaceRoot`:** absolute path to the repo (for example `/usr/local/src/com.github/Rethunk-Tech/repo-ops`).
+- **Batching:** Small, thematic commits. Run [verification](HUMANS.md#verification-and-testing) before committing.
+- **Push:** `push: "never"` unless the user requests a push.
 
 ## Commit conventions
 
 - [Conventional Commits](https://www.conventionalcommits.org/).
-- Agents: MCP `batch_commit` per [AGENTS.md — Incremental commits](AGENTS.md#incremental-commits-for-agents). Humans may use shell git or MCP.
 - Body explains **why**, not a file list.
-- Small, thematic commits.
+- Small, thematic commits. Agents follow [Git for agents](#git-for-agents) above; humans may use shell git or MCP.
 
 ## Code style
 

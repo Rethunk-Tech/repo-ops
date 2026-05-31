@@ -6,7 +6,7 @@ Conventions and coordination for AI coding agents (Cursor, Claude Code, etc.) an
 
 **uv workspace** (`packages/*`): repository operations and dependency tools for Rethunk-Tech. The installable meta package is `packages/repo-ops` (`repo-ops` on PyPI); the repo root is not installable (`package = false`). Console script **`repo-ops`** with subcommands `inventory`, `plan`, `apply`, `pushed`, and `install-skill`.
 
-Install, usage flags, and verification: [HUMANS.md](HUMANS.md). Commit conventions: [CONTRIBUTING.md](CONTRIBUTING.md).
+**Operators:** install, CLI flags, upgrade modes, verification — [HUMANS.md](HUMANS.md). **Contributors:** commits, style, PR checks — [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Coordination with other agents
 
@@ -14,6 +14,7 @@ Install, usage flags, and verification: [HUMANS.md](HUMANS.md). Commit conventio
 - Before editing, run `git status --short` (or MCP `git_status`) to see files others are changing.
 - Avoid broad edits across `packages/repo-ops-upgrade*` and `tests/*` during active refactor passes unless hygiene-critical and coordinated.
 - Prefer small, reviewable changes. Batch related edits where safe.
+- Local git commits: MCP `batch_commit` / `git_status` per [CONTRIBUTING.md — Git for agents](CONTRIBUTING.md#git-for-agents). Do not use shell `git commit` unless the user opts into shell git for the session.
 
 ## Layout and files
 
@@ -32,24 +33,22 @@ Install, usage flags, and verification: [HUMANS.md](HUMANS.md). Commit conventio
 
 Ecosystem plugins register via `repo_ops._register.register_all()` before CLI dispatch. Programmatic import paths: [HUMANS.md — Programmatic imports](HUMANS.md#programmatic-imports). Do not add top-level scripts; route through workspace packages and the `repo-ops` entry point.
 
+## Agent invariants (behavior)
+
+Do not duplicate full CLI reference here — [HUMANS.md](HUMANS.md) is canonical. When changing behavior, keep these aligned:
+
+- **Plan vs apply:** plan/check is read-only; Node Corepack runs on apply only (`repo_ops_upgrade.registry.apply_workspace`).
+- **Discovery:** `resolve_scan_roots`, optional `--follow-symlinks`, `--flat`, actions-only repos — [HUMANS — Security and discovery](HUMANS.md#security-and-discovery).
+- **Docs tiers:** README (orientation + Documentation table), HUMANS (install/usage/verify), this file (layout/coordination), CONTRIBUTING (commits/style).
+
 ## Development practices for agents
 
-- Sync, tool install, and verification: [HUMANS.md — Installation](HUMANS.md#installation), [Verification and Testing](HUMANS.md#verification-and-testing). Editable global CLI: `uv tool install -e packages/repo-ops`.
+- Run [HUMANS — Verification and Testing](HUMANS.md#verification-and-testing) before commits (at least `pytest` for code changes).
 - Avoid committing `.venv/`, `dist/`, or other build artifacts.
-- Run verification (at least `pytest` for code changes) before commits.
-- When adding CLI or plugins, update `repo_ops._register` and tiered docs: `README.md` (orientation), `HUMANS.md` (install/usage), `CONTRIBUTING.md` / this file (process).
+- When adding CLI or plugins, update `repo_ops._register` and the tiered docs above (not duplicate tables into README or AGENTS).
 - Respect `.editorconfig` (4-space Python, LF, final newlines).
+- When scope is unclear, ask in-session rather than guessing.
 
 ## Hygiene and tooling
 
 - `.gitignore` covers Python caches, venvs, build artifacts, coverage, and IDE noise.
-- When scope is unclear, ask in-session rather than guessing.
-
-## Incremental commits for agents
-
-Use MCP-only git for staging and commits:
-
-- **Tooling:** `batch_commit`, `git_status` from `plugin-rethunk-git-rethunk-git` (or `user-rethunk-git`). No shell `git commit` / `git add` unless the user opts into shell git for the session.
-- **Batching:** Small, thematic commits. Verify before committing (HUMANS verification suite).
-- **Messages:** [CONTRIBUTING.md — Commit conventions](CONTRIBUTING.md#commit-conventions) (Conventional Commits, why-focused body).
-- **Pushing:** `push: "never"` unless the user requests a push.
