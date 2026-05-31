@@ -7,11 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-
-from repo_ops.core.cli import parse_iso8601
-from repo_ops.core.discovery import discover_repos
-from repo_ops.core.git import git_common_dir, repo_label
-from repo_ops.pushed.audit import (
+from repo_ops_core.cli import parse_iso8601
+from repo_ops_core.discovery import discover_repos
+from repo_ops_core.git import git_common_dir, repo_label
+from repo_ops_pushed.audit import (
     PUSH_RE,
     Filters,
     collect_results,
@@ -82,7 +81,7 @@ def test_discover_repos_finds_dot_git(tmp_path: Path):
 
     from unittest.mock import patch
 
-    with patch("repo_ops.core.discovery.git_common_dir", fake_git_common_dir):
+    with patch("repo_ops_core.discovery.git_common_dir", fake_git_common_dir):
         found = discover_repos([str(tmp_path)])
     assert found[common] == str(repo_dir.resolve())
 
@@ -114,7 +113,7 @@ def test_pushed_commits_for_repo_from_push_reflog(monkeypatch):
             Fake.stdout = f"{commit_sha}\n"
         return Fake()
 
-    monkeypatch.setattr("repo_ops.pushed.audit.run_git", fake_run_git)
+    monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
     commits = pushed_commits_for_repo("/fake/repo", filters)
     assert commit_sha in commits
 
@@ -132,8 +131,8 @@ def test_collect_results_uses_discovery(tmp_path: Path, monkeypatch):
 
     from unittest.mock import patch
 
-    with patch("repo_ops.core.discovery.git_common_dir", fake_git_common_dir):
-        with patch("repo_ops.pushed.audit.pushed_commits_for_repo", fake_pushed):
+    with patch("repo_ops_core.discovery.git_common_dir", fake_git_common_dir):
+        with patch("repo_ops_pushed.audit.pushed_commits_for_repo", fake_pushed):
             all_commits, per_repo = collect_results([str(tmp_path)], Filters(0, 2**31))
     assert len(all_commits) == 1
     assert len(per_repo) == 1
@@ -151,7 +150,7 @@ def test_git_common_dir_monkeypatch(monkeypatch):
 
         return Fake()
 
-    monkeypatch.setattr("repo_ops.core.git.run_git", fake_run_git)
+    monkeypatch.setattr("repo_ops_core.git.run_git", fake_run_git)
     result = git_common_dir("/some/repo")
     assert result == "/real/common"
     assert len(calls) == 1

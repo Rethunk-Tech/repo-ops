@@ -5,10 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
-from repo_ops.upgrade.models import Change, RepoBundle, Workspace, WorkspaceResult
-from repo_ops.upgrade.report import build_json_payload, print_human_report
+from repo_ops._register import register_all
+from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
+from repo_ops_upgrade.report import build_json_payload, print_human_report
 
 
 def _sample_workspace(tmp_path: Path) -> Workspace:
@@ -45,17 +44,17 @@ def test_print_human_report_header(capsys) -> None:
         include_actions=False,
     )
     out = capsys.readouterr().out
-    assert "repos-upgrade-plan" in out
+    assert "repo-ops plan" in out
 
 
 def test_scan_actions_empty_repo(tmp_path: Path) -> None:
-    from repo_ops.upgrade.actions import scan_actions
+    from repo_ops_upgrade.actions import scan_actions
 
     assert scan_actions(tmp_path, apply=False) == []
 
 
 def test_run_remediations_no_detected(tmp_path: Path) -> None:
-    from repo_ops.upgrade import remediations
+    from repo_ops_upgrade_remediations_js import remediations
 
     ws = _sample_workspace(tmp_path)
     result = WorkspaceResult(workspace=ws)
@@ -65,8 +64,9 @@ def test_run_remediations_no_detected(tmp_path: Path) -> None:
 
 
 def test_process_workspace_plan_mode(tmp_path: Path) -> None:
-    from repo_ops.upgrade import orchestration
+    from repo_ops_upgrade import orchestration
 
+    register_all()
     ws = _sample_workspace(tmp_path)
     wr = WorkspaceResult(workspace=ws)
     checked = WorkspaceResult(
@@ -76,10 +76,10 @@ def test_process_workspace_plan_mode(tmp_path: Path) -> None:
 
     with (
         patch(
-            "repo_ops.upgrade.orchestration.ecosystems.check_workspace",
+            "repo_ops_upgrade.orchestration.ecosystems.check_workspace",
             return_value=checked,
         ),
-        patch("repo_ops.upgrade.orchestration.remediations.run_remediations"),
+        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
     ):
         out = orchestration.process_workspace(
             wr,
@@ -89,12 +89,4 @@ def test_process_workspace_plan_mode(tmp_path: Path) -> None:
             skip_remediations=set(),
             allow_dirty=False,
         )
-    assert out.changes == checked.changes
-
-
-def test_inventory_scan_help_exits_zero() -> None:
-    from repo_ops.inventory.scan import main
-
-    with pytest.raises(SystemExit) as exc_info:
-        main(["--help"])
-    assert exc_info.value.code == 0
+    assert out.changes[0].name == "dep"

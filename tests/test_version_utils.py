@@ -1,6 +1,6 @@
 """Tests for pure version utilities."""
 
-from repo_ops.core.version_utils import normalize_version, semver_tuple
+from repo_ops_core.version_utils import normalize_version, semver_tuple
 
 
 def test_normalize_version_strips_prefixes_and_prerelease():

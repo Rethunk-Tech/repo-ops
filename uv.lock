@@ -6,6 +6,31 @@ resolution-markers = [
     "python_full_version < '3.15'",
 ]
 
+[manifest]
+members = [
+    "repo-ops",
+    "repo-ops-core",
+    "repo-ops-go",
+    "repo-ops-inventory",
+    "repo-ops-js",
+    "repo-ops-js-bun",
+    "repo-ops-js-npm",
+    "repo-ops-js-pnpm",
+    "repo-ops-js-yarn",
+    "repo-ops-lockfiles",
+    "repo-ops-models",
+    "repo-ops-pushed",
+    "repo-ops-py",
+    "repo-ops-py-hatch",
+    "repo-ops-py-pip-tools",
+    "repo-ops-py-poetry",
+    "repo-ops-py-uv",
+    "repo-ops-rust",
+    "repo-ops-upgrade",
+    "repo-ops-upgrade-remediations-js",
+    "repo-ops-workspace",
+]
+
 [[package]]
 name = "ast-serialize"
 version = "0.5.0"
@@ -417,14 +442,396 @@ wheels = [
 
 [[package]]
 name = "repo-ops"
-version = "0.2.5"
-source = { editable = "." }
+version = "0.3.0"
+source = { editable = "packages/repo-ops" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-go" },
+    { name = "repo-ops-inventory" },
+    { name = "repo-ops-js" },
+    { name = "repo-ops-js-bun" },
+    { name = "repo-ops-js-npm" },
+    { name = "repo-ops-js-pnpm" },
+    { name = "repo-ops-js-yarn" },
+    { name = "repo-ops-lockfiles" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-pushed" },
+    { name = "repo-ops-py" },
+    { name = "repo-ops-py-hatch" },
+    { name = "repo-ops-py-pip-tools" },
+    { name = "repo-ops-py-poetry" },
+    { name = "repo-ops-py-uv" },
+    { name = "repo-ops-rust" },
+    { name = "repo-ops-upgrade" },
+    { name = "repo-ops-upgrade-remediations-js" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-go", editable = "packages/repo-ops-go" },
+    { name = "repo-ops-inventory", editable = "packages/repo-ops-inventory" },
+    { name = "repo-ops-js", editable = "packages/repo-ops-js" },
+    { name = "repo-ops-js-bun", editable = "packages/repo-ops-js-bun" },
+    { name = "repo-ops-js-npm", editable = "packages/repo-ops-js-npm" },
+    { name = "repo-ops-js-pnpm", editable = "packages/repo-ops-js-pnpm" },
+    { name = "repo-ops-js-yarn", editable = "packages/repo-ops-js-yarn" },
+    { name = "repo-ops-lockfiles", editable = "packages/repo-ops-lockfiles" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-pushed", editable = "packages/repo-ops-pushed" },
+    { name = "repo-ops-py", editable = "packages/repo-ops-py" },
+    { name = "repo-ops-py-hatch", editable = "packages/repo-ops-py-hatch" },
+    { name = "repo-ops-py-pip-tools", editable = "packages/repo-ops-py-pip-tools" },
+    { name = "repo-ops-py-poetry", editable = "packages/repo-ops-py-poetry" },
+    { name = "repo-ops-py-uv", editable = "packages/repo-ops-py-uv" },
+    { name = "repo-ops-rust", editable = "packages/repo-ops-rust" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+    { name = "repo-ops-upgrade-remediations-js", editable = "packages/repo-ops-upgrade-remediations-js" },
+]
+
+[[package]]
+name = "repo-ops-core"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-core" }
+
+[[package]]
+name = "repo-ops-go"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-go" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+]
+
+[[package]]
+name = "repo-ops-inventory"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-inventory" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-lockfiles" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-lockfiles", editable = "packages/repo-ops-lockfiles" },
+]
+
+[[package]]
+name = "repo-ops-js"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-js" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-lockfiles" },
+    { name = "repo-ops-models" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-lockfiles", editable = "packages/repo-ops-lockfiles" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+]
+
+[[package]]
+name = "repo-ops-js-bun"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-js-bun" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+]
+
+[[package]]
+name = "repo-ops-js-npm"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-js-npm" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+]
+
+[[package]]
+name = "repo-ops-js-pnpm"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-js-pnpm" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+]
+
+[[package]]
+name = "repo-ops-js-yarn"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-js-yarn" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-js" },
+    { name = "repo-ops-lockfiles" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-js", editable = "packages/repo-ops-js" },
+    { name = "repo-ops-lockfiles", editable = "packages/repo-ops-lockfiles" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+]
+
+[[package]]
+name = "repo-ops-lockfiles"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-lockfiles" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8" }]
+
+[[package]]
+name = "repo-ops-models"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-models" }
+
+[[package]]
+name = "repo-ops-pushed"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-pushed" }
+dependencies = [
+    { name = "repo-ops-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "repo-ops-core", editable = "packages/repo-ops-core" }]
+
+[[package]]
+name = "repo-ops-py"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-py" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+]
+
+[[package]]
+name = "repo-ops-py-hatch"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-py-hatch" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-py-uv" },
+    { name = "repo-ops-upgrade" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-py-uv", editable = "packages/repo-ops-py-uv" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+]
+
+[[package]]
+name = "repo-ops-py-pip-tools"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-py-pip-tools" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-py" },
+    { name = "repo-ops-upgrade" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-py", editable = "packages/repo-ops-py" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+]
+
+[[package]]
+name = "repo-ops-py-poetry"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-py-poetry" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+]
+
+[[package]]
+name = "repo-ops-py-uv"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-py-uv" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+]
+
+[[package]]
+name = "repo-ops-rust"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-rust" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+]
+
+[[package]]
+name = "repo-ops-upgrade"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-upgrade" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-js" },
+    { name = "repo-ops-lockfiles" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade-remediations-js" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-js", editable = "packages/repo-ops-js" },
+    { name = "repo-ops-lockfiles", editable = "packages/repo-ops-lockfiles" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade-remediations-js", editable = "packages/repo-ops-upgrade-remediations-js" },
+]
+
+[[package]]
+name = "repo-ops-upgrade-remediations-js"
+version = "0.3.0"
+source = { editable = "packages/repo-ops-upgrade-remediations-js" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-js" },
+    { name = "repo-ops-lockfiles" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-js", editable = "packages/repo-ops-js" },
+    { name = "repo-ops-lockfiles", editable = "packages/repo-ops-lockfiles" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+]
+
+[[package]]
+name = "repo-ops-workspace"
+version = "0.3.0"
+source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "repo-ops" },
+    { name = "repo-ops-core" },
+    { name = "repo-ops-go" },
+    { name = "repo-ops-inventory" },
+    { name = "repo-ops-js" },
+    { name = "repo-ops-js-bun" },
+    { name = "repo-ops-js-npm" },
+    { name = "repo-ops-js-pnpm" },
+    { name = "repo-ops-js-yarn" },
+    { name = "repo-ops-lockfiles" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-pushed" },
+    { name = "repo-ops-py" },
+    { name = "repo-ops-py-hatch" },
+    { name = "repo-ops-py-pip-tools" },
+    { name = "repo-ops-py-poetry" },
+    { name = "repo-ops-py-uv" },
+    { name = "repo-ops-rust" },
+    { name = "repo-ops-upgrade" },
+    { name = "repo-ops-upgrade-remediations-js" },
     { name = "ruff" },
 ]
 
@@ -435,6 +842,26 @@ dev = [
     { name = "mypy", specifier = ">=1.10" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-cov", specifier = ">=5.0" },
+    { name = "repo-ops", editable = "packages/repo-ops" },
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-go", editable = "packages/repo-ops-go" },
+    { name = "repo-ops-inventory", editable = "packages/repo-ops-inventory" },
+    { name = "repo-ops-js", editable = "packages/repo-ops-js" },
+    { name = "repo-ops-js-bun", editable = "packages/repo-ops-js-bun" },
+    { name = "repo-ops-js-npm", editable = "packages/repo-ops-js-npm" },
+    { name = "repo-ops-js-pnpm", editable = "packages/repo-ops-js-pnpm" },
+    { name = "repo-ops-js-yarn", editable = "packages/repo-ops-js-yarn" },
+    { name = "repo-ops-lockfiles", editable = "packages/repo-ops-lockfiles" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-pushed", editable = "packages/repo-ops-pushed" },
+    { name = "repo-ops-py", editable = "packages/repo-ops-py" },
+    { name = "repo-ops-py-hatch", editable = "packages/repo-ops-py-hatch" },
+    { name = "repo-ops-py-pip-tools", editable = "packages/repo-ops-py-pip-tools" },
+    { name = "repo-ops-py-poetry", editable = "packages/repo-ops-py-poetry" },
+    { name = "repo-ops-py-uv", editable = "packages/repo-ops-py-uv" },
+    { name = "repo-ops-rust", editable = "packages/repo-ops-rust" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+    { name = "repo-ops-upgrade-remediations-js", editable = "packages/repo-ops-upgrade-remediations-js" },
     { name = "ruff", specifier = ">=0.11.0" },
 ]
 

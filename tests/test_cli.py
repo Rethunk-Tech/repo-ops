@@ -7,25 +7,25 @@ import importlib
 from collections.abc import Callable
 
 import pytest
-
-from repo_ops.core.cli import (
+from repo_ops._register import register_all
+from repo_ops_core.cli import (
     ECO_FILTER_HELP,
     add_eco_filter_argument,
     build_upgrade_parser,
     parse_iso8601,
 )
 
-# (module, callable name, argv prefix before --help)
 _MAIN_HELP_TARGETS: list[tuple[str, str, list[str]]] = [
-    ("repo_ops.inventory.scan", "main", []),
-    ("repo_ops.upgrade.run", "main_plan", []),
-    ("repo_ops.upgrade.run", "main_apply", []),
-    ("repo_ops.pushed.audit", "main", []),
-    ("repo_ops.commands.dispatch", "main", ["plan"]),
+    ("repo_ops_inventory.scan", "main", []),
+    ("repo_ops_upgrade.run", "main_plan", []),
+    ("repo_ops_upgrade.run", "main_apply", []),
+    ("repo_ops_pushed.audit", "main", []),
+    ("repo_ops.cli", "main", ["plan"]),
 ]
 
 
 def _call_main_help(module_name: str, func_name: str, prefix: list[str]) -> None:
+    register_all()
     mod = importlib.import_module(module_name)
     fn: Callable[..., object] = getattr(mod, func_name)
     with pytest.raises(SystemExit) as exc_info:
@@ -68,4 +68,4 @@ def test_entrypoint_main_help(
 
 def test_repo_ops_dispatcher_subcommands_help() -> None:
     for sub in ("inventory", "plan", "apply", "pushed"):
-        _call_main_help("repo_ops.commands.dispatch", "main", [sub])
+        _call_main_help("repo_ops.cli", "main", [sub])

@@ -4,7 +4,7 @@ This document records conventions and coordination notes for AI coding agents (C
 
 ## Project Overview
 
-repo-ops is a lightweight Python package (src layout) that consolidates repository operations and dependency tools for Rethunk-Tech into importable modules with console scripts. It uses uv with the `uv_build` backend, a committed `uv.lock`, pytest for testing, and targets Python >= 3.10. PEP 621 `[project.scripts]` and metadata live in `pyproject.toml`.
+repo-ops is a **uv workspace** (`packages/*`, version 0.3.0) of Python packages for repository operations and dependency tools for Rethunk-Tech. The installable meta package `repo-ops` exposes a single console script `repo-ops` with subcommands `inventory`, `plan`, `apply`, and `pushed`. It uses the `uv_build` backend, a committed `uv.lock`, pytest for testing, and targets Python >= 3.10.
 
 For command names, install paths, and usage flags, see [HUMANS.md](HUMANS.md).
 
@@ -12,32 +12,33 @@ For command names, install paths, and usage flags, see [HUMANS.md](HUMANS.md).
 
 - Multiple agents often work concurrently on refactors and extractions.
 - Before editing, always run `git status --short` (or equivalent) to identify files currently being modified by others.
-- Avoid `src/repo_ops/commands/*` and `tests/*` during active refactor passes unless the change is hygiene-critical and coordinated.
-- New untracked modules (e.g. helpers) and tests are frequently added; coordinate to prevent duplicate work or merge conflicts.
+- Avoid broad edits across `packages/repo-ops-upgrade*` and `tests/*` during active refactor passes unless hygiene-critical and coordinated.
+- New workspace packages and tests are frequently added; coordinate to prevent duplicate work or merge conflicts.
 - Prefer small, reviewable changes. Batch related edits where safe.
 
 ## Layout and Files
 
-- `src/repo_ops/core/` - shared constants, git, filesystem, process, CLI helpers
-- `src/repo_ops/inventory/` - dependency counting and `repos-inventory` scan logic
-- `src/repo_ops/upgrade/` - plan/apply (`run.py`), `orchestration` (`process_workspace`), `workspaces` (`discover_all`, `group_by_repo`), `actions`, `remediations`, `verify`, `report`, `constants`, `models`, `ecosystems/` (`node`, `node_lockfiles`, `yarn`, `go`, `rust`, `python`)
-- `src/repo_ops/pushed/` - push reflog audit
-- `src/repo_ops/commands/` - optional dispatcher only (`dispatch.py`); **`pyproject.toml` `[project.scripts]` points at domain `module:main`**, not `commands/*` shims
-- `tests/` - test suite
-- `pyproject.toml` / `uv.lock` - single source of truth for build, scripts, locked deps, pytest config, and metadata
-- `README.md` - user overview
-- `LICENSE`, `CONTRIBUTING.md`, `AGENTS.md` - hygiene and process docs
-- `CLAUDE.md` - convention entrypoint; pointer to this file (not a symlink—edit here only)
-- `.gitignore`, `.editorconfig` - editor/build hygiene
+- `packages/repo-ops-core/` — shared constants, git, filesystem, process, CLI helpers (`repo_ops_core`)
+- `packages/repo-ops-models/` — dataclasses (`repo_ops_models`)
+- `packages/repo-ops-lockfiles/` — lockfile parsers and snapshot diff (`repo_ops_lockfiles`)
+- `packages/repo-ops-js/` — Node workspace helpers and overrides audit (`repo_ops_js`)
+- `packages/repo-ops-js-{npm,pnpm,bun,yarn}/` — PM check/apply plugins with `register()`
+- `packages/repo-ops-go/`, `repo-ops-rust/`, `repo-ops-py*/` — ecosystem plugins
+- `packages/repo-ops-upgrade/` — plan/apply (`run.py`), `discovery`, `orchestration`, `registry`, `actions`, `verify`, `report`, `post_apply`
+- `packages/repo-ops-upgrade-remediations-js/` — JS remediations
+- `packages/repo-ops-inventory/`, `repo-ops-pushed/` — inventory and push audit
+- `packages/repo-ops/` — meta CLI (`repo_ops.cli`, `repo_ops._register`)
+- `tests/` — integration tests; `packages/repo-ops-lockfiles/tests/` — parser unit tests
+- Root `pyproject.toml` / `uv.lock` — workspace root (not installable; `package = false`)
 
-Programmatic import paths are listed in [HUMANS.md](HUMANS.md#package-layout). Do not create top-level scripts; everything routes through the package and entry points.
+Programmatic import paths are listed in [HUMANS.md](HUMANS.md#package-layout-uv-workspace-030). Do not create top-level scripts; everything routes through workspace packages and `repo-ops` entry point.
 
 ## Development Practices for Agents
 
 - Install, sync, and verification commands: [HUMANS.md](HUMANS.md) (Installation, Verification and Testing).
 - Avoid committing `.venv/`, `dist/`, or other build artifacts (`.venv` is uv-managed and gitignored).
 - Run the HUMANS verification suite (or at least `pytest` for code changes) before finalizing commits.
-- When adding CLI commands or features, register them in `pyproject.toml` and ensure tests cover behavior.
+- When adding CLI commands or features, register ecosystem plugins and update `repo_ops._register` / docs.
 - Keep diffs minimal and preserve existing command output/behavior during refactors.
 - Update tiered docs when user-facing surfaces change: `README.md` for orientation, `HUMANS.md` for install/usage, `CONTRIBUTING.md` for contributor workflow, this file for agent coordination.
 - Respect `.editorconfig` (4-space Python, LF, final newlines, etc.).

@@ -7,21 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-30
+
+### Added
+
+- **uv workspace** under `packages/*` (20 internal packages): `repo_ops_core`, `repo_ops_models`, `repo_ops_lockfiles`, `repo_ops_js` (+ npm/pnpm/bun/yarn plugins), `repo_ops_go`, `repo_ops_rust`, `repo_ops_py` (+ uv/poetry/pip-tools/hatch plugins), `repo_ops_upgrade`, `repo_ops_upgrade_remediations_js`, `repo_ops_inventory`, `repo_ops_pushed`, meta `repo_ops`.
+- Explicit ecosystem registry (`repo_ops_upgrade.registry`) populated by `repo_ops._register.register_all()` at CLI startup.
+- Lockfile parser unit tests in `packages/repo-ops-lockfiles/tests/`.
+
 ### Changed
 
-- Shared manifest walks: `repo_ops.core.walk` (`iter_scanned_dirs`, `manifest_kinds`) used by inventory counting and upgrade workspace discovery; upgrade now treats `requirements.txt`-only trees as Python workspaces.
-- Upgrade plan/apply parallel execution consolidated in `repo_ops.core.parallel.run_bounded_pool`.
-- `YARN_ISOLATED_COPY_SKIP` derives from `SKIP_DIRS` plus `.dep_refresh_venv` (drops duplicate name list).
-- Ecosystem dispatch: yarn checker registered as `check_yarn_snapshot` with tuple results handled uniformly; removed `check_yarn` wrapper.
-- `repo-ops` dispatcher uses a single handler map (same CLI surface).
-- Shared CLI: `add_eco_filter_argument` and unified `--json` dest (`json_out`) on all commands; upgrade `--top` defined once for plan/apply.
+- **Breaking:** Monolith `src/repo_ops` removed. Programmatic imports use `repo_ops_*` package modules (see HUMANS package-layout table).
+- **Breaking:** Single console script **`repo-ops`** with subcommands `inventory`, `plan`, `apply`, `pushed` (no flat `repos-*` entry points).
+- Lockfile parsing and snapshot/diff consolidated in `repo_ops_lockfiles`; post-apply change detection uses injected checker (no eager `CHECKERS` import hub).
+- Shared manifest walks: `repo_ops_core.walk` (`iter_scanned_dirs`, `manifest_kinds`).
+- Upgrade parallel execution: `repo_ops_core.parallel.run_bounded_pool`.
 
-### Fixed
+### Removed
 
-- CLI: `--filter` help text matches inventory (rows by kind) and upgrade (workspaces by ecosystem) behavior.
-- `is_git_dirty` lives in `repo_ops.core.git` (upgrade orchestration imports it).
-- Node: `resolved_version_from_node_modules` shared by overrides audit and biome remediation; package-manager pin remediations use `parse_package_manager`.
-- Documentation: separate `CLAUDE.md` pointer (was symlink to `AGENTS.md`); HUMANS package-layout anchor normalized; PR template defers verification to HUMANS.
+- **Breaking:** `repos-inventory`, `repos-upgrade-plan`, `repos-upgrade-apply`, `repos-pushed` console scripts.
+- **Breaking:** `repo_ops.upgrade.ecosystems` package and compatibility re-exports.
+- `reject_legacy_upgrade_flags` and legacy dep_refresh flag migration hints.
 
 ## [0.2.5] - 2026-05-29
 

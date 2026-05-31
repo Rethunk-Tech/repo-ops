@@ -7,9 +7,9 @@ import re
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from repo_ops.core.table import column_width, format_cell
-from repo_ops.inventory.counting import scan
-from repo_ops.inventory.scan import _print_inventory_table
+from repo_ops_core.table import column_width, format_cell
+from repo_ops_inventory.counting import scan
+from repo_ops_inventory.scan import _print_inventory_table
 
 
 def test_column_width_includes_header():

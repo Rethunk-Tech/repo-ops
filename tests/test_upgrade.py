@@ -6,9 +6,9 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-# Import from the command module under test
-from repo_ops.core.version_utils import normalize_version, semver_tuple
-from repo_ops.upgrade.ecosystems.python import _parse_requirements_lines
+from repo_ops._register import register_all
+from repo_ops_core.version_utils import normalize_version, semver_tuple
+from repo_ops_py.requirements import parse_requirements_lines
 
 
 def test_normalize_version_strips_prefixes():
@@ -24,13 +24,12 @@ def test_semver_tuple_parses():
 
 def test_parse_requirements_lines_basic():
     text = "foo==1.0\nbar==2.0\n# comment\n-baz==3"
-    assert _parse_requirements_lines(text) == {"foo": "1.0", "bar": "2.0"}
+    assert parse_requirements_lines(text) == {"foo": "1.0", "bar": "2.0"}
 
 
 def test_checkers_use_monkeypatched_run(monkeypatch):
-    """Safety regression: ensure checkers can be exercised with mocked pm calls."""
-    from repo_ops.upgrade.ecosystems.node import check_bun
-    from repo_ops.upgrade.models import Workspace
+    from repo_ops_js_bun.bun import check_bun
+    from repo_ops_models import Workspace
 
     calls: list[list[str]] = []
 
@@ -47,7 +46,7 @@ def test_checkers_use_monkeypatched_run(monkeypatch):
         git_repo=Path("/tmp"),
         label="",
     )
-    with patch("repo_ops.upgrade.ecosystems.node.run", fake_run):
+    with patch("repo_ops_js_bun.bun.run", fake_run):
         changes = check_bun(ws)
     assert len(changes) == 1
     assert changes[0].name == "foo"
@@ -55,8 +54,9 @@ def test_checkers_use_monkeypatched_run(monkeypatch):
 
 
 def test_ecosystem_checker_and_applier_registry_keys():
-    from repo_ops.upgrade.ecosystems import APPLIERS, CHECKERS
+    from repo_ops_upgrade import registry
 
+    register_all()
     expected = {
         "bun",
         "npm",
@@ -69,26 +69,24 @@ def test_ecosystem_checker_and_applier_registry_keys():
         "pip-tools",
         "hatch",
     }
-    assert expected == set(CHECKERS.keys())
-    assert set(APPLIERS.keys()) == expected
+    assert expected == set(registry.CHECKERS.keys())
+    assert set(registry.APPLIERS.keys()) == expected
 
 
 def test_actions_discover_workflow_files_empty_without_github_dir(tmp_path):
-    from repo_ops.upgrade.actions import discover_workflow_files
+    from repo_ops_upgrade.actions import discover_workflow_files
 
     assert discover_workflow_files(tmp_path) == []
 
 
 def test_remediations_pm_exec_prefix_yarn():
-    from repo_ops.upgrade.workspaces import pm_exec_prefix
+    from repo_ops_js.workspaces import pm_exec_prefix
 
     assert pm_exec_prefix("yarn") == ["yarn"]
 
 
 def test_resolved_version_from_node_modules_scoped(tmp_path):
-    from repo_ops.upgrade.ecosystems.node_lockfiles import (
-        resolved_version_from_node_modules,
-    )
+    from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 
     pkg_dir = tmp_path / "node_modules" / "@biomejs" / "biome"
     pkg_dir.mkdir(parents=True)
@@ -99,7 +97,7 @@ def test_resolved_version_from_node_modules_scoped(tmp_path):
 
 
 def test_is_git_dirty_clean_repo(tmp_path):
-    from repo_ops.core.git import is_git_dirty
+    from repo_ops_core.git import is_git_dirty
 
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
     assert is_git_dirty(tmp_path) is False

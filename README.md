@@ -12,13 +12,13 @@ Local repository operations and dependency maintenance tools for Rethunk-Tech
 
 ---
 
-repo-ops packages four console workflows for scanning many local git checkouts under shared roots: dependency footprint reporting, read-only upgrade planning, apply-with-verify upgrades (including GitHub Actions pin bumps), and push-reflog audits.
+repo-ops is a **uv workspace** of packages for scanning many local git checkouts under shared roots: dependency footprint reporting, read-only upgrade planning, apply-with-verify upgrades (including GitHub Actions pin bumps), and push-reflog audits.
 
-The tools share discovery, git, and subprocess helpers in `repo_ops.core`, expose domain logic under `inventory/`, `upgrade/`, and `pushed/`, and ship as PEP 621 console scripts (install and usage: [HUMANS.md](HUMANS.md)). They target monorepo-style layouts where you maintain sibling org checkouts rather than a single application tree.
+Install the `repo-ops` console script and use subcommands `inventory`, `plan`, `apply`, and `pushed` (see [HUMANS.md](HUMANS.md)). Shared helpers live in `repo_ops_core`; domain logic is split across `packages/repo-ops-*`.
 
 ## Highlights
 
-- `repos-inventory`, `repos-upgrade-plan`, `repos-upgrade-apply`, and `repos-pushed` console tools, plus optional `repo-ops` dispatcher
+- Single `repo-ops` CLI with `inventory`, `plan`, `apply`, and `pushed` subcommands
 - Upgrade plan/apply includes GitHub Actions pin drift by default (`--skip-actions` to omit)
 - uv-locked src-layout package (`uv_build`); Python >= 3.10
 - Subsystem modules for ecosystems, remediations, verify gates, and workspace discovery
