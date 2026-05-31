@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-05-31
+
+### Fixed
+
+- **Go plan/apply:** parse `go list -m -u -json` stdout with a streaming JSON decoder so pretty-printed multi-line module objects work (previously treated output as JSONL and failed every Go root).
+
 ## [0.3.2] - 2026-05-30
 
 ### Fixed
@@ -131,7 +137,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.2.5...v0.3.0
