@@ -1,0 +1,23 @@
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+
+[project]
+name = "repo-ops-js-bun"
+version = "0.3.0"
+requires-python = ">=3.10"
+dependencies = [
+  "repo-ops-core",
+  "repo-ops-models",
+  "repo-ops-upgrade",
+]
+
+[tool.uv.sources]
+repo-ops-core = { workspace = true }
+repo-ops-models = { workspace = true }
+repo-ops-upgrade = { workspace = true }
+repo-ops-py = { workspace = true }
+repo-ops-py-uv = { workspace = true }
