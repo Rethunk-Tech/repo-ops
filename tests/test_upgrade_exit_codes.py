@@ -145,6 +145,32 @@ def _dirty_skip(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
     return wr
 
 
+def test_apply_dirty_skip_does_not_scan_actions(tmp_path: Path) -> None:
+    _npm_workspace(tmp_path)
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / ".github" / "workflows" / "ci.yml").write_text(
+        "jobs:\n  x:\n    steps:\n      - uses: actions/checkout@v3\n",
+        encoding="utf-8",
+    )
+    register_all()
+    scan_calls: list[tuple[Path, bool]] = []
+
+    def track_scan(repo: Path, *, apply: bool = False):
+        scan_calls.append((repo, apply))
+        return [], 0
+
+    with (
+        patch(
+            "repo_ops_upgrade.run.orchestration.process_workspace",
+            side_effect=_dirty_skip,
+        ),
+        patch("repo_ops_upgrade.run.actions.scan_actions", side_effect=track_scan),
+    ):
+        main_apply([str(tmp_path), "--flat", "--quiet"])
+
+    assert scan_calls == []
+
+
 def test_strict_exit_counts_dirty_skip(tmp_path: Path) -> None:
     _npm_workspace(tmp_path)
     register_all()

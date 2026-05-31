@@ -183,7 +183,7 @@ def _run_upgrade_body(
 
     if not args.skip_actions:
         for bundle in bundles.values():
-            if apply and bundle.any_fail():
+            if apply and (bundle.any_fail() or bundle.any_dirty_skip()):
                 continue
             bundle.actions, bundle.actions_workflows_scanned = actions.scan_actions(
                 bundle.git_repo, apply=apply

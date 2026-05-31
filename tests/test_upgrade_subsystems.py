@@ -20,6 +20,19 @@ def _sample_workspace(tmp_path: Path) -> Workspace:
     )
 
 
+def test_repo_bundle_any_dirty_skip(tmp_path: Path) -> None:
+    ws = _sample_workspace(tmp_path)
+    dirty = WorkspaceResult(
+        workspace=ws,
+        status="skip",
+        error="dirty git worktree (use --allow-dirty)",
+    )
+    other = WorkspaceResult(workspace=ws, status="skip", error="excluded path")
+    bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[dirty, other])
+    assert bundle.any_dirty_skip() is True
+    assert bundle.any_fail() is False
+
+
 def test_build_json_payload_shape(tmp_path: Path) -> None:
     ws = _sample_workspace(tmp_path)
     wr = WorkspaceResult(workspace=ws, changes=[Change("pkg", "1.0", "2.0")])

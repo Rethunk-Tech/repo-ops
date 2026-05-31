@@ -85,6 +85,14 @@ class RepoBundle:
     def any_fail(self) -> bool:
         return any(w.status == "fail" for w in self.workspaces)
 
+    def any_dirty_skip(self) -> bool:
+        return any(
+            w.status == "skip"
+            and w.error
+            and "dirty git worktree" in w.error
+            for w in self.workspaces
+        )
+
     def actions_summary(self) -> dict[str, int]:
         bumps = 0
         failures = 0
