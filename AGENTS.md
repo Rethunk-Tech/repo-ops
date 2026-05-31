@@ -27,9 +27,10 @@ For command names, install paths, and usage flags, see [HUMANS.md](HUMANS.md).
 - `pyproject.toml` / `uv.lock` - single source of truth for build, scripts, locked deps, pytest config, and metadata
 - `README.md` - user overview
 - `LICENSE`, `CONTRIBUTING.md`, `AGENTS.md` - hygiene and process docs
+- `CLAUDE.md` - convention entrypoint; pointer to this file (not a symlink—edit here only)
 - `.gitignore`, `.editorconfig` - editor/build hygiene
 
-Programmatic import paths are listed in [HUMANS.md](HUMANS.md#package-layout-021). Do not create top-level scripts; everything routes through the package and entry points.
+Programmatic import paths are listed in [HUMANS.md](HUMANS.md#package-layout). Do not create top-level scripts; everything routes through the package and entry points.
 
 ## Development Practices for Agents
 
@@ -49,9 +50,9 @@ Programmatic import paths are listed in [HUMANS.md](HUMANS.md#package-layout-021
 
 These guidelines help keep parallel agent work efficient and the repository tidy.
 
-## Incremental Commits for Agents (from now on)
+## Incremental Commits for Agents
 
-From this point forward, every Task, subagent, or automation working in this repository **must commit incrementally** using MCP-only git operations:
+Every Task, subagent, or automation working in this repository **must commit incrementally** using MCP-only git operations:
 
 - **Tooling**: Use `batch_commit` and `git_status` from the `plugin-rethunk-git-rethunk-git` (or `user-rethunk-git`) MCP server. Never invoke shell `git commit`, `git add`, or equivalent unless the user has explicitly opted into shell-based git workflows for this session.
 - **Batching**: Small, thematic batches (e.g., one doc file or one logical change per commit). Verify before committing (see HUMANS verification).
