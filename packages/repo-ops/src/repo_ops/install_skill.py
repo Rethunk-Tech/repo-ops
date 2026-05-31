@@ -114,6 +114,17 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def validate_dest(dest: Path) -> None:
+    """Refuse paths that are not the repo-ops skill directory."""
+    resolved = dest.expanduser().resolve()
+    if resolved.name != _SKILL_DIR_NAME:
+        msg = (
+            f"--dest must end with {_SKILL_DIR_NAME!r} (got {resolved.name!r}); "
+            "refusing to remove an unrelated directory"
+        )
+        raise ValueError(msg)
+
+
 def run_install(
     *,
     target: str,
@@ -124,6 +135,11 @@ def run_install(
 ) -> int:
     src = bundled_skill_dir()
     if dest is not None:
+        try:
+            validate_dest(dest)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         dest_resolved = dest.expanduser().resolve()
         code = install_one(src, dest_resolved, force=force, dry_run=dry_run)
         return code

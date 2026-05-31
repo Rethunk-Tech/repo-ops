@@ -24,14 +24,14 @@ def test_install_skill_to_dest(tmp_path: Path) -> None:
 
 
 def test_install_skill_dry_run_does_not_write(tmp_path: Path) -> None:
-    dest = tmp_path / "dry"
+    dest = tmp_path / "repo-ops"
     code = main(["--dest", str(dest), "--dry-run"])
     assert code == 0
     assert not dest.exists()
 
 
 def test_install_skill_skip_without_force(tmp_path: Path) -> None:
-    dest = tmp_path / "existing"
+    dest = tmp_path / "repo-ops"
     dest.mkdir()
     (dest / "SKILL.md").write_text("placeholder", encoding="utf-8")
     code = main(["--dest", str(dest)])
@@ -40,7 +40,7 @@ def test_install_skill_skip_without_force(tmp_path: Path) -> None:
 
 
 def test_install_skill_force_overwrites(tmp_path: Path) -> None:
-    dest = tmp_path / "existing"
+    dest = tmp_path / "repo-ops"
     dest.mkdir()
     (dest / "SKILL.md").write_text("placeholder", encoding="utf-8")
     code = main(["--dest", str(dest), "--force"])
@@ -56,6 +56,13 @@ def test_install_skill_home_layout(
     code = main(["--target", "cursor"])
     assert code == 0
     assert (tmp_path / ".cursor" / "skills" / "repo-ops" / "SKILL.md").is_file()
+
+
+def test_install_skill_rejects_unsafe_dest(tmp_path: Path) -> None:
+    dest = tmp_path / "not-repo-ops"
+    code = main(["--dest", str(dest), "--force"])
+    assert code == 1
+    assert not dest.exists()
 
 
 def test_install_skill_help_exits_zero() -> None:
