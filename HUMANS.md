@@ -102,6 +102,28 @@ GitHub Actions workflow pins are included in both plan and apply by default. Use
 
 Run `repo-ops <subcommand> --help` for full options.
 
+### Migration from 0.2.x
+
+0.3.0 replaces four standalone console scripts with one **`repo-ops`** entry point and a **uv workspace** under `packages/*`.
+
+| 0.2.x (removed) | 0.3.0 |
+|-----------------|-------|
+| `repos-inventory` | `repo-ops inventory` |
+| `repos-upgrade-plan` | `repo-ops plan` |
+| `repos-upgrade-apply` | `repo-ops apply` |
+| `repos-pushed` | `repo-ops pushed` |
+| `repo_ops.commands.dispatch` | `repo_ops.cli` |
+| `repo_ops.upgrade.ecosystems` | `repo_ops_upgrade.registry` (after `repo_ops._register.register_all()`) |
+
+**Operators:** reinstall the global tool so `~/.local/bin/repo-ops` points at the new CLI (`uv tool install -e .` from a clone, or `uv tool upgrade repo-ops` after pulling 0.3.0). Update shell aliases, CI jobs, and automation that invoke `repos-*` or import `repo_ops.upgrade.ecosystems`.
+
+**Org scan (2026-05-30):** `gh search code` in `Rethunk-Tech` found stale `repos-*` / `repo_ops.commands.dispatch` / `repo_ops.upgrade.ecosystems` references only on the default branch of **this** repository (pre-0.3.0 tree: `src/repo_ops/`, root `pyproject.toml` scripts, older README/HUMANS). No hits in other org repos. After merging 0.3.0, re-run:
+
+```bash
+gh search code "repos-inventory" --owner Rethunk-Tech
+gh search code "repo_ops.upgrade.ecosystems" --owner Rethunk-Tech
+```
+
 ### Package layout (uv workspace 0.3.0)
 
 The repo is a **uv workspace** under `packages/*`. Ecosystem plugins register checkers/appliers via `repo_ops._register.register_all()` before dispatch. Programmatic import paths:
