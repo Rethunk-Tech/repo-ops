@@ -21,8 +21,8 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Python version, OS, repo-ops version or commit
-      placeholder: "Python 3.12, Ubuntu 24.04, repo-ops --version or git SHA"
+      description: Python version, OS, `repo-ops --version` or git SHA (install/verify — HUMANS.md)
+      placeholder: "Python 3.12, Fedora 44, repo-ops 0.5.0 or git SHA"
   - type: textarea
     id: logs
     attributes:

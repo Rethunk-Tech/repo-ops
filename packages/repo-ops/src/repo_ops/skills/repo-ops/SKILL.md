@@ -23,7 +23,7 @@ Use the **`repo-ops`** CLI for dependency and Actions maintenance. **Install, fl
 | Apply updates + verify | `repo-ops apply` |
 | Pushed-commit audit | `repo-ops pushed` |
 
-Default roots: [`DEFAULT_ROOTS`](https://github.com/Rethunk-Tech/repo-ops/blob/main/packages/repo-ops-core/src/repo_ops_core/constants.py). Pass checkout paths as trailing args to override. Common flags: `--flat`, `--filter ECO`, `--json`, `--json-out PATH` (with `--json`), `--submodules` (plan/apply JSON: `submodules: [{path, git_repo, parent}]`), `--submodule-order=children-first` (apply: child repos before parents), `--log-file`, `--strict-exit`, `--max-failures`, `--skip-actions`, `--skip-remediations`, `--no-verify`, `--on-verify-fail=revert|keep` (apply only; default `keep`), `--commit=none|conventional|agent`, `--commit-dry-run`, `--commit-on-fail` (apply only; agent needs `CURSOR_API_KEY` + `repo-ops-upgrade[commit-agent-cursor]`; provider via `REPO_OPS_COMMIT_AGENT_PROVIDER`, default `cursor`).
+Default roots: [`DEFAULT_ROOTS`](https://github.com/Rethunk-Tech/repo-ops/blob/main/packages/repo-ops-core/src/repo_ops_core/constants.py). Pass checkout paths as trailing args to override. Common flags: `--flat`, `--follow-symlinks`, `--filter ECO`, `--json`, `--json-out PATH` (with `--json`), `--submodules`, `--submodule-order=children-first`, `--log-file`, `--strict-exit`, `--max-failures`, `--jobs` (positive int), `--skip-actions`, `--skip-remediations`, `--no-verify`, `--on-verify-fail=revert|keep` (apply; default `keep`), `--commit=none|conventional|agent`, `--commit-dry-run`, `--commit-on-fail`. pnpm/yarn latest: `REPO_OPS_PNPM_UPDATE_LATEST`, `REPO_OPS_YARN_UPDATE_LATEST`. Discovery/security: [HUMANS — Security and discovery](https://github.com/Rethunk-Tech/repo-ops/blob/main/HUMANS.md#security-and-discovery). Upgrade mode table: [Ecosystem upgrade modes](https://github.com/Rethunk-Tech/repo-ops/blob/main/HUMANS.md#ecosystem-upgrade-modes-plan-and-apply).
 
 ## Workflow
 
@@ -66,4 +66,4 @@ repo-ops pushed --count-only /path/to/my-repo
 repo-ops install-skill    # ~/.cursor/skills/repo-ops and ~/.claude/skills/repo-ops
 ```
 
-Details: HUMANS — Agent skill.
+`install-skill --dest` must end with `repo-ops`. Details: [HUMANS — Agent skill](https://github.com/Rethunk-Tech/repo-ops/blob/main/HUMANS.md#agent-skill).
