@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from repo_ops_models import RepoBundle
 
+from repo_ops_upgrade.discovery import DiscoveryDiagnostics
+
 UpgradeMode = Literal["plan", "apply"]
 
 
@@ -16,10 +18,13 @@ def build_json_payload(
     *,
     roots: list[str],
     mode: UpgradeMode,
+    diagnostics: DiscoveryDiagnostics | None = None,
 ) -> dict[str, Any]:
     return {
         "roots": roots,
         "mode": mode,
+        "warnings": list(diagnostics.warnings) if diagnostics else [],
+        "skipped": list(diagnostics.skipped) if diagnostics else [],
         "repos": [b.to_json() for b in sorted(bundles.values(), key=lambda x: x.label)],
     }
 
@@ -29,8 +34,14 @@ def print_json_report(
     *,
     roots: list[str],
     mode: UpgradeMode,
+    diagnostics: DiscoveryDiagnostics | None = None,
 ) -> None:
-    payload = build_json_payload(bundles, roots=roots, mode=mode)
+    payload = build_json_payload(
+        bundles,
+        roots=roots,
+        mode=mode,
+        diagnostics=diagnostics,
+    )
     print(json.dumps(payload, indent=2))
 
 

@@ -15,6 +15,7 @@ from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 
 from repo_ops_upgrade import actions, orchestration, report
 from repo_ops_upgrade import discovery as workspace_discovery
+from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 
 _FAIL_FAST = orchestration.FAIL_FAST_EVENT
 
@@ -46,7 +47,13 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
             s.strip() for s in args.skip_remediations.split(",") if s.strip()
         }
 
-    found: list[Workspace] = workspace_discovery.discover_all(roots, flat=args.flat)
+    json_out = args.json_out
+    diagnostics = DiscoveryDiagnostics() if json_out else None
+    found: list[Workspace] = workspace_discovery.discover_all(
+        roots,
+        flat=args.flat,
+        diagnostics=diagnostics,
+    )
     found = orchestration.filter_workspaces(found, args.eco_filter)
 
     bundles = workspace_discovery.group_by_repo(found, roots)
@@ -133,12 +140,12 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
                 if wr.changes or wr.status != "ok" or wr.remediations
             ]
 
-    json_out = args.json_out
     if json_out:
         report.print_json_report(
             bundles,
             roots=roots,
             mode="apply" if apply else "plan",
+            diagnostics=diagnostics,
         )
     elif not args.quiet:
         top_n = getattr(args, "top", 10)

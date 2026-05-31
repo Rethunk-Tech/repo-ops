@@ -31,6 +31,8 @@ def test_build_json_payload_shape(tmp_path: Path) -> None:
     )
     assert payload["mode"] == "plan"
     assert payload["roots"] == ["/tmp"]
+    assert payload["warnings"] == []
+    assert payload["skipped"] == []
     assert len(payload["repos"]) == 1
     assert payload["repos"][0]["label"] == "demo"
 

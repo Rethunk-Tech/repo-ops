@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from repo_ops_core.filesystem import read_json_file, read_toml_file
@@ -110,7 +111,31 @@ def path_is_yarn_workspace_child(mdir: Path, root: Path, members: set[str]) -> b
 # ---------- Workspace discovery ----------
 
 
-def discover_workspaces_in_root(root: Path, flat: bool) -> list[Workspace]:
+@dataclass
+class DiscoveryDiagnostics:
+    """Discovery SKIP/WARN events; collected for --json, printed to stderr otherwise."""
+
+    warnings: list[dict[str, str]] = field(default_factory=list)
+    skipped: list[dict[str, str]] = field(default_factory=list)
+
+    def skip_node(self, path: Path, reason: str) -> None:
+        self.skipped.append(
+            {"path": str(path), "ecosystem": "node", "reason": reason},
+        )
+
+    def warn(self, path: Path, message: str) -> None:
+        self.warnings.append({"path": str(path), "message": message})
+
+    def warn_root_not_found(self, root: Path) -> None:
+        self.warnings.append({"path": str(root), "message": "root not found"})
+
+
+def discover_workspaces_in_root(
+    root: Path,
+    flat: bool,
+    *,
+    diagnostics: DiscoveryDiagnostics | None = None,
+) -> list[Workspace]:
     found: list[Workspace] = []
     yarn_roots: dict[Path, set[str]] = {}
 
@@ -119,10 +144,17 @@ def discover_workspaces_in_root(root: Path, flat: bool) -> list[Workspace]:
             return
         mgr, warn = detect_node_manager(mdir)
         if not mgr:
-            print(f"SKIP node {mdir}: {warn}", file=sys.stderr)
+            reason = warn or "skipped"
+            if diagnostics is not None:
+                diagnostics.skip_node(mdir, reason)
+            else:
+                print(f"SKIP node {mdir}: {reason}", file=sys.stderr)
             return
         if warn:
-            print(f"WARN {mdir}: {warn}", file=sys.stderr)
+            if diagnostics is not None:
+                diagnostics.warn(mdir, warn)
+            else:
+                print(f"WARN {mdir}: {warn}", file=sys.stderr)
         for yr, members in yarn_roots.items():
             if mdir != yr and path_is_yarn_workspace_child(mdir, yr, members):
                 return
@@ -234,15 +266,27 @@ def discover_workspaces_in_root(root: Path, flat: bool) -> list[Workspace]:
     return found
 
 
-def discover_all(roots: list[str], flat: bool) -> list[Workspace]:
+def discover_all(
+    roots: list[str],
+    flat: bool,
+    *,
+    diagnostics: DiscoveryDiagnostics | None = None,
+) -> list[Workspace]:
     all_ws: list[Workspace] = []
     seen: set[tuple[str, str]] = set()
     for r in roots:
         root = Path(r).expanduser().resolve()
         if not root.is_dir():
-            print(f"WARN: root not found: {root}", file=sys.stderr)
+            if diagnostics is not None:
+                diagnostics.warn_root_not_found(root)
+            else:
+                print(f"WARN: root not found: {root}", file=sys.stderr)
             continue
-        for ws in discover_workspaces_in_root(root, flat=flat and len(roots) == 1):
+        for ws in discover_workspaces_in_root(
+            root,
+            flat=flat and len(roots) == 1,
+            diagnostics=diagnostics,
+        ):
             key = (str(ws.path), ws.manager)
             if key not in seen:
                 seen.add(key)
