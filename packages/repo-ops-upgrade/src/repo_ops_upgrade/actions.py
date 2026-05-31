@@ -10,22 +10,13 @@ from pathlib import Path
 from repo_ops_core.process import run
 from repo_ops_models import ActionBump
 
-from repo_ops_upgrade.constants import ACTION_ALLOWLIST, USES_RE
-
-
-def replace_action_pin_in_text(text: str, action: str, pin: str, latest: str) -> str:
-    """Replace one action pin only on matching ``uses:`` lines (never substring)."""
-    parts: list[str] = []
-    last = 0
-    for m in USES_RE.finditer(text):
-        parts.append(text[last : m.start()])
-        line = m.group(0)
-        if m.group(1) == action and m.group(2) == pin:
-            line = line.replace(f"{action}@{pin}", f"{action}@{latest}", 1)
-        parts.append(line)
-        last = m.end()
-    parts.append(text[last:])
-    return "".join(parts)
+from repo_ops_upgrade.constants import ACTION_ALLOWLIST
+from repo_ops_upgrade.workflow_uses import (
+    PinReplacement,
+    WorkflowParseError,
+    parse_workflow_uses,
+    update_workflow_pins,
+)
 
 
 def discover_workflow_files(repo: Path) -> list[Path]:
@@ -67,13 +58,13 @@ def scan_actions(repo: Path, apply: bool) -> tuple[list[ActionBump], int]:
     workflows = discover_workflow_files(repo)
     bumps: list[ActionBump] = []
     for wf in workflows:
-        text = wf.read_text(encoding="utf-8", errors="replace")
+        rel = str(wf.relative_to(repo))
         if shutil.which("actionlint"):
             proc = run(["actionlint", str(wf)], repo, timeout=60)
             if proc.returncode != 0:
                 bumps.append(
                     ActionBump(
-                        workflow=str(wf.relative_to(repo)),
+                        workflow=rel,
                         action="(actionlint)",
                         pin="",
                         latest="",
@@ -82,13 +73,27 @@ def scan_actions(repo: Path, apply: bool) -> tuple[list[ActionBump], int]:
                     )
                 )
                 continue
-        file_changed = False
-        for m in USES_RE.finditer(text):
-            action, pin = m.group(1), m.group(2)
+        try:
+            pins = parse_workflow_uses(wf, workflow_rel=rel)
+        except WorkflowParseError as exc:
+            bumps.append(
+                ActionBump(
+                    workflow=rel,
+                    action="(yaml)",
+                    pin="",
+                    latest="",
+                    status="fail",
+                    detail=str(exc),
+                )
+            )
+            continue
+        replacements: list[PinReplacement] = []
+        for uses in pins:
+            action, pin = uses.action, uses.pin
             if pin.startswith("sha") or re.fullmatch(r"[0-9a-f]{7,40}", pin):
                 bumps.append(
                     ActionBump(
-                        workflow=str(wf.relative_to(repo)),
+                        workflow=rel,
                         action=action,
                         pin=pin,
                         latest=pin,
@@ -101,17 +106,36 @@ def scan_actions(repo: Path, apply: bool) -> tuple[list[ActionBump], int]:
             if not latest:
                 continue
             if pin != latest:
-                bump = ActionBump(
-                    workflow=str(wf.relative_to(repo)),
-                    action=action,
-                    pin=pin,
-                    latest=latest,
-                    status="ok",
+                bumps.append(
+                    ActionBump(
+                        workflow=rel,
+                        action=action,
+                        pin=pin,
+                        latest=latest,
+                        status="ok",
+                    )
                 )
-                bumps.append(bump)
                 if apply:
-                    text = replace_action_pin_in_text(text, action, pin, latest)
-                    file_changed = True
-        if apply and file_changed:
-            wf.write_text(text, encoding="utf-8")
+                    replacements.append(
+                        PinReplacement(
+                            action=action,
+                            pin=pin,
+                            latest=latest,
+                            line=uses.line or None,
+                        )
+                    )
+        if apply and replacements:
+            try:
+                update_workflow_pins(wf, replacements)
+            except WorkflowParseError as exc:
+                bumps.append(
+                    ActionBump(
+                        workflow=rel,
+                        action="(yaml)",
+                        pin="",
+                        latest="",
+                        status="fail",
+                        detail=str(exc),
+                    )
+                )
     return bumps, len(workflows)
