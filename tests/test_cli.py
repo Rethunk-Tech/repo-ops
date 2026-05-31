@@ -8,7 +8,12 @@ from collections.abc import Callable
 
 import pytest
 
-from repo_ops.core.cli import parse_iso8601
+from repo_ops.core.cli import (
+    ECO_FILTER_HELP,
+    add_eco_filter_argument,
+    build_upgrade_parser,
+    parse_iso8601,
+)
 
 # (module, callable name, argv prefix before --help)
 _MAIN_HELP_TARGETS: list[tuple[str, str, list[str]]] = [
@@ -26,6 +31,15 @@ def _call_main_help(module_name: str, func_name: str, prefix: list[str]) -> None
     with pytest.raises(SystemExit) as exc_info:
         fn([*prefix, "--help"])
     assert exc_info.value.code == 0
+
+
+def test_eco_filter_help_on_inventory_and_upgrade_parsers():
+    bare = argparse.ArgumentParser()
+    add_eco_filter_argument(bare)
+    upgrade = build_upgrade_parser(apply=False)
+    for parser in (bare, upgrade):
+        action = next(a for a in parser._actions if a.dest == "eco_filter")
+        assert action.help == ECO_FILTER_HELP
 
 
 def test_parse_iso8601_accepts_z_and_returns_utc():

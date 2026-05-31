@@ -9,6 +9,12 @@ from datetime import datetime, timezone
 from repo_ops.core.constants import DEFAULT_ROOTS
 from repo_ops.core.process import set_verbose
 
+ECO_FILTER_CHOICES = ("node", "go", "rust", "py")
+ECO_FILTER_HELP = (
+    "Limit inventory rows or upgrade workspaces to one ecosystem "
+    f"({'/'.join(ECO_FILTER_CHOICES)})."
+)
+
 
 def parse_iso8601(value: str) -> datetime:
     """Parse an ISO 8601 string into a timezone-aware UTC datetime.
@@ -75,10 +81,10 @@ def add_eco_filter_argument(parser: argparse.ArgumentParser) -> None:
     """Add --filter for a single ecosystem (node/go/rust/py)."""
     parser.add_argument(
         "--filter",
-        choices=["node", "go", "rust", "py"],
+        choices=list(ECO_FILTER_CHOICES),
         dest="eco_filter",
         metavar="ECO",
-        help="Only include this ecosystem (node/go/rust/py).",
+        help=ECO_FILTER_HELP,
     )
 
 
