@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import sys
-
-import re
 
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
