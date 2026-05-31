@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
@@ -56,13 +57,30 @@ def check_pip_tools(ws: Workspace) -> list[Change]:
     return changes
 
 
+def _compile_requirements(ws: Workspace, out: Path, req_in: Path) -> None:
+    if shutil.which("uv"):
+        proc = run(
+            ["uv", "pip", "compile", str(req_in), "-o", str(out), "--upgrade"],
+            ws.path,
+            timeout=TIMEOUT_APPLY,
+        )
+        if proc.returncode == 0:
+            return
+    if not shutil.which("pip-compile"):
+        raise RuntimeError("pip-compile not on PATH and uv pip compile failed")
+    proc = run(
+        ["pip-compile", "--upgrade", "-o", str(out), str(req_in)],
+        ws.path,
+        timeout=TIMEOUT_APPLY,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.strip() or "pip-compile failed")
+
+
 def apply_pip_tools(ws: Workspace) -> None:
     req_in = ws.path / "requirements.in"
     req_txt = ws.path / "requirements.txt"
     out = req_txt if req_txt.exists() else req_in.with_suffix(".txt")
-    args = ["pip-compile", "--upgrade"]
-    if req_in.exists():
-        args.extend(["-o", str(out), str(req_in)])
-    proc = run(args, ws.path, timeout=TIMEOUT_APPLY)
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "pip-compile failed")
+    if not req_in.exists():
+        raise RuntimeError("requirements.in not found")
+    _compile_requirements(ws, out, req_in)
