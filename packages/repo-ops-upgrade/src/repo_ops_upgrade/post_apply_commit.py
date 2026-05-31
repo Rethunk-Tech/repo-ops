@@ -1,9 +1,7 @@
-"""Optional post-apply git commits (conventional or Cursor SDK agent-drafted)."""
+"""Optional post-apply git commits (conventional or pluggable commit-agent)."""
 
 from __future__ import annotations
 
-import os
-import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -174,70 +172,6 @@ def build_conventional_message(bundle: RepoBundle, files: list[str]) -> str:
     return f"{subject}\n\n{body}"
 
 
-def _normalize_agent_subject(text: str) -> str:
-    line = ""
-    for raw in text.splitlines():
-        candidate = raw.strip().strip("`\"'")
-        if candidate:
-            line = candidate
-            break
-    if not line:
-        return "chore(deps): apply repo-ops dependency updates"
-    line = re.sub(r"\s+", " ", line)
-    if len(line) > 72:
-        line = line[:69].rstrip() + "..."
-    return line
-
-
-def draft_message_with_agent(
-    bundle: RepoBundle,
-    files: list[str],
-    *,
-    api_key: str | None = None,
-) -> str:
-    """Draft commit subject via Cursor SDK Agent.prompt (message only)."""
-    key = (api_key or os.environ.get("CURSOR_API_KEY") or "").strip()
-    if not key:
-        raise RuntimeError(
-            "CURSOR_API_KEY is not set; export a Cursor API key or use "
-            "--commit=conventional. Install: pip install cursor-sdk"
-        )
-    try:
-        from cursor_sdk import Agent, AgentOptions, LocalAgentOptions
-    except ImportError as exc:
-        raise RuntimeError(
-            "cursor-sdk is not installed; pip install cursor-sdk "
-            "(or uv sync --extra agent on repo-ops-upgrade)"
-        ) from exc
-
-    file_blob = "\n".join(f"- {p}" for p in files[:40])
-    if len(files) > 40:
-        file_blob += f"\n- … and {len(files) - 40} more"
-    prompt = (
-        "Draft exactly one Conventional Commits subject line (max 72 characters) "
-        "for a dependency or CI maintenance commit in this repository.\n"
-        f"Repository label: {bundle.label}\n"
-        f"Changed files:\n{file_blob}\n\n"
-        "Return only the subject line, no quotes or body."
-    )
-    result = Agent.prompt(
-        prompt,
-        AgentOptions(
-            api_key=key,
-            model="composer-2.5",
-            local=LocalAgentOptions(cwd=str(bundle.git_repo.resolve())),
-        ),
-    )
-    if getattr(result, "status", None) == "error":
-        rid = getattr(result, "id", "?")
-        raise RuntimeError(f"Cursor agent run failed (run id {rid})")
-    text = getattr(result, "result", None) or getattr(result, "text", None) or ""
-    if not isinstance(text, str):
-        text = str(text)
-    subject = _normalize_agent_subject(text)
-    return f"{subject}\n\nAutomated post-apply commit (Cursor SDK draft)."
-
-
 def plan_repo_commit(
     bundle: RepoBundle,
     *,
@@ -271,7 +205,11 @@ def plan_repo_commit(
         return CommitPlan(repo, bundle.label, "", skipped_reason="no safe paths to stage")
     if mode == "agent":
         try:
-            message = draft_message_with_agent(bundle, safe)
+            from repo_ops_upgrade.commit_agent_providers import (
+                draft_message_with_commit_agent,
+            )
+
+            message = draft_message_with_commit_agent(bundle, safe)
         except RuntimeError as exc:
             return CommitPlan(repo, bundle.label, "", skipped_reason=str(exc))
     else:
