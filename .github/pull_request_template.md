@@ -4,10 +4,9 @@
 
 ## Test Plan
 
-- [ ] Existing tests pass (`pytest`)
+- [ ] [HUMANS verification](HUMANS.md#verification-and-testing) passed (at minimum `uv run pytest` for code changes)
 - [ ] New behavior covered by tests (if applicable)
-- [ ] Manual verification of CLI commands (if user-facing)
-- [ ] Linting/formatting clean (`ruff check . && ruff format --check .`)
+- [ ] Manual CLI check if user-facing behavior changed
 
 ## Documentation
 
