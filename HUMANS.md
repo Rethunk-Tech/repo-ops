@@ -123,7 +123,7 @@ For programmatic use, prefer these import paths (there is no `repo_ops.upgrade.e
 | GitHub Actions pins | `repo_ops.upgrade.actions` |
 | Inventory scan | `repo_ops.inventory.scan` |
 | Push audit | `repo_ops.pushed.audit` |
-| Shared helpers | `repo_ops.core.*` |
+| Shared helpers | `repo_ops.core.*` (`walk.iter_scanned_dirs`, `parallel.run_bounded_pool`, `discovery.discover_repos`) |
 
 ## Verification and Testing
 

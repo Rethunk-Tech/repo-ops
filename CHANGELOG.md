@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Shared manifest walks: `repo_ops.core.walk` (`iter_scanned_dirs`, `manifest_kinds`) used by inventory counting and upgrade workspace discovery; upgrade now treats `requirements.txt`-only trees as Python workspaces.
+- Upgrade plan/apply parallel execution consolidated in `repo_ops.core.parallel.run_bounded_pool`.
+- `YARN_ISOLATED_COPY_SKIP` derives from `SKIP_DIRS` plus `.dep_refresh_venv` (drops duplicate name list).
+- Ecosystem dispatch: yarn checker registered as `check_yarn_snapshot` with tuple results handled uniformly; removed `check_yarn` wrapper.
+- `repo-ops` dispatcher uses a single handler map (same CLI surface).
 - Shared CLI: `add_eco_filter_argument` and unified `--json` dest (`json_out`) on all commands; upgrade `--top` defined once for plan/apply.
 
 ### Fixed
