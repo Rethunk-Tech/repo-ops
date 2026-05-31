@@ -110,7 +110,7 @@ The installable console script is **`repo-ops`** (`packages/repo-ops`). Subcomma
 
 All tools default to scanning [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_ops_core/constants.py) unless you pass explicit root directories.
 
-`--json` emits machine-readable output on every subcommand. `--filter ECO` limits inventory rows or upgrade workspaces to one ecosystem (`node`, `go`, `rust`, `py`).
+`--json` emits machine-readable output on every subcommand. For `plan` and `apply`, stdout is a single JSON object only; discovery notes (skipped node dirs, packageManager/lockfile mismatches) are in top-level `skipped` and `warnings` arrays, not mixed into stdout. Human-mode discovery still prints those lines to stderr. `--filter ECO` limits inventory rows or upgrade workspaces to one ecosystem (`node`, `go`, `rust`, `py`).
 
 `--flat` treats each root as a single project (skips the org/proj two-level walk). It is available on `inventory` and upgrade `plan`/`apply`, not on `pushed`.
 

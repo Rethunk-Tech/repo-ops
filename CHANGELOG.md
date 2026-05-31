@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bundled agent skill (`repo_ops/skills/repo-ops/SKILL.md`) and `repo-ops install-skill` to copy it into `~/.cursor/skills/repo-ops/` and `~/.claude/skills/repo-ops/` (`--target`, `--force`, `--dry-run`, `--home`, `--dest`).
 
+### Fixed
+
+- `repo-ops plan` / `apply` with `--json`: discovery SKIP/WARN lines no longer print during the scan; they appear in JSON `skipped` / `warnings` arrays so stdout stays a single JSON document.
+
 ## [0.3.0] - 2026-05-30
 
 ### Added
