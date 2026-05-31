@@ -51,7 +51,8 @@ def process_workspace(
 
     before_snap: dict[Path, bytes] | None = None
     if do_apply:
-        if is_git_dirty(ws.git_repo) and not allow_dirty:
+        result.started_dirty = is_git_dirty(ws.git_repo)
+        if result.started_dirty and not allow_dirty:
             result.status = "skip"
             result.error = "dirty git worktree (use --allow-dirty)"
             return result

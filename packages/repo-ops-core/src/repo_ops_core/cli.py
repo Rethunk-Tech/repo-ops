@@ -209,6 +209,30 @@ def add_upgrade_common_arguments(
                 "or children-first (child git repos before parent umbrellas)."
             ),
         )
+        parser.add_argument(
+            "--commit",
+            choices=("none", "conventional", "agent"),
+            default="none",
+            metavar="MODE",
+            help=(
+                "After apply: commit each repo where apply and verify succeeded. "
+                "conventional=local git; agent=Cursor SDK drafts the subject (needs "
+                "CURSOR_API_KEY and cursor-sdk)."
+            ),
+        )
+        parser.add_argument(
+            "--commit-dry-run",
+            action="store_true",
+            help="With --commit: print intended messages and file lists; no git writes.",
+        )
+        parser.add_argument(
+            "--commit-on-fail",
+            action="store_true",
+            help=(
+                "Also attempt commits for repos with apply/verify failures "
+                "(default: skip failed verify)."
+            ),
+        )
 
 
 def build_upgrade_parser(*, apply: bool) -> argparse.ArgumentParser:

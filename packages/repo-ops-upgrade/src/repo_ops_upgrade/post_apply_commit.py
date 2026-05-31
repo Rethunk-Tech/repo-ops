@@ -1,0 +1,378 @@
+"""Optional post-apply git commits (conventional or Cursor SDK agent-drafted)."""
+
+from __future__ import annotations
+
+import os
+import re
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Literal
+
+from repo_ops_core.git import run_git
+from repo_ops_models import RepoBundle
+
+CommitMode = Literal["none", "conventional", "agent"]
+
+_FORBIDDEN_BASENAMES = frozenset(
+    {
+        ".env",
+        "credentials.json",
+        "secrets.json",
+        "id_rsa",
+        "id_ed25519",
+        ".netrc",
+        ".npmrc",
+    }
+)
+_FORBIDDEN_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
+_FORBIDDEN_FRAGMENTS = (
+    "/.env.",
+    "/.env/",
+    "/secrets/",
+    "/credentials/",
+    "service-account",
+    "private_key",
+)
+
+
+@dataclass
+class CommitPlan:
+    git_repo: Path
+    label: str
+    message: str
+    files: list[str] = field(default_factory=list)
+    skipped_reason: str | None = None
+
+
+@dataclass
+class CommitOutcome:
+    git_repo: Path
+    label: str
+    status: Literal["committed", "dry_run", "skipped", "failed"]
+    message: str | None = None
+    files: list[str] = field(default_factory=list)
+    detail: str | None = None
+
+
+def is_forbidden_commit_path(path: str) -> bool:
+    """True when path must never be staged for an automated deps commit."""
+    norm = path.replace("\\", "/").strip()
+    base = Path(norm).name
+    lower_base = base.lower()
+    if lower_base in _FORBIDDEN_BASENAMES or base in _FORBIDDEN_BASENAMES:
+        return True
+    if lower_base.startswith(".env"):
+        return True
+    if any(lower_base.endswith(s) for s in _FORBIDDEN_SUFFIXES):
+        return True
+    lower_norm = norm.lower()
+    return any(frag in lower_norm for frag in _FORBIDDEN_FRAGMENTS)
+
+
+def porcelain_changed_paths(repo: Path) -> list[str]:
+    proc = run_git(repo, "status", "--porcelain", timeout=60)
+    if proc.returncode != 0:
+        return []
+    paths: list[str] = []
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if len(line) < 4:
+            continue
+        entry = line[3:].strip()
+        if " -> " in entry:
+            entry = entry.split(" -> ", 1)[1].strip()
+        if entry:
+            paths.append(entry)
+    return paths
+
+
+def filter_safe_paths(paths: list[str]) -> tuple[list[str], list[str]]:
+    safe: list[str] = []
+    blocked: list[str] = []
+    for p in paths:
+        if is_forbidden_commit_path(p):
+            blocked.append(p)
+        else:
+            safe.append(p)
+    return safe, blocked
+
+
+def _bundle_started_dirty(bundle: RepoBundle) -> bool:
+    return any(wr.started_dirty for wr in bundle.workspaces)
+
+
+def _bundle_apply_ok(
+    bundle: RepoBundle,
+    *,
+    commit_on_fail: bool,
+) -> tuple[bool, str | None]:
+    if not bundle.workspaces:
+        return False, "no workspaces"
+    for wr in bundle.workspaces:
+        if wr.status == "skip":
+            err = wr.error or ""
+            if "dirty git worktree" in err:
+                return False, "skipped dirty worktree"
+            if wr.error == "fail-fast":
+                return False, "fail-fast"
+        if wr.status == "fail":
+            if wr.verify_error and not commit_on_fail:
+                return False, "verify failed"
+            if not commit_on_fail:
+                return False, wr.verify_error or wr.error or "apply failed"
+    if bundle.any_fail() and not commit_on_fail:
+        return False, "workspace failures"
+    return True, None
+
+
+def _has_actionable_repo_changes(bundle: RepoBundle) -> bool:
+    for wr in bundle.workspaces:
+        if wr.changes or wr.remediations:
+            return True
+    for ab in bundle.actions:
+        if ab.status == "ok" and ab.pin != ab.latest:
+            return True
+    return porcelain_changed_paths(bundle.git_repo)
+
+
+def classify_commit_subject(files: list[str]) -> str:
+    """One-line Conventional Commits subject from changed paths."""
+    names = {Path(p).name.lower() for p in files}
+    if any(n.endswith(".yml") or n.endswith(".yaml") for n in names) and any(
+        ".github" in p.replace("\\", "/") for p in files
+    ):
+        return "chore(ci): bump GitHub Actions pins"
+    if any(n in ("go.mod", "go.sum") for n in names):
+        return "chore(deps): update Go modules"
+    if any(n.endswith(".toml") and "cargo" in n for n in names):
+        return "chore(deps): update Rust lockfiles"
+    if any(n in ("pyproject.toml", "uv.lock", "poetry.lock", "requirements.txt") for n in names):
+        return "chore(deps): update Python dependencies"
+    if any(
+        n in ("package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb")
+        for n in names
+    ):
+        return "chore(deps): update Node lockfiles and manifests"
+    return "chore(deps): apply repo-ops dependency updates"
+
+
+def build_conventional_message(bundle: RepoBundle, files: list[str]) -> str:
+    subject = classify_commit_subject(files)
+    body_lines = [f"Automated post-apply commit for {bundle.label}."]
+    if bundle.workspaces:
+        changed_ws = [wr for wr in bundle.workspaces if wr.changes]
+        if changed_ws:
+            body_lines.append("")
+            body_lines.append("Workspaces:")
+            for wr in changed_ws[:8]:
+                ws = wr.workspace
+                body_lines.append(f"- {ws.label} ({ws.ecosystem}/{ws.manager})")
+            if len(changed_ws) > 8:
+                body_lines.append(f"- … and {len(changed_ws) - 8} more")
+    body = "\n".join(body_lines)
+    return f"{subject}\n\n{body}"
+
+
+def _normalize_agent_subject(text: str) -> str:
+    line = ""
+    for raw in text.splitlines():
+        candidate = raw.strip().strip("`\"'")
+        if candidate:
+            line = candidate
+            break
+    if not line:
+        return "chore(deps): apply repo-ops dependency updates"
+    line = re.sub(r"\s+", " ", line)
+    if len(line) > 72:
+        line = line[:69].rstrip() + "..."
+    return line
+
+
+def draft_message_with_agent(
+    bundle: RepoBundle,
+    files: list[str],
+    *,
+    api_key: str | None = None,
+) -> str:
+    """Draft commit subject via Cursor SDK Agent.prompt (message only)."""
+    key = (api_key or os.environ.get("CURSOR_API_KEY") or "").strip()
+    if not key:
+        raise RuntimeError(
+            "CURSOR_API_KEY is not set; export a Cursor API key or use "
+            "--commit=conventional. Install: pip install cursor-sdk"
+        )
+    try:
+        from cursor_sdk import Agent, AgentOptions, LocalAgentOptions
+    except ImportError as exc:
+        raise RuntimeError(
+            "cursor-sdk is not installed; pip install cursor-sdk "
+            "(or uv sync --extra agent on repo-ops-upgrade)"
+        ) from exc
+
+    file_blob = "\n".join(f"- {p}" for p in files[:40])
+    if len(files) > 40:
+        file_blob += f"\n- … and {len(files) - 40} more"
+    prompt = (
+        "Draft exactly one Conventional Commits subject line (max 72 characters) "
+        "for a dependency or CI maintenance commit in this repository.\n"
+        f"Repository label: {bundle.label}\n"
+        f"Changed files:\n{file_blob}\n\n"
+        "Return only the subject line, no quotes or body."
+    )
+    result = Agent.prompt(
+        prompt,
+        AgentOptions(
+            api_key=key,
+            model="composer-2.5",
+            local=LocalAgentOptions(cwd=str(bundle.git_repo.resolve())),
+        ),
+    )
+    if getattr(result, "status", None) == "error":
+        rid = getattr(result, "id", "?")
+        raise RuntimeError(f"Cursor agent run failed (run id {rid})")
+    text = getattr(result, "result", None) or getattr(result, "text", None) or ""
+    if not isinstance(text, str):
+        text = str(text)
+    subject = _normalize_agent_subject(text)
+    return f"{subject}\n\nAutomated post-apply commit (Cursor SDK draft)."
+
+
+def plan_repo_commit(
+    bundle: RepoBundle,
+    *,
+    mode: CommitMode,
+    allow_dirty: bool,
+    commit_on_fail: bool,
+) -> CommitPlan:
+    repo = bundle.git_repo
+    if _bundle_started_dirty(bundle) and not allow_dirty:
+        return CommitPlan(
+            repo, bundle.label, "", skipped_reason="dirty worktree at start"
+        )
+    ok, reason = _bundle_apply_ok(bundle, commit_on_fail=commit_on_fail)
+    if not ok:
+        return CommitPlan(repo, bundle.label, "", skipped_reason=reason)
+    if not _has_actionable_repo_changes(bundle):
+        return CommitPlan(repo, bundle.label, "", skipped_reason="no changes to commit")
+    files = porcelain_changed_paths(repo)
+    if not files:
+        return CommitPlan(repo, bundle.label, "", skipped_reason="clean worktree")
+    safe, blocked = filter_safe_paths(files)
+    if blocked:
+        return CommitPlan(
+            repo,
+            bundle.label,
+            "",
+            skipped_reason=f"forbidden paths: {', '.join(blocked[:3])}"
+            + ("…" if len(blocked) > 3 else ""),
+        )
+    if not safe:
+        return CommitPlan(repo, bundle.label, "", skipped_reason="no safe paths to stage")
+    if mode == "agent":
+        try:
+            message = draft_message_with_agent(bundle, safe)
+        except RuntimeError as exc:
+            return CommitPlan(repo, bundle.label, "", skipped_reason=str(exc))
+    else:
+        message = build_conventional_message(bundle, safe)
+    return CommitPlan(repo, bundle.label, message, files=safe)
+
+
+def execute_commit_plan(plan: CommitPlan, *, dry_run: bool) -> CommitOutcome:
+    if plan.skipped_reason:
+        return CommitOutcome(
+            plan.git_repo,
+            plan.label,
+            "skipped",
+            detail=plan.skipped_reason,
+        )
+    if dry_run:
+        return CommitOutcome(
+            plan.git_repo,
+            plan.label,
+            "dry_run",
+            message=plan.message,
+            files=plan.files,
+        )
+    for path in plan.files:
+        add = run_git(plan.git_repo, "add", "--", path, timeout=120)
+        if add.returncode != 0:
+            err = (add.stderr or add.stdout or "git add failed").strip()
+            return CommitOutcome(
+                plan.git_repo,
+                plan.label,
+                "failed",
+                detail=f"git add {path!r}: {err}",
+            )
+    commit = run_git(
+        plan.git_repo,
+        "commit",
+        "-m",
+        plan.message,
+        timeout=120,
+    )
+    if commit.returncode != 0:
+        err = (commit.stderr or commit.stdout or "git commit failed").strip()
+        return CommitOutcome(
+            plan.git_repo,
+            plan.label,
+            "failed",
+            detail=err,
+        )
+    return CommitOutcome(
+        plan.git_repo,
+        plan.label,
+        "committed",
+        message=plan.message,
+        files=plan.files,
+    )
+
+
+def run_post_apply_commits(
+    bundles: dict[Path, RepoBundle],
+    *,
+    mode: CommitMode,
+    dry_run: bool = False,
+    allow_dirty: bool = False,
+    commit_on_fail: bool = False,
+    quiet: bool = False,
+) -> tuple[list[CommitOutcome], int]:
+    """Plan and optionally execute one commit per eligible git repo."""
+    if mode == "none":
+        return [], 0
+    outcomes: list[CommitOutcome] = []
+    exit_code = 0
+    for bundle in sorted(bundles.values(), key=lambda b: b.label):
+        plan = plan_repo_commit(
+            bundle,
+            mode=mode,
+            allow_dirty=allow_dirty,
+            commit_on_fail=commit_on_fail,
+        )
+        outcome = execute_commit_plan(plan, dry_run=dry_run)
+        outcomes.append(outcome)
+        if outcome.status == "failed":
+            exit_code = 1
+        if not quiet:
+            _print_outcome(outcome)
+    return outcomes, exit_code
+
+
+def _print_outcome(outcome: CommitOutcome) -> None:
+    prefix = outcome.label
+    if outcome.status == "dry_run":
+        print(f"[commit dry-run] {prefix}")
+        if outcome.message:
+            print(outcome.message)
+        if outcome.files:
+            print("  files:")
+            for f in outcome.files:
+                print(f"    {f}")
+    elif outcome.status == "committed":
+        print(f"[commit] {prefix}: committed ({len(outcome.files)} files)")
+    elif outcome.status == "skipped":
+        print(f"[commit skip] {prefix}: {outcome.detail}")
+    elif outcome.status == "failed":
+        print(f"[commit fail] {prefix}: {outcome.detail}", file=sys.stderr)
+

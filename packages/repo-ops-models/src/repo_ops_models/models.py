@@ -33,6 +33,7 @@ class WorkspaceResult:
     error: str | None = None
     verify_error: str | None = None
     verify_fail_disposition: str | None = None
+    started_dirty: bool = False
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {

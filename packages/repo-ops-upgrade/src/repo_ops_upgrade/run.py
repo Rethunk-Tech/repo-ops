@@ -14,7 +14,7 @@ from repo_ops_core.parallel import run_bounded_pool
 from repo_ops_core.tee import tee_stdout_stderr
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 
-from repo_ops_upgrade import actions, orchestration, report, submodules
+from repo_ops_upgrade import actions, orchestration, post_apply_commit, report, submodules
 from repo_ops_upgrade import discovery as workspace_discovery
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 
@@ -254,6 +254,20 @@ def _run_upgrade_body(
         strict_exit=args.strict_exit,
         has_actionable_work=_has_actionable_work(bundles),
     )
+    if apply:
+        commit_mode = getattr(args, "commit", "none")
+        if commit_mode and commit_mode != "none":
+            _, commit_exit = post_apply_commit.run_post_apply_commits(
+                bundles,
+                mode=commit_mode,
+                dry_run=getattr(args, "commit_dry_run", False),
+                allow_dirty=args.allow_dirty,
+                commit_on_fail=getattr(args, "commit_on_fail", False),
+                quiet=args.quiet,
+            )
+            if commit_exit != 0:
+                exit_code = 1 if exit_code == 0 else exit_code
+
     if not use_json:
         footer_hints = pointer_hints if apply else None
         if include_submodules and pointer_hints and not apply:
