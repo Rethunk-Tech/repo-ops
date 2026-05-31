@@ -14,7 +14,7 @@ _INVALID_BUN_NAME = re.compile(r"^[|?\s]+$|Package|^─")
 
 def _valid_bun_package_name(name: str) -> bool:
     n = (name or "").strip()
-    if not n or _INVALID_BUN_NAME.search(n):
+    if not n or n.startswith("-") or _INVALID_BUN_NAME.search(n):
         return False
     if "|" in n or n in ("Package", "bun", "─"):
         return False
@@ -93,6 +93,6 @@ def apply_bun(ws: Workspace) -> None:
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "bun update failed")
         return
-    proc = run(["bun", "update", *targets], ws.path, timeout=TIMEOUT_APPLY)
+    proc = run(["bun", "update", "--", *targets], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
