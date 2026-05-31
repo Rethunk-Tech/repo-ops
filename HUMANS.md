@@ -121,6 +121,16 @@ All tools default to scanning [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_
 
 GitHub Actions workflow pins are included in both plan and apply by default. Use `--skip-actions` for dependency-only runs.
 
+**Go modules** — plan and apply share semantics via `REPO_OPS_GO_UPGRADE_MODE` (default `patch`):
+
+| Mode | Plan | Apply |
+|------|------|-------|
+| `patch` (default) | `go list -m -u -json` filtered to same minor-line patch bumps | `go get -u=patch all`, then `go mod tidy` |
+| `explicit` | all `list -u` updates | batched `go get path@version` for each update, then tidy |
+| `mvs` | legacy `go list -u -m all` text | `go get -u ./...`, `go get -t -u ./...`, tidy |
+
+**Yarn (plan)** — isolated snapshots copy `.yarn/releases/` (Berry) and any `file:../…` sibling checkouts referenced from `package.json`, while still skipping `node_modules`, `.yarn/cache`, and other heavy dirs. Failed `yarn up` / `install` errors include a stderr tail in the plan JSON `error` field.
+
 Run `repo-ops <subcommand> --help` for full options.
 
 ### Migration from 0.2.x
