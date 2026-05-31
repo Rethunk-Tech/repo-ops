@@ -147,6 +147,14 @@ def add_upgrade_common_arguments(
         default=10,
         help="Max changes shown per workspace in human output.",
     )
+    parser.add_argument(
+        "--max-failures",
+        type=int,
+        default=20,
+        metavar="N",
+        dest="max_failures",
+        help="Max failure lines in the end-of-run summary (default: 20).",
+    )
     if apply:
         parser.add_argument(
             "--no-verify",

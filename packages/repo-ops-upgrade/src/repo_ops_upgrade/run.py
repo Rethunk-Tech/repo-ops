@@ -195,12 +195,12 @@ def _run_upgrade_body(
         has_actionable_work=_has_actionable_work(bundles),
     )
     if not use_json:
-        failures = report.count_failures(bundles)
-        skips = report.count_workspace_skips(bundles)
         report.print_run_footer(
-            failures=failures,
+            summary=report.build_run_summary(bundles, diagnostics=diagnostics),
+            failures=report.collect_run_failures(bundles),
             exit_code=exit_code,
-            skips=skips if args.strict_exit else None,
+            max_failures=args.max_failures,
+            show_skips=args.strict_exit,
         )
     return exit_code
 

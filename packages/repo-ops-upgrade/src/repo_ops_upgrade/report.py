@@ -14,6 +14,72 @@ from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 
 UpgradeMode = Literal["plan", "apply"]
 
+DEFAULT_MAX_FAILURE_LINES = 20
+_DIRTY_SKIP_MARKER = "dirty git worktree"
+
+
+def build_run_summary(
+    bundles: dict[Path, RepoBundle],
+    *,
+    diagnostics: DiscoveryDiagnostics | None = None,
+) -> dict[str, int]:
+    """Aggregate end-of-run counters for human footer and JSON ``summary``."""
+    workspaces_ok = 0
+    workspaces_fail = 0
+    workspaces_skip = 0
+    dirty_skips = 0
+    verify_failures = 0
+    actions_bumps = 0
+    actions_failures = 0
+
+    for bundle in bundles.values():
+        for wr in bundle.workspaces:
+            if wr.status == "ok":
+                workspaces_ok += 1
+            elif wr.status == "fail":
+                workspaces_fail += 1
+            elif wr.status == "skip":
+                workspaces_skip += 1
+                if wr.error and _DIRTY_SKIP_MARKER in wr.error:
+                    dirty_skips += 1
+            if wr.verify_error:
+                verify_failures += 1
+        action_totals = bundle.actions_summary()
+        actions_bumps += action_totals["bumps"]
+        actions_failures += action_totals["failures"]
+
+    discovery_skipped = len(diagnostics.skipped) if diagnostics else 0
+    return {
+        "workspaces_ok": workspaces_ok,
+        "workspaces_fail": workspaces_fail,
+        "workspaces_skip": workspaces_skip,
+        "dirty_skips": dirty_skips,
+        "verify_failures": verify_failures,
+        "actions_bumps": actions_bumps,
+        "actions_failures": actions_failures,
+        "discovery_skipped": discovery_skipped,
+        "failure_count": count_failures(bundles),
+    }
+
+
+def collect_run_failures(
+    bundles: dict[Path, RepoBundle],
+) -> list[tuple[str, str]]:
+    """Return ``(repo_label, reason)`` rows for failed workspaces and Actions."""
+    items: list[tuple[str, str]] = []
+    for bundle in sorted(bundles.values(), key=lambda b: b.label):
+        for wr in bundle.workspaces:
+            if wr.status != "fail":
+                continue
+            reason = wr.verify_error or wr.error or "failed"
+            items.append((bundle.label, reason))
+        for ab in bundle.actions:
+            if ab.status != "fail":
+                continue
+            reason = ab.detail or f"{ab.workflow}: {ab.action}"
+            items.append((bundle.label, reason))
+    return items
+
 
 def build_json_payload(
     bundles: dict[Path, RepoBundle],
@@ -25,6 +91,7 @@ def build_json_payload(
     return {
         "roots": roots,
         "mode": mode,
+        "summary": build_run_summary(bundles, diagnostics=diagnostics),
         "warnings": list(diagnostics.warnings) if diagnostics else [],
         "skipped": list(diagnostics.skipped) if diagnostics else [],
         "repos": [b.to_json() for b in sorted(bundles.values(), key=lambda x: x.label)],
@@ -163,10 +230,42 @@ def any_workspace_skip_or_fail(bundles: dict[Path, RepoBundle]) -> bool:
     )
 
 
-def print_run_footer(*, failures: int, exit_code: int, skips: int | None = None) -> None:
-    """End-of-run summary for automation (human stdout)."""
+def print_run_footer(
+    *,
+    summary: dict[str, int],
+    failures: list[tuple[str, str]],
+    exit_code: int,
+    max_failures: int = DEFAULT_MAX_FAILURE_LINES,
+    show_skips: bool = False,
+) -> None:
+    """End-of-run roll-up and automation lines (human stdout)."""
     print("---")
-    print(f"failures: {failures}")
-    if skips is not None and skips > 0:
-        print(f"skips: {skips}")
+    print("Summary")
+    rows = [
+        ("workspaces ok", summary["workspaces_ok"]),
+        ("workspaces fail", summary["workspaces_fail"]),
+        ("workspaces skip", summary["workspaces_skip"]),
+        ("dirty skips", summary["dirty_skips"]),
+        ("verify failures", summary["verify_failures"]),
+        ("actions bumps", summary["actions_bumps"]),
+        ("discovery skipped", summary["discovery_skipped"]),
+    ]
+    width = max(len(label) for label, _ in rows)
+    for label, count in rows:
+        print(f"  {label:<{width}}  {count}")
+
+    if failures:
+        print()
+        print("Failures:")
+        shown = failures[: max(0, max_failures)]
+        for label, reason in shown:
+            print(f"  {label}: {reason}")
+        remaining = len(failures) - len(shown)
+        if remaining > 0:
+            print(f"  ... and {remaining} more")
+
+    print()
+    print(f"failures: {summary['failure_count']}")
+    if show_skips and summary["workspaces_skip"] > 0:
+        print(f"skips: {summary['workspaces_skip']}")
     print(f"exit_code: {exit_code}")
