@@ -12,7 +12,6 @@ from repo_ops.core.cli import (
     wire_verbose,
 )
 from repo_ops.core.constants import DEFAULT_ROOTS
-from repo_ops.core.process import set_verbose
 from repo_ops.upgrade import actions, orchestration, report
 from repo_ops.upgrade import workspaces as workspace_discovery
 from repo_ops.upgrade.models import RepoBundle, Workspace, WorkspaceResult
@@ -88,7 +87,6 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
 
     bundles = workspace_discovery.group_by_repo(found, roots)
 
-    set_verbose(args.verbose)
     _FAIL_FAST.clear()
 
     def _process_one(wr: WorkspaceResult) -> WorkspaceResult:

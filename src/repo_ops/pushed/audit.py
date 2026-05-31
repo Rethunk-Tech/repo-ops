@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from repo_ops.core.cli import (
+    add_json_argument,
     add_roots_argument,
     add_verbose_argument,
     parse_iso8601,
@@ -333,11 +334,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Print only the total commit count",
     )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Emit machine-readable JSON",
-    )
+    add_json_argument(parser, dest="json_out")
     add_verbose_argument(parser)
     args = parser.parse_args(argv)
     wire_verbose(args)
@@ -402,7 +399,7 @@ def main(argv: list[str] | None = None) -> int:
     roots = list(args.roots)
     all_commits, per_repo = collect_results(roots, filters)
 
-    if args.json:
+    if args.json_out:
         # Resolve subjects before serialising when --show-messages is set
         subjects: dict[str, dict[str, str]] = {}
         if args.show_messages:

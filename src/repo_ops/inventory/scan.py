@@ -23,6 +23,7 @@ import json
 from pathlib import Path
 
 from repo_ops.core.cli import (
+    add_eco_filter_argument,
     add_flat_argument,
     add_json_argument,
     add_roots_argument,
@@ -111,13 +112,7 @@ def main(argv: list[str] | None = None) -> None:
         default="name",
         help="Sort column: name (asc), others descending. Default: name.",
     )
-    parser.add_argument(
-        "--filter",
-        dest="filter_kind",
-        choices=["node", "go", "rust", "py"],
-        metavar="KIND",
-        help="Only show rows whose kinds include KIND (node/go/rust/py).",
-    )
+    add_eco_filter_argument(parser)
     add_flat_argument(parser)
     parser.add_argument(
         "--no-cache",
@@ -146,8 +141,8 @@ def main(argv: list[str] | None = None) -> None:
         r["kinds_s"] = ",".join(sorted(r["kinds"]))
         r["versions_n"] = len(r["versions"])
 
-    if args.filter_kind:
-        all_rows = [r for r in all_rows if _kind_matches(r["kinds"], args.filter_kind)]
+    if args.eco_filter:
+        all_rows = [r for r in all_rows if _kind_matches(r["kinds"], args.eco_filter)]
 
     sort_key = args.sort
     if sort_key == "name":

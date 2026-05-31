@@ -71,6 +71,17 @@ def add_flat_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_eco_filter_argument(parser: argparse.ArgumentParser) -> None:
+    """Add --filter for a single ecosystem (node/go/rust/py)."""
+    parser.add_argument(
+        "--filter",
+        choices=["node", "go", "rust", "py"],
+        dest="eco_filter",
+        metavar="ECO",
+        help="Only include this ecosystem (node/go/rust/py).",
+    )
+
+
 def add_verbose_argument(parser: argparse.ArgumentParser) -> None:
     """Add --verbose / -v flag; caller must wire via wire_verbose(args) after parse."""
     parser.add_argument(
@@ -94,12 +105,7 @@ def add_upgrade_common_arguments(
     add_json_argument(parser, dest="json_out")
     add_flat_argument(parser)
     add_verbose_argument(parser)
-    parser.add_argument(
-        "--filter",
-        choices=["node", "go", "rust", "py"],
-        dest="eco_filter",
-        help="Only process workspaces for this ecosystem.",
-    )
+    add_eco_filter_argument(parser)
     parser.add_argument("-q", "--quiet", action="store_true")
     parser.add_argument("--jobs", type=int, default=8)
     parser.add_argument("--fail-fast", action="store_true")
@@ -108,6 +114,12 @@ def add_upgrade_common_arguments(
         "--skip-actions",
         action="store_true",
         help="Skip GitHub Actions workflow pin audit (deps only).",
+    )
+    parser.add_argument(
+        "--top",
+        type=int,
+        default=10,
+        help="Max changes shown per workspace in human output.",
     )
     if apply:
         parser.add_argument(
@@ -126,23 +138,11 @@ def add_upgrade_common_arguments(
             action="store_true",
             help="Run go test ./... during verify.",
         )
-        parser.add_argument(
-            "--top",
-            type=int,
-            default=10,
-            help="Max changes shown per workspace in human output.",
-        )
     else:
         parser.add_argument(
             "--only-outdated",
             action="store_true",
             help="Omit clean workspaces from human output.",
-        )
-        parser.add_argument(
-            "--top",
-            type=int,
-            default=10,
-            help="Max changes shown per workspace in human output.",
         )
 
 
