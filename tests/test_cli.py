@@ -13,6 +13,7 @@ from repo_ops_core.cli import (
     add_eco_filter_argument,
     build_upgrade_parser,
     parse_iso8601,
+    positive_int,
 )
 
 _MAIN_HELP_TARGETS: list[tuple[str, str, list[str]]] = [
@@ -41,6 +42,22 @@ def test_eco_filter_help_on_inventory_and_upgrade_parsers():
     for parser in (bare, upgrade):
         action = next(a for a in parser._actions if a.dest == "eco_filter")
         assert action.help == ECO_FILTER_HELP
+
+
+def test_upgrade_parser_rejects_non_positive_jobs():
+    parser = build_upgrade_parser(apply=False)
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--jobs", "0"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--jobs", "-1"])
+
+
+def test_positive_int_rejects_zero_and_negative():
+    with pytest.raises(argparse.ArgumentTypeError):
+        positive_int("0")
+    with pytest.raises(argparse.ArgumentTypeError):
+        positive_int("-3")
+    assert positive_int("4") == 4
 
 
 def test_parse_iso8601_accepts_z_and_returns_utc():

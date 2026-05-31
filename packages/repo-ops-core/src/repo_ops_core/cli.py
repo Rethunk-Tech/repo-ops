@@ -15,6 +15,19 @@ ECO_FILTER_HELP = (
 )
 
 
+def positive_int(value: str) -> int:
+    """Parse a strictly positive integer for argparse ``type=``."""
+    try:
+        n = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"invalid int value: {value!r}"
+        ) from exc
+    if n <= 0:
+        raise argparse.ArgumentTypeError("--jobs must be a positive integer")
+    return n
+
+
 def parse_iso8601(value: str) -> datetime:
     """Parse an ISO 8601 string into a timezone-aware UTC datetime.
 
@@ -123,7 +136,7 @@ def add_upgrade_common_arguments(
     add_verbose_argument(parser)
     add_eco_filter_argument(parser)
     parser.add_argument("-q", "--quiet", action="store_true")
-    parser.add_argument("--jobs", type=int, default=8)
+    parser.add_argument("--jobs", type=positive_int, default=8)
     parser.add_argument("--fail-fast", action="store_true")
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument(
