@@ -54,7 +54,10 @@ def process_workspace(
                 before_snap, after_snap, ws.manager
             )
             if not result.changes:
-                result.changes = collect_changes_after_apply(ws)
+                result.changes = collect_changes_after_apply(
+                    ws,
+                    checker=ecosystems.get_checker(ws.manager),
+                )
             if ws.ecosystem == "node":
                 result.overrides_audit = overrides_audit(ws.path, ws.manager)
         except Exception as exc:

@@ -15,10 +15,14 @@ from repo_ops_lockfiles.constants import (
 )
 from repo_ops_models import Change, Workspace
 
-from repo_ops_upgrade import registry
+from repo_ops_upgrade.registry import Checker
 
 
-def collect_changes_after_apply(ws: Workspace) -> list[Change]:
+def collect_changes_after_apply(
+    ws: Workspace,
+    *,
+    checker: Checker | None = None,
+) -> list[Change]:
     """Lightweight post-apply change detection for remediation context."""
     repo = ws.git_repo
     rel = ws.path
@@ -69,7 +73,6 @@ def collect_changes_after_apply(ws: Workspace) -> list[Change]:
                 changes.append(Change(fname, "changed", "updated"))
         if changes:
             return changes
-    checker = registry.get_checker(ws.manager)
     if checker:
         try:
             out = checker(ws)
