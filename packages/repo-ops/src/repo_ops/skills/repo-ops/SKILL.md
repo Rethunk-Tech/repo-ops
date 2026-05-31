@@ -12,60 +12,39 @@ description: >-
 
 # repo-ops agent skill
 
-Steer the user (or run yourself) through the **`repo-ops`** CLI installed via `uv tool install` (see [HUMANS.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/HUMANS.md) for install and environment). Do not duplicate full install docs here.
+Use the **`repo-ops`** CLI for dependency and Actions maintenance. **Install, flags, Go modes, verification:** [HUMANS.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/HUMANS.md) (editable install: `uv tool install -e packages/repo-ops` from a clone). **Repo layout for agents:** [AGENTS.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/AGENTS.md).
 
-## When to use which subcommand
+## Subcommands
 
 | Goal | Command |
 |------|---------|
-| Read-only footprint: direct deps, versions, on-disk sprawl | `repo-ops inventory` |
-| Plan outdated deps, Actions pin drift, remediations (no writes) | `repo-ops plan` |
-| Apply updates, Actions bumps, remediations, verify gates | `repo-ops apply` |
-| Audit commits pushed to remotes in a time window | `repo-ops pushed` |
+| Footprint (direct deps, versions, sprawl) | `repo-ops inventory` |
+| Plan drift (no writes) | `repo-ops plan` |
+| Apply updates + verify | `repo-ops apply` |
+| Pushed-commit audit | `repo-ops pushed` |
 
-- **Plan** never mutates the tree; exit code `1` when actionable drift exists (CI-friendly).
-- **Apply** performs updates; narrow scope with `--no-verify`, `--skip-remediations`, or `--skip-actions`.
-- GitHub Actions workflow pins are included in plan/apply by default; use `--skip-actions` for dependency-only runs.
+Default roots: [`DEFAULT_ROOTS`](https://github.com/Rethunk-Tech/repo-ops/blob/main/packages/repo-ops-core/src/repo_ops_core/constants.py). Pass checkout paths as trailing args to override. Common flags: `--flat`, `--filter ECO`, `--json`, `--skip-actions`, `--skip-remediations`, `--no-verify`.
 
-## Roots and filters
+## Workflow
 
-- Commands default to scanning [`DEFAULT_ROOTS`](https://github.com/Rethunk-Tech/repo-ops/blob/main/packages/repo-ops-core/src/repo_ops_core/constants.py) unless explicit root directories are passed as trailing arguments.
-- `--flat` treats each root as a single project (skips org/proj two-level walk) on `inventory` and upgrade `plan`/`apply`.
-- `--filter ECO` limits to one ecosystem (`node`, `go`, `rust`, `py`).
-- `--json` on every subcommand for machine-readable output.
+1. **`plan` before `apply`** — show drift and remediations without writes (`plan` exits `1` when drift exists).
+2. Omit roots to scan `DEFAULT_ROOTS`, or pass explicit paths / `--flat` for a single checkout.
+3. `repo-ops <subcommand> --help` for full options; 0.2.x `repos-*` mapping in HUMANS migration section.
 
-## Example invocations
+## Examples
 
 ```bash
-# Footprint for one checkout
 repo-ops inventory --flat /path/to/my-repo
-
-# Read-only upgrade plan (deps + Actions unless skipped)
-repo-ops plan /path/to/my-repo
 repo-ops plan --skip-actions --json /path/to/my-repo
-
-# Apply with default verify gates
 repo-ops apply /path/to/my-repo
-
-# Dependency-only apply
 repo-ops apply --skip-actions /path/to/my-repo
-
-# Pushed-commit audit (count only)
 repo-ops pushed --count-only /path/to/my-repo
 ```
 
-## Agent workflow hints
-
-1. Prefer **`plan` before `apply`** so the user sees drift and remediations without writes.
-2. For monorepos under Rethunk layout, omit roots to use `DEFAULT_ROOTS` or pass explicit checkout paths.
-3. Use `repo-ops <subcommand> --help` for full flags; migration from 0.2.x `repos-*` scripts is documented in HUMANS.md.
-
-## Install this skill globally
-
-After installing the `repo-ops` tool:
+## Bundled skill install
 
 ```bash
-repo-ops install-skill
+repo-ops install-skill    # ~/.cursor/skills/repo-ops and ~/.claude/skills/repo-ops
 ```
 
-Installs to `~/.cursor/skills/repo-ops/` (Cursor) and `~/.claude/skills/repo-ops/` (Claude Code). See HUMANS.md — Agent skill installation.
+Details: HUMANS — Agent skill.

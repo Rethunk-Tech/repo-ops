@@ -1,36 +1,31 @@
 # Using repo-ops
 
-This document is the authoritative source for installation, environment setup, and usage of the `repo-ops` command-line tools.
+Authoritative install, environment, usage, programmatic imports, and verification for the `repo-ops` CLI.
+
+The **installable package** is `packages/repo-ops`. The repository root is a uv workspace manifest only (`package = false`); `uv tool install` against the clone root fails — use `packages/repo-ops` or the git URL with `#subdirectory=packages/repo-ops` below.
 
 ## Installation
 
 Requires [uv](https://docs.astral.sh/uv/) and Python >= 3.10.
 
-### Runtime (recommended)
+### Runtime
 
-Install the `repo-ops` console command into an isolated tool environment (no project clone required):
+Install into an isolated tool environment (no clone):
 
 ```bash
-uv tool install git+https://github.com/Rethunk-Tech/repo-ops.git
+uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git#subdirectory=packages/repo-ops"
 ```
 
-Ensure the tool bin directory is on your `PATH` (see `uv tool dir --bin`; uv documents shell hooks for this).
+Put the tool bin directory on `PATH` (`uv tool dir --bin`; see uv shell hooks).
 
-After a release is published to PyPI:
+After PyPI publish:
 
 ```bash
 uv tool install repo-ops
-```
-
-Upgrade an existing tool install:
-
-```bash
-uv tool upgrade repo-ops
+uv tool upgrade repo-ops   # refresh an existing install
 ```
 
 ### Development
-
-Clone the repository and sync the locked project environment:
 
 ```bash
 git clone https://github.com/Rethunk-Tech/repo-ops.git
@@ -38,148 +33,140 @@ cd repo-ops
 uv sync --group dev
 ```
 
-Run commands through the project environment without a global install:
+Run without a global tool install:
 
 ```bash
 uv run repo-ops inventory --help
 ```
 
-`uv.lock` pins dev and build dependencies; use `uv sync --locked` in CI and before pushing.
+Use `uv sync --locked` in CI and before pushing.
 
-Editable tool install from your clone (picks up source changes without reinstalling):
+Editable global CLI from your clone:
 
 ```bash
-uv tool install -e .
+uv tool install -e packages/repo-ops
 ```
 
-### Agent skill installation
+After pulling changes, refresh the tool and bundled agent skill:
 
-After installing the `repo-ops` tool, install the bundled agent skill so Cursor and Claude Code steer LLMs toward `repo-ops` for dependency inventory and upgrade workflows:
+```bash
+uv sync --locked --group dev
+uv tool install -e packages/repo-ops
+repo-ops install-skill --force
+```
+
+### Agent skill
+
+After the `repo-ops` tool is on `PATH`:
 
 ```bash
 repo-ops install-skill
 ```
 
-| Target | Install path |
-|--------|----------------|
-| Cursor (default with `--target both`) | `~/.cursor/skills/repo-ops/` |
+| Target | Path |
+|--------|------|
+| Cursor (`--target both` default) | `~/.cursor/skills/repo-ops/` |
 | Claude Code | `~/.claude/skills/repo-ops/` |
 
-Options:
-
-- `--target cursor|claude|both` — default `both`
-- `--force` — overwrite an existing skill directory
-- `--dry-run` — print planned paths without writing
-
-Do not install under `~/.cursor/skills-cursor/` (reserved for Cursor built-ins).
+Options: `--target cursor|claude|both`, `--force`, `--dry-run`. Do not install under `~/.cursor/skills-cursor/` (Cursor built-ins).
 
 ### Verify install
 
-After `uv tool install` (runtime or `-e` development):
-
 ```bash
 uv tool list          # expect repo-ops 0.3.4+
-uv tool dir --bin     # ensure this directory is on PATH
+uv tool dir --bin
 which repo-ops
 ```
 
-Optional read-only smoke checks on a single repo (replace the path with your checkout):
+Optional smoke checks (replace the path):
 
 ```bash
-repo-ops inventory --flat /path/to/repo-ops
-repo-ops plan --skip-actions /path/to/repo-ops
-repo-ops pushed --count-only /path/to/repo-ops
+repo-ops inventory --flat /path/to/checkout
+repo-ops plan --skip-actions /path/to/checkout
+repo-ops pushed --count-only /path/to/checkout
 ```
 
 ## Environment
 
 - Python >= 3.10 (`.python-version` pins 3.12 for local/uv default)
-- Git available on PATH (tools interact with local repositories)
-- Optional for upgrades: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, etc.) and `gh` / `actionlint` for GitHub Actions pin audits
+- Git on `PATH`
+- Optional for upgrades: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, …) and `gh` / `actionlint` for Actions pin audits
 
 ## Usage
 
-The installable console script is **`repo-ops`** (`packages/repo-ops`). Subcommands:
+Subcommands (entry point in `packages/repo-ops`):
 
 | Subcommand | Purpose |
 |------------|---------|
-| `repo-ops inventory` | Read-only dependency footprint (direct, versions, on-disk sprawl) |
-| `repo-ops plan` | Plan outdated deps, GitHub Actions pin drift, and remediations (no writes) |
-| `repo-ops apply` | Apply dependency updates, Actions pin bumps, remediations, and verify gates |
-| `repo-ops pushed` | Commits pushed to remotes in a time window (local reflog) |
+| `inventory` | Read-only dependency footprint |
+| `plan` | Outdated deps, Actions pin drift, remediations (no writes) |
+| `apply` | Apply updates, Actions bumps, remediations, verify gates |
+| `pushed` | Commits pushed to remotes in a time window (reflog) |
+| `install-skill` | Copy bundled agent skill into Cursor/Claude skill dirs |
 
-All tools default to scanning [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_ops_core/constants.py) unless you pass explicit root directories.
+Default scan roots: [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. `--flat` skips the org/proj two-level walk on `inventory` and upgrade `plan`/`apply` (not `pushed`).
 
-`--json` emits machine-readable output on every subcommand. For `plan` and `apply`, stdout is a single JSON object only; discovery notes (skipped node dirs, packageManager/lockfile mismatches) are in top-level `skipped` and `warnings` arrays, not mixed into stdout. Human-mode discovery still prints those lines to stderr. `--filter ECO` limits inventory rows or upgrade workspaces to one ecosystem (`node`, `go`, `rust`, `py`).
+`--json` on every subcommand. For `plan`/`apply`, stdout is one JSON object; discovery notes live in `skipped` / `warnings`. Human mode prints discovery lines to stderr. `--filter ECO` limits to `node`, `go`, `rust`, or `py`.
 
-`--flat` treats each root as a single project (skips the org/proj two-level walk). It is available on `inventory` and upgrade `plan`/`apply`, not on `pushed`.
+### Plan vs apply
 
-### Upgrade plan vs apply
+- **Plan** never mutates; exit code `1` when actionable drift exists (CI-friendly).
+- **Apply** performs updates; `--no-verify`, `--skip-remediations`, or `--skip-actions` narrow scope.
+- Actions pins included by default; `--skip-actions` for dependency-only runs.
 
-- **Plan** (`repo-ops plan`) never mutates the tree. Exit code `1` when actionable drift exists (useful for CI).
-- **Apply** (`repo-ops apply`) performs updates. Use `--no-verify` or `--skip-remediations` to narrow scope.
+### Go modules
 
-GitHub Actions workflow pins are included in both plan and apply by default. Use `--skip-actions` for dependency-only runs.
-
-**Go modules** — plan and apply share semantics via `REPO_OPS_GO_UPGRADE_MODE` (default `patch`):
+`REPO_OPS_GO_UPGRADE_MODE` (default `patch`) aligns plan and apply:
 
 | Mode | Plan | Apply |
 |------|------|-------|
-| `patch` (default) | `go list -m -u -json` filtered to same minor-line patch bumps | `go get -u=patch all`, then `go mod tidy` |
-| `explicit` | all `list -u` updates | batched `go get path@version` for each update, then tidy |
-| `mvs` | legacy `go list -u -m all` text | `go get -u -t all`, then `go mod tidy` |
+| `patch` (default) | `go list -m -u -json`, same minor-line patches only | `go get -u=patch all`, `go mod tidy` |
+| `explicit` | all `list -u` updates | batched `go get path@version`, tidy |
+| `mvs` | legacy `go list -u -m all` text | `go get -u -t all`, tidy |
 
-**Yarn (plan)** — isolated snapshots copy `.yarn/releases/` (Berry) and any `file:../…` sibling checkouts referenced from `package.json`, while still skipping `node_modules`, `.yarn/cache`, and other heavy dirs. Failed `yarn up` / `install` errors include a stderr tail in the plan JSON `error` field.
+### Yarn (plan)
 
-Run `repo-ops <subcommand> --help` for full options.
+Isolated snapshots copy `.yarn/releases/` (Berry) and `file:../…` siblings from `package.json`; skip `node_modules`, `.yarn/cache`, and other heavy dirs. Failed `yarn up` / `install` errors include a stderr tail in plan JSON `error`.
+
+Run `repo-ops <subcommand> --help` for all flags.
 
 ### Migration from 0.2.x
 
-0.3.0 replaces four standalone console scripts with one **`repo-ops`** entry point and a **uv workspace** under `packages/*`.
-
-| 0.2.x (removed) | 0.3.0 |
-|-----------------|-------|
+| 0.2.x (removed) | Current |
+|-----------------|---------|
 | `repos-inventory` | `repo-ops inventory` |
 | `repos-upgrade-plan` | `repo-ops plan` |
 | `repos-upgrade-apply` | `repo-ops apply` |
 | `repos-pushed` | `repo-ops pushed` |
 | `repo_ops.commands.dispatch` | `repo_ops.cli` |
-| `repo_ops.upgrade.ecosystems` | `repo_ops_upgrade.registry` (after `repo_ops._register.register_all()`) |
+| `repo_ops.upgrade.ecosystems` | `repo_ops_upgrade.registry` (after `register_all()`) |
 
-**Operators:** reinstall the global tool so `~/.local/bin/repo-ops` points at the new CLI (`uv tool install -e .` from a clone, or `uv tool upgrade repo-ops` after pulling 0.3.0). Update shell aliases, CI jobs, and automation that invoke `repos-*` or import `repo_ops.upgrade.ecosystems`.
+Reinstall operators: `uv tool install -e packages/repo-ops` (clone), `uv tool upgrade repo-ops` (PyPI), or the git `#subdirectory=` URL above. Update automation still calling `repos-*` or importing `repo_ops.upgrade.ecosystems`.
 
-**Org scan (2026-05-30):** `gh search code` in `Rethunk-Tech` found stale `repos-*` / `repo_ops.commands.dispatch` / `repo_ops.upgrade.ecosystems` references only on the default branch of **this** repository (pre-0.3.0 tree: `src/repo_ops/`, root `pyproject.toml` scripts, older README/HUMANS). No hits in other org repos. After merging 0.3.0, re-run:
-
-```bash
-gh search code "repos-inventory" --owner Rethunk-Tech
-gh search code "repo_ops.upgrade.ecosystems" --owner Rethunk-Tech
-```
-
-### Package layout (uv workspace 0.3.4)
-
-The repo is a **uv workspace** under `packages/*`. Ecosystem plugins register checkers/appliers via `repo_ops._register.register_all()` before dispatch. Programmatic import paths:
+## Programmatic imports
 
 | Area | Module |
 |------|--------|
-| CLI dispatcher | `repo_ops.cli` |
+| CLI | `repo_ops.cli` |
 | Upgrade entrypoints | `repo_ops_upgrade` (`main_plan`, `main_apply`) |
 | Models | `repo_ops_models` |
-| Workspace discovery | `repo_ops_upgrade.discovery` (`discover_all`, `group_by_repo`) |
-| Ecosystem registry | `repo_ops_upgrade.registry` (`check_workspace`, `apply_workspace`, `register`) |
+| Discovery | `repo_ops_upgrade.discovery` |
+| Ecosystem registry | `repo_ops_upgrade.registry` |
 | GitHub Actions pins | `repo_ops_upgrade.actions` |
-| Inventory scan | `repo_ops_inventory.scan` |
+| Inventory | `repo_ops_inventory.scan` |
 | Push audit | `repo_ops_pushed.audit` |
-| Lockfile parsers / snapshots | `repo_ops_lockfiles` |
+| Lockfiles | `repo_ops_lockfiles` |
 | Node helpers | `repo_ops_js` |
-| Shared helpers | `repo_ops_core` (`walk.iter_scanned_dirs`, `parallel.run_bounded_pool`, `discovery.discover_repos`) |
+| Shared | `repo_ops_core` |
+
+Filesystem layout of `packages/*`: [AGENTS.md — Layout and files](AGENTS.md#layout-and-files).
 
 ## Verification and Testing
 
-After install or changes (full dev verification):
+Full dev verification:
 
 ```bash
 uv sync --locked --group dev
-# Doc governance: run the global doc-audit skill (~/.cursor/skills/doc-audit) on the repo root when Markdown tiers change.
 uv run python scripts/check_import_boundaries.py
 uv run ruff check .
 uv run ruff format --check .
@@ -188,18 +175,6 @@ uv run pytest -q --cov --cov-report=term-missing --cov-fail-under=15
 uv build packages/repo-ops
 ```
 
-The test suite lives under `tests/` and is configured in `pyproject.toml` under `[tool.pytest.ini_options]`. Coverage and mypy configs also live in `pyproject.toml`.
+Tests: `tests/`; config in root `pyproject.toml`. CI runs the same checks on Python 3.10–3.12; tag `v*` triggers [release.yml](.github/workflows/release.yml). When changing Markdown tiers, run the doc-audit skill on the repo root (e.g. `~/.cursor/skills/doc-audit` or `~/.claude/skills/doc-audit`).
 
-CI runs `uv sync --locked`, doc-audit, import-boundary checks, ruff, mypy, pytest+cov, and `uv build packages/repo-ops` on push/PR to `main` (matrix 3.10–3.12). Pushing a version tag (`v*`) runs [`.github/workflows/release.yml`](.github/workflows/release.yml) to build the wheel/sdist and attach them to the GitHub release. Dependabot maintains the uv lockfile and GitHub Actions weekly.
-
-Doc governance uses the Rethunk tier split (README / HUMANS / AGENTS / CONTRIBUTING). Locally:
-
-```bash
-# Doc governance: run the global doc-audit skill (~/.cursor/skills/doc-audit) on the repo root when Markdown tiers change.
-```
-
-## Typical Roots
-
-These utilities scan local checkout trees under standard roots (`/usr/local/src`, `~/Projects`, etc.). They discover repository roots, filter paths, and parse Git/dependency metadata for Rethunk-Tech monorepo workflows.
-
-Pull requests and feedback welcome via the repository issues.
+Pull requests welcome via repository issues.
