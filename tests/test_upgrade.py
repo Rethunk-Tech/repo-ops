@@ -80,6 +80,6 @@ def test_actions_discover_workflow_files_empty_without_github_dir(tmp_path):
 
 
 def test_remediations_pm_exec_prefix_yarn():
-    from repo_ops.upgrade.remediations import _pm_exec_prefix
+    from repo_ops.upgrade.workspaces import pm_exec_prefix
 
-    assert _pm_exec_prefix("yarn") == ["yarn"]
+    assert pm_exec_prefix("yarn") == ["yarn"]
