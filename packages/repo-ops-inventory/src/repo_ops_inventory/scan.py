@@ -134,8 +134,8 @@ def main(argv: list[str] | None = None) -> None:
     roots = resolve_scan_roots(list(args.roots), parser)
     scanned_roots = list(roots)
     all_rows = []
-    for r in roots:
-        all_rows.extend(scan(Path(r), flat=args.flat, go_cache=go_cache))
+    for root_path in roots:
+        all_rows.extend(scan(Path(root_path), flat=args.flat, go_cache=go_cache))
 
     if not args.no_cache and go_cache is not None:
         save_go_cache(cache_path, go_cache)

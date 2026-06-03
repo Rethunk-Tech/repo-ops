@@ -39,7 +39,7 @@ def tee_stdout_stderr(log_path: Path) -> Iterator[None]:
         out_tee = _TeeIO(sys.stdout, log_file)
         err_tee = _TeeIO(sys.stderr, log_file)
         prev_out, prev_err = sys.stdout, sys.stderr
-        sys.stdout, sys.stderr = out_tee, err_tee  # type: ignore[assignment]
+        sys.stdout, sys.stderr = out_tee, err_tee
         try:
             yield
         finally:

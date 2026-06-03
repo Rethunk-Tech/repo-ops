@@ -183,7 +183,7 @@ def _has_actionable_repo_changes(bundle: RepoBundle) -> bool:
     for ab in bundle.actions:
         if ab.status == "ok" and ab.pin != ab.latest:
             return True
-    return porcelain_changed_paths(bundle.git_repo)
+    return bool(porcelain_changed_paths(bundle.git_repo))
 
 
 def classify_commit_subject(files: list[str]) -> str:

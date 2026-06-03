@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 from pathlib import Path
+from typing import Literal
 
 from repo_ops_core.cli import (
     build_upgrade_parser,
@@ -234,7 +235,7 @@ def _run_upgrade_body(
         json_pointer_hints = pointer_hints
 
     if use_json:
-        mode = "apply" if apply else "plan"
+        mode: Literal["plan", "apply"] = "apply" if apply else "plan"
         if json_report_path:
             written = report.write_json_report(
                 Path(json_report_path),
@@ -277,7 +278,9 @@ def _run_upgrade_body(
         has_actionable_work=_has_actionable_work(bundles),
     )
     if apply:
-        commit_mode = getattr(args, "commit", "none")
+        commit_mode: Literal["none", "conventional", "agent"] = getattr(
+            args, "commit", "none"
+        )
         if commit_mode and commit_mode != "none":
             _, commit_exit = post_apply_commit.run_post_apply_commits(
                 bundles,
