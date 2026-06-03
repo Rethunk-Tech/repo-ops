@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib
 from collections.abc import Callable
+from unittest.mock import patch
 
 import pytest
 from repo_ops._register import register_all
@@ -87,3 +88,24 @@ def test_entrypoint_main_help(
 def test_repo_ops_dispatcher_subcommands_help() -> None:
     for sub in ("inventory", "plan", "apply", "pushed", "install-skill"):
         _call_main_help("repo_ops.cli", "main", [sub])
+
+
+def test_dispatcher_forwards_empty_list_for_bare_subcommand() -> None:
+    """Regression: a bare subcommand (e.g. ``repo-ops plan``) must forward an
+    empty list to the handler, not ``None``. ``None`` makes the handler's
+    argparse fall back to ``sys.argv[1:]`` and re-consume the subcommand token
+    ("plan") as a positional root, defeating the DEFAULT_ROOTS default.
+    """
+    from repo_ops import cli
+
+    captured: dict[str, list[str] | None] = {}
+
+    def _recorder(argv: list[str] | None) -> int:
+        captured["argv"] = argv
+        return 0
+
+    with patch.dict(cli._HANDLERS, {"plan": _recorder}):
+        assert cli.main(["plan"]) == 0
+        assert captured["argv"] == []
+        assert cli.main(["plan", "/some/root"]) == 0
+        assert captured["argv"] == ["/some/root"]

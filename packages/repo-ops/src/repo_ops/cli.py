@@ -41,7 +41,12 @@ def main(argv: list[str] | None = None) -> int:
 
     args, remainder = parser.parse_known_args(argv)
     handler = _HANDLERS[args.command]
-    code = handler(remainder or None)
+    # Forward the remainder as-is (possibly an empty list). Using `remainder or
+    # None` would pass None for a bare subcommand (e.g. `repo-ops plan`), and the
+    # handler's argparse then falls back to sys.argv[1:] — re-consuming the
+    # subcommand token "plan" as a positional root. Passing [] lets defaults
+    # (DEFAULT_ROOTS) apply correctly.
+    code = handler(remainder)
     return 0 if code is None else code
 
 
