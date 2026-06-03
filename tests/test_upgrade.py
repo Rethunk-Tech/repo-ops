@@ -36,7 +36,14 @@ def test_checkers_use_monkeypatched_run(monkeypatch):
     def fake_run(cmd, cwd, timeout=600, env=None):
         calls.append(cmd)
         return subprocess.CompletedProcess(
-            cmd, 0, stdout="Package  current  latest\nfoo 1.0 latest 1.1\n", stderr=""
+            cmd,
+            0,
+            stdout=(
+                "\x1b[1mbun outdated v1.3.14 (0d9b296a)\x1b[0m\n"
+                "│ Package │ Current │ Update │ Latest │\n"
+                "│ foo │ 1.0 │ 1.1 │ 1.1 │\n"
+            ),
+            stderr="",
         )
 
     ws = Workspace(

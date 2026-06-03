@@ -43,22 +43,51 @@ def test_check_bun_prefers_json() -> None:
     assert changes[0].to == "6.0.0"
 
 
-def test_check_bun_filters_table_artifacts_from_text() -> None:
-    table_stdout = "\n".join(
-        [
-            "Package Current Latest",
-            "─".join("─" for _ in range(10)),
-            "| Package → |",
-            "vite 5.0.0 6.0.0",
-        ]
-    )
+# Real `bun outdated` (>=1.3) output: no `--json` support, an ANSI-coloured box
+# table led by a `bun outdated vX (hash)` banner. The banner must NOT be parsed
+# as a package "bun" at version "(hash)" — the original `bun update bun@(hash)`
+# hard-failure bug.
+_REAL_BUN_TABLE = (
+    "\x1b[0m\x1b[1mbun outdated \x1b[0m\x1b[2mv1.3.14 (0d9b296a)\x1b[0m\n"
+    "  \U0001f50d Resolving... ┌──┐\n"
+    "│ \x1b[1m\x1b[34mPackage\x1b[0m │ \x1b[1mCurrent\x1b[0m "
+    "│ \x1b[1mUpdate\x1b[0m │ \x1b[1mLatest\x1b[0m │\n"
+    "├────│\n"
+    "│ @hono/node-server\x1b[2m\x1b[0m │ 1.19.14 │ "
+    "\x1b[2m1.19.14\x1b[0m │ \x1b[1m\x1b[31m2.0.4\x1b[0m │\n"
+    "│ ai\x1b[2m\x1b[0m │ 6.0.193 │ "
+    "\x1b[2m6.0.\x1b[1m\x1b[32m195\x1b[0m │ 6.0.195 │\n"
+    "│ vitest\x1b[2m (dev)\x1b[0m │ 4.1.7 │ 4.1.8 │ 4.1.8 │\n"
+)
 
+
+def _patched_check(table_stdout: str):
     def fake_run(cmd, cwd, timeout=600, env=None):
         if "--json" in cmd:
             return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
         return subprocess.CompletedProcess(cmd, 0, stdout=table_stdout, stderr="")
 
     with patch("repo_ops_js_bun.bun.run", fake_run):
-        changes = check_bun(_ws())
+        return check_bun(_ws())
 
-    assert [c.name for c in changes] == ["vite"]
+
+def test_check_bun_parses_real_ansi_table_in_range() -> None:
+    changes = _patched_check(_REAL_BUN_TABLE)
+
+    # Default: range-respecting (Update column). @hono is skipped — its in-range
+    # Update (1.19.14) equals Current; only ai and vitest have in-range bumps.
+    assert [(c.name, c.from_ver, c.to) for c in changes] == [
+        ("ai", "6.0.193", "6.0.195"),
+        ("vitest", "4.1.7", "4.1.8"),
+    ]
+    # The banner must never leak through as a bogus "bun@(hash)" target.
+    assert "bun" not in [c.name for c in changes]
+    assert all("0d9b296a" not in c.to for c in changes)
+
+
+def test_check_bun_latest_column_when_opted_in(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
+    changes = _patched_check(_REAL_BUN_TABLE)
+
+    # Latest column: @hono now upgrades out-of-range to 2.0.4.
+    assert ("@hono/node-server", "2.0.4") in [(c.name, c.to) for c in changes]
