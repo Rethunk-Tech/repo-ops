@@ -205,6 +205,26 @@ def add_upgrade_common_arguments(
         help="Skip GitHub Actions workflow pin audit (deps only).",
     )
     parser.add_argument(
+        "--actions-keep-sha",
+        action="store_true",
+        dest="actions_keep_sha",
+        help=(
+            "Preserve SHA-pinned Actions as-is (report only, no rewrite). "
+            "By default, SHA pins are resolved to version tags when possible."
+        ),
+    )
+    parser.add_argument(
+        "--actions-tag-style",
+        choices=("major", "exact"),
+        default="major",
+        dest="actions_tag_style",
+        metavar="STYLE",
+        help=(
+            "Tag style when unpinning SHA-pinned Actions: "
+            "major (default) → @vN; exact → highest @vN.M.P within that major."
+        ),
+    )
+    parser.add_argument(
         "--log-file",
         metavar="PATH",
         help="Write combined stdout/stderr transcript to PATH (no shell pipe needed).",

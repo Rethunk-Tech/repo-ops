@@ -205,11 +205,17 @@ def _run_upgrade_body(
         bundle.workspaces = updated
 
     if not args.skip_actions:
+        keep_sha = bool(getattr(args, "actions_keep_sha", False))
+        _raw_tag_style = getattr(args, "actions_tag_style", "major")
+        tag_style: actions.TagStyle = "exact" if _raw_tag_style == "exact" else "major"
         for bundle in bundles.values():
             if apply and (bundle.any_fail() or bundle.any_dirty_skip()):
                 continue
             bundle.actions, bundle.actions_workflows_scanned = actions.scan_actions(
-                bundle.git_repo, apply=apply
+                bundle.git_repo,
+                apply=apply,
+                keep_sha=keep_sha,
+                tag_style=tag_style,
             )
 
     only_outdated = getattr(args, "only_outdated", False)

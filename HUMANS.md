@@ -118,6 +118,7 @@ Umbrella repos (e.g. Bastion with many Go/Node submodules) need **children-first
 - **Plan** never mutates; exit code `1` when actionable drift exists (CI-friendly). Node **check** does not run Corepack (`corepack enable` / `prepare` run only on **apply**).
 - **Apply** performs updates; `--no-verify`, `--skip-remediations`, or `--skip-actions` narrow scope. On verify failure, `--on-verify-fail=keep` (default) leaves the worktree as-is; `--on-verify-fail=revert` restores pre-apply lockfile snapshots and git-tracked paths under the workspace. Human and JSON workspace rows include `verify_fail_disposition` (`FAILED_WITH_CHANGES` vs `FAILED_CLEAN`) when verify fails.
 - Actions pins included by default; `--skip-actions` for dependency-only runs.
+- **SHA unpinning:** By default, `uses: owner/repo@<40-hex-sha>` pins are resolved to version tags and rewritten on `apply`. Resolution order: (1) trailing `# vN[.N.N]` comment → use that major; (2) tags API SHA→tag lookup → pick the highest semver tag whose commit SHA matches. If neither resolves (no mapping, no comment), the SHA is reported but left untouched. `--actions-keep-sha` disables all SHA rewrites (restores report-only mode). `--actions-tag-style=major` (default) → `@vN`; `--actions-tag-style=exact` → highest `@vN.M.P` within the resolved major (falls back to `@vN` when no exact tags exist). Supply-chain note: SHA pins are immutable — the tag style trades immutability for Dependabot/renovate compatibility; this is an intentional project preference (tags are mutable but practical).
 - Parallelism: `--jobs` must be a positive integer (default `8`).
 
 ### Security and discovery
@@ -203,7 +204,7 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
 
    **IDE agents:** prefer MCP **rethunk-git** `batch_commit` with `push: "never"` when committing from Cursor/Claude; use `--commit=conventional` for headless bulk apply after `apply` logs are green.
 
-**See also (tracking issues):** [#11](https://github.com/Rethunk-Tech/repo-ops/issues/11) remediation apply reporting (closed) · [#12](https://github.com/Rethunk-Tech/repo-ops/issues/12) bun outdated JSON (closed) · [#13](https://github.com/Rethunk-Tech/repo-ops/issues/13) submodule umbrella workflow · [#14](https://github.com/Rethunk-Tech/repo-ops/issues/14) end-of-run roll-up (closed) · [#15](https://github.com/Rethunk-Tech/repo-ops/issues/15) optional post-apply commits (closed) · [#16](https://github.com/Rethunk-Tech/repo-ops/issues/16) plan `--json-out` artifact (closed).
+**See also (tracking issues):** [#11](https://github.com/Rethunk-Tech/repo-ops/issues/11) remediation apply reporting (closed) · [#12](https://github.com/Rethunk-Tech/repo-ops/issues/12) bun outdated JSON (closed) · [#13](https://github.com/Rethunk-Tech/repo-ops/issues/13) submodule umbrella workflow · [#14](https://github.com/Rethunk-Tech/repo-ops/issues/14) end-of-run roll-up (closed) · [#15](https://github.com/Rethunk-Tech/repo-ops/issues/15) optional post-apply commits (closed) · [#16](https://github.com/Rethunk-Tech/repo-ops/issues/16) plan `--json-out` artifact (closed) · [#21](https://github.com/Rethunk-Tech/repo-ops/issues/21) SHA-pinned Actions unpin (closed).
 
 Refresh the bundled agent skill after doc pulls: `repo-ops install-skill --force` (see [Agent skill](#agent-skill)).
 
@@ -213,10 +214,11 @@ Refresh the bundled agent skill after doc pulls: `repo-ops install-skill --force
 |-----------|------------------|----------------------------|
 | **npm** | `npm update` (semver ranges in manifests) | — |
 | **pnpm** | `pnpm update -r` (within ranges) | `REPO_OPS_PNPM_UPDATE_LATEST=1` → adds `--latest` |
-| **yarn** | `yarn up` (Berry, in-range bumps in isolated plan snapshots) | `REPO_OPS_YARN_UPDATE_LATEST=1` → `yarn up -R '*'` |
+| **yarn** | `yarn up` (Berry, in-range bumps in isolated plan snapshots) | `REPO_OPS_YARN_UPDATE_LATEST=1` → `yarn up -R ‘*’` |
 | **go** | `REPO_OPS_GO_UPGRADE_MODE=patch` (default) | `explicit` or `mvs` (see below) |
 | **rust** | `cargo update --dry-run` / `cargo update` | — |
 | **python** | Manager-specific (`uv`, poetry, pip-tools, hatch) | See each plugin’s check/apply |
+| **GitHub Actions** | Tag pins: normalize exact to floating major (`@vN`). SHA pins: resolve via comment hint or tags API → rewrite to `@vN` (default). | `--actions-tag-style=exact` → rewrite to highest `@vN.M.P`; `--actions-keep-sha` → report only (no rewrite) |
 
 ### Go modules
 

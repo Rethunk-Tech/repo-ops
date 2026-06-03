@@ -7,8 +7,10 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Literal
 
 from repo_ops_core.process import run
+from repo_ops_core.version_utils import semver_tuple
 from repo_ops_models import ActionBump
 
 from repo_ops_upgrade.workflow_uses import (
@@ -21,6 +23,11 @@ from repo_ops_upgrade.workflow_uses import (
 _TAG_CACHE: dict[str, dict | None] = {}
 
 _MAJOR_TAG_RE = re.compile(r"^v(\d+)(?:\.|$)")
+
+# Full 40-hex SHA or short sha<hex> prefix
+_SHA_RE = re.compile(r"^(?:sha[0-9a-f]+|[0-9a-f]{7,40})$", re.IGNORECASE)
+
+TagStyle = Literal["major", "exact"]
 
 
 def discover_workflow_files(repo: Path) -> list[Path]:
@@ -40,6 +47,9 @@ def action_tag_info(
     Returns a dict with:
       - ``bare_majors``: set of integer majors that have a bare ``vN`` tag.
       - ``max_major``: maximum integer major across all version tags, or None.
+      - ``sha_to_tags``: mapping of commit SHA → list of tag names (for SHA unpin).
+        Each line from the API is parsed as "name sha" or "name" (name-only for
+        backwards compat with existing test mocks that return names only).
 
     Returns None when ``gh`` is absent or the API call fails (caller should skip
     the pin — mirrors old graceful degradation).
@@ -51,17 +61,32 @@ def action_tag_info(
         return store[action]
     try:
         proc = run(
-            ["gh", "api", f"repos/{action}/tags", "--paginate", "--jq", ".[].name"],
+            [
+                "gh",
+                "api",
+                f"repos/{action}/tags",
+                "--paginate",
+                "--jq",
+                r'.[] | "\(.name) \(.commit.sha)"',
+            ],
             Path.cwd(),
             timeout=30,
         )
         if proc.returncode != 0 or not proc.stdout.strip():
             store[action] = None
             return None
-        tag_names = [t.strip() for t in proc.stdout.splitlines() if t.strip()]
         bare_majors: set[int] = set()
         all_majors: set[int] = set()
-        for name in tag_names:
+        sha_to_tags: dict[str, list[str]] = {}
+        for raw_line in proc.stdout.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            name = parts[0]
+            sha = parts[1] if len(parts) > 1 else None
+            if sha:
+                sha_to_tags.setdefault(sha.lower(), []).append(name)
             # Bare major: exactly "vN"
             if re.fullmatch(r"v\d+", name):
                 try:
@@ -75,13 +100,119 @@ def action_tag_info(
                 except ValueError:
                     pass
         max_major = max(all_majors) if all_majors else None
-        result: dict = {"bare_majors": bare_majors, "max_major": max_major}
+        result: dict = {
+            "bare_majors": bare_majors,
+            "max_major": max_major,
+            "sha_to_tags": sha_to_tags,
+        }
         store[action] = result
         return result
     except subprocess.TimeoutExpired:
         print(f"WARN: gh api timed out for {action}", file=sys.stderr)
     store[action] = None
     return None
+
+
+def _resolve_sha_target(
+    sha: str,
+    *,
+    comment_hint: str | None,
+    info: dict | None,
+    tag_style: TagStyle,
+) -> tuple[str, str] | None:
+    """Resolve a SHA pin to a target tag string and a human description.
+
+    Returns ``(target_tag, description)`` or ``None`` when unresolvable.
+
+    Resolution order:
+    1. Comment hint ``# vN[.N.N]``: use major N (e.g. ``v4``) as the major.
+    2. SHA→tag mapping from the tags API: find tags pointing at this SHA, pick
+       the highest semver one to determine the major.
+
+    When ``tag_style='exact'``, ``target_tag`` is the highest ``vN.M.P`` within
+    the resolved major (or ``@vN`` fallback when no exact tags exist).
+    When ``tag_style='major'``, ``target_tag`` is ``vN``.
+    """
+    # --- Step 1: resolve major ---
+    resolved_major: int | None = None
+    source_desc = ""
+
+    if comment_hint:
+        m = re.match(r"^v(\d+)", comment_hint)
+        if m:
+            resolved_major = int(m.group(1))
+            source_desc = f"comment hint {comment_hint}"
+
+    if resolved_major is None and info is not None:
+        sha_lower = sha.lower()
+        # Normalise sha prefix-form: "sha<hex>" → strip "sha" prefix
+        if sha_lower.startswith("sha"):
+            sha_lower = sha_lower[3:]
+        tags_for_sha = info.get("sha_to_tags", {}).get(sha_lower, [])
+        if tags_for_sha:
+            # Pick the highest semver among tags pointing at this SHA.
+            best: str | None = None
+            best_tuple: tuple[int, ...] = ()
+            for t in tags_for_sha:
+                if not _MAJOR_TAG_RE.match(t):
+                    continue
+                stripped = t.lstrip("v")
+                tup = semver_tuple(stripped)
+                if tup > best_tuple:
+                    best_tuple = tup
+                    best = t
+            if best:
+                m2 = _MAJOR_TAG_RE.match(best)
+                if m2:
+                    resolved_major = int(m2.group(1))
+                    source_desc = f"SHA resolves to {best}"
+
+    if resolved_major is None:
+        return None
+
+    major_tag = f"v{resolved_major}"
+
+    # --- Step 2: pick target based on tag_style ---
+    if tag_style == "major":
+        return major_tag, f"unpin SHA to {major_tag} (via {source_desc})"
+
+    # exact: find highest vN.M.P within this major
+    exact_tag: str | None = None
+    if info is not None:
+        best_exact: str | None = None
+        best_exact_tup: tuple[int, ...] = ()
+        for sha_tags in info.get("sha_to_tags", {}).values():
+            for t in sha_tags:
+                m3 = _MAJOR_TAG_RE.match(t)
+                if not m3 or int(m3.group(1)) != resolved_major:
+                    continue
+                if re.fullmatch(r"v\d+\.\d+\.\d+.*", t):
+                    stripped = t.lstrip("v")
+                    tup = semver_tuple(stripped)
+                    if tup > best_exact_tup:
+                        best_exact_tup = tup
+                        best_exact = t
+        # Also scan all_majors tags from sha_to_tags full names list
+        # (may include tags on different commits within the same major)
+        # We need ALL tags for the major, not just ones mapping to this SHA.
+        # The info dict doesn't directly provide this, so we build it from sha_to_tags.
+        all_in_major: list[str] = []
+        for tags_list in info.get("sha_to_tags", {}).values():
+            for t in tags_list:
+                m4 = _MAJOR_TAG_RE.match(t)
+                if m4 and int(m4.group(1)) == resolved_major:
+                    if re.fullmatch(r"v\d+\.\d+\.\d+.*", t):
+                        all_in_major.append(t)
+        if all_in_major:
+            best_in_major = max(all_in_major, key=lambda t: semver_tuple(t.lstrip("v")))
+            best_in_major_tup = semver_tuple(best_in_major.lstrip("v"))
+            if best_in_major_tup > best_exact_tup:
+                best_exact = best_in_major
+        exact_tag = best_exact
+
+    target = exact_tag if exact_tag else major_tag
+    style_note = "exact" if exact_tag else "major (no exact tag found)"
+    return target, f"unpin SHA to {target} ({style_note}; via {source_desc})"
 
 
 def _run_actionlint(wf: Path, repo: Path) -> str | None:
@@ -97,7 +228,28 @@ def _run_actionlint(wf: Path, repo: Path) -> str | None:
     return None
 
 
-def scan_actions(repo: Path, apply: bool) -> tuple[list[ActionBump], int]:
+def scan_actions(
+    repo: Path,
+    apply: bool,
+    *,
+    keep_sha: bool = False,
+    tag_style: TagStyle = "major",
+) -> tuple[list[ActionBump], int]:
+    """Scan GitHub Actions workflow files and produce bump recommendations.
+
+    Parameters
+    ----------
+    repo:
+        Repository root (parent of ``.github/workflows/``).
+    apply:
+        When True, rewrite workflow files for actionable bumps.
+    keep_sha:
+        When True, SHA-pinned actions are reported only and never rewritten
+        (restores the old ``--actions-keep-sha`` behaviour).
+    tag_style:
+        ``"major"`` (default) → rewrite SHA pins to ``@vN``.
+        ``"exact"`` → rewrite to the highest ``@vN.M.P`` within the resolved major.
+    """
     if not shutil.which("actionlint"):
         print(
             "WARN: actionlint not on PATH; skipping action validation", file=sys.stderr
@@ -141,19 +293,65 @@ def scan_actions(repo: Path, apply: bool) -> tuple[list[ActionBump], int]:
         replacements: list[PinReplacement] = []
         for uses in pins:
             action, pin = uses.action, uses.pin
-            # SHA-pinned: report only, never replace.
-            if pin.startswith("sha") or re.fullmatch(r"[0-9a-f]{7,40}", pin):
+            # SHA-pinned: attempt to resolve to a version tag (unless keep_sha).
+            if _SHA_RE.fullmatch(pin):
+                if keep_sha:
+                    bumps.append(
+                        ActionBump(
+                            workflow=rel,
+                            action=action,
+                            pin=pin,
+                            latest=pin,
+                            status="ok",
+                            detail="SHA-pinned; report only",
+                        )
+                    )
+                    continue
+
+                info = action_tag_info(action, cache=tag_cache)
+                resolution = _resolve_sha_target(
+                    pin,
+                    comment_hint=uses.comment,
+                    info=info,
+                    tag_style=tag_style,
+                )
+                if resolution is None:
+                    # Cannot resolve: keep reporting, do not rewrite.
+                    bumps.append(
+                        ActionBump(
+                            workflow=rel,
+                            action=action,
+                            pin=pin,
+                            latest=pin,
+                            status="ok",
+                            detail="SHA-pinned; report only (unresolvable: no tag maps to this SHA)",
+                        )
+                    )
+                    continue
+
+                target_tag, detail = resolution
                 bumps.append(
                     ActionBump(
                         workflow=rel,
                         action=action,
                         pin=pin,
-                        latest=pin,
+                        latest=target_tag,
                         status="ok",
-                        detail="SHA-pinned; report only",
+                        detail=detail,
                     )
                 )
+                if apply:
+                    replacements.append(
+                        PinReplacement(
+                            action=action,
+                            pin=pin,
+                            latest=target_tag,
+                            line=uses.line or None,
+                            drop_comment=uses.comment is not None,
+                        )
+                    )
                 continue
+
             # Parse current major from pin (vN, vN.x.y). Skip non-version refs.
             m = re.match(r"^v(\d+)", pin)
             if not m:

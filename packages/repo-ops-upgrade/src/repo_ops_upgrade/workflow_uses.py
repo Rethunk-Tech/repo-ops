@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -15,6 +15,9 @@ from ruamel.yaml.error import YAMLError
 # Validate parsed action@pin shape only — not used to discover pins in file text.
 _PIN_TAG_RE = re.compile(r"^v[\d.]+$")
 _PIN_SHA_RE = re.compile(r"^(?:sha[0-9a-f]+|[0-9a-f]{7,40})$", re.IGNORECASE)
+
+# Trailing version hint comment: "# v4" or "# v4.1.2"
+_COMMENT_HINT_RE = re.compile(r"#\s*(v\d[\d.]*)")
 
 
 class WorkflowParseError(Exception):
@@ -28,6 +31,7 @@ class UsesPin:
     col: int
     action: str
     pin: str
+    comment: str | None = field(default=None)  # trailing "# vN" hint, stripped
 
 
 def parse_uses_ref(value: str) -> tuple[str, str] | None:
@@ -53,6 +57,18 @@ def _scalar_line_col(scalar: Any) -> tuple[int, int]:
     return (lc.line + 1, lc.col + 1)
 
 
+def _extract_uses_comment(node: CommentedMap) -> str | None:
+    """Return the stripped trailing comment on the ``uses`` key (e.g. '# v4'), or None."""
+    ca = getattr(node, "ca", None)
+    if ca is None:
+        return None
+    entry = ca.items.get("uses")
+    # ruamel stores EOL comments in slot index 2 of the [pre, post, eol, post2] list.
+    if entry and len(entry) > 2 and entry[2] is not None:
+        return str(entry[2].value).strip()
+    return None
+
+
 def _walk_collect(node: Any, workflow: str, out: list[UsesPin]) -> None:
     if isinstance(node, CommentedMap):
         uses_val = node.get("uses")
@@ -61,6 +77,12 @@ def _walk_collect(node: Any, workflow: str, out: list[UsesPin]) -> None:
             if parsed:
                 action, pin = parsed
                 line, col = _scalar_line_col(uses_val)
+                raw_comment = _extract_uses_comment(node)
+                comment: str | None = None
+                if raw_comment:
+                    m = _COMMENT_HINT_RE.search(raw_comment)
+                    if m:
+                        comment = m.group(1)  # e.g. "v4" or "v4.1.2"
                 out.append(
                     UsesPin(
                         workflow=workflow,
@@ -68,6 +90,7 @@ def _walk_collect(node: Any, workflow: str, out: list[UsesPin]) -> None:
                         col=col,
                         action=action,
                         pin=pin,
+                        comment=comment,
                     )
                 )
         for child in node.values():
@@ -137,6 +160,7 @@ class PinReplacement:
     pin: str
     latest: str
     line: int | None = None
+    drop_comment: bool = False  # When True, clear the trailing # vN comment on apply
 
 
 def _walk_apply(
@@ -157,6 +181,13 @@ def _walk_apply(
                     if repl.line is not None and line != repl.line:
                         continue
                     node["uses"] = f"{repl.action}@{repl.latest}"
+                    # Optionally drop the trailing version-hint comment (# vN).
+                    if repl.drop_comment and isinstance(node, CommentedMap):
+                        ca = getattr(node, "ca", None)
+                        if ca is not None:
+                            entry = ca.items.get("uses")
+                            if entry and len(entry) > 2:
+                                entry[2] = None
                     changed = True
                     break
         for child in node.values():
