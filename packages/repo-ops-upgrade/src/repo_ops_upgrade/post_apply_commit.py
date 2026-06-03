@@ -120,13 +120,17 @@ def upgrade_scoped_paths(bundle: RepoBundle, porcelain: list[str]) -> list[str]:
     return scoped
 
 
-def porcelain_changed_paths(repo: Path) -> list[str]:
-    proc = run_git(repo, "status", "--porcelain", timeout=60)
-    if proc.returncode != 0:
-        return []
+def _parse_porcelain(stdout: str) -> list[str]:
+    """Extract changed paths from ``git status --porcelain`` (v1) output.
+
+    The porcelain-v1 short format is ``XY <path>`` where ``XY`` is a two-char
+    status code followed by a single space (3 leading chars). The path begins at
+    index 3 and must be sliced *without* stripping the line first: for unstaged
+    entries the X column is a space (e.g. ``" M go.mod"``), and stripping it would
+    shift the slice and drop the first character of the filename (``"o.mod"``).
+    """
     paths: list[str] = []
-    for line in proc.stdout.splitlines():
-        line = line.strip()
+    for line in stdout.splitlines():
         if len(line) < 4:
             continue
         entry = line[3:].strip()
@@ -135,6 +139,13 @@ def porcelain_changed_paths(repo: Path) -> list[str]:
         if entry:
             paths.append(entry)
     return paths
+
+
+def porcelain_changed_paths(repo: Path) -> list[str]:
+    proc = run_git(repo, "status", "--porcelain", timeout=60)
+    if proc.returncode != 0:
+        return []
+    return _parse_porcelain(proc.stdout)
 
 
 def filter_safe_paths(paths: list[str]) -> tuple[list[str], list[str]]:

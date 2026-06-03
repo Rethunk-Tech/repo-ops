@@ -64,6 +64,32 @@ def test_commit_dry_run_lists_files(tmp_path: Path) -> None:
     assert "chore(deps)" in (outcome.message or "")
 
 
+def test_parse_porcelain_unstaged_preserves_filename() -> None:
+    # Regression: unstaged entries (" M path") have a space in the X column.
+    # Stripping the line before slicing dropped the filename's first char
+    # ("go.mod" -> "o.mod"), which broke staging and subject classification.
+    out = " M go.mod\n M go.sum\n"
+    assert post_apply_commit._parse_porcelain(out) == ["go.mod", "go.sum"]
+
+
+def test_parse_porcelain_staged_and_rename() -> None:
+    out = "M  package-lock.json\nR  old.txt -> new.txt\n?? extra.json\n"
+    assert post_apply_commit._parse_porcelain(out) == [
+        "package-lock.json",
+        "new.txt",
+        "extra.json",
+    ]
+
+
+def test_unstaged_go_change_classifies_as_go_modules() -> None:
+    # End-to-end of the bug: a real unstaged go.mod/go.sum change must yield
+    # the Go subject, not the generic fallback.
+    paths = post_apply_commit._parse_porcelain(" M go.mod\n M go.sum\n")
+    assert post_apply_commit.classify_commit_subject(paths) == (
+        "chore(deps): update Go modules"
+    )
+
+
 def test_skips_verify_fail_by_default(tmp_path: Path) -> None:
     bundle = _bundle(tmp_path)
     bundle.workspaces[0].status = "fail"
