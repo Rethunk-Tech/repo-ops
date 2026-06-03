@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -158,7 +159,11 @@ def test_parse_real_ci_workflow(repo_ops_workflows: Path) -> None:
     pins = parse_workflow_uses(repo_ops_workflows / "ci.yml")
     checkout = [p for p in pins if p.action == "actions/checkout"]
     assert checkout, "expected actions/checkout in repo ci.yml"
-    assert checkout[0].pin == "v6.0.2"
+    # Policy dogfood: this repo's own workflows pin to a floating major tag
+    # (e.g. v6), not an exact patch — assert the shape, not a frozen value.
+    assert re.fullmatch(r"v\d+", checkout[0].pin), (
+        f"repo ci.yml checkout should pin a floating major tag, got {checkout[0].pin!r}"
+    )
 
 
 def test_workflow_roundtrip_preserves_ci_yaml(repo_ops_workflows: Path) -> None:
