@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-06-03
+
+### Fixed
+
+- **CLI:** Bare subcommands (e.g. `repo-ops plan` with no path args) no longer fail with `root does not exist: <cwd>/plan`. The dispatcher forwarded `None` instead of the empty remainder list, so the handler's argparse fell back to `sys.argv[1:]` and re-consumed the subcommand token as a positional root. Bare subcommands now correctly scan `DEFAULT_ROOTS`.
+
 ## [0.6.0] - 2026-06-03
 
 ### Changed
