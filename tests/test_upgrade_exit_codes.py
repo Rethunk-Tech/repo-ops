@@ -179,9 +179,7 @@ def test_strict_exit_counts_dirty_skip(tmp_path: Path) -> None:
         "repo_ops_upgrade.run.orchestration.process_workspace",
         side_effect=_dirty_skip,
     ):
-        rc_normal = main_apply(
-            [str(tmp_path), "--flat", "--skip-actions", "--quiet"]
-        )
+        rc_normal = main_apply([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
         rc_strict = main_apply(
             [
                 str(tmp_path),

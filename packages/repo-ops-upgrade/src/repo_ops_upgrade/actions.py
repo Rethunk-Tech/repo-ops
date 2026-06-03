@@ -32,7 +32,9 @@ def discover_workflow_files(repo: Path) -> list[Path]:
     )
 
 
-def action_tag_info(action: str, *, cache: dict[str, dict | None] | None = None) -> dict | None:
+def action_tag_info(
+    action: str, *, cache: dict[str, dict | None] | None = None
+) -> dict | None:
     """Return tag info dict for a GitHub Action via ``gh api repos/<action>/tags``.
 
     Returns a dict with:

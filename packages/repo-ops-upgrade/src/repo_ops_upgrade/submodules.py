@@ -71,7 +71,9 @@ def _parse_gitmodules_file(gitmodules_path: Path) -> list[tuple[str, str]]:
     return entries
 
 
-def discover_submodules_under_roots(roots: list[str], *, flat: bool) -> list[SubmoduleLink]:
+def discover_submodules_under_roots(
+    roots: list[str], *, flat: bool
+) -> list[SubmoduleLink]:
     """Find .gitmodules under scanned roots and resolve parent/child git repos."""
     links: list[SubmoduleLink] = []
     seen: set[tuple[str, str, str]] = set()

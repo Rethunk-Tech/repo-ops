@@ -87,9 +87,7 @@ class RepoBundle:
 
     def any_dirty_skip(self) -> bool:
         return any(
-            w.status == "skip"
-            and w.error
-            and "dirty git worktree" in w.error
+            w.status == "skip" and w.error and "dirty git worktree" in w.error
             for w in self.workspaces
         )
 

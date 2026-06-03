@@ -231,10 +231,7 @@ def print_submodule_section(
         return
     print("Submodules")
     for entry in submodules:
-        print(
-            f"  {entry['path']} → {entry['git_repo']} "
-            f"(parent {entry['parent']})"
-        )
+        print(f"  {entry['path']} → {entry['git_repo']} (parent {entry['parent']})")
     if pointer_hints:
         print()
         print("Parent repos needing submodule pointer commit:")

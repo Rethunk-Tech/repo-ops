@@ -116,7 +116,9 @@ def test_dirty_submodule_pointer_hint(tmp_path: Path) -> None:
     _init_git_repo(child)
     _write_gitmodules(parent, "pkg", "https://example.com/pkg.git")
     (child / "README.md").write_text("child\n", encoding="utf-8")
-    subprocess.run(["git", "add", "README.md"], cwd=child, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", "README.md"], cwd=child, check=True, capture_output=True
+    )
     subprocess.run(
         ["git", "commit", "-m", "init"],
         cwd=child,
@@ -130,7 +132,9 @@ def test_dirty_submodule_pointer_hint(tmp_path: Path) -> None:
         capture_output=True,
     )
     (child / "README.md").write_text("child v2\n", encoding="utf-8")
-    subprocess.run(["git", "add", "README.md"], cwd=child, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", "README.md"], cwd=child, check=True, capture_output=True
+    )
     subprocess.run(
         ["git", "commit", "-m", "bump"],
         cwd=child,

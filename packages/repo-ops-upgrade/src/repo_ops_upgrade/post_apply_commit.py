@@ -197,10 +197,20 @@ def classify_commit_subject(files: list[str]) -> str:
         return "chore(deps): update Go modules"
     if any(n.endswith(".toml") and "cargo" in n for n in names):
         return "chore(deps): update Rust lockfiles"
-    if any(n in ("pyproject.toml", "uv.lock", "poetry.lock", "requirements.txt") for n in names):
+    if any(
+        n in ("pyproject.toml", "uv.lock", "poetry.lock", "requirements.txt")
+        for n in names
+    ):
         return "chore(deps): update Python dependencies"
     if any(
-        n in ("package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb")
+        n
+        in (
+            "package.json",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "bun.lockb",
+        )
         for n in names
     ):
         return "chore(deps): update Node lockfiles and manifests"
@@ -264,7 +274,9 @@ def plan_repo_commit(
             + ("…" if len(blocked) > 3 else ""),
         )
     if not safe:
-        return CommitPlan(repo, bundle.label, "", skipped_reason="no safe paths to stage")
+        return CommitPlan(
+            repo, bundle.label, "", skipped_reason="no safe paths to stage"
+        )
     if mode == "agent":
         try:
             from repo_ops_upgrade.commit_agent_providers import (
@@ -375,4 +387,3 @@ def _print_outcome(outcome: CommitOutcome) -> None:
         print(f"[commit skip] {prefix}: {outcome.detail}")
     elif outcome.status == "failed":
         print(f"[commit fail] {prefix}: {outcome.detail}", file=sys.stderr)
-

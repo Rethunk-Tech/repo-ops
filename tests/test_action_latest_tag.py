@@ -24,8 +24,9 @@ def test_collapse_exact_to_floating_major(tmp_path: Path) -> None:
     )
     tags_proc = _make_tags_proc("v4", "v4.2.1", "v4.2.2")
 
-    with patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"), patch(
-        "repo_ops_upgrade.actions.run", return_value=tags_proc
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
         bumps, scanned = scan_actions(tmp_path, apply=True)
 
@@ -49,8 +50,9 @@ def test_cross_major_is_report_only_no_replacement(tmp_path: Path) -> None:
     wf.write_text(original, encoding="utf-8")
     tags_proc = _make_tags_proc("v4", "v5", "v5.1.0", "v6", "v6.0.1")
 
-    with patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"), patch(
-        "repo_ops_upgrade.actions.run", return_value=tags_proc
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
         bumps, scanned = scan_actions(tmp_path, apply=True)
 
@@ -75,8 +77,9 @@ def test_bare_major_up_to_date_emits_nothing(tmp_path: Path) -> None:
     )
     tags_proc = _make_tags_proc("v3", "v3.6.0", "v3.5.0")
 
-    with patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"), patch(
-        "repo_ops_upgrade.actions.run", return_value=tags_proc
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
         bumps, scanned = scan_actions(tmp_path, apply=False)
 

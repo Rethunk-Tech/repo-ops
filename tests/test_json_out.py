@@ -16,9 +16,7 @@ def _init_git_repo(path: Path) -> None:
     subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
 
 
-def test_plan_json_out_writes_file_and_prints_path_only(
-    tmp_path: Path, capsys
-) -> None:
+def test_plan_json_out_writes_file_and_prints_path_only(tmp_path: Path, capsys) -> None:
     _init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"npm@10.0.0"}',

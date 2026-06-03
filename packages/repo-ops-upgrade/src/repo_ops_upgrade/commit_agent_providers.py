@@ -92,4 +92,3 @@ def draft_message_with_commit_agent(
     """Draft a commit message via the selected commit-agent provider."""
     provider = resolve_commit_agent_provider(provider_name)
     return provider.draft_commit_message(bundle, files)
-
