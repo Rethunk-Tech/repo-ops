@@ -100,7 +100,7 @@ class RepoBundle:
             if ab.status == "fail":
                 failures += 1
                 continue
-            if ab.detail and "SHA-pinned" in (ab.detail or ""):
+            if "report only" in (ab.detail or "").lower():
                 continue
             if ab.pin != ab.latest:
                 bumps += 1

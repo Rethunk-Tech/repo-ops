@@ -100,25 +100,23 @@ def test_scan_actions_discovers_checkout_list_item(tmp_path: Path) -> None:
     wf_dir.mkdir(parents=True)
     (wf_dir / "ci.yml").write_text(_CI_SNIPPET, encoding="utf-8")
 
-    def _latest(action: str, **kwargs: object) -> str | None:
-        if action == "actions/checkout":
-            return "v6"
-        if action == "astral-sh/setup-uv":
-            return "v6"
+    def _tag_info(action: str, **kwargs: object) -> dict | None:
+        if action in ("actions/checkout", "astral-sh/setup-uv"):
+            return {"bare_majors": {4, 5, 6}, "max_major": 6}
         return None
 
     with (
         patch(
-            "repo_ops_upgrade.actions.action_latest_tag",
-            side_effect=_latest,
+            "repo_ops_upgrade.actions.action_tag_info",
+            side_effect=_tag_info,
         ),
         patch("repo_ops_upgrade.actions.shutil.which", return_value=None),
     ):
         bumps, scanned = scan_actions(tmp_path, apply=False)
     assert scanned == 1
-    actions = {b.action for b in bumps}
-    assert "actions/checkout" in actions
-    assert "astral-sh/setup-uv" in actions
+    action_names = {b.action for b in bumps}
+    assert "actions/checkout" in action_names
+    assert "astral-sh/setup-uv" in action_names
 
 
 def test_scan_actions_apply_no_stacked_suffix(tmp_path: Path) -> None:
@@ -137,8 +135,8 @@ def test_scan_actions_apply_no_stacked_suffix(tmp_path: Path) -> None:
     )
     with (
         patch(
-            "repo_ops_upgrade.actions.action_latest_tag",
-            return_value="v3.19.0",
+            "repo_ops_upgrade.actions.action_tag_info",
+            return_value={"bare_majors": {3}, "max_major": 3},
         ),
         patch("repo_ops_upgrade.actions.shutil.which", return_value=None),
     ):

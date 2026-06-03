@@ -36,7 +36,7 @@ def _has_actionable_work(bundles: dict[Path, RepoBundle]) -> bool:
         for ab in bundle.actions:
             if ab.status != "ok":
                 return True
-            if ab.detail and "SHA-pinned" in (ab.detail or ""):
+            if "report only" in (ab.detail or "").lower():
                 continue
             if ab.pin != ab.latest:
                 return True

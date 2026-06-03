@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **GitHub Actions pin policy:** Tag-pinned actions (e.g. `v3.19.0`, `v4`) now normalize to the floating bare-major tag for the *same* major (`v3.19.0` → `v3`, `v4` stays `v4`). Cross-major upgrades (e.g. `v4` → `v6`) are reported but never auto-applied. SHA pins remain report-only. This eliminates per-patch churn on apply consumers and prevents silent breaking major bumps. **Behavior change:** `apply` now writes `v3` instead of `v3.19.0`; consumers that expected exact-patch replacement will see floating major tags instead.
+
 ## [0.5.0] - 2026-05-31
 
 ### Added
