@@ -75,6 +75,22 @@ packages:
         assert versions_pnpm_lock(p) == {"foo@1.2.3", "@scope/bar@2.3.4"}
 
 
+def test_versions_pnpm_lock_path_notation():
+    """pnpm v5/older path-notation entries must parse to name@version (not empty)."""
+    content = """lockfileVersion: 5
+
+packages:
+  /lodash/4.17.21:
+    resolution: {integrity: sha512-abc}
+  /@babel/core/7.22.0:
+    resolution: {integrity: sha512-xyz}
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "pnpm-lock.yaml"
+        p.write_text(content)
+        assert versions_pnpm_lock(p) == {"lodash@4.17.21", "@babel/core@7.22.0"}
+
+
 def test_versions_bun_lock_json_and_fallback():
     content = """{
   "packages": {

@@ -84,6 +84,18 @@ def versions_yarn_lock(p: Path) -> set[str]:
 
 
 def versions_pnpm_lock(p: Path) -> set[str]:
+    """pnpm-lock.yaml → set of name@version.
+
+    Handles both notations:
+    - v6+ ``@``-notation: ``foo@1.2.3:`` / ``@scope/bar@2.3.4:``
+    - v5/older path-notation: ``/lodash/4.17.21:`` / ``/@babel/core/7.22.0:``
+    """
+    # v6+ @-notation: name@version key (name may be scoped, e.g. @babel/core@7.x)
+    _RE_AT = re.compile(r"^  ['\"]?/?([@\w][^@:'\"]*@[^:'\"\s]+)['\"]?:\s*$")
+    # v5 path-notation: /name/version: or /@scope/name/version:
+    _RE_PATH = re.compile(
+        r"^  ['\"]?/((?:@[^/'\"@]+/)?[^/'\"@]+)/([^/:'\"\s]+)['\"]?:\s*$"
+    )
     out: set[str] = set()
     in_pkgs = False
     for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -94,9 +106,13 @@ def versions_pnpm_lock(p: Path) -> set[str]:
             if line and not line.startswith(" "):
                 in_pkgs = False
                 continue
-            m = re.match(r"^  ['\"]?/?([@\w][^@:'\"]*@[^:'\"\s]+)['\"]?:\s*$", line)
+            m = _RE_AT.match(line)
             if m:
                 out.add(m.group(1))
+                continue
+            m = _RE_PATH.match(line)
+            if m:
+                out.add(f"{m.group(1)}@{m.group(2)}")
     return out
 
 
