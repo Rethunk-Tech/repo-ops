@@ -29,8 +29,24 @@ def overrides_audit(mdir: Path, manager: str) -> list[dict[str, str]]:
     if isinstance(pnpm.get("overrides"), dict):
         pins.update({str(k): str(v) for k, v in pnpm["overrides"].items()})
 
+    _PROTOCOL_PREFIXES = (
+        "workspace:",
+        "file:",
+        "link:",
+        "portal:",
+        "git+",
+        "github:",
+        "https:",
+    )
+
     out: list[dict[str, str]] = []
     for name, pinned in pins.items():
+        # Protocol-style pins are intentional references (monorepo workspace,
+        # local path, git URL, etc.) — they are never semver and cannot be
+        # stale in the same sense as a version pin.  Skip them entirely so we
+        # don't fire spurious "OVERRIDE stale:" warnings.
+        if pinned.startswith(_PROTOCOL_PREFIXES):
+            continue
         pkg_name = _override_package_name(name)
         pinned_ver = normalize_version(
             pinned.split("@")[-1] if "@" in pinned else pinned
