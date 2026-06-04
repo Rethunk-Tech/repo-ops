@@ -125,6 +125,27 @@ def test_build_json_payload_includes_summary(tmp_path: Path) -> None:
     assert payload["summary"]["failure_count"] == 0
 
 
+def test_print_run_footer_includes_actions_failures_row(tmp_path: Path) -> None:
+    """#48 — actions_failures must appear in the footer summary table."""
+    summary = {
+        "workspaces_ok": 1,
+        "workspaces_fail": 0,
+        "workspaces_skip": 0,
+        "dirty_skips": 0,
+        "verify_failures": 0,
+        "actions_bumps": 3,
+        "actions_failures": 2,
+        "discovery_skipped": 0,
+        "failure_count": 0,
+    }
+    buf = io.StringIO()
+    with patch("sys.stdout", buf):
+        print_run_footer(summary=summary, failures=[], exit_code=0)
+    out = buf.getvalue()
+    assert "actions failures" in out
+    assert "2" in out
+
+
 def test_print_run_footer_caps_failure_list(tmp_path: Path) -> None:
     summary = {
         "workspaces_ok": 0,

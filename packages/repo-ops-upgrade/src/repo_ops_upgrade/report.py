@@ -323,6 +323,7 @@ def print_run_footer(
         ("dirty skips", summary["dirty_skips"]),
         ("verify failures", summary["verify_failures"]),
         ("actions bumps", summary["actions_bumps"]),
+        ("actions failures", summary["actions_failures"]),
         ("discovery skipped", summary["discovery_skipped"]),
     ]
     width = max(len(label) for label, _ in rows)
