@@ -289,6 +289,27 @@ def test_discover_repos_find_timeout_is_tunable(
     )
 
 
+def test_discover_repos_git_common_dir_timeout_skips_and_warns(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Regression for #71: TimeoutExpired from git_common_dir must be caught,
+    emit a WARN to stderr, and allow discover_repos to continue (not raise)."""
+    repo_dir = tmp_path / "myorg" / "myrepo"
+    (repo_dir / ".git").mkdir(parents=True)
+
+    def fake_git_common_dir(p: object) -> str:
+        raise subprocess.TimeoutExpired(cmd=["git"], timeout=10)
+
+    with patch("repo_ops_core.discovery.git_common_dir", fake_git_common_dir):
+        result = discover_repos([str(tmp_path)])
+
+    assert result == {}, "timed-out repo must be skipped (not added)"
+    captured = capsys.readouterr()
+    assert "WARN" in captured.err and "timeout" in captured.err, (
+        f"expected WARN+timeout on stderr; got: {captured.err!r}"
+    )
+
+
 @pytest.mark.parametrize(
     "matcher",
     [

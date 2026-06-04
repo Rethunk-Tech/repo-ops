@@ -109,7 +109,11 @@ def discover_repos(
             repo = os.path.realpath(os.path.dirname(git_dir))
             if should_exclude(repo):
                 continue
-            common = git_common_dir(repo)
+            try:
+                common = git_common_dir(repo)
+            except subprocess.TimeoutExpired:
+                print(f"WARN: skipped {repo}: timeout", file=sys.stderr)
+                continue
             if not common:
                 continue
             prev = common_to_repo.get(common)
