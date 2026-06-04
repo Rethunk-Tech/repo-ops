@@ -53,3 +53,18 @@ jobs:
     - run: uv run pytest -q --cov --cov-report=term-missing --cov-fail-under=15
     - run: uv build packages/repo-ops
     - run: ls -l dist/
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    - uses: astral-sh/setup-uv@v8.1.0
+      with:
+        python-version: "3.12"
+        enable-cache: true
+    - name: Sync locked dependencies
+      run: uv sync --locked --group dev
+    - name: Audit third-party dependencies for known CVEs
+      # --skip-editable drops the local workspace packages (not on PyPI);
+      # only the resolved third-party dependency tree is audited.
+      run: uv run --with pip-audit pip-audit --skip-editable
