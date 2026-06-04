@@ -202,8 +202,8 @@ def _run_upgrade_body(
                 stop_on_result=_workspace_failed,
             )
 
+    path_to_result = {r.workspace.path: r for r in all_results}
     for bundle in bundles.values():
-        path_to_result = {r.workspace.path: r for r in all_results}
         updated: list[WorkspaceResult] = []
         for wr in bundle.workspaces:
             if wr.workspace.path in path_to_result:
