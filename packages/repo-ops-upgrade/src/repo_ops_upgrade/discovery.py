@@ -242,7 +242,6 @@ def discover_workspaces_in_root(
         key = mdir.resolve()
         if key in seen_paths:
             continue
-        before = len(found)
         if "package.json" in names:
             consider_node(mdir)
         if "go.mod" in names:
@@ -251,8 +250,12 @@ def discover_workspaces_in_root(
             consider_rust(mdir)
         if names & {"pyproject.toml", "requirements.in", "requirements.txt", "Pipfile"}:
             consider_py(mdir)
-        if len(found) > before:
-            seen_paths.add(key)
+        # Mark this dir visited unconditionally (not only when a workspace was
+        # added) so that skip-only dirs are deduped across nested-repo overlap.
+        # Without this, a dir that produces only a record_skip is walked a
+        # second time by the overlapping repo walk, printing SKIP twice on
+        # stderr (diagnostics._seen_skips dedupes --json only). (closes #46)
+        seen_paths.add(key)
 
     return found
 

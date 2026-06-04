@@ -186,6 +186,37 @@ def test_discover_node_workspace_member_not_recorded_as_skip(tmp_path: Path):
     assert node_found[0].path == repo.resolve()
 
 
+def test_discover_skip_only_dir_not_double_printed_in_nested_repo(
+    tmp_path: Path, capsys
+):
+    """Regression for #46: a dir that yields only a skip (no actionable workspace)
+    must not emit SKIP twice on stderr when it appears in two overlapping repo
+    walks (outer repo walk + inner repo walk both visit it).
+
+    Trigger: nested git repos — outer/.git and outer/inner/.git.  A no-manager
+    package.json at outer/inner/ causes iter_scanned_dirs(outer) AND
+    iter_scanned_dirs(inner) to both queue outer/inner, but seen_paths now
+    dedupes it unconditionally regardless of whether a workspace was added.
+    """
+    outer = tmp_path / "org" / "outer"
+    inner = outer / "inner"
+    inner.mkdir(parents=True)
+    _git_init(outer)
+    _git_init(inner)
+    # package.json with no lockfile and no packageManager — will skip.
+    (inner / "package.json").write_text('{"name":"inner"}')
+
+    # Run without diagnostics so skips go to stderr (the --json path already
+    # dedupes via _seen_skips; the bug is stderr-only).
+    discover_all([str(tmp_path)], flat=False, diagnostics=None)
+    err = capsys.readouterr().err
+
+    skip_count = err.count("SKIP node")
+    assert skip_count == 1, (
+        f"expected exactly one SKIP node line on stderr, got {skip_count}:\n{err}"
+    )
+
+
 @pytest.mark.parametrize(
     "env_val, param_val, expected",
     [
