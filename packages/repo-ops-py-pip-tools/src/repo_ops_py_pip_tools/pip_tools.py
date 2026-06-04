@@ -24,7 +24,7 @@ def check_pip_tools(ws: Workspace) -> list[Change]:
     proposed: dict[str, str] = {}
     if shutil.which("uv"):
         proc = run(
-            ["uv", "pip", "compile", str(req_in), "-o", "-", "--quiet"],
+            ["uv", "pip", "compile", str(req_in), "-o", "-", "--upgrade", "--quiet"],
             ws.path,
             timeout=TIMEOUT_CHECK,
         )
