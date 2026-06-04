@@ -217,6 +217,30 @@ def test_discover_skip_only_dir_not_double_printed_in_nested_repo(
     )
 
 
+def test_discover_cargo_workspace_members_not_enumerated_standalone(tmp_path: Path):
+    """Regression for #52: Cargo workspace members must NOT surface as separate
+    rust workspaces; only the root (which owns Cargo.lock) should be returned."""
+    repo = tmp_path / "com.github" / "Acme" / "crates"
+    _git_init(repo)
+    # Root: Cargo workspace with Cargo.lock.
+    (repo / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["crates/*"]\n\n[package]\nname = "root"\nversion = "0.1.0"\n'
+    )
+    (repo / "Cargo.lock").write_text("")
+    member = repo / "crates" / "util"
+    member.mkdir(parents=True)
+    # Member: Cargo.toml with [package] but no own Cargo.lock.
+    (member / "Cargo.toml").write_text('[package]\nname = "util"\nversion = "0.1.0"\n')
+
+    found = discover_all([str(tmp_path)], flat=False)
+    rust_found = [ws for ws in found if ws.ecosystem == "rust"]
+
+    assert len(rust_found) == 1, (
+        f"expected only the cargo workspace root; found={[str(w.path) for w in rust_found]}"
+    )
+    assert rust_found[0].path == repo.resolve()
+
+
 @pytest.mark.parametrize(
     "env_val, param_val, expected",
     [

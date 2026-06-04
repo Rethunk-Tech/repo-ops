@@ -20,6 +20,47 @@ from repo_ops_py_uv.uv import path_is_uv_workspace_child, uv_workspace_members
 
 from repo_ops_upgrade.actions import discover_workflow_files
 
+# ---------- Cargo workspace helpers ----------
+
+
+def cargo_workspace_members(mdir: Path) -> set[str]:
+    """Return the ``[workspace].members`` globs declared in *mdir*'s Cargo.toml.
+
+    Empty when *mdir* is not a Cargo workspace root.  Members are governed by
+    the root ``Cargo.lock`` and must not be enumerated as standalone
+    workspaces.  Mirrors ``uv_workspace_members``.
+    """
+    d = read_toml_file(mdir / "Cargo.toml") or {}
+    ws = d.get("workspace") or {}
+    if not isinstance(ws, dict):
+        return set()
+    members = ws.get("members")
+    if not isinstance(members, list):
+        return set()
+    return {m.rstrip("/") for m in members if isinstance(m, str)}
+
+
+def path_is_cargo_workspace_child(mdir: Path, root: Path, members: set[str]) -> bool:
+    """True when *mdir* is a member of the Cargo workspace rooted at *root*.
+
+    Uses the same glob-prefix matching as ``path_is_uv_workspace_child`` and
+    ``path_is_yarn_workspace_child``.  Note: Cargo also supports implicit
+    auto-discovery (no ``members`` key), ``exclude``, and ``default-members``;
+    those cases are not handled here — that's a known limitation.
+    """
+    try:
+        rel = mdir.relative_to(root).as_posix()
+    except ValueError:
+        return False
+    for pattern in members:
+        pat = pattern.replace("*", "")
+        if rel == pattern.rstrip("/*") or rel.startswith(pat):
+            return True
+        if pattern.endswith("/*") and rel.startswith(pattern[:-2]):
+            return True
+    return False
+
+
 # ---------- Workspace discovery ----------
 
 
@@ -73,6 +114,7 @@ def discover_workspaces_in_root(
     # top-down, so a root is always seen before its members.
     node_workspace_roots: dict[Path, set[str]] = {}
     uv_roots: dict[Path, set[str]] = {}
+    cargo_roots: dict[Path, set[str]] = {}
 
     def record_skip(mdir: Path, ecosystem: str, reason: str) -> None:
         """A manifest was found but is not actionable — count it, never drop it.
@@ -144,6 +186,13 @@ def discover_workspaces_in_root(
         cargo = mdir / "Cargo.toml"
         if not cargo.exists():
             return
+        # Suppress Cargo workspace members before any lockfile/package checks,
+        # mirroring the uv_roots / node_workspace_roots pattern. A member dir
+        # has a Cargo.toml with [package] but no own Cargo.lock; without this
+        # guard every member surfaced as a standalone rust workspace. (closes #52)
+        for cr, members in cargo_roots.items():
+            if mdir != cr and path_is_cargo_workspace_child(mdir, cr, members):
+                return
         lock = mdir / "Cargo.lock"
         d = read_toml_file(cargo) or {}
         if not lock.exists() and not d.get("workspace") and not d.get("package"):
@@ -153,6 +202,11 @@ def discover_workspaces_in_root(
                 "Cargo.toml without Cargo.lock and not a [workspace]/[package]",
             )
             return
+        # Register this dir as a cargo workspace root if it declares [workspace]
+        # with members globs so descendants can be suppressed.
+        ws_members = cargo_workspace_members(mdir)
+        if ws_members:
+            cargo_roots[mdir] = ws_members
         git = git_repo_for(mdir)
         if not git:
             record_skip(mdir, "rust", "not inside a git repo")
