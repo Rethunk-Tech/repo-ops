@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Expanded lint coverage:** ruff now enforces flake8-bandit (`S`), flake8-simplify (`SIM`), flake8-comprehensions (`C4`), and ruff-native (`RUF`) rules on top of `E/F/I/UP/B`. `S603`/`S607` are ignored project-wide (invoking package managers by name off `PATH` is repo-ops's purpose, not a vulnerability) and tests ignore `S101`/`S108`; the remaining best-effort exception swallows are annotated. The `scripts/` directory is now linted and formatted alongside the packages.
 
+### Fixed
+
+- **Actions pin update (read-only / vanished workflow file):** `update_workflow_pins` now wraps its YAML load *and* write in `OSError` handling, raising `WorkflowParseError` like `parse_workflow_uses` already did, so a read-only or mid-scan-deleted `.github/workflows/*.yml` is recorded as a failed bump instead of an uncaught `PermissionError`/`OSError` aborting the entire actions run. (#77)
+- **Override audit (range/caret pins):** `overrides_audit` no longer fires a false `OVERRIDE stale` for range pins (`^1.2.3`, `~`, `>=`). The string-equality stale check is now gated to exact semver pins, so an in-range higher resolved version (e.g. `1.2.5` satisfying `^1.2.3`) passes silently while the floor comparison still flags genuine downgrades. (#78)
+- **Lockfile version parsers (bogus tokens):** the pnpm packages-section parser strips the parenthesized peer-dep suffix (`@babel/core@7.21.0(supports-color@8.1.1)` → `@babel/core@7.21.0`) and the yarn-Berry parser skips the `__metadata` preamble block, so the inventory `versions` set no longer carries garbled pnpm-v6 tokens or a bogus `__metadata@6` token per Berry lockfile. (#79)
+- **Commit classifier (`bun.lock`):** `classify_commit_subject` now recognizes Bun ≥1.0's text `bun.lock` (not just the legacy binary `bun.lockb`) as a Node lockfile, so a lockfile-only Bun update gets the "update Node lockfiles and manifests" subject instead of the generic dependency-update fallback. (#80)
+- **Override resolution (bare-scope key):** `resolved_version_from_node_modules` no longer crashes with `ValueError` on a slashless scoped override key (e.g. `@types`); the scoped-split branch now requires a `/`, so a single malformed override key degrades to a warning instead of failing the entire workspace check. (#81)
+- **Post-apply package.json diff (non-dependency fields):** `collect_changes_after_apply` now tracks which JSON section each diff line is in and only emits changes from dependency sections, so a bumped package `"version"`/`"name"`/`"license"`/script line is no longer captured as a spurious `Change` row polluting remediation context and the commit body. (#82)
+- **Post-apply lightweight path (root workspaces):** the fast `git diff --name-only` path now skips its workspace-prefix filter when the workspace is the git root (`rel_s == "."`), so root-workspace applies use the lightweight path as intended instead of always falling back to a full checker re-run. (#83)
+
 ## [0.7.1] - 2026-06-04
 
 ### Fixed
