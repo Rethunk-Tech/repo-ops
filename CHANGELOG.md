@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-04
+
 ### Added
 
 - **CI dependency audit:** a dedicated `audit` job runs `pip-audit` on every push/PR, scanning the resolved third-party dependency tree for known CVEs (`--skip-editable` drops the local workspace packages).
@@ -327,7 +329,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.6.0...v0.6.1
