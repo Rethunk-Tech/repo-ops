@@ -123,6 +123,42 @@ packages:
         assert "lodash@4.17.21" in result
 
 
+def test_versions_pnpm_lock_v6_peer_suffix_stripped():
+    """#79 — pnpm v6 peer-dep suffix must not appear in emitted token."""
+    content = """lockfileVersion: '6.0'
+
+packages:
+  /@babel/core@7.21.0(supports-color@8.1.1):
+    resolution: {integrity: sha512-abc}
+  foo@1.0.0:
+    resolution: {integrity: sha512-xyz}
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "pnpm-lock.yaml"
+        p.write_text(content)
+        result = versions_pnpm_lock(p)
+        assert result == {"@babel/core@7.21.0", "foo@1.0.0"}
+        assert not any("supports-color" in t for t in result)
+
+
+def test_versions_yarn_lock_skips_metadata_block():
+    """#79 — Berry __metadata preamble must not emit a bogus __metadata@6 token."""
+    content = """\
+__metadata:
+  version: 6
+  cacheKey: 8
+
+foo@^1.0.0:
+  version "1.2.3"
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "yarn.lock"
+        p.write_text(content)
+        result = versions_yarn_lock(p)
+        assert "foo@1.2.3" in result
+        assert not any(t.startswith("__metadata") for t in result)
+
+
 def test_versions_bun_lock_json_and_fallback():
     content = """{
   "packages": {

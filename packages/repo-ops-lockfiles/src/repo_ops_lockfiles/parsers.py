@@ -71,7 +71,7 @@ def versions_yarn_lock(p: Path) -> set[str]:
             if m:
                 version = m.group(1).strip()
                 break
-        if not header or not version:
+        if not header or not version or header == "__metadata":
             continue
         first = header.split(",")[0].strip().strip('"')
         if first.startswith("@"):
@@ -112,7 +112,8 @@ def versions_pnpm_lock(p: Path) -> set[str]:
                 continue
             m = _RE_AT.match(line)
             if m:
-                out.add(m.group(1))
+                token = m.group(1).split("(", 1)[0]
+                out.add(token)
     return out
 
 
