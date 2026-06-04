@@ -112,8 +112,18 @@ def path_is_yarn_workspace_child(mdir: Path, root: Path, members: set[str]) -> b
         return False
     for pattern in members:
         pat = pattern.replace("*", "")
-        if rel == pattern.rstrip("/*") or rel.startswith(pat):
+        if rel == pattern.rstrip("/*") or _under(rel, pat):
             return True
-        if pattern.endswith("/*") and rel.startswith(pattern[:-2]):
+        if pattern.endswith("/*") and _under(rel, pattern[:-2]):
             return True
     return False
+
+
+def _under(rel: str, prefix: str) -> bool:
+    """True when *rel* equals *prefix* or sits under it on a path boundary.
+
+    Separator-aware so ``packages/foo`` does not match the sibling
+    ``packages/foobar`` (#59).
+    """
+    prefix = prefix.rstrip("/")
+    return rel == prefix or rel.startswith(prefix + "/")

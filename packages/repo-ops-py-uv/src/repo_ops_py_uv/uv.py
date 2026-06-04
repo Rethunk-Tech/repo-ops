@@ -8,7 +8,7 @@ from pathlib import Path
 from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import TIMEOUT_APPLY
+from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
 
 def uv_workspace_members(mdir: Path) -> set[str]:
@@ -33,15 +33,25 @@ def path_is_uv_workspace_child(mdir: Path, root: Path, members: set[str]) -> boo
         return False
     for pattern in members:
         pat = pattern.replace("*", "")
-        if rel == pattern.rstrip("/*") or rel.startswith(pat):
+        if rel == pattern.rstrip("/*") or _under(rel, pat):
             return True
-        if pattern.endswith("/*") and rel.startswith(pattern[:-2]):
+        if pattern.endswith("/*") and _under(rel, pattern[:-2]):
             return True
     return False
 
 
+def _under(rel: str, prefix: str) -> bool:
+    """True when *rel* equals *prefix* or sits under it on a path boundary.
+
+    Separator-aware so ``packages/foo`` does not match the sibling
+    ``packages/foobar`` (#59).
+    """
+    prefix = prefix.rstrip("/")
+    return rel == prefix or rel.startswith(prefix + "/")
+
+
 def check_uv(ws: Workspace) -> list[Change]:
-    proc = run(["uv", "lock", "--upgrade", "--dry-run"], ws.path)
+    proc = run(["uv", "lock", "--upgrade", "--dry-run"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "uv lock --dry-run failed")
     changes: list[Change] = []

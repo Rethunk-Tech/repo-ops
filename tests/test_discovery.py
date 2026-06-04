@@ -287,3 +287,38 @@ def test_discover_repos_find_timeout_is_tunable(
     assert actual_timeout == expected, (
         f"env={env_val!r} param={param_val!r}: expected timeout={expected}, got {actual_timeout}"
     )
+
+
+@pytest.mark.parametrize(
+    "matcher",
+    [
+        "repo_ops_js.workspaces:path_is_yarn_workspace_child",
+        "repo_ops_py_uv.uv:path_is_uv_workspace_child",
+        "repo_ops_upgrade.discovery:path_is_cargo_workspace_child",
+    ],
+)
+def test_workspace_member_match_is_separator_bound(matcher: str):
+    """#59 — prefix match must respect a path boundary in all three packages.
+
+    A sibling dir (``packages/foobar``) must not be matched as a child of the
+    member pattern ``packages/foo``; the same for ``apps`` vs ``apps-legacy``.
+    Real children must still match.
+    """
+    import importlib
+
+    mod_name, fn_name = matcher.split(":")
+    is_child = getattr(importlib.import_module(mod_name), fn_name)
+    root = Path("/r")
+
+    # Exact-name member: sibling rejected, exact + nested accepted.
+    assert is_child(root / "packages/foo", root, {"packages/foo"}) is True
+    assert is_child(root / "packages/foo/sub", root, {"packages/foo"}) is True
+    assert is_child(root / "packages/foobar", root, {"packages/foo"}) is False
+
+    # Bare member with no glob: 'apps' must not match 'apps-legacy'.
+    assert is_child(root / "apps", root, {"apps"}) is True
+    assert is_child(root / "apps-legacy", root, {"apps"}) is False
+
+    # Glob member: real children still match.
+    assert is_child(root / "packages/foo", root, {"packages/*"}) is True
+    assert is_child(root / "packages/foobar", root, {"packages/*"}) is True
