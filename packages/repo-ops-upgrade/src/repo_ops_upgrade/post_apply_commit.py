@@ -346,7 +346,7 @@ def plan_repo_commit(
             )
 
             message = draft_message_with_commit_agent(bundle, safe)
-        except RuntimeError as exc:
+        except Exception as exc:
             return CommitPlan(repo, bundle.label, "", skipped_reason=str(exc))
     else:
         message = build_conventional_message(bundle, safe)

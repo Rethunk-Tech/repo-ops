@@ -184,6 +184,31 @@ def test_agent_drafts_message_when_mocked(tmp_path: Path) -> None:
     assert "agent" in plan.message or "deps" in plan.message
 
 
+def test_agent_non_runtime_error_skips_instead_of_propagating(
+    tmp_path: Path,
+) -> None:
+    """Regression #84: non-RuntimeError from Agent.prompt must not crash plan_repo_commit.
+
+    A network/transport error (ConnectionError, TimeoutError, etc.) raised inside
+    draft_message_with_commit_agent must degrade to a skipped-commit result with a
+    reason, not propagate out of plan_repo_commit and crash the commit phase.
+    """
+    bundle = _bundle(tmp_path)
+    lock = tmp_path / "package-lock.json"
+    lock.write_text("{}", encoding="utf-8")
+    subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
+    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
+    with patch(
+        "repo_ops_upgrade.commit_agent_providers.draft_message_with_commit_agent",
+        side_effect=ConnectionError("network down"),
+    ):
+        plan = post_apply_commit.plan_repo_commit(
+            bundle, mode="agent", allow_dirty=False, commit_on_fail=False
+        )
+    assert plan.skipped_reason == "network down"
+    assert plan.message == ""
+
+
 def test_conventional_commit_writes(tmp_path: Path) -> None:
     bundle = _bundle(tmp_path)
     lock = tmp_path / "package-lock.json"
