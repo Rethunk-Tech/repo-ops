@@ -208,7 +208,9 @@ def _run_upgrade_body(
         bundle.workspaces = updated
 
     if not args.skip_actions:
-        keep_sha = bool(getattr(args, "actions_keep_sha", False))
+        # SHA pins are preserved by default (supply-chain hardening).
+        # Only unpin when the user explicitly opts in via --actions-unpin-sha.
+        keep_sha = not bool(getattr(args, "actions_unpin_sha", False))
         _raw_tag_style = getattr(args, "actions_tag_style", "major")
         tag_style: actions.TagStyle = "exact" if _raw_tag_style == "exact" else "major"
         for bundle in bundles.values():

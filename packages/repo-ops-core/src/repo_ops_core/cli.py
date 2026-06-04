@@ -205,13 +205,22 @@ def add_upgrade_common_arguments(
         help="Skip GitHub Actions workflow pin audit (deps only).",
     )
     parser.add_argument(
+        "--actions-unpin-sha",
+        action="store_true",
+        dest="actions_unpin_sha",
+        help=(
+            "Opt in to resolving SHA-pinned Actions to version tags on apply. "
+            "By default, SHA pins are preserved (report only) to protect supply-chain hardening."
+        ),
+    )
+    # Backwards-compat alias: --actions-keep-sha was the old flag (it was the default
+    # behaviour is now the default, so this flag becomes a no-op, but kept to avoid
+    # breaking existing scripts that pass it).
+    parser.add_argument(
         "--actions-keep-sha",
         action="store_true",
         dest="actions_keep_sha",
-        help=(
-            "Preserve SHA-pinned Actions as-is (report only, no rewrite). "
-            "By default, SHA pins are resolved to version tags when possible."
-        ),
+        help="Deprecated no-op: SHA pins are preserved by default now.",
     )
     parser.add_argument(
         "--actions-tag-style",
@@ -220,7 +229,7 @@ def add_upgrade_common_arguments(
         dest="actions_tag_style",
         metavar="STYLE",
         help=(
-            "Tag style when unpinning SHA-pinned Actions: "
+            "Tag style when unpinning SHA-pinned Actions (requires --actions-unpin-sha): "
             "major (default) → @vN; exact → highest @vN.M.P within that major."
         ),
     )

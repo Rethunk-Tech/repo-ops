@@ -232,7 +232,7 @@ def scan_actions(
     repo: Path,
     apply: bool,
     *,
-    keep_sha: bool = False,
+    keep_sha: bool = True,
     tag_style: TagStyle = "major",
 ) -> tuple[list[ActionBump], int]:
     """Scan GitHub Actions workflow files and produce bump recommendations.
@@ -244,8 +244,10 @@ def scan_actions(
     apply:
         When True, rewrite workflow files for actionable bumps.
     keep_sha:
-        When True, SHA-pinned actions are reported only and never rewritten
-        (restores the old ``--actions-keep-sha`` behaviour).
+        When True (the default), SHA-pinned actions are reported only and never
+        rewritten — preserving supply-chain hardening.  Pass ``keep_sha=False``
+        (CLI: ``--actions-unpin-sha``) to opt in to resolving SHA pins to
+        version tags.
     tag_style:
         ``"major"`` (default) → rewrite SHA pins to ``@vN``.
         ``"exact"`` → rewrite to the highest ``@vN.M.P`` within the resolved major.
@@ -347,7 +349,7 @@ def scan_actions(
                             pin=pin,
                             latest=target_tag,
                             line=uses.line or None,
-                            drop_comment=uses.comment is not None,
+                            drop_comment=False,  # preserve the # vN audit hint
                         )
                     )
                 continue

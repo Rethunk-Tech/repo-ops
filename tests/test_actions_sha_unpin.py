@@ -30,7 +30,7 @@ def _wf(tmp_path: Path, content: str) -> Path:
 
 
 def test_comment_hint_sha_resolved_major(tmp_path: Path) -> None:
-    """SHA pin with # v6 comment → @v6; comment dropped on apply."""
+    """SHA pin with # v6 comment → @v6; comment preserved on apply (keep_sha=False opt-in)."""
     wf = _wf(
         tmp_path,
         f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_SHA}  # v6\n",
@@ -42,7 +42,7 @@ def test_comment_hint_sha_resolved_major(tmp_path: Path) -> None:
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, scanned = scan_actions(tmp_path, apply=True)
+        bumps, scanned = scan_actions(tmp_path, apply=True, keep_sha=False)
 
     assert scanned == 1
     checkout = [b for b in bumps if b.action == "actions/checkout"]
@@ -53,12 +53,12 @@ def test_comment_hint_sha_resolved_major(tmp_path: Path) -> None:
     assert "unpin SHA to v6" in (b.detail or "")
     assert "report only" not in (b.detail or "").lower()
 
-    # File should be rewritten to @v6 without the trailing comment
+    # File should be rewritten to @v6 and the audit hint comment preserved
     text = wf.read_text(encoding="utf-8")
     assert "actions/checkout@v6" in text
     assert _SHA not in text
-    # Comment should be dropped
-    assert "# v6" not in text
+    # Comment should be preserved (not dropped)
+    assert "# v6" in text
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +67,7 @@ def test_comment_hint_sha_resolved_major(tmp_path: Path) -> None:
 
 
 def test_api_sha_resolution_major(tmp_path: Path) -> None:
-    """SHA with no comment; tags API maps SHA to v4.2.1 → resolved to @v4."""
+    """SHA with no comment; tags API maps SHA to v4.2.1 → resolved to @v4 (keep_sha=False opt-in)."""
     wf = _wf(
         tmp_path,
         f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_SHA}\n",
@@ -84,7 +84,7 @@ def test_api_sha_resolution_major(tmp_path: Path) -> None:
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, scanned = scan_actions(tmp_path, apply=False)
+        bumps, scanned = scan_actions(tmp_path, apply=False, keep_sha=False)
 
     assert scanned == 1
     checkout = [b for b in bumps if b.action == "actions/checkout"]
@@ -101,7 +101,7 @@ def test_api_sha_resolution_major(tmp_path: Path) -> None:
 
 
 def test_api_sha_resolution_applies_rewrite(tmp_path: Path) -> None:
-    """apply=True rewrites SHA to @v4 when API resolves it."""
+    """apply=True with keep_sha=False rewrites SHA to @v4 when API resolves it."""
     wf = _wf(
         tmp_path,
         f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_SHA}\n",
@@ -115,7 +115,7 @@ def test_api_sha_resolution_applies_rewrite(tmp_path: Path) -> None:
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, _ = scan_actions(tmp_path, apply=True)
+        bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=False)
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert checkout[0].latest == "v4"
@@ -181,7 +181,7 @@ def test_unresolvable_sha_gh_absent(tmp_path: Path) -> None:
 
 
 def test_exact_tag_style(tmp_path: Path) -> None:
-    """tag_style='exact' → highest vN.M.P within resolved major."""
+    """tag_style='exact' with keep_sha=False → highest vN.M.P within resolved major."""
     _wf(
         tmp_path,
         f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_SHA}  # v4\n",
@@ -198,7 +198,9 @@ def test_exact_tag_style(tmp_path: Path) -> None:
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, _ = scan_actions(tmp_path, apply=False, tag_style="exact")
+        bumps, _ = scan_actions(
+            tmp_path, apply=False, keep_sha=False, tag_style="exact"
+        )
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert len(checkout) == 1
@@ -208,7 +210,7 @@ def test_exact_tag_style(tmp_path: Path) -> None:
 
 
 def test_exact_tag_style_fallback_to_major(tmp_path: Path) -> None:
-    """tag_style='exact' falls back to @vN when no vN.M.P tags exist for that major."""
+    """tag_style='exact' with keep_sha=False falls back to @vN when no vN.M.P tags exist."""
     _wf(
         tmp_path,
         f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_SHA}  # v4\n",
@@ -220,7 +222,9 @@ def test_exact_tag_style_fallback_to_major(tmp_path: Path) -> None:
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, _ = scan_actions(tmp_path, apply=False, tag_style="exact")
+        bumps, _ = scan_actions(
+            tmp_path, apply=False, keep_sha=False, tag_style="exact"
+        )
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert len(checkout) == 1
@@ -257,3 +261,74 @@ def test_keep_sha_noop(tmp_path: Path) -> None:
     assert b.detail == "SHA-pinned; report only"
     # File must be unchanged
     assert wf.read_text(encoding="utf-8") == original
+
+
+# ---------------------------------------------------------------------------
+# (f) Security regression: default settings NEVER unpin SHA pins (issue #25)
+# ---------------------------------------------------------------------------
+
+
+def test_default_settings_do_not_unpin_sha(tmp_path: Path) -> None:
+    """Default scan_actions (keep_sha=True) must NOT rewrite a SHA pin.
+
+    This is the core regression test for issue #25: the old default was
+    keep_sha=False, which silently downgraded supply-chain-hardened SHA pins
+    to floating major tags on every apply run.
+    """
+    wf = _wf(
+        tmp_path,
+        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_SHA}  # v4\n",
+    )
+    original = wf.read_text(encoding="utf-8")
+    # Even when the API can resolve the SHA to a tag, the default must refuse to rewrite.
+    tags_proc = _make_tags_proc(
+        f"v4 {_SHA2}",
+        f"v4.2.1 {_SHA}",
+    )
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
+    ):
+        # No keep_sha argument — relies on the default.
+        bumps, _ = scan_actions(tmp_path, apply=True)
+
+    checkout = [b for b in bumps if b.action == "actions/checkout"]
+    assert len(checkout) == 1
+    b = checkout[0]
+    assert b.pin == _SHA
+    assert b.latest == _SHA  # not changed to a tag
+    assert "report only" in (b.detail or "").lower()
+    # File must be unchanged — SHA preserved
+    assert wf.read_text(encoding="utf-8") == original
+
+
+def test_comment_hint_preserved_on_unpin(tmp_path: Path) -> None:
+    """When keep_sha=False is opted in, the # vN audit hint is NOT dropped on apply.
+
+    The hint is the only signal indicating which version the SHA corresponds to;
+    erasing it removes that audit trail.
+    """
+    wf = _wf(
+        tmp_path,
+        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_SHA}  # v4\n",
+    )
+    tags_proc = _make_tags_proc(
+        f"v4 {_SHA2}",
+        f"v4.2.1 {_SHA}",
+    )
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
+    ):
+        bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=False)
+
+    checkout = [b for b in bumps if b.action == "actions/checkout"]
+    assert len(checkout) == 1
+    text = wf.read_text(encoding="utf-8")
+    # The SHA was rewritten (opt-in worked)
+    assert _SHA not in text
+    assert "actions/checkout@v4" in text
+    # The audit hint comment must still be there
+    assert "# v4" in text
