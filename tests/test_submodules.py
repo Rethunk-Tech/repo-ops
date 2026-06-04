@@ -206,3 +206,23 @@ def test_find_gitmodules_prunes_skip_dirs(tmp_path: Path) -> None:
     assert not any("node_modules" in p for p in paths), (
         f"node_modules/.gitmodules must be pruned; got {paths}"
     )
+
+
+def test_discover_rejects_self_referential_dot_path(tmp_path: Path) -> None:
+    """Regression for #47: a .gitmodules entry with path='.' produces
+    child_dir == parent; the existing guard (child_repo.resolve() != child_dir)
+    passes because git_repo_for('.') == the repo itself, so an explicit check
+    for child_repo.resolve() == parent is required to reject it."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_git_repo(repo)
+    # Write a .gitmodules with path = "." (self-referential).
+    (repo / ".gitmodules").write_text(
+        '[submodule "self"]\n\tpath = .\n\turl = https://example.com/self.git\n',
+        encoding="utf-8",
+    )
+
+    links = submodules.discover_submodules_under_roots([str(repo)], flat=True)
+    assert links == [], (
+        f"self-referential path='.' submodule must be rejected; got {links}"
+    )

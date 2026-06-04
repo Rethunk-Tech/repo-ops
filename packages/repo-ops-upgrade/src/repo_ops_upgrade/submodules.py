@@ -106,7 +106,14 @@ def discover_submodules_under_roots(
                 child_repo = git_repo_for(child_dir)
                 # Skip uninitialized submodules (.git absent → git_repo_for
                 # walks up to the parent repo) and self-referential links.
+                # The second guard catches a path="." entry: child_dir resolves
+                # to the parent itself, git_repo_for returns the parent repo,
+                # so child_repo.resolve() == child_dir passes the first check
+                # but would produce SubmoduleLink(git_repo=parent, parent=parent).
+                # (closes #47)
                 if child_repo is None or child_repo.resolve() != child_dir:
+                    continue
+                if child_repo.resolve() == parent:
                     continue
                 key = (str(parent), rel_path, str(child_repo.resolve()))
                 if key in seen:
