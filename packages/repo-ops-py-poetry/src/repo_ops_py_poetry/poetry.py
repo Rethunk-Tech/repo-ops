@@ -8,14 +8,14 @@ import sys
 
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import TIMEOUT_APPLY
+from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
 
 def check_poetry(ws: Workspace) -> list[Change]:
     if not shutil.which("poetry"):
         print(f"WARN {ws.path}: poetry not on PATH", file=sys.stderr)
         return []
-    proc = run(["poetry", "update", "--dry-run"], ws.path)
+    proc = run(["poetry", "update", "--dry-run"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "poetry update --dry-run failed")
     changes: list[Change] = []

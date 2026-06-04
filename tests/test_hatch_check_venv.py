@@ -1,4 +1,4 @@
-"""check_hatch must not create .dep_refresh_venv in the workspace."""
+"""check_hatch must not create .dep_refresh_venv in the workspace (#70)."""
 
 from __future__ import annotations
 
@@ -9,9 +9,11 @@ from unittest.mock import patch
 import pytest
 from repo_ops_models import Workspace
 from repo_ops_py_hatch.hatch import (
+    _check_uv_lock,
     _install_target,
     check_hatch,
 )
+from repo_ops_upgrade.constants import TIMEOUT_CHECK
 
 
 def _make_ws(tmp_path: Path) -> Workspace:
@@ -215,3 +217,20 @@ def test_check_hatch_uv_lock_without_uv_warns_and_returns_empty(
         assert check_hatch(ws) == []
 
     assert "without uv on PATH" in capsys.readouterr().err
+
+
+def test_check_uv_lock_passes_timeout_check(tmp_path: Path) -> None:
+    """#70 — _check_uv_lock must call ``run`` with ``timeout=TIMEOUT_CHECK``."""
+    ws = _make_ws(tmp_path)
+    captured_timeout: list[int | None] = []
+
+    def fake_run(
+        cmd: list[str], cwd: Path, timeout: int | None = None, env: object = None
+    ) -> subprocess.CompletedProcess[str]:
+        captured_timeout.append(timeout)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with patch("repo_ops_py_hatch.hatch.run", fake_run):
+        _check_uv_lock(ws)
+
+    assert captured_timeout == [TIMEOUT_CHECK]

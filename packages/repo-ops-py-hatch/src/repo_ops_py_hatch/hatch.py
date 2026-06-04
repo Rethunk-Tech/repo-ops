@@ -11,7 +11,7 @@ from pathlib import Path
 from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import TIMEOUT_APPLY
+from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
 _EXTRAS_PREFERENCE = ("dev", "test", "all", "lint")
 
@@ -34,7 +34,7 @@ def _install_target(ws_path: Path) -> str:
 
 
 def _check_uv_lock(ws: Workspace) -> list[Change]:
-    proc = run(["uv", "lock", "--upgrade", "--dry-run"], ws.path)
+    proc = run(["uv", "lock", "--upgrade", "--dry-run"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "uv lock --dry-run failed")
     changes: list[Change] = []
