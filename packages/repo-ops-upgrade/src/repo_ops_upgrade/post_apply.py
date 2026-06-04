@@ -93,11 +93,7 @@ def collect_changes_after_apply(
                                     normalize_version(dep_m.group(2)),
                                 )
                             )
-            elif fname.endswith(".lock") or fname in (
-                "go.sum",
-                "go.mod",
-                "requirements.txt",
-            ):
+            elif fname in set(lock_names):
                 changes.append(Change(fname, "changed", "updated"))
         if changes:
             return changes

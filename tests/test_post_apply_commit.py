@@ -372,3 +372,41 @@ def test_collect_changes_root_workspace_and_non_dep_fields_excluded(
     assert "react" in names, f"expected react dep in changes, got {changes}"
     # "version" top-level field must not appear (#82 scoping fix)
     assert "version" not in names, f"version field leaked into changes: {changes}"
+
+
+def test_collect_changes_json_yaml_lockb_fallback(tmp_path: Path) -> None:
+    """Regression #89: package-lock.json, pnpm-lock.yaml, bun.lockb must appear in fallback changes.
+
+    These filenames don't match .endswith(".lock") but are in NODE_LOCKFILES, so
+    the git diff --name-only gate already filters to them. The elif must use
+    set(lock_names) membership rather than the .endswith heuristic.
+    """
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="npm",
+        git_repo=tmp_path,
+        label="root",
+    )
+
+    def _fake_run(
+        cmd: list[str], cwd: object, **kwargs: object
+    ) -> CompletedProcess[str]:
+        if "--name-only" in cmd:
+            return CompletedProcess(
+                cmd,
+                0,
+                stdout="package-lock.json\npnpm-lock.yaml\nbun.lockb\n",
+                stderr="",
+            )
+        return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with patch("repo_ops_upgrade.post_apply.run", side_effect=_fake_run):
+        changes = collect_changes_after_apply(ws)
+
+    names = {c.name for c in changes}
+    assert "package-lock.json" in names, (
+        f"package-lock.json missing from changes: {changes}"
+    )
+    assert "pnpm-lock.yaml" in names, f"pnpm-lock.yaml missing from changes: {changes}"
+    assert "bun.lockb" in names, f"bun.lockb missing from changes: {changes}"
