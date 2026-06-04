@@ -12,9 +12,9 @@ Local repository operations and dependency maintenance tools for Rethunk-Tech
 
 ---
 
-repo-ops is a **uv workspace** of Python packages for scanning local git checkouts: dependency footprint, read-only upgrade planning, apply-with-verify upgrades (including GitHub Actions pins), and push-reflog audits. Latest release: [0.6.1](CHANGELOG.md#061---2026-06-03) ([changelog](CHANGELOG.md)).
+repo-ops is a **uv workspace** of Python packages for scanning local git checkouts: dependency footprint, read-only upgrade planning, apply-with-verify upgrades (including GitHub Actions pins), and push-reflog audits. See [releases](https://github.com/Rethunk-Tech/repo-ops/releases) for the latest version ([changelog](CHANGELOG.md)).
 
-Install and run the unified **`repo-ops`** CLI — [HUMANS.md](HUMANS.md). Operators on legacy `repos-*` entry points: [HUMANS — Migration from 0.2.x](HUMANS.md#migration-from-02x).
+Install and run the unified **`repo-ops`** CLI — [HUMANS.md](HUMANS.md).
 
 ## Highlights
 

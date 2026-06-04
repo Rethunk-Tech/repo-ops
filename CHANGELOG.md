@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- Documented the `REPO_OPS_BUN_UPDATE_LATEST` and `REPO_OPS_FIND_TIMEOUT` environment variables, and removed the pre-1.0 0.2.x `repos-*` migration guide (no migration guide needed for a pre-1.0 project).
+- Refocused `HUMANS.md` and `AGENTS.md` as concise entry docs and moved the deep reference (installation, usage, bulk maintenance, programmatic imports, testing, architecture) into a new `docs/` canon directory linked from each.
+
 ## [0.8.0] - 2026-06-04
 
 ### Added
