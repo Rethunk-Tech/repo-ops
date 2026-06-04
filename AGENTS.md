@@ -11,7 +11,7 @@ Conventions and coordination for AI coding agents (Cursor, Claude Code, etc.) an
 ## Coordination with other agents
 
 - Multiple agents often work concurrently on refactors and extractions.
-- Before editing, run `git status --short` (or MCP `git_status`) to see files others are changing.
+- Before editing, run MCP `git_status` to see files others are changing.
 - Avoid broad edits across `packages/repo-ops-upgrade*` and `tests/*` during active refactor passes unless hygiene-critical and coordinated.
 - Prefer small, reviewable changes. Batch related edits where safe.
 - Local git commits: MCP `batch_commit` / `git_status` per [CONTRIBUTING.md — Git for agents](CONTRIBUTING.md#git-for-agents). Do not use shell `git commit` unless the user opts into shell git for the session.
