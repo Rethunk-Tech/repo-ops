@@ -74,7 +74,7 @@ def check_hatch(ws: Workspace) -> list[Change]:
             install_proc = run(
                 ["uv", "pip", "install", "-e", install_target],
                 ws.path,
-                timeout=300,
+                timeout=TIMEOUT_CHECK,
                 env={"VIRTUAL_ENV": str(venv_dir)},
             )
             if install_proc.returncode != 0:

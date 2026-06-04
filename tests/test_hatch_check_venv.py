@@ -234,3 +234,33 @@ def test_check_uv_lock_passes_timeout_check(tmp_path: Path) -> None:
         _check_uv_lock(ws)
 
     assert captured_timeout == [TIMEOUT_CHECK]
+
+
+def test_check_hatch_pip_install_uses_timeout_check(tmp_path: Path) -> None:
+    """#93 — venv-path ``uv pip install -e`` must use TIMEOUT_CHECK, not hardcoded 300."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    ws = _make_ws(tmp_path)
+    install_timeout: list[int | None] = []
+
+    def fake_run(
+        cmd: list[str], cwd: Path, timeout: int | None = None, env: object = None
+    ) -> subprocess.CompletedProcess[str]:
+        if cmd[:2] == ["uv", "venv"]:
+            venv = Path(cmd[2])
+            venv.mkdir(parents=True, exist_ok=True)
+        if cmd[:3] == ["uv", "pip", "install"]:
+            install_timeout.append(timeout)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
+        patch("repo_ops_py_hatch.hatch.run", fake_run),
+    ):
+        check_hatch(ws)
+
+    assert install_timeout == [TIMEOUT_CHECK], (
+        f"uv pip install called with timeout={install_timeout}, expected TIMEOUT_CHECK={TIMEOUT_CHECK}"
+    )
