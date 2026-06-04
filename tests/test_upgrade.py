@@ -27,6 +27,20 @@ def test_parse_requirements_lines_basic():
     assert parse_requirements_lines(text) == {"foo": "1.0", "bar": "2.0"}
 
 
+def test_parse_requirements_lines_extras_and_markers():
+    """#87 — extras must not drop the package; inline markers must not bleed into version."""
+    text = (
+        'requests[security]==2.31.0\nflask==3.0.0;sys_platform=="win32"\nplain==1.0.0\n'
+    )
+    result = parse_requirements_lines(text)
+    # extras: key is bare name, version is clean
+    assert result["requests"] == "2.31.0"
+    # marker: version stops at semicolon
+    assert result["flask"] == "3.0.0"
+    # plain name==version unchanged
+    assert result["plain"] == "1.0.0"
+
+
 def test_checkers_use_monkeypatched_run(monkeypatch):
     from repo_ops_js_bun.bun import check_bun
     from repo_ops_models import Workspace
