@@ -14,3 +14,16 @@ def test_semver_tuple_parses_and_zero_fills():
     assert semver_tuple("^2.0") == (2, 0)
     assert semver_tuple("foo") == (0,)
     assert semver_tuple("") == (0,)
+
+
+def test_normalize_version_strips_leading_v():
+    assert normalize_version("v4.1.0") == "4.1.0"
+    assert normalize_version("v10.0.0") == "10.0.0"
+
+
+def test_semver_tuple_v_prefixed():
+    # v4.1.0 must parse as (4,1,0), not (0,1,0)
+    assert semver_tuple("v4.1.0") == (4, 1, 0)
+    assert semver_tuple("v4.1.0") == semver_tuple("4.1.0")
+    # ordering must hold across major versions
+    assert semver_tuple("v10.0.0") > semver_tuple("v9.0.0")

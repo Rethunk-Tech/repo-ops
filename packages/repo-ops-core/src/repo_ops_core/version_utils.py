@@ -6,7 +6,10 @@ import re
 
 
 def normalize_version(v: str) -> str:
-    return re.sub(r"^[\^~>=<]+", "", v.strip()).split("-")[0]
+    stripped = re.sub(r"^[\^~>=<]+", "", v.strip())
+    if stripped.startswith("v"):
+        stripped = stripped[1:]
+    return stripped.split("-")[0]
 
 
 def semver_tuple(v: str) -> tuple[int, ...]:
