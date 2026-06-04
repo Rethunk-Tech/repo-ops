@@ -91,3 +91,38 @@ def test_apply_warns_and_counts_unparseable_version(
     assert set_version.read_version(root_toml) == "0.9.0"
     # Summary line must appear on stdout.
     assert "1 manifest(s)" in captured.out
+
+
+def test_show_exits_1_on_unparseable_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """show-mode must exit 1 whenever any manifest version cannot be parsed.
+
+    Covers two sub-cases:
+    1. Partial skip: one parseable manifest + one pre-release → exit 1, version shown.
+    2. All skipped: only pre-release manifests → exit 1, "(none)" summary.
+    """
+    monkeypatch.setattr(set_version, "ROOT", tmp_path)
+    root_toml = tmp_path / "pyproject.toml"
+    sub_dir = tmp_path / "packages" / "sub"
+    sub_dir.mkdir(parents=True)
+    prerelease_toml = sub_dir / "pyproject.toml"
+    prerelease_toml.write_text(_PRERELEASE_FIXTURE, encoding="utf-8")
+
+    # Case 1: partial skip — root is parseable, sub is pre-release.
+    root_toml.write_text(_NORMAL_FIXTURE, encoding="utf-8")
+    rc = set_version.main([])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "skipped" in captured.err
+    assert "current version: 0.8.0" in captured.out
+
+    # Case 2: all skipped — root is also pre-release.
+    root_toml.write_text(_PRERELEASE_FIXTURE, encoding="utf-8")
+    rc = set_version.main([])
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "skipped" in captured.err
+    assert "current version: (none)" in captured.out

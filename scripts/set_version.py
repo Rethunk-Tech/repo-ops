@@ -159,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         print("error: no pyproject.toml manifests found", file=sys.stderr)
         return 1
     versions = _current_versions(paths)
+    skipped = len(paths) - len(versions)
     distinct = sorted(set(versions.values()))
 
     if args.command is None:
@@ -168,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"version drift: {', '.join(distinct)}", file=sys.stderr)
             return 1
         print(f"current version: {distinct[0] if distinct else '(none)'}")
-        return 0
+        return 1 if skipped else 0
 
     if len(distinct) > 1:
         print(
