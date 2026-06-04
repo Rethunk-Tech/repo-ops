@@ -6,11 +6,11 @@ import re
 
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import TIMEOUT_APPLY
+from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
 
 def check_rust(ws: Workspace) -> list[Change]:
-    proc = run(["cargo", "update", "--dry-run"], ws.path)
+    proc = run(["cargo", "update", "--dry-run"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "cargo update --dry-run failed")
     changes: list[Change] = []
