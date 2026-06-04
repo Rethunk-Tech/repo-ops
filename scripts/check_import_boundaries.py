@@ -61,7 +61,10 @@ def _imports_in_file(path: Path) -> tuple[set[str], set[str]]:
         elif isinstance(node, ast.ImportFrom) and node.module:
             mod = node.module
             tops.add(_top_level(mod))
-            if mod.startswith("repo_ops_upgrade."):
+            if mod == "repo_ops_upgrade":
+                for alias in node.names:
+                    upgrade_subs.add(alias.name)
+            elif mod.startswith("repo_ops_upgrade."):
                 upgrade_subs.add(mod.split(".", 1)[1])
     return tops, upgrade_subs
 
