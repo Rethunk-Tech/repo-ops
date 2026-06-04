@@ -28,6 +28,7 @@ class WorkspaceResult:
     workspace: Workspace
     status: str = "ok"
     changes: list[Change] = field(default_factory=list)
+    behind_latest: list[Change] = field(default_factory=list)
     overrides_audit: list[dict[str, str]] = field(default_factory=list)
     remediations: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
@@ -43,6 +44,10 @@ class WorkspaceResult:
             "status": self.status,
             "changes": [
                 {"name": c.name, "from": c.from_ver, "to": c.to} for c in self.changes
+            ],
+            "behind_latest": [
+                {"name": c.name, "from": c.from_ver, "to": c.to}
+                for c in self.behind_latest
             ],
             "overrides_audit": self.overrides_audit,
             "remediations": self.remediations,
@@ -94,11 +99,19 @@ class RepoBundle:
     def actions_summary(self) -> dict[str, int]:
         bumps = 0
         failures = 0
+        behind_latest = 0
         for ab in self.actions:
             if ab.status == "fail":
                 failures += 1
                 continue
-            if "report only" in (ab.detail or "").lower():
+            detail_lower = (ab.detail or "").lower()
+            # Count "newer major available; not auto-applied" as behind_latest,
+            # not as an actionable bump. Other report-only cases (SHA-pin, no
+            # floating major) are informational and excluded from both counters.
+            if "newer major" in detail_lower and "not auto-applied" in detail_lower:
+                behind_latest += 1
+                continue
+            if "report only" in detail_lower:
                 continue
             if ab.pin != ab.latest:
                 bumps += 1
@@ -106,6 +119,7 @@ class RepoBundle:
             "workflows_scanned": self.actions_workflows_scanned,
             "bumps": bumps,
             "failures": failures,
+            "behind_latest": behind_latest,
         }
 
     def to_json(self) -> dict[str, Any]:
