@@ -137,3 +137,21 @@ def test_is_git_dirty_clean_repo(tmp_path):
 
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
     assert is_git_dirty(tmp_path) is False
+
+
+def test_apply_poetry_raises_clear_error_when_poetry_absent(tmp_path):
+    """apply_poetry must raise RuntimeError with 'poetry not on PATH', not bare FileNotFoundError."""
+    import pytest
+    from repo_ops_models import Workspace
+    from repo_ops_py_poetry.poetry import apply_poetry
+
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="python",
+        manager="poetry",
+        git_repo=tmp_path,
+        label="",
+    )
+    with patch("repo_ops_py_poetry.poetry.shutil.which", return_value=None):
+        with pytest.raises(RuntimeError, match="poetry not on PATH"):
+            apply_poetry(ws)
