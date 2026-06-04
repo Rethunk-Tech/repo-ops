@@ -46,7 +46,7 @@ def test_inventory_table_aligns_columns():
     with redirect_stdout(buf):
         _print_inventory_table(rows)
     out = buf.getvalue()
-    header, sep, data, sep2, total = out.strip().splitlines()
+    header, sep, data, _sep2, total = out.strip().splitlines()
     assert len(sep) == len(header)
     assert re.match(
         r"^project\s+kinds\s+mans\s+direct\s+versions\s+on-disk\s+edges$", header

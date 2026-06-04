@@ -152,6 +152,8 @@ def test_apply_poetry_raises_clear_error_when_poetry_absent(tmp_path):
         git_repo=tmp_path,
         label="",
     )
-    with patch("repo_ops_py_poetry.poetry.shutil.which", return_value=None):
-        with pytest.raises(RuntimeError, match="poetry not on PATH"):
-            apply_poetry(ws)
+    with (
+        patch("repo_ops_py_poetry.poetry.shutil.which", return_value=None),
+        pytest.raises(RuntimeError, match="poetry not on PATH"),
+    ):
+        apply_poetry(ws)

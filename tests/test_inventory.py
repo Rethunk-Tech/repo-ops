@@ -21,7 +21,7 @@ def test_count_rust_and_python_minimal(tmp_path: Path):
     assert "a@1.0" in v
 
     (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = ["b"]')
-    d2, v2, tag = count_python(tmp_path)
+    d2, _v2, tag = count_python(tmp_path)
     assert d2 >= 1
     assert "pyproject" in tag
 

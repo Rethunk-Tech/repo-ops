@@ -48,7 +48,7 @@ def run_bounded_pool(
                 futures.pop(fut)
             try:
                 result = fut.result()
-            except Exception:
+            except Exception:  # noqa: S112 — best-effort: skip failed task result
                 continue
             results.append(result)
             if stop_on_result and stop_on_result(result):

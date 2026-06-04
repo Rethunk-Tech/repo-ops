@@ -77,9 +77,9 @@ def test_check_hatch_raises_on_pip_install_failure(tmp_path: Path):
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
         patch("repo_ops_py_hatch.hatch.run", fake_run),
+        pytest.raises(RuntimeError, match="No matching distribution found"),
     ):
-        with pytest.raises(RuntimeError, match="No matching distribution found"):
-            check_hatch(ws)
+        check_hatch(ws)
 
 
 def test_check_hatch_raises_on_venv_failure(tmp_path: Path):
@@ -100,9 +100,9 @@ def test_check_hatch_raises_on_venv_failure(tmp_path: Path):
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
         patch("repo_ops_py_hatch.hatch.run", fake_run),
+        pytest.raises(RuntimeError, match="permission denied"),
     ):
-        with pytest.raises(RuntimeError, match="permission denied"):
-            check_hatch(ws)
+        check_hatch(ws)
 
 
 def test_install_target_picks_test_when_dev_absent(tmp_path: Path):
@@ -162,9 +162,9 @@ def test_check_hatch_raises_on_pip_list_outdated_failure(tmp_path: Path):
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
         patch("repo_ops_py_hatch.hatch.run", fake_run),
+        pytest.raises(RuntimeError, match="uv pip list failed: network error"),
     ):
-        with pytest.raises(RuntimeError, match="uv pip list failed: network error"):
-            check_hatch(ws)
+        check_hatch(ws)
 
 
 def test_check_hatch_uses_detected_extras(tmp_path: Path):

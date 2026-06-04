@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -45,7 +46,5 @@ def tee_stdout_stderr(log_path: Path) -> Iterator[None]:
         finally:
             sys.stdout, sys.stderr = prev_out, prev_err
             for tee in (out_tee, err_tee):
-                try:
+                with contextlib.suppress(Exception):
                     tee.flush()
-                except Exception:
-                    pass

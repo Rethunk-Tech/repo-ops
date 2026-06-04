@@ -136,7 +136,7 @@ def save_go_cache(cache_path: Path, cache: dict) -> None:
         tmp = cache_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(cache, indent=2))
         os.replace(tmp, cache_path)
-    except Exception:
+    except Exception:  # noqa: S110 — best-effort: malformed-cache write silently skipped
         pass
 
 
@@ -206,13 +206,13 @@ def count_go(mdir: Path, go_cache: dict | None = None) -> tuple[int, set[str]]:
             if key in go_cache:
                 entry = go_cache[key]
                 return entry["direct"], set(entry["versions"])
-        except Exception:
+        except Exception:  # noqa: S110 — best-effort: malformed-manifest cache read skipped
             pass
         direct, versions = _count_go_subprocess(mdir)
         try:
             key = _go_cache_key(mod)
             go_cache[key] = {"direct": direct, "versions": sorted(versions)}
-        except Exception:
+        except Exception:  # noqa: S110 — best-effort: cache-write failure is non-fatal
             pass
         return direct, versions
     return _count_go_subprocess(mdir)

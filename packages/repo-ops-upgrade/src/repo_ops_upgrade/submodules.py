@@ -142,7 +142,7 @@ def sort_bundles_children_first(
         return bundle_keys
 
     key_set = set(bundle_keys)
-    depth: dict[Path, int] = {k: 0 for k in bundle_keys}
+    depth: dict[Path, int] = dict.fromkeys(bundle_keys, 0)
 
     # Cap iterations to len(bundle_keys): a valid DAG with N nodes converges
     # in at most N-1 passes; a cycle (or self-referential link) cannot spin

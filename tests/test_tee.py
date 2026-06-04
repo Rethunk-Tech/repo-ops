@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -18,12 +19,12 @@ def test_tee_restores_streams_when_flush_raises(tmp_path: Path) -> None:
     def raising_flush(self) -> None:
         raise OSError("disk full")
 
-    with patch.object(_TeeIO, "flush", raising_flush):
-        try:
-            with tee_stdout_stderr(log):
-                pass
-        except Exception:
-            pass  # flush error is swallowed; if it bubbles, test still checks restore
+    with (
+        patch.object(_TeeIO, "flush", raising_flush),
+        contextlib.suppress(Exception),
+        tee_stdout_stderr(log),
+    ):
+        pass
 
     assert sys.stdout is orig_stdout
     assert sys.stderr is orig_stderr

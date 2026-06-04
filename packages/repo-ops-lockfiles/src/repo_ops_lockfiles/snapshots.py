@@ -47,10 +47,7 @@ def _parse_yarn_lock_versions(text: str) -> dict[str, str]:
             raw = line.rstrip(":")
             # Use the first descriptor as the canonical key
             hdr = raw.split(",")[0].strip().strip('"')
-            if "@" in hdr:
-                current_hdr = hdr
-            else:
-                current_hdr = None
+            current_hdr = hdr if "@" in hdr else None
         elif current_hdr is not None:
             m = re.match(r'^\s+version[:\s]+["\']?([^"\']+)["\']?', line)
             if m:
@@ -159,19 +156,22 @@ def diff_workspace_snapshots(
                 if c.name not in seen:
                     seen.add(c.name)
                     changes.append(c)
-        elif path.name in (
-            "package-lock.json",
-            "pnpm-lock.yaml",
-            "bun.lock",
-            "bun.lockb",
-            "uv.lock",
-            "poetry.lock",
-            "requirements.txt",
-            "go.mod",
-            "go.sum",
-            "Cargo.lock",
+        elif (
+            path.name
+            in (
+                "package-lock.json",
+                "pnpm-lock.yaml",
+                "bun.lock",
+                "bun.lockb",
+                "uv.lock",
+                "poetry.lock",
+                "requirements.txt",
+                "go.mod",
+                "go.sum",
+                "Cargo.lock",
+            )
+            and path.name not in seen
         ):
-            if path.name not in seen:
-                seen.add(path.name)
-                changes.append(Change(path.name, "changed", "changed"))
+            seen.add(path.name)
+            changes.append(Change(path.name, "changed", "changed"))
     return changes

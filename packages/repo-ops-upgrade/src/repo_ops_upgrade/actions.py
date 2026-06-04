@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 import shutil
 import subprocess
@@ -89,16 +90,12 @@ def action_tag_info(
                 sha_to_tags.setdefault(sha.lower(), []).append(name)
             # Bare major: exactly "vN"
             if re.fullmatch(r"v\d+", name):
-                try:
+                with contextlib.suppress(ValueError):
                     bare_majors.add(int(name[1:]))
-                except ValueError:
-                    pass
             m = _MAJOR_TAG_RE.match(name)
             if m:
-                try:
+                with contextlib.suppress(ValueError):
                     all_majors.add(int(m.group(1)))
-                except ValueError:
-                    pass
         max_major = max(all_majors) if all_majors else None
         result: dict = {
             "bare_majors": bare_majors,
@@ -207,9 +204,12 @@ def _resolve_sha_target(
         for tags_list in info.get("sha_to_tags", {}).values():
             for t in tags_list:
                 m4 = _MAJOR_TAG_RE.match(t)
-                if m4 and int(m4.group(1)) == resolved_major:
-                    if re.fullmatch(r"v\d+\.\d+\.\d+.*", t):
-                        all_in_major.append(t)
+                if (
+                    m4
+                    and int(m4.group(1)) == resolved_major
+                    and re.fullmatch(r"v\d+\.\d+\.\d+.*", t)
+                ):
+                    all_in_major.append(t)
         if all_in_major:
             best_in_major = max(all_in_major, key=lambda t: semver_tuple(t.lstrip("v")))
             best_in_major_tup = semver_tuple(best_in_major.lstrip("v"))

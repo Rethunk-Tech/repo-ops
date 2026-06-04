@@ -245,9 +245,11 @@ def test_collect_results_uses_discovery(tmp_path: Path, monkeypatch):
 
     from unittest.mock import patch
 
-    with patch("repo_ops_core.discovery.git_common_dir", fake_git_common_dir):
-        with patch("repo_ops_pushed.audit.pushed_commits_for_repo", fake_pushed):
-            all_commits, per_repo = collect_results([str(tmp_path)], Filters(0, 2**31))
+    with (
+        patch("repo_ops_core.discovery.git_common_dir", fake_git_common_dir),
+        patch("repo_ops_pushed.audit.pushed_commits_for_repo", fake_pushed),
+    ):
+        all_commits, per_repo = collect_results([str(tmp_path)], Filters(0, 2**31))
     assert len(all_commits) == 1
     assert len(per_repo) == 1
 

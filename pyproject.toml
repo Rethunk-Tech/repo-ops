@@ -95,11 +95,19 @@ pythonpath = []
 [tool.ruff]
 target-version = "py310"
 line-length = 88
-extend-exclude = [".git", "__pycache__", "build", "dist", ".venv", "venv", "scripts"]
+extend-exclude = [".git", "__pycache__", "build", "dist", ".venv", "venv"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
-ignore = ["E501"]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "RUF", "S"]
+# E501 (line length) is owned by the formatter. S603/S607 fire on essentially
+# every subprocess call by design — invoking package managers (npm/pnpm/git/uv
+# …) by name off PATH is repo-ops's entire purpose, not a vulnerability.
+ignore = ["E501", "S603", "S607"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use bare `assert` (S101) and hardcoded /tmp fixture paths (S108).
+"**/tests/**" = ["S101", "S108"]
+"tests/**" = ["S101", "S108"]
 
 [tool.ruff.format]
 indent-style = "space"

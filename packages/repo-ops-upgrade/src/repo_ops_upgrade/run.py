@@ -133,7 +133,7 @@ def _run_upgrade_body(
                 allow_dirty=args.allow_dirty,
                 on_verify_fail=getattr(args, "on_verify_fail", "keep"),
             )
-        except Exception as exc:  # noqa: BLE001 - any worker crash => fail, never clean
+        except Exception as exc:
             wr.status = "fail"
             wr.error = str(exc)
             return wr

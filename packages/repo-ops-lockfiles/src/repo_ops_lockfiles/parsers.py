@@ -133,10 +133,8 @@ def versions_bun_lock(p: Path) -> set[str]:
         return out
     out = set()
     for key, val in (d.get("packages") or {}).items():
-        if (
-            "@" in key
-            and not key.startswith("@")
-            or (key.startswith("@") and key.count("@") >= 2)
+        if ("@" in key and not key.startswith("@")) or (
+            key.startswith("@") and key.count("@") >= 2
         ):
             out.add(key)
         elif (

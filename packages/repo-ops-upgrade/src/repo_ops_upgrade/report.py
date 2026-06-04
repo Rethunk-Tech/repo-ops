@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
@@ -189,10 +190,8 @@ def print_human_report(
                 continue
             status = wr.status.upper()
             rel = ws.path
-            try:
+            with contextlib.suppress(ValueError):
                 rel = ws.path.relative_to(ws.git_repo)
-            except ValueError:
-                pass
             behind_n = len(wr.behind_latest)
             print(f"  [{status}] {rel} ({ws.ecosystem}/{ws.manager}) — {n} upgrade(s)")
             if wr.error:

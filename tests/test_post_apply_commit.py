@@ -241,11 +241,13 @@ def test_cursor_provider_missing_sdk_message(
         return real_import(name, _globals, _locals, fromlist, level)
 
     sys.modules.pop("cursor_sdk", None)
-    with patch("builtins.__import__", side_effect=_block_cursor_sdk):
-        with pytest.raises(RuntimeError, match="commit-agent-cursor"):
-            providers.resolve_commit_agent_provider().draft_commit_message(
-                bundle, ["package-lock.json"]
-            )
+    with (
+        patch("builtins.__import__", side_effect=_block_cursor_sdk),
+        pytest.raises(RuntimeError, match="commit-agent-cursor"),
+    ):
+        providers.resolve_commit_agent_provider().draft_commit_message(
+            bundle, ["package-lock.json"]
+        )
 
 
 def test_collect_changes_no_phantom_downgrade(tmp_path: Path) -> None:
