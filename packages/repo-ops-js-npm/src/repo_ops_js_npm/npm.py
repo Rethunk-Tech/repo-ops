@@ -9,24 +9,36 @@ from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
 
-def check_npm(ws: Workspace) -> list[Change]:
+def check_npm(ws: Workspace) -> tuple[list[Change], list[Change]]:
+    """Check for outdated npm packages.
+
+    Returns ``(changes, behind_latest)`` where ``changes`` contains packages
+    with in-range upgrades (``wanted`` > ``current``) and ``behind_latest``
+    holds packages whose ``latest`` exceeds ``current`` but the in-range
+    ``wanted`` version equals ``current`` (i.e. only a range-breaking bump
+    is available).
+    """
     proc = run(["npm", "outdated", "--json"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode not in (0, 1):
         raise RuntimeError(proc.stderr.strip() or "npm outdated failed")
     if not proc.stdout.strip():
-        return []
+        return [], []
     data = json.loads(proc.stdout)
     changes: list[Change] = []
+    behind_latest: list[Change] = []
     for name, meta in data.items():
-        if isinstance(meta, dict):
-            changes.append(
-                Change(
-                    name,
-                    str(meta.get("current", "?")),
-                    str(meta.get("latest", "?")),
-                )
-            )
-    return changes
+        if not isinstance(meta, dict):
+            continue
+        cur = str(meta.get("current", "?"))
+        wanted = str(meta.get("wanted", "?"))
+        latest = str(meta.get("latest", "?"))
+        if cur != wanted and wanted not in ("?", ""):
+            # In-range upgrade available.
+            changes.append(Change(name, cur, wanted))
+        elif latest not in ("?", "") and cur != latest:
+            # latest exceeds current but wanted == current (out-of-range).
+            behind_latest.append(Change(name, cur, latest))
+    return changes, behind_latest
 
 
 def apply_npm(ws: Workspace) -> None:

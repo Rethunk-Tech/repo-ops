@@ -1,7 +1,8 @@
-"""Tests for npm check (#57 — check_npm must pass TIMEOUT_CHECK)."""
+"""Tests for npm check (#57, #76)."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -33,3 +34,33 @@ def test_check_npm_passes_timeout_check(tmp_path: Path) -> None:
 
     assert len(captured) == 1
     assert captured[0]["timeout"] == TIMEOUT_CHECK
+
+
+def test_check_npm_bucketing(tmp_path: Path) -> None:
+    """#76 — in-range pkg → changes; out-of-range only → behind_latest."""
+    # react: wanted == current (no in-range bump), latest > current → behind_latest.
+    # lodash: wanted > current (in-range bump) → changes.
+    payload = {
+        "react": {"current": "18.0.0", "wanted": "18.0.0", "latest": "19.0.0"},
+        "lodash": {"current": "4.17.20", "wanted": "4.17.21", "latest": "4.17.21"},
+    }
+
+    def fake_run(cmd, cwd, timeout=None):
+        return type(
+            "Proc",
+            (),
+            {"returncode": 1, "stdout": json.dumps(payload), "stderr": ""},
+        )()
+
+    with patch("repo_ops_js_npm.npm.run", side_effect=fake_run):
+        changes, behind_latest = check_npm(_ws(tmp_path))
+
+    assert len(changes) == 1
+    assert changes[0].name == "lodash"
+    assert changes[0].from_ver == "4.17.20"
+    assert changes[0].to == "4.17.21"
+
+    assert len(behind_latest) == 1
+    assert behind_latest[0].name == "react"
+    assert behind_latest[0].from_ver == "18.0.0"
+    assert behind_latest[0].to == "19.0.0"
