@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Report — behind-latest disposition:** Workspaces with packages that have a newer version available but are not actioned (because latest-mode is off) are now tracked on a distinct `behind_latest` field of `WorkspaceResult` rather than being silently dropped into `status: ok`. Affected managers: **bun** (detects packages where `latest` column > in-range `update` column), and **GitHub Actions** (actions where a newer major is available but cross-major upgrades are intentionally not auto-applied). A summary counter (`packages_behind_latest`, `actions_behind_latest`) and a human footer hint are emitted when any behind-latest items are found. Exit code and `failure_count` are unchanged — behind-latest is report-only. The `WorkspaceResult.to_json()` output gains an additive `behind_latest` array; existing fields are unchanged. Yarn's behind-latest detection is deferred (requires a second install pass) — see #22 for details. (#22)
+
 ### Fixed
 
 - **Discovery:** Bare default-root `plan`/`apply` now discovers package-manifest workspaces (npm/yarn/pnpm/bun, Go, Python, Rust) at any depth below a root, not just at a fixed `<root>/<org>/<proj>` layout. The non-flat walker previously hardcoded a two-level descent, so checkouts laid out as `/usr/local/src/com.github/<org>/<repo>` (or flat roots like `~/Projects`) silently yielded **zero** workspaces while Actions drift still surfaced — a false sense of completeness. Package discovery now reuses the same depth-agnostic git-repo walk that drives Actions discovery, so both ecosystems cover the same repos. Also surfaces repos nested one level deeper (e.g. `<org>/Bastion/<repo>`) whose dependency drift was previously invisible at every root depth. (#23)
