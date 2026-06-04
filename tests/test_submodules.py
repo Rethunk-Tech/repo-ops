@@ -108,6 +108,37 @@ def test_plan_json_includes_submodules(tmp_path: Path, capsys) -> None:
     assert payload["submodules"][0]["path"] == "pkg"
 
 
+def test_sort_bundles_self_referential_link_terminates(tmp_path: Path) -> None:
+    """A self-referential SubmoduleLink (git_repo == parent) must not hang.
+
+    This is the regression case for issue #36: an uninitialized submodule
+    causes git_repo_for to walk up and return the parent repo, producing a
+    link where git_repo == parent.  The fix-point loop in
+    sort_bundles_children_first would previously spin forever on such a link.
+    """
+    p = (tmp_path / "repo").resolve()
+    p.mkdir()
+    # Construct the pathological link directly (no git init needed).
+    self_link = submodules.SubmoduleLink(path="sub", git_repo=p, parent=p)
+    # Must terminate (would hang before the fix) and must exclude the bad link.
+    ordered = submodules.sort_bundles_children_first([p], [self_link])
+    assert ordered == [p]
+
+
+def test_discover_skips_uninitialized_submodule(tmp_path: Path) -> None:
+    """A registered but uninitialized submodule (no .git) is excluded."""
+    parent = tmp_path / "umbrella"
+    parent.mkdir()
+    _init_git_repo(parent)
+    # Register a submodule path that exists as a plain dir (no git init).
+    uninit_dir = parent / "sub"
+    uninit_dir.mkdir()
+    _write_gitmodules(parent, "sub", "https://example.com/sub.git")
+
+    links = submodules.discover_submodules_under_roots([str(parent)], flat=True)
+    assert links == []
+
+
 def test_dirty_submodule_pointer_hint(tmp_path: Path) -> None:
     parent = tmp_path / "umbrella"
     child = parent / "pkg"

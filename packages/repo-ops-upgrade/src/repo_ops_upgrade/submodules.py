@@ -97,7 +97,9 @@ def discover_submodules_under_roots(
             for rel_path, _url in _parse_gitmodules_file(gitmodules_path):
                 child_dir = (parent / rel_path).resolve()
                 child_repo = git_repo_for(child_dir)
-                if child_repo is None:
+                # Skip uninitialized submodules (.git absent → git_repo_for
+                # walks up to the parent repo) and self-referential links.
+                if child_repo is None or child_repo.resolve() != child_dir:
                     continue
                 key = (str(parent), rel_path, str(child_repo.resolve()))
                 if key in seen:
@@ -128,8 +130,13 @@ def sort_bundles_children_first(
     key_set = set(bundle_keys)
     depth: dict[Path, int] = {k: 0 for k in bundle_keys}
 
+    # Cap iterations to len(bundle_keys): a valid DAG with N nodes converges
+    # in at most N-1 passes; a cycle (or self-referential link) cannot spin
+    # forever because we break once the budget is exhausted.
+    budget = len(bundle_keys)
     changed = True
-    while changed:
+    while changed and budget > 0:
+        budget -= 1
         changed = False
         for link in links:
             if link.git_repo not in key_set or link.parent not in key_set:
