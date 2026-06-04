@@ -153,6 +153,39 @@ def test_iter_scanned_dirs_skips_node_modules(tmp_path: Path):
     assert not any("node_modules" in str(p) for p in dirs)
 
 
+def test_discover_node_workspace_member_not_recorded_as_skip(tmp_path: Path):
+    """Regression for #49: a yarn/npm workspace member (no own lockfile, no
+    packageManager field) must be silently suppressed, NOT recorded as a skip."""
+    repo = tmp_path / "com.github" / "Acme" / "frontend"
+    _git_init(repo)
+    # Root package.json with yarn workspace declaration and a yarn.lock.
+    (repo / "package.json").write_text(
+        '{"name":"root","workspaces":["packages/*"]}',
+    )
+    (repo / "yarn.lock").write_text("")
+    member = repo / "packages" / "ui"
+    member.mkdir(parents=True)
+    # Member has package.json but no lockfile and no packageManager field.
+    (member / "package.json").write_text('{"name":"ui"}')
+
+    diags = DiscoveryDiagnostics()
+    found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
+
+    member_skips = [
+        s
+        for s in diags.skipped
+        if Path(s["path"]) == member.resolve() and s["ecosystem"] == "node"
+    ]
+    assert member_skips == [], (
+        f"workspace member must not be recorded as skip; got {member_skips}"
+    )
+    node_found = [ws for ws in found if ws.ecosystem == "node"]
+    assert len(node_found) == 1, (
+        f"expected only the workspace root; found={[str(w.path) for w in node_found]}"
+    )
+    assert node_found[0].path == repo.resolve()
+
+
 @pytest.mark.parametrize(
     "env_val, param_val, expected",
     [

@@ -88,6 +88,15 @@ def discover_workspaces_in_root(
     def consider_node(mdir: Path) -> None:
         if not (mdir / "package.json").exists():
             return
+        # Check workspace membership BEFORE manager detection so that a hoisted
+        # yarn/npm workspace member (package.json, no own lockfile, no
+        # packageManager field) is suppressed silently instead of being recorded
+        # as an unactionable skip. Mirrors the uv_roots check in consider_py.
+        # The walk is top-down, so a workspace root is always registered before
+        # its members are visited. (closes #49)
+        for wr, members in node_workspace_roots.items():
+            if mdir != wr and path_is_yarn_workspace_child(mdir, wr, members):
+                return
         mgr, warn = detect_node_manager(mdir)
         if not mgr:
             record_skip(mdir, "node", warn or "unrecognized package manager")
@@ -97,9 +106,6 @@ def discover_workspaces_in_root(
                 diagnostics.warn(mdir, warn)
             else:
                 print(f"WARN {mdir}: {warn}", file=sys.stderr)
-        for wr, members in node_workspace_roots.items():
-            if mdir != wr and path_is_yarn_workspace_child(mdir, wr, members):
-                return
         members = yarn_workspace_members(mdir)
         if members:
             node_workspace_roots[mdir] = members
