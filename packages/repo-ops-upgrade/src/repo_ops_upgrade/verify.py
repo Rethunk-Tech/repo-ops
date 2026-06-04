@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import shutil
+
 from repo_ops_core.filesystem import read_json_file, read_toml_file
 from repo_ops_core.process import run
 from repo_ops_js.workspaces import pm_run_prefix
@@ -125,4 +128,61 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
         if proc.returncode != 0:
             return proc.stderr.strip() or "poetry check failed"
         return None
+    if mgr == "pip-tools":
+        return _verify_pip_tools(ws)
+    return None
+
+
+def _parse_req_lines(text: str) -> dict[str, str]:
+    """Parse pinned versions from a requirements.txt-format string."""
+    versions: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("-"):
+            continue
+        m = re.match(r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*==\s*([^;\s]+)", line)
+        if m:
+            versions[m.group(1).lower().replace("_", "-")] = m.group(2)
+    return versions
+
+
+def _verify_pip_tools(ws: Workspace) -> str | None:
+    """Verify pip-tools workspace by recompiling requirements.in and checking for drift."""
+    req_in = ws.path / "requirements.in"
+    req_txt = ws.path / "requirements.txt"
+    if not req_in.exists():
+        return None
+    if shutil.which("uv"):
+        proc = run(
+            ["uv", "pip", "compile", str(req_in), "-o", "-", "--quiet"],
+            ws.path,
+            timeout=TIMEOUT_VERIFY,
+        )
+        if proc.returncode != 0:
+            return proc.stderr.strip() or "uv pip compile failed"
+        compiled = proc.stdout
+    elif shutil.which("pip-compile"):
+        proc = run(
+            ["pip-compile", "--quiet", "-o", "-", str(req_in)],
+            ws.path,
+            timeout=TIMEOUT_VERIFY,
+        )
+        if proc.returncode != 0:
+            return proc.stderr.strip() or "pip-compile failed"
+        compiled = proc.stdout
+    else:
+        return None
+    if not req_txt.exists():
+        return "requirements.txt missing after apply"
+    current = _parse_req_lines(req_txt.read_text(encoding="utf-8", errors="replace"))
+    proposed = _parse_req_lines(compiled)
+    if not proposed:
+        return None
+    drift = {
+        pkg
+        for pkg in set(current) | set(proposed)
+        if current.get(pkg) != proposed.get(pkg)
+    }
+    if drift:
+        return f"requirements.txt is out of sync: {', '.join(sorted(drift))}"
     return None
