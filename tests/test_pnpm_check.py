@@ -1,4 +1,4 @@
-"""Regression tests for ``check_pnpm`` outdated parsing (#76, #70)."""
+"""Regression tests for ``check_pnpm`` outdated parsing (#76, #70, #91)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from repo_ops_js_pnpm.pnpm import check_pnpm
 from repo_ops_models import Workspace
 from repo_ops_upgrade.constants import TIMEOUT_CHECK
@@ -117,3 +118,40 @@ def test_check_pnpm_bucketing_and_timeout() -> None:
     assert behind_latest[0].name == "vue"
     assert behind_latest[0].from_ver == "3.0.0"
     assert behind_latest[0].to == "4.0.0"
+
+
+@pytest.mark.parametrize(
+    "env_value,expect_in_changes",
+    [
+        ("1", True),  # REPO_OPS_PNPM_UPDATE_LATEST set → lands in changes
+        ("", False),  # env var unset → stays in behind_latest
+    ],
+)
+def test_check_pnpm_update_latest_env(
+    monkeypatch: pytest.MonkeyPatch, env_value: str, expect_in_changes: bool
+) -> None:
+    """#91 — with REPO_OPS_PNPM_UPDATE_LATEST set, a package at current==wanted
+    but latest>current lands in *changes*; without it, stays in *behind_latest*."""
+    # current == wanted (no in-range bump), latest > current.
+    payload = {
+        "lodash": {"current": "4.17.20", "wanted": "4.17.20", "latest": "4.17.21"}
+    }
+
+    if env_value:
+        monkeypatch.setenv("REPO_OPS_PNPM_UPDATE_LATEST", env_value)
+    else:
+        monkeypatch.delenv("REPO_OPS_PNPM_UPDATE_LATEST", raising=False)
+
+    with patch("repo_ops_js_pnpm.pnpm.run", _make_run(json.dumps(payload))):
+        changes, behind_latest = check_pnpm(_ws())
+
+    if expect_in_changes:
+        assert len(changes) == 1
+        assert changes[0].name == "lodash"
+        assert changes[0].to == "4.17.21"
+        assert behind_latest == []
+    else:
+        assert changes == []
+        assert len(behind_latest) == 1
+        assert behind_latest[0].name == "lodash"
+        assert behind_latest[0].to == "4.17.21"

@@ -10,6 +10,17 @@ from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
+_PNPM_UPDATE_LATEST_ENV = "REPO_OPS_PNPM_UPDATE_LATEST"
+
+
+def _pnpm_update_latest_enabled() -> bool:
+    return os.environ.get(_PNPM_UPDATE_LATEST_ENV, "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
 
 def _bucket_pnpm_pkg(
     name: str,
@@ -23,7 +34,16 @@ def _bucket_pnpm_pkg(
 
     ``wanted`` is the newest version that satisfies the declared range;
     ``latest`` is the registry's latest release (may break the range).
+
+    When ``REPO_OPS_PNPM_UPDATE_LATEST`` is set, ``latest`` is used as the
+    target so packages that are only behind latest are treated as actionable
+    (matching what ``apply_pnpm`` does when it passes ``--latest``).
     """
+    if _pnpm_update_latest_enabled():
+        # Treat latest as the upgrade target — mirrors apply_pnpm --latest.
+        if latest not in ("?", "") and cur != latest:
+            changes.append(Change(name, cur, latest))
+        return
     if cur != wanted and wanted not in ("?", ""):
         changes.append(Change(name, cur, wanted))
     elif latest not in ("?", "") and cur != latest:
@@ -82,11 +102,7 @@ def check_pnpm(ws: Workspace) -> tuple[list[Change], list[Change]]:
 def apply_pnpm(ws: Workspace) -> None:
     # Match npm conservative bumps (semver ranges) unless the user opts into latest.
     cmd = ["pnpm", "update", "-r"]
-    if os.environ.get("REPO_OPS_PNPM_UPDATE_LATEST", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    ):
+    if _pnpm_update_latest_enabled():
         cmd.append("--latest")
     proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
