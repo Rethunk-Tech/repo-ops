@@ -222,9 +222,19 @@ def print_human_report(
                     )
         if include_actions:
             summary = repo.actions_summary()
-            if repo.actions:
+            seen_action_pins: set[tuple[str, str]] = set()
+            action_rows: list = []
+            for ab in repo.actions:
+                if ab.pin == ab.latest and ab.status == "ok":
+                    continue
+                key = (ab.action, ab.pin)
+                if key in seen_action_pins:
+                    continue
+                seen_action_pins.add(key)
+                action_rows.append(ab)
+            if action_rows:
                 print("  Actions:")
-                for ab in repo.actions:
+                for ab in action_rows:
                     print(
                         f"    {ab.workflow}: {ab.action}@{ab.pin} → {ab.latest} [{ab.status}]"
                     )

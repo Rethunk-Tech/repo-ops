@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops._register import register_all
-from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
+from repo_ops_models import ActionBump, Change, RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade.report import build_json_payload, print_human_report
 
 
@@ -160,3 +160,60 @@ def test_process_workspace_plan_mode(tmp_path: Path) -> None:
             allow_dirty=False,
         )
     assert out.changes[0].name == "dep"
+
+
+def test_print_human_report_actions_dedup_and_no_op_filter(
+    tmp_path: Path, capsys
+) -> None:
+    """No-op rows (pin==latest, ok) are omitted; same genuine action ×3 prints once."""
+    bundle = RepoBundle(
+        git_repo=tmp_path,
+        label="demo",
+        actions=[
+            # no-op: pin == latest, status ok → must NOT appear
+            ActionBump(
+                "ci.yml",
+                "aquasecurity/trivy-action",
+                "v0.36.0",
+                "v0.36.0",
+                status="ok",
+            ),
+            # genuine bump, first occurrence
+            ActionBump(
+                "ci.yml",
+                "slackapi/slack-github-action",
+                "v3.19.0",
+                "v4.0.0",
+                status="ok",
+            ),
+            # duplicate of genuine bump (same action+pin, different step)
+            ActionBump(
+                "ci.yml",
+                "slackapi/slack-github-action",
+                "v3.19.0",
+                "v4.0.0",
+                status="ok",
+            ),
+            # third duplicate
+            ActionBump(
+                "deploy.yml",
+                "slackapi/slack-github-action",
+                "v3.19.0",
+                "v4.0.0",
+                status="ok",
+            ),
+        ],
+        actions_workflows_scanned=2,
+    )
+    print_human_report(
+        {tmp_path: bundle},
+        dry_run=True,
+        only_outdated=False,
+        top_n=10,
+        include_actions=True,
+    )
+    out = capsys.readouterr().out
+    # genuine bump appears exactly once
+    assert out.count("slackapi/slack-github-action@v3.19.0") == 1
+    # no-op is absent
+    assert "trivy-action" not in out
