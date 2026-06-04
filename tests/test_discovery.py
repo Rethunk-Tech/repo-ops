@@ -125,6 +125,23 @@ def test_discover_all_records_skip_for_unactionable_manifest(tmp_path: Path):
     ), f"unactionable manifest not recorded as skip; skipped={diags.skipped}"
 
 
+def test_discover_all_finds_requirements_txt_only_repo(tmp_path: Path):
+    """Regression for #32: a repo whose only Python manifest is requirements.txt
+    must be discovered as a pip-tools workspace in non-flat mode.  The trigger
+    set on the dir-iter loop previously omitted 'requirements.txt', so these
+    repos were silently ignored before consider_py was ever reached."""
+    repo = tmp_path / "com.github" / "Acme" / "legacy"
+    _git_init(repo)
+    (repo / "requirements.txt").write_text("requests==2.31.0\n")
+
+    found = discover_all([str(tmp_path)], flat=False)
+    py = [ws for ws in found if ws.ecosystem == "py"]
+
+    assert len(py) == 1, f"expected one py workspace, got {[str(w.path) for w in py]}"
+    assert py[0].path == repo.resolve()
+    assert py[0].manager == "pip-tools"
+
+
 def test_iter_scanned_dirs_skips_node_modules(tmp_path: Path):
     root = tmp_path / "proj"
     (root / "node_modules" / "pkg").mkdir(parents=True)

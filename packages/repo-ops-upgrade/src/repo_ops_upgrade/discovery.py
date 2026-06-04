@@ -243,7 +243,7 @@ def discover_workspaces_in_root(
             consider_go(mdir)
         if "Cargo.toml" in names:
             consider_rust(mdir)
-        if names & {"pyproject.toml", "requirements.in", "Pipfile"}:
+        if names & {"pyproject.toml", "requirements.in", "requirements.txt", "Pipfile"}:
             consider_py(mdir)
         if len(found) > before:
             seen_paths.add(key)
