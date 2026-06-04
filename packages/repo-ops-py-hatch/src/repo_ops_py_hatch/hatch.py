@@ -59,6 +59,9 @@ def _apply_uv_lock(ws: Workspace) -> None:
 
 def check_hatch(ws: Workspace) -> list[Change]:
     if (ws.path / "uv.lock").exists():
+        if not shutil.which("uv"):
+            print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
+            return []
         return _check_uv_lock(ws)
     if shutil.which("uv"):
         changes: list[Change] = []
@@ -98,6 +101,9 @@ def check_hatch(ws: Workspace) -> list[Change]:
 
 
 def apply_hatch(ws: Workspace) -> None:
+    if not shutil.which("uv"):
+        print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
+        return
     if not (ws.path / "uv.lock").exists():
         proc = run(["uv", "lock"], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:

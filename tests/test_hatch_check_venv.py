@@ -192,3 +192,26 @@ def test_check_hatch_uses_detected_extras(tmp_path: Path):
 
     assert install_calls, "uv pip install was never called"
     assert ".[test]" in install_calls[0], f"Expected .[test] in {install_calls[0]}"
+
+
+def test_check_hatch_uv_lock_without_uv_warns_and_returns_empty(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    """#66 — a uv.lock project with uv absent from PATH must warn + return [], not crash."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    ws = _make_ws(tmp_path)
+
+    def boom_run(*_args, **_kwargs):  # pragma: no cover - must never run
+        raise AssertionError("run() must not be called when uv is missing")
+
+    with (
+        patch("repo_ops_py_hatch.hatch.shutil.which", return_value=None),
+        patch("repo_ops_py_hatch.hatch.run", boom_run),
+    ):
+        assert check_hatch(ws) == []
+
+    assert "without uv on PATH" in capsys.readouterr().err
