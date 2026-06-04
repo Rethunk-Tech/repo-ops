@@ -32,7 +32,11 @@ def _bun_update_latest_enabled() -> bool:
 
 def _valid_bun_package_name(name: str) -> bool:
     n = (name or "").strip()
-    if not n or n.startswith("-") or n in ("Package", "bun"):
+    # Reject only the table header (``Package``) and dash-led junk. A real npm
+    # dependency literally named ``bun`` is valid: the ``bun outdated`` banner is
+    # filtered by STRUCTURE (it is not a ``│``-delimited row) in
+    # ``_changes_from_bun_text``, not by excluding the name ``bun`` here (#67).
+    if not n or n.startswith("-") or n == "Package":
         return False
     return bool(_PKG_NAME_RE.match(n))
 

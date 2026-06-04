@@ -124,3 +124,27 @@ def test_text_parser_no_double_count_when_current_lt_update_lt_latest() -> None:
     assert changes[0].to == "18.3.0"
     # It must NOT also appear in behind_latest (double-count regression).
     assert behind_latest == [], f"expected empty behind_latest, got {behind_latest}"
+
+
+# Regression #67: a real npm dependency literally named ``bun`` must be detected
+# as a Change, while the ``bun outdated vX (hash)`` banner on the same output is
+# still NOT emitted. The discriminator is structural — the banner is not a
+# ``│``-delimited table row — not a by-name exclusion of "bun".
+_TABLE_WITH_REAL_BUN_DEP = (
+    "\x1b[0m\x1b[1mbun outdated \x1b[0m\x1b[2mv1.3.14 (0d9b296a)\x1b[0m\n"
+    "│ \x1b[1m\x1b[34mPackage\x1b[0m │ \x1b[1mCurrent\x1b[0m "
+    "│ \x1b[1mUpdate\x1b[0m │ \x1b[1mLatest\x1b[0m │\n"
+    "├────│\n"
+    # A genuine dependency named `bun` with an in-range bump 1.0.0 -> 1.1.0.
+    "│ bun │ 1.0.0 │ 1.1.0 │ 1.1.0 │\n"
+)
+
+
+def test_check_bun_detects_real_bun_dep_but_not_banner() -> None:
+    """Regression #67: real `bun` dep detected; `(hash)` banner still filtered."""
+    changes, _behind = _patched_check(_TABLE_WITH_REAL_BUN_DEP)
+
+    # (a) The real `bun` dependency is detected as an in-range upgrade.
+    assert ("bun", "1.0.0", "1.1.0") in [(c.name, c.from_ver, c.to) for c in changes]
+    # (b) The banner never leaks through as a bogus `bun@(hash)` change.
+    assert all("0d9b296a" not in c.to for c in changes)
