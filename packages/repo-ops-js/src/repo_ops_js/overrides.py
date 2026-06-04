@@ -43,6 +43,14 @@ def overrides_audit(mdir: Path, manager: str) -> list[dict[str, str]]:
         "patch:",
     )
 
+    # Matches an exact semver pin: optionally a leading "v", then three
+    # dot-separated numeric components, with an optional pre-release / build
+    # suffix.  Anything with a leading operator (^, ~, >=, >, <=, <) or
+    # wildcard/partial spec (1.x, 1.*, *, 1.2) does NOT match and is treated
+    # as a range pin — for which in-range resolution is valid and must not
+    # trigger a "stale" warning.
+    _EXACT_RE = re.compile(r"^v?\d+\.\d+\.\d+(?:[-+].*)?$")
+
     out: list[dict[str, str]] = []
     for name, pinned in pins.items():
         # Protocol-style pins are intentional references (monorepo workspace,
@@ -52,9 +60,9 @@ def overrides_audit(mdir: Path, manager: str) -> list[dict[str, str]]:
         if pinned.startswith(_PROTOCOL_PREFIXES):
             continue
         pkg_name = _override_package_name(name)
-        pinned_ver = normalize_version(
-            pinned.split("@")[-1] if "@" in pinned else pinned
-        )
+        # Extract the raw version spec (strip any scoped-package @version suffix).
+        raw_spec = pinned.split("@")[-1] if "@" in pinned else pinned
+        pinned_ver = normalize_version(raw_spec)
         resolved = resolved_version_from_node_modules(mdir, pkg_name)
         if not resolved:
             out.append(
@@ -76,7 +84,11 @@ def overrides_audit(mdir: Path, manager: str) -> list[dict[str, str]]:
                 }
             )
             continue
-        if res_norm != pinned_ver:
+        # For range pins (^, ~, >=, x-ranges, partial versions, …) the floor
+        # check above already guarantees res_norm >= floor.  Any higher
+        # in-range resolution is valid — suppress the stale warning.
+        # Only fire for exact pins where the resolved version must match exactly.
+        if _EXACT_RE.match(raw_spec) and res_norm != pinned_ver:
             out.append(
                 {
                     "level": "warn",

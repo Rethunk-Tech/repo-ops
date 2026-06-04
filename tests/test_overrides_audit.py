@@ -84,3 +84,29 @@ def test_npm_and_catalog_protocol_pins_produce_no_warning(tmp_path: Path) -> Non
     )
     results = overrides_audit(tmp_path, "pnpm")
     assert results == [], f"expected no warnings for protocol pins, got: {results}"
+
+
+def test_range_override_in_range_resolution_produces_no_stale_warning(
+    tmp_path: Path,
+) -> None:
+    """^1.2.3 override with tree at 1.2.5 (in-range) must not fire stale — closes #78.
+
+    Also asserts that an exact-pin mismatch (1.2.3 pinned, 1.2.5 resolved) still
+    fires a stale warning, proving the equality check is not simply disabled.
+    """
+    # Case 1: range pin — 1.2.5 satisfies ^1.2.3, must NOT warn
+    _write_pkg_json(tmp_path, {"semver-range-pkg": "^1.2.3"})
+    _install_pkg(tmp_path, "semver-range-pkg", "1.2.5")
+    results = overrides_audit(tmp_path, "npm")
+    stale = [r for r in results if "stale" in r.get("detail", "")]
+    assert stale == [], f"range pin with in-range resolution should not warn: {stale}"
+
+    # Case 2: exact pin — 1.2.3 pinned but 1.2.5 resolved — MUST still warn
+    mdir2 = tmp_path / "exact"
+    mdir2.mkdir()
+    _write_pkg_json(mdir2, {"semver-exact-pkg": "1.2.3"})
+    _install_pkg(mdir2, "semver-exact-pkg", "1.2.5")
+    results2 = overrides_audit(mdir2, "npm")
+    stale2 = [r for r in results2 if "stale" in r.get("detail", "")]
+    assert len(stale2) == 1, f"exact-pin mismatch must still warn: {results2}"
+    assert "semver-exact-pkg" in stale2[0]["detail"]
