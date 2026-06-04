@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
@@ -40,7 +41,11 @@ def check_pnpm(ws: Workspace) -> list[Change]:
                             )
                         )
         except json.JSONDecodeError:
-            pass
+            snippet = proc.stdout[:200].strip()
+            print(
+                f"WARN: pnpm outdated returned non-JSON output: {snippet!r}",
+                file=sys.stderr,
+            )
     return changes
 
 
