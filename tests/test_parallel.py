@@ -8,6 +8,23 @@ from unittest.mock import patch
 from repo_ops_core.parallel import run_bounded_pool
 
 
+def test_run_bounded_pool_raising_task_does_not_abort_pool():
+    """#51 — a raising worker must not abort the pool; other results are returned."""
+
+    def worker(x: int) -> int:
+        if x == 1:
+            raise ValueError("boom")
+        return x * 10
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        results = run_bounded_pool(pool, [0, 1, 2], worker, max_in_flight=2)
+
+    assert 0 in results
+    assert 20 in results
+    # The raising task must not appear in results (no fabricated value)
+    assert len(results) == 2
+
+
 def test_run_bounded_pool_stop_on_result_multiple_done_no_keyerror():
     """stop_on_result must not KeyError when wait() returns several done futures."""
     wait_calls = 0

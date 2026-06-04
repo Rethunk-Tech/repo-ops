@@ -46,7 +46,10 @@ def run_bounded_pool(
         for fut in done:
             if fut in futures:
                 futures.pop(fut)
-            result = fut.result()
+            try:
+                result = fut.result()
+            except Exception:
+                continue
             results.append(result)
             if stop_on_result and stop_on_result(result):
                 for pending_fut in list(futures):
