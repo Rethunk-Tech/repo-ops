@@ -136,6 +136,35 @@ def test_install_target_falls_back_to_bare_dot(tmp_path: Path):
     assert _install_target(tmp_path) == "."
 
 
+def test_check_hatch_raises_on_pip_list_outdated_failure(tmp_path: Path):
+    """Failed ``uv pip list --outdated`` must raise RuntimeError, not silently return []."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    ws = _make_ws(tmp_path)
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        if cmd[:2] == ["uv", "venv"]:
+            venv = Path(cmd[2])
+            venv.mkdir(parents=True, exist_ok=True)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        if cmd[:3] == ["uv", "pip", "install"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        if cmd[:3] == ["uv", "pip", "list"]:
+            return subprocess.CompletedProcess(
+                cmd, 1, stdout="", stderr="uv pip list failed: network error"
+            )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
+        patch("repo_ops_py_hatch.hatch.run", fake_run),
+    ):
+        with pytest.raises(RuntimeError, match="uv pip list failed: network error"):
+            check_hatch(ws)
+
+
 def test_check_hatch_uses_detected_extras(tmp_path: Path):
     """check_hatch passes the detected extras group to ``uv pip install``."""
     (tmp_path / "pyproject.toml").write_text(

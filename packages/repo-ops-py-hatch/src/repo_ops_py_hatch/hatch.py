@@ -84,6 +84,10 @@ def check_hatch(ws: Workspace) -> list[Change]:
                 timeout=120,
                 env={"VIRTUAL_ENV": str(venv_dir)},
             )
+            if proc.returncode != 0:
+                raise RuntimeError(
+                    proc.stderr.strip() or "uv pip list --outdated failed"
+                )
             for line in proc.stdout.splitlines()[2:]:
                 parts = line.split()
                 if len(parts) >= 3:
