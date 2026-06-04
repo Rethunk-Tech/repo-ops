@@ -26,6 +26,7 @@ from repo_ops_core.cli import (
     add_roots_argument,
     add_verbose_argument,
     parse_iso8601,
+    positive_int,
     resolve_scan_roots,
     wire_verbose,
 )
@@ -359,7 +360,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--top",
-        type=int,
+        type=positive_int,
         default=10,
         help="Number of top repos to show (default: 10)",
     )

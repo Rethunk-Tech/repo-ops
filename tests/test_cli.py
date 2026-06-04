@@ -53,6 +53,17 @@ def test_upgrade_parser_rejects_non_positive_jobs():
         parser.parse_args(["--jobs", "-1"])
 
 
+def test_upgrade_parser_rejects_non_positive_top():
+    """Regression #88: --top accepted negative integers, corrupting change list slices."""
+    parser = build_upgrade_parser(apply=False)
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--top", "-1"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--top", "0"])
+    args = parser.parse_args(["--top", "5"])
+    assert args.top == 5
+
+
 def test_positive_int_rejects_zero_and_negative():
     with pytest.raises(argparse.ArgumentTypeError):
         positive_int("0")

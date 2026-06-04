@@ -36,7 +36,7 @@ def positive_int(value: str) -> int:
     except ValueError as exc:
         raise argparse.ArgumentTypeError(f"invalid int value: {value!r}") from exc
     if n <= 0:
-        raise argparse.ArgumentTypeError("--jobs must be a positive integer")
+        raise argparse.ArgumentTypeError("must be a positive integer")
     return n
 
 
@@ -245,13 +245,13 @@ def add_upgrade_common_arguments(
     )
     parser.add_argument(
         "--top",
-        type=int,
+        type=positive_int,
         default=10,
         help="Max changes shown per workspace in human output.",
     )
     parser.add_argument(
         "--max-failures",
-        type=int,
+        type=positive_int,
         default=20,
         metavar="N",
         dest="max_failures",
