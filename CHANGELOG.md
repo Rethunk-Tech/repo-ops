@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CI dependency audit:** a dedicated `audit` job runs `pip-audit` on every push/PR, scanning the resolved third-party dependency tree for known CVEs (`--skip-editable` drops the local workspace packages).
+
+### Changed
+
+- **Expanded lint coverage:** ruff now enforces flake8-bandit (`S`), flake8-simplify (`SIM`), flake8-comprehensions (`C4`), and ruff-native (`RUF`) rules on top of `E/F/I/UP/B`. `S603`/`S607` are ignored project-wide (invoking package managers by name off `PATH` is repo-ops's purpose, not a vulnerability) and tests ignore `S101`/`S108`; the remaining best-effort exception swallows are annotated. The `scripts/` directory is now linted and formatted alongside the packages.
+
 ## [0.7.1] - 2026-06-04
 
 ### Fixed
