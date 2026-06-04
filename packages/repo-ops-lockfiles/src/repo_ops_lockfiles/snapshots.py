@@ -32,32 +32,48 @@ def resolved_version_from_node_modules(mdir: Path, name: str) -> str | None:
     return None
 
 
+def _parse_yarn_lock_versions(text: str) -> dict[str, str]:
+    """Return {range_header: resolved_version} for each block in a yarn.lock text."""
+    import re
+
+    out: dict[str, str] = {}
+    current_hdr: str | None = None
+    for line in text.splitlines():
+        if not line or line.startswith("#"):
+            current_hdr = None
+            continue
+        if not line[0].isspace():
+            # Header line: may be one or more comma-separated range specs followed by ":"
+            raw = line.rstrip(":")
+            # Use the first descriptor as the canonical key
+            hdr = raw.split(",")[0].strip().strip('"')
+            if "@" in hdr:
+                current_hdr = hdr
+            else:
+                current_hdr = None
+        elif current_hdr is not None:
+            m = re.match(r'^\s+version[:\s]+["\']?([^"\']+)["\']?', line)
+            if m:
+                out[current_hdr] = m.group(1).strip()
+                current_hdr = None  # version captured; stop scanning this block
+    return out
+
+
 def _diff_lock_text(before: str, after: str) -> list[Change]:
     changes: list[Change] = []
-    b_map: dict[str, str] = {}
-    a_map: dict[str, str] = {}
-    for line in before.splitlines():
-        if not line or line.startswith("#"):
-            continue
-        hdr = line.split()[0]
-        if "@" in hdr:
-            b_map[hdr] = hdr
-    for line in after.splitlines():
-        if not line or line.startswith("#"):
-            continue
-        hdr = line.split()[0]
-        if "@" in hdr:
-            a_map[hdr] = hdr
+    b_map = _parse_yarn_lock_versions(before)
+    a_map = _parse_yarn_lock_versions(after)
     for hdr in set(a_map) | set(b_map):
-        if a_map.get(hdr) != b_map.get(hdr):
+        b_ver = b_map.get(hdr)
+        a_ver = a_map.get(hdr)
+        if a_ver != b_ver:
+            # Derive package name from the range header
             if hdr.startswith("@"):
-                parts = hdr.split("@")
-                name = f"@{parts[1]}" if len(parts) > 2 else hdr
+                at2 = hdr.find("@", 1)
+                name = hdr[:at2] if at2 != -1 else hdr
             else:
                 name = hdr.split("@")[0]
-            changes.append(
-                Change(name, "?" if hdr not in b_map else "prior", "updated")
-            )
+            changes.append(Change(name, b_ver or "?", a_ver or "removed"))
     return changes[:50]
 
 
