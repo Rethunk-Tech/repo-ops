@@ -188,6 +188,34 @@ def test_apply_go_explicit_mode_uses_get_separator(tmp_path) -> None:
     assert ["go", "mod", "tidy"] in calls
 
 
+def test_check_go_passes_timeout_check(tmp_path) -> None:
+    """#57 — check_go must pass TIMEOUT_CHECK to run(), not the 300s default."""
+    from repo_ops_go.go import check_go
+    from repo_ops_upgrade.constants import TIMEOUT_CHECK
+
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="go",
+        manager="go",
+        git_repo=tmp_path,
+        label="mod",
+    )
+    captured: list[dict] = []
+
+    def fake_run(cmd, cwd, timeout=None):
+        captured.append({"cmd": cmd, "timeout": timeout})
+        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    with (
+        patch.dict("os.environ", {"REPO_OPS_GO_UPGRADE_MODE": "patch"}),
+        patch("repo_ops_go.go.run", side_effect=fake_run),
+    ):
+        check_go(ws)
+
+    assert captured, "run() was not called"
+    assert captured[0]["timeout"] == TIMEOUT_CHECK
+
+
 def test_apply_go_mvs_mode_runs_get_u_t_all(tmp_path) -> None:
     ws = Workspace(
         path=tmp_path,

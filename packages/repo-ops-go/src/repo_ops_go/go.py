@@ -9,7 +9,7 @@ from collections.abc import Iterator
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import GO_UPGRADE_RE, TIMEOUT_APPLY
+from repo_ops_upgrade.constants import GO_UPGRADE_RE, TIMEOUT_APPLY, TIMEOUT_CHECK
 
 GO_UPGRADE_MODE_ENV = "REPO_OPS_GO_UPGRADE_MODE"
 _GO_GET_BATCH = 40
@@ -60,7 +60,9 @@ def _iter_go_list_modules(stdout: str) -> Iterator[dict]:
 
 
 def _changes_from_go_list_json(ws: Workspace, *, patch_only: bool) -> list[Change]:
-    proc = run(["go", "list", "-m", "-u", "-json", "all"], ws.path)
+    proc = run(
+        ["go", "list", "-m", "-u", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK
+    )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "go list failed")
     changes: list[Change] = []
@@ -78,7 +80,9 @@ def _changes_from_go_list_json(ws: Workspace, *, patch_only: bool) -> list[Chang
 
 
 def _explicit_go_get_targets(ws: Workspace) -> list[str]:
-    proc = run(["go", "list", "-m", "-u", "-json", "all"], ws.path)
+    proc = run(
+        ["go", "list", "-m", "-u", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK
+    )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "go list failed")
     targets: list[str] = []
@@ -103,7 +107,7 @@ def check_go(ws: Workspace) -> list[Change]:
 
 
 def _check_go_mvs(ws: Workspace) -> list[Change]:
-    proc = run(["go", "list", "-u", "-m", "all"], ws.path)
+    proc = run(["go", "list", "-u", "-m", "all"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "go list failed")
     changes: list[Change] = []

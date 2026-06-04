@@ -6,11 +6,11 @@ import json
 
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import TIMEOUT_APPLY
+from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
 
 def check_npm(ws: Workspace) -> list[Change]:
-    proc = run(["npm", "outdated", "--json"], ws.path)
+    proc = run(["npm", "outdated", "--json"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode not in (0, 1):
         raise RuntimeError(proc.stderr.strip() or "npm outdated failed")
     if not proc.stdout.strip():
