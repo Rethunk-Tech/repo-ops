@@ -104,6 +104,34 @@ def test_resolved_version_from_node_modules_scoped(tmp_path):
     assert resolved_version_from_node_modules(tmp_path, "@biomejs/biome") == "2.0.0"
 
 
+def test_check_rust_parses_stderr_updates(monkeypatch):
+    """cargo update --dry-run writes to stderr; check_rust must not miss it."""
+    from repo_ops_models import Workspace
+    from repo_ops_rust.rust import check_rust
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout="",
+            stderr="    Updating serde v1.0.100 -> v1.0.200\n",
+        )
+
+    ws = Workspace(
+        path=Path("/tmp"),
+        ecosystem="rust",
+        manager="rust",
+        git_repo=Path("/tmp"),
+        label="",
+    )
+    with patch("repo_ops_rust.rust.run", fake_run):
+        changes = check_rust(ws)
+    assert len(changes) == 1
+    assert changes[0].name == "serde"
+    assert changes[0].from_ver == "1.0.100"
+    assert changes[0].to == "1.0.200"
+
+
 def test_is_git_dirty_clean_repo(tmp_path):
     from repo_ops_core.git import is_git_dirty
 

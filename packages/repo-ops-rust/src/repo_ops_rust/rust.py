@@ -14,7 +14,7 @@ def check_rust(ws: Workspace) -> list[Change]:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "cargo update --dry-run failed")
     changes: list[Change] = []
-    for line in proc.stdout.splitlines():
+    for line in (proc.stdout + proc.stderr).splitlines():
         m = re.search(r"Updating\s+(\S+)\s+v([\d.]+)\s+->\s+v([\d.]+)", line)
         if m:
             changes.append(Change(m.group(1), m.group(2), m.group(3)))
