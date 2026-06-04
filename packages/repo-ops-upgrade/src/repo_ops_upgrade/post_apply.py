@@ -68,7 +68,7 @@ def collect_changes_after_apply(
                 )
                 if proc2.returncode == 0:
                     m = re.findall(
-                        r'^[+-]\s*"([^"]+)":\s*"([^"]+)"',
+                        r'^\+\s*"([^"]+)":\s*"([^"]+)"',
                         proc2.stdout,
                         re.MULTILINE,
                     )

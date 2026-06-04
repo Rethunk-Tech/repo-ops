@@ -5,12 +5,14 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+from subprocess import CompletedProcess
 from unittest.mock import patch
 
 import pytest
 from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import commit_agent_providers as providers
 from repo_ops_upgrade import post_apply_commit
+from repo_ops_upgrade.post_apply import collect_changes_after_apply
 
 
 def _init_git_repo(path: Path) -> None:
@@ -223,3 +225,47 @@ def test_cursor_provider_missing_sdk_message(
             providers.resolve_commit_agent_provider().draft_commit_message(
                 bundle, ["package-lock.json"]
             )
+
+
+def test_collect_changes_no_phantom_downgrade(tmp_path: Path) -> None:
+    """Regression #63: removed (-) package.json lines must not produce phantom Changes."""
+    # Use a subdirectory workspace so rel_s ("app") is a real prefix of the
+    # path returned by git diff --name-only ("app/package.json").
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    ws = Workspace(
+        path=app_dir,
+        ecosystem="node",
+        manager="npm",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    # Simulate a git diff where pkg bumps from 1.0.0 to 1.1.0.
+    # The [+-] regex bug would yield two Changes; the fixed \+ regex yields one.
+    pkg_diff = (
+        "diff --git a/app/package.json b/app/package.json\n"
+        "--- a/app/package.json\n"
+        "+++ b/app/package.json\n"
+        "@@ -1,5 +1,5 @@\n"
+        " {\n"
+        '   "dependencies": {\n'
+        '-    "pkg": "1.0.0"\n'
+        '+    "pkg": "1.1.0"\n'
+        "   }\n"
+        " }\n"
+    )
+
+    def _fake_run(
+        cmd: list[str], cwd: object, **kwargs: object
+    ) -> CompletedProcess[str]:
+        if "--name-only" in cmd:
+            return CompletedProcess(cmd, 0, stdout="app/package.json\n", stderr="")
+        # git diff -- app/package.json
+        return CompletedProcess(cmd, 0, stdout=pkg_diff, stderr="")
+
+    with patch("repo_ops_upgrade.post_apply.run", side_effect=_fake_run):
+        changes = collect_changes_after_apply(ws)
+
+    assert len(changes) == 1, f"expected 1 Change, got {changes}"
+    assert changes[0].name == "pkg"
+    assert changes[0].to == "1.1.0"
