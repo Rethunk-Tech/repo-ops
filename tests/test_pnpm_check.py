@@ -64,22 +64,24 @@ def test_check_pnpm_malformed_json_snippet_truncated(capsys) -> None:
 def test_check_pnpm_valid_json_no_warning(capsys) -> None:
     """Valid JSON output must parse correctly and emit no warning.
 
-    When no ``wanted`` field is present the parser falls back to ``latest``.
-    Since ``current`` (18.0.0) != ``wanted`` (falls back to 19.0.0), the
-    package lands in ``changes``.
+    Real ``pnpm outdated --format json`` always emits ``wanted``; this fixture
+    omits it to exercise the conservative fallback. With no ``wanted`` we must
+    NOT fabricate an actionable change to ``latest`` (apply only bumps in-range)
+    — the package is reported as ``behind_latest`` instead, symmetric with the
+    npm checker.
     """
     payload = {"react": {"current": "18.0.0", "latest": "19.0.0"}}
 
     with patch("repo_ops_js_pnpm.pnpm.run", _make_run(json.dumps(payload))):
         changes, behind_latest = check_pnpm(_ws())
 
-    # No ``wanted`` field → wanted falls back to latest (19.0.0).
-    # current (18.0.0) != wanted (19.0.0) → changes bucket.
-    assert len(changes) == 1
-    assert changes[0].name == "react"
-    assert changes[0].from_ver == "18.0.0"
-    assert changes[0].to == "19.0.0"
-    assert behind_latest == []
+    # No ``wanted`` field → wanted == "?" → not an in-range change; latest
+    # (19.0.0) > current (18.0.0) → behind_latest (never a phantom change).
+    assert changes == []
+    assert len(behind_latest) == 1
+    assert behind_latest[0].name == "react"
+    assert behind_latest[0].from_ver == "18.0.0"
+    assert behind_latest[0].to == "19.0.0"
     captured = capsys.readouterr()
     assert captured.err == ""
 

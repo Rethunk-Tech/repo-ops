@@ -51,7 +51,7 @@ def check_pnpm(ws: Workspace) -> tuple[list[Change], list[Change]]:
                 for name, meta in items.items():
                     if isinstance(meta, dict):
                         cur = str(meta.get("current", "?"))
-                        wanted = str(meta.get("wanted") or meta.get("latest") or "?")
+                        wanted = str(meta.get("wanted", "?"))
                         latest = str(meta.get("latest", "?"))
                         _bucket_pnpm_pkg(
                             name, cur, wanted, latest, changes, behind_latest
@@ -60,7 +60,7 @@ def check_pnpm(ws: Workspace) -> tuple[list[Change], list[Change]]:
                 for meta in items:
                     if isinstance(meta, dict) and meta.get("name"):
                         cur = str(meta.get("current", "?"))
-                        wanted = str(meta.get("wanted") or meta.get("latest") or "?")
+                        wanted = str(meta.get("wanted", "?"))
                         latest = str(meta.get("latest", "?"))
                         _bucket_pnpm_pkg(
                             str(meta["name"]),
