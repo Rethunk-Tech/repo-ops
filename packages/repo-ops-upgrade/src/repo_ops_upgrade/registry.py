@@ -11,8 +11,18 @@ from repo_ops_models import Change, Workspace, WorkspaceResult
 
 logger = logging.getLogger(__name__)
 
+# A checker may return:
+#   list[Change]                                  — changes only
+#   tuple[list[Change], list[dict[str, str]]]     — changes + overrides_audit
+#   tuple[list[Change], list[Change]]             — changes + behind_latest
+#
+# The two tuple forms are distinguished at dispatch time by inspecting the
+# first element of the second list: dict → overrides_audit, Change → behind_latest.
 Checker = Callable[
-    [Workspace], list[Change] | tuple[list[Change], list[dict[str, str]]]
+    [Workspace],
+    list[Change]
+    | tuple[list[Change], list[dict[str, str]]]
+    | tuple[list[Change], list[Change]],
 ]
 Applier = Callable[[Workspace], None]
 
@@ -39,7 +49,16 @@ def check_workspace(ws: Workspace) -> WorkspaceResult:
             return result
         out = checker(ws)
         if isinstance(out, tuple):
-            result.changes, result.overrides_audit = out
+            changes, second = out
+            result.changes = changes
+            # Distinguish overrides_audit (list[dict]) from behind_latest (list[Change]).
+            # An empty second list is treated as overrides_audit (existing behaviour).
+            if second and isinstance(second[0], Change):
+                result.behind_latest = [c for c in second if isinstance(c, Change)]
+                if ws.ecosystem == "node":
+                    result.overrides_audit = overrides_audit(ws.path, ws.manager)
+            else:
+                result.overrides_audit = [e for e in second if isinstance(e, dict)]
         else:
             result.changes = out
             if ws.ecosystem == "node":
