@@ -236,7 +236,77 @@ def test_footer_hint_appears_for_packages_behind_latest(tmp_path: Path) -> None:
     out = buf.getvalue()
     assert "behind-latest" in out
     assert "3 package(s)" in out
-    assert "REPO_OPS_BUN_UPDATE_LATEST=1" in out
+    # #102: remediation advice now points at the unified --latest flag
+    # (no manager breakdown in this summary, so the default hint is used).
+    assert "--latest" in out
+
+
+def test_footer_per_manager_hints_npm_vs_latest(tmp_path: Path) -> None:
+    """#102: each manager gets its own correct remediation hint.
+
+    npm has no latest mode (bump manually); bun honours --latest.
+    """
+    summary = {
+        "workspaces_ok": 2,
+        "workspaces_fail": 0,
+        "workspaces_skip": 0,
+        "dirty_skips": 0,
+        "verify_failures": 0,
+        "actions_bumps": 0,
+        "actions_failures": 0,
+        "discovery_skipped": 0,
+        "packages_behind_latest": 5,
+        "packages_behind_latest_by_manager": {"npm": 2, "bun": 3},
+        "actions_behind_latest": 0,
+        "failure_count": 0,
+    }
+    buf = io.StringIO()
+    with patch("sys.stdout", buf):
+        print_run_footer(summary=summary, failures=[], exit_code=0)
+    out = buf.getvalue()
+    # npm line: no latest mode, manual bump advice (NOT --latest).
+    assert (
+        "2 npm package(s) behind latest (no latest mode; bump the pin manually)" in out
+    )
+    # bun line: --latest remediation.
+    assert "3 bun package(s) behind latest (run with --latest to include)" in out
+
+
+def test_latest_flag_sets_ecosystem_env_vars(tmp_path: Path, monkeypatch) -> None:
+    """#102: --latest sets the per-ecosystem env vars before workers run."""
+    import os
+
+    # Seed each var so monkeypatch records the original and reliably restores it
+    # on teardown — run.py writes to os.environ directly, so without a recorded
+    # original the writes would leak into later checker tests.
+    env_vars = (
+        "REPO_OPS_BUN_UPDATE_LATEST",
+        "REPO_OPS_PNPM_UPDATE_LATEST",
+        "REPO_OPS_YARN_UPDATE_LATEST",
+        "REPO_OPS_GO_UPGRADE_MODE",
+    )
+    for var in env_vars:
+        monkeypatch.setenv(var, "__sentinel__")
+        monkeypatch.delenv(var)
+    _bun_workspace(tmp_path)
+    register_all()
+
+    seen: dict[str, str | None] = {}
+
+    def _capture(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
+        seen["bun"] = os.environ.get("REPO_OPS_BUN_UPDATE_LATEST")
+        seen["pnpm"] = os.environ.get("REPO_OPS_PNPM_UPDATE_LATEST")
+        seen["yarn"] = os.environ.get("REPO_OPS_YARN_UPDATE_LATEST")
+        seen["go"] = os.environ.get("REPO_OPS_GO_UPGRADE_MODE")
+        return wr
+
+    with patch(
+        "repo_ops_upgrade.run.orchestration.process_workspace",
+        side_effect=_capture,
+    ):
+        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet", "--latest"])
+
+    assert seen == {"bun": "1", "pnpm": "1", "yarn": "1", "go": "explicit"}
 
 
 def test_footer_hint_appears_for_actions_behind_latest(tmp_path: Path) -> None:

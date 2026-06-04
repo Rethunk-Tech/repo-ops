@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -67,6 +68,18 @@ def _run_upgrade_body(
     roots: list[str],
     follow_symlinks: bool = False,
 ) -> int:
+    # --latest / --go-upgrade-mode set the per-ecosystem env vars the checker
+    # modules already read, BEFORE any worker pool starts (#102). Additive: the
+    # env-var reads stay; these flags just populate them for this process.
+    if getattr(args, "latest", False):
+        os.environ["REPO_OPS_BUN_UPDATE_LATEST"] = "1"
+        os.environ["REPO_OPS_PNPM_UPDATE_LATEST"] = "1"
+        os.environ["REPO_OPS_YARN_UPDATE_LATEST"] = "1"
+        os.environ.setdefault("REPO_OPS_GO_UPGRADE_MODE", "explicit")
+    go_mode = getattr(args, "go_upgrade_mode", None)
+    if go_mode:
+        os.environ["REPO_OPS_GO_UPGRADE_MODE"] = go_mode
+
     skip_remediations = set()
     if apply:
         skip_remediations = {

@@ -203,6 +203,28 @@ def add_upgrade_common_arguments(
     parser.add_argument("-q", "--quiet", action="store_true")
     parser.add_argument("--jobs", type=positive_int, default=8)
     parser.add_argument("--fail-fast", action="store_true")
+    parser.add_argument(
+        "--latest",
+        action="store_true",
+        help=(
+            "Include cross-range (behind-latest) upgrades for bun/pnpm/yarn. "
+            "Sets the per-ecosystem latest-mode env vars before the run. "
+            "npm has no latest mode; go is controlled by --go-upgrade-mode."
+        ),
+    )
+    parser.add_argument(
+        "--go-upgrade-mode",
+        choices=("patch", "explicit", "mvs"),
+        default=None,
+        dest="go_upgrade_mode",
+        metavar="MODE",
+        help=(
+            "Go module upgrade selection: patch (default) bumps within the "
+            "current minor; explicit takes the latest tagged version; mvs uses "
+            "the module graph's minimum version selection. Overrides "
+            "REPO_OPS_GO_UPGRADE_MODE for this run."
+        ),
+    )
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument(
         "--skip-actions",

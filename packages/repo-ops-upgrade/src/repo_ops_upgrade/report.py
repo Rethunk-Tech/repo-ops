@@ -18,12 +18,25 @@ UpgradeMode = Literal["plan", "apply"]
 DEFAULT_MAX_FAILURE_LINES = 20
 _DIRTY_SKIP_MARKER = "dirty git worktree"
 
+# Per-manager remediation advice for packages reported behind latest.
+# bun/pnpm/yarn honour --latest (which sets their per-ecosystem env var);
+# go has a 3-way mode flag; npm has no latest mode at all, so the only
+# remediation is a manual pin bump (issue #102).
+_LATEST_HINT_BY_MANAGER: dict[str, str] = {
+    "bun": "run with --latest to include",
+    "pnpm": "run with --latest to include",
+    "yarn": "run with --latest to include",
+    "go": "run with --go-upgrade-mode=explicit to include",
+}
+_LATEST_HINT_NO_MODE = "no latest mode; bump the pin manually"
+_LATEST_HINT_DEFAULT = "run with --latest to include"
+
 
 def build_run_summary(
     bundles: dict[Path, RepoBundle],
     *,
     diagnostics: DiscoveryDiagnostics | None = None,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     """Aggregate end-of-run counters for human footer and JSON ``summary``."""
     workspaces_ok = 0
     workspaces_fail = 0
@@ -34,6 +47,7 @@ def build_run_summary(
     actions_failures = 0
     packages_behind_latest = 0
     actions_behind_latest = 0
+    behind_latest_by_manager: dict[str, int] = {}
 
     for bundle in bundles.values():
         for wr in bundle.workspaces:
@@ -47,7 +61,13 @@ def build_run_summary(
                     dirty_skips += 1
             if wr.verify_error:
                 verify_failures += 1
-            packages_behind_latest += len(wr.behind_latest)
+            n_behind = len(wr.behind_latest)
+            packages_behind_latest += n_behind
+            if n_behind:
+                manager = wr.workspace.manager
+                behind_latest_by_manager[manager] = (
+                    behind_latest_by_manager.get(manager, 0) + n_behind
+                )
         action_totals = bundle.actions_summary()
         actions_bumps += action_totals["bumps"]
         actions_failures += action_totals["failures"]
@@ -64,6 +84,7 @@ def build_run_summary(
         "actions_failures": actions_failures,
         "discovery_skipped": discovery_skipped,
         "packages_behind_latest": packages_behind_latest,
+        "packages_behind_latest_by_manager": behind_latest_by_manager,
         "actions_behind_latest": actions_behind_latest,
         "failure_count": count_failures(bundles),
     }
@@ -298,7 +319,7 @@ def any_workspace_skip_or_fail(bundles: dict[Path, RepoBundle]) -> bool:
 
 def print_run_footer(
     *,
-    summary: dict[str, int],
+    summary: dict[str, Any],
     failures: list[tuple[str, str]],
     exit_code: int,
     max_failures: int = DEFAULT_MAX_FAILURE_LINES,
@@ -338,10 +359,28 @@ def print_run_footer(
     if total_behind > 0:
         parts: list[str] = []
         if packages_behind > 0:
-            parts.append(
-                f"{packages_behind} package(s) behind latest"
-                " (run with REPO_OPS_BUN_UPDATE_LATEST=1 to include)"
+            by_manager: dict[str, int] = summary.get(
+                "packages_behind_latest_by_manager", {}
             )
+            if by_manager:
+                # One line per manager so the remediation advice is correct for
+                # each (npm has no latest mode; bun/pnpm/yarn honour --latest).
+                for manager in sorted(by_manager):
+                    count = by_manager[manager]
+                    if manager == "npm":
+                        manager_hint = _LATEST_HINT_NO_MODE
+                    else:
+                        manager_hint = _LATEST_HINT_BY_MANAGER.get(
+                            manager, _LATEST_HINT_DEFAULT
+                        )
+                    parts.append(
+                        f"{count} {manager} package(s) behind latest ({manager_hint})"
+                    )
+            else:
+                parts.append(
+                    f"{packages_behind} package(s) behind latest"
+                    f" ({_LATEST_HINT_DEFAULT})"
+                )
         if actions_behind > 0:
             parts.append(
                 f"{actions_behind} action(s) have a newer major available"
