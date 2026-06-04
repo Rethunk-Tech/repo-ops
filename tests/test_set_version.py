@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 _SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "set_version.py"
 _spec = importlib.util.spec_from_file_location("set_version", _SCRIPT)
 assert _spec is not None and _spec.loader is not None
@@ -46,3 +48,46 @@ def test_set_version_scopes_to_project_and_bumps(tmp_path: Path) -> None:
 
     # Idempotent: no rewrite when already at the target version.
     assert set_version.write_version(pyproject, "0.7.1") is False
+
+
+_PRERELEASE_FIXTURE = '[project]\nname = "demo"\nversion = "0.8.0rc1"\n'
+
+_NORMAL_FIXTURE = '[project]\nname = "normal"\nversion = "0.8.0"\n'
+
+
+def test_apply_warns_and_counts_unparseable_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """_apply must emit a stderr warning and return 1 for non-standard versions.
+
+    Pre-release strings like "0.8.0rc1" do not match VERSION_RE, so
+    read_version returns None.  The manifest must be reported on stderr,
+    counted as skipped (not silently dropped), and must NOT be rewritten.
+    """
+    # Two manifests: one parseable, one pre-release.
+    root_toml = tmp_path / "pyproject.toml"
+    root_toml.write_text(_NORMAL_FIXTURE, encoding="utf-8")
+    sub_dir = tmp_path / "packages" / "sub"
+    sub_dir.mkdir(parents=True)
+    prerelease_toml = sub_dir / "pyproject.toml"
+    prerelease_toml.write_text(_PRERELEASE_FIXTURE, encoding="utf-8")
+
+    # Patch ROOT so path.relative_to(ROOT) works inside _apply.
+    monkeypatch.setattr(set_version, "ROOT", tmp_path)
+
+    rc = set_version._apply([root_toml, prerelease_toml], "0.9.0", dry_run=False)
+
+    captured = capsys.readouterr()
+    # Must exit 1 because a manifest was skipped.
+    assert rc == 1
+    # stderr must name the skipped manifest.
+    assert "pyproject.toml" in captured.err
+    assert "skipped" in captured.err
+    # The skipped manifest must not be rewritten.
+    assert "0.8.0rc1" in prerelease_toml.read_text(encoding="utf-8")
+    # The parseable manifest must have been updated.
+    assert set_version.read_version(root_toml) == "0.9.0"
+    # Summary line must appear on stdout.
+    assert "1 manifest(s)" in captured.out

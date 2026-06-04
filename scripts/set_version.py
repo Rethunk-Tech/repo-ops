@@ -13,7 +13,10 @@ Usage::
     python scripts/set_version.py bump minor --dry-run
 
 Exit status: 0 on success; 1 on version drift (in show mode), an invalid
-version, or no manifests found.
+version, no manifests found, or any manifest whose version cannot be parsed
+(non-standard format such as pre/post-release).  Unparseable manifests are
+never silently skipped — they are reported on stderr so mixed-version state
+cannot be hidden.
 """
 
 from __future__ import annotations
@@ -93,6 +96,13 @@ def bump_version(version: str, part: str) -> str:
 
 def _current_versions(paths: list[Path]) -> dict[Path, str]:
     found = {p: read_version(p) for p in paths}
+    for p, v in found.items():
+        if v is None:
+            print(
+                f"warning: {p.relative_to(ROOT)}: version could not be parsed "
+                "(non-standard format; skipped)",
+                file=sys.stderr,
+            )
     return {p: v for p, v in found.items() if v is not None}
 
 
@@ -101,9 +111,17 @@ def _apply(paths: list[Path], new: str, dry_run: bool) -> int:
         print(f"error: {new!r} is not a valid X.Y.Z version", file=sys.stderr)
         return 1
     changed = 0
+    skipped = 0
     for path in paths:
         current = read_version(path)
         if current is None:
+            rel = path.relative_to(ROOT)
+            print(
+                f"warning: {rel}: version could not be parsed "
+                "(non-standard format; skipped)",
+                file=sys.stderr,
+            )
+            skipped += 1
             continue
         rel = path.relative_to(ROOT)
         if current == new:
@@ -116,6 +134,12 @@ def _apply(paths: list[Path], new: str, dry_run: bool) -> int:
         changed += 1
     verb = "would update" if dry_run else "updated"
     print(f"{verb} {changed} manifest(s) to {new}")
+    if skipped:
+        print(
+            f"warning: {skipped} manifest(s) skipped (unparseable version)",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
