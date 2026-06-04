@@ -127,18 +127,20 @@ def pushed_commits_for_repo(repo: str, filters: Filters) -> dict[str, None]:
             if match:
                 entries.append((int(match.group(2)), match.group(1)))
 
-        for i, (ts, new_sha) in enumerate(entries):
+        for ts, new_sha in entries:
             if not (filters.since_unix <= ts < filters.until_unix):
                 # Non-monotonic timestamps (clock skew): skip, don't stop
                 continue
-            if i + 1 < len(entries):
-                old_sha = entries[i + 1][1]
-            else:
-                # Fix 1: oldest reflog entry — resolve pre-state via git log -g
-                old_sha = _reflog_pre_sha(repo, ref, new_sha)  # type: ignore[assignment]
-                if old_sha is None:
-                    # No parent means this was the very first push; list all commits
-                    old_sha = "--root"
+            # Fix #92: use _reflog_pre_sha for ALL entries, not just the oldest.
+            # entries[i+1][1] (previous push tip) is wrong when a git fetch advanced
+            # the remote-tracking ref between two pushes — the fetched commits would
+            # be included in the range and miscounted as this push's commits.
+            # _reflog_pre_sha walks the full reflog to find ref@{n+1} for the exact
+            # entry where the tip matched new_sha, returning the true pre-push state.
+            old_sha = _reflog_pre_sha(repo, ref, new_sha)
+            if old_sha is None:
+                # No parent means this was the very first push; list all commits
+                old_sha = "--root"
             if old_sha != "--root" and old_sha == new_sha:
                 continue
             try:

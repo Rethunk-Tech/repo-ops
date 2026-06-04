@@ -254,6 +254,92 @@ def test_collect_results_uses_discovery(tmp_path: Path, monkeypatch):
     assert len(per_repo) == 1
 
 
+def test_pushed_commits_non_oldest_uses_reflog_pre_sha_not_prev_push_tip(monkeypatch):
+    """Regression #92: non-oldest push entry uses _reflog_pre_sha, not previous push tip.
+
+    Simulates two pushes with a fetch in between:
+      full reflog: @{0} push2  @{1} fetch (colleague)  @{2} push1
+    Push-only entries: [(ts2, push2_sha), (ts1, push1_sha)]
+
+    Without the fix, push2's old_sha = push1_sha, so rev-list runs
+    push1_sha..push2_sha and inflates the count by including commit_from_fetch.
+    With the fix, _reflog_pre_sha resolves ref@{1} (= fetch_sha) as the true
+    pre-push2 base, so rev-list runs fetch_sha..push2_sha and returns only
+    commit_from_push2 — the colleague's commit is excluded.
+    """
+    now = 1_700_000_000
+    filters = Filters(since_unix=now - 7200, until_unix=now + 3600)
+    ref = "refs/remotes/origin/main"
+
+    push1_sha = "1" * 40  # tip after first push (oldest)
+    fetch_sha = "f" * 40  # tip after colleague fetch (between the two pushes)
+    push2_sha = "2" * 40  # tip after second push (newest)
+
+    commit_from_push1 = "e" * 40  # commit in first push (reachable from push1_sha)
+    commit_from_push2 = "c" * 40  # commit in second push — must appear in results
+    commit_from_fetch = "d" * 40  # colleague's fetched commit — must NOT appear
+
+    # Full reflog (used by _reflog_pre_sha): all entries including fetch
+    full_reflog = (
+        f"{push2_sha} {ref}@{{0}}: update by push\n"
+        f"{fetch_sha} {ref}@{{1}}: fetch\n"
+        f"{push1_sha} {ref}@{{2}}: update by push\n"
+    )
+    # Filtered push-only reflog (used by pushed_commits_for_repo, with --date=unix)
+    push_reflog = (
+        f"{push2_sha} {ref}@{{{now}}}: update by push\n"
+        f"{push1_sha} {ref}@{{{now - 3600}}}: update by push\n"
+    )
+
+    def fake_run_git(repo, *args, **kwargs):
+        class Fake:
+            returncode = 0
+            stdout = ""
+
+        cmd = args
+        if cmd[:2] == ("for-each-ref", "--format=%(refname)"):
+            Fake.stdout = f"{ref}\n"
+        elif cmd[:2] == ("reflog", "show") and "--date=unix" in cmd:
+            # Called from pushed_commits_for_repo to build push-only entries list
+            Fake.stdout = push_reflog
+        elif cmd[:2] == ("reflog", "show"):
+            # Called from _reflog_pre_sha to walk the full reflog (no --date=unix)
+            Fake.stdout = full_reflog
+        elif cmd[0] == "rev-parse":
+            # _reflog_pre_sha resolves ref@{n+1} for the entry matching new_sha:
+            #   push2 is at @{0}  → resolves @{1} → fetch_sha  (correct pre-push2 base)
+            #   push1 is at @{2}  → resolves @{3} → not found (returncode=1, oldest)
+            spec = cmd[1]  # e.g. "refs/remotes/origin/main@{1}"
+            import re
+
+            m = re.search(r"@\{(\d+)\}", spec)
+            n = int(m.group(1)) if m else -1
+            if n == 1:
+                Fake.stdout = f"{fetch_sha}\n"
+            else:
+                Fake.returncode = 1
+        elif cmd[0] == "rev-list":
+            range_arg = next((a for a in cmd if ".." in a), None)
+            if range_arg == f"{fetch_sha}..{push2_sha}":
+                # Correct range for push2 — excludes fetched colleague commit
+                Fake.stdout = f"{commit_from_push2}\n"
+            elif range_arg == f"{push1_sha}..{push2_sha}":
+                # Wrong range (bug path) — would include colleague's fetched commit
+                Fake.stdout = f"{commit_from_push2}\n{commit_from_fetch}\n"
+            else:
+                # push1 uses --root; return only push1's own commits
+                Fake.stdout = f"{commit_from_push1}\n"
+        return Fake()
+
+    monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
+    commits = pushed_commits_for_repo("/fake/repo", filters)
+
+    # push2 must use fetch_sha as base (true pre-push tip) — commit_from_push2 present
+    assert commit_from_push2 in commits
+    # colleague's fetched commit must NOT appear (excluded by correct fetch_sha base)
+    assert commit_from_fetch not in commits
+
+
 def test_git_common_dir_monkeypatch(monkeypatch):
     calls = []
 
