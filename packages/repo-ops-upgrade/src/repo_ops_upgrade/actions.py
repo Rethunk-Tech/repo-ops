@@ -234,6 +234,7 @@ def scan_actions(
     *,
     keep_sha: bool = True,
     tag_style: TagStyle = "major",
+    tag_cache: dict[str, dict | None] | None = None,
 ) -> tuple[list[ActionBump], int]:
     """Scan GitHub Actions workflow files and produce bump recommendations.
 
@@ -251,6 +252,11 @@ def scan_actions(
     tag_style:
         ``"major"`` (default) → rewrite SHA pins to ``@vN``.
         ``"exact"`` → rewrite to the highest ``@vN.M.P`` within the resolved major.
+    tag_cache:
+        Optional shared cache dict mapping action name → tag info (or None on
+        failure).  When provided, entries are reused across calls so each
+        (action, ref) is resolved at most once per run.  When omitted, a fresh
+        per-call dict is used (preserves test isolation).
     """
     if not shutil.which("actionlint"):
         print(
@@ -258,7 +264,7 @@ def scan_actions(
         )
     workflows = discover_workflow_files(repo)
     bumps: list[ActionBump] = []
-    tag_cache: dict[str, dict | None] = {}
+    _cache: dict[str, dict | None] = tag_cache if tag_cache is not None else {}
     for wf in workflows:
         rel = str(wf.relative_to(repo))
         lint_err = _run_actionlint(wf, repo)
@@ -310,7 +316,7 @@ def scan_actions(
                     )
                     continue
 
-                info = action_tag_info(action, cache=tag_cache)
+                info = action_tag_info(action, cache=_cache)
                 resolution = _resolve_sha_target(
                     pin,
                     comment_hint=uses.comment,
@@ -361,7 +367,7 @@ def scan_actions(
             M = int(m.group(1))
             desired = f"v{M}"
 
-            info = action_tag_info(action, cache=tag_cache)
+            info = action_tag_info(action, cache=_cache)
             if info is None:
                 # gh absent or API failed — skip this pin.
                 continue

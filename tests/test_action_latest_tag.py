@@ -110,3 +110,47 @@ def test_gh_absent_skips_pin(tmp_path: Path) -> None:
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert checkout == []
+
+
+def test_shared_tag_cache_resolves_action_once_across_repos(tmp_path: Path) -> None:
+    """A shared tag_cache means the GitHub API is called only once for the same action.
+
+    Regression for issue #31: scan_actions used to create a fresh dict per call,
+    so ``actions/checkout`` was re-fetched from the GitHub API for every repo in
+    a multi-repo run.  With a caller-supplied cache the resolver is invoked once.
+    """
+    wf_content = "jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@v4.2.1\n"
+
+    repo1 = tmp_path / "repo1"
+    repo2 = tmp_path / "repo2"
+    for repo in (repo1, repo2):
+        wf_dir = repo / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text(wf_content, encoding="utf-8")
+
+    tags_proc = _make_tags_proc("v4", "v4.2.1", "v4.2.2")
+
+    shared_cache: dict[str, dict | None] = {}
+
+    gh_call_count = 0
+
+    def fake_run(cmd: list[str], *args: object, **kwargs: object) -> MagicMock:
+        nonlocal gh_call_count
+        if cmd and cmd[0] == "gh":
+            gh_call_count += 1
+            return tags_proc
+        # actionlint: report success so it doesn't block pin scanning.
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with (
+        patch(
+            "repo_ops_upgrade.actions.shutil.which",
+            side_effect=lambda name: "/usr/bin/" + name,
+        ),
+        patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
+    ):
+        scan_actions(repo1, apply=False, tag_cache=shared_cache)
+        scan_actions(repo2, apply=False, tag_cache=shared_cache)
+
+    # The gh API should have been called exactly once — cache hit on the second repo.
+    assert gh_call_count == 1

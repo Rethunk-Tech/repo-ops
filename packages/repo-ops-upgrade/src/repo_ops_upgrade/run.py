@@ -213,6 +213,9 @@ def _run_upgrade_body(
         keep_sha = not bool(getattr(args, "actions_unpin_sha", False))
         _raw_tag_style = getattr(args, "actions_tag_style", "major")
         tag_style: actions.TagStyle = "exact" if _raw_tag_style == "exact" else "major"
+        # One shared cache for the whole run so each (action, ref) is resolved
+        # at most once across all repos — avoids redundant GitHub API calls.
+        run_tag_cache: dict[str, dict | None] = {}
         for bundle in bundles.values():
             if apply and (bundle.any_fail() or bundle.any_dirty_skip()):
                 continue
@@ -221,6 +224,7 @@ def _run_upgrade_body(
                 apply=apply,
                 keep_sha=keep_sha,
                 tag_style=tag_style,
+                tag_cache=run_tag_cache,
             )
 
     only_outdated = getattr(args, "only_outdated", False)
