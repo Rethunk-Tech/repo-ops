@@ -251,7 +251,7 @@ def add_upgrade_common_arguments(
     )
     parser.add_argument(
         "--max-failures",
-        type=positive_int,
+        type=int,
         default=20,
         metavar="N",
         dest="max_failures",
