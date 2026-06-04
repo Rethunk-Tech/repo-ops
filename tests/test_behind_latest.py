@@ -1,9 +1,12 @@
-"""Regression tests for behind-latest disposition (#22).
+"""Regression tests for behind-latest disposition (#22, #42).
 
 Verifies that workspaces with newer-than-installed packages when latest-mode
 is off, and Actions with a newer major available, are reported as a distinct
 ``behind_latest`` disposition (NOT ok / NOT fail), do not change exit code,
 and appear in the footer hint.
+
+Also covers #42: node/bun tuple-checker with empty behind_latest still triggers
+``overrides_audit`` (the empty list must NOT suppress the call).
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from unittest.mock import patch
 
 from repo_ops._register import register_all
 from repo_ops_models import ActionBump, Change, RepoBundle, Workspace, WorkspaceResult
+from repo_ops_upgrade import registry
 from repo_ops_upgrade.report import (
     build_run_summary,
     print_run_footer,
@@ -287,3 +291,41 @@ def test_behind_latest_workspace_does_not_change_plan_exit_code(
             ]
         )
     assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# #42 — node tuple-checkers always call overrides_audit even when behind_latest
+# is empty (the common case that triggered the regression)
+# ---------------------------------------------------------------------------
+
+
+def test_check_workspace_calls_overrides_audit_when_behind_latest_empty(
+    tmp_path: Path,
+) -> None:
+    """Regression #42: bun checker returning ([], []) must still invoke overrides_audit."""
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="bun",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    finding = {"pkg": "lodash", "pinned": "4.17.21", "detail": "stale override"}
+
+    def fake_bun_checker(_ws: Workspace):
+        # Simulate a clean run: no actionable changes, no behind_latest entries.
+        return [], []
+
+    with (
+        patch.dict(registry.CHECKERS, {"bun": fake_bun_checker}, clear=False),
+        patch(
+            "repo_ops_upgrade.registry.overrides_audit",
+            return_value=[finding],
+        ) as mock_audit,
+    ):
+        result = registry.check_workspace(ws)
+
+    mock_audit.assert_called_once_with(tmp_path, "bun")
+    assert result.overrides_audit == [finding]
+    assert result.behind_latest == []
+    assert result.changes == []

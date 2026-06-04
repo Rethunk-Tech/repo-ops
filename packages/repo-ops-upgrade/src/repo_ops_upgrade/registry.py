@@ -52,13 +52,14 @@ def check_workspace(ws: Workspace) -> WorkspaceResult:
             changes, second = out
             result.changes = changes
             # Distinguish overrides_audit (list[dict]) from behind_latest (list[Change]).
-            # An empty second list is treated as overrides_audit (existing behaviour).
-            if second and isinstance(second[0], Change):
+            # Check for dict shape explicitly so that an empty second list falls through
+            # to the behind_latest path (and still triggers overrides_audit for node).
+            if second and isinstance(second[0], dict):
+                result.overrides_audit = [e for e in second if isinstance(e, dict)]
+            else:
                 result.behind_latest = [c for c in second if isinstance(c, Change)]
                 if ws.ecosystem == "node":
                     result.overrides_audit = overrides_audit(ws.path, ws.manager)
-            else:
-                result.overrides_audit = [e for e in second if isinstance(e, dict)]
         else:
             result.changes = out
             if ws.ecosystem == "node":
