@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-04
+
+### Added
+
+- **`--latest` flag:** a single `--latest` flag on `plan`/`apply` enables aggressive (include-majors) upgrades across every ecosystem, replacing the four undiscoverable per-ecosystem env vars (`REPO_OPS_BUN_UPDATE_LATEST`, `REPO_OPS_PNPM_UPDATE_LATEST`, `REPO_OPS_YARN_UPDATE_LATEST`, `REPO_OPS_GO_UPGRADE_MODE`); those env vars are still honored. (#102)
+- **`--go-upgrade-mode {patch,explicit,mvs}` flag:** the Go upgrade mode — previously only the `REPO_OPS_GO_UPGRADE_MODE` env var, documented solely in HUMANS.md — is now a first-class CLI flag surfaced in `--help`. (#102)
+- **`--json-out PATH` for `pushed` and `inventory`:** both commands can now write their JSON report atomically to a file (via a new `write_json_atomic` core helper) instead of only streaming to stdout, matching `plan`/`apply`. (#104)
+- **`--top N` for `inventory`:** caps the displayed rows — the TOTAL is still computed over the full set and "… and N more" is appended; `--json` still emits every row. (#104)
+- **`--jobs N` for `pushed` and `inventory`:** the worker-pool size is now configurable (previously hardcoded to `min(16, cpu)` and `8` respectively), matching `plan`/`apply`. (#104)
+- **`--manager` filter:** scope a run to a single package manager (bun/npm/pnpm/yarn/uv/poetry/pip-tools/hatch/go/rust), complementing the ecosystem `--filter` for mixed monorepos. (#104)
+- **`--version` flag:** `repo-ops --version` now prints the installed version instead of erroring on the required subcommand. (#104)
+- **`--only-outdated` for `apply`:** the triage flag (previously plan-only) now also works on `apply`. (#103)
+- **`--compact` flag:** emits single-line (unindented) JSON across all three producers for NDJSON-adjacent piping. (#101)
+- **`schema_version: 1`** is now the first key in every JSON payload (plan/apply, pushed, inventory), giving consumers a migration gate. (#101)
+- **"packages upgraded" footer total:** the run footer (and JSON `summary`) now reports the total package-upgrade count across workspaces. (#103)
+
+### Changed
+
+- **Per-ecosystem behind-latest hints:** the human-report footer now gives each manager its correct "include latest" remediation (bun/pnpm/yarn → `--latest`; npm → "no latest mode; bump the pin manually") instead of the one-size-fits-all `REPO_OPS_BUN_UPDATE_LATEST=1` advice, which was wrong for npm/pnpm. (#102)
+- **Triage-sorted report under `--only-outdated`:** repos now sort heaviest-first (by upgrade count) when `--only-outdated` is set; full reports stay alphabetical. (#103)
+- **Aligned change rows** (`name  from → to` via `table.py`) and **suppressed empty `## repo` headers** under `--only-outdated --skip-actions` in the human report. (#103)
+- **JSON payloads omit null fields:** `error`, `verify_error`, and `detail` are now omitted when null (matching the existing omit-when-None fields), shrinking large payloads. (#101)
+- **Harmonized JSON roots key:** `inventory` now emits `roots` (was `scanned_roots`), consistent with plan/apply and pushed. (#101)
+
+### Fixed
+
+- **`set_version.py` show mode** now exits 1 when any manifest version is unparseable, completing the exit-code contract #98 added to the set/bump paths (the show path silently exited 0). (#100)
+
 ### Documentation
 
 - Documented the `REPO_OPS_BUN_UPDATE_LATEST` and `REPO_OPS_FIND_TIMEOUT` environment variables, and removed the pre-1.0 0.2.x `repos-*` migration guide (no migration guide needed for a pre-1.0 project).
@@ -334,7 +362,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.6.1...v0.7.0
