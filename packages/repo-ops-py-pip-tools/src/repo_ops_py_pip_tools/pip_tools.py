@@ -32,7 +32,15 @@ def check_pip_tools(ws: Workspace) -> list[Change]:
             proposed = parse_requirements_lines(proc.stdout)
     if not proposed and shutil.which("pip-compile"):
         proc = run(
-            ["pip-compile", "--dry-run", "--quiet", "-o", "-", str(req_in)],
+            [
+                "pip-compile",
+                "--upgrade",
+                "--dry-run",
+                "--quiet",
+                "-o",
+                "-",
+                str(req_in),
+            ],
             ws.path,
             timeout=TIMEOUT_CHECK,
         )
