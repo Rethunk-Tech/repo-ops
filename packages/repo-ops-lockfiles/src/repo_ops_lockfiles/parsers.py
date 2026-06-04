@@ -106,13 +106,13 @@ def versions_pnpm_lock(p: Path) -> set[str]:
             if line and not line.startswith(" "):
                 in_pkgs = False
                 continue
-            m = _RE_AT.match(line)
-            if m:
-                out.add(m.group(1))
-                continue
             m = _RE_PATH.match(line)
             if m:
                 out.add(f"{m.group(1)}@{m.group(2)}")
+                continue
+            m = _RE_AT.match(line)
+            if m:
+                out.add(m.group(1))
     return out
 
 

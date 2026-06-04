@@ -91,6 +91,38 @@ packages:
         assert versions_pnpm_lock(p) == {"lodash@4.17.21", "@babel/core@7.22.0"}
 
 
+def test_versions_pnpm_lock_v5_peer_suffix_not_swallowed():
+    """v5 path lines with @peer-suffix must parse correctly via _RE_PATH — closes #53.
+
+    Before the fix _RE_AT matched these first and emitted a garbled token.
+    A plain name@version line must still parse correctly too.
+    """
+    content = """lockfileVersion: 5
+
+packages:
+  /react-dom/18.2.0_react@18.2.0:
+    resolution: {integrity: sha512-abc}
+  /lodash/4.17.21:
+    resolution: {integrity: sha512-xyz}
+  lodash@4.17.21:
+    resolution: {integrity: sha512-abc}
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "pnpm-lock.yaml"
+        p.write_text(content)
+        result = versions_pnpm_lock(p)
+        # The peer-suffix path line must start with "react-dom@" (not "react-dom/")
+        assert any(t.startswith("react-dom@18.2.0") for t in result), (
+            f"peer-suffix path line not parsed correctly; got: {result}"
+        )
+        # Plain name@version must still parse
+        assert "lodash@4.17.21" in result, (
+            f"plain name@version line broken; got: {result}"
+        )
+        # Path-notation without peer suffix must still parse
+        assert "lodash@4.17.21" in result
+
+
 def test_versions_bun_lock_json_and_fallback():
     content = """{
   "packages": {
