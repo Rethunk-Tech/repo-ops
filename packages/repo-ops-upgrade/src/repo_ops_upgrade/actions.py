@@ -148,7 +148,14 @@ def _resolve_sha_target(
         # Normalise sha prefix-form: "sha<hex>" → strip "sha" prefix
         if sha_lower.startswith("sha"):
             sha_lower = sha_lower[3:]
-        tags_for_sha = info.get("sha_to_tags", {}).get(sha_lower, [])
+        sha_to_tags_map = info.get("sha_to_tags", {})
+        tags_for_sha = sha_to_tags_map.get(sha_lower, [])
+        if not tags_for_sha and len(sha_lower) < 40:
+            # Short-SHA prefix fallback: scan all full SHAs for a unique prefix match.
+            matches = [k for k in sha_to_tags_map if k.startswith(sha_lower)]
+            if len(matches) == 1:
+                tags_for_sha = sha_to_tags_map[matches[0]]
+            # len == 0: no match; len > 1: ambiguous — leave tags_for_sha empty.
         if tags_for_sha:
             # Pick the highest semver among tags pointing at this SHA.
             best: str | None = None
