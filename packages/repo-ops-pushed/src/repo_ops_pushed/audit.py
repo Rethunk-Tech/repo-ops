@@ -61,7 +61,11 @@ def _reflog_pre_sha(repo: str, ref: str, new_sha: str) -> str | None:
     Uses ``git rev-parse ref@{n+1}`` for the reflog entry at ``@{n}`` whose new tip
     is ``new_sha``. Returns ``None`` when there is no prior reflog entry (first push).
     """
-    proc = run_git(repo, "reflog", "show", ref)
+    try:
+        proc = run_git(repo, "reflog", "show", ref)
+    except subprocess.TimeoutExpired:
+        print(f"WARN: skipped {repo} (ref {ref}): timeout", file=sys.stderr)
+        return None
     if proc.returncode != 0:
         return None
     for line in proc.stdout.splitlines():
@@ -78,7 +82,11 @@ def _reflog_pre_sha(repo: str, ref: str, new_sha: str) -> str | None:
         if not idx_match:
             continue
         n = int(idx_match.group(1))
-        pre = run_git(repo, "rev-parse", f"{ref}@{{{n + 1}}}")
+        try:
+            pre = run_git(repo, "rev-parse", f"{ref}@{{{n + 1}}}")
+        except subprocess.TimeoutExpired:
+            print(f"WARN: skipped {repo} (ref {ref}): timeout", file=sys.stderr)
+            return None
         if pre.returncode != 0 or not pre.stdout.strip():
             return None
         old = pre.stdout.strip()
@@ -199,8 +207,14 @@ def resolve_subjects(per_repo: list[RepoResult]) -> dict[str, dict[str, str]]:
     for r in per_repo:
         subs: dict[str, str] = {}
         for sha in r.commits:
-            proc = run_git(r.path, "log", "-1", "--format=%s", sha)
-            subject = proc.stdout.strip() if proc.returncode == 0 else ""
+            try:
+                proc = run_git(r.path, "log", "-1", "--format=%s", sha)
+                subject = proc.stdout.strip() if proc.returncode == 0 else ""
+            except subprocess.TimeoutExpired:
+                print(
+                    f"WARN: skipped {r.path} (log {sha[:8]}): timeout", file=sys.stderr
+                )
+                subject = ""
             if len(subject) > 100:
                 subject = subject[:100] + "…"
             subs[sha] = subject

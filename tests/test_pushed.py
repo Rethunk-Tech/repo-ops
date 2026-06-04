@@ -187,6 +187,51 @@ def test_pushed_commits_for_repo_from_push_reflog(monkeypatch):
     assert commit_sha in commits
 
 
+def test_timeout_in_reflog_pre_sha_does_not_abort_scan(monkeypatch):
+    """Regression #41: TimeoutExpired in _reflog_pre_sha must not propagate through
+    future.result() and abort the whole scan; pushed_commits_for_repo returns gracefully.
+
+    Setup: single ref, single oldest push entry (i+1 >= len(entries)) so the code
+    falls through to _reflog_pre_sha. reflog show inside _reflog_pre_sha returns a
+    matching tip line, driving it to the rev-parse call, which times out.
+    Expected: no exception raised; commits dict is returned (possibly empty but intact).
+    """
+    import subprocess
+
+    now = 1_700_000_000
+    filters = Filters(since_unix=now - 3600, until_unix=now + 3600)
+    ref = "refs/remotes/origin/main"
+    new_sha = "b" * 40
+    commit_sha = "c" * 40
+
+    def fake_run_git(repo, *args, **kwargs):
+        class Fake:
+            returncode = 0
+            stdout = ""
+
+        cmd = args
+        if cmd[:2] == ("for-each-ref", "--format=%(refname)"):
+            Fake.stdout = f"{ref}\n"
+        elif cmd[:2] == ("reflog", "show") and "--date=unix" in cmd:
+            # Called from pushed_commits_for_repo — single entry, so hits _reflog_pre_sha
+            Fake.stdout = f"{new_sha} {ref}@{{{now}}}: update by push\n"
+        elif cmd[:2] == ("reflog", "show"):
+            # Called from _reflog_pre_sha — return matching tip to reach rev-parse
+            Fake.stdout = f"{new_sha} {ref}@{{0}}: update by push\n"
+        elif cmd[0] == "rev-parse":
+            # Simulate timeout — this is the newly guarded site
+            raise subprocess.TimeoutExpired(cmd=["git", "rev-parse"], timeout=10)
+        elif cmd[0] == "rev-list":
+            Fake.stdout = f"{commit_sha}\n"
+        return Fake()
+
+    monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
+    # Must not raise; scan degrades gracefully (old_sha falls back to "--root")
+    commits = pushed_commits_for_repo("/fake/repo", filters)
+    # The scan continues: commit_sha should still be found via --root fallback
+    assert commit_sha in commits
+
+
 def test_collect_results_uses_discovery(tmp_path: Path, monkeypatch):
     repo_dir = tmp_path / "r"
     (repo_dir / ".git").mkdir(parents=True)
