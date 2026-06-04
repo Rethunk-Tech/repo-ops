@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -83,6 +84,38 @@ with patch(
         text=True,
     )
     assert proc.returncode == 1
+
+
+def test_apply_worker_exception_reports_fail_not_clean(tmp_path: Path) -> None:
+    """A worker that raises must surface as a FAILED workspace, not a silent
+    clean exit 0 (#62). Exit code alone is insufficient: the defensive
+    fallthrough would also yield rc=1, so the error text ("boom") pins that the
+    guard path in _process_one actually ran and recorded the exception."""
+    _npm_workspace(tmp_path)
+    out_file = tmp_path / "apply.json"
+    register_all()
+    with patch(
+        "repo_ops_upgrade.run.orchestration.process_workspace",
+        side_effect=RuntimeError("boom"),
+    ):
+        rc = main_apply(
+            [
+                str(tmp_path),
+                "--flat",
+                "--skip-actions",
+                "--json",
+                f"--json-out={out_file}",
+            ]
+        )
+    # (a) crashed worker => non-zero exit, never silent success.
+    assert rc != 0
+    payload = json.loads(out_file.read_text(encoding="utf-8"))
+    workspaces = [ws for repo in payload["repos"] for ws in repo["workspaces"]]
+    assert workspaces, "expected the crashed workspace to be reported"
+    # (b) the affected workspace is reported fail/not-clean, with the original
+    # exception preserved (guard path, not the generic fallthrough string).
+    assert all(ws["status"] == "fail" for ws in workspaces)
+    assert any("boom" in (ws["error"] or "") for ws in workspaces)
 
 
 def test_apply_log_file_captures_transcript(tmp_path: Path) -> None:

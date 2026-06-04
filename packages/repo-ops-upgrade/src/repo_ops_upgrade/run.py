@@ -119,15 +119,24 @@ def _run_upgrade_body(
     _FAIL_FAST.clear()
 
     def _process_one(wr: WorkspaceResult) -> WorkspaceResult:
-        return orchestration.process_workspace(
-            wr,
-            do_apply=apply,
-            do_verify=apply and not args.no_verify,
-            verify_test=apply and args.verify_test,
-            skip_remediations=skip_remediations,
-            allow_dirty=args.allow_dirty,
-            on_verify_fail=getattr(args, "on_verify_fail", "keep"),
-        )
+        # Guard the worker body: a raising worker must surface as a FAILED
+        # workspace, not get silently dropped from results and reported clean
+        # with exit 0 (#62). Mutate and return the input result so its
+        # workspace.path still matches in reconciliation below.
+        try:
+            return orchestration.process_workspace(
+                wr,
+                do_apply=apply,
+                do_verify=apply and not args.no_verify,
+                verify_test=apply and args.verify_test,
+                skip_remediations=skip_remediations,
+                allow_dirty=args.allow_dirty,
+                on_verify_fail=getattr(args, "on_verify_fail", "keep"),
+            )
+        except Exception as exc:  # noqa: BLE001 - any worker crash => fail, never clean
+            wr.status = "fail"
+            wr.error = str(exc)
+            return wr
 
     def _process_repo(bundle: RepoBundle) -> list[WorkspaceResult]:
         results: list[WorkspaceResult] = []
@@ -204,6 +213,11 @@ def _run_upgrade_body(
                 wr.error = "fail-fast"
                 updated.append(wr)
             else:
+                # No result and not fail-fast: the worker crashed and dropped
+                # this workspace. Mark it failed rather than re-appending the
+                # original (default-status) result as a silent clean pass (#62).
+                wr.status = "fail"
+                wr.error = "worker crashed (no result returned)"
                 updated.append(wr)
         bundle.workspaces = updated
 
