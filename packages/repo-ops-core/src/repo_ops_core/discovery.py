@@ -102,7 +102,12 @@ def discover_repos(
             print(f"WARN: find timed out under {root_path}", file=sys.stderr)
             continue
         if proc.returncode != 0:
-            continue
+            if not proc.stdout.strip():
+                continue
+            print(
+                f"WARN: find exited {proc.returncode} under {root_path} (partial results used)",
+                file=sys.stderr,
+            )
         for git_dir in proc.stdout.splitlines():
             if not git_dir:
                 continue

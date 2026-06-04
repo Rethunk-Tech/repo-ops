@@ -310,6 +310,35 @@ def test_discover_repos_git_common_dir_timeout_skips_and_warns(
     )
 
 
+def test_discover_repos_find_nonzero_with_stdout_still_discovers(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Regression for #94: when find exits non-zero (e.g. permission-denied subdir)
+    but still prints .git paths to stdout, those repos must be discovered and a
+    WARN must be emitted to stderr."""
+    repo_dir = tmp_path / "myorg" / "myrepo"
+    (repo_dir / ".git").mkdir(parents=True)
+    git_path = str(repo_dir / ".git")
+    common = str((repo_dir / ".git").resolve())
+
+    def fake_git_common_dir(p: object) -> str:
+        return common
+
+    mock_run = MagicMock(returncode=1, stdout=f"{git_path}\n")
+
+    with (
+        patch("repo_ops_core.discovery.subprocess.run", return_value=mock_run),
+        patch("repo_ops_core.discovery.git_common_dir", fake_git_common_dir),
+    ):
+        result = discover_repos([str(tmp_path)])
+
+    assert common in result, "repo must be discovered despite find exit code 1"
+    captured = capsys.readouterr()
+    assert "WARN" in captured.err, (
+        f"expected WARN on stderr for non-zero find exit; got: {captured.err!r}"
+    )
+
+
 @pytest.mark.parametrize(
     "matcher",
     [
