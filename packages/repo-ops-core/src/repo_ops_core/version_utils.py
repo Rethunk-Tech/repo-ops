@@ -7,7 +7,7 @@ import re
 
 def normalize_version(v: str) -> str:
     stripped = re.sub(r"^[\^~>=<]+", "", v.strip())
-    if stripped.startswith("v"):
+    if stripped.startswith(("v", "V")):
         stripped = stripped[1:]
     return stripped.split("-")[0]
 

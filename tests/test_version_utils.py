@@ -27,3 +27,9 @@ def test_semver_tuple_v_prefixed():
     assert semver_tuple("v4.1.0") == semver_tuple("4.1.0")
     # ordering must hold across major versions
     assert semver_tuple("v10.0.0") > semver_tuple("v9.0.0")
+
+
+def test_semver_tuple_uppercase_V_prefix():
+    # V1.2.3 must parse as (1,2,3), not (0,2,3) — closes #58
+    assert semver_tuple("V1.2.3") == (1, 2, 3)
+    assert normalize_version("V1.2.3") == "1.2.3"
