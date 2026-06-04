@@ -68,24 +68,7 @@ def count_dep_edges(proj: Path) -> int:
     """Sum dependency edges under proj (Node package.json + Python lock/manifests)."""
     total = 0
     for dirpath, dirnames, filenames in os.walk(proj):
-        dirnames[:] = [
-            d
-            for d in dirnames
-            if d
-            not in (
-                ".git",
-                ".next",
-                "dist",
-                "build",
-                ".turbo",
-                ".cache",
-                "target",
-                "venv",
-                ".venv",
-                ".claude",
-                "node_modules",
-            )
-        ]
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         names = set(filenames)
         mdir = Path(dirpath)
         if "package.json" in names:

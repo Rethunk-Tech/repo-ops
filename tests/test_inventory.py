@@ -122,6 +122,43 @@ def test_nested_node_modules_counting(tmp_path: Path) -> None:
     assert count_dep_edges(tmp_path) == 2
 
 
+def test_count_dep_edges_skips_vendor_and_yarn(tmp_path: Path) -> None:
+    """#96: count_dep_edges must not descend into vendor/ or .yarn/ dirs.
+
+    Layout:
+      uv.lock                          <- root lock, 1 edge (counted)
+      vendor/
+        sub/
+          uv.lock                      <- vendored lock, should NOT be counted
+      .yarn/
+        sub/
+          package.json                 <- vendored node manifest, should NOT be counted
+    """
+    import json
+
+    # Root-level lock with 1 dependency edge
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "root"\nversion = "0.0.1"\ndependencies = [\n    { name = "dep-a" },\n]\n'
+    )
+
+    # vendor/ subtree — should be skipped entirely
+    vendor_sub = tmp_path / "vendor" / "sub"
+    vendor_sub.mkdir(parents=True)
+    (vendor_sub / "uv.lock").write_text(
+        '[[package]]\nname = "vendored"\nversion = "1.0.0"\ndependencies = [\n    { name = "x" },\n    { name = "y" },\n]\n'
+    )
+
+    # .yarn/ subtree — should be skipped entirely
+    yarn_sub = tmp_path / ".yarn" / "sub"
+    yarn_sub.mkdir(parents=True)
+    (yarn_sub / "package.json").write_text(
+        json.dumps({"dependencies": {"a": "^1.0", "b": "^2.0", "c": "^3.0"}})
+    )
+
+    # Only the 1 root edge must be counted; vendor/ and .yarn/ are pruned
+    assert count_dep_edges(tmp_path) == 1
+
+
 def test_go_cache_roundtrip_and_invalid(tmp_path: Path):
     cache_path = tmp_path / "cache.json"
     data = {"k": {"direct": 1, "versions": ["x@1"]}}
