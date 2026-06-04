@@ -152,6 +152,45 @@ def test_actions_summary_counts_newer_major_as_behind_latest(tmp_path: Path) -> 
     assert s["bumps"] == 1  # normalize bump is still actionable
 
 
+def test_actions_summary_dedupes_behind_latest_across_workflows(
+    tmp_path: Path,
+) -> None:
+    """Same action@pin with newer major across N workflows → behind_latest == 1 (#74)."""
+    bundle = _bundle(
+        tmp_path,
+        actions=[
+            ActionBump(
+                workflow="ci.yml",
+                action="actions/checkout",
+                pin="v4",
+                latest="v5",
+                status="ok",
+                detail="newer major v5 available; not auto-applied (report only)",
+            ),
+            ActionBump(
+                workflow="release.yml",
+                action="actions/checkout",
+                pin="v4",
+                latest="v5",
+                status="ok",
+                detail="newer major v5 available; not auto-applied (report only)",
+            ),
+            ActionBump(
+                workflow="deploy.yml",
+                action="actions/checkout",
+                pin="v4",
+                latest="v5",
+                status="ok",
+                detail="newer major v5 available; not auto-applied (report only)",
+            ),
+        ],
+        workflows_scanned=3,
+    )
+    s = bundle.actions_summary()
+    assert s["behind_latest"] == 1
+    assert s["bumps"] == 0
+
+
 def test_build_run_summary_includes_actions_behind_latest(tmp_path: Path) -> None:
     bundle = _bundle(
         tmp_path,

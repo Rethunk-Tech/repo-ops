@@ -115,7 +115,10 @@ class RepoBundle:
             # not as an actionable bump. Other report-only cases (SHA-pin, no
             # floating major) are informational and excluded from both counters.
             if "newer major" in detail_lower and "not auto-applied" in detail_lower:
-                behind_latest += 1
+                key = (ab.action, ab.pin)
+                if key not in seen:
+                    seen.add(key)
+                    behind_latest += 1
                 continue
             if "report only" in detail_lower:
                 continue
