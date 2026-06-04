@@ -4,6 +4,7 @@ from pathlib import Path
 
 from repo_ops_inventory.counting import (
     count_dep_edges,
+    count_installed_node,
     count_python,
     count_rust,
     load_go_cache,
@@ -78,6 +79,47 @@ def test_scan_non_flat_missing_root_returns_empty(tmp_path: Path):
     missing = tmp_path / "no-such-root"
     assert not missing.exists()
     assert scan(missing, flat=False) == []
+
+
+def test_nested_node_modules_counting(tmp_path: Path) -> None:
+    """#69: count_installed_node descends into nested node_modules.
+    #75: count_dep_edges does NOT descend into node_modules.
+
+    Fixture layout:
+      package.json          <- root manifest, 2 direct deps
+      node_modules/
+        pkg-a/
+          package.json      <- installed package with 1 dep (nested level 1)
+          node_modules/
+            pkg-b/
+              package.json  <- installed package with 1 dep (nested level 2)
+    """
+    import json
+
+    # Root manifest with 2 direct dependencies
+    (tmp_path / "package.json").write_text(
+        json.dumps({"dependencies": {"pkg-a": "^1.0.0", "pkg-b": "^2.0.0"}})
+    )
+
+    # Nested installed packages, each carrying 1 dep
+    nm = tmp_path / "node_modules"
+    pkg_a = nm / "pkg-a"
+    pkg_a.mkdir(parents=True)
+    (pkg_a / "package.json").write_text(
+        json.dumps({"name": "pkg-a", "dependencies": {"lodash": "^4.0.0"}})
+    )
+    pkg_b = pkg_a / "node_modules" / "pkg-b"
+    pkg_b.mkdir(parents=True)
+    (pkg_b / "package.json").write_text(
+        json.dumps({"name": "pkg-b", "dependencies": {"semver": "^7.0.0"}})
+    )
+
+    # #69: both nested packages are counted (unfixed = 1, pkg-a only)
+    assert count_installed_node(tmp_path) == 2
+
+    # #75: only root's 2 direct deps count; node_modules is pruned entirely
+    # (unfixed = 4: root 2 + pkg-a 1 + pkg-b 1)
+    assert count_dep_edges(tmp_path) == 2
 
 
 def test_go_cache_roundtrip_and_invalid(tmp_path: Path):

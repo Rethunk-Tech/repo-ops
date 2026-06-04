@@ -51,9 +51,14 @@ def count_installed_node(mdir: Path) -> int:
     nm = mdir / "node_modules"
     if not nm.exists():
         return 0
+    # Do NOT prune node_modules here — we want to count nested duplicates from
+    # version conflicts (e.g. node_modules/a/node_modules/b). SKIP_DIRS contains
+    # "node_modules" to prevent count_node's manifest walk from descending; that
+    # shared constant must not be modified. Build a local set that allows descent.
+    _skip = SKIP_DIRS - {"node_modules"}
     n = 0
     for dirpath, dirnames, filenames in os.walk(nm):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [d for d in dirnames if d not in _skip]
         if "package.json" in filenames and Path(dirpath) != nm:
             n += 1
     return n
@@ -78,6 +83,7 @@ def count_dep_edges(proj: Path) -> int:
                 "venv",
                 ".venv",
                 ".claude",
+                "node_modules",
             )
         ]
         names = set(filenames)
