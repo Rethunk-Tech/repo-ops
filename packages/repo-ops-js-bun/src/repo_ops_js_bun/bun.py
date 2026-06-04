@@ -8,7 +8,7 @@ import re
 
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import TIMEOUT_APPLY
+from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
 # bun >= 1.3 has no `--json` for `outdated`; it always prints an ANSI-coloured
 # box-drawing table led by a `bun outdated vX (hash)` banner. Parse that table
@@ -124,7 +124,7 @@ def check_bun(ws: Workspace) -> tuple[list[Change], list[Change]]:
     that have a newer ``latest`` version available but are not actioned when
     ``REPO_OPS_BUN_UPDATE_LATEST`` is unset.
     """
-    proc_json = run(["bun", "outdated", "--json"], ws.path)
+    proc_json = run(["bun", "outdated", "--json"], ws.path, timeout=TIMEOUT_CHECK)
     if proc_json.returncode in (0, 1) and proc_json.stdout.strip():
         try:
             data = json.loads(proc_json.stdout)
@@ -133,7 +133,7 @@ def check_bun(ws: Workspace) -> tuple[list[Change], list[Change]]:
         if isinstance(data, dict):
             return _changes_from_bun_json(proc_json.stdout)
 
-    proc = run(["bun", "outdated"], ws.path)
+    proc = run(["bun", "outdated"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode not in (0, 1):
         raise RuntimeError(
             proc.stderr.strip() or proc.stdout.strip() or "bun outdated failed"

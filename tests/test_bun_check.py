@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from repo_ops_js_bun.bun import check_bun
 from repo_ops_models import Workspace
+from repo_ops_upgrade.constants import TIMEOUT_CHECK
 
 
 def _ws() -> Workspace:
@@ -148,3 +149,28 @@ def test_check_bun_detects_real_bun_dep_but_not_banner() -> None:
     assert ("bun", "1.0.0", "1.1.0") in [(c.name, c.from_ver, c.to) for c in changes]
     # (b) The banner never leaks through as a bogus `bun@(hash)` change.
     assert all("0d9b296a" not in c.to for c in changes)
+
+
+def test_check_bun_passes_timeout_check() -> None:
+    """#90 — both bun outdated calls must use TIMEOUT_CHECK (600s), not the default 300s."""
+    captured: list[dict] = []
+
+    def fake_run(cmd, cwd, timeout=None):
+        captured.append({"cmd": list(cmd), "timeout": timeout})
+        if "--json" in cmd:
+            # Simulate bun >= 1.3 not supporting --json: empty output, returncode=1.
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with patch("repo_ops_js_bun.bun.run", fake_run):
+        check_bun(_ws())
+
+    assert len(captured) == 2, f"expected 2 run() calls, got {len(captured)}"
+    assert captured[0]["cmd"] == ["bun", "outdated", "--json"]
+    assert captured[0]["timeout"] == TIMEOUT_CHECK, (
+        f"--json call used timeout={captured[0]['timeout']!r}, want {TIMEOUT_CHECK}"
+    )
+    assert captured[1]["cmd"] == ["bun", "outdated"]
+    assert captured[1]["timeout"] == TIMEOUT_CHECK, (
+        f"text call used timeout={captured[1]['timeout']!r}, want {TIMEOUT_CHECK}"
+    )
