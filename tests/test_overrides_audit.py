@@ -69,3 +69,18 @@ def test_semver_stale_override_still_fires(tmp_path: Path) -> None:
     stale = [r for r in results if "stale" in r.get("detail", "")]
     assert len(stale) == 1, f"expected exactly one stale warning, got: {results}"
     assert "lodash" in stale[0]["detail"]
+
+
+def test_npm_and_catalog_protocol_pins_produce_no_warning(tmp_path: Path) -> None:
+    """npm: alias and catalog: protocol pins must produce no warnings — closes #50."""
+    _write_pkg_json(
+        tmp_path,
+        {
+            "react": "npm:preact@^10.0.0",
+            "lodash": "catalog:default",
+            "axios": "http://example.com/axios.tgz",
+            "my-patch": "patch:my-pkg@1.0.0#./patches/my-pkg.patch",
+        },
+    )
+    results = overrides_audit(tmp_path, "pnpm")
+    assert results == [], f"expected no warnings for protocol pins, got: {results}"

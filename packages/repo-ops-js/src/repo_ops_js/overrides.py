@@ -37,6 +37,10 @@ def overrides_audit(mdir: Path, manager: str) -> list[dict[str, str]]:
         "git+",
         "github:",
         "https:",
+        "http:",
+        "npm:",
+        "catalog:",
+        "patch:",
     )
 
     out: list[dict[str, str]] = []
