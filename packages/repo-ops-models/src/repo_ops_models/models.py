@@ -35,6 +35,7 @@ class WorkspaceResult:
     verify_error: str | None = None
     verify_fail_disposition: str | None = None
     started_dirty: bool = False
+    reverted_ok: bool = True
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -56,6 +57,8 @@ class WorkspaceResult:
         }
         if self.verify_fail_disposition is not None:
             out["verify_fail_disposition"] = self.verify_fail_disposition
+        if not self.reverted_ok:
+            out["reverted_ok"] = False
         return out
 
 

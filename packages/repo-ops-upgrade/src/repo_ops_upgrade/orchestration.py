@@ -89,19 +89,24 @@ def process_workspace(
             result.verify_error = verr
             result.status = "fail"
             if before_snap is not None:
+                reverted_ok = True
                 if on_verify_fail == "revert":
                     try:
-                        revert_workspace_after_verify_fail(ws, before_snap)
+                        reverted_ok = revert_workspace_after_verify_fail(
+                            ws, before_snap
+                        )
                     except (RuntimeError, OSError, ValueError) as exc:
                         logger.warning("revert after verify fail failed: %s", exc)
+                        reverted_ok = False
                         prefix = result.error or ""
                         result.error = (
                             f"{prefix}; revert failed: {exc}".strip("; ")
                             if prefix
                             else f"revert failed: {exc}"
                         )
+                    result.reverted_ok = reverted_ok
                 result.verify_fail_disposition = classify_verify_fail_disposition(
-                    ws, before_snap
+                    ws, before_snap, reverted_ok=reverted_ok
                 )
 
     return result

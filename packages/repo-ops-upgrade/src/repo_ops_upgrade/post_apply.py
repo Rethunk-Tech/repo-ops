@@ -123,7 +123,11 @@ def workspace_has_apply_artifacts(
 def classify_verify_fail_disposition(
     ws: Workspace,
     before_snap: dict[Path, bytes],
+    *,
+    reverted_ok: bool = True,
 ) -> str:
+    if not reverted_ok:
+        return FAILED_WITH_CHANGES
     if workspace_has_apply_artifacts(ws, before_snap):
         return FAILED_WITH_CHANGES
     return FAILED_CLEAN
@@ -132,10 +136,17 @@ def classify_verify_fail_disposition(
 def revert_workspace_after_verify_fail(
     ws: Workspace,
     before_snap: dict[Path, bytes],
-) -> None:
-    """Restore pre-apply lockfile snapshot and git-tracked paths under the workspace."""
+) -> bool:
+    """Restore pre-apply lockfile snapshot and git-tracked paths under the workspace.
+
+    Returns True when all revert operations succeeded, False if any git operation
+    reported a non-zero exit code (in which case the workspace may be partially
+    reverted).
+    """
     restore_workspace_snapshot(ws.path, before_snap, ws.manager)
     pathspec = _workspace_git_pathspec(ws)
+    reverted_ok = True
+
     diff_proc = run(
         ["git", "diff", "--name-only", "--", pathspec],
         ws.git_repo,
@@ -143,8 +154,33 @@ def revert_workspace_after_verify_fail(
     )
     if diff_proc.returncode == 0 and diff_proc.stdout.strip():
         paths = [line.strip() for line in diff_proc.stdout.splitlines() if line.strip()]
-        run(
+        checkout_proc = run(
             ["git", "checkout", "--", *paths],
             ws.git_repo,
             timeout=120,
         )
+        if checkout_proc.returncode != 0:
+            logger.warning(
+                "git checkout failed during revert for %s (rc=%d): %s",
+                ws.path,
+                checkout_proc.returncode,
+                (checkout_proc.stderr or checkout_proc.stdout).strip(),
+            )
+            reverted_ok = False
+
+    # Remove untracked files created by apply (e.g. new lockfiles) scoped to workspace.
+    clean_proc = run(
+        ["git", "clean", "-fd", "--", pathspec],
+        ws.git_repo,
+        timeout=60,
+    )
+    if clean_proc.returncode != 0:
+        logger.warning(
+            "git clean failed during revert for %s (rc=%d): %s",
+            ws.path,
+            clean_proc.returncode,
+            (clean_proc.stderr or clean_proc.stdout).strip(),
+        )
+        reverted_ok = False
+
+    return reverted_ok
