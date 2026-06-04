@@ -209,10 +209,15 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
         data = yaml.load(path)
     except YAMLError as exc:
         raise WorkflowParseError(f"{path.name}: {exc}") from exc
+    except OSError as exc:
+        raise WorkflowParseError(f"{path.name}: {exc}") from exc
     if data is None:
         return False
     if not _walk_apply(data, replacements):
         return False
-    with path.open("w", encoding="utf-8", newline="\n") as fh:
-        yaml.dump(data, fh)
+    try:
+        with path.open("w", encoding="utf-8", newline="\n") as fh:
+            yaml.dump(data, fh)
+    except OSError as exc:
+        raise WorkflowParseError(f"{path.name}: {exc}") from exc
     return True

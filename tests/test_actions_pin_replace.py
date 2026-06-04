@@ -1,11 +1,14 @@
-"""Regression tests for GitHub Actions pin apply (issues #5, #19)."""
+"""Regression tests for GitHub Actions pin apply (issues #5, #19, #77)."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
+import pytest
 from repo_ops_upgrade.workflow_uses import (
     PinReplacement,
+    WorkflowParseError,
     parse_uses_ref,
     update_workflow_pins,
 )
@@ -57,3 +60,39 @@ def test_update_pin_same_file_mixed_pins(tmp_path: Path) -> None:
     out = wf.read_text(encoding="utf-8")
     assert "uses: 8398a7/action-slack@v3.19.0" in out
     assert "v3.19.0.19.0" not in out
+
+
+def test_update_workflow_pins_write_oserror_raises_parse_error(
+    tmp_path: Path,
+) -> None:
+    """Issue #77: OSError on write must be caught and re-raised as WorkflowParseError."""
+    wf = tmp_path / "wf.yml"
+    wf.write_text("uses: actions/checkout@v3\n", encoding="utf-8")
+    # ruamel.yaml.load uses Path.open internally; patch only write mode so load succeeds.
+    _real_open = Path.open
+
+    def _raise_on_write(self: Path, mode: str = "r", **kwargs: object) -> object:
+        if "w" in mode:
+            raise OSError("permission denied")
+        return _real_open(self, mode, **kwargs)  # type: ignore[call-overload]
+
+    with (
+        patch("pathlib.Path.open", _raise_on_write),
+        pytest.raises(WorkflowParseError, match="permission denied"),
+    ):
+        update_workflow_pins(
+            wf,
+            [PinReplacement("actions/checkout", "v3", "v4")],
+        )
+
+
+def test_update_workflow_pins_load_oserror_raises_parse_error(
+    tmp_path: Path,
+) -> None:
+    """Issue #77: OSError on load (file vanished) must be caught and re-raised as WorkflowParseError."""
+    missing = tmp_path / "nonexistent.yml"
+    with pytest.raises(WorkflowParseError):
+        update_workflow_pins(
+            missing,
+            [PinReplacement("actions/checkout", "v3", "v4")],
+        )
