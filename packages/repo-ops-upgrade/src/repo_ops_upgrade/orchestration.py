@@ -115,7 +115,11 @@ def process_workspace(
 def filter_workspaces(
     workspaces: list[Workspace],
     eco_filter: str | None,
+    manager_filter: str | None = None,
 ) -> list[Workspace]:
-    if not eco_filter:
-        return workspaces
-    return [w for w in workspaces if w.ecosystem == eco_filter]
+    result = workspaces
+    if eco_filter:
+        result = [w for w in result if w.ecosystem == eco_filter]
+    if manager_filter:
+        result = [w for w in result if w.manager == manager_filter]
+    return result

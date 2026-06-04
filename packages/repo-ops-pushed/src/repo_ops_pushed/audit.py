@@ -19,10 +19,12 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from repo_ops_core.cli import (
     add_follow_symlinks_argument,
     add_json_argument,
+    add_json_out_argument,
     add_roots_argument,
     add_verbose_argument,
     parse_iso8601,
@@ -31,6 +33,7 @@ from repo_ops_core.cli import (
     wire_verbose,
 )
 from repo_ops_core.discovery import discover_repos
+from repo_ops_core.filesystem import write_json_atomic
 from repo_ops_core.git import repo_label, run_git
 from repo_ops_core.table import column_width, format_cell, join_row
 
@@ -171,12 +174,13 @@ def collect_results(
     filters: Filters,
     *,
     follow_symlinks: bool = False,
+    jobs: int | None = None,
 ) -> tuple[dict[str, None], list[RepoResult]]:
     common_to_repo = discover_repos(roots, follow_symlinks=follow_symlinks)
     per_repo: list[RepoResult] = []
     all_commits: dict[str, None] = {}
 
-    max_workers = min(16, (os.cpu_count() or 4))
+    max_workers = jobs if jobs is not None else min(16, (os.cpu_count() or 4))
     repos_sorted = sorted(common_to_repo.values())
 
     def _scan_repo(repo: str) -> RepoResult | None:
@@ -371,10 +375,19 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Print only the total commit count",
     )
+    parser.add_argument(
+        "--jobs",
+        type=positive_int,
+        default=None,
+        help="Max parallel workers for repo scanning (default: min(16, cpu count)).",
+    )
     add_json_argument(parser, dest="json_out")
+    add_json_out_argument(parser)
     add_verbose_argument(parser)
     args = parser.parse_args(argv)
     wire_verbose(args)
+    if getattr(args, "json_report_path", None) and not args.json_out:
+        parser.error("--json-out requires --json")
 
     # --show-messages implies --show-shas; set once here to avoid repeated checks
     if args.show_messages:
@@ -439,6 +452,7 @@ def main(argv: list[str] | None = None) -> int:
         roots,
         filters,
         follow_symlinks=follow_symlinks,
+        jobs=args.jobs,
     )
 
     if args.json_out:
@@ -475,7 +489,14 @@ def main(argv: list[str] | None = None) -> int:
             # Consumers slice from "repos" themselves; "top" key removed.
             "repos": [_repo_entry(r) for r in per_repo],
         }
-        print(json.dumps(payload, indent=None if args.compact else 2))
+        json_report_path = getattr(args, "json_report_path", None)
+        if json_report_path:
+            written = write_json_atomic(
+                Path(json_report_path), payload, compact=args.compact
+            )
+            print(written)
+        else:
+            print(json.dumps(payload, indent=None if args.compact else 2))
         return 0
 
     if args.count_only:

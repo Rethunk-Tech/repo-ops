@@ -11,6 +11,7 @@ import pytest
 from repo_ops._register import register_all
 from repo_ops_core.cli import (
     ECO_FILTER_HELP,
+    MANAGER_FILTER_CHOICES,
     add_eco_filter_argument,
     build_upgrade_parser,
     parse_iso8601,
@@ -120,3 +121,40 @@ def test_dispatcher_forwards_empty_list_for_bare_subcommand() -> None:
         assert captured["argv"] == []
         assert cli.main(["plan", "/some/root"]) == 0
         assert captured["argv"] == ["/some/root"]
+
+
+def test_cli_version_flag_short_circuits(capsys) -> None:
+    """#104: repo-ops --version prints the installed version and exits 0."""
+    from repo_ops import cli
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["--version"])
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    assert out.startswith("repo-ops ")
+    # _resolve_version pulls importlib.metadata.version("repo-ops").
+    assert cli._resolve_version() in out
+
+
+def test_manager_filter_choices_match_registry() -> None:
+    """#104: --manager choices stay in sync with the registry's CHECKERS keys.
+
+    The choices are a static tuple in core to avoid a core->upgrade circular
+    import; this guard fails loudly if a new manager is registered but the
+    filter tuple is not updated.
+    """
+    register_all()
+    from repo_ops_upgrade.registry import CHECKERS
+
+    assert set(MANAGER_FILTER_CHOICES) == set(CHECKERS.keys())
+
+
+def test_upgrade_parser_accepts_104_and_102_flags() -> None:
+    """#104/#102: plan parser accepts --manager, --latest, --go-upgrade-mode."""
+    parser = build_upgrade_parser(apply=False)
+    args = parser.parse_args(
+        ["--manager", "npm", "--latest", "--go-upgrade-mode", "explicit"]
+    )
+    assert args.manager_filter == "npm"
+    assert args.latest is True
+    assert args.go_upgrade_mode == "explicit"

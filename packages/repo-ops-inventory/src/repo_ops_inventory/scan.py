@@ -26,11 +26,14 @@ from repo_ops_core.cli import (
     add_eco_filter_argument,
     add_flat_argument,
     add_json_argument,
+    add_json_out_argument,
     add_roots_argument,
     add_verbose_argument,
+    positive_int,
     resolve_scan_roots,
     wire_verbose,
 )
+from repo_ops_core.filesystem import write_json_atomic
 from repo_ops_core.table import column_width, format_cell, join_row
 
 from repo_ops_inventory.counting import (
@@ -42,10 +45,24 @@ from repo_ops_inventory.counting import (
 )
 
 
-def _print_inventory_table(all_rows: list[dict]) -> None:
-    """Emit the human-readable inventory table."""
-    names = [r["name"] for r in all_rows]
-    kinds = [r["kinds_s"] for r in all_rows]
+def _print_inventory_table(all_rows: list[dict], top: int | None = None) -> None:
+    """Emit the human-readable inventory table.
+
+    ``top`` caps the number of displayed rows; TOTAL is always computed over the
+    full row set and a "… and N more" line is appended when rows are truncated.
+    """
+    # Totals over the FULL set first, so truncating the display never undercounts.
+    td = tv = ti = te = tm = 0
+    for r in all_rows:
+        td += r["direct"]
+        tv += r["versions_n"]
+        ti += r["installed"]
+        te += r["edges"]
+        tm += r["manifests"]
+
+    shown = all_rows[:top] if top is not None else all_rows
+    names = [r["name"] for r in shown]
+    kinds = [r["kinds_s"] for r in shown]
     name_w = column_width(names, "project")
     kind_w = column_width(kinds, "kinds", cap=40)
 
@@ -62,8 +79,7 @@ def _print_inventory_table(all_rows: list[dict]) -> None:
     print(header)
     print("-" * len(header))
 
-    td = tv = ti = te = tm = 0
-    for r in all_rows:
+    for r in shown:
         k = r["kinds_s"]
         print(
             join_row(
@@ -78,11 +94,9 @@ def _print_inventory_table(all_rows: list[dict]) -> None:
                 ]
             )
         )
-        td += r["direct"]
-        tv += r["versions_n"]
-        ti += r["installed"]
-        te += r["edges"]
-        tm += r["manifests"]
+
+    if top is not None and len(all_rows) > top:
+        print(f"... and {len(all_rows) - top} more")
 
     print("-" * len(header))
     print(
@@ -108,11 +122,24 @@ def main(argv: list[str] | None = None) -> None:
     )
     add_roots_argument(parser)
     add_json_argument(parser, dest="json_out")
+    add_json_out_argument(parser)
     parser.add_argument(
         "--sort",
         choices=["name", "direct", "versions", "on-disk", "edges"],
         default="name",
         help="Sort column: name (asc), others descending. Default: name.",
+    )
+    parser.add_argument(
+        "--top",
+        type=positive_int,
+        default=None,
+        help="Show only the top N rows in human output (TOTAL covers all rows).",
+    )
+    parser.add_argument(
+        "--jobs",
+        type=positive_int,
+        default=8,
+        help="Max parallel workers for the Go module pool (default: 8).",
     )
     add_eco_filter_argument(parser)
     add_flat_argument(parser)
@@ -125,6 +152,8 @@ def main(argv: list[str] | None = None) -> None:
     add_verbose_argument(parser)
     args = parser.parse_args(argv)
     wire_verbose(args)
+    if getattr(args, "json_report_path", None) and not args.json_out:
+        parser.error("--json-out requires --json")
 
     cache_path = _go_cache_path()
     go_cache: dict | None = None
@@ -135,7 +164,9 @@ def main(argv: list[str] | None = None) -> None:
     scanned_roots = list(roots)
     all_rows = []
     for root_path in roots:
-        all_rows.extend(scan(Path(root_path), flat=args.flat, go_cache=go_cache))
+        all_rows.extend(
+            scan(Path(root_path), flat=args.flat, go_cache=go_cache, jobs=args.jobs)
+        )
 
     if not args.no_cache and go_cache is not None:
         save_go_cache(cache_path, go_cache)
@@ -160,6 +191,7 @@ def main(argv: list[str] | None = None) -> None:
         all_rows.sort(key=lambda x: x["edges"], reverse=True)
 
     if args.json_out:
+        # --json always emits ALL rows (--top only caps human output).
         td = tv = ti = te = 0
         json_rows = []
         for r in all_rows:
@@ -177,25 +209,30 @@ def main(argv: list[str] | None = None) -> None:
             tv += r["versions_n"]
             ti += r["installed"]
             te += r["edges"]
-        print(
-            json.dumps(
-                {
-                    "schema_version": 1,
-                    "rows": json_rows,
-                    "totals": {
-                        "direct": td,
-                        "versions": tv,
-                        "on_disk": ti,
-                        "edges": te,
-                    },
-                    "roots": scanned_roots,
-                },
-                indent=None if args.compact else 2,
+        # Build the payload once so the stdout and --json-out paths can never
+        # diverge on schema_version/roots/totals (#101 + #104).
+        payload = {
+            "schema_version": 1,
+            "rows": json_rows,
+            "totals": {
+                "direct": td,
+                "versions": tv,
+                "on_disk": ti,
+                "edges": te,
+            },
+            "roots": scanned_roots,
+        }
+        json_report_path = getattr(args, "json_report_path", None)
+        if json_report_path:
+            written = write_json_atomic(
+                Path(json_report_path), payload, compact=args.compact
             )
-        )
+            print(written)
+        else:
+            print(json.dumps(payload, indent=None if args.compact else 2))
         return
 
-    _print_inventory_table(all_rows)
+    _print_inventory_table(all_rows, args.top)
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import sys
 from collections.abc import Callable
 
@@ -22,11 +23,25 @@ _HANDLERS: dict[str, Callable[[list[str] | None], int | None]] = {
 }
 
 
+def _resolve_version() -> str:
+    """Resolve the installed repo-ops version (the CLI dist carries it)."""
+    try:
+        return importlib.metadata.version("repo-ops")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
 def main(argv: list[str] | None = None) -> int:
     register_all()
     parser = argparse.ArgumentParser(
         prog="repo-ops",
         description="Repository operations for local monorepo roots.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"repo-ops {_resolve_version()}",
+        help="Print the repo-ops version and exit.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
     for name in _HANDLERS:

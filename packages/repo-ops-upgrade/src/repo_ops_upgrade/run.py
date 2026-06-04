@@ -97,7 +97,11 @@ def _run_upgrade_body(
         diagnostics=diagnostics,
         follow_symlinks=follow_symlinks,
     )
-    found = orchestration.filter_workspaces(found, args.eco_filter)
+    found = orchestration.filter_workspaces(
+        found,
+        args.eco_filter,
+        getattr(args, "manager_filter", None),
+    )
 
     bundles = workspace_discovery.group_by_repo(found, roots)
     if not args.skip_actions:

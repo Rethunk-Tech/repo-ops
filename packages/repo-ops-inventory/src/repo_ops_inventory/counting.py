@@ -427,7 +427,10 @@ def _flat_project_name(root: Path) -> str:
 
 
 def scan(
-    root: Path, flat: bool = False, go_cache: dict | None = None
+    root: Path,
+    flat: bool = False,
+    go_cache: dict | None = None,
+    jobs: int = 8,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     go_tasks: list[tuple[dict, Path, dict | None]] = []
@@ -450,7 +453,7 @@ def scan(
                 rows.append(row)
 
     if go_tasks:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
             future_to_row = {
                 executor.submit(count_go, mdir, cache): row
                 for row, mdir, cache in go_tasks

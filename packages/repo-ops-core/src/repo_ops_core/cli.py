@@ -28,6 +28,26 @@ ECO_FILTER_HELP = (
     f"({'/'.join(ECO_FILTER_CHOICES)})."
 )
 
+# Package-manager filter choices. Mirrors the registry's CHECKERS keys exactly
+# (kept as a static tuple to avoid a core -> upgrade circular import; a test in
+# the upgrade suite asserts this stays in sync with CHECKERS).
+MANAGER_FILTER_CHOICES = (
+    "bun",
+    "npm",
+    "pnpm",
+    "yarn",
+    "uv",
+    "poetry",
+    "pip-tools",
+    "hatch",
+    "go",
+    "rust",
+)
+MANAGER_FILTER_HELP = (
+    "Limit upgrade workspaces to one package manager "
+    f"({'/'.join(MANAGER_FILTER_CHOICES)})."
+)
+
 
 def positive_int(value: str) -> int:
     """Parse a strictly positive integer for argparse ``type=``."""
@@ -174,6 +194,17 @@ def add_eco_filter_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_manager_filter_argument(parser: argparse.ArgumentParser) -> None:
+    """Add --manager for a single package manager (bun/npm/.../go/rust)."""
+    parser.add_argument(
+        "--manager",
+        choices=list(MANAGER_FILTER_CHOICES),
+        dest="manager_filter",
+        metavar="MANAGER",
+        help=MANAGER_FILTER_HELP,
+    )
+
+
 def add_verbose_argument(parser: argparse.ArgumentParser) -> None:
     """Add --verbose / -v flag; caller must wire via wire_verbose(args) after parse."""
     parser.add_argument(
@@ -199,6 +230,7 @@ def add_upgrade_common_arguments(
     add_flat_argument(parser)
     add_verbose_argument(parser)
     add_eco_filter_argument(parser)
+    add_manager_filter_argument(parser)
     add_follow_symlinks_argument(parser)
     parser.add_argument("-q", "--quiet", action="store_true")
     parser.add_argument("--jobs", type=positive_int, default=8)
