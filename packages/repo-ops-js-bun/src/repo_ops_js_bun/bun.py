@@ -110,14 +110,6 @@ def _changes_from_bun_text(stdout: str) -> tuple[list[Change], list[Change]]:
                 behind_latest.append(Change(name, current, latest_ver))
             continue
         changes.append(Change(name, current, target))
-        # If latest-mode is off and latest > update target, also record behind_latest.
-        if (
-            not want_latest
-            and latest_ver
-            and target != latest_ver
-            and latest_ver != current
-        ):
-            behind_latest.append(Change(name, current, latest_ver))
     return changes, behind_latest
 
 

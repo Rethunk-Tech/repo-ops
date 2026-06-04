@@ -98,3 +98,29 @@ def test_check_bun_latest_column_when_opted_in(monkeypatch) -> None:
     assert ("@hono/node-server", "2.0.4") in [(c.name, c.to) for c in changes]
     # When latest-mode is on, no behind_latest entries are emitted.
     assert behind_latest == []
+
+
+# Regression #45: a package where current < update < latest (all distinct) must
+# land in EXACTLY ONE bucket — changes — matching the JSON parser's if/elif
+# semantics.  The old text parser appended to changes AND then also to
+# behind_latest via a separate trailing `if`, causing double-counting.
+_TABLE_CURRENT_LT_UPDATE_LT_LATEST = (
+    "│ \x1b[1m\x1b[34mPackage\x1b[0m │ \x1b[1mCurrent\x1b[0m "
+    "│ \x1b[1mUpdate\x1b[0m │ \x1b[1mLatest\x1b[0m │\n"
+    "├────│\n"
+    # react: current=18.0.0, update=18.3.0 (in-range bump), latest=19.0.0
+    "│ react │ 18.0.0 │ 18.3.0 │ 19.0.0 │\n"
+)
+
+
+def test_text_parser_no_double_count_when_current_lt_update_lt_latest() -> None:
+    """Regression #45: current < update < latest → changes only, not both buckets."""
+    changes, behind_latest = _patched_check(_TABLE_CURRENT_LT_UPDATE_LT_LATEST)
+
+    # The in-range bump (18.0.0 → 18.3.0) lands in changes.
+    assert len(changes) == 1
+    assert changes[0].name == "react"
+    assert changes[0].from_ver == "18.0.0"
+    assert changes[0].to == "18.3.0"
+    # It must NOT also appear in behind_latest (double-count regression).
+    assert behind_latest == [], f"expected empty behind_latest, got {behind_latest}"
