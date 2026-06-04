@@ -48,6 +48,10 @@ def collect_changes_after_apply(
         + list(GO_LOCKFILES)
         + list(RUST_LOCKFILES)
     )
+    _DEP_SECTIONS = frozenset(
+        ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
+    )
+
     proc = run(
         ["git", "diff", "--name-only", "--", *lock_names],
         repo,
@@ -57,7 +61,7 @@ def collect_changes_after_apply(
         changes: list[Change] = []
         for line in proc.stdout.splitlines():
             p = line.strip()
-            if not p.startswith(rel_s):
+            if rel_s != "." and not p.startswith(rel_s):
                 continue
             fname = Path(p).name
             if fname == "package.json":
@@ -67,15 +71,28 @@ def collect_changes_after_apply(
                     timeout=60,
                 )
                 if proc2.returncode == 0:
-                    m = re.findall(
-                        r'^\+\s*"([^"]+)":\s*"([^"]+)"',
-                        proc2.stdout,
-                        re.MULTILINE,
-                    )
-                    for name, ver in m:
-                        if name in ("dependencies", "devDependencies"):
+                    in_dep_section = False
+                    for diff_line in proc2.stdout.splitlines():
+                        # Detect section header on context or added lines
+                        sec_m = re.match(r'^[ +]\s*"([^"]+)":\s*\{', diff_line)
+                        if sec_m:
+                            in_dep_section = sec_m.group(1) in _DEP_SECTIONS
                             continue
-                        changes.append(Change(name, "?", normalize_version(ver)))
+                        # Detect section close
+                        if re.match(r"^[ +]\s*\}", diff_line):
+                            in_dep_section = False
+                            continue
+                        if not in_dep_section:
+                            continue
+                        dep_m = re.match(r'^\+\s*"([^"]+)":\s*"([^"]+)"', diff_line)
+                        if dep_m:
+                            changes.append(
+                                Change(
+                                    dep_m.group(1),
+                                    "?",
+                                    normalize_version(dep_m.group(2)),
+                                )
+                            )
             elif fname.endswith(".lock") or fname in (
                 "go.sum",
                 "go.mod",
