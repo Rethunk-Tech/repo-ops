@@ -120,6 +120,49 @@ def upgrade_scoped_paths(bundle: RepoBundle, porcelain: list[str]) -> list[str]:
     return scoped
 
 
+def _git_unquote(s: str) -> str:
+    """Decode a git-quoted path string.
+
+    Git wraps paths containing spaces, non-ASCII bytes, or special characters
+    in double quotes with C-style escape sequences (``\\n``, ``\\t``, ``\\\\``,
+    ``\\"``, ``\\NNN`` octal).  When the input is not quoted it is returned
+    unchanged.  Octal escapes encode raw UTF-8 bytes, so they are accumulated
+    into a ``bytearray`` and decoded as UTF-8 at the end — handling multi-byte
+    sequences such as ``\\303\\251`` (``é``) correctly.
+    """
+    if not (s.startswith('"') and s.endswith('"')):
+        return s
+    inner = s[1:-1]
+    buf = bytearray()
+    i = 0
+    while i < len(inner):
+        ch = inner[i]
+        if ch != "\\":
+            buf.extend(ch.encode("utf-8"))
+            i += 1
+        else:
+            i += 1
+            esc = inner[i]
+            if esc == "n":
+                buf.append(ord("\n"))
+            elif esc == "t":
+                buf.append(ord("\t"))
+            elif esc == "r":
+                buf.append(ord("\r"))
+            elif esc == "\\":
+                buf.append(ord("\\"))
+            elif esc == '"':
+                buf.append(ord('"'))
+            elif esc.isdigit():
+                buf.append(int(inner[i : i + 3], 8))
+                i += 2  # two extra digits consumed; loop adds one
+            else:
+                buf.append(ord("\\"))
+                buf.extend(esc.encode("utf-8"))
+            i += 1
+    return buf.decode("utf-8")
+
+
 def _parse_porcelain(stdout: str) -> list[str]:
     """Extract changed paths from ``git status --porcelain`` (v1) output.
 
@@ -128,6 +171,12 @@ def _parse_porcelain(stdout: str) -> list[str]:
     index 3 and must be sliced *without* stripping the line first: for unstaged
     entries the X column is a space (e.g. ``" M go.mod"``), and stripping it would
     shift the slice and drop the first character of the filename (``"o.mod"``).
+
+    Paths containing spaces or non-ASCII characters are wrapped in double quotes
+    by git with C-style escapes; ``_git_unquote`` decodes them before the path
+    is returned so callers can use them directly as ``git add --`` arguments.
+
+    Rename entries (``R  old -> new``) are returned as the *new* path only.
     """
     paths: list[str] = []
     for line in stdout.splitlines():
@@ -136,6 +185,7 @@ def _parse_porcelain(stdout: str) -> list[str]:
         entry = line[3:].strip()
         if " -> " in entry:
             entry = entry.split(" -> ", 1)[1].strip()
+        entry = _git_unquote(entry)
         if entry:
             paths.append(entry)
     return paths
