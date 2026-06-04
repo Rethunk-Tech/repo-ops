@@ -80,6 +80,7 @@ def _run_upgrade_body(
         roots,
         flat=args.flat,
         diagnostics=diagnostics,
+        follow_symlinks=follow_symlinks,
     )
     found = orchestration.filter_workspaces(found, args.eco_filter)
 

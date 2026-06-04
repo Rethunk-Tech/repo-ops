@@ -1,10 +1,12 @@
 """Lightweight tests for discovery module."""
 
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
+from repo_ops_upgrade.discovery import discover_all
 
 
 def test_discover_repos_skips_non_dirs_and_returns_dict():
@@ -34,6 +36,26 @@ def test_manifest_kinds_detects_ecosystems():
     assert manifest_kinds({"Cargo.toml"}) == ["rust"]
     assert manifest_kinds({"requirements.txt"}) == ["py"]
     assert manifest_kinds(set()) == []
+
+
+def _git_init(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", str(path)], check=True)
+
+
+def test_discover_all_finds_repo_below_org_proj_depth(tmp_path: Path):
+    """Regression for #23: a repo sitting deeper than the old two-level
+    ``<root>/<org>/<proj>`` walk (here ``<root>/com.github/<org>/<repo>``,
+    three levels down) must still be discovered in non-flat mode."""
+    repo = tmp_path / "com.github" / "Acme" / "widget"
+    _git_init(repo)
+    (repo / "pyproject.toml").write_text("[project]\nname = 'widget'\n")
+    (repo / "uv.lock").write_text("")
+
+    found = discover_all([str(tmp_path)], flat=False)
+
+    paths = {ws.path for ws in found}
+    assert repo.resolve() in paths, f"deep repo not discovered; found={paths}"
 
 
 def test_iter_scanned_dirs_skips_node_modules(tmp_path: Path):

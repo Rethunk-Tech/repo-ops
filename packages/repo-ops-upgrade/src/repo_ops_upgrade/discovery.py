@@ -46,6 +46,7 @@ def discover_workspaces_in_root(
     flat: bool,
     *,
     diagnostics: DiscoveryDiagnostics | None = None,
+    follow_symlinks: bool = False,
 ) -> list[Workspace]:
     found: list[Workspace] = []
     yarn_roots: dict[Path, set[str]] = {}
@@ -161,18 +162,23 @@ def discover_workspaces_in_root(
     if flat:
         dir_iter: list[tuple[Path, set[str]]] = list(iter_scanned_dirs(root))
     else:
+        # Depth-agnostic discovery: find every git repo under ``root`` using the
+        # same recursive walk that drives Actions discovery (``discover_repos``),
+        # then scan each repo at repo-root granularity. The previous hardcoded
+        # two-level ``<root>/<org>/<proj>`` walk silently found zero workspaces
+        # when the real checkout layout sat deeper (e.g. ``/usr/local/src`` ->
+        # ``com.github/<org>/<repo>``) or shallower (a flat ``~/Projects``).
         dir_iter = []
-        if root.is_dir():
-            for org in sorted(root.iterdir()):
-                if not org.is_dir() or org.name.startswith("."):
-                    continue
-                for proj in sorted(org.iterdir()):
-                    if not proj.is_dir() or proj.name.startswith("."):
-                        continue
-                    proj_names = {
-                        p.name for p in proj.iterdir() if (proj / p.name).exists()
-                    }
-                    dir_iter.append((proj, proj_names))
+        repos = discover_repos([str(root)], follow_symlinks=follow_symlinks)
+        for repo_s in sorted(set(repos.values())):
+            repo_path = Path(repo_s)
+            try:
+                repo_names = {
+                    p.name for p in repo_path.iterdir() if (repo_path / p.name).exists()
+                }
+            except OSError:
+                continue
+            dir_iter.append((repo_path, repo_names))
         if not dir_iter:
             dir_iter = list(iter_scanned_dirs(root))
 
@@ -200,6 +206,7 @@ def discover_all(
     flat: bool,
     *,
     diagnostics: DiscoveryDiagnostics | None = None,
+    follow_symlinks: bool = False,
 ) -> list[Workspace]:
     all_ws: list[Workspace] = []
     seen: set[tuple[str, str]] = set()
@@ -215,6 +222,7 @@ def discover_all(
             root,
             flat=flat and len(roots) == 1,
             diagnostics=diagnostics,
+            follow_symlinks=follow_symlinks,
         ):
             key = (str(ws.path), ws.manager)
             if key not in seen:

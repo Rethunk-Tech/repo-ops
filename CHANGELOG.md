@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Discovery:** Bare default-root `plan`/`apply` now discovers package-manifest workspaces (npm/yarn/pnpm/bun, Go, Python, Rust) at any depth below a root, not just at a fixed `<root>/<org>/<proj>` layout. The non-flat walker previously hardcoded a two-level descent, so checkouts laid out as `/usr/local/src/com.github/<org>/<repo>` (or flat roots like `~/Projects`) silently yielded **zero** workspaces while Actions drift still surfaced — a false sense of completeness. Package discovery now reuses the same depth-agnostic git-repo walk that drives Actions discovery, so both ecosystems cover the same repos. Also surfaces repos nested one level deeper (e.g. `<org>/Bastion/<repo>`) whose dependency drift was previously invisible at every root depth. (#23)
+
 ## [0.6.1] - 2026-06-03
 
 ### Fixed
