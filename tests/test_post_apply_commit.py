@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import types
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import patch
@@ -80,6 +82,19 @@ def test_parse_porcelain_staged_and_rename() -> None:
         "package-lock.json",
         "new.txt",
         "extra.json",
+    ]
+
+
+def test_parse_porcelain_quoted_path_and_rename() -> None:
+    # Regression #72: git wraps paths containing spaces (or non-ASCII) in
+    # double-quotes with C-style escapes. The quotes must be stripped and octal
+    # sequences decoded before the path reaches `git add`.
+    # Also verifies that a rename entry returns only the new (right-hand) path,
+    # and that the new path itself may also be quoted.
+    out = ' M "path with spaces.txt"\nR  "old dir/a.txt" -> "new dir/b.txt"\n'
+    assert post_apply_commit._parse_porcelain(out) == [
+        "path with spaces.txt",
+        "new dir/b.txt",
     ]
 
 
@@ -214,10 +229,16 @@ def test_cursor_provider_missing_sdk_message(
     monkeypatch.setenv("CURSOR_API_KEY", "test-key")
     real_import = __import__
 
-    def _block_cursor_sdk(name: str, *args: object, **kwargs: object) -> object:
+    def _block_cursor_sdk(
+        name: str,
+        _globals: Mapping[str, object] | None = None,
+        _locals: Mapping[str, object] | None = None,
+        fromlist: Sequence[str] | None = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         if name == "cursor_sdk" or name.startswith("cursor_sdk."):
             raise ImportError("cursor-sdk not installed")
-        return real_import(name, *args, **kwargs)
+        return real_import(name, _globals, _locals, fromlist, level)
 
     sys.modules.pop("cursor_sdk", None)
     with patch("builtins.__import__", side_effect=_block_cursor_sdk):
