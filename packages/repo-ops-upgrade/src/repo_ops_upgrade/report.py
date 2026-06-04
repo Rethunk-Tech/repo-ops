@@ -277,6 +277,7 @@ def print_run_footer(
     max_failures: int = DEFAULT_MAX_FAILURE_LINES,
     show_skips: bool = False,
     submodule_pointer_hints: list[dict[str, str]] | None = None,
+    discovery_skips: list[dict[str, str]] | None = None,
 ) -> None:
     """End-of-run roll-up and automation lines (human stdout)."""
     if submodule_pointer_hints:
@@ -312,6 +313,17 @@ def print_run_footer(
         remaining = len(failures) - len(shown)
         if remaining > 0:
             print(f"  ... and {remaining} more")
+
+    if discovery_skips:
+        print()
+        print("Discovery skips (manifest found but not actionable):")
+        shown_skips = discovery_skips[: max(0, max_failures)]
+        for entry in shown_skips:
+            eco = entry.get("ecosystem", "?")
+            print(f"  [{eco}] {entry.get('path', '')}: {entry.get('reason', '')}")
+        remaining_skips = len(discovery_skips) - len(shown_skips)
+        if remaining_skips > 0:
+            print(f"  ... and {remaining_skips} more")
 
     print()
     print(f"failures: {summary['failure_count']}")

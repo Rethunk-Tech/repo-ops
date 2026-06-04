@@ -16,6 +16,7 @@ from repo_ops_js.workspaces import (
     yarn_workspace_members,
 )
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
+from repo_ops_py_uv.uv import path_is_uv_workspace_child, uv_workspace_members
 
 from repo_ops_upgrade.actions import discover_workflow_files
 
@@ -29,10 +30,19 @@ class DiscoveryDiagnostics:
     warnings: list[dict[str, str]] = field(default_factory=list)
     skipped: list[dict[str, str]] = field(default_factory=list)
 
-    def skip_node(self, path: Path, reason: str) -> None:
+    def skip(self, path: Path, ecosystem: str, reason: str) -> None:
+        """Record a manifest that was found but is not actionable.
+
+        Every manifest on disk maps to exactly one of ok / skip / error; a
+        silent drop here would make a coverage gap indistinguishable from
+        "nothing to upgrade" (see #24).
+        """
         self.skipped.append(
-            {"path": str(path), "ecosystem": "node", "reason": reason},
+            {"path": str(path), "ecosystem": ecosystem, "reason": reason},
         )
+
+    def skip_node(self, path: Path, reason: str) -> None:
+        self.skip(path, "node", reason)
 
     def warn(self, path: Path, message: str) -> None:
         self.warnings.append({"path": str(path), "message": message})
@@ -49,33 +59,46 @@ def discover_workspaces_in_root(
     follow_symlinks: bool = False,
 ) -> list[Workspace]:
     found: list[Workspace] = []
-    yarn_roots: dict[Path, set[str]] = {}
+    # Workspace roots whose members are governed by a single root lockfile and
+    # must not be enumerated as standalone workspaces (npm/yarn ``workspaces``
+    # field; uv ``[tool.uv.workspace].members``). Populated as the root dir is
+    # visited, then consulted to suppress its descendants. The recursive walk is
+    # top-down, so a root is always seen before its members.
+    node_workspace_roots: dict[Path, set[str]] = {}
+    uv_roots: dict[Path, set[str]] = {}
+
+    def record_skip(mdir: Path, ecosystem: str, reason: str) -> None:
+        """A manifest was found but is not actionable — count it, never drop it.
+
+        Silent omission (the core defect in #24) makes a coverage gap read
+        identically to "nothing to upgrade".
+        """
+        if diagnostics is not None:
+            diagnostics.skip(mdir, ecosystem, reason)
+        else:
+            print(f"SKIP {ecosystem} {mdir}: {reason}", file=sys.stderr)
 
     def consider_node(mdir: Path) -> None:
         if not (mdir / "package.json").exists():
             return
         mgr, warn = detect_node_manager(mdir)
         if not mgr:
-            reason = warn or "skipped"
-            if diagnostics is not None:
-                diagnostics.skip_node(mdir, reason)
-            else:
-                print(f"SKIP node {mdir}: {reason}", file=sys.stderr)
+            record_skip(mdir, "node", warn or "unrecognized package manager")
             return
         if warn:
             if diagnostics is not None:
                 diagnostics.warn(mdir, warn)
             else:
                 print(f"WARN {mdir}: {warn}", file=sys.stderr)
-        for yr, members in yarn_roots.items():
-            if mdir != yr and path_is_yarn_workspace_child(mdir, yr, members):
+        for wr, members in node_workspace_roots.items():
+            if mdir != wr and path_is_yarn_workspace_child(mdir, wr, members):
                 return
-        if mgr == "yarn":
-            members = yarn_workspace_members(mdir)
-            if members:
-                yarn_roots[mdir] = members
+        members = yarn_workspace_members(mdir)
+        if members:
+            node_workspace_roots[mdir] = members
         git = git_repo_for(mdir)
         if not git:
+            record_skip(mdir, "node", "not inside a git repo")
             return
         found.append(
             Workspace(
@@ -88,18 +111,21 @@ def discover_workspaces_in_root(
         )
 
     def consider_go(mdir: Path) -> None:
-        if (mdir / "go.mod").exists():
-            git = git_repo_for(mdir)
-            if git:
-                found.append(
-                    Workspace(
-                        path=mdir.resolve(),
-                        ecosystem="go",
-                        manager="go",
-                        git_repo=git.resolve(),
-                        label="",
-                    )
-                )
+        if not (mdir / "go.mod").exists():
+            return
+        git = git_repo_for(mdir)
+        if not git:
+            record_skip(mdir, "go", "not inside a git repo")
+            return
+        found.append(
+            Workspace(
+                path=mdir.resolve(),
+                ecosystem="go",
+                manager="go",
+                git_repo=git.resolve(),
+                label="",
+            )
+        )
 
     def consider_rust(mdir: Path) -> None:
         cargo = mdir / "Cargo.toml"
@@ -108,18 +134,25 @@ def discover_workspaces_in_root(
         lock = mdir / "Cargo.lock"
         d = read_toml_file(cargo) or {}
         if not lock.exists() and not d.get("workspace") and not d.get("package"):
+            record_skip(
+                mdir,
+                "rust",
+                "Cargo.toml without Cargo.lock and not a [workspace]/[package]",
+            )
             return
         git = git_repo_for(mdir)
-        if git:
-            found.append(
-                Workspace(
-                    path=mdir.resolve(),
-                    ecosystem="rust",
-                    manager="rust",
-                    git_repo=git.resolve(),
-                    label="",
-                )
+        if not git:
+            record_skip(mdir, "rust", "not inside a git repo")
+            return
+        found.append(
+            Workspace(
+                path=mdir.resolve(),
+                ecosystem="rust",
+                manager="rust",
+                git_repo=git.resolve(),
+                label="",
             )
+        )
 
     def consider_py(mdir: Path) -> None:
         pyp = mdir / "pyproject.toml"
@@ -130,6 +163,9 @@ def discover_workspaces_in_root(
             or (mdir / "Pipfile").exists()
         ):
             return
+        for ur, members in uv_roots.items():
+            if mdir != ur and path_is_uv_workspace_child(mdir, ur, members):
+                return
         mgr: str | None = None
         if (mdir / "uv.lock").exists():
             mgr = "uv"
@@ -144,41 +180,48 @@ def discover_workspaces_in_root(
             build = (d.get("build-system") or {}).get("build-backend", "")
             if "hatch" in build or (d.get("tool") or {}).get("hatch"):
                 mgr = "hatch"
+        if mgr == "uv":
+            members = uv_workspace_members(mdir)
+            if members:
+                uv_roots[mdir] = members
         if not mgr:
+            record_skip(
+                mdir,
+                "py",
+                "pyproject.toml without a recognized manager "
+                "(uv/poetry/pip-tools/hatch)",
+            )
             return
         git = git_repo_for(mdir)
-        if git:
-            found.append(
-                Workspace(
-                    path=mdir.resolve(),
-                    ecosystem="py",
-                    manager=mgr,
-                    git_repo=git.resolve(),
-                    label="",
-                )
+        if not git:
+            record_skip(mdir, "py", "not inside a git repo")
+            return
+        found.append(
+            Workspace(
+                path=mdir.resolve(),
+                ecosystem="py",
+                manager=mgr,
+                git_repo=git.resolve(),
+                label="",
             )
+        )
 
     seen_paths: set[Path] = set()
     if flat:
         dir_iter: list[tuple[Path, set[str]]] = list(iter_scanned_dirs(root))
     else:
-        # Depth-agnostic discovery: find every git repo under ``root`` using the
-        # same recursive walk that drives Actions discovery (``discover_repos``),
-        # then scan each repo at repo-root granularity. The previous hardcoded
-        # two-level ``<root>/<org>/<proj>`` walk silently found zero workspaces
-        # when the real checkout layout sat deeper (e.g. ``/usr/local/src`` ->
-        # ``com.github/<org>/<repo>``) or shallower (a flat ``~/Projects``).
+        # Depth-agnostic, full per-repo discovery: find every git repo under
+        # ``root`` using the same recursive walk that drives Actions discovery
+        # (``discover_repos``), then recursively scan each repo so that *every*
+        # manifest in the tree is enumerated — multiple ecosystems and sub-apps
+        # within one repo (e.g. a Go module at the root plus a node app in
+        # ``web/``), not just one workspace per repo (#24). Walking each repo
+        # (rather than ``root`` wholesale) keeps the scan scoped to real repos
+        # and lets per-repo workspace-member suppression run in tree order.
         dir_iter = []
         repos = discover_repos([str(root)], follow_symlinks=follow_symlinks)
         for repo_s in sorted(set(repos.values())):
-            repo_path = Path(repo_s)
-            try:
-                repo_names = {
-                    p.name for p in repo_path.iterdir() if (repo_path / p.name).exists()
-                }
-            except OSError:
-                continue
-            dir_iter.append((repo_path, repo_names))
+            dir_iter.extend(iter_scanned_dirs(Path(repo_s)))
         if not dir_iter:
             dir_iter = list(iter_scanned_dirs(root))
 

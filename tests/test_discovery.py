@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
-from repo_ops_upgrade.discovery import discover_all
+from repo_ops_upgrade.discovery import DiscoveryDiagnostics, discover_all
 
 
 def test_discover_repos_skips_non_dirs_and_returns_dict():
@@ -56,6 +56,73 @@ def test_discover_all_finds_repo_below_org_proj_depth(tmp_path: Path):
 
     paths = {ws.path for ws in found}
     assert repo.resolve() in paths, f"deep repo not discovered; found={paths}"
+
+
+def test_discover_all_enumerates_multiple_and_subdir_workspaces(tmp_path: Path):
+    """Regression for #24 (points 3 + subdir-only): a single repo with a Go
+    module at its root AND a node app in ``web/`` yields BOTH workspaces, and a
+    repo whose only manifest sits in a subdir is still discovered."""
+    org = tmp_path / "com.github" / "Acme"
+
+    multi = org / "kui"
+    _git_init(multi)
+    (multi / "go.mod").write_text("module example.com/kui\n\ngo 1.22\n")
+    (multi / "web").mkdir()
+    (multi / "web" / "package.json").write_text('{"name":"kui-web"}')
+    (multi / "web" / "yarn.lock").write_text("")
+
+    subdir_only = org / "interviewer"
+    _git_init(subdir_only)
+    (subdir_only / "web").mkdir()
+    (subdir_only / "web" / "package.json").write_text('{"name":"iv-web"}')
+    (subdir_only / "web" / "yarn.lock").write_text("")
+
+    found = discover_all([str(tmp_path)], flat=False)
+    by_path = {ws.path: ws for ws in found}
+
+    assert (multi).resolve() in by_path, "root Go module not found"
+    assert by_path[(multi).resolve()].ecosystem == "go"
+    assert (multi / "web").resolve() in by_path, "web/ node app not found"
+    assert (subdir_only / "web").resolve() in by_path, "subdir-only repo missed"
+
+
+def test_discover_all_suppresses_uv_workspace_members(tmp_path: Path):
+    """Regression for #24 (explosion guard): uv workspace members (governed by
+    the root ``uv.lock``) must NOT each surface as standalone workspaces."""
+    repo = tmp_path / "com.github" / "Acme" / "monorepo"
+    _git_init(repo)
+    (repo / "pyproject.toml").write_text(
+        "[project]\nname = 'root'\n\n[tool.uv.workspace]\nmembers = ['packages/*']\n"
+    )
+    (repo / "uv.lock").write_text("")
+    member = repo / "packages" / "lib"
+    member.mkdir(parents=True)
+    (member / "pyproject.toml").write_text(
+        "[project]\nname = 'lib'\n\n[build-system]\nbuild-backend = 'uv_build'\n"
+    )
+
+    found = discover_all([str(tmp_path)], flat=False)
+    py = [ws for ws in found if ws.ecosystem == "py"]
+    assert len(py) == 1, f"expected only the uv root, got {[str(w.path) for w in py]}"
+    assert py[0].path == repo.resolve()
+
+
+def test_discover_all_records_skip_for_unactionable_manifest(tmp_path: Path):
+    """Regression for #24 (point 2): a manifest found but not actionable is
+    recorded as a counted skip with a reason, never silently dropped."""
+    repo = tmp_path / "com.github" / "Acme" / "nolock"
+    _git_init(repo)
+    # package.json with neither a lockfile nor a packageManager field.
+    (repo / "package.json").write_text('{"name":"nolock"}')
+
+    diags = DiscoveryDiagnostics()
+    found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
+
+    assert not [ws for ws in found if ws.path == repo.resolve()]
+    assert any(
+        s["path"] == str(repo.resolve()) and s["ecosystem"] == "node"
+        for s in diags.skipped
+    ), f"unactionable manifest not recorded as skip; skipped={diags.skipped}"
 
 
 def test_iter_scanned_dirs_skips_node_modules(tmp_path: Path):

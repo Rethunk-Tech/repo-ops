@@ -75,7 +75,9 @@ def _run_upgrade_body(
 
     use_json = args.json
     json_report_path = getattr(args, "json_report_path", None)
-    diagnostics = DiscoveryDiagnostics() if use_json else None
+    # Always collect discovery diagnostics so found-but-unactionable manifests are
+    # counted (and surfaced) in human runs too, not only under --json (#24).
+    diagnostics = DiscoveryDiagnostics()
     found: list[Workspace] = workspace_discovery.discover_all(
         roots,
         flat=args.flat,
@@ -311,6 +313,7 @@ def _run_upgrade_body(
             max_failures=args.max_failures,
             show_skips=args.strict_exit,
             submodule_pointer_hints=footer_hints,
+            discovery_skips=diagnostics.skipped,
         )
     return exit_code
 
