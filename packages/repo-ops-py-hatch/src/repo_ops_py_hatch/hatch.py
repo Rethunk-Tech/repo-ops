@@ -8,9 +8,29 @@ import sys
 import tempfile
 from pathlib import Path
 
+from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import TIMEOUT_APPLY
+
+_EXTRAS_PREFERENCE = ("dev", "test", "all", "lint")
+
+
+def _install_target(ws_path: Path) -> str:
+    """Return the best ``-e <target>`` string for *ws_path*.
+
+    Reads ``pyproject.toml`` and picks the first optional-dependencies group
+    from the preference list (dev → test → all → lint).  Falls back to plain
+    ``"."`` when none of those groups exist or the file is absent/malformed.
+    """
+    data = read_toml_file(ws_path / "pyproject.toml") or {}
+    extras: dict[str, object] = (data.get("project") or {}).get(
+        "optional-dependencies"
+    ) or {}
+    for group in _EXTRAS_PREFERENCE:
+        if group in extras:
+            return f".[{group}]"
+    return "."
 
 
 def _check_uv_lock(ws: Workspace) -> list[Change]:
@@ -44,13 +64,20 @@ def check_hatch(ws: Workspace) -> list[Change]:
         changes: list[Change] = []
         with tempfile.TemporaryDirectory(prefix="repo-ops-hatch-") as tmp:
             venv_dir = Path(tmp) / "venv"
-            run(["uv", "venv", str(venv_dir)], ws.path, timeout=120)
-            run(
-                ["uv", "pip", "install", "-e", ".[dev]"],
+            venv_proc = run(["uv", "venv", str(venv_dir)], ws.path, timeout=120)
+            if venv_proc.returncode != 0:
+                raise RuntimeError(venv_proc.stderr.strip() or "uv venv failed")
+            install_target = _install_target(ws.path)
+            install_proc = run(
+                ["uv", "pip", "install", "-e", install_target],
                 ws.path,
                 timeout=300,
                 env={"VIRTUAL_ENV": str(venv_dir)},
             )
+            if install_proc.returncode != 0:
+                raise RuntimeError(
+                    install_proc.stderr.strip() or "uv pip install failed"
+                )
             proc = run(
                 ["uv", "pip", "list", "--outdated"],
                 ws.path,
