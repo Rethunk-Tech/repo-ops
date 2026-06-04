@@ -2,7 +2,22 @@
 
 from __future__ import annotations
 
-from repo_ops_lockfiles.snapshots import _diff_lock_text
+import tempfile
+from pathlib import Path
+
+from repo_ops_lockfiles.snapshots import (
+    _diff_lock_text,
+    resolved_version_from_node_modules,
+)
+
+
+def test_resolved_version_bare_scope_does_not_crash() -> None:
+    """#81 — bare-scope name like '@types' must not raise ValueError."""
+    with tempfile.TemporaryDirectory() as tmp:
+        mdir = Path(tmp)
+        # No node_modules present; function must return None without crashing.
+        result = resolved_version_from_node_modules(mdir, "@types")
+        assert result is None
 
 
 def test_diff_lock_text_detects_in_range_version_bump() -> None:

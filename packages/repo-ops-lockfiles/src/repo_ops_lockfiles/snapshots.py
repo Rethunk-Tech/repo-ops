@@ -22,7 +22,7 @@ def resolved_version_from_node_modules(mdir: Path, name: str) -> str | None:
     candidates = [
         mdir / "node_modules" / name / "package.json",
     ]
-    if name.startswith("@"):
+    if name.startswith("@") and "/" in name:
         scope, pkg = name.split("/", 1)
         candidates.append(mdir / "node_modules" / scope / pkg / "package.json")
     for p in candidates:
