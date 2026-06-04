@@ -175,3 +175,18 @@ def test_print_run_footer_caps_failure_list(tmp_path: Path) -> None:
     assert "... and 3 more" in out
     assert "failures: 5" in out
     assert "exit_code: 1" in out
+
+
+def test_actions_summary_dedupes_bumps_by_action_pin(tmp_path: Path) -> None:
+    # Same (action, pin) across two workflow files yields a single deduped
+    # report row, so the bump counter must also count it once (issue #65).
+    bundle = _bundle(
+        tmp_path,
+        actions=[
+            ActionBump("ci.yml", "actions/checkout", "v3", "v4", status="ok"),
+            ActionBump("release.yml", "actions/checkout", "v3", "v4", status="ok"),
+        ],
+        workflows_scanned=2,
+    )
+
+    assert bundle.actions_summary()["bumps"] == 1

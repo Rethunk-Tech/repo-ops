@@ -103,6 +103,9 @@ class RepoBundle:
         bumps = 0
         failures = 0
         behind_latest = 0
+        # Dedupe the bump count by the same (action, pin) key report.py uses to
+        # dedupe displayed rows, so this counter equals the number of rows shown.
+        seen: set[tuple[str, str]] = set()
         for ab in self.actions:
             if ab.status == "fail":
                 failures += 1
@@ -117,6 +120,10 @@ class RepoBundle:
             if "report only" in detail_lower:
                 continue
             if ab.pin != ab.latest:
+                key = (ab.action, ab.pin)
+                if key in seen:
+                    continue
+                seen.add(key)
                 bumps += 1
         return {
             "workflows_scanned": self.actions_workflows_scanned,
