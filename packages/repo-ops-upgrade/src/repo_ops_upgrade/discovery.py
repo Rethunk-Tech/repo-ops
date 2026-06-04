@@ -29,14 +29,21 @@ class DiscoveryDiagnostics:
 
     warnings: list[dict[str, str]] = field(default_factory=list)
     skipped: list[dict[str, str]] = field(default_factory=list)
+    _seen_skips: set[tuple[str, str]] = field(default_factory=set)
 
     def skip(self, path: Path, ecosystem: str, reason: str) -> None:
         """Record a manifest that was found but is not actionable.
 
         Every manifest on disk maps to exactly one of ok / skip / error; a
         silent drop here would make a coverage gap indistinguishable from
-        "nothing to upgrade" (see #24).
+        "nothing to upgrade" (see #24). Deduped by (path, ecosystem) so a
+        manifest reachable through two overlapping repo walks (e.g. a nested
+        git repo) is not double-counted in ``discovery skipped``.
         """
+        key = (str(path), ecosystem)
+        if key in self._seen_skips:
+            return
+        self._seen_skips.add(key)
         self.skipped.append(
             {"path": str(path), "ecosystem": ecosystem, "reason": reason},
         )
