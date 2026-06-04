@@ -52,9 +52,11 @@ class WorkspaceResult:
             ],
             "overrides_audit": self.overrides_audit,
             "remediations": self.remediations,
-            "error": self.error,
-            "verify_error": self.verify_error,
         }
+        if self.error is not None:
+            out["error"] = self.error
+        if self.verify_error is not None:
+            out["verify_error"] = self.verify_error
         if self.verify_fail_disposition is not None:
             out["verify_fail_disposition"] = self.verify_fail_disposition
         if not self.reverted_ok:
@@ -72,14 +74,16 @@ class ActionBump:
     detail: str | None = None
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "workflow": self.workflow,
             "action": self.action,
             "pin": self.pin,
             "latest": self.latest,
             "status": self.status,
-            "detail": self.detail,
         }
+        if self.detail is not None:
+            out["detail"] = self.detail
+        return out
 
 
 @dataclass

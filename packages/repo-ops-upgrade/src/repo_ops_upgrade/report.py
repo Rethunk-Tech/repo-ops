@@ -98,6 +98,7 @@ def build_json_payload(
     submodule_pointer_hints: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
+        "schema_version": 1,
         "roots": roots,
         "mode": mode,
         "summary": build_run_summary(bundles, diagnostics=diagnostics),
@@ -120,6 +121,7 @@ def print_json_report(
     diagnostics: DiscoveryDiagnostics | None = None,
     submodules: list[dict[str, str]] | None = None,
     submodule_pointer_hints: list[dict[str, str]] | None = None,
+    compact: bool = False,
 ) -> None:
     payload = build_json_payload(
         bundles,
@@ -129,7 +131,7 @@ def print_json_report(
         submodules=submodules,
         submodule_pointer_hints=submodule_pointer_hints,
     )
-    print(json.dumps(payload, indent=2))
+    print(json.dumps(payload, indent=None if compact else 2))
 
 
 def write_json_report(
@@ -141,6 +143,7 @@ def write_json_report(
     diagnostics: DiscoveryDiagnostics | None = None,
     submodules: list[dict[str, str]] | None = None,
     submodule_pointer_hints: list[dict[str, str]] | None = None,
+    compact: bool = False,
 ) -> Path:
     """Write one JSON document to path via temp file + rename. Returns resolved path."""
     path = Path(path).expanduser().resolve()
@@ -153,7 +156,7 @@ def write_json_report(
         submodules=submodules,
         submodule_pointer_hints=submodule_pointer_hints,
     )
-    text = json.dumps(payload, indent=2) + "\n"
+    text = json.dumps(payload, indent=None if compact else 2) + "\n"
     fd, tmp_name = tempfile.mkstemp(
         dir=path.parent,
         prefix=f".{path.name}.",

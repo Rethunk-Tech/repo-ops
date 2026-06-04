@@ -464,6 +464,7 @@ def main(argv: list[str] | None = None) -> int:
             return entry
 
         payload = {
+            "schema_version": 1,
             "window": {
                 "since": since_dt.isoformat(),
                 "until": until_dt.isoformat(),
@@ -474,7 +475,7 @@ def main(argv: list[str] | None = None) -> int:
             # Consumers slice from "repos" themselves; "top" key removed.
             "repos": [_repo_entry(r) for r in per_repo],
         }
-        print(json.dumps(payload, indent=2))
+        print(json.dumps(payload, indent=None if args.compact else 2))
         return 0
 
     if args.count_only:

@@ -180,6 +180,7 @@ def main(argv: list[str] | None = None) -> None:
         print(
             json.dumps(
                 {
+                    "schema_version": 1,
                     "rows": json_rows,
                     "totals": {
                         "direct": td,
@@ -187,9 +188,9 @@ def main(argv: list[str] | None = None) -> None:
                         "on_disk": ti,
                         "edges": te,
                     },
-                    "scanned_roots": scanned_roots,
+                    "roots": scanned_roots,
                 },
-                indent=2,
+                indent=None if args.compact else 2,
             )
         )
         return

@@ -130,12 +130,17 @@ def add_roots_argument(
 
 
 def add_json_argument(parser: argparse.ArgumentParser, dest: str = "json_out") -> None:
-    """Add --json flag (common across commands)."""
+    """Add --json flag (common across commands), plus --compact for single-line JSON."""
     parser.add_argument(
         "--json",
         dest=dest,
         action="store_true",
         help="Emit JSON instead of human-readable output.",
+    )
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="With --json: emit single-line JSON (indent=None) instead of pretty-printed.",
     )
 
 

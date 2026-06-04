@@ -268,6 +268,7 @@ def _run_upgrade_body(
 
     if use_json:
         mode: Literal["plan", "apply"] = "apply" if apply else "plan"
+        compact = bool(getattr(args, "compact", False))
         if json_report_path:
             written = report.write_json_report(
                 Path(json_report_path),
@@ -277,6 +278,7 @@ def _run_upgrade_body(
                 diagnostics=diagnostics,
                 submodules=json_submodules,
                 submodule_pointer_hints=json_pointer_hints,
+                compact=compact,
             )
             print(written)
         else:
@@ -287,6 +289,7 @@ def _run_upgrade_body(
                 diagnostics=diagnostics,
                 submodules=json_submodules,
                 submodule_pointer_hints=json_pointer_hints,
+                compact=compact,
             )
     elif not args.quiet:
         top_n = getattr(args, "top", 10)
