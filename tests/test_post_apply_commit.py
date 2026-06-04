@@ -107,6 +107,13 @@ def test_unstaged_go_change_classifies_as_go_modules() -> None:
     )
 
 
+def test_classify_bun_lock_text_format_is_node() -> None:
+    """Issue #80: bun.lock (Bun >=1.0 text format) must classify as Node, not generic."""
+    assert post_apply_commit.classify_commit_subject(["bun.lock"]) == (
+        "chore(deps): update Node lockfiles and manifests"
+    )
+
+
 def test_skips_verify_fail_by_default(tmp_path: Path) -> None:
     bundle = _bundle(tmp_path)
     bundle.workspaces[0].status = "fail"
@@ -292,3 +299,51 @@ def test_collect_changes_no_phantom_downgrade(tmp_path: Path) -> None:
     assert len(changes) == 1, f"expected 1 Change, got {changes}"
     assert changes[0].name == "pkg"
     assert changes[0].to == "1.1.0"
+
+
+def test_collect_changes_root_workspace_and_non_dep_fields_excluded(
+    tmp_path: Path,
+) -> None:
+    """Issues #82 + #83: root workspace (rel_s==".") must not drop diff paths,
+    and non-dependency fields (version, name, scripts) must not appear as Changes."""
+    # Root workspace: path == git_repo so relative_to yields "."
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="npm",
+        git_repo=tmp_path,
+        label="root",
+    )
+    # Diff contains a top-level "version" field change AND a real dep bump.
+    # Only the dep inside "dependencies" section must be returned.
+    pkg_diff = (
+        "diff --git a/package.json b/package.json\n"
+        "--- a/package.json\n"
+        "+++ b/package.json\n"
+        "@@ -1,9 +1,9 @@\n"
+        " {\n"
+        '-  "version": "1.0.0",\n'
+        '+  "version": "1.1.0",\n'
+        '   "dependencies": {\n'
+        '-    "react": "18.0.0"\n'
+        '+    "react": "18.3.0"\n'
+        "   }\n"
+        " }\n"
+    )
+
+    def _fake_run(
+        cmd: list[str], cwd: object, **kwargs: object
+    ) -> CompletedProcess[str]:
+        if "--name-only" in cmd:
+            # bare "package.json" — no leading subdirectory prefix
+            return CompletedProcess(cmd, 0, stdout="package.json\n", stderr="")
+        return CompletedProcess(cmd, 0, stdout=pkg_diff, stderr="")
+
+    with patch("repo_ops_upgrade.post_apply.run", side_effect=_fake_run):
+        changes = collect_changes_after_apply(ws)
+
+    names = {c.name for c in changes}
+    # "react" dep bump captured (#83 root-workspace fix makes this reachable)
+    assert "react" in names, f"expected react dep in changes, got {changes}"
+    # "version" top-level field must not appear (#82 scoping fix)
+    assert "version" not in names, f"version field leaked into changes: {changes}"

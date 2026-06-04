@@ -270,6 +270,7 @@ def classify_commit_subject(files: list[str]) -> str:
             "package-lock.json",
             "pnpm-lock.yaml",
             "yarn.lock",
+            "bun.lock",
             "bun.lockb",
         )
         for n in names
