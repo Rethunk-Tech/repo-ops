@@ -339,6 +339,35 @@ def test_discover_repos_find_nonzero_with_stdout_still_discovers(
     )
 
 
+def test_discover_repos_git_common_dir_fnf_skips_and_warns(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Regression for #95: FileNotFoundError from git_common_dir (repo vanished
+    between find and git_common_dir) must be caught, emit a WARN, and allow the
+    scan to continue — other repos in the same root must still be returned."""
+    # Two repos under the same root.
+    vanished_dir = tmp_path / "myorg" / "vanished"
+    (vanished_dir / ".git").mkdir(parents=True)
+    survivor_dir = tmp_path / "myorg" / "survivor"
+    (survivor_dir / ".git").mkdir(parents=True)
+    survivor_common = str((survivor_dir / ".git").resolve())
+
+    def fake_git_common_dir(p: object) -> str:
+        if "vanished" in str(p):
+            raise FileNotFoundError(f"git -C target is not a directory: {p}")
+        return survivor_common
+
+    with patch("repo_ops_core.discovery.git_common_dir", fake_git_common_dir):
+        result = discover_repos([str(tmp_path)])
+
+    assert survivor_common in result, "surviving repo must still be discovered"
+    assert len(result) == 1, f"only the survivor should be in result; got {result}"
+    captured = capsys.readouterr()
+    assert "WARN" in captured.err, (
+        f"expected WARN on stderr for vanished repo; got: {captured.err!r}"
+    )
+
+
 @pytest.mark.parametrize(
     "matcher",
     [

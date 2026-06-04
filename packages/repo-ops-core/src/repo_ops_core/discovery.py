@@ -119,6 +119,9 @@ def discover_repos(
             except subprocess.TimeoutExpired:
                 print(f"WARN: skipped {repo}: timeout", file=sys.stderr)
                 continue
+            except (FileNotFoundError, OSError) as exc:
+                print(f"WARN: skipped {repo}: {exc}", file=sys.stderr)
+                continue
             if not common:
                 continue
             prev = common_to_repo.get(common)
