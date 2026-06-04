@@ -28,7 +28,7 @@ def test_apply_bun_updates_reported_packages_not_latest_flag(monkeypatch) -> Non
         patch("repo_ops_js_bun.bun.run", fake_run),
         patch(
             "repo_ops_js_bun.bun.check_bun",
-            return_value=[Change("foo", "1.0.0", "1.1.0")],
+            return_value=([Change("foo", "1.0.0", "1.1.0")], []),
         ),
     ):
         apply_bun(ws)
@@ -55,7 +55,7 @@ def test_apply_bun_rejects_dash_prefixed_package_names() -> None:
         patch("repo_ops_js_bun.bun.run", fake_run),
         patch(
             "repo_ops_js_bun.bun.check_bun",
-            return_value=[Change("-evil", "1.0.0", "9.9.9")],
+            return_value=([Change("-evil", "1.0.0", "9.9.9")], []),
         ),
     ):
         apply_bun(ws)
@@ -79,7 +79,7 @@ def test_apply_bun_noop_when_nothing_outdated(monkeypatch) -> None:
     )
     with (
         patch("repo_ops_js_bun.bun.run", fake_run),
-        patch("repo_ops_js_bun.bun.check_bun", return_value=[]),
+        patch("repo_ops_js_bun.bun.check_bun", return_value=([], [])),
     ):
         apply_bun(ws)
 

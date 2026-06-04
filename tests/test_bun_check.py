@@ -34,13 +34,14 @@ def test_check_bun_prefers_json() -> None:
         raise AssertionError("text outdated should not run when JSON succeeds")
 
     with patch("repo_ops_js_bun.bun.run", fake_run):
-        changes = check_bun(_ws())
+        changes, behind_latest = check_bun(_ws())
 
     assert calls == [["bun", "outdated", "--json"]]
     assert len(changes) == 1
     assert changes[0].name == "vite"
     assert changes[0].from_ver == "5.0.0"
     assert changes[0].to == "6.0.0"
+    assert behind_latest == []
 
 
 # Real `bun outdated` (>=1.3) output: no `--json` support, an ANSI-coloured box
@@ -72,7 +73,7 @@ def _patched_check(table_stdout: str):
 
 
 def test_check_bun_parses_real_ansi_table_in_range() -> None:
-    changes = _patched_check(_REAL_BUN_TABLE)
+    changes, behind_latest = _patched_check(_REAL_BUN_TABLE)
 
     # Default: range-respecting (Update column). @hono is skipped — its in-range
     # Update (1.19.14) equals Current; only ai and vitest have in-range bumps.
@@ -83,11 +84,17 @@ def test_check_bun_parses_real_ansi_table_in_range() -> None:
     # The banner must never leak through as a bogus "bun@(hash)" target.
     assert "bun" not in [c.name for c in changes]
     assert all("0d9b296a" not in c.to for c in changes)
+    # @hono has a newer latest (2.0.4) but in-range update == current, so behind_latest.
+    assert ("@hono/node-server", "1.19.14", "2.0.4") in [
+        (c.name, c.from_ver, c.to) for c in behind_latest
+    ]
 
 
 def test_check_bun_latest_column_when_opted_in(monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
-    changes = _patched_check(_REAL_BUN_TABLE)
+    changes, behind_latest = _patched_check(_REAL_BUN_TABLE)
 
     # Latest column: @hono now upgrades out-of-range to 2.0.4.
     assert ("@hono/node-server", "2.0.4") in [(c.name, c.to) for c in changes]
+    # When latest-mode is on, no behind_latest entries are emitted.
+    assert behind_latest == []

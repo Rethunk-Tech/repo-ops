@@ -54,9 +54,10 @@ def test_checkers_use_monkeypatched_run(monkeypatch):
         label="",
     )
     with patch("repo_ops_js_bun.bun.run", fake_run):
-        changes = check_bun(ws)
+        changes, behind_latest = check_bun(ws)
     assert len(changes) == 1
     assert changes[0].name == "foo"
+    assert behind_latest == []
     assert any("bun" in c[0] for c in calls)
 
 
