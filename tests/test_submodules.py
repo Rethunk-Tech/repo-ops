@@ -178,3 +178,31 @@ def test_dirty_submodule_pointer_hint(tmp_path: Path) -> None:
     assert hints
     assert hints[0]["parent"] == str(parent.resolve())
     assert "pkg" in hints[0]["paths"]
+
+
+def test_find_gitmodules_prunes_skip_dirs(tmp_path: Path) -> None:
+    """Regression for #43: _find_gitmodules must not descend into SKIP_DIRS
+    (e.g. node_modules) and must not register a .gitmodules found inside them."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    _init_git_repo(root)
+    # Legitimate .gitmodules at the repo root.
+    _write_gitmodules(root, "sub", "https://example.com/sub.git")
+    # A .gitmodules inside node_modules — should be ignored.
+    nm = root / "node_modules" / "some-pkg"
+    nm.mkdir(parents=True)
+    (nm / ".gitmodules").write_text(
+        '[submodule "evil"]\n\tpath = evil\n\turl = https://evil.example.com/evil.git\n',
+        encoding="utf-8",
+    )
+
+    from repo_ops_upgrade.submodules import _find_gitmodules
+
+    found = _find_gitmodules(root)
+    paths = [str(p) for p in found]
+    assert any(p.endswith(".gitmodules") and "node_modules" not in p for p in paths), (
+        f"legitimate .gitmodules not found; got {paths}"
+    )
+    assert not any("node_modules" in p for p in paths), (
+        f"node_modules/.gitmodules must be pruned; got {paths}"
+    )

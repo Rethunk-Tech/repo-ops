@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.git import git_repo_for, run_git
 
 SubmoduleOrder = str  # "discovery" | "children-first"
@@ -52,6 +53,12 @@ def _find_gitmodules(root: Path, *, max_depth: int = 32) -> list[Path]:
             if entry.name == ".gitmodules" and entry.is_file():
                 found.append(entry)
             elif entry.is_dir() and not entry.is_symlink():
+                # Prune well-known noise dirs (node_modules, target, .venv, …)
+                # to match iter_scanned_dirs behaviour and avoid registering a
+                # .gitmodules found inside a vendored or generated subtree.
+                # (closes #43)
+                if entry.name in SKIP_DIRS:
+                    continue
                 stack.append((entry, depth + 1))
     return sorted(found)
 
