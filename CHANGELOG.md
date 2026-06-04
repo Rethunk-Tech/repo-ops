@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-06-04
+
 ### Fixed
 
 - **Workspace-member matching (sibling bleed):** uv/yarn/npm and Cargo workspace-member matching is now separator-bound, so a member pattern targeting `packages/foo` no longer also claims the sibling `packages/foobar`, and a bare `apps` pattern no longer claims `apps-legacy`. Previously a `startswith` prefix test with no path-boundary check silently folded sibling workspaces into a member and dropped them from the outdated scan. Fixed in place in all three checkers (`path_is_uv_workspace_child`, `path_is_yarn_workspace_child`, the upgrade `discovery` matcher). (#59)
@@ -291,7 +293,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.6.1...v0.7.0
+[0.6.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.5...v0.4.0
 [0.3.5]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.3.4...v0.3.5
