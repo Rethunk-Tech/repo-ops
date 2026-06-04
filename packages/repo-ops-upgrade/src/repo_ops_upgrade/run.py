@@ -227,7 +227,10 @@ def _run_upgrade_body(
             bundle.workspaces = [
                 wr
                 for wr in bundle.workspaces
-                if wr.changes or wr.status != "ok" or wr.remediations
+                if wr.changes
+                or wr.behind_latest
+                or wr.status != "ok"
+                or wr.remediations
             ]
 
     pointer_hints: list[dict[str, str]] | None = None

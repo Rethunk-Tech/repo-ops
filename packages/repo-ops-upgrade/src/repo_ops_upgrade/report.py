@@ -31,6 +31,8 @@ def build_run_summary(
     verify_failures = 0
     actions_bumps = 0
     actions_failures = 0
+    packages_behind_latest = 0
+    actions_behind_latest = 0
 
     for bundle in bundles.values():
         for wr in bundle.workspaces:
@@ -44,9 +46,11 @@ def build_run_summary(
                     dirty_skips += 1
             if wr.verify_error:
                 verify_failures += 1
+            packages_behind_latest += len(wr.behind_latest)
         action_totals = bundle.actions_summary()
         actions_bumps += action_totals["bumps"]
         actions_failures += action_totals["failures"]
+        actions_behind_latest += action_totals.get("behind_latest", 0)
 
     discovery_skipped = len(diagnostics.skipped) if diagnostics else 0
     return {
@@ -58,6 +62,8 @@ def build_run_summary(
         "actions_bumps": actions_bumps,
         "actions_failures": actions_failures,
         "discovery_skipped": discovery_skipped,
+        "packages_behind_latest": packages_behind_latest,
+        "actions_behind_latest": actions_behind_latest,
         "failure_count": count_failures(bundles),
     }
 
@@ -179,7 +185,7 @@ def print_human_report(
         for wr in repo.workspaces:
             ws = wr.workspace
             n = len(wr.changes)
-            if only_outdated and n == 0 and wr.status == "ok":
+            if only_outdated and n == 0 and not wr.behind_latest and wr.status == "ok":
                 continue
             status = wr.status.upper()
             rel = ws.path
@@ -187,6 +193,7 @@ def print_human_report(
                 rel = ws.path.relative_to(ws.git_repo)
             except ValueError:
                 pass
+            behind_n = len(wr.behind_latest)
             print(f"  [{status}] {rel} ({ws.ecosystem}/{ws.manager}) — {n} upgrade(s)")
             if wr.error:
                 print(f"    error: {wr.error}")
@@ -198,6 +205,14 @@ def print_human_report(
                 print(f"    {c.name} {c.from_ver} → {c.to}")
             if len(wr.changes) > top_n:
                 print(f"    ... and {len(wr.changes) - top_n} more")
+            if behind_n > 0:
+                print(
+                    f"    behind-latest: {behind_n} package(s) not actioned (latest-mode off)"
+                )
+                for c in wr.behind_latest[:top_n]:
+                    print(f"      {c.name} {c.from_ver} → {c.to} (latest)")
+                if behind_n > top_n:
+                    print(f"      ... and {behind_n - top_n} more")
             for oa in wr.overrides_audit:
                 print(f"    {oa.get('detail', oa)}")
             for rem in wr.remediations:
@@ -303,6 +318,25 @@ def print_run_footer(
     width = max(len(label) for label, _ in rows)
     for label, count in rows:
         print(f"  {label:<{width}}  {count}")
+
+    packages_behind = summary.get("packages_behind_latest", 0)
+    actions_behind = summary.get("actions_behind_latest", 0)
+    total_behind = packages_behind + actions_behind
+    if total_behind > 0:
+        parts: list[str] = []
+        if packages_behind > 0:
+            parts.append(
+                f"{packages_behind} package(s) behind latest"
+                " (run with REPO_OPS_BUN_UPDATE_LATEST=1 to include)"
+            )
+        if actions_behind > 0:
+            parts.append(
+                f"{actions_behind} action(s) have a newer major available"
+                " (cross-major upgrades are not auto-applied)"
+            )
+        print()
+        for part in parts:
+            print(f"  behind-latest: {part}")
 
     if failures:
         print()
