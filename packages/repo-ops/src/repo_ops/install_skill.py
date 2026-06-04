@@ -114,13 +114,33 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def validate_dest(dest: Path) -> None:
-    """Refuse paths that are not the repo-ops skill directory."""
+def validate_dest(dest: Path, src: Path) -> None:
+    """Refuse paths that are not the repo-ops skill directory.
+
+    Also refuses when *dest* is equal to, an ancestor of, or a descendant
+    of *src* — any such overlap would cause ``shutil.rmtree(dest)`` to
+    destroy the source checkout.
+    """
     resolved = dest.expanduser().resolve()
+    src_resolved = src.resolve()
+
     if resolved.name != _SKILL_DIR_NAME:
         msg = (
             f"--dest must end with {_SKILL_DIR_NAME!r} (got {resolved.name!r}); "
             "refusing to remove an unrelated directory"
+        )
+        raise ValueError(msg)
+
+    # Guard: dest == src, dest is ancestor of src, or src is ancestor of dest.
+    # Path.parents is component-aware so /foo/bar-extra does not match /foo/bar.
+    if (
+        resolved == src_resolved
+        or resolved in src_resolved.parents
+        or src_resolved in resolved.parents
+    ):
+        msg = (
+            f"--dest {resolved} overlaps with the source skill directory "
+            f"{src_resolved}; refusing to remove source checkout"
         )
         raise ValueError(msg)
 
@@ -136,7 +156,7 @@ def run_install(
     src = bundled_skill_dir()
     if dest is not None:
         try:
-            validate_dest(dest)
+            validate_dest(dest, src)
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 1

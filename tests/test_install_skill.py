@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from repo_ops import install_skill
-from repo_ops.install_skill import bundled_skill_dir, main
+from repo_ops.install_skill import bundled_skill_dir, main, validate_dest
 
 
 def test_bundled_skill_dir_contains_skill_md() -> None:
@@ -69,3 +69,47 @@ def test_install_skill_help_exits_zero() -> None:
     with pytest.raises(SystemExit) as exc_info:
         main(["--help"])
     assert exc_info.value.code == 0
+
+
+# --- source-overlap guard (issue #40) ---
+
+
+def test_validate_dest_rejects_dest_equal_to_src(tmp_path: Path) -> None:
+    """dest == src: rmtree would destroy the source checkout."""
+    src = tmp_path / "repo-ops"
+    src.mkdir()
+    with pytest.raises(ValueError, match="overlaps with the source skill directory"):
+        validate_dest(src, src)
+
+
+def test_validate_dest_rejects_dest_ancestor_of_src(tmp_path: Path) -> None:
+    """dest is an ancestor of src: rmtree(dest) removes src recursively.
+
+    This is the exact scenario from issue #40 — the user passes
+    ``--dest /path/to/checkout/repo-ops --force`` where src lives inside
+    that checkout dir.
+    """
+    # dest = tmp_path/repo-ops  (the checkout root, ends with _SKILL_DIR_NAME)
+    # src  = tmp_path/repo-ops/skills/repo-ops  (bundled skill inside checkout)
+    dest = tmp_path / "repo-ops"
+    src = dest / "skills" / "repo-ops"
+    dest.mkdir(parents=True)
+    with pytest.raises(ValueError, match="overlaps with the source skill directory"):
+        validate_dest(dest, src)
+
+
+def test_validate_dest_rejects_src_ancestor_of_dest(tmp_path: Path) -> None:
+    """src is an ancestor of dest: dest is nested inside src."""
+    src = tmp_path / "src-skill" / "repo-ops"
+    dest = src / "nested" / "repo-ops"
+    src.mkdir(parents=True)
+    with pytest.raises(ValueError, match="overlaps with the source skill directory"):
+        validate_dest(dest, src)
+
+
+def test_validate_dest_allows_unrelated_dest(tmp_path: Path) -> None:
+    """A legitimate --dest with no overlap must not raise."""
+    src = tmp_path / "a" / "repo-ops"
+    dest = tmp_path / "b" / "repo-ops"
+    # Should not raise — unrelated paths, same final component.
+    validate_dest(dest, src)
