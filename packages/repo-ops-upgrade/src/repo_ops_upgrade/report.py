@@ -9,7 +9,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
-from repo_ops_models import RepoBundle
+from repo_ops_core.table import column_width, format_cell
+from repo_ops_models import RepoBundle, WorkspaceResult
 
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 
@@ -47,10 +48,12 @@ def build_run_summary(
     actions_failures = 0
     packages_behind_latest = 0
     actions_behind_latest = 0
+    packages_upgraded = 0
     behind_latest_by_manager: dict[str, int] = {}
 
     for bundle in bundles.values():
         for wr in bundle.workspaces:
+            packages_upgraded += len(wr.changes)
             if wr.status == "ok":
                 workspaces_ok += 1
             elif wr.status == "fail":
@@ -83,6 +86,7 @@ def build_run_summary(
         "actions_bumps": actions_bumps,
         "actions_failures": actions_failures,
         "discovery_skipped": discovery_skipped,
+        "packages_upgraded": packages_upgraded,
         "packages_behind_latest": packages_behind_latest,
         "packages_behind_latest_by_manager": behind_latest_by_manager,
         "actions_behind_latest": actions_behind_latest,
@@ -205,13 +209,41 @@ def print_human_report(
     mode = "plan" if dry_run else "apply"
     print(f"repo-ops {mode}")
     print()
-    for repo in sorted(bundles.values(), key=lambda b: b.label):
+
+    def _bundle_upgrade_count(b: RepoBundle) -> int:
+        return sum(len(wr.changes) for wr in b.workspaces)
+
+    if only_outdated:
+        # Heaviest-first so the most-outdated repos surface at the top;
+        # tie-break alphabetically for stable output (#103).
+        ordered = sorted(
+            bundles.values(),
+            key=lambda b: (-_bundle_upgrade_count(b), b.label),
+        )
+    else:
+        ordered = sorted(bundles.values(), key=lambda b: b.label)
+
+    def _is_visible(wr: WorkspaceResult) -> bool:
+        # Single display gate shared by header suppression and the row loop so
+        # they never disagree (#103). A clean ok workspace is hidden under
+        # --only-outdated; everything else is shown.
+        return not (
+            only_outdated
+            and len(wr.changes) == 0
+            and not wr.behind_latest
+            and wr.status == "ok"
+        )
+
+    for repo in ordered:
+        visible = [wr for wr in repo.workspaces if _is_visible(wr)]
+        # Under --only-outdated --skip-actions a bundle that renders no rows and
+        # no actions gets no header (and no trailing blank) at all (#103).
+        if not visible and not include_actions:
+            continue
         print(f"## {repo.label}")
-        for wr in repo.workspaces:
+        for wr in visible:
             ws = wr.workspace
             n = len(wr.changes)
-            if only_outdated and n == 0 and not wr.behind_latest and wr.status == "ok":
-                continue
             status = wr.status.upper()
             rel = ws.path
             with contextlib.suppress(ValueError):
@@ -224,16 +256,29 @@ def print_human_report(
                 print(f"    verify: {wr.verify_error}")
             if wr.verify_fail_disposition:
                 print(f"    disposition: {wr.verify_fail_disposition}")
-            for c in wr.changes[:top_n]:
-                print(f"    {c.name} {c.from_ver} → {c.to}")
+            shown_changes = wr.changes[:top_n]
+            if shown_changes:
+                name_w = column_width([c.name for c in shown_changes], "")
+                from_w = column_width([c.from_ver for c in shown_changes], "")
+                for c in shown_changes:
+                    print(
+                        f"    {format_cell(c.name, name_w)} "
+                        f"{format_cell(c.from_ver, from_w)} → {c.to}"
+                    )
             if len(wr.changes) > top_n:
                 print(f"    ... and {len(wr.changes) - top_n} more")
             if behind_n > 0:
                 print(
                     f"    behind-latest: {behind_n} package(s) not actioned (latest-mode off)"
                 )
-                for c in wr.behind_latest[:top_n]:
-                    print(f"      {c.name} {c.from_ver} → {c.to} (latest)")
+                shown_behind = wr.behind_latest[:top_n]
+                bname_w = column_width([c.name for c in shown_behind], "")
+                bfrom_w = column_width([c.from_ver for c in shown_behind], "")
+                for c in shown_behind:
+                    print(
+                        f"      {format_cell(c.name, bname_w)} "
+                        f"{format_cell(c.from_ver, bfrom_w)} → {c.to} (latest)"
+                    )
                 if behind_n > top_n:
                     print(f"      ... and {behind_n - top_n} more")
             for oa in wr.overrides_audit:
@@ -340,6 +385,7 @@ def print_run_footer(
     print("---")
     print("Summary")
     rows = [
+        ("packages upgraded", summary.get("packages_upgraded", 0)),
         ("workspaces ok", summary["workspaces_ok"]),
         ("workspaces fail", summary["workspaces_fail"]),
         ("workspaces skip", summary["workspaces_skip"]),
@@ -352,6 +398,15 @@ def print_run_footer(
     width = max(len(label) for label, _ in rows)
     for label, count in rows:
         print(f"  {label:<{width}}  {count}")
+
+    # Sentence-form total package-upgrade count across all workspaces (#103).
+    pkgs = summary.get("packages_upgraded", 0)
+    workspaces_total = (
+        summary["workspaces_ok"]
+        + summary["workspaces_fail"]
+        + summary["workspaces_skip"]
+    )
+    print(f"  {pkgs} package(s) upgraded across {workspaces_total} workspace(s)")
 
     packages_behind = summary.get("packages_behind_latest", 0)
     actions_behind = summary.get("actions_behind_latest", 0)

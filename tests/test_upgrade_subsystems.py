@@ -7,7 +7,11 @@ from unittest.mock import patch
 
 from repo_ops._register import register_all
 from repo_ops_models import ActionBump, Change, RepoBundle, Workspace, WorkspaceResult
-from repo_ops_upgrade.report import build_json_payload, print_human_report
+from repo_ops_upgrade.report import (
+    build_json_payload,
+    build_run_summary,
+    print_human_report,
+)
 
 
 def _sample_workspace(tmp_path: Path) -> Workspace:
@@ -217,3 +221,84 @@ def test_print_human_report_actions_dedup_and_no_op_filter(
     assert out.count("slackapi/slack-github-action@v3.19.0") == 1
     # no-op is absent
     assert "trivy-action" not in out
+
+
+def test_only_outdated_human_report_sort_suppress_align(tmp_path: Path, capsys) -> None:
+    """#103: --only-outdated sorts heaviest-first, suppresses empty headers,
+    and aligns change rows; build_run_summary carries packages_upgraded."""
+    heavy_repo = tmp_path / "heavy"
+    light_repo = tmp_path / "light"
+    clean_repo = tmp_path / "clean"
+
+    heavy = RepoBundle(
+        git_repo=heavy_repo,
+        label="aaa-heavy",  # alphabetically first, but must NOT lead the output
+        workspaces=[
+            WorkspaceResult(
+                workspace=Workspace(
+                    path=heavy_repo,
+                    ecosystem="node",
+                    manager="npm",
+                    git_repo=heavy_repo,
+                    label="aaa-heavy",
+                ),
+                changes=[
+                    Change("a-short", "1.0.0", "2.0.0"),
+                    Change("a-much-longer-name", "1.0.0", "2.0.0"),
+                ],
+            )
+        ],
+    )
+    light = RepoBundle(
+        git_repo=light_repo,
+        label="zzz-light",
+        workspaces=[
+            WorkspaceResult(
+                workspace=Workspace(
+                    path=light_repo,
+                    ecosystem="node",
+                    manager="npm",
+                    git_repo=light_repo,
+                    label="zzz-light",
+                ),
+                changes=[Change("solo", "1.0.0", "1.1.0")],
+            )
+        ],
+    )
+    clean = RepoBundle(
+        git_repo=clean_repo,
+        label="mmm-clean",
+        workspaces=[
+            WorkspaceResult(
+                workspace=Workspace(
+                    path=clean_repo,
+                    ecosystem="node",
+                    manager="npm",
+                    git_repo=clean_repo,
+                    label="mmm-clean",
+                ),
+                status="ok",
+            )
+        ],
+    )
+    bundles = {heavy_repo: heavy, light_repo: light, clean_repo: clean}
+
+    print_human_report(
+        bundles,
+        dry_run=True,
+        only_outdated=True,
+        top_n=10,
+        include_actions=False,  # --skip-actions
+    )
+    out = capsys.readouterr().out
+
+    # Heaviest-first: heavy (2 changes) header precedes light (1 change),
+    # even though "zzz-light" sorts after and "aaa-heavy" is unrelated.
+    assert out.index("## aaa-heavy") < out.index("## zzz-light")
+    # Clean bundle renders no rows and no actions -> no header at all.
+    assert "## mmm-clean" not in out
+    # Change rows are column-aligned: the short name is padded to the longest.
+    assert "a-short            1.0.0 → 2.0.0" in out
+
+    summary = build_run_summary(bundles)
+    assert summary["packages_upgraded"] == 3

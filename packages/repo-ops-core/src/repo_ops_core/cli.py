@@ -312,12 +312,14 @@ def add_upgrade_common_arguments(
                 "or revert lockfiles and git-tracked paths under the workspace."
             ),
         )
-    else:
-        parser.add_argument(
-            "--only-outdated",
-            action="store_true",
-            help="Omit clean workspaces from human output.",
-        )
+    # --only-outdated applies to both plan and apply: the filter logic in run.py
+    # and the human report are mode-agnostic (both read it via getattr), so it is
+    # registered unconditionally (#103).
+    parser.add_argument(
+        "--only-outdated",
+        action="store_true",
+        help="Omit clean workspaces from human output.",
+    )
     parser.add_argument(
         "--submodules",
         action="store_true",
