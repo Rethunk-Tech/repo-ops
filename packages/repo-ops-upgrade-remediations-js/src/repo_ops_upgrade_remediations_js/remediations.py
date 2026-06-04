@@ -10,8 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from repo_ops_core import process
 from repo_ops_core.filesystem import read_json_file
-from repo_ops_core.process import VERBOSE, run
+from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version, semver_tuple
 from repo_ops_js.workspaces import (
     parse_package_manager,
@@ -310,7 +311,7 @@ def run_remediations(
         entry: dict[str, Any] = {"id": rem.id, "status": "ok", "detail": ""}
         try:
             detected = rem.detect(result.workspace, ctx)
-            if VERBOSE:
+            if process.VERBOSE:
                 print(
                     f"  remediation {rem.id}: detect={detected}",
                     file=sys.stderr,
