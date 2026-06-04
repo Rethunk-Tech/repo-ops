@@ -43,6 +43,9 @@ def tee_stdout_stderr(log_path: Path) -> Iterator[None]:
         try:
             yield
         finally:
-            out_tee.flush()
-            err_tee.flush()
             sys.stdout, sys.stderr = prev_out, prev_err
+            for tee in (out_tee, err_tee):
+                try:
+                    tee.flush()
+                except Exception:
+                    pass
