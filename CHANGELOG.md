@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Workspace-member matching (sibling bleed):** uv/yarn/npm and Cargo workspace-member matching is now separator-bound, so a member pattern targeting `packages/foo` no longer also claims the sibling `packages/foobar`, and a bare `apps` pattern no longer claims `apps-legacy`. Previously a `startswith` prefix test with no path-boundary check silently folded sibling workspaces into a member and dropped them from the outdated scan. Fixed in place in all three checkers (`path_is_uv_workspace_child`, `path_is_yarn_workspace_child`, the upgrade `discovery` matcher). (#59)
+- **Version normalization (operator whitespace + build metadata):** `normalize_version` now strips whitespace left behind by a range operator (`>= 1.2.3` → `1.2.3`, previously yielding a `(0, 2, 3)` tuple) and drops `+build` metadata (`1.2.3+build.1` → `1.2.3`, previously `(1, 2, 3, 1)`). Leading `v`/`V` and `-prerelease` stripping are unchanged. (#60)
+- **Actions SHA-unpin (short pins):** `--actions-unpin-sha` now resolves short (≤7-char) SHA pins back to a tag by a unique-prefix scan of the full-SHA → tags map. The previous exact-key lookup only matched full 40-char SHAs, so short-SHA pins never resolved. Ambiguous prefixes are left unresolved. (#61)
+- **Worker exceptions no longer escape as a clean exit 0:** An exception raised inside a per-workspace upgrade worker (`run_remediations` / `verify_workspace`) is now recorded as a `status: fail` workspace result with the error text, yielding a non-zero exit. Previously the bounded thread pool swallowed the exception and the run reconciliation re-emitted the workspace as its original (clean) result, so a crashed workspace was reported clean with exit 0. (#62)
+- **Post-apply diff scan (phantom downgrades):** The `package.json` post-apply diff scan now matches added (`+`) lines only, instead of both `+` and `-`. Capturing removed lines recorded the old version as a spurious downgrade change alongside the real upgrade. (#63)
+- **Checker timeouts (uv, Rust):** `check_uv` and `check_rust` now pass `TIMEOUT_CHECK` (600 s) to their dry-run subprocesses instead of falling back to the 300 s default — the sibling fix to #57 for npm/go. (#64)
+- **Actions bump counter (inflated count):** `actions_summary()`'s `bumps` counter now dedupes by `(action, pin)`, matching the deduped rows the report renders. Previously the same action+pin appearing in multiple workflow files inflated the summary count above the number of displayed rows. (#65)
+- **Hatch uv-guard (uv.lock paths):** The `uv`-on-PATH guard added in #33 now also protects the `uv.lock` check/apply paths (`_check_uv_lock` / `_apply_uv_lock`), so a hatch project with a `uv.lock` but no `uv` on PATH degrades gracefully (warn + no-op) instead of crashing. (#66)
+- **bun checker (real `bun` dependency):** A dependency literally named `bun` is no longer rejected by name and is now detected as outdated and upgraded. The `bun outdated` banner that motivated the original exclusion is filtered by structure (it is not a `│`-delimited table row), so the false-negative is fixed without reintroducing the banner false-positive. (#67)
+
 ## [0.7.0] - 2026-06-04
 
 ### Added
