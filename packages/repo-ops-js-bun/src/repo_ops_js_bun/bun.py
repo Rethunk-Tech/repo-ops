@@ -37,42 +37,58 @@ def _valid_bun_package_name(name: str) -> bool:
     return bool(_PKG_NAME_RE.match(n))
 
 
-def _changes_from_bun_json(stdout: str) -> list[Change]:
+def _changes_from_bun_json(stdout: str) -> tuple[list[Change], list[Change]]:
     """Forward-compatible parser for a future `bun outdated --json`.
 
     Range-respecting by default (``update`` field); ``latest`` when opted in.
+
+    Returns ``(changes, behind_latest)`` where ``behind_latest`` contains
+    packages that have a newer ``latest`` version available but are not
+    actionable because latest-mode is off (and the in-range update equals
+    the current version).
     """
     want_latest = _bun_update_latest_enabled()
     changes: list[Change] = []
+    behind_latest: list[Change] = []
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        return changes
+        return changes, behind_latest
     if not isinstance(data, dict):
-        return changes
+        return changes, behind_latest
     for name, meta in data.items():
         if not _valid_bun_package_name(str(name)) or not isinstance(meta, dict):
             continue
         cur = str(meta.get("current") or meta.get("installed") or "?")
+        latest = str(meta.get("latest", "?"))
         if want_latest:
-            target = str(meta.get("latest", "?"))
+            target = latest
         else:
             target = str(meta.get("update") or meta.get("latest") or "?")
         if cur != target and target not in ("?", ""):
             changes.append(Change(str(name), cur, target))
-    return changes
+        elif not want_latest and latest not in ("?", "") and cur != latest:
+            # In-range is already current, but a newer latest exists.
+            behind_latest.append(Change(str(name), cur, latest))
+    return changes, behind_latest
 
 
-def _changes_from_bun_text(stdout: str) -> list[Change]:
+def _changes_from_bun_text(stdout: str) -> tuple[list[Change], list[Change]]:
     """Parse ``bun outdated``'s ANSI box table.
 
     Columns: ``Package │ Current │ Update │ Latest``. ``Update`` is the newest
     version within the package.json range; ``Latest`` ignores the range. Only
     ``│``-delimited data rows are read, so the banner, the ``Resolving…`` line,
     the box borders, and the ``Package`` header are all skipped.
+
+    Returns ``(changes, behind_latest)`` where ``behind_latest`` contains
+    packages that have a newer ``latest`` version available but are not
+    actionable because latest-mode is off (and the in-range update equals
+    the current version).
     """
     want_latest = _bun_update_latest_enabled()
     changes: list[Change] = []
+    behind_latest: list[Change] = []
     for raw in stdout.splitlines():
         line = _ANSI_RE.sub("", raw).strip()
         if not line.startswith(_BOX_V):
@@ -85,14 +101,33 @@ def _changes_from_bun_text(stdout: str) -> list[Change]:
         if name == "Package" or not _valid_bun_package_name(name):
             continue
         current = cells[2]
-        target = cells[4] if want_latest else cells[3]
+        update_ver = cells[3]
+        latest_ver = cells[4]
+        target = latest_ver if want_latest else update_ver
         if not current or not target or current == target:
+            # When latest-mode is off, check if there's a newer latest to report.
+            if not want_latest and latest_ver and current and current != latest_ver:
+                behind_latest.append(Change(name, current, latest_ver))
             continue
         changes.append(Change(name, current, target))
-    return changes
+        # If latest-mode is off and latest > update target, also record behind_latest.
+        if (
+            not want_latest
+            and latest_ver
+            and target != latest_ver
+            and latest_ver != current
+        ):
+            behind_latest.append(Change(name, current, latest_ver))
+    return changes, behind_latest
 
 
-def check_bun(ws: Workspace) -> list[Change]:
+def check_bun(ws: Workspace) -> tuple[list[Change], list[Change]]:
+    """Check for outdated bun packages.
+
+    Returns ``(changes, behind_latest)`` where ``behind_latest`` holds packages
+    that have a newer ``latest`` version available but are not actioned when
+    ``REPO_OPS_BUN_UPDATE_LATEST`` is unset.
+    """
     proc_json = run(["bun", "outdated", "--json"], ws.path)
     if proc_json.returncode in (0, 1) and proc_json.stdout.strip():
         try:
@@ -112,7 +147,7 @@ def check_bun(ws: Workspace) -> list[Change]:
 
 def apply_bun(ws: Workspace) -> None:
     """Apply upgrades reported by ``check_bun`` without rewriting ranges to ``latest``."""
-    changes = check_bun(ws)
+    changes, _behind = check_bun(ws)
     if not changes:
         return
     targets: list[str] = []
