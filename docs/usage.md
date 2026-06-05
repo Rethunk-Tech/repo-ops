@@ -42,7 +42,7 @@ Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_cor
 |-----------|------------------|----------------------------|
 | **npm** | `npm update` (semver ranges in manifests) | — |
 | **pnpm** | `pnpm update -r` (within ranges) | `REPO_OPS_PNPM_UPDATE_LATEST=1` → adds `--latest` |
-| **yarn** | `yarn up` (Berry, in-range bumps in isolated plan snapshots) | `REPO_OPS_YARN_UPDATE_LATEST=1` → `yarn up -R '*'` |
+| **yarn** | `yarn up` (Berry, in-range bumps in isolated plan snapshots) | `REPO_OPS_YARN_UPDATE_LATEST=1` → `yarn up -R '*'`; reports direct deps yarn's resolver kept behind their newest published version as `behind_latest` (#110) |
 | **bun** | `bun update` (within ranges) | `REPO_OPS_BUN_UPDATE_LATEST=1` → includes out-of-range "latest" packages |
 | **go** | `REPO_OPS_GO_UPGRADE_MODE=patch` (default) | `explicit` or `mvs` (see below) |
 | **rust** | `cargo update --dry-run` / `cargo update` | — |

@@ -10,8 +10,10 @@ import tempfile
 from pathlib import Path
 
 from repo_ops_core.process import run
+from repo_ops_core.version_utils import semver_tuple
 from repo_ops_js.overrides import overrides_audit
 from repo_ops_js.workspaces import corepack_prepare
+from repo_ops_lockfiles.parsers import versions_yarn_lock
 from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
     snapshot_workspace_files,
@@ -26,6 +28,7 @@ from repo_ops_upgrade.constants import (
 FILE_PROTOCOL_RE = re.compile(r"^file:(\.\./.+?)(?:#.*)?$")
 _STDERR_TAIL_LINES = 12
 _YARN_UPDATE_LATEST_ENV = "REPO_OPS_YARN_UPDATE_LATEST"
+_TIMEOUT_NPM_INFO = 60
 
 
 def _yarn_update_latest_enabled() -> bool:
@@ -182,7 +185,101 @@ def _copy_yarn_workspace_to_temp(ws: Workspace, temp_root: Path) -> Path:
     return (dest_ws_root / rel_ws).resolve()
 
 
-def check_yarn_snapshot(ws: Workspace) -> tuple[list[Change], list[dict[str, str]]]:
+def _direct_dep_names(ws_path: Path) -> set[str]:
+    """Direct dependency names declared across the workspace's package.json files."""
+    names: set[str] = set()
+    for pkg_json in _package_json_paths(ws_path):
+        try:
+            data = json.loads(pkg_json.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for section in (
+            "dependencies",
+            "devDependencies",
+            "optionalDependencies",
+        ):
+            deps = data.get(section)
+            if isinstance(deps, dict):
+                names.update(k for k in deps if isinstance(k, str))
+    return names
+
+
+def _resolved_versions(lock_path: Path) -> dict[str, str]:
+    """name -> highest resolved version from a yarn.lock (handles duplicate ranges)."""
+    resolved: dict[str, str] = {}
+    for entry in versions_yarn_lock(lock_path):
+        name, _, ver = entry.rpartition("@")
+        if not name or not ver:
+            continue
+        prev = resolved.get(name)
+        try:
+            if prev is None or semver_tuple(ver) > semver_tuple(prev):
+                resolved[name] = ver
+        except (TypeError, ValueError):
+            resolved.setdefault(name, ver)
+    return resolved
+
+
+def _latest_published(mdir: Path, name: str) -> str | None:
+    """Latest published version via ``yarn npm info`` (None on any failure)."""
+    try:
+        proc = run(
+            ["yarn", "npm", "info", name, "--json"], mdir, timeout=_TIMEOUT_NPM_INFO
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None
+    dist_tags = data.get("dist-tags")
+    if isinstance(dist_tags, dict):
+        latest = dist_tags.get("latest")
+        if isinstance(latest, str):
+            return latest
+    ver = data.get("version")
+    return ver if isinstance(ver, str) else None
+
+
+def behind_after_up(mdir: Path) -> list[Change]:
+    """Direct deps with a newer published version that ``yarn up`` did not apply.
+
+    yarn's resolver (especially under ``yarn up -R '*'``) can keep a package below
+    its newest release for peer/group constraints, and repo-ops lands exactly what
+    yarn produces — silently. This surfaces those gaps (issue #110) as ``behind_latest``
+    so a supersede run reads honestly instead of "everything is current".
+
+    Only runs in latest mode (``--latest`` / REPO_OPS_YARN_UPDATE_LATEST), where the
+    gap is meaningful and the extra registry lookups are warranted. Resilient: any
+    ``yarn npm info`` failure skips that package rather than failing the run.
+    """
+    if not _yarn_update_latest_enabled():
+        return []
+    lock = mdir / "yarn.lock"
+    if not lock.is_file():
+        return []
+    resolved = _resolved_versions(lock)
+    behind: list[Change] = []
+    for name in sorted(_direct_dep_names(mdir)):
+        cur = resolved.get(name)
+        if not cur:
+            continue
+        latest = _latest_published(mdir, name)
+        if not latest or latest == cur:
+            continue
+        try:
+            if semver_tuple(latest) > semver_tuple(cur):
+                behind.append(Change(name, cur, latest))
+        except (TypeError, ValueError):
+            continue
+    return behind
+
+
+def check_yarn_snapshot(
+    ws: Workspace,
+) -> tuple[list[Change], list[dict[str, str]], list[Change]]:
     """Plan via isolated copy; conservative ``yarn up`` unless latest env is set."""
     changes: list[Change] = []
     snapshot_overrides: list[dict[str, str]] = []
@@ -206,11 +303,16 @@ def check_yarn_snapshot(ws: Workspace) -> tuple[list[Change], list[dict[str, str
         ):
             changes.append(Change("package.json", "changed", "changed"))
         snapshot_overrides = overrides_audit(mdir, "yarn")
-    return changes, snapshot_overrides
+        behind = behind_after_up(mdir)
+    return changes, snapshot_overrides, behind
 
 
-def apply_yarn(ws: Workspace) -> None:
-    """Apply in workspace; matches check policy (see ``_yarn_up_cmd``)."""
+def apply_yarn(ws: Workspace) -> list[Change]:
+    """Apply in workspace; matches check policy (see ``_yarn_up_cmd``).
+
+    Returns the direct deps a latest-mode ``yarn up`` left behind (issue #110);
+    empty in conservative mode or when nothing is behind.
+    """
     corepack_prepare("yarn", ws.path)
     proc = run(_yarn_up_cmd(), ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
@@ -218,3 +320,4 @@ def apply_yarn(ws: Workspace) -> None:
     proc2 = run(["yarn", "install"], ws.path, timeout=TIMEOUT_APPLY)
     if proc2.returncode != 0:
         raise _command_failure("yarn install failed", proc2)
+    return behind_after_up(ws.path)

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **yarn latest-mode surfaces packages left behind:** after `yarn up -R '*'` (`--latest`), repo-ops now diffs each direct dependency's resolved version against the latest published version and reports any that yarn's resolver kept behind (peer/group constraints) as `behind_latest`, instead of silently omitting them. A supersede run no longer reads as "everything is current" when a newer version exists but wasn't applied (e.g. `@sentry/nextjs` `10.55.0` while `10.56.0` is published). Only runs in latest mode; a registry lookup failure skips that package rather than failing the run. (#110)
 - **`--actions-refresh-sha` flag:** keeps a SHA-pinned action pinned **by digest** but advances the SHA to the commit of the newest `vN.M.P` release **within its current major**, preserving the `# vN` audit comment. Lets repo-ops supersede Dependabot's digest-pin bumps (e.g. `actions/checkout` `6.0.2 → 6.0.3`) without un-hardening the pin to a floating tag. The major is resolved from the `# vN` comment, else the tags API; no effect with `--actions-unpin-sha`. (#109)
 
 ### Fixed

@@ -12,19 +12,23 @@ from repo_ops_models import Change, Workspace, WorkspaceResult
 logger = logging.getLogger(__name__)
 
 # A checker may return:
-#   list[Change]                                  — changes only
-#   tuple[list[Change], list[dict[str, str]]]     — changes + overrides_audit
-#   tuple[list[Change], list[Change]]             — changes + behind_latest
+#   list[Change]                                            — changes only
+#   tuple[list[Change], list[dict[str, str]]]               — changes + overrides_audit
+#   tuple[list[Change], list[Change]]                       — changes + behind_latest
+#   tuple[list[Change], list[dict[str, str]], list[Change]] — changes + overrides + behind
 #
-# The two tuple forms are distinguished at dispatch time by inspecting the
-# first element of the second list: dict → overrides_audit, Change → behind_latest.
+# The two-tuple forms are distinguished at dispatch time by inspecting the first
+# element of the second list: dict → overrides_audit, Change → behind_latest. The
+# three-tuple form (yarn) supplies both explicitly in fixed order.
 Checker = Callable[
     [Workspace],
     list[Change]
     | tuple[list[Change], list[dict[str, str]]]
-    | tuple[list[Change], list[Change]],
+    | tuple[list[Change], list[Change]]
+    | tuple[list[Change], list[dict[str, str]], list[Change]],
 ]
-Applier = Callable[[Workspace], None]
+# An applier returns None, or the behind_latest gaps it observed (yarn, issue #110).
+Applier = Callable[[Workspace], None | list[Change]]
 
 CHECKERS: dict[str, Checker] = {}
 APPLIERS: dict[str, Applier] = {}
@@ -48,7 +52,13 @@ def check_workspace(ws: Workspace) -> WorkspaceResult:
             result.error = f"unsupported manager {ws.manager}"
             return result
         out = checker(ws)
-        if isinstance(out, tuple):
+        if isinstance(out, tuple) and len(out) == 3:
+            # Explicit (changes, overrides_audit, behind_latest) — yarn.
+            changes, overrides, behind = out
+            result.changes = changes
+            result.overrides_audit = [e for e in overrides if isinstance(e, dict)]
+            result.behind_latest = [c for c in behind if isinstance(c, Change)]
+        elif isinstance(out, tuple):
             changes, second = out
             result.changes = changes
             # Distinguish overrides_audit (list[dict]) from behind_latest (list[Change]).
@@ -85,10 +95,12 @@ def check_workspace(ws: Workspace) -> WorkspaceResult:
     return result
 
 
-def apply_workspace(ws: Workspace) -> None:
+def apply_workspace(ws: Workspace) -> list[Change]:
+    """Apply upgrades; return the applier's behind_latest gaps (yarn) or []."""
     if ws.ecosystem == "node":
         corepack_prepare(ws.manager, ws.path)
     applier = APPLIERS.get(ws.manager)
     if not applier:
         raise RuntimeError(f"no applier for {ws.manager}")
-    applier(ws)
+    behind = applier(ws)
+    return behind or []

@@ -26,7 +26,10 @@ _DIRTY_SKIP_MARKER = "dirty git worktree"
 _LATEST_HINT_BY_MANAGER: dict[str, str] = {
     "bun": "run with --latest to include",
     "pnpm": "run with --latest to include",
-    "yarn": "run with --latest to include",
+    # yarn behind-latest is surfaced only after --latest already ran (the resolver
+    # kept these back for peer/group constraints), so re-running --latest won't move
+    # them — they need manual attention. (#110)
+    "yarn": "peer/group-constrained; --latest can't move them, bump manually",
     "go": "run with --go-upgrade-mode=explicit to include",
 }
 _LATEST_HINT_NO_MODE = "no latest mode; bump the pin manually"
