@@ -309,6 +309,38 @@ def test_latest_flag_sets_ecosystem_env_vars(tmp_path: Path, monkeypatch) -> Non
     assert seen == {"bun": "1", "pnpm": "1", "yarn": "1", "go": "explicit"}
 
 
+def test_latest_umbrella_flips_actions_mode(tmp_path: Path, monkeypatch) -> None:
+    """#106: --latest opts Actions into latest mode; explicit flag overrides it."""
+    # --latest writes REPO_OPS_*_UPDATE_LATEST to os.environ directly; record the
+    # originals so monkeypatch restores them and the writes don't leak into other
+    # checker tests (mirrors test_latest_flag_sets_ecosystem_env_vars).
+    for var in (
+        "REPO_OPS_BUN_UPDATE_LATEST",
+        "REPO_OPS_PNPM_UPDATE_LATEST",
+        "REPO_OPS_YARN_UPDATE_LATEST",
+        "REPO_OPS_GO_UPGRADE_MODE",
+    ):
+        monkeypatch.setenv(var, "__sentinel__")
+        monkeypatch.delenv(var)
+    _bun_workspace(tmp_path)
+    register_all()
+
+    def _mode_for(argv: list[str]) -> str:
+        with patch(
+            "repo_ops_upgrade.run.actions.scan_actions",
+            return_value=([], 0),
+        ) as scan:
+            main_plan([str(tmp_path), "--flat", "--quiet", *argv])
+        return scan.call_args.kwargs["upgrade_mode"]
+
+    # --latest umbrella → Actions latest mode.
+    assert _mode_for(["--latest"]) == "latest"
+    # Explicit --actions-upgrade-mode overrides the umbrella.
+    assert _mode_for(["--latest", "--actions-upgrade-mode", "normalize"]) == "normalize"
+    # Neither → default normalize.
+    assert _mode_for([]) == "normalize"
+
+
 def test_footer_hint_appears_for_actions_behind_latest(tmp_path: Path) -> None:
     summary = {
         "workspaces_ok": 1,
