@@ -223,18 +223,18 @@ toml = [
 
 [[package]]
 name = "cursor-sdk"
-version = "0.1.6"
+version = "0.1.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dc/11/9b158a5d6552b099d6db6b86314430e55690589afffd09633f9aef91e2fa/cursor_sdk-0.1.6.tar.gz", hash = "sha256:182220898bcd55966e99655c5c1be93126295319d38961011925eab2af7abcc4", size = 1175, upload-time = "2026-05-29T12:24:09.796Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1c/36/dbba49561bad0f2acc21654bb5ba398b0691ecbea5667f7370f581781422/cursor_sdk-0.1.7.tar.gz", hash = "sha256:a8eead9558bf4a53aab0a4a83eb1f56bb8c38fb5f978041712b436a12c6a30d7", size = 1175, upload-time = "2026-06-05T15:44:51.544Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/53/40/c7c1d98eefbdd62702486a5debd81d2c8c717f424d60d6c3215baa7cc4ae/cursor_sdk-0.1.6-py3-none-macosx_11_0_arm64.whl", hash = "sha256:606f949317e91b96fa1c4b854e37c92dc9d99ed736c843c6601a2a3eee0d41fd", size = 52647139, upload-time = "2026-05-29T12:23:55.772Z" },
-    { url = "https://files.pythonhosted.org/packages/2a/d6/10a2387980274b3968eedc71e4f9c0a0df16b249f41b3eb2ac10c1ac53f2/cursor_sdk-0.1.6-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:a3280d0956bc517e6dcec44abcc4ea3a595c84a1f72326c48cf9220bd4e89954", size = 54249819, upload-time = "2026-05-29T12:23:58.644Z" },
-    { url = "https://files.pythonhosted.org/packages/2d/9f/3c87fcf245f83970d5d76f22e5880cae4ff44d3b4b6922b1955b097c5150/cursor_sdk-0.1.6-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:e593108451d33298e3c5f7b3174de5f9e36f07fd2a24f7267b0204454e559323", size = 61273380, upload-time = "2026-05-29T12:24:01.565Z" },
-    { url = "https://files.pythonhosted.org/packages/39/c7/4aacc3672c3688dea97fb6492bf7e00ce7c8d57db008c484b12f7eab110c/cursor_sdk-0.1.6-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:04277e5b923e13e2b7a07dd1cdd61e2614ebbf507f8c6777760664bb29249d86", size = 61966173, upload-time = "2026-05-29T12:24:04.44Z" },
-    { url = "https://files.pythonhosted.org/packages/96/49/0f2380a8b29fd41a1e21d6451657e4c0b9f6275c6d2e48250a92a073e52c/cursor_sdk-0.1.6-py3-none-win_amd64.whl", hash = "sha256:41d41213751a58dd7af4eddbe43224ce73b280d0ec49149f5a3988e933fdffcd", size = 48675453, upload-time = "2026-05-29T12:24:07.681Z" },
+    { url = "https://files.pythonhosted.org/packages/35/74/f966249d4b8e251a6bc21f68af879e436c31f8a41c8138b3ef5d91e05980/cursor_sdk-0.1.7-py3-none-macosx_11_0_arm64.whl", hash = "sha256:0e7eb4999c9176caaa6da45690f1cfde674ea5e5fb4f4decfc137e36a599e535", size = 52825504, upload-time = "2026-06-05T15:44:36.199Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/93/96c85399164c6ff7195661874e0728ef83ca7535721116cb989db7334080/cursor_sdk-0.1.7-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:0b689cdf1a1a1c3e011ea47cd1b7257bc3b38924f3b299bc580bcea64f841f7a", size = 54423057, upload-time = "2026-06-05T15:44:39.368Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/8a/9f8c7541759507be32208545a7ebb3fad451e9da83e2fff86e8b73f6356a/cursor_sdk-0.1.7-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:719c555bdb20ac68545883ef19e49dd592160fc204f4ccbd543c4cd977032a0f", size = 61457752, upload-time = "2026-06-05T15:44:42.536Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/22/7ddc14b07b73603b41f62970f49c186daa1301622c5a87cd3d67136142c9/cursor_sdk-0.1.7-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:1f1d35c9136cdcd2ac8e5b4caa216f002b1087281d63992101485a1854f3a313", size = 62149668, upload-time = "2026-06-05T15:44:46.014Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/a9/be47ff49fe67420b3392547b63909c3232d0081bdb068247a3f145a06e3b/cursor_sdk-0.1.7-py3-none-win_amd64.whl", hash = "sha256:5b0528f90b520a02012201ee9071b5f48081686b6c599729fa1942a29cadc0a0", size = 48834389, upload-time = "2026-06-05T15:44:49.103Z" },
 ]
 
 [[package]]
