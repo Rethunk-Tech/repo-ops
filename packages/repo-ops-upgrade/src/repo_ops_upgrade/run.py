@@ -244,6 +244,16 @@ def _run_upgrade_body(
         keep_sha = not bool(getattr(args, "actions_unpin_sha", False))
         _raw_tag_style = getattr(args, "actions_tag_style", "major")
         tag_style: actions.TagStyle = "exact" if _raw_tag_style == "exact" else "major"
+        # Cross-major apply (#106): explicit --actions-upgrade-mode wins; otherwise
+        # --latest is the umbrella that also opts Actions into latest mode.
+        _raw_actions_mode = getattr(args, "actions_upgrade_mode", None)
+        if _raw_actions_mode is None:
+            _raw_actions_mode = (
+                "latest" if getattr(args, "latest", False) else "normalize"
+            )
+        actions_mode: actions.ActionsUpgradeMode = (
+            "latest" if _raw_actions_mode == "latest" else "normalize"
+        )
         # One shared cache for the whole run so each (action, ref) is resolved
         # at most once across all repos — avoids redundant GitHub API calls.
         run_tag_cache: dict[str, dict | None] = {}
@@ -255,6 +265,7 @@ def _run_upgrade_body(
                 apply=apply,
                 keep_sha=keep_sha,
                 tag_style=tag_style,
+                upgrade_mode=actions_mode,
                 tag_cache=run_tag_cache,
             )
 

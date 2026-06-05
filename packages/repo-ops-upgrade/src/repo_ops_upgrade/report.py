@@ -439,7 +439,8 @@ def print_run_footer(
         if actions_behind > 0:
             parts.append(
                 f"{actions_behind} action(s) have a newer major available"
-                " (cross-major upgrades are not auto-applied)"
+                " (apply with --actions-upgrade-mode=latest or --latest;"
+                " report-only when no floating major tag exists upstream)"
             )
         print()
         for part in parts:

@@ -158,3 +158,11 @@ def test_upgrade_parser_accepts_104_and_102_flags() -> None:
     assert args.manager_filter == "npm"
     assert args.latest is True
     assert args.go_upgrade_mode == "explicit"
+
+
+def test_upgrade_parser_accepts_actions_upgrade_mode() -> None:
+    """#106: plan parser accepts --actions-upgrade-mode; defaults to None (umbrella)."""
+    parser = build_upgrade_parser(apply=False)
+    assert parser.parse_args([]).actions_upgrade_mode is None
+    args = parser.parse_args(["--actions-upgrade-mode", "latest"])
+    assert args.actions_upgrade_mode == "latest"

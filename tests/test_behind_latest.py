@@ -329,7 +329,8 @@ def test_footer_hint_appears_for_actions_behind_latest(tmp_path: Path) -> None:
     out = buf.getvalue()
     assert "behind-latest" in out
     assert "2 action(s)" in out
-    assert "cross-major" in out
+    # #106: footer now points operators at the apply path for cross-major bumps.
+    assert "--actions-upgrade-mode=latest" in out
 
 
 def test_footer_hint_absent_when_none_behind_latest(tmp_path: Path) -> None:

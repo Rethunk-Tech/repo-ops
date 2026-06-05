@@ -30,6 +30,13 @@ _SHA_RE = re.compile(r"^(?:sha[0-9a-f]+|[0-9a-f]{7,40})$", re.IGNORECASE)
 
 TagStyle = Literal["major", "exact"]
 
+# How the Actions upgrader treats a pin whose major is behind the newest upstream
+# major line. ``normalize`` (default) only collapses to the current floating major
+# and reports newer majors (report only). ``latest`` also rewrites the pin to the
+# newest available major (issue #106), subject to the same tag-style + bare-major
+# safety rules used elsewhere.
+ActionsUpgradeMode = Literal["normalize", "latest"]
+
 
 def discover_workflow_files(repo: Path) -> list[Path]:
     wf_dir = repo / ".github" / "workflows"
@@ -48,6 +55,9 @@ def action_tag_info(
     Returns a dict with:
       - ``bare_majors``: set of integer majors that have a bare ``vN`` tag.
       - ``max_major``: maximum integer major across all version tags, or None.
+      - ``all_tags``: set of every version tag name seen (``vN``, ``vN.M.P`` …).
+        Source of truth for highest-exact-in-major lookups, since ``sha_to_tags``
+        is empty when the API/mock returns name-only lines.
       - ``sha_to_tags``: mapping of commit SHA → list of tag names (for SHA unpin).
         Each line from the API is parsed as "name sha" or "name" (name-only for
         backwards compat with existing test mocks that return names only).
@@ -78,6 +88,7 @@ def action_tag_info(
             return None
         bare_majors: set[int] = set()
         all_majors: set[int] = set()
+        all_tags: set[str] = set()
         sha_to_tags: dict[str, list[str]] = {}
         for raw_line in proc.stdout.splitlines():
             line = raw_line.strip()
@@ -94,12 +105,14 @@ def action_tag_info(
                     bare_majors.add(int(name[1:]))
             m = _MAJOR_TAG_RE.match(name)
             if m:
+                all_tags.add(name)
                 with contextlib.suppress(ValueError):
                     all_majors.add(int(m.group(1)))
         max_major = max(all_majors) if all_majors else None
         result: dict = {
             "bare_majors": bare_majors,
             "max_major": max_major,
+            "all_tags": all_tags,
             "sha_to_tags": sha_to_tags,
         }
         store[action] = result
@@ -222,6 +235,45 @@ def _resolve_sha_target(
     return target, f"unpin SHA to {target} ({style_note}; via {source_desc})"
 
 
+def _highest_exact_in_major(info: dict, major: int) -> str | None:
+    """Return the highest ``vN.M.P`` tag within ``major`` from ``info['all_tags']``."""
+    best: str | None = None
+    best_tup: tuple[int, ...] = ()
+    for t in info.get("all_tags", ()):
+        m = re.fullmatch(r"v(\d+)\.\d+\.\d+.*", t)
+        if not m or int(m.group(1)) != major:
+            continue
+        tup = semver_tuple(t.lstrip("v"))
+        if tup > best_tup:
+            best_tup = tup
+            best = t
+    return best
+
+
+def _resolve_latest_target(info: dict, tag_style: TagStyle) -> str | None:
+    """Resolve the rewrite target for a cross-major (latest-mode) bump.
+
+    Honors ``tag_style`` and the same bare-major safety rule used elsewhere:
+    - ``exact`` → highest ``v{max_major}.M.P`` (falls back to floating ``v{max_major}``
+      only when no exact tag exists but a bare major tag does).
+    - ``major`` → floating ``v{max_major}`` only when a bare ``v{max_major}`` tag
+      exists upstream.
+
+    Returns ``None`` when no major can be safely targeted (caller keeps report-only).
+    """
+    max_major = info.get("max_major")
+    if max_major is None:
+        return None
+    if tag_style == "exact":
+        exact = _highest_exact_in_major(info, max_major)
+        if exact:
+            return exact
+        # No exact tag for the newest major — fall back to floating major below.
+    if max_major in info.get("bare_majors", set()):
+        return f"v{max_major}"
+    return None
+
+
 def _run_actionlint(wf: Path, repo: Path) -> str | None:
     """Return a lint error string, or None when lint passes or is unavailable."""
     if not shutil.which("actionlint"):
@@ -241,6 +293,7 @@ def scan_actions(
     *,
     keep_sha: bool = True,
     tag_style: TagStyle = "major",
+    upgrade_mode: ActionsUpgradeMode = "normalize",
     tag_cache: dict[str, dict | None] | None = None,
 ) -> tuple[list[ActionBump], int]:
     """Scan GitHub Actions workflow files and produce bump recommendations.
@@ -259,6 +312,13 @@ def scan_actions(
     tag_style:
         ``"major"`` (default) → rewrite SHA pins to ``@vN``.
         ``"exact"`` → rewrite to the highest ``@vN.M.P`` within the resolved major.
+    upgrade_mode:
+        ``"normalize"`` (default) → only collapse to the current floating major;
+        a newer major upstream is reported only (not applied).
+        ``"latest"`` (CLI: ``--actions-upgrade-mode=latest`` / ``--latest``) → also
+        rewrite a pin to the newest available major, honoring ``tag_style`` and the
+        bare-major safety rule. Falls back to normalize/report-only when the newest
+        major cannot be safely targeted.
     tag_cache:
         Optional shared cache dict mapping action name → tag info (or None on
         failure).  When provided, entries are reused across calls so each
@@ -382,9 +442,38 @@ def scan_actions(
             bare_major_exists = M in info["bare_majors"]
             max_major = info["max_major"]
 
-            if pin == desired:
+            # In latest mode, a newer major upstream is rewritten (not just
+            # reported), provided it can be safely targeted (#106).
+            newer_major = max_major is not None and max_major > M
+            latest_target = (
+                _resolve_latest_target(info, tag_style)
+                if upgrade_mode == "latest" and newer_major
+                else None
+            )
+
+            if latest_target and latest_target != pin:
+                bumps.append(
+                    ActionBump(
+                        workflow=rel,
+                        action=action,
+                        pin=pin,
+                        latest=latest_target,
+                        status="ok",
+                        detail=f"cross-major {pin} -> {latest_target} (latest mode)",
+                    )
+                )
+                if apply:
+                    replacements.append(
+                        PinReplacement(
+                            action=action,
+                            pin=pin,
+                            latest=latest_target,
+                            line=uses.line or None,
+                        )
+                    )
+            elif pin == desired:
                 # Already at floating major. Report newer major if available.
-                if max_major is not None and max_major > M:
+                if newer_major:
                     bumps.append(
                         ActionBump(
                             workflow=rel,
@@ -400,7 +489,7 @@ def scan_actions(
                 # Exact/minor pin (e.g. v3.19.0) — try to collapse to floating major.
                 if bare_major_exists:
                     detail = f"normalize to floating major v{M}"
-                    if max_major is not None and max_major > M:
+                    if newer_major:
                         detail += f"; newer major v{max_major} available"
                     bumps.append(
                         ActionBump(

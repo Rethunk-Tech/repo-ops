@@ -239,9 +239,11 @@ def add_upgrade_common_arguments(
         "--latest",
         action="store_true",
         help=(
-            "Include cross-range (behind-latest) upgrades for bun/pnpm/yarn. "
-            "Sets the per-ecosystem latest-mode env vars before the run. "
-            "npm has no latest mode; go is controlled by --go-upgrade-mode."
+            "Include cross-range (behind-latest) upgrades for bun/pnpm/yarn, and "
+            "apply cross-major GitHub Actions bumps (equivalent to "
+            "--actions-upgrade-mode=latest). Sets the per-ecosystem latest-mode env "
+            "vars before the run. npm has no latest mode; go is controlled by "
+            "--go-upgrade-mode; an explicit --actions-upgrade-mode overrides this."
         ),
     )
     parser.add_argument(
@@ -280,6 +282,20 @@ def add_upgrade_common_arguments(
         action="store_true",
         dest="actions_keep_sha",
         help="Deprecated no-op: SHA pins are preserved by default now.",
+    )
+    parser.add_argument(
+        "--actions-upgrade-mode",
+        choices=("normalize", "latest"),
+        default=None,
+        dest="actions_upgrade_mode",
+        metavar="MODE",
+        help=(
+            "GitHub Actions cross-major policy: normalize (default) collapses to "
+            "the current floating major and reports newer majors; latest also "
+            "applies cross-major bumps to the newest available major (honoring "
+            "--actions-tag-style and the bare-major safety check). Overrides the "
+            "--latest umbrella for Actions."
+        ),
     )
     parser.add_argument(
         "--actions-tag-style",
