@@ -331,7 +331,8 @@ def test_latest_umbrella_flips_actions_mode(tmp_path: Path, monkeypatch) -> None
             return_value=([], 0),
         ) as scan:
             main_plan([str(tmp_path), "--flat", "--quiet", *argv])
-        return scan.call_args.kwargs["upgrade_mode"]
+        mode: str = scan.call_args.kwargs["upgrade_mode"]
+        return mode
 
     # --latest umbrella → Actions latest mode.
     assert _mode_for(["--latest"]) == "latest"

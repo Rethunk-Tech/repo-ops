@@ -7,7 +7,7 @@ module-root = "src"
 
 [project]
 name = "repo-ops"
-version = "0.9.0"
+version = "0.10.0"
 description = "Repository operations and dependency maintenance tools for Rethunk-Tech."
 requires-python = ">=3.10"
 license = { text = "MIT" }

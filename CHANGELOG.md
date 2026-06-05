@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-05
+
+### Added
+
+- **`--actions-upgrade-mode {normalize,latest}` flag:** controls how the GitHub Actions upgrader treats a pin whose major is behind the newest upstream major line, mirroring `--go-upgrade-mode`. `normalize` (default) keeps the prior behavior — collapse exact tag pins to the floating major and report newer majors as report-only. `latest` **applies** cross-major bumps to the newest available major, honoring `--actions-tag-style` (`major` → floating `@vN`; `exact` → highest `@vN.M.P`) and the existing bare-major safety check; it falls back to normalize/report-only when the newest major cannot be safely targeted. (#106)
+
+### Changed
+
+- **`--latest` now also applies cross-major Action bumps:** the `--latest` umbrella opts GitHub Actions into `latest` mode (equivalent to `--actions-upgrade-mode=latest`), closing the gap where node ecosystems honored `--latest` but Actions cross-major bumps were always report-only. An explicit `--actions-upgrade-mode` overrides the umbrella. Without either opt-in, cross-major Action bumps remain report-only. (#106)
+- **Behind-latest footer wording:** the Actions "newer major available" footer hint now points operators at the apply path (`--actions-upgrade-mode=latest` / `--latest`); applied cross-major bumps are counted under "actions bumps" while unresolvable ones remain under "behind-latest". (#106)
+
 ## [0.9.0] - 2026-06-04
 
 ### Added
@@ -362,7 +373,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.7.0...v0.7.1
