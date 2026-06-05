@@ -251,12 +251,14 @@ def _bundle_apply_ok(
             return True, None
         return False, "no workspaces"
     for wr in bundle.workspaces:
-        if wr.status == "skip":
-            err = wr.error or ""
-            if "dirty git worktree" in err:
-                return False, "skipped dirty worktree"
-            if wr.error == "fail-fast":
-                return False, "fail-fast"
+        # A workspace skipped as dirty must NOT veto the whole repo — a clean
+        # sibling's bump still commits. The dirty workspace contributes no
+        # wr.changes, so upgrade_scoped_paths excludes it and its dirty files are
+        # never staged; if every workspace was skipped, scoping yields nothing and
+        # the commit skips as "no upgrade-scoped changes". Issue #108. (fail-fast,
+        # which signals an aborted run, still vetoes.)
+        if wr.status == "skip" and wr.error == "fail-fast":
+            return False, "fail-fast"
         if wr.status == "fail":
             if wr.verify_error and not commit_on_fail:
                 return False, "verify failed"

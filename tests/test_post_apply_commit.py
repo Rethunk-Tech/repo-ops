@@ -167,6 +167,37 @@ def test_dirty_sibling_does_not_block_clean_workspace_commit(tmp_path: Path) -> 
     assert "WIP.md" not in plan.files
 
 
+def test_skipped_dirty_sibling_workspace_does_not_block_commit(tmp_path: Path) -> None:
+    # #108 (real repro): a *sibling workspace* skipped as dirty (status="skip",
+    # error "dirty git worktree") must not veto committing a clean workspace's
+    # applied bump. Exercises the second gate (_bundle_apply_ok), which the
+    # original fix left in place — fails before the skip-dirty veto was removed.
+    bundle = _bundle(tmp_path)  # clean root workspace, status "ok"
+    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
+    (tmp_path / "package.json").write_text('{"version":"1.0.0"}', encoding="utf-8")
+    (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
+    # A go sibling skipped because the repo started dirty (orchestration sets this).
+    sibling = WorkspaceResult(
+        workspace=Workspace(
+            path=tmp_path / "cmd" / "example",
+            ecosystem="go",
+            manager="go",
+            git_repo=tmp_path,
+            label="example",
+        ),
+        status="skip",
+    )
+    sibling.error = "dirty git worktree (use --allow-dirty)"
+    sibling.started_dirty = True
+    bundle.workspaces.append(sibling)
+
+    plan = post_apply_commit.plan_repo_commit(
+        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
+    )
+    assert plan.skipped_reason is None
+    assert set(plan.files) == {"package.json", "package-lock.json"}
+
+
 def test_actions_only_repo_commits(tmp_path: Path) -> None:
     # #107: a repo with workflow bumps but no package workspaces must still
     # commit; _bundle_apply_ok previously bailed with "no workspaces".
