@@ -138,13 +138,68 @@ def test_allow_dirty_scopes_commit_to_upgrade_paths(tmp_path: Path) -> None:
     assert "wip.txt" not in plan.files
 
 
-def test_skips_dirty_at_start_unless_allowed(tmp_path: Path) -> None:
+def test_dirty_start_no_upgrade_changes_skips(tmp_path: Path) -> None:
+    # #108: when the repo started dirty but no workspace produced changes, the
+    # commit is scoped to upgrade paths (none here), so it skips rather than
+    # sweeping the stray dirty file into a commit.
     bundle = _bundle(tmp_path, started_dirty=True)
     (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
     plan = post_apply_commit.plan_repo_commit(
         bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
     )
-    assert plan.skipped_reason == "dirty worktree at start"
+    assert plan.skipped_reason == "no upgrade-scoped changes to commit (dirty worktree)"
+
+
+def test_dirty_sibling_does_not_block_clean_workspace_commit(tmp_path: Path) -> None:
+    # #108: a dirty sibling file must not block committing a clean workspace's
+    # applied bump. The root workspace's manifest AND lockfile are both scoped
+    # (the manifest fix prevents a partial commit); the unrelated dirty file is
+    # never staged. Fails without the root-manifest scoping fix.
+    bundle = _bundle(tmp_path, started_dirty=True)
+    (tmp_path / "package.json").write_text('{"version":"1.0.0"}', encoding="utf-8")
+    (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
+    (tmp_path / "WIP.md").write_text("unrelated pre-existing edit", encoding="utf-8")
+    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
+    plan = post_apply_commit.plan_repo_commit(
+        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
+    )
+    assert set(plan.files) == {"package.json", "package-lock.json"}
+    assert "WIP.md" not in plan.files
+
+
+def test_actions_only_repo_commits(tmp_path: Path) -> None:
+    # #107: a repo with workflow bumps but no package workspaces must still
+    # commit; _bundle_apply_ok previously bailed with "no workspaces".
+    from repo_ops_models import ActionBump
+
+    _init_git_repo(tmp_path)
+    wf_dir = tmp_path / ".github" / "workflows"
+    wf_dir.mkdir(parents=True)
+    wf = wf_dir / "ci.yml"
+    wf.write_text("on: push\njobs: {}\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
+    # The action bump rewrites the (tracked) workflow file.
+    wf.write_text("on: push  # bumped\njobs: {}\n", encoding="utf-8")
+    bundle = RepoBundle(
+        git_repo=tmp_path,
+        label="actions-only",
+        workspaces=[],
+        actions=[
+            ActionBump(
+                workflow=".github/workflows/ci.yml",
+                action="actions/checkout",
+                pin="v4",
+                latest="v6",
+            )
+        ],
+    )
+    plan = post_apply_commit.plan_repo_commit(
+        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
+    )
+    assert plan.skipped_reason is None
+    assert ".github/workflows/ci.yml" in plan.files
+    assert "chore(ci)" in plan.message
 
 
 def test_agent_missing_api_key_skips(

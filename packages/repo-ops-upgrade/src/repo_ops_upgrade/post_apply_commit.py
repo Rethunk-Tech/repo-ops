@@ -86,6 +86,25 @@ def _lockfile_names_for_manager(manager: str) -> frozenset[str]:
     return frozenset()
 
 
+def _manifest_names_for_manager(manager: str) -> frozenset[str]:
+    """Manifest basenames for a manager (the file a bump rewrites versions in).
+
+    Used only for root workspaces (``rel == "."``), where there is no directory
+    prefix to scope by, so the manifest must be matched by name to avoid a partial
+    commit (lockfile staged, manifest dropped). A subdirectory workspace's prefix
+    already captures its manifest. Issue #108.
+    """
+    if manager in ("yarn", "npm", "pnpm", "bun"):
+        return frozenset({"package.json"})
+    if manager in ("uv", "hatch", "pip-tools", "poetry"):
+        return frozenset({"pyproject.toml"})
+    if manager == "go":
+        return frozenset({"go.mod"})
+    if manager == "rust":
+        return frozenset({"Cargo.toml"})
+    return frozenset()
+
+
 def upgrade_scoped_paths(bundle: RepoBundle, porcelain: list[str]) -> list[str]:
     """Porcelain paths that belong to this upgrade (not unrelated dirty files)."""
     wanted_names: set[str] = set()
@@ -93,12 +112,17 @@ def upgrade_scoped_paths(bundle: RepoBundle, porcelain: list[str]) -> list[str]:
     for wr in bundle.workspaces:
         if not (wr.changes or wr.remediations):
             continue
-        wanted_names.update(_lockfile_names_for_manager(wr.workspace.manager))
         try:
             rel = wr.workspace.path.resolve().relative_to(bundle.git_repo.resolve())
         except ValueError:
             rel = Path(".")
-        if rel != Path("."):
+        wanted_names.update(_lockfile_names_for_manager(wr.workspace.manager))
+        if rel == Path("."):
+            # Root workspace: no prefix to scope by, so include the manifest by
+            # name too — otherwise a root bump commits the lockfile but drops the
+            # manifest (partial commit). Issue #108.
+            wanted_names.update(_manifest_names_for_manager(wr.workspace.manager))
+        else:
             prefixes.add(str(rel).replace("\\", "/"))
     for ab in bundle.actions:
         if ab.workflow:
@@ -219,6 +243,12 @@ def _bundle_apply_ok(
     commit_on_fail: bool,
 ) -> tuple[bool, str | None]:
     if not bundle.workspaces:
+        # Actions-only repo (workflows but no package manifest): still committable
+        # when an action bump was actually applied. The porcelain check downstream
+        # is the real arbiter, so a report-only bump (pin == latest) still skips as
+        # "no changes to commit". Issue #107.
+        if any(ab.status == "ok" and ab.pin != ab.latest for ab in bundle.actions):
+            return True, None
         return False, "no workspaces"
     for wr in bundle.workspaces:
         if wr.status == "skip":
@@ -304,10 +334,6 @@ def plan_repo_commit(
     commit_on_fail: bool,
 ) -> CommitPlan:
     repo = bundle.git_repo
-    if _bundle_started_dirty(bundle) and not allow_dirty:
-        return CommitPlan(
-            repo, bundle.label, "", skipped_reason="dirty worktree at start"
-        )
     ok, reason = _bundle_apply_ok(bundle, commit_on_fail=commit_on_fail)
     if not ok:
         return CommitPlan(repo, bundle.label, "", skipped_reason=reason)
@@ -316,7 +342,11 @@ def plan_repo_commit(
     files = porcelain_changed_paths(repo)
     if not files:
         return CommitPlan(repo, bundle.label, "", skipped_reason="clean worktree")
-    if allow_dirty and _bundle_started_dirty(bundle):
+    if _bundle_started_dirty(bundle):
+        # Repo started dirty (any workspace, or an unrelated file — `started_dirty`
+        # is repo-wide via is_git_dirty). Don't block the whole repo: scope the
+        # commit to this upgrade's own paths so a dirty sibling never drops a clean
+        # workspace's bump, and a pre-existing dirty file is never staged. Issue #108.
         scoped = upgrade_scoped_paths(bundle, files)
         if not scoped:
             return CommitPlan(
