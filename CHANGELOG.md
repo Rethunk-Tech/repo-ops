@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`--actions-refresh-sha` flag:** keeps a SHA-pinned action pinned **by digest** but advances the SHA to the commit of the newest `vN.M.P` release **within its current major**, preserving the `# vN` audit comment. Lets repo-ops supersede Dependabot's digest-pin bumps (e.g. `actions/checkout` `6.0.2 → 6.0.3`) without un-hardening the pin to a floating tag. The major is resolved from the `# vN` comment, else the tags API; no effect with `--actions-unpin-sha`. (#109)
+
+### Fixed
+
+- **Actions-only repos now commit under `--commit`:** `_bundle_apply_ok` bailed with "no workspaces" before considering action bumps, so a repo with workflows but no package manifest applied action bumps to the worktree but never committed them. (#107)
+- **A dirty sibling no longer blocks committing a clean workspace's bump:** the post-apply dirty guard was repo-wide (`any(started_dirty)`, itself repo-wide via `is_git_dirty`), so under `--jobs` one dirty/skipped workspace dropped every other workspace's commit. A dirty-start repo now scopes the commit to the upgrade's own paths instead of skipping wholesale; a root-workspace manifest (e.g. `package.json`) is no longer dropped from that scoped commit. (#108)
+
 ## [0.10.0] - 2026-06-05
 
 ### Added

@@ -235,6 +235,68 @@ def _resolve_sha_target(
     return target, f"unpin SHA to {target} ({style_note}; via {source_desc})"
 
 
+def _resolve_sha_major(
+    sha: str, *, comment_hint: str | None, info: dict | None
+) -> int | None:
+    """Resolve the floating major (integer N) a SHA pin belongs to.
+
+    Mirrors step 1 of ``_resolve_sha_target``: prefer the ``# vN`` comment hint,
+    else look the SHA up in the tags API (full SHA or unique short-prefix). Returns
+    ``None`` when the major cannot be determined.
+    """
+    if comment_hint:
+        m = re.match(r"^v(\d+)", comment_hint)
+        if m:
+            return int(m.group(1))
+    if info is None:
+        return None
+    sha_lower = sha.lower()
+    if sha_lower.startswith("sha"):
+        sha_lower = sha_lower[3:]
+    sha_to_tags_map = info.get("sha_to_tags", {})
+    tags_for_sha = sha_to_tags_map.get(sha_lower, [])
+    if not tags_for_sha and len(sha_lower) < 40:
+        matches = [k for k in sha_to_tags_map if k.startswith(sha_lower)]
+        if len(matches) == 1:
+            tags_for_sha = sha_to_tags_map[matches[0]]
+    best_tuple: tuple[int, ...] = ()
+    best_major: int | None = None
+    for t in tags_for_sha:
+        m2 = _MAJOR_TAG_RE.match(t)
+        if not m2:
+            continue
+        tup = semver_tuple(t.lstrip("v"))
+        if tup > best_tuple:
+            best_tuple = tup
+            best_major = int(m2.group(1))
+    return best_major
+
+
+def _highest_exact_digest_in_major(info: dict, major: int) -> tuple[str, str] | None:
+    """Return ``(commit_sha, tag)`` for the highest ``vN.M.P`` tag within ``major``.
+
+    Used by SHA-pin digest refresh (#109): keeps an action digest-pinned but
+    advances the SHA to the newest release within its current major, matching how
+    Dependabot security-pins by commit. ``None`` when no exact tag exists in major.
+    """
+    best_tag: str | None = None
+    best_sha: str | None = None
+    best_tup: tuple[int, ...] = ()
+    for sha, tags in info.get("sha_to_tags", {}).items():
+        for t in tags:
+            m = re.fullmatch(r"v(\d+)\.\d+\.\d+.*", t)
+            if not m or int(m.group(1)) != major:
+                continue
+            tup = semver_tuple(t.lstrip("v"))
+            if tup > best_tup:
+                best_tup = tup
+                best_tag = t
+                best_sha = sha
+    if best_sha and best_tag:
+        return best_sha, best_tag
+    return None
+
+
 def _highest_exact_in_major(info: dict, major: int) -> str | None:
     """Return the highest ``vN.M.P`` tag within ``major`` from ``info['all_tags']``."""
     best: str | None = None
@@ -292,6 +354,7 @@ def scan_actions(
     apply: bool,
     *,
     keep_sha: bool = True,
+    refresh_sha: bool = False,
     tag_style: TagStyle = "major",
     upgrade_mode: ActionsUpgradeMode = "normalize",
     tag_cache: dict[str, dict | None] | None = None,
@@ -309,6 +372,13 @@ def scan_actions(
         rewritten — preserving supply-chain hardening.  Pass ``keep_sha=False``
         (CLI: ``--actions-unpin-sha``) to opt in to resolving SHA pins to
         version tags.
+    refresh_sha:
+        When True (CLI: ``--actions-refresh-sha``) and the action stays SHA-pinned
+        (``keep_sha=True``), advance the digest to the commit of the newest
+        ``vN.M.P`` release within the pin's resolved major, preserving the digest
+        pin and the ``# vN`` comment (Dependabot-compatible, issue #109). Ignored
+        when ``keep_sha=False`` (the unpin path takes over). No-op when the major
+        cannot be resolved or no newer in-major digest exists.
     tag_style:
         ``"major"`` (default) → rewrite SHA pins to ``@vN``.
         ``"exact"`` → rewrite to the highest ``@vN.M.P`` within the resolved major.
@@ -371,6 +441,56 @@ def scan_actions(
             # SHA-pinned: attempt to resolve to a version tag (unless keep_sha).
             if _SHA_RE.fullmatch(pin):
                 if keep_sha:
+                    # Digest refresh (#109): stay SHA-pinned but advance the digest
+                    # to the newest in-major release, preserving the # vN comment.
+                    if refresh_sha:
+                        info = action_tag_info(action, cache=_cache)
+                        major = (
+                            _resolve_sha_major(
+                                pin, comment_hint=uses.comment, info=info
+                            )
+                            if info is not None
+                            else None
+                        )
+                        digest = (
+                            _highest_exact_digest_in_major(info, major)
+                            if info is not None and major is not None
+                            else None
+                        )
+                        if digest is not None:
+                            new_sha, tag = digest
+                            pin_norm = pin.lower()
+                            if pin_norm.startswith("sha"):
+                                pin_norm = pin_norm[3:]
+                            already_current = pin_norm == new_sha or (
+                                len(pin_norm) < 40 and new_sha.startswith(pin_norm)
+                            )
+                            if not already_current:
+                                bumps.append(
+                                    ActionBump(
+                                        workflow=rel,
+                                        action=action,
+                                        pin=pin,
+                                        latest=new_sha,
+                                        status="ok",
+                                        detail=(
+                                            f"refresh SHA digest to {tag} within v{major} "
+                                            f"({new_sha[:12]})"
+                                        ),
+                                    )
+                                )
+                                if apply:
+                                    replacements.append(
+                                        PinReplacement(
+                                            action=action,
+                                            pin=pin,
+                                            latest=new_sha,
+                                            line=uses.line or None,
+                                            drop_comment=False,  # keep the # vN hint
+                                        )
+                                    )
+                                continue
+                        # Unresolvable major / no newer digest → report only below.
                     bumps.append(
                         ActionBump(
                             workflow=rel,

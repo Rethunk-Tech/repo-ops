@@ -242,6 +242,8 @@ def _run_upgrade_body(
         # SHA pins are preserved by default (supply-chain hardening).
         # Only unpin when the user explicitly opts in via --actions-unpin-sha.
         keep_sha = not bool(getattr(args, "actions_unpin_sha", False))
+        # Digest refresh (#109): only meaningful while staying SHA-pinned.
+        refresh_sha = keep_sha and bool(getattr(args, "actions_refresh_sha", False))
         _raw_tag_style = getattr(args, "actions_tag_style", "major")
         tag_style: actions.TagStyle = "exact" if _raw_tag_style == "exact" else "major"
         # Cross-major apply (#106): explicit --actions-upgrade-mode wins; otherwise
@@ -264,6 +266,7 @@ def _run_upgrade_body(
                 bundle.git_repo,
                 apply=apply,
                 keep_sha=keep_sha,
+                refresh_sha=refresh_sha,
                 tag_style=tag_style,
                 upgrade_mode=actions_mode,
                 tag_cache=run_tag_cache,

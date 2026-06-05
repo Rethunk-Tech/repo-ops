@@ -284,6 +284,17 @@ def add_upgrade_common_arguments(
         help="Deprecated no-op: SHA pins are preserved by default now.",
     )
     parser.add_argument(
+        "--actions-refresh-sha",
+        action="store_true",
+        dest="actions_refresh_sha",
+        help=(
+            "Keep SHA-pinned Actions pinned by digest, but advance the digest to "
+            "the newest vN.M.P release within the pin's current major (preserves "
+            "the # vN comment). Dependabot-compatible digest bumps; supersedes "
+            "their SHA-pin PRs. No effect with --actions-unpin-sha."
+        ),
+    )
+    parser.add_argument(
         "--actions-upgrade-mode",
         choices=("normalize", "latest"),
         default=None,
