@@ -7,6 +7,8 @@ import os
 import re
 
 from repo_ops_core.process import run
+from repo_ops_core.version_utils import normalize_version, semver_tuple
+from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
@@ -141,12 +143,50 @@ def check_bun(ws: Workspace) -> tuple[list[Change], list[Change]]:
     return _changes_from_bun_text(proc.stdout)
 
 
+def _assert_targets_resolved(ws: Workspace, requested: list[Change]) -> None:
+    """Guard against #112 ghost bumps.
+
+    An ``overrides``/``resolutions`` entry, an exact-pin dependency range, or a
+    peer/transitive constraint can shadow ``bun update``: ``bun.lock`` churns but
+    the OLD version stays installed. ``verify`` (build/test) then passes against
+    the *un-upgraded* tree and the bump is reported green when nothing moved.
+
+    Compare each requested target against the version actually resolved on disk;
+    if any is still behind, raise so ``apply_workspace`` marks the workspace
+    ``fail`` (which both vetoes the repo commit by default and stops the summary
+    from lying) instead of reporting a successful upgrade that never happened.
+
+    Resolution is read from ``node_modules`` (the workspace dir, then the repo
+    root for a hoisted/workspace layout). When the version can't be read at all,
+    we don't manufacture a failure — a layout we can't see is left to the
+    existing ``overrides_audit`` warnings.
+    """
+    blocked: list[str] = []
+    for ch in requested:
+        target = normalize_version((ch.to or "").strip())
+        resolved = resolved_version_from_node_modules(ws.path, ch.name)
+        if resolved is None and ws.git_repo and ws.git_repo != ws.path:
+            resolved = resolved_version_from_node_modules(ws.git_repo, ch.name)
+        if resolved is None:
+            continue
+        # ``<`` not ``!=``: a legitimate higher in-range resolution is a success,
+        # not a ghost bump. Only a version left behind the requested target is.
+        if semver_tuple(normalize_version(resolved)) < semver_tuple(target):
+            blocked.append(f"{ch.name} pinned at {resolved} (wanted {ch.to})")
+    if blocked:
+        raise RuntimeError(
+            "bun upgrade blocked (override/resolution/pin/constraint), "
+            "lockfile churned but dependency did not move: " + "; ".join(blocked)
+        )
+
+
 def apply_bun(ws: Workspace) -> None:
     """Apply upgrades reported by ``check_bun`` without rewriting ranges to ``latest``."""
     changes, _behind = check_bun(ws)
     if not changes:
         return
     targets: list[str] = []
+    requested: list[Change] = []
     for ch in changes:
         name = (ch.name or "").strip()
         version = (ch.to or "").strip()
@@ -155,6 +195,7 @@ def apply_bun(ws: Workspace) -> None:
         if not _valid_bun_package_name(name):
             continue
         targets.append(f"{name}@{version}")
+        requested.append(ch)
     if not targets:
         proc = run(["bun", "update"], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
@@ -163,3 +204,4 @@ def apply_bun(ws: Workspace) -> None:
     proc = run(["bun", "update", "--", *targets], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
+    _assert_targets_resolved(ws, requested)
