@@ -76,13 +76,12 @@ def install_one(
     return 0
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="repo-ops install-skill",
-        description=(
-            "Install the bundled repo-ops agent skill for Cursor and/or Claude Code."
-        ),
-    )
+_INSTALL_SKILL_DESCRIPTION = (
+    "Install the bundled repo-ops agent skill for Cursor and/or Claude Code."
+)
+
+
+def _add_install_skill_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--target",
         choices=_TARGETS,
@@ -111,6 +110,14 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="install directly to this skill directory (testing; ignores --target layout)",
     )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="repo-ops install-skill",
+        description=_INSTALL_SKILL_DESCRIPTION,
+    )
+    _add_install_skill_arguments(parser)
     return parser
 
 

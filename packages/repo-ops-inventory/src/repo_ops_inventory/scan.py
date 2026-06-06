@@ -114,12 +114,17 @@ def _print_inventory_table(all_rows: list[dict], top: int | None = None) -> None
     )
 
 
-def main(argv: list[str] | None = None) -> None:
+def build_inventory_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="repo-ops inventory",
         description="Count dependencies per project.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    _add_inventory_arguments(parser)
+    return parser
+
+
+def _add_inventory_arguments(parser: argparse.ArgumentParser) -> None:
     add_roots_argument(parser)
     add_json_argument(parser, dest="json_out")
     add_json_out_argument(parser)
@@ -150,6 +155,10 @@ def main(argv: list[str] | None = None) -> None:
         help="Bypass XDG Go module result cache.",
     )
     add_verbose_argument(parser)
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_inventory_parser()
     args = parser.parse_args(argv)
     wire_verbose(args)
     if getattr(args, "json_report_path", None) and not args.json_out:

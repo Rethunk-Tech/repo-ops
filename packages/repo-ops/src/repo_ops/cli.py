@@ -7,12 +7,20 @@ import importlib.metadata
 import sys
 from collections.abc import Callable
 
+from repo_ops_core.cli import build_upgrade_parser
+from repo_ops_inventory.scan import build_inventory_parser
 from repo_ops_inventory.scan import main as inventory_main
+from repo_ops_pushed.audit import build_pushed_parser
 from repo_ops_pushed.audit import main as pushed_main
 from repo_ops_upgrade.run import main_apply, main_plan
 
 from repo_ops._register import register_all
-from repo_ops.install_skill import main as install_skill_main
+from repo_ops.install_skill import (
+    build_parser as build_install_skill_parser,
+)
+from repo_ops.install_skill import (
+    main as install_skill_main,
+)
 
 _HANDLERS: dict[str, Callable[[list[str] | None], int | None]] = {
     "inventory": inventory_main,
@@ -20,6 +28,22 @@ _HANDLERS: dict[str, Callable[[list[str] | None], int | None]] = {
     "apply": main_apply,
     "pushed": pushed_main,
     "install-skill": install_skill_main,
+}
+
+_HELP_BUILDERS: dict[str, Callable[[], argparse.ArgumentParser]] = {
+    "inventory": build_inventory_parser,
+    "plan": lambda: build_upgrade_parser(apply=False),
+    "apply": lambda: build_upgrade_parser(apply=True),
+    "pushed": build_pushed_parser,
+    "install-skill": build_install_skill_parser,
+}
+
+_SUBCOMMAND_HELP = {
+    "inventory": "Dependency footprint report",
+    "plan": "Upgrade plan: deps + Actions + remediations (read-only)",
+    "apply": "Apply upgrades with verify gates",
+    "pushed": "Pushed commits audit",
+    "install-skill": "Install Cursor/Claude agent skill for repo-ops",
 }
 
 
@@ -31,11 +55,43 @@ def _resolve_version() -> str:
         return "unknown"
 
 
+_TOP_LEVEL_DESCRIPTION = """\
+Repository operations for local monorepo roots (inventory, plan, apply, pushed).
+
+When no root_dir arguments are passed, plan/apply/inventory/pushed scan DEFAULT_ROOTS
+(see repo-ops plan --help). Agents: AGENTS.md quick reference. Humans: HUMANS.md.
+"""
+
+_TOP_LEVEL_EPILOG = """\
+examples:
+  repo-ops plan --latest
+  repo-ops apply --latest --log-file apply.log
+  repo-ops inventory --flat /path/to/checkout
+
+Use repo-ops <subcommand> --help for all flags on that subcommand.
+"""
+
+
+def _wants_subcommand_help(remainder: list[str]) -> bool:
+    return remainder in (["--help"], ["-h"])
+
+
 def main(argv: list[str] | None = None) -> int:
     register_all()
+    if (
+        argv is not None
+        and len(argv) >= 2
+        and argv[0] in _HELP_BUILDERS
+        and _wants_subcommand_help(argv[1:])
+    ):
+        _HELP_BUILDERS[argv[0]]().print_help()
+        return 0
+
     parser = argparse.ArgumentParser(
         prog="repo-ops",
-        description="Repository operations for local monorepo roots.",
+        description=_TOP_LEVEL_DESCRIPTION,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=_TOP_LEVEL_EPILOG,
     )
     parser.add_argument(
         "--version",
@@ -44,17 +100,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Print the repo-ops version and exit.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in _HANDLERS:
-        help_text = {
-            "inventory": "Dependency footprint report",
-            "plan": "Upgrade plan: deps + Actions + remediations",
-            "apply": "Apply upgrades",
-            "pushed": "Pushed commits audit",
-            "install-skill": "Install Cursor/Claude agent skill for repo-ops",
-        }[name]
-        sub.add_parser(name, help=help_text)
+    for name, help_text in _SUBCOMMAND_HELP.items():
+        # add_help=False: delegate --help to the full subcommand parser so flags
+        # and root_dir are documented; parse_known_args forwards real argv.
+        sub.add_parser(name, help=help_text, add_help=False)
 
     args, remainder = parser.parse_known_args(argv)
+    if _wants_subcommand_help(remainder):
+        _HELP_BUILDERS[args.command]().print_help()
+        return 0
+
     handler = _HANDLERS[args.command]
     # Forward the remainder as-is (possibly an empty list). Using `remainder or
     # None` would pass None for a bare subcommand (e.g. `repo-ops plan`), and the

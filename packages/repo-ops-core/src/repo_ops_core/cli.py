@@ -48,6 +48,63 @@ MANAGER_FILTER_HELP = (
     f"({'/'.join(MANAGER_FILTER_CHOICES)})."
 )
 
+DEFAULT_ROOTS_HELP = (
+    "Root directories to scan. When omitted, uses DEFAULT_ROOTS: "
+    + ", ".join(DEFAULT_ROOTS)
+    + ". Pass explicit paths to limit scope (e.g. a single checkout with --flat)."
+)
+
+PLAN_DESCRIPTION = (
+    "Plan dependency updates, GitHub Actions pin drift, and remediations "
+    "(read-only; no lockfile or workflow writes)."
+)
+
+APPLY_DESCRIPTION = (
+    "Apply dependency updates, GitHub Actions pin bumps, and remediations, "
+    "then run per-workspace verify gates unless --no-verify."
+)
+
+PLAN_EPILOG = """\
+exit codes:
+  0  no actionable drift
+  1  drift, remediations, or Actions pin changes exist (CI-friendly);
+     or any workspace skip/fail when --strict-exit
+
+workflow:
+  Run plan before apply with the same flags and roots. Plan may run
+  corepack prepare (network) for Yarn version activation.
+
+docs:
+  Agents: AGENTS.md (quick reference). Humans: HUMANS.md (install).
+  Full reference: docs/usage.md in the repo-ops clone.
+"""
+
+APPLY_EPILOG = """\
+exit codes:
+  0  no workspace failures (dirty skips are ok unless --strict-exit)
+  1  any workspace fail; or any skip/fail when --strict-exit
+
+workflow:
+  Prefer plan first (same flags/roots). Dirty git worktrees are skipped
+  unless --allow-dirty. On verify failure, default --on-verify-fail=keep
+  leaves changes; use revert to roll back lockfiles and tracked paths.
+
+docs:
+  Agents: AGENTS.md. Humans: HUMANS.md. Bulk playbook: docs/bulk-maintenance.md.
+"""
+
+LATEST_FLAG_HELP = (
+    "Aggressive / cross-range upgrade mode for this run. Sets "
+    "REPO_OPS_BUN_UPDATE_LATEST, REPO_OPS_PNPM_UPDATE_LATEST, and "
+    "REPO_OPS_YARN_UPDATE_LATEST; defaults REPO_OPS_GO_UPGRADE_MODE to "
+    "explicit when unset; and opts GitHub Actions into "
+    "--actions-upgrade-mode=latest. Per ecosystem: bun/pnpm use their "
+    "CLI --latest; yarn uses yarn up -R '*' (peer-constrained deps may "
+    "stay behind_latest); go uses explicit latest tags; npm has no latest "
+    "mode (semver ranges only). An explicit --actions-upgrade-mode or "
+    "--go-upgrade-mode overrides the umbrella for that ecosystem."
+)
+
 
 def positive_int(value: str) -> int:
     """Parse a strictly positive integer for argparse ``type=``."""
@@ -145,7 +202,7 @@ def add_roots_argument(
         nargs="*",
         default=default,
         metavar="root_dir",
-        help=help_text or "Root directories to scan (default: standard local roots)",
+        help=help_text or DEFAULT_ROOTS_HELP,
     )
 
 
@@ -232,19 +289,27 @@ def add_upgrade_common_arguments(
     add_eco_filter_argument(parser)
     add_manager_filter_argument(parser)
     add_follow_symlinks_argument(parser)
-    parser.add_argument("-q", "--quiet", action="store_true")
-    parser.add_argument("--jobs", type=positive_int, default=8)
-    parser.add_argument("--fail-fast", action="store_true")
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress per-workspace progress lines (summary still prints).",
+    )
+    parser.add_argument(
+        "--jobs",
+        type=positive_int,
+        default=8,
+        help="Max parallel workers per run (default: 8).",
+    )
+    parser.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="Stop scheduling new workspaces after the first failure.",
+    )
     parser.add_argument(
         "--latest",
         action="store_true",
-        help=(
-            "Include cross-range (behind-latest) upgrades for bun/pnpm/yarn, and "
-            "apply cross-major GitHub Actions bumps (equivalent to "
-            "--actions-upgrade-mode=latest). Sets the per-ecosystem latest-mode env "
-            "vars before the run. npm has no latest mode; go is controlled by "
-            "--go-upgrade-mode; an explicit --actions-upgrade-mode overrides this."
-        ),
+        help=LATEST_FLAG_HELP,
     )
     parser.add_argument(
         "--go-upgrade-mode",
@@ -259,7 +324,14 @@ def add_upgrade_common_arguments(
             "REPO_OPS_GO_UPGRADE_MODE for this run."
         ),
     )
-    parser.add_argument("--allow-dirty", action="store_true")
+    parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help=(
+            "Process repos with uncommitted changes (default: skip dirty worktrees "
+            "and report them in the summary)."
+        ),
+    )
     parser.add_argument(
         "--skip-actions",
         action="store_true",
@@ -428,21 +500,19 @@ def add_upgrade_common_arguments(
 
 def build_upgrade_parser(*, apply: bool) -> argparse.ArgumentParser:
     if apply:
-        description = (
-            "Apply dependency updates, GitHub Actions pin bumps, and remediations."
-        )
         prog = "repo-ops apply"
+        description = APPLY_DESCRIPTION
+        epilog = APPLY_EPILOG
     else:
-        description = (
-            "Plan dependency updates, GitHub Actions pin drift, and remediations "
-            "(read-only; no writes)."
-        )
         prog = "repo-ops plan"
+        description = PLAN_DESCRIPTION
+        epilog = PLAN_EPILOG
 
     parser = argparse.ArgumentParser(
         prog=prog,
         description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=epilog,
     )
     add_upgrade_common_arguments(parser, apply=apply)
     return parser

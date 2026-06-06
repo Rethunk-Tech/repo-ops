@@ -23,7 +23,6 @@ _MAIN_HELP_TARGETS: list[tuple[str, str, list[str]]] = [
     ("repo_ops_upgrade.run", "main_plan", []),
     ("repo_ops_upgrade.run", "main_apply", []),
     ("repo_ops_pushed.audit", "main", []),
-    ("repo_ops.cli", "main", ["plan"]),
     ("repo_ops.install_skill", "main", []),
 ]
 
@@ -97,9 +96,26 @@ def test_entrypoint_main_help(
     _call_main_help(module_name, func_name, prefix)
 
 
-def test_repo_ops_dispatcher_subcommands_help() -> None:
+def test_repo_ops_dispatcher_subcommands_help(capsys) -> None:
+    """Dispatcher delegates --help to full subcommand parsers (return 0, no exit)."""
+    from repo_ops import cli
+
     for sub in ("inventory", "plan", "apply", "pushed", "install-skill"):
-        _call_main_help("repo_ops.cli", "main", [sub])
+        assert cli.main([sub, "--help"]) == 0
+        out = capsys.readouterr().out
+        assert "usage: repo-ops" in out
+        assert sub in out
+
+
+def test_dispatcher_apply_help_lists_latest_flag(capsys) -> None:
+    """Regression: dispatcher --help must expose full flags, not only -h."""
+    from repo_ops import cli
+
+    assert cli.main(["apply", "--help"]) == 0
+    out = capsys.readouterr().out
+    assert "--latest" in out
+    assert "REPO_OPS_PNPM_UPDATE_LATEST" in out
+    assert "root_dir" in out
 
 
 def test_dispatcher_forwards_empty_list_for_bare_subcommand() -> None:

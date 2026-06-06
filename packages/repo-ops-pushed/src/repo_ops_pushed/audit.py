@@ -309,11 +309,16 @@ def print_report(
                 print(f"    {short}")
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_pushed_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="repo-ops pushed",
         description="Count commits pushed in a rolling window across local git repos.",
     )
+    _add_pushed_arguments(parser)
+    return parser
+
+
+def _add_pushed_arguments(parser: argparse.ArgumentParser) -> None:
     add_roots_argument(parser)
     add_follow_symlinks_argument(parser)
 
@@ -384,6 +389,10 @@ def main(argv: list[str] | None = None) -> int:
     add_json_argument(parser, dest="json_out")
     add_json_out_argument(parser)
     add_verbose_argument(parser)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_pushed_parser()
     args = parser.parse_args(argv)
     wire_verbose(args)
     if getattr(args, "json_report_path", None) and not args.json_out:
