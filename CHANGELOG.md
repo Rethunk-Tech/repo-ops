@@ -7,15 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-05
+
 ### Added
 
 - **yarn latest-mode surfaces packages left behind:** after `yarn up -R '*'` (`--latest`), repo-ops now diffs each direct dependency's resolved version against the latest published version and reports any that yarn's resolver kept behind (peer/group constraints) as `behind_latest`, instead of silently omitting them. A supersede run no longer reads as "everything is current" when a newer version exists but wasn't applied (e.g. `@sentry/nextjs` `10.55.0` while `10.56.0` is published). Only runs in latest mode; a registry lookup failure skips that package rather than failing the run. (#110)
 - **`--actions-refresh-sha` flag:** keeps a SHA-pinned action pinned **by digest** but advances the SHA to the commit of the newest `vN.M.P` release **within its current major**, preserving the `# vN` audit comment. Lets repo-ops supersede Dependabot's digest-pin bumps (e.g. `actions/checkout` `6.0.2 → 6.0.3`) without un-hardening the pin to a floating tag. The major is resolved from the `# vN` comment, else the tags API; no effect with `--actions-unpin-sha`. (#109)
+- **Subcommand `--help` shows full flags:** the top-level dispatcher delegates `repo-ops plan --help` / `apply --help` (etc.) to the real subcommand parsers so `--latest`, `root_dir`, exit-code epilogs, and DEFAULT_ROOTS paths appear without reading source.
+- **AGENTS.md quick reference:** invocations, DEFAULT_ROOTS, `--latest` umbrella, workflow, flags cheat sheet, and explicit do-not-explore guidance for routine maintenance runs.
 
 ### Fixed
 
 - **Actions-only repos now commit under `--commit`:** `_bundle_apply_ok` bailed with "no workspaces" before considering action bumps, so a repo with workflows but no package manifest applied action bumps to the worktree but never committed them. (#107)
 - **A dirty sibling no longer blocks committing a clean workspace's bump:** the post-apply dirty guard was repo-wide (`any(started_dirty)`, itself repo-wide via `is_git_dirty`), so under `--jobs` one dirty/skipped workspace dropped every other workspace's commit. A dirty-start repo now scopes the commit to the upgrade's own paths instead of skipping wholesale; a root-workspace manifest (e.g. `package.json`) is no longer dropped from that scoped commit. (#108)
+
+### Changed
+
+- **`plan`/`apply` `--help` text:** richer `--latest`, `--allow-dirty`, `--jobs`, and DEFAULT_ROOTS help; plan/apply epilogs document exit codes and agent vs human docs.
+- **Bundled agent skill:** points to AGENTS.md instead of duplicating flag tables; instructs agents to run named commands directly.
+
+### Documentation
+
+- **Doc tiers:** README/HUMANS/CONTRIBUTING/usage aligned on agent quick reference vs `--help` as canonical flags; SHA-pin default (preserve digest) clarified in usage.md.
 
 ## [0.10.0] - 2026-06-05
 
