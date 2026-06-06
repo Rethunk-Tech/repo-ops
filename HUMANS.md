@@ -26,5 +26,5 @@ repo-ops inventory --help
 | [Bulk maintenance](docs/bulk-maintenance.md) | Submodule umbrellas and multi-repo apply playbook |
 | [Programmatic imports](docs/programmatic-imports.md) | Python module paths for programmatic use |
 | [Testing](docs/testing.md) | Verification and CI commands |
-| [Agents guide](AGENTS.md) | AI/agent layout, coordination, and invariants |
+| [Agents guide](AGENTS.md) | Agent quick reference, coordination, and workflows |
 | [Contributing](CONTRIBUTING.md) | Commit conventions, code style, git for agents |

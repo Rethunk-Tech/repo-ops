@@ -21,7 +21,7 @@ Install and run the unified **`repo-ops`** CLI — [HUMANS.md](HUMANS.md).
 - Single CLI: `inventory`, `plan`, `apply`, `pushed`, and `install-skill` (bundled agent skill for Cursor/Claude)
 - Plan is read-only; apply runs ecosystem updates, optional Corepack for Node, and verify gates
 - GitHub Actions pin drift in plan/apply by default (`--skip-actions` to omit); actions-only repos (workflows, no manifests) included
-- Discovery: validated scan roots, optional `--follow-symlinks`, `--flat` and actions-only repos; conservative pnpm/yarn unless env opt-in (see HUMANS)
+- Discovery: validated scan roots, optional `--follow-symlinks`, `--flat` and actions-only repos; conservative pnpm/yarn unless `--latest` or env opt-in (see [usage](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply))
 - uv-locked workspace (`uv_build`); Python >= 3.10; ecosystem plugins (Node, Go, Rust, Python) with remediations
 - Built for Rethunk-Tech monorepo and sibling checkout trees under shared roots
 
@@ -29,8 +29,8 @@ Install and run the unified **`repo-ops`** CLI — [HUMANS.md](HUMANS.md).
 
 | Document | Purpose |
 |----------|---------|
-| [Humans guide](HUMANS.md) | Installation, configuration, and usage |
-| [Agents guide](AGENTS.md) | AI/agent layout, coordination, and invariants |
+| [Humans guide](HUMANS.md) | Quickstart, requirements, and doc index |
+| [Agents guide](AGENTS.md) | Agent quick reference, coordination, and workflows |
 | [Contributing](CONTRIBUTING.md) | Contributor guidelines and code style |
 | [Security](SECURITY.md) | Vulnerability reporting |
 | [Changelog](CHANGELOG.md) | Release history (Keep a Changelog style) |

@@ -12,53 +12,11 @@ description: >-
 
 # repo-ops agent skill
 
-Use the **`repo-ops`** CLI for dependency and Actions maintenance. **Install, flags, Go modes, verification:** [HUMANS.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/HUMANS.md) (editable install: `uv tool install -e packages/repo-ops` from a clone). **Repo layout for agents:** [AGENTS.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/AGENTS.md).
+Use the **`repo-ops`** CLI for dependency and Actions maintenance.
 
-## Subcommands
+**Agent quick reference (invocations, DEFAULT_ROOTS, workflow, flags, do-nots):** [AGENTS.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/AGENTS.md) — read this first in a clone (`AGENTS.md` at repo root). When the user names a command (e.g. `/repo-ops apply --latest`), **run it directly** with default roots; do not run `which repo-ops`, read source, or probe `--help` first.
 
-| Goal | Command |
-|------|---------|
-| Footprint (direct deps, versions, sprawl) | `repo-ops inventory` |
-| Plan drift (no writes) | `repo-ops plan` |
-| Apply updates + verify | `repo-ops apply` |
-| Pushed-commit audit | `repo-ops pushed` |
-
-Default roots: [`DEFAULT_ROOTS`](https://github.com/Rethunk-Tech/repo-ops/blob/main/packages/repo-ops-core/src/repo_ops_core/constants.py). Pass checkout paths as trailing args to override. Common flags: `--flat`, `--follow-symlinks`, `--filter ECO`, `--json`, `--json-out PATH` (with `--json`), `--submodules`, `--submodule-order=children-first`, `--log-file`, `--strict-exit`, `--max-failures`, `--jobs` (positive int), `--skip-actions`, `--skip-remediations`, `--no-verify`, `--on-verify-fail=revert|keep` (apply; default `keep`), `--commit=none|conventional|agent`, `--commit-dry-run`, `--commit-on-fail`. pnpm/yarn latest: `REPO_OPS_PNPM_UPDATE_LATEST`, `REPO_OPS_YARN_UPDATE_LATEST`. Discovery/security: [Security and discovery](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/usage.md#security-and-discovery). Upgrade mode table: [Ecosystem upgrade modes](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/usage.md#ecosystem-upgrade-modes-plan-and-apply).
-
-## Workflow
-
-1. **`plan` before `apply`** — show drift and remediations without writes (`plan` exits `1` when drift exists).
-2. Omit roots to scan `DEFAULT_ROOTS`, or pass explicit paths / `--flat` for a single checkout.
-3. `repo-ops <subcommand> --help` for full options.
-
-## Bulk apply playbook
-
-For many repos under one parent root (e.g. `/usr/local/src/com.github`):
-
-| Step | Action |
-|------|--------|
-| 1. Plan | `repo-ops plan /path/to/root --log-file plan.log` — or `plan --json --json-out plan.json` (stdout: path only) |
-| 2. Dirty trees | Read skips for `dirty git worktree`; commit/stash per repo or add `--allow-dirty` when intentional |
-| 3. Apply | `repo-ops apply /path/to/root --log-file apply.log` (footer: Summary roll-up, capped Failures, `failures:` / `exit_code:`). If piping: `set -o pipefail` then `2>&1 \| tee` |
-| 4. Submodules | `plan --submodules` / `apply --submodule-order=children-first --submodules`; push children first, parent pointer commit last ([git-push-order](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/bulk-maintenance.md#submodule-umbrellas-git-push-order); footer **Submodule pointers**) |
-| 5. Verify | Failed verify ≠ always bad deps — check env vars, flaky tests, local toolchain. Use `--on-verify-fail=revert` to roll back failed workspaces; JSON reports `verify_fail_disposition` (`FAILED_WITH_CHANGES` / `FAILED_CLEAN`) |
-| 6. Commit | In IDE: MCP `batch_commit` (`push: "never"`). Headless: `apply --commit=conventional` or `--commit=agent` (+ optional `[commit-agent-cursor]`, `CURSOR_API_KEY`); preview with `--commit-dry-run` |
-
-Full prose and related-issue links: [Bulk maintenance](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/bulk-maintenance.md).
-
-## Examples
-
-```bash
-repo-ops inventory --flat /path/to/my-repo
-repo-ops plan --skip-actions --json --json-out plan.json /path/to/my-repo
-repo-ops plan --submodules --json --json-out plan.json /path/to/umbrella
-repo-ops apply --submodule-order=children-first --submodules /path/to/umbrella
-repo-ops apply /path/to/my-repo
-repo-ops apply --skip-actions /path/to/my-repo
-repo-ops apply --commit=conventional --log-file apply.log /path/to/root
-repo-ops apply --commit=agent --commit-dry-run /path/to/root
-repo-ops pushed --count-only /path/to/my-repo
-```
+**Install and environment:** [HUMANS.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/HUMANS.md). **CLI flags (authoritative):** `repo-ops <subcommand> --help`. **Deep reference:** [docs/usage.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/usage.md), [docs/bulk-maintenance.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/bulk-maintenance.md).
 
 ## Bundled skill install
 
@@ -66,4 +24,4 @@ repo-ops pushed --count-only /path/to/my-repo
 repo-ops install-skill    # ~/.cursor/skills/repo-ops and ~/.claude/skills/repo-ops
 ```
 
-`install-skill --dest` must end with `repo-ops`. Details: [Installation — Agent skill](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/installation.md#agent-skill).
+Details: [Installation — Agent skill](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/installation.md#agent-skill).

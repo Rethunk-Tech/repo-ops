@@ -4,7 +4,7 @@
 
 ## Test Plan
 
-- [ ] [HUMANS verification](HUMANS.md#verification-and-testing) passed (at minimum `uv run pytest` for code changes)
+- [ ] [Verification and testing](docs/testing.md) passed (at minimum `uv run pytest` for code changes)
 - [ ] New behavior covered by tests (if applicable)
 - [ ] Manual CLI check if user-facing behavior changed
 

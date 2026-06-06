@@ -11,7 +11,7 @@ Thank you for contributing. Orientation: [README.md](README.md). Install, usage,
 ## Development notes
 
 - Workspace members live under `packages/repo-ops-*` (`src/` per package). CLI and registration: `packages/repo-ops` (`repo_ops.cli`, `repo_ops._register`).
-- Doc tiers: README (orientation + Documentation table), HUMANS (quickstart + doc links), docs/ (deep reference), AGENTS (layout/coordination/invariants), this file (commits/style/git for agents).
+- Doc tiers: README (orientation + Documentation table), HUMANS (quickstart + doc links), docs/ (deep reference), AGENTS (agent quick reference + coordination), this file (commits/style/git for agents). CLI flags: `repo-ops <subcommand> --help` (authoritative).
 
 ## Git for agents
 
