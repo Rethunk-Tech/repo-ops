@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-07
+
+### Added
+
+- **`--yarn-targeted-bump`: move the `behind_latest` gap, not just report it (option 2 of #110):** with `--latest`, for each direct dependency that `yarn up -R '*'` left behind (peer/group constraints, surfaced as `behind_latest` in #110), repo-ops can now attempt a reversible targeted `yarn up <pkg>@latest`. It snapshots the lockfile/manifests, runs the targeted up plus `yarn install`, and **keeps the result only if install succeeds and the resolved version actually advances** — otherwise it restores the snapshot and the dependency stays `behind_latest`, so nothing broken is committed. The version-advance gate also drops the ghost-bump case where the lock churns but the resolver holds the old version. Opt-in via the flag or `REPO_OPS_YARN_TARGETED_BUMP`; successful bumps appear as normal planned changes, so `plan` previews exactly what `apply` lands. (#111)
+
 ## [0.11.0] - 2026-06-05
 
 ### Added
@@ -396,7 +402,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.7.1...v0.8.0
