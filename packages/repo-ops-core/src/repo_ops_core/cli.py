@@ -312,6 +312,19 @@ def add_upgrade_common_arguments(
         help=LATEST_FLAG_HELP,
     )
     parser.add_argument(
+        "--yarn-targeted-bump",
+        action="store_true",
+        dest="yarn_targeted_bump",
+        help=(
+            "Yarn only, requires --latest: for each direct dep that yarn up -R '*' "
+            "left behind_latest (peer/group-constrained), try a reversible targeted "
+            "yarn up <pkg>@latest and keep it only if the workspace still installs and "
+            "the version actually advances. Moves the gap instead of just reporting it; "
+            "bumps that fight the resolver are reverted per-package, never committed. "
+            "Sets REPO_OPS_YARN_TARGETED_BUMP."
+        ),
+    )
+    parser.add_argument(
         "--go-upgrade-mode",
         choices=("patch", "explicit", "mvs"),
         default=None,

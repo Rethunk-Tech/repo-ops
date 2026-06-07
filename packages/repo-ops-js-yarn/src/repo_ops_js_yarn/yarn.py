@@ -16,6 +16,7 @@ from repo_ops_js.workspaces import corepack_prepare
 from repo_ops_lockfiles.parsers import versions_yarn_lock
 from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
+    restore_workspace_snapshot,
     snapshot_workspace_files,
 )
 from repo_ops_models import Change, Workspace
@@ -28,15 +29,17 @@ from repo_ops_upgrade.constants import (
 FILE_PROTOCOL_RE = re.compile(r"^file:(\.\./.+?)(?:#.*)?$")
 _STDERR_TAIL_LINES = 12
 _YARN_UPDATE_LATEST_ENV = "REPO_OPS_YARN_UPDATE_LATEST"
+_YARN_TARGETED_BUMP_ENV = "REPO_OPS_YARN_TARGETED_BUMP"
 _TIMEOUT_NPM_INFO = 60
+_TRUE_VALUES = ("1", "true", "yes")
 
 
 def _yarn_update_latest_enabled() -> bool:
-    return os.environ.get(_YARN_UPDATE_LATEST_ENV, "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
+    return os.environ.get(_YARN_UPDATE_LATEST_ENV, "").strip().lower() in _TRUE_VALUES
+
+
+def _yarn_targeted_bump_enabled() -> bool:
+    return os.environ.get(_YARN_TARGETED_BUMP_ENV, "").strip().lower() in _TRUE_VALUES
 
 
 def _yarn_up_cmd() -> list[str]:
@@ -277,6 +280,52 @@ def behind_after_up(mdir: Path) -> list[Change]:
     return behind
 
 
+def targeted_bump_behind(
+    mdir: Path, behind: list[Change]
+) -> tuple[list[Change], list[Change]]:
+    """Per-package ``yarn up <pkg>@latest`` fallback for still-behind deps (issue #111).
+
+    Option 2 of #110: rather than only reporting the gap ``behind_after_up`` found,
+    optionally *move* it. For each still-behind direct dep we snapshot the workspace's
+    lockfile/manifests, run a targeted ``yarn up <pkg>@latest`` + ``yarn install``, and
+    keep the bump only if install succeeds **and** the resolved version actually advanced
+    (guards the ghost-bump case where the lock churns but the resolver holds the old
+    version). On any failure or no-op we restore the snapshot, leaving that package behind.
+
+    Opt-in (``REPO_OPS_YARN_TARGETED_BUMP`` / ``--yarn-targeted-bump``) and reversible
+    per-package: a bump that fights peer constraints is dropped, never committed. Returns
+    ``(applied, still_behind)`` — ``applied`` carries the real resolved version landed.
+    """
+    if not behind or not _yarn_targeted_bump_enabled():
+        return [], behind
+    lock = mdir / "yarn.lock"
+    if not lock.is_file():
+        return [], behind
+    applied: list[Change] = []
+    still_behind: list[Change] = []
+    for change in behind:
+        snap = snapshot_workspace_files(mdir, "yarn")
+        up = run(["yarn", "up", f"{change.name}@latest"], mdir, timeout=TIMEOUT_APPLY)
+        install = (
+            run(["yarn", "install"], mdir, timeout=TIMEOUT_APPLY)
+            if up.returncode == 0
+            else None
+        )
+        landed = _resolved_versions(lock).get(change.name) if install else None
+        advanced = False
+        if landed:
+            try:
+                advanced = semver_tuple(landed) > semver_tuple(change.from_ver)
+            except (TypeError, ValueError):
+                advanced = landed != change.from_ver
+        if landed and advanced and install and install.returncode == 0:
+            applied.append(Change(change.name, change.from_ver, landed))
+        else:
+            restore_workspace_snapshot(mdir, snap, "yarn")
+            still_behind.append(change)
+    return applied, still_behind
+
+
 def check_yarn_snapshot(
     ws: Workspace,
 ) -> tuple[list[Change], list[dict[str, str]], list[Change]]:
@@ -304,6 +353,12 @@ def check_yarn_snapshot(
             changes.append(Change("package.json", "changed", "changed"))
         snapshot_overrides = overrides_audit(mdir, "yarn")
         behind = behind_after_up(mdir)
+        # Optionally move (not just report) the gap; applied bumps become planned
+        # changes so plan previews what apply will land (issue #111).
+        applied, behind = targeted_bump_behind(mdir, behind)
+        for c in applied:
+            if not any(existing.name == c.name for existing in changes):
+                changes.append(c)
     return changes, snapshot_overrides, behind
 
 
@@ -311,7 +366,9 @@ def apply_yarn(ws: Workspace) -> list[Change]:
     """Apply in workspace; matches check policy (see ``_yarn_up_cmd``).
 
     Returns the direct deps a latest-mode ``yarn up`` left behind (issue #110);
-    empty in conservative mode or when nothing is behind.
+    empty in conservative mode or when nothing is behind. With ``--yarn-targeted-bump``
+    (issue #111), each still-behind dep gets a reversible targeted bump first, so only
+    the deps that truly could not move are returned.
     """
     corepack_prepare("yarn", ws.path)
     proc = run(_yarn_up_cmd(), ws.path, timeout=TIMEOUT_APPLY)
@@ -320,4 +377,6 @@ def apply_yarn(ws: Workspace) -> list[Change]:
     proc2 = run(["yarn", "install"], ws.path, timeout=TIMEOUT_APPLY)
     if proc2.returncode != 0:
         raise _command_failure("yarn install failed", proc2)
-    return behind_after_up(ws.path)
+    behind = behind_after_up(ws.path)
+    _, behind = targeted_bump_behind(ws.path, behind)
+    return behind

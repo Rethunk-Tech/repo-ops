@@ -76,6 +76,10 @@ def _run_upgrade_body(
         os.environ["REPO_OPS_PNPM_UPDATE_LATEST"] = "1"
         os.environ["REPO_OPS_YARN_UPDATE_LATEST"] = "1"
         os.environ.setdefault("REPO_OPS_GO_UPGRADE_MODE", "explicit")
+    # Opt-in yarn per-package targeted fallback (#111); only meaningful with --latest,
+    # which is what produces the behind_latest work-list it consumes.
+    if getattr(args, "yarn_targeted_bump", False):
+        os.environ["REPO_OPS_YARN_TARGETED_BUMP"] = "1"
     go_mode = getattr(args, "go_upgrade_mode", None)
     if go_mode:
         os.environ["REPO_OPS_GO_UPGRADE_MODE"] = go_mode
