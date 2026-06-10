@@ -9,9 +9,11 @@ from repo_ops_js_yarn.yarn import _yarn_up_cmd, apply_yarn
 from repo_ops_models import Workspace
 
 
-def test_yarn_up_cmd_conservative_by_default(monkeypatch) -> None:
+def test_yarn_up_cmd_in_range_refresh_by_default(monkeypatch) -> None:
+    """#114 — bare `yarn up` is a Yarn 4 no-op; conservative mode must pass
+    `-R '*'` to actually re-resolve in-range bumps."""
     monkeypatch.delenv("REPO_OPS_YARN_UPDATE_LATEST", raising=False)
-    assert _yarn_up_cmd() == ["yarn", "up"]
+    assert _yarn_up_cmd() == ["yarn", "up", "-R", "*"]
 
 
 def test_yarn_up_cmd_latest_when_env_set(monkeypatch) -> None:
@@ -19,7 +21,7 @@ def test_yarn_up_cmd_latest_when_env_set(monkeypatch) -> None:
     assert _yarn_up_cmd() == ["yarn", "up", "-R", "*"]
 
 
-def test_apply_yarn_uses_conservative_cmd(tmp_path: Path, monkeypatch) -> None:
+def test_apply_yarn_uses_in_range_refresh_cmd(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("REPO_OPS_YARN_UPDATE_LATEST", raising=False)
     ws = Workspace(
         path=tmp_path,
@@ -46,5 +48,5 @@ def test_apply_yarn_uses_conservative_cmd(tmp_path: Path, monkeypatch) -> None:
     ):
         apply_yarn(ws)
 
-    assert calls[0] == ["yarn", "up"]
+    assert calls[0] == ["yarn", "up", "-R", "*"]
     assert calls[1] == ["yarn", "install"]

@@ -43,10 +43,16 @@ def _yarn_targeted_bump_enabled() -> bool:
 
 
 def _yarn_up_cmd() -> list[str]:
-    """Conservative in-range bumps by default; ``yarn up -R '*'`` when latest is opted in."""
-    if _yarn_update_latest_enabled():
-        return ["yarn", "up", "-R", "*"]
-    return ["yarn", "up"]
+    """In-range resolution refresh: ``yarn up -R '*'`` in both modes.
+
+    Bare ``yarn up`` (no patterns) is a no-op in Yarn 4 — it resolves and
+    installs but upgrades nothing, so conservative mode never moved a single
+    in-range bump (issue #114). ``-R '*'`` re-resolves every dependency to the
+    newest version satisfying the existing package.json range without touching
+    the range itself. Latest mode differs downstream, not here: it adds
+    behind-latest reporting (#110) and targeted range-breaking bumps (#111).
+    """
+    return ["yarn", "up", "-R", "*"]
 
 
 def _stderr_tail(proc) -> str:
