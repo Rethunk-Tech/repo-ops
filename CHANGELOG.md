@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Go ghost upgrades eliminated (check + post-apply):** `go list -m -u all` enumerates the full module graph, including modules no package of the build needs (`stretchr/objx`, `kr/pty`, `cel.dev/expr`, …); upgrading those is immediately undone by `go mod tidy`, yet they were counted and printed as upgrades — a run reported "50 package(s) upgraded" with every worktree byte-identical afterward. Go check/plan and explicit-mode `go get` targets are now filtered to modules recorded in the workspace `go.mod` (`go mod edit -json` Require list, fail-open when unreadable), and the post-apply fallback that re-ran the ecosystem checker — reporting *still-available* updates as *applied* changes whenever the lockfile diff was empty — is removed: a clean diff now reports zero changes for every ecosystem. (#113)
+- **Report-only Actions rows no longer print `[ok]`:** rows `apply` never rewrites (newer major in normalize mode, SHA-pinned report-only, no floating major upstream) printed `[ok]`, reading as an applied bump (e.g. `codecov-action@v6 → v7 [ok]` while the workflow still pinned v6). They now print `[report-only]`. (#113)
+
 ## [0.12.0] - 2026-06-07
 
 ### Added

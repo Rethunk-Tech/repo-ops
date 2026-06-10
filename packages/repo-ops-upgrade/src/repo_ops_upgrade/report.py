@@ -306,8 +306,15 @@ def print_human_report(
             if action_rows:
                 print("  Actions:")
                 for ab in action_rows:
+                    # Rows apply never rewrites carry a "report only" detail;
+                    # printing their status ("ok") reads as an applied bump.
+                    marker = (
+                        "report-only"
+                        if ab.detail and "report only" in ab.detail
+                        else ab.status
+                    )
                     print(
-                        f"    {ab.workflow}: {ab.action}@{ab.pin} → {ab.latest} [{ab.status}]"
+                        f"    {ab.workflow}: {ab.action}@{ab.pin} → {ab.latest} [{marker}]"
                     )
             print(
                 "  Actions: "
