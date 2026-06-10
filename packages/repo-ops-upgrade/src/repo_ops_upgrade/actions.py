@@ -631,17 +631,48 @@ def scan_actions(
                             )
                         )
                 else:
-                    # No bare major tag upstream — cannot safely collapse.
-                    bumps.append(
-                        ActionBump(
-                            workflow=rel,
-                            action=action,
-                            pin=pin,
-                            latest=pin,
-                            status="ok",
-                            detail="no floating major tag upstream; report only",
+                    # No bare major tag upstream — cannot collapse to floating.
+                    # Advance the exact pin within its major instead (#115):
+                    # e.g. astral-sh/setup-uv publishes only vN.M.P tags, so
+                    # v8.1.0 would otherwise never move while v8.2.0 exists.
+                    in_major = _highest_exact_in_major(info, M)
+                    if in_major and in_major != pin:
+                        detail = (
+                            f"advance exact pin within v{M} "
+                            "(no floating major tag upstream)"
                         )
-                    )
+                        if newer_major:
+                            detail += f"; newer major v{max_major} available"
+                        bumps.append(
+                            ActionBump(
+                                workflow=rel,
+                                action=action,
+                                pin=pin,
+                                latest=in_major,
+                                status="ok",
+                                detail=detail,
+                            )
+                        )
+                        if apply:
+                            replacements.append(
+                                PinReplacement(
+                                    action=action,
+                                    pin=pin,
+                                    latest=in_major,
+                                    line=uses.line or None,
+                                )
+                            )
+                    else:
+                        bumps.append(
+                            ActionBump(
+                                workflow=rel,
+                                action=action,
+                                pin=pin,
+                                latest=pin,
+                                status="ok",
+                                detail="no floating major tag upstream; report only",
+                            )
+                        )
         if apply and replacements:
             try:
                 update_workflow_pins(wf, replacements)
