@@ -44,10 +44,10 @@ def test_changes_from_go_list_json_patch_filter(tmp_path) -> None:
             }
         ),
     ]
-    proc = type(
-        "Proc", (), {"returncode": 0, "stdout": "\n".join(lines), "stderr": ""}
-    )()
-    with patch("repo_ops_go.go.run", return_value=proc):
+    fake_run = _fake_run_with_gomod(
+        "\n".join(lines), ["example.com/a", "example.com/b"]
+    )
+    with patch("repo_ops_go.go.run", side_effect=fake_run):
         changes = _changes_from_go_list_json(ws, patch_only=True)
     assert len(changes) == 1
     assert changes[0].name == "example.com/a"
@@ -74,11 +74,27 @@ def test_changes_from_go_list_json_pretty_printed(tmp_path) -> None:
         },
     ]
     stdout = "\n".join(json.dumps(m, indent="\t") for m in modules)
-    proc = type("Proc", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
-    with patch("repo_ops_go.go.run", return_value=proc):
+    fake_run = _fake_run_with_gomod(stdout, ["example.com/a", "example.com/b"])
+    with patch("repo_ops_go.go.run", side_effect=fake_run):
         changes = _changes_from_go_list_json(ws, patch_only=False)
     assert len(changes) == 2
     assert {c.name for c in changes} == {"example.com/a", "example.com/b"}
+
+
+def _fake_run_with_gomod(list_stdout: str, require_paths: list[str]):
+    """Dispatching fake for go.run: answers go list and go mod edit -json."""
+    gomod = json.dumps(
+        {
+            "Module": {"Path": "example.com/main"},
+            "Require": [{"Path": p, "Version": "v0.0.0"} for p in require_paths],
+        }
+    )
+
+    def fake_run(cmd, cwd, timeout=0):
+        stdout = gomod if cmd[:3] == ["go", "mod", "edit"] else list_stdout
+        return type("Proc", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
+
+    return fake_run
 
 
 def test_explicit_go_get_targets(tmp_path) -> None:
@@ -96,9 +112,71 @@ def test_explicit_go_get_targets(tmp_path) -> None:
             "Update": {"Path": "example.com/foo", "Version": "v1.0.1"},
         }
     )
-    proc = type("Proc", (), {"returncode": 0, "stdout": line, "stderr": ""})()
-    with patch("repo_ops_go.go.run", return_value=proc):
+    fake_run = _fake_run_with_gomod(line, ["example.com/foo"])
+    with patch("repo_ops_go.go.run", side_effect=fake_run):
         assert _explicit_go_get_targets(ws) == ["example.com/foo@v1.0.1"]
+
+
+def test_graph_only_modules_excluded(tmp_path) -> None:
+    """#113 — modules outside go.mod's Require list are ghost upgrades:
+    go get bumps them in the graph, go mod tidy drops them, net diff zero.
+    Neither check output nor explicit go get targets may include them."""
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="go",
+        manager="go",
+        git_repo=tmp_path,
+        label="mod",
+    )
+    lines = "\n".join(
+        json.dumps(m)
+        for m in [
+            {
+                "Path": "example.com/recorded",
+                "Version": "v1.0.0",
+                "Update": {"Path": "example.com/recorded", "Version": "v1.0.1"},
+            },
+            {
+                # In the module graph but absent from go.mod (e.g. stretchr/objx).
+                "Path": "example.com/graph-only",
+                "Version": "v0.5.2",
+                "Update": {"Path": "example.com/graph-only", "Version": "v0.5.3"},
+            },
+        ]
+    )
+    fake_run = _fake_run_with_gomod(lines, ["example.com/recorded"])
+    with patch("repo_ops_go.go.run", side_effect=fake_run):
+        changes = _changes_from_go_list_json(ws, patch_only=False)
+        targets = _explicit_go_get_targets(ws)
+    assert [c.name for c in changes] == ["example.com/recorded"]
+    assert targets == ["example.com/recorded@v1.0.1"]
+
+
+def test_unreadable_gomod_skips_filtering(tmp_path) -> None:
+    """#113 — when go mod edit -json fails, fail open: report all updates."""
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="go",
+        manager="go",
+        git_repo=tmp_path,
+        label="mod",
+    )
+    line = json.dumps(
+        {
+            "Path": "example.com/foo",
+            "Version": "v1.0.0",
+            "Update": {"Path": "example.com/foo", "Version": "v1.0.1"},
+        }
+    )
+
+    def fake_run(cmd, cwd, timeout=0):
+        if cmd[:3] == ["go", "mod", "edit"]:
+            return type("Proc", (), {"returncode": 1, "stdout": "", "stderr": "boom"})()
+        return type("Proc", (), {"returncode": 0, "stdout": line, "stderr": ""})()
+
+    with patch("repo_ops_go.go.run", side_effect=fake_run):
+        changes = _changes_from_go_list_json(ws, patch_only=False)
+    assert [c.name for c in changes] == ["example.com/foo"]
 
 
 def test_apply_go_patch_mode_runs_patch_all(tmp_path) -> None:
@@ -154,10 +232,8 @@ def test_explicit_go_get_targets_skips_flag_like_modules(tmp_path) -> None:
             }
         ),
     ]
-    proc = type(
-        "Proc", (), {"returncode": 0, "stdout": "\n".join(lines), "stderr": ""}
-    )()
-    with patch("repo_ops_go.go.run", return_value=proc):
+    fake_run = _fake_run_with_gomod("\n".join(lines), ["-evil", "example.com/foo"])
+    with patch("repo_ops_go.go.run", side_effect=fake_run):
         assert _explicit_go_get_targets(ws) == ["example.com/foo@v1.0.1"]
 
 

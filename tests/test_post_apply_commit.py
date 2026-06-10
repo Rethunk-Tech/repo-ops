@@ -496,3 +496,26 @@ def test_collect_changes_json_yaml_lockb_fallback(tmp_path: Path) -> None:
     )
     assert "pnpm-lock.yaml" in names, f"pnpm-lock.yaml missing from changes: {changes}"
     assert "bun.lockb" in names, f"bun.lockb missing from changes: {changes}"
+
+
+def test_collect_changes_no_diff_reports_nothing(tmp_path: Path) -> None:
+    """#113 — a clean git diff means no changes were applied. The removed
+    checker fallback used to re-run the ecosystem checker here and report
+    still-available updates as applied (ghost upgrades)."""
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="go",
+        manager="go",
+        git_repo=tmp_path,
+        label="root",
+    )
+
+    def _fake_run(
+        cmd: list[str], cwd: object, **kwargs: object
+    ) -> CompletedProcess[str]:
+        return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with patch("repo_ops_upgrade.post_apply.run", side_effect=_fake_run):
+        changes = collect_changes_after_apply(ws)
+
+    assert changes == [], f"clean diff must yield no changes, got {changes}"

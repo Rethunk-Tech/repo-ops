@@ -21,20 +21,20 @@ from repo_ops_lockfiles.snapshots import (
 )
 from repo_ops_models import Change, Workspace
 
-from repo_ops_upgrade.registry import Checker
-
 logger = logging.getLogger(__name__)
 
 FAILED_WITH_CHANGES = "FAILED_WITH_CHANGES"
 FAILED_CLEAN = "FAILED_CLEAN"
 
 
-def collect_changes_after_apply(
-    ws: Workspace,
-    *,
-    checker: Checker | None = None,
-) -> list[Change]:
-    """Lightweight post-apply change detection for remediation context."""
+def collect_changes_after_apply(ws: Workspace) -> list[Change]:
+    """Lightweight post-apply change detection for remediation context.
+
+    Only reports changes evidenced by the git diff of lockfiles/manifests.
+    Never falls back to the ecosystem checker: checker output is "updates
+    still available", not "changes applied", and reporting it here counted
+    graph-only upgrades that go mod tidy had already dropped (issue #113).
+    """
     repo = ws.git_repo
     rel = ws.path
     try:
@@ -97,14 +97,6 @@ def collect_changes_after_apply(
                 changes.append(Change(fname, "changed", "updated"))
         if changes:
             return changes
-    if checker:
-        try:
-            out = checker(ws)
-            if isinstance(out, tuple):
-                return out[0]
-            return out
-        except (RuntimeError, OSError, ValueError) as exc:
-            logger.debug("post-apply checker fallback failed for %s: %s", ws.path, exc)
     return []
 
 

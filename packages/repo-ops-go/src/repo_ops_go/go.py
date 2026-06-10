@@ -59,12 +59,39 @@ def _iter_go_list_modules(stdout: str) -> Iterator[dict]:
         idx = end
 
 
+def _gomod_require_paths(ws: Workspace) -> set[str] | None:
+    """Module paths recorded in the workspace go.mod (direct and indirect).
+
+    ``go list -m -u all`` enumerates the full module graph, including modules
+    no package of the build actually needs; upgrading those is undone by
+    ``go mod tidy``, so reporting them produces ghost upgrades (issue #113).
+    Returns None when go.mod cannot be read (callers then skip filtering).
+    """
+    proc = run(["go", "mod", "edit", "-json"], ws.path, timeout=TIMEOUT_CHECK)
+    if proc.returncode != 0:
+        return None
+    try:
+        doc = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(doc, dict):
+        return None
+    requires = doc.get("Require") or []
+    return {
+        r["Path"]
+        for r in requires
+        if isinstance(r, dict) and isinstance(r.get("Path"), str)
+    }
+
+
 def _changes_from_go_list_json(ws: Workspace, *, patch_only: bool) -> list[Change]:
     proc = run(
         ["go", "list", "-m", "-u", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "go list failed")
+    recorded: set[str] | None = None
+    have_recorded = False
     changes: list[Change] = []
     for mod in _iter_go_list_modules(proc.stdout):
         update = mod.get("Update")
@@ -74,6 +101,11 @@ def _changes_from_go_list_json(ws: Workspace, *, patch_only: bool) -> list[Chang
         cur = mod.get("Version") or "?"
         new = update.get("Version") or "?"
         if patch_only and not _is_patch_update(cur, new):
+            continue
+        if not have_recorded:
+            recorded = _gomod_require_paths(ws)
+            have_recorded = True
+        if recorded is not None and path not in recorded:
             continue
         changes.append(Change(path, cur, new))
     return changes
@@ -85,6 +117,8 @@ def _explicit_go_get_targets(ws: Workspace) -> list[str]:
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "go list failed")
+    recorded: set[str] | None = None
+    have_recorded = False
     targets: list[str] = []
     for mod in _iter_go_list_modules(proc.stdout):
         update = mod.get("Update")
@@ -93,6 +127,11 @@ def _explicit_go_get_targets(ws: Workspace) -> list[str]:
         path = mod.get("Path") or update.get("Path")
         version = update.get("Version")
         if path and version:
+            if not have_recorded:
+                recorded = _gomod_require_paths(ws)
+                have_recorded = True
+            if recorded is not None and path not in recorded:
+                continue
             spec = f"{path}@{version}"
             if _valid_go_get_target(spec):
                 targets.append(spec)
@@ -110,6 +149,8 @@ def _check_go_mvs(ws: Workspace) -> list[Change]:
     proc = run(["go", "list", "-u", "-m", "all"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "go list failed")
+    recorded: set[str] | None = None
+    have_recorded = False
     changes: list[Change] = []
     for line in proc.stdout.splitlines():
         m = GO_UPGRADE_RE.search(line)
@@ -117,6 +158,11 @@ def _check_go_mvs(ws: Workspace) -> list[Change]:
             parts = line.split()
             name = parts[0]
             cur = parts[1] if len(parts) > 1 and not parts[1].startswith("[") else "?"
+            if not have_recorded:
+                recorded = _gomod_require_paths(ws)
+                have_recorded = True
+            if recorded is not None and name not in recorded:
+                continue
             changes.append(Change(name, cur, m.group(1)))
     return changes
 
