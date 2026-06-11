@@ -7,13 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-11
+
+### Added
+
+- **Actions: exact tag pins advance within their major when upstream has no floating `vN` tag:** pins like `astral-sh/setup-uv@v8.1.0` (only `vN.M.P` tags published) could never move — normalize had no bare major to collapse to and the pin was hidden from the report (`pin == latest`). Such pins now bump to the highest exact tag within their current major, the tag-pin analog of #109's SHA digest refresh. (#115)
+
 ### Fixed
 
-- **yarn conservative mode actually upgrades now:** default (non-latest) mode ran bare `yarn up`, which in Yarn 4 resolves and installs but upgrades **nothing** — every default-mode run reported `0 upgrade(s)` on yarn workspaces while plain in-range bumps (e.g. `@biomejs/biome ^2.4.14 → 2.4.16`) sat unapplied and Dependabot kept filing PRs repo-ops should have superseded. Conservative mode now runs `yarn up -R '*'` (re-resolve all resolutions within existing package.json ranges, ranges untouched); latest mode keeps behind-latest reporting (#110) and targeted range-breaking bumps (#111) on top. (#114)
-- **Actions: exact tag pins advance within their major when upstream has no floating `vN` tag:** `astral-sh/setup-uv@v8.1.0` (only `vN.M.P` tags published) could never move — normalize had no bare major to collapse to and the report-only row was hidden from the report (`pin == latest`). Such pins now bump to the highest exact tag within their current major (tag-pin analog of #109's SHA digest refresh). (#115)
+- **yarn conservative mode actually upgrades now:** default (non-latest) mode ran bare `yarn up`, a Yarn 4 no-op that resolves and installs but upgrades nothing — every run reported `0 upgrade(s)` on yarn workspaces while plain in-range bumps sat unapplied and Dependabot kept filing PRs repo-ops should have superseded. Conservative mode now runs `yarn up -R '*'` (re-resolve within existing ranges, ranges untouched); latest mode keeps behind-latest reporting and targeted bumps on top. (#114)
+- **Go ghost upgrades eliminated:** `go list -m -u all` enumerates the full module graph including modules no build package needs; bumping those was immediately undone by `go mod tidy`, yet they were counted as upgrades — a run claimed "50 package(s) upgraded" with every worktree byte-identical afterward. Check/plan and explicit-mode `go get` targets are now filtered to modules recorded in the workspace `go.mod`. The post-apply fallback that re-ran the checker on the clean tree and reported still-available updates as applied changes is also removed. (#113)
+- **Report-only Actions rows no longer print `[ok]`:** rows `apply` never rewrites (newer major in normalize mode, SHA-pinned, no floating major upstream) printed `[ok]`, reading as an applied bump while the workflow file was untouched. They now print `[report-only]`. (#113)
 
-- **Go ghost upgrades eliminated (check + post-apply):** `go list -m -u all` enumerates the full module graph, including modules no package of the build needs (`stretchr/objx`, `kr/pty`, `cel.dev/expr`, …); upgrading those is immediately undone by `go mod tidy`, yet they were counted and printed as upgrades — a run reported "50 package(s) upgraded" with every worktree byte-identical afterward. Go check/plan and explicit-mode `go get` targets are now filtered to modules recorded in the workspace `go.mod` (`go mod edit -json` Require list, fail-open when unreadable), and the post-apply fallback that re-ran the ecosystem checker — reporting *still-available* updates as *applied* changes whenever the lockfile diff was empty — is removed: a clean diff now reports zero changes for every ecosystem. (#113)
-- **Report-only Actions rows no longer print `[ok]`:** rows `apply` never rewrites (newer major in normalize mode, SHA-pinned report-only, no floating major upstream) printed `[ok]`, reading as an applied bump (e.g. `codecov-action@v6 → v7 [ok]` while the workflow still pinned v6). They now print `[report-only]`. (#113)
+### Changed
+
+- CI: bump `astral-sh/setup-uv` from v8.1.0 to v8.2.0.
 
 ## [0.12.0] - 2026-06-07
 
@@ -410,7 +418,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.9.0...v0.10.0
