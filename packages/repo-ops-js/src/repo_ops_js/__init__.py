@@ -1,5 +1,6 @@
 """Node.js workspace helpers."""
 
+from repo_ops_js.guards import assert_targets_resolved
 from repo_ops_js.overrides import overrides_audit
 from repo_ops_js.workspaces import (
     corepack_prepare,
@@ -13,6 +14,7 @@ from repo_ops_js.workspaces import (
 )
 
 __all__ = [
+    "assert_targets_resolved",
     "corepack_prepare",
     "detect_node_manager",
     "lockfile_manager",
