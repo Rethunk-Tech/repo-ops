@@ -21,9 +21,9 @@ from repo_ops_lockfiles.snapshots import (
 )
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import (
-    TIMEOUT_APPLY,
     YARN_ISOLATED_COPY_SKIP,
     YARN_ISOLATED_YARN_SKIP,
+    resolve_timeout_apply,
 )
 
 FILE_PROTOCOL_RE = re.compile(r"^file:(\.\./.+?)(?:#.*)?$")
@@ -311,9 +311,13 @@ def targeted_bump_behind(
     still_behind: list[Change] = []
     for change in behind:
         snap = snapshot_workspace_files(mdir, "yarn")
-        up = run(["yarn", "up", f"{change.name}@latest"], mdir, timeout=TIMEOUT_APPLY)
+        up = run(
+            ["yarn", "up", f"{change.name}@latest"],
+            mdir,
+            timeout=resolve_timeout_apply(),
+        )
         install = (
-            run(["yarn", "install"], mdir, timeout=TIMEOUT_APPLY)
+            run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
             if up.returncode == 0
             else None
         )
@@ -342,10 +346,10 @@ def check_yarn_snapshot(
         mdir = _copy_yarn_workspace_to_temp(ws, Path(td))
         before_snap = snapshot_workspace_files(mdir, "yarn")
         corepack_prepare("yarn", mdir)
-        proc = run(_yarn_up_cmd(), mdir, timeout=TIMEOUT_APPLY)
+        proc = run(_yarn_up_cmd(), mdir, timeout=resolve_timeout_apply())
         if proc.returncode != 0:
             raise _command_failure("yarn up failed", proc)
-        proc2 = run(["yarn", "install"], mdir, timeout=TIMEOUT_APPLY)
+        proc2 = run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
         if proc2.returncode != 0:
             raise _command_failure("yarn install failed", proc2)
         after_snap = snapshot_workspace_files(mdir, "yarn")
@@ -377,10 +381,10 @@ def apply_yarn(ws: Workspace) -> list[Change]:
     the deps that truly could not move are returned.
     """
     corepack_prepare("yarn", ws.path)
-    proc = run(_yarn_up_cmd(), ws.path, timeout=TIMEOUT_APPLY)
+    proc = run(_yarn_up_cmd(), ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         raise _command_failure("yarn up failed", proc)
-    proc2 = run(["yarn", "install"], ws.path, timeout=TIMEOUT_APPLY)
+    proc2 = run(["yarn", "install"], ws.path, timeout=resolve_timeout_apply())
     if proc2.returncode != 0:
         raise _command_failure("yarn install failed", proc2)
     behind = behind_after_up(ws.path)

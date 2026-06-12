@@ -29,7 +29,7 @@ from repo_ops_upgrade.constants import (
     BIOME_PKG,
     CODEGEN_TRIGGERS,
     PLAYWRIGHT_PKG,
-    TIMEOUT_APPLY,
+    resolve_timeout_apply,
 )
 
 ApplyResult = tuple[bool, str]
@@ -131,7 +131,7 @@ def apply_biome(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
         cmd = [*prefix, "biome", "migrate", "--write"]
         if cfg_dir != ws.path:
             cmd.append(f"--config-path={cfg_dir}")
-        proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
+        proc = run(cmd, ws.path, timeout=resolve_timeout_apply())
         if proc.returncode != 0:
             ok = False
             last_err = _stderr_tail(proc.stderr or proc.stdout or "")
@@ -199,7 +199,9 @@ def report_playwright(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
 
 def apply_playwright(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     prefix = pm_exec_prefix(ws.manager)
-    proc = run([*prefix, "playwright", "install"], ws.path, timeout=TIMEOUT_APPLY)
+    proc = run(
+        [*prefix, "playwright", "install"], ws.path, timeout=resolve_timeout_apply()
+    )
     cmd = f"{ws.manager} exec playwright install"
     if proc.returncode == 0:
         return True, f"{cmd} (ok)"
@@ -233,7 +235,7 @@ def apply_codegen(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     pkg = read_json_file(ws.path / "package.json") or {}
     for script in ("generate:proto", "generate:openapi"):
         if script in (pkg.get("scripts") or {}):
-            proc = run([*prefix, script], ws.path, timeout=TIMEOUT_APPLY)
+            proc = run([*prefix, script], ws.path, timeout=resolve_timeout_apply())
             if proc.returncode != 0:
                 ok = False
                 last_err = _stderr_tail(proc.stderr or proc.stdout or "")

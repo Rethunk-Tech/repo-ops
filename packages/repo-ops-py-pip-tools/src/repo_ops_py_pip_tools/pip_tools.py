@@ -8,7 +8,7 @@ from pathlib import Path
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
 from repo_ops_py.requirements import parse_requirements_lines
-from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
+from repo_ops_upgrade.constants import resolve_timeout_apply, resolve_timeout_check
 
 
 def check_pip_tools(ws: Workspace) -> list[Change]:
@@ -26,7 +26,7 @@ def check_pip_tools(ws: Workspace) -> list[Change]:
         proc = run(
             ["uv", "pip", "compile", str(req_in), "-o", "-", "--upgrade", "--quiet"],
             ws.path,
-            timeout=TIMEOUT_CHECK,
+            timeout=resolve_timeout_check(),
         )
         if proc.returncode == 0 and proc.stdout.strip():
             proposed = parse_requirements_lines(proc.stdout)
@@ -42,13 +42,13 @@ def check_pip_tools(ws: Workspace) -> list[Change]:
                 str(req_in),
             ],
             ws.path,
-            timeout=TIMEOUT_CHECK,
+            timeout=resolve_timeout_check(),
         )
         if proc.returncode != 0:
             proc = run(
                 ["pip-compile", "--upgrade", "--quiet", "-o", "-", str(req_in)],
                 ws.path,
-                timeout=TIMEOUT_CHECK,
+                timeout=resolve_timeout_check(),
             )
         if proc.returncode == 0 and proc.stdout.strip():
             proposed = parse_requirements_lines(proc.stdout)
@@ -70,7 +70,7 @@ def _compile_requirements(ws: Workspace, out: Path, req_in: Path) -> None:
         proc = run(
             ["uv", "pip", "compile", str(req_in), "-o", str(out), "--upgrade"],
             ws.path,
-            timeout=TIMEOUT_APPLY,
+            timeout=resolve_timeout_apply(),
         )
         if proc.returncode == 0:
             return
@@ -79,7 +79,7 @@ def _compile_requirements(ws: Workspace, out: Path, req_in: Path) -> None:
     proc = run(
         ["pip-compile", "--upgrade", "-o", str(out), str(req_in)],
         ws.path,
-        timeout=TIMEOUT_APPLY,
+        timeout=resolve_timeout_apply(),
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pip-compile failed")
