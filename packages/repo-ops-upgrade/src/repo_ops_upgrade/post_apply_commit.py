@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -16,6 +17,8 @@ from repo_ops_lockfiles.constants import (
     RUST_LOCKFILES,
 )
 from repo_ops_models import RepoBundle
+
+from repo_ops_upgrade.submodules import SubmoduleLink
 
 CommitMode = Literal["none", "conventional", "agent"]
 
@@ -558,3 +561,190 @@ def _print_outcome(outcome: CommitOutcome) -> None:
         print(f"[commit skip] {prefix}: {outcome.detail}")
     elif outcome.status == "failed":
         print(f"[commit fail] {prefix}: {outcome.detail}", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
+# Umbrella submodule pointer-bump commits (opt-in via REPO_OPS_COMMIT_UMBRELLA=1)
+# ---------------------------------------------------------------------------
+
+_COMMIT_UMBRELLA_ENV = "REPO_OPS_COMMIT_UMBRELLA"
+
+
+def _is_gitlink_line(line: str) -> bool:
+    """True when a ``git status --porcelain`` line describes a submodule gitlink.
+
+    Gitlink entries appear as ``XY <path>`` where the two-letter status code
+    contains 'M' or '?' in either column, and the entry resolves to a directory
+    (not a regular file).  We accept any dirty status code — the caller already
+    filtered to paths that are registered submodule paths, so any dirty entry for
+    those paths is a pointer change.
+    """
+    return len(line) >= 4
+
+
+def _dirty_gitlink_paths_for_children(
+    umbrella: Path,
+    submodule_paths: list[str],
+    committed_child_repos: set[Path],
+    submodule_links: list[SubmoduleLink],
+) -> list[str]:
+    """Return submodule gitlink paths in *umbrella* that: (a) are dirty and
+    (b) correspond to a child repo that received a commit this run.
+
+    Only paths present in *submodule_paths* (derived from SubmoduleLinks whose
+    parent == umbrella) that also appear in *committed_child_repos* are
+    eligible — unrelated dirty files are never touched.
+    """
+    # Map submodule path → child git_repo so we can cross-check against
+    # committed_child_repos.
+    path_to_child: dict[str, Path] = {}
+    for link in submodule_links:
+        if link.parent.resolve() == umbrella.resolve():
+            path_to_child[link.path.replace("\\", "/")] = link.git_repo.resolve()
+
+    # Subset: only submodule paths whose children were committed this run.
+    eligible: set[str] = {
+        p for p, child in path_to_child.items() if child in committed_child_repos
+    }
+    if not eligible:
+        return []
+
+    proc = run_git(umbrella, "status", "--porcelain", timeout=60)
+    if proc.returncode != 0:
+        return []
+
+    dirty: list[str] = []
+    for line in proc.stdout.splitlines():
+        if not _is_gitlink_line(line):
+            continue
+        entry = line[3:].strip()
+        entry = _git_unquote(entry)
+        norm = entry.replace("\\", "/")
+        if norm in eligible:
+            dirty.append(norm)
+    return sorted(set(dirty))
+
+
+def commit_umbrella_submodule_pointers(
+    submodule_links: list[SubmoduleLink],
+    child_outcomes: list[CommitOutcome],
+    *,
+    mode: CommitMode,
+    dry_run: bool = False,
+    quiet: bool = False,
+) -> tuple[list[CommitOutcome], int]:
+    """Commit submodule pointer bumps in umbrella repos after child commits.
+
+    Enabled only when ``REPO_OPS_COMMIT_UMBRELLA=1`` is set in the environment
+    and *mode* is ``"conventional"`` or ``"agent"`` (same gate as the child
+    commit phase).  One commit per eligible umbrella repo is produced; each
+    stages only the gitlink paths corresponding to children that received a
+    commit this run — pre-existing dirty paths are never touched.
+
+    Returns ``(outcomes, exit_code)`` matching ``run_post_apply_commits``.
+    """
+    if mode == "none":
+        return [], 0
+    if not os.environ.get(_COMMIT_UMBRELLA_ENV, "").strip():
+        return [], 0
+    if not submodule_links:
+        return [], 0
+
+    # Set of child git repos that got a real commit (not dry_run, skip, fail).
+    committed_children: set[Path] = {
+        o.git_repo.resolve()
+        for o in child_outcomes
+        if o.status in ("committed", "dry_run")
+    }
+    if not committed_children:
+        return [], 0
+
+    # Collect unique umbrella repos.
+    umbrella_repos: dict[Path, list[str]] = {}
+    for link in submodule_links:
+        parent = link.parent.resolve()
+        umbrella_repos.setdefault(parent, []).append(link.path.replace("\\", "/"))
+
+    outcomes: list[CommitOutcome] = []
+    exit_code = 0
+
+    for umbrella, submodule_paths in sorted(
+        umbrella_repos.items(), key=lambda x: str(x[0])
+    ):
+        label = umbrella.name
+
+        dirty_paths = _dirty_gitlink_paths_for_children(
+            umbrella,
+            submodule_paths,
+            committed_children,
+            submodule_links,
+        )
+        if not dirty_paths:
+            # No gitlinks to bump — skip silently (no output to keep noise down).
+            continue
+
+        n = len(dirty_paths)
+        child_names = ", ".join(Path(p).name for p in sorted(dirty_paths))
+        subject = f"chore(submodules): bump {n} child pin(s)"
+        body = (
+            f"Automated pointer-bump commit for {label}.\n\n"
+            f"Children updated: {child_names}"
+        )
+        message = f"{subject}\n\n{body}"
+
+        if dry_run:
+            outcome = CommitOutcome(
+                umbrella,
+                label,
+                "dry_run",
+                message=message,
+                files=dirty_paths,
+            )
+            outcomes.append(outcome)
+            if not quiet:
+                _print_outcome(outcome)
+            continue
+
+        # Stage exactly the qualifying gitlink paths.
+        add_failed = False
+        for p in dirty_paths:
+            add = run_git(umbrella, "add", "--", p, timeout=120)
+            if add.returncode != 0:
+                err = (add.stderr or add.stdout or "git add failed").strip()
+                outcome = CommitOutcome(
+                    umbrella,
+                    label,
+                    "failed",
+                    detail=f"git add {p!r}: {err}",
+                )
+                outcomes.append(outcome)
+                if not quiet:
+                    _print_outcome(outcome)
+                exit_code = 1
+                add_failed = True
+                break
+        if add_failed:
+            continue
+
+        commit = run_git(umbrella, "commit", "-m", message, timeout=120)
+        if commit.returncode != 0:
+            err = (commit.stderr or commit.stdout or "git commit failed").strip()
+            outcome = CommitOutcome(umbrella, label, "failed", detail=err)
+            outcomes.append(outcome)
+            if not quiet:
+                _print_outcome(outcome)
+            exit_code = 1
+            continue
+
+        outcome = CommitOutcome(
+            umbrella,
+            label,
+            "committed",
+            message=message,
+            files=dirty_paths,
+        )
+        outcomes.append(outcome)
+        if not quiet:
+            _print_outcome(outcome)
+
+    return outcomes, exit_code
