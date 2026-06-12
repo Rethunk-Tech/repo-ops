@@ -36,6 +36,23 @@ _YARN_TARGETED_BUMP_ENV = "REPO_OPS_YARN_TARGETED_BUMP"
 _TIMEOUT_NPM_INFO = 60
 _TRUE_VALUES = ("1", "true", "yes")
 
+# Per-run probe cache: resolved workspace path → intended-targets list.
+# Populated by check_yarn_snapshot so that a subsequent apply_yarn in the
+# same process can reuse the result without re-running an isolated yarn up.
+# Key: str(ws.path.resolve()) — avoids Path hashing inconsistencies.
+_probe_cache: dict[str, list[Change]] = {}
+
+
+def clear_probe_cache() -> None:
+    """Empty the per-run probe cache.
+
+    Call between workspace runs in tests to prevent cross-test contamination.
+    Mirrors the pattern used by ``register_go_work_dir`` / ``_go_work_dirs``
+    in go.py.
+    """
+    _probe_cache.clear()
+
+
 # Yarn 4 defaults to Plug'n'Play when no nodeLinker setting is present.
 # PnP repos have no node_modules, so the ghost-bump guard (which reads the
 # installed version from node_modules) cannot operate.  We detect PnP by:
@@ -383,7 +400,13 @@ def targeted_bump_behind(
 def check_yarn_snapshot(
     ws: Workspace,
 ) -> tuple[list[Change], list[dict[str, str]], list[Change]]:
-    """Plan via isolated copy; conservative ``yarn up`` unless latest env is set."""
+    """Plan via isolated copy; conservative ``yarn up`` unless latest env is set.
+
+    Also pre-computes the ghost-bump guard probe (``_plan_without_resolutions``)
+    and stores the result in ``_probe_cache`` so that a subsequent
+    ``apply_yarn`` call in the same process can reuse it without spinning up a
+    second isolated copy.
+    """
     changes: list[Change] = []
     snapshot_overrides: list[dict[str, str]] = []
     with tempfile.TemporaryDirectory(prefix="dep-refresh-yarn-") as td:
@@ -413,6 +436,10 @@ def check_yarn_snapshot(
         for c in applied:
             if not any(existing.name == c.name for existing in changes):
                 changes.append(c)
+    # Pre-compute the ghost-bump guard probe and cache it so apply_yarn can
+    # skip its own isolated copy when check ran first in the same process.
+    probe = _plan_without_resolutions(ws)
+    _probe_cache[str(ws.path.resolve())] = probe
     return changes, snapshot_overrides, behind
 
 
@@ -502,10 +529,13 @@ def apply_yarn(ws: Workspace) -> list[Change]:
     note is written to stderr in that case.
     """
     # --- ghost-bump guard: plan what *should* move without resolutions --------
-    # We probe in isolation with resolutions stripped so the resolver freely
-    # advances each dep.  The resulting changes are the intended targets that
-    # the real apply (with resolutions blocking some) must satisfy.
-    guardable = _plan_without_resolutions(ws)
+    # Check whether check_yarn_snapshot already ran the probe in this process
+    # and cached the result.  If so, reuse it (avoids a second isolated copy).
+    # Fall back to a fresh probe when apply is called without a prior check
+    # (e.g. direct invocations in integration tests or --apply-only runs).
+    cache_key = str(ws.path.resolve())
+    cached = _probe_cache.get(cache_key)
+    guardable = cached if cached is not None else _plan_without_resolutions(ws)
 
     # --- real apply -----------------------------------------------------------
     corepack_prepare("yarn", ws.path)
