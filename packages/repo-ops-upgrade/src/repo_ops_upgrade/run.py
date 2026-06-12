@@ -443,7 +443,7 @@ def _run_upgrade_body(
             args, "commit", "none"
         )
         if commit_mode and commit_mode != "none":
-            _, commit_exit = post_apply_commit.run_post_apply_commits(
+            child_outcomes, commit_exit = post_apply_commit.run_post_apply_commits(
                 bundles,
                 mode=commit_mode,
                 dry_run=getattr(args, "commit_dry_run", False),
@@ -454,6 +454,20 @@ def _run_upgrade_body(
             )
             if commit_exit != 0:
                 exit_code = 1 if exit_code == 0 else exit_code
+            # Umbrella pointer-bump commits: after all child commits complete,
+            # commit dirty gitlinks in umbrella repos for children that received
+            # commits this run.  Opt-in via REPO_OPS_COMMIT_UMBRELLA=1 env var.
+            # CLI flag --commit-umbrella wires the env var (deferred to cli.py).
+            if submodule_links:
+                _, umbrella_exit = post_apply_commit.commit_umbrella_submodule_pointers(
+                    submodule_links,
+                    child_outcomes,
+                    mode=commit_mode,
+                    dry_run=getattr(args, "commit_dry_run", False),
+                    quiet=args.quiet,
+                )
+                if umbrella_exit != 0:
+                    exit_code = 1 if exit_code == 0 else exit_code
 
     if not use_json:
         footer_hints = pointer_hints if apply else None
