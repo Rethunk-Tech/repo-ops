@@ -10,14 +10,39 @@ candidate to close.
 Default mode: dry-run (print the "would-close" list).  Pass ``--close`` to
 actually close PRs via ``gh pr close``.
 
+Title patterns handled
+----------------------
+- ``Bump X from A to B``  (standard Dependabot single-package)
+- ``Bumps X from A to B``  (grammatical variant)
+- ``bump X from A to B``  (lowercase)
+- ``bump X from A to B in /path``  (monorepo sub-path)
+- ``chore(deps): bump X from A to B``  (conventional-commit prefix)
+- ``build(deps-dev): bump X from A to B``  (build-scope prefix)
+- ``[Security] Bump X from A to B``  (security advisory; ``is_security=True``)
+- ``Bump the <group-name> group with N updates``  (grouped PR; body parsed)
+
+Grouped PRs
+-----------
+When the title matches the group pattern, the PR body is fetched via
+``gh pr view --json body``.  Each row of the Markdown update table is parsed to
+extract (package, from_version, to_version).  A grouped PR is eligible for
+auto-close **only** when **all** rows are satisfied with high-confidence
+lockfile/manifest matches.  Body parse failures produce ``is_unparseable=True``
+and the PR is never auto-closed.
+
+Satisfaction precision
+----------------------
+- **High-confidence**: resolved version read from a lockfile parser (npm-lock,
+  yarn-lock, pnpm-lock, bun-lock) or from go.mod / Cargo.lock.  Auto-close
+  eligible when ``version >= target``.
+- **Low-confidence** (``low_confidence=True``): text-search fallback used when no
+  lockfile parser returned a result.  These matches are **never** auto-closed
+  regardless of ``--close``.
+
 Precision caveats
 -----------------
-- Lockfile version checks are text-search based (``name@version`` patterns).
-  False negatives are possible when a package is present but the lockfile uses an
-  unusual format or the package is not in the lockfile at all (workspace-hoisted).
-- The title regex covers the common Dependabot title pattern
-  ("Bump X from A to B" / "Bump X and Y from A to B").  Non-standard titles are
-  treated as unparseable and included in the report but not closed.
+- The lockfile parsers are the same ones used by the upgrade subcommand.  They
+  may miss workspace-hoisted packages.
 - ``gh`` must be authenticated and on PATH; if not, all repos are skipped.
 
 Console entry point: ``repo-ops dependabot`` (see ``--help`` for flags).
@@ -56,12 +81,30 @@ from repo_ops_lockfiles.parsers import (
 # Data model
 # ---------------------------------------------------------------------------
 
-# Parses: "Bump X from A to B" / "Bumps X from A to B"
-# Also handles "Bump X and Y from A to B" (multi-package, groups bump)
+# Conventional-commit prefixes (chore(deps): / build(deps-dev): / etc.)
+_CC_PREFIX = r"(?:[a-zA-Z]+(?:\([^)]*\))?:\s*)?"
+
+# [Security] prefix
+_SEC_PREFIX = r"(?:\[Security\]\s*)?"
+
+# Core bump pattern: "Bump(s) X from A to B [in /path]"
 _BUMP_RE = re.compile(
-    r"^[Bb]umps?\s+(.+?)\s+from\s+(\S+)\s+to\s+(\S+)",
+    r"^"
+    + _CC_PREFIX
+    + _SEC_PREFIX
+    + r"[Bb]umps?\s+(.+?)\s+from\s+(\S+)\s+to\s+(\S+)"
+    + r"(?:\s+in\s+\S+)?",
     re.IGNORECASE,
 )
+
+# Grouped PR: "Bump the <group-name> group with N updates"
+_GROUP_RE = re.compile(
+    r"^" + _CC_PREFIX + r"[Bb]ump\s+the\s+(.+?)\s+group\s+with\s+(\d+)\s+update",
+    re.IGNORECASE,
+)
+
+# Detect [Security] prefix
+_SEC_RE = re.compile(r"^\[Security\]", re.IGNORECASE)
 
 # Normalise version strings: strip leading "v"
 _VER_RE = re.compile(r"^v?(\d.*)$")
@@ -80,6 +123,18 @@ class BumpInfo:
 
 
 @dataclass
+class GroupRow:
+    """Single row from a grouped PR update table."""
+
+    package: str
+    from_ver: str
+    to_ver: str
+    superseded: bool | None = None  # None = unknown
+    current_ver: str | None = None
+    low_confidence: bool = False
+
+
+@dataclass
 class DependabotPR:
     number: int
     title: str
@@ -87,8 +142,18 @@ class DependabotPR:
     repo_path: str
     repo_label_str: str
     bump: BumpInfo | None = None
+    # Grouped PR fields
+    is_grouped: bool = False
+    group_rows: list[GroupRow] = field(default_factory=list)
+    # Security advisory flag
+    is_security: bool = False
+    # Supersession result (single-package PRs)
     superseded: bool | None = None  # None = unknown (unparseable / no lockfile)
     current_ver: str | None = None  # resolved from lockfile when superseded=True
+    low_confidence: bool = False  # True = text-search fallback, never auto-close
+    # Parse / body-fetch failure
+    is_unparseable: bool = False
+    unparseable_reason: str = ""
     close_error: str = ""
 
 
@@ -139,7 +204,7 @@ _GH_TIMEOUT = 30
 
 def _gh_list_dependabot_prs(
     owner_repo: str,
-) -> tuple[list[dict], str]:  # type: ignore[type-arg]
+) -> tuple[list[dict[str, str | int]], str]:
     """Return (list_of_pr_dicts, error_string)."""
     if shutil.which("gh") is None:
         return [], "gh not on PATH"
@@ -178,6 +243,40 @@ def _gh_list_dependabot_prs(
         return [], f"gh output parse error: {exc}"
 
 
+def _gh_pr_body(owner_repo: str, pr_number: int) -> tuple[str, str]:
+    """Return (body_text, error_string) for the given PR."""
+    if shutil.which("gh") is None:
+        return "", "gh not on PATH"
+    try:
+        proc = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "view",
+                str(pr_number),
+                "--repo",
+                owner_repo,
+                "--json",
+                "body",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_GH_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return "", f"gh pr view timed out after {_GH_TIMEOUT}s"
+    except FileNotFoundError:
+        return "", "gh not found"
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "gh pr view failed").strip()[:200]
+        return "", err
+    try:
+        data = json.loads(proc.stdout)
+        return str(data.get("body") or ""), ""
+    except (json.JSONDecodeError, ValueError) as exc:
+        return "", f"gh pr view parse error: {exc}"
+
+
 def _gh_close_pr(owner_repo: str, pr_number: int, comment: str) -> str:
     """Close *pr_number* with *comment*; return error string (empty = success)."""
     if shutil.which("gh") is None:
@@ -208,8 +307,77 @@ def _gh_close_pr(owner_repo: str, pr_number: int, comment: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Lockfile version resolution
+# Lockfile version resolution (high-confidence via parser)
 # ---------------------------------------------------------------------------
+
+
+def _lockfile_resolved(repo: str) -> dict[str, str]:
+    """Return {name: version} of all packages resolved in lockfiles under *repo*.
+
+    Uses the same lockfile parsers as the upgrade subcommand.  The returned dict
+    maps package name (lowercased) to the highest resolved version seen.  When
+    multiple lockfiles exist (monorepo), the highest semver wins.
+
+    Confidence: **high** — parsed directly from the lockfile structure.
+    """
+    root = Path(repo)
+    resolved: dict[str, str] = {}
+
+    def _update(name: str, ver: str) -> None:
+        key = name.lower()
+        if key not in resolved or _version_gte(ver, resolved[key]):
+            resolved[key] = ver
+
+    for lockfile in root.rglob("package-lock.json"):
+        with contextlib.suppress(Exception):
+            for entry in versions_npm_lock(lockfile):
+                if "@" in entry:
+                    pkg, ver = _split_name_ver(entry)
+                    if pkg:
+                        _update(pkg, ver)
+
+    for lockfile in root.rglob("yarn.lock"):
+        with contextlib.suppress(Exception):
+            for entry in versions_yarn_lock(lockfile):
+                if "@" in entry:
+                    pkg, ver = _split_name_ver(entry)
+                    if pkg:
+                        _update(pkg, ver)
+
+    for lockfile in root.rglob("pnpm-lock.yaml"):
+        with contextlib.suppress(Exception):
+            for entry in versions_pnpm_lock(lockfile):
+                if "@" in entry:
+                    pkg, ver = _split_name_ver(entry)
+                    if pkg:
+                        _update(pkg, ver)
+
+    for lockfile in root.rglob("bun.lock"):
+        with contextlib.suppress(Exception):
+            for entry in versions_bun_lock(lockfile):
+                if "@" in entry:
+                    pkg, ver = _split_name_ver(entry)
+                    if pkg:
+                        _update(pkg, ver)
+
+    return resolved
+
+
+def _split_name_ver(entry: str) -> tuple[str, str]:
+    """Split a ``name@version`` string into (name, version).
+
+    Handles scoped packages like ``@babel/core@7.22.0``.
+    """
+    if entry.startswith("@"):
+        # @scope/pkg@version
+        second_at = entry.find("@", 1)
+        if second_at == -1:
+            return entry, ""
+        return entry[:second_at], entry[second_at + 1 :]
+    at = entry.find("@")
+    if at == -1:
+        return entry, ""
+    return entry[:at], entry[at + 1 :]
 
 
 def _lockfile_versions(repo: str) -> set[str]:
@@ -286,47 +454,80 @@ def _version_gte(current: str, target: str) -> bool:
     return _to_tuple(current) >= _to_tuple(target)
 
 
+def _resolve_package_version(
+    pkg: str,
+    lockfile_resolved: dict[str, str],
+    lockfile_versions: set[str],
+    manifest_versions: dict[str, str],
+) -> tuple[str | None, bool]:
+    """Return (current_version, is_high_confidence) for *pkg*, or (None, False).
+
+    Lookup order:
+    1. High-confidence: lockfile_resolved (parsed by lockfile parsers).
+    2. High-confidence: manifest_versions (go.mod / Cargo.lock).
+    3. Low-confidence: text-search lockfile_versions set.
+    """
+    pkg_lower = pkg.lower()
+
+    # 1. Lockfile parser result (high confidence)
+    if pkg_lower in lockfile_resolved:
+        return lockfile_resolved[pkg_lower], True
+
+    # Also try short-name match for Go module paths
+    short_pkg = pkg.rsplit("/", 1)[-1].rsplit(".", 1)[-1].lower()
+    if short_pkg != pkg_lower and short_pkg in lockfile_resolved:
+        return lockfile_resolved[short_pkg], True
+
+    # 2. Manifest versions (go.mod, Cargo.lock) — high confidence
+    if pkg in manifest_versions:
+        return manifest_versions[pkg], True
+    if short_pkg != pkg and short_pkg in manifest_versions:
+        return manifest_versions[short_pkg], True
+
+    # 3. Text-search lockfile_versions (low confidence)
+    for entry in lockfile_versions:
+        if entry.startswith(f"{pkg}@"):
+            current = entry[len(pkg) + 1 :]
+            return current, False
+        if entry.lower().startswith(f"{pkg_lower}@"):
+            current = entry[len(pkg_lower) + 1 :]
+            return current, False
+
+    return None, False
+
+
 def _check_superseded(
     pr: DependabotPR,
     lockfile_versions: set[str],
     manifest_versions: dict[str, str],
+    lockfile_resolved: dict[str, str] | None = None,
 ) -> tuple[bool | None, str | None]:
     """Return (superseded, current_version) for *pr*.
 
     Returns (None, None) when the PR title is unparseable or the package
     cannot be found in any lockfile or manifest.
+
+    When *lockfile_resolved* is provided, high-confidence parser results are
+    preferred over text-search.  Sets ``pr.low_confidence`` when the match came
+    from text-search only.
     """
     if pr.bump is None:
         return None, None
 
     pkg = pr.bump.package
     target = _strip_v(pr.bump.to_ver)
+    resolved = lockfile_resolved or {}
 
-    # Check Node lockfiles first (set of "name@version" strings)
-    for entry in lockfile_versions:
-        # entry might be "pkg@1.2.3" or "@scope/pkg@1.2.3"
-        if entry.startswith(f"{pkg}@"):
-            current = entry[len(pkg) + 1 :]
-            if _version_gte(current, target):
-                return True, current
-            return False, current
+    current_ver, high_conf = _resolve_package_version(
+        pkg, resolved, lockfile_versions, manifest_versions
+    )
+    if current_ver is None:
+        return None, None
 
-    # Check manifest versions (go.mod, Cargo.lock)
-    if pkg in manifest_versions:
-        current = manifest_versions[pkg]
-        if _version_gte(current, target):
-            return True, current
-        return False, current
-
-    # Also handle short package names (last component of module path)
-    short_pkg = pkg.rsplit("/", 1)[-1].rsplit(".", 1)[-1]
-    if short_pkg != pkg and short_pkg in manifest_versions:
-        current = manifest_versions[short_pkg]
-        if _version_gte(current, target):
-            return True, current
-        return False, current
-
-    return None, None
+    pr.low_confidence = not high_conf
+    if _version_gte(current_ver, target):
+        return True, current_ver
+    return False, current_ver
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +535,16 @@ def _check_superseded(
 # ---------------------------------------------------------------------------
 
 
+def _is_security_title(title: str) -> bool:
+    """Return True when the title has a [Security] prefix."""
+    return bool(_SEC_RE.match(title.strip()))
+
+
 def _parse_bump(title: str) -> BumpInfo | None:
+    """Parse a single-package bump title.  Returns None for group/unparseable."""
+    # Reject group titles early
+    if _GROUP_RE.match(title.strip()):
+        return None
     m = _BUMP_RE.match(title.strip())
     if not m:
         return None
@@ -346,6 +556,86 @@ def _parse_bump(title: str) -> BumpInfo | None:
         from_ver=m.group(2).strip(),
         to_ver=m.group(3).strip(),
     )
+
+
+# Markdown update table row patterns (grouped PR body).
+# Two variants seen in practice:
+#   | package-name | from `A` | to `B` |
+#   | package-name | `A` → `B` |
+_TABLE_ROW_RE = re.compile(
+    r"^\|\s*`?([^`|]+?)`?\s*\|"  # package name cell
+    r"\s*`?([^`|\n→]+?)`?\s*"  # from-version or combined cell
+    r"(?:(?:→|->|to)\s*`?([^`|\n]+?)`?\s*)?"  # optional to-version
+    r"\|",
+    re.IGNORECASE,
+)
+
+# Alternative: explicit "from X to Y" in table cells
+_TABLE_FROM_TO_RE = re.compile(
+    r"^\|\s*`?([^`|]+?)`?\s*\|"  # package
+    r"\s*`?([^`|]+?)`?\s*\|"  # from
+    r"\s*`?([^`|]+?)`?\s*\|",  # to
+    re.IGNORECASE,
+)
+
+
+def _parse_group_body(body: str) -> list[GroupRow] | None:
+    """Parse the update table from a grouped Dependabot PR body.
+
+    Returns None when the body does not contain a recognisable update table.
+    Returns an empty list when the table was found but had no parseable rows
+    (caller treats this as unparseable).
+    """
+    rows: list[GroupRow] = []
+    in_table = False
+
+    for line in body.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            if in_table and rows:
+                # Table ended; we have our rows
+                break
+            continue
+
+        # Skip separator rows (|---|---|)
+        if re.match(r"^\|[\s\-|:]+\|$", stripped):
+            in_table = True
+            continue
+
+        in_table = True
+
+        # Try 3-cell format: | pkg | from | to |
+        m3 = _TABLE_FROM_TO_RE.match(stripped)
+        if m3:
+            pkg = m3.group(1).strip().strip("`").strip()
+            frm = m3.group(2).strip().strip("`").strip()
+            to_ = m3.group(3).strip().strip("`").strip()
+            if (
+                pkg
+                and frm
+                and to_
+                and not re.match(r"package|dependency|name", pkg, re.I)
+            ):
+                rows.append(GroupRow(package=pkg, from_ver=frm, to_ver=to_))
+            continue
+
+        # Try 2-cell format: | pkg | from → to |
+        m2 = _TABLE_ROW_RE.match(stripped)
+        if m2:
+            pkg = m2.group(1).strip().strip("`").strip()
+            frm = m2.group(2).strip().strip("`").strip()
+            to_ = (m2.group(3) or "").strip().strip("`").strip()
+            if (
+                pkg
+                and frm
+                and to_
+                and not re.match(r"package|dependency|name", pkg, re.I)
+            ):
+                rows.append(GroupRow(package=pkg, from_ver=frm, to_ver=to_))
+
+    if not in_table:
+        return None
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +672,7 @@ def scan_repos(
             continue
 
         # Pre-compute lockfile/manifest versions for this repo once
+        lockfile_resolved_map = _lockfile_resolved(repo)
         lockfile_vers = _lockfile_versions(repo)
         manifest_vers = _manifest_versions(repo)
 
@@ -395,28 +686,102 @@ def scan_repos(
 
         for pr_dict in pr_dicts:
             pr = DependabotPR(
-                number=int(pr_dict.get("number", 0)),
-                title=pr_dict.get("title", ""),
-                head_ref=pr_dict.get("headRefName", ""),
+                number=int(str(pr_dict.get("number", 0))),
+                title=str(pr_dict.get("title", "")),
+                head_ref=str(pr_dict.get("headRefName", "")),
                 repo_path=repo,
                 repo_label_str=label,
             )
-            pr.bump = _parse_bump(pr.title)
-            pr.superseded, pr.current_ver = _check_superseded(
-                pr, lockfile_vers, manifest_vers
-            )
+            pr.is_security = _is_security_title(pr.title)
+
+            # Detect grouped PR
+            group_m = _GROUP_RE.match(pr.title.strip())
+            if group_m:
+                pr.is_grouped = True
+                body, body_err = _gh_pr_body(owner_repo_str, pr.number)
+                if body_err:
+                    pr.is_unparseable = True
+                    pr.unparseable_reason = f"body fetch failed: {body_err}"
+                else:
+                    parsed_rows = _parse_group_body(body)
+                    if parsed_rows is None or len(parsed_rows) == 0:
+                        pr.is_unparseable = True
+                        pr.unparseable_reason = (
+                            "could not parse update table in PR body"
+                        )
+                    else:
+                        pr.group_rows = parsed_rows
+                        # Check each row
+                        for row in pr.group_rows:
+                            row_bump = BumpInfo(
+                                package=row.package,
+                                from_ver=row.from_ver,
+                                to_ver=row.to_ver,
+                            )
+                            fake_pr = DependabotPR(
+                                number=pr.number,
+                                title=pr.title,
+                                head_ref=pr.head_ref,
+                                repo_path=repo,
+                                repo_label_str=label,
+                                bump=row_bump,
+                            )
+                            sup, cur = _check_superseded(
+                                fake_pr,
+                                lockfile_vers,
+                                manifest_vers,
+                                lockfile_resolved_map,
+                            )
+                            row.superseded = sup
+                            row.current_ver = cur
+                            row.low_confidence = fake_pr.low_confidence
+                # Grouped PR: superseded only when ALL rows high-confidence satisfied
+                if pr.is_unparseable or not pr.group_rows:
+                    pr.superseded = None
+                else:
+                    all_ok = all(
+                        row.superseded is True and not row.low_confidence
+                        for row in pr.group_rows
+                    )
+                    pr.superseded = bool(all_ok)
+            else:
+                # Single-package PR
+                pr.bump = _parse_bump(pr.title)
+                if pr.bump is None:
+                    pr.is_unparseable = True
+                    pr.unparseable_reason = "title did not match any known bump pattern"
+                    pr.superseded = None
+                else:
+                    pr.superseded, pr.current_ver = _check_superseded(
+                        pr, lockfile_vers, manifest_vers, lockfile_resolved_map
+                    )
+
             rr.prs.append(pr)
 
         if do_close:
             for pr in rr.prs:
+                # Safety: never close unparseable, low-confidence, or not-superseded
+                if pr.is_unparseable:
+                    continue
                 if not pr.superseded:
                     continue
-                pkg_name = pr.bump.package if pr.bump else "dependency"
+                if pr.low_confidence:
+                    continue
+                # For grouped PRs, all rows must be high-confidence (already checked above)
+                if pr.is_grouped and any(row.low_confidence for row in pr.group_rows):
+                    continue
+                pkg_name = pr.bump.package if pr.bump else "dependency group"
                 current_ver = pr.current_ver or "unknown"
-                comment = (
-                    f"Superseded by repo-ops: {pkg_name} is at {current_ver} "
-                    f"on {default_branch}"
-                )
+                if pr.is_grouped:
+                    comment = (
+                        f"Superseded by repo-ops: all {len(pr.group_rows)} packages "
+                        f"in this group are at target versions on {default_branch}"
+                    )
+                else:
+                    comment = (
+                        f"Superseded by repo-ops: {pkg_name} is at {current_ver} "
+                        f"on {default_branch}"
+                    )
                 err = _gh_close_pr(owner_repo_str, pr.number, comment)
                 pr.close_error = err
 
@@ -431,9 +796,22 @@ def scan_repos(
 def print_dependabot_report(results: list[RepoResult], *, do_close: bool) -> None:
     action_verb = "Closed" if do_close else "Would close"
     total_prs = sum(len(r.prs) for r in results)
-    superseded = sum(1 for r in results for pr in r.prs if pr.superseded is True)
+    superseded = sum(
+        1
+        for r in results
+        for pr in r.prs
+        if pr.superseded is True and not pr.low_confidence
+    )
     not_superseded = sum(1 for r in results for pr in r.prs if pr.superseded is False)
-    unknown = sum(1 for r in results for pr in r.prs if pr.superseded is None)
+    unknown = sum(
+        1 for r in results for pr in r.prs if pr.superseded is None or pr.is_unparseable
+    )
+    low_conf = sum(
+        1
+        for r in results
+        for pr in r.prs
+        if pr.superseded is True and pr.low_confidence
+    )
 
     print(
         f"Dependabot PR sweep across {len(results)} github.com repo(s); "
@@ -442,6 +820,7 @@ def print_dependabot_report(results: list[RepoResult], *, do_close: bool) -> Non
     print(
         f"  superseded: {superseded}, not yet: {not_superseded}, "
         f"unparseable/unknown: {unknown}"
+        + (f", low-confidence (report-only): {low_conf}" if low_conf else "")
     )
     print()
 
@@ -454,27 +833,56 @@ def print_dependabot_report(results: list[RepoResult], *, do_close: bool) -> Non
 
         print(f"[{rr.label}]  ({rr.remote})")
         for pr in rr.prs:
-            superseded_str = (
-                "superseded"
-                if pr.superseded is True
-                else ("not yet" if pr.superseded is False else "unknown")
-            )
+            if pr.is_unparseable:
+                superseded_str = f"unparseable: {pr.unparseable_reason}"
+            elif pr.superseded is True and pr.low_confidence:
+                superseded_str = "superseded (low-confidence)"
+            elif pr.superseded is True:
+                superseded_str = "superseded"
+            elif pr.superseded is False:
+                superseded_str = "not yet"
+            else:
+                superseded_str = "unknown"
             current_str = f" (current: {pr.current_ver})" if pr.current_ver else ""
+            security_str = " [SECURITY]" if pr.is_security else ""
+            grouped_str = " [grouped]" if pr.is_grouped else ""
             close_str = ""
-            if do_close and pr.superseded:
+            if (
+                do_close
+                and pr.superseded
+                and not pr.low_confidence
+                and not pr.is_unparseable
+            ):
                 close_str = (
                     " → closed"
                     if not pr.close_error
                     else f" → close FAILED: {pr.close_error}"
                 )
             print(
-                f"  #{pr.number:5d}  [{superseded_str}]{current_str}  "
-                f"{pr.title}{close_str}"
+                f"  #{pr.number:5d}  [{superseded_str}]{current_str}{security_str}"
+                f"{grouped_str}  {pr.title}{close_str}"
             )
+            if pr.is_grouped and pr.group_rows:
+                for row in pr.group_rows:
+                    row_sup = (
+                        "ok"
+                        if row.superseded
+                        else ("pending" if row.superseded is False else "?")
+                    )
+                    lc_str = " [low-conf]" if row.low_confidence else ""
+                    print(
+                        f"           {row.package} {row.from_ver}→{row.to_ver}"
+                        f" [{row_sup}{lc_str}]"
+                    )
         print()
 
     if superseded > 0 and not do_close:
         print(f"{action_verb} {superseded} PR(s).  Re-run with --close to close them.")
+    if low_conf > 0:
+        print(
+            f"Note: {low_conf} low-confidence match(es) reported but never auto-closed. "
+            "Verify manually."
+        )
 
 
 def build_dependabot_parser() -> argparse.ArgumentParser:
@@ -490,10 +898,13 @@ exit codes:
   0  success (including dry-run; use --json to machine-check counts)
   1  unexpected error (gh unavailable, etc.)
 
-precision caveats:
-  Version checks are text-search based against lockfiles/manifests.
-  False negatives possible for workspace-hoisted packages or non-standard
-  lockfile formats.  Review the "would-close" list before --close.
+precision:
+  High-confidence: lockfile parser (npm/yarn/pnpm/bun) or go.mod/Cargo.lock.
+  Low-confidence: text-search fallback.  Low-confidence matches are NEVER
+  auto-closed regardless of --close.
+
+  Grouped PRs: closed only when ALL rows are high-confidence satisfied.
+  Unparseable titles/bodies: always report-only, never closed.
 """,
     )
     add_roots_argument(parser)
@@ -523,7 +934,7 @@ def main(argv: list[str] | None = None) -> int:
     results = scan_repos(roots, follow_symlinks=follow_symlinks, do_close=do_close)
 
     if args.json_out:
-        payload: dict = {
+        payload: dict[str, object] = {
             "schema_version": 1,
             "roots": roots,
             "dry_run": not do_close,
@@ -538,14 +949,39 @@ def main(argv: list[str] | None = None) -> int:
                             "number": pr.number,
                             "title": pr.title,
                             "head_ref": pr.head_ref,
+                            "is_grouped": pr.is_grouped,
+                            "is_security": pr.is_security,
+                            "is_unparseable": pr.is_unparseable,
+                            "unparseable_reason": pr.unparseable_reason or None,
                             "package": pr.bump.package if pr.bump else None,
                             "from_ver": pr.bump.from_ver if pr.bump else None,
                             "to_ver": pr.bump.to_ver if pr.bump else None,
                             "superseded": pr.superseded,
+                            "low_confidence": pr.low_confidence,
                             "current_ver": pr.current_ver,
+                            "group_rows": (
+                                [
+                                    {
+                                        "package": row.package,
+                                        "from_ver": row.from_ver,
+                                        "to_ver": row.to_ver,
+                                        "superseded": row.superseded,
+                                        "current_ver": row.current_ver,
+                                        "low_confidence": row.low_confidence,
+                                    }
+                                    for row in pr.group_rows
+                                ]
+                                if pr.is_grouped
+                                else None
+                            ),
                             "closed": (
                                 not pr.close_error
-                                if (do_close and pr.superseded)
+                                if (
+                                    do_close
+                                    and pr.superseded
+                                    and not pr.low_confidence
+                                    and not pr.is_unparseable
+                                )
                                 else None
                             ),
                             "close_error": pr.close_error or None,
@@ -559,13 +995,25 @@ def main(argv: list[str] | None = None) -> int:
                 "repos": len(results),
                 "total_prs": sum(len(r.prs) for r in results),
                 "superseded": sum(
-                    1 for r in results for pr in r.prs if pr.superseded is True
+                    1
+                    for r in results
+                    for pr in r.prs
+                    if pr.superseded is True and not pr.low_confidence
                 ),
                 "not_yet": sum(
                     1 for r in results for pr in r.prs if pr.superseded is False
                 ),
                 "unknown": sum(
-                    1 for r in results for pr in r.prs if pr.superseded is None
+                    1
+                    for r in results
+                    for pr in r.prs
+                    if pr.superseded is None or pr.is_unparseable
+                ),
+                "low_confidence": sum(
+                    1
+                    for r in results
+                    for pr in r.prs
+                    if pr.superseded is True and pr.low_confidence
                 ),
             },
         }

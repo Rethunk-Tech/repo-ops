@@ -12,9 +12,12 @@ import pytest
 from repo_ops_dependabot.dependabot import (
     DependabotPR,
     _check_superseded,
+    _is_security_title,
     _manifest_versions,
     _owner_repo,
     _parse_bump,
+    _parse_group_body,
+    _split_name_ver,
     _strip_v,
     _version_gte,
     build_dependabot_parser,
@@ -48,7 +51,7 @@ def test_version_gte_pre_release_segment_ignored() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Title parsing
+# Title parsing — single-package patterns
 # ---------------------------------------------------------------------------
 
 
@@ -66,6 +69,33 @@ def test_parse_bump_bumps_variant() -> None:
     assert bump.package == "lodash"
 
 
+def test_parse_bump_lowercase() -> None:
+    bump = _parse_bump("bump lodash from 4.17.11 to 4.17.21")
+    assert bump is not None
+    assert bump.package == "lodash"
+
+
+def test_parse_bump_in_subpath() -> None:
+    bump = _parse_bump("Bump lodash from 4.17.11 to 4.17.21 in /packages/app")
+    assert bump is not None
+    assert bump.package == "lodash"
+    assert bump.to_ver == "4.17.21"
+
+
+def test_parse_bump_conventional_commit_chore_deps() -> None:
+    bump = _parse_bump("chore(deps): bump lodash from 4.17.11 to 4.17.21")
+    assert bump is not None
+    assert bump.package == "lodash"
+    assert bump.to_ver == "4.17.21"
+
+
+def test_parse_bump_conventional_commit_build_deps_dev() -> None:
+    bump = _parse_bump("build(deps-dev): bump typescript from 4.9.5 to 5.0.0")
+    assert bump is not None
+    assert bump.package == "typescript"
+    assert bump.to_ver == "5.0.0"
+
+
 def test_parse_bump_go_module() -> None:
     bump = _parse_bump("Bump golang.org/x/net from 0.14.0 to 0.17.0")
     assert bump is not None
@@ -79,9 +109,104 @@ def test_parse_bump_multi_package_takes_first() -> None:
     assert bump.package == "foo"
 
 
+def test_parse_bump_group_title_returns_none() -> None:
+    """Grouped PR title must not be parsed as a single-package bump."""
+    assert _parse_bump("Bump the production-dependencies group with 3 updates") is None
+
+
 def test_parse_bump_unparseable_returns_none() -> None:
     assert _parse_bump("chore: update lockfile") is None
     assert _parse_bump("") is None
+
+
+# ---------------------------------------------------------------------------
+# Security flag
+# ---------------------------------------------------------------------------
+
+
+def test_is_security_title_detects_bracket_prefix() -> None:
+    assert _is_security_title("[Security] Bump lodash from 4.17.11 to 4.17.21") is True
+
+
+def test_is_security_title_false_for_normal() -> None:
+    assert _is_security_title("Bump lodash from 4.17.11 to 4.17.21") is False
+
+
+def test_parse_bump_security_prefix() -> None:
+    bump = _parse_bump("[Security] Bump lodash from 4.17.11 to 4.17.21")
+    assert bump is not None
+    assert bump.package == "lodash"
+    assert bump.to_ver == "4.17.21"
+
+
+# ---------------------------------------------------------------------------
+# Grouped PR body parsing
+# ---------------------------------------------------------------------------
+
+_SAMPLE_GROUP_BODY_3COL = """\
+## Bumped dependencies
+
+| Package | From | To |
+| ------- | ---- | -- |
+| lodash  | 4.17.11 | 4.17.21 |
+| express | 4.18.0  | 4.19.0  |
+"""
+
+_SAMPLE_GROUP_BODY_ARROW = """\
+Updates the group:
+
+| Package | Update |
+| ------- | ------ |
+| lodash  | 4.17.11 → 4.17.21 |
+| express | 4.18.0 → 4.19.0  |
+"""
+
+_SAMPLE_GROUP_BODY_NO_TABLE = """\
+This is a regular PR with no update table.
+Just some prose.
+"""
+
+
+def test_parse_group_body_three_column() -> None:
+    rows = _parse_group_body(_SAMPLE_GROUP_BODY_3COL)
+    assert rows is not None
+    assert len(rows) == 2
+    pkgs = {r.package for r in rows}
+    assert "lodash" in pkgs
+    assert "express" in pkgs
+    lodash = next(r for r in rows if r.package == "lodash")
+    assert lodash.from_ver == "4.17.11"
+    assert lodash.to_ver == "4.17.21"
+
+
+def test_parse_group_body_no_table_returns_none() -> None:
+    result = _parse_group_body(_SAMPLE_GROUP_BODY_NO_TABLE)
+    assert result is None
+
+
+def test_parse_group_body_empty_string_returns_none() -> None:
+    assert _parse_group_body("") is None
+
+
+# ---------------------------------------------------------------------------
+# split_name_ver helper
+# ---------------------------------------------------------------------------
+
+
+def test_split_name_ver_regular() -> None:
+    assert _split_name_ver("lodash@4.17.21") == ("lodash", "4.17.21")
+
+
+def test_split_name_ver_scoped() -> None:
+    name, ver = _split_name_ver("@babel/core@7.22.0")
+    assert name == "@babel/core"
+    assert ver == "7.22.0"
+
+
+def test_split_name_ver_no_at() -> None:
+    name, ver = _split_name_ver("lodash")
+    assert name == "lodash"
+    assert ver == ""
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +228,7 @@ def test_owner_repo_non_github_returns_none() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Supersession check
+# Supersession check (with lockfile_resolved)
 # ---------------------------------------------------------------------------
 
 
@@ -117,6 +242,32 @@ def _make_pr(title: str) -> DependabotPR:
     )
     pr.bump = _parse_bump(title)
     return pr
+
+
+def test_check_superseded_high_confidence_from_resolved() -> None:
+    pr = _make_pr("Bump lodash from 4.17.11 to 4.17.21")
+    superseded, current = _check_superseded(
+        pr,
+        lockfile_versions=set(),
+        manifest_versions={},
+        lockfile_resolved={"lodash": "4.17.21"},
+    )
+    assert superseded is True
+    assert current == "4.17.21"
+    assert pr.low_confidence is False
+
+
+def test_check_superseded_low_confidence_from_text_search() -> None:
+    pr = _make_pr("Bump lodash from 4.17.11 to 4.17.21")
+    superseded, current = _check_superseded(
+        pr,
+        lockfile_versions={"lodash@4.17.21"},
+        manifest_versions={},
+        lockfile_resolved={},  # empty → falls back to text search
+    )
+    assert superseded is True
+    assert current == "4.17.21"
+    assert pr.low_confidence is True  # text-search fallback
 
 
 def test_check_superseded_found_in_lockfile() -> None:
@@ -161,6 +312,112 @@ def test_check_superseded_unparseable_pr_returns_none() -> None:
     # bump is None — cannot determine supersession
     superseded, _current = _check_superseded(pr, {"foo@1.0"}, {})
     assert superseded is None
+
+
+# ---------------------------------------------------------------------------
+# Grouped PR close safety
+# ---------------------------------------------------------------------------
+
+
+def test_grouped_pr_not_closed_when_row_low_confidence(tmp_path: Path) -> None:
+    """Grouped PRs with any low-confidence row must not be auto-closed."""
+    fake_repo = str(tmp_path)
+
+    group_pr_data = [
+        {
+            "number": 77,
+            "title": "Bump the production-dependencies group with 2 updates",
+            "headRefName": "dependabot/npm/group-1",
+        }
+    ]
+
+    group_body = """\
+| Package | From | To |
+| ------- | ---- | -- |
+| lodash  | 4.17.11 | 4.17.21 |
+| express | 4.18.0  | 4.19.0  |
+"""
+
+    mock_git = MagicMock(returncode=0, stdout="origin/main\n")
+
+    with (
+        patch(
+            "repo_ops_dependabot.dependabot.discover_repos",
+            return_value={"c": fake_repo},
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._github_remote",
+            return_value="https://github.com/owner/repo",
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_list_dependabot_prs",
+            return_value=(group_pr_data, ""),
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_pr_body",
+            return_value=(group_body, ""),
+        ),
+        # lockfile_resolved is empty → falls back to text search (low confidence)
+        patch(
+            "repo_ops_dependabot.dependabot._lockfile_resolved",
+            return_value={},
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._lockfile_versions",
+            return_value={"lodash@4.17.21", "express@4.19.0"},
+        ),
+        patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
+        patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_close_pr", return_value=""
+        ) as mock_close,
+    ):
+        main(["--close", fake_repo])
+        # Low-confidence rows → grouped PR must NOT be closed
+        mock_close.assert_not_called()
+
+
+def test_unparseable_grouped_pr_never_closed(tmp_path: Path) -> None:
+    """Grouped PR where body fetch fails must never be closed."""
+    fake_repo = str(tmp_path)
+
+    group_pr_data = [
+        {
+            "number": 88,
+            "title": "Bump the security group with 2 updates",
+            "headRefName": "dependabot/npm/security-group",
+        }
+    ]
+
+    mock_git = MagicMock(returncode=0, stdout="origin/main\n")
+
+    with (
+        patch(
+            "repo_ops_dependabot.dependabot.discover_repos",
+            return_value={"c": fake_repo},
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._github_remote",
+            return_value="https://github.com/owner/repo",
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_list_dependabot_prs",
+            return_value=(group_pr_data, ""),
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_pr_body",
+            return_value=("", "gh error: not found"),
+        ),
+        patch("repo_ops_dependabot.dependabot._lockfile_resolved", return_value={}),
+        patch("repo_ops_dependabot.dependabot._lockfile_versions", return_value=set()),
+        patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
+        patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_close_pr", return_value=""
+        ) as mock_close,
+    ):
+        main(["--close", fake_repo])
+        mock_close.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +498,7 @@ def test_dependabot_parser_close_flag() -> None:
 
 
 def test_dependabot_close_calls_gh_pr_close(tmp_path: Path) -> None:
-    """With --close and a superseded PR, gh pr close is invoked."""
+    """With --close and a superseded high-confidence PR, gh pr close is invoked."""
     fake_repo = str(tmp_path)
 
     mock_pr_data = [
@@ -268,9 +525,14 @@ def test_dependabot_close_calls_gh_pr_close(tmp_path: Path) -> None:
             "repo_ops_dependabot.dependabot._gh_list_dependabot_prs",
             return_value=(mock_pr_data, ""),
         ),
+        # High-confidence via lockfile_resolved
+        patch(
+            "repo_ops_dependabot.dependabot._lockfile_resolved",
+            return_value={"lodash": "4.17.21"},
+        ),
         patch(
             "repo_ops_dependabot.dependabot._lockfile_versions",
-            return_value={"lodash@4.17.21"},
+            return_value=set(),
         ),
         patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
         patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
@@ -282,6 +544,51 @@ def test_dependabot_close_calls_gh_pr_close(tmp_path: Path) -> None:
         mock_close.assert_called_once()
         call_args = mock_close.call_args
         assert call_args[0][1] == 42  # pr_number
+
+
+def test_dependabot_low_confidence_never_closed(tmp_path: Path) -> None:
+    """Low-confidence text-search match must not trigger close even with --close."""
+    fake_repo = str(tmp_path)
+
+    mock_pr_data = [
+        {
+            "number": 55,
+            "title": "Bump lodash from 4.17.11 to 4.17.21",
+            "headRefName": "dependabot/npm/lodash-4.17.21",
+        }
+    ]
+
+    mock_git_result = MagicMock(returncode=0, stdout="origin/main\n")
+    with (
+        patch(
+            "repo_ops_dependabot.dependabot.discover_repos",
+            return_value={"c": fake_repo},
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._github_remote",
+            return_value="https://github.com/owner/repo",
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_list_dependabot_prs",
+            return_value=(mock_pr_data, ""),
+        ),
+        # No lockfile_resolved → text-search fallback (low confidence)
+        patch(
+            "repo_ops_dependabot.dependabot._lockfile_resolved",
+            return_value={},
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._lockfile_versions",
+            return_value={"lodash@4.17.21"},
+        ),
+        patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
+        patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_close_pr", return_value=""
+        ) as mock_close,
+    ):
+        main(["--close", fake_repo])
+        mock_close.assert_not_called()
 
 
 def test_dependabot_skips_non_github_repos(tmp_path: Path) -> None:
@@ -296,3 +603,43 @@ def test_dependabot_skips_non_github_repos(tmp_path: Path) -> None:
     ):
         main([str(tmp_path)])
         mock_list.assert_not_called()
+
+
+def test_dependabot_security_pr_is_flagged(tmp_path: Path) -> None:
+    """[Security] PRs have is_security=True in the result."""
+    fake_repo = str(tmp_path)
+
+    mock_pr_data = [
+        {
+            "number": 99,
+            "title": "[Security] Bump lodash from 4.17.11 to 4.17.21",
+            "headRefName": "dependabot/npm/lodash-4.17.21",
+        }
+    ]
+
+    mock_git = MagicMock(returncode=0, stdout="origin/main\n")
+    with (
+        patch(
+            "repo_ops_dependabot.dependabot.discover_repos",
+            return_value={"c": fake_repo},
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._github_remote",
+            return_value="https://github.com/owner/repo",
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_list_dependabot_prs",
+            return_value=(mock_pr_data, ""),
+        ),
+        patch("repo_ops_dependabot.dependabot._lockfile_resolved", return_value={}),
+        patch("repo_ops_dependabot.dependabot._lockfile_versions", return_value=set()),
+        patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
+        patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git),
+    ):
+        from repo_ops_dependabot.dependabot import scan_repos
+
+        results = scan_repos([fake_repo])
+        assert results
+        prs = results[0].prs
+        assert len(prs) == 1
+        assert prs[0].is_security is True
