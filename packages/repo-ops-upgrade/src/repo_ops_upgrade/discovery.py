@@ -10,6 +10,7 @@ from repo_ops_core.discovery import discover_repos
 from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.git import git_repo_for, repo_label
 from repo_ops_core.walk import iter_scanned_dirs
+from repo_ops_go.go import register_go_work_dir
 from repo_ops_js.workspaces import (
     detect_node_manager,
     path_is_yarn_workspace_child,
@@ -175,6 +176,27 @@ def discover_workspaces_in_root(
             )
         )
 
+    def _find_go_work(mdir: Path, git_root: Path) -> Path | None:
+        """Return the directory containing go.work nearest to *mdir*, up to *git_root*.
+
+        Walks from *mdir* toward *git_root* (inclusive) and returns the first
+        directory that contains a ``go.work`` file, or ``None`` when none is
+        found.  This lets the go.work-version-mismatch error hint name the
+        exact directory so the operator can run ``go work use`` there.
+        """
+        current = mdir.resolve()
+        ceiling = git_root.resolve()
+        while True:
+            if (current / "go.work").exists():
+                return current
+            if current == ceiling:
+                break
+            parent = current.parent
+            if parent == current:
+                break
+            current = parent
+        return None
+
     def consider_go(mdir: Path) -> None:
         if not (mdir / "go.mod").exists():
             return
@@ -182,9 +204,15 @@ def discover_workspaces_in_root(
         if not git:
             record_skip(mdir, "go", "not inside a git repo")
             return
+        ws_path = mdir.resolve()
+        # Detect a go.work file between the module dir and the git root so that
+        # classification hints in go.py can name the actionable directory.
+        go_work_dir = _find_go_work(mdir, git)
+        if go_work_dir is not None:
+            register_go_work_dir(ws_path, go_work_dir)
         found.append(
             Workspace(
-                path=mdir.resolve(),
+                path=ws_path,
                 ecosystem="go",
                 manager="go",
                 git_repo=git.resolve(),
