@@ -14,7 +14,7 @@ Package layout and filesystem map for the `repo-ops` uv workspace under `package
 - `packages/repo-ops-upgrade-remediations-js/` — JS remediations
 - `packages/repo-ops-inventory/`, `repo-ops-pushed/` — inventory and push audit
 - `packages/repo-ops/` — meta CLI (`repo_ops.cli`, `repo_ops._register`, bundled skill under `repo_ops/skills/`)
-- `tests/` — integration tests; `packages/repo-ops-lockfiles/tests/` — parser unit tests
+- `tests/` — unit tests with mocked subprocess (pure-unit tier); a git-touching tier exercises real git operations; future `integration` tests (bun/yarn/go network calls) will carry the `@pytest.mark.integration` marker. `packages/repo-ops-lockfiles/tests/` — parser unit tests
 - Root `pyproject.toml` / `uv.lock` — workspace manifest only
 
 Ecosystem plugins register via `repo_ops._register.register_all()` before CLI dispatch. Programmatic import paths: [docs/programmatic-imports.md](programmatic-imports.md). Do not add top-level scripts; route through workspace packages and the `repo-ops` entry point.
