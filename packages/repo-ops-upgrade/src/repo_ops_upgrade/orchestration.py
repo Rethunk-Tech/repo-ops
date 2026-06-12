@@ -8,11 +8,13 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
 from repo_ops_core.filesystem import should_exclude
 from repo_ops_core.git import is_git_dirty
+from repo_ops_core.state import cache_clear_dirty_skip, cache_record_dirty_skip
 from repo_ops_js.overrides import overrides_audit
 from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
@@ -113,7 +115,10 @@ def _process_workspace_body(
         if result.started_dirty and not allow_dirty:
             result.status = "skip"
             result.error = "dirty git worktree (use --allow-dirty)"
+            cache_record_dirty_skip(ws.git_repo, date.today())
             return result
+        # Repo processed cleanly — clear any stale dirty-skip entry.
+        cache_clear_dirty_skip(ws.git_repo)
         before_snap = snapshot_workspace_files(ws.path, ws.manager)
         try:
             behind_after = ecosystems.apply_workspace(ws)
