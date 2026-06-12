@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from repo_ops_core.process import run
+from repo_ops_js.guards import assert_targets_resolved
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
@@ -42,9 +43,12 @@ def check_npm(ws: Workspace) -> tuple[list[Change], list[Change]]:
 
 
 def apply_npm(ws: Workspace) -> None:
+    changes, _behind = check_npm(ws)
     proc = run(["npm", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "npm update failed")
     proc2 = run(["npm", "install"], ws.path, timeout=TIMEOUT_APPLY)
     if proc2.returncode != 0:
         raise RuntimeError(proc2.stderr.strip() or "npm install failed")
+    if changes:
+        assert_targets_resolved(ws, changes, manager="npm")
