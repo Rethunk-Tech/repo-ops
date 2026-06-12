@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-06-12
+
+### Added
+
+- **`--commit-umbrella` and `--actions-org-policy` flags** wiring the v0.15.0 env-gated features; Actions policy rows now render in the report (`[policy]` lines, per-bundle and footer `actions policy violations` counts, JSON summary field). (#125)
+- **Container ecosystem v2 (#126):** generic OCI registry-v2 challenge flow (quay.io, gcr.io, mcr.microsoft.com, and any spec-compliant public registry now resolve — no more per-registry hardcoding); basic-auth from `~/.docker/config.json` (`DOCKER_CONFIG` honored; credential helpers out of scope → report-only); opt-in digest refresh for `tag@sha256` pins via `REPO_OPS_CONTAINER_REFRESH_SHA=1`; compose `build.dockerfile` references resolved and included in discovery.
+- **Audit/dependabot hardening (#128):** dependabot parses conventional-commit prefixes, `in /path` variants, grouped PRs (body table via `gh pr view`), and `[Security]` titles; satisfaction checks use real lockfile parsers (npm/yarn/pnpm/bun/go.mod/Cargo.lock) with semver comparison — text-search fallback is flagged low-confidence and never auto-closed; audit gains a documented severity-normalization table per tool, an `unknown` bucket (govulncheck) with `--fail-on-unknown`, and robust pip-audit/bun-audit probes; govulncheck integration test added.
+
+### Changed
+
+- **yarn apply ghost-guard probe reuses the check-phase plan (#127):** per-run cache keyed by workspace; the isolated resolutions-stripped probe runs only when apply executes without a prior check — one fewer `yarn up` + `yarn install` per workspace.
+
 ## [0.15.0] - 2026-06-12
 
 ### Added
@@ -474,7 +486,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.12.0...v0.13.0
