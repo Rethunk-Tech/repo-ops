@@ -91,6 +91,9 @@ repo-ops-pushed = { workspace = true }
 [tool.pytest.ini_options]
 testpaths = ["tests", "packages/repo-ops-lockfiles/tests"]
 pythonpath = []
+markers = [
+  "integration: tests requiring real external tools (bun, yarn, go, git network)",
+]
 
 [tool.ruff]
 target-version = "py310"
@@ -169,8 +172,15 @@ source = [
 ]
 branch = true
 
+# Strict-annotation overrides: packages confirmed clean under disallow_untyped_defs.
+# TODO(ratchet): repo_ops_core (tee.py:15,30), repo_ops_lockfiles (parsers.py:44)
+#   — fix missing annotations then add to [[tool.mypy.overrides]] below.
+[[tool.mypy.overrides]]
+module = ["repo_ops_models.*"]
+disallow_untyped_defs = true
+
 [tool.coverage.report]
-fail_under = 15
+fail_under = 63
 show_missing = true
 skip_covered = true
 exclude_lines = [
