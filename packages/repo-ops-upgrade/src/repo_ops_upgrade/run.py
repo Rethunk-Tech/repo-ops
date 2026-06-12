@@ -5,6 +5,7 @@ from __future__ import annotations
 import concurrent.futures
 import fnmatch
 import os
+import sys
 import threading
 from itertools import groupby
 from pathlib import Path
@@ -117,6 +118,25 @@ def _run_upgrade_body(
             roots,
             follow_symlinks=follow_symlinks,
         )
+
+    exclude_patterns: list[str] = getattr(args, "exclude_patterns", None) or []
+    excluded_count = 0
+    if exclude_patterns:
+        kept: dict[Path, object] = {}
+        for key, bundle in bundles.items():
+            label = bundle.label
+            path_str = str(key)
+            if any(
+                pat in label
+                or pat in path_str
+                or fnmatch.fnmatch(label, pat)
+                or fnmatch.fnmatch(path_str, pat)
+                for pat in exclude_patterns
+            ):
+                excluded_count += 1
+            else:
+                kept[key] = bundle
+        bundles = kept  # type: ignore[assignment]
 
     include_submodules = getattr(args, "submodules", False)
     submodule_order = getattr(args, "submodule_order", "discovery")
@@ -376,6 +396,8 @@ def _run_upgrade_body(
         footer_hints = pointer_hints if apply else None
         if include_submodules and pointer_hints and not apply:
             footer_hints = pointer_hints
+        if excluded_count:
+            print(f"excluded {excluded_count} repo(s) via --exclude", file=sys.stderr)
         report.print_run_footer(
             summary=report.build_run_summary(bundles, diagnostics=diagnostics),
             failures=report.collect_run_failures(bundles),

@@ -290,6 +290,17 @@ def add_upgrade_common_arguments(
     add_manager_filter_argument(parser)
     add_follow_symlinks_argument(parser)
     parser.add_argument(
+        "--exclude",
+        action="append",
+        dest="exclude_patterns",
+        default=None,
+        metavar="PATTERN",
+        help=(
+            "Exclude repos whose label or absolute path contains PATTERN "
+            "(substring or glob). Repeatable."
+        ),
+    )
+    parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
