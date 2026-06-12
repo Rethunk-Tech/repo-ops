@@ -9,7 +9,7 @@ import pytest
 from repo_ops_models import Workspace
 from repo_ops_py_uv.uv import check_uv
 from repo_ops_rust.rust import check_rust
-from repo_ops_upgrade.constants import TIMEOUT_CHECK
+from repo_ops_upgrade.constants import resolve_timeout_check
 
 
 def _ws(tmp_path: Path, ecosystem: str, manager: str) -> Workspace:
@@ -42,4 +42,4 @@ def test_dry_run_check_uses_timeout_check(
         check(_ws(tmp_path, ecosystem, manager))
 
     assert len(captured) == 1
-    assert captured[0]["timeout"] == TIMEOUT_CHECK
+    assert captured[0]["timeout"] == resolve_timeout_check()
