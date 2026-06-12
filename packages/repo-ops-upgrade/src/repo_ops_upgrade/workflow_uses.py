@@ -1,4 +1,9 @@
-"""Parse and update GitHub Actions ``uses:`` pins via ruamel.yaml (issue #19)."""
+"""Parse and update GitHub Actions ``uses:`` pins (issue #19).
+
+Pin rewrites use byte-preserving targeted line edits (issue #117): only the
+``@old_pin`` portion of a ``uses:`` line is substituted; all other bytes
+(indentation, comments, quoting, line endings) are left untouched.
+"""
 
 from __future__ import annotations
 
@@ -57,6 +62,23 @@ def _scalar_line_col(scalar: Any) -> tuple[int, int]:
     return (lc.line + 1, lc.col + 1)
 
 
+def _uses_line_from_parent(node: CommentedMap) -> int:
+    """Return the 1-based line number of the ``uses`` key in *node*.
+
+    ruamel.yaml stores per-key position in ``node.lc.data`` as
+    ``{key: [key_line, key_col, value_line, value_col]}`` (0-based).
+    Plain string scalars carry no ``lc`` attribute of their own, so we
+    read from the parent map instead.  Returns 0 when unavailable.
+    """
+    lc = getattr(node, "lc", None)
+    if lc is None:
+        return 0
+    entry = getattr(lc, "data", {}).get("uses")
+    if entry and len(entry) >= 1:
+        return int(entry[0]) + 1  # convert 0-based → 1-based
+    return 0
+
+
 def _extract_uses_comment(node: CommentedMap) -> str | None:
     """Return the stripped trailing comment on the ``uses`` key (e.g. '# v4'), or None."""
     ca = getattr(node, "ca", None)
@@ -76,7 +98,12 @@ def _walk_collect(node: Any, workflow: str, out: list[UsesPin]) -> None:
             parsed = parse_uses_ref(uses_val)
             if parsed:
                 action, pin = parsed
-                line, col = _scalar_line_col(uses_val)
+                # Prefer reading line from the parent map's lc.data (the scalar
+                # value itself is a plain str with no lc attribute).
+                line = _uses_line_from_parent(node)
+                col = 0
+                if line == 0:
+                    line, col = _scalar_line_col(uses_val)
                 raw_comment = _extract_uses_comment(node)
                 comment: str | None = None
                 if raw_comment:
@@ -200,24 +227,79 @@ def _walk_apply(
     return changed
 
 
+def _apply_pin_to_line(line: str, action: str, old_pin: str, new_pin: str) -> str:
+    """Return *line* with ``@old_pin`` replaced by ``@new_pin`` for *action*.
+
+    Matches the ``uses:`` value on the line and replaces only the ``@<ref>``
+    portion, leaving every other byte (indentation, comments, quoting, line
+    endings) untouched (issue #117).
+
+    The match is anchored to the action name and uses a negative lookahead for
+    ``.`` and word characters so that a v3 → v3.19.0 bump does not
+    accidentally corrupt an existing ``v3.19.0`` pin on the same line.
+    """
+    escaped_action = re.escape(action)
+    escaped_pin = re.escape(old_pin)
+    # After the pin must come a non-word / non-dot character (whitespace, #,
+    # newline) or end-of-string — prevents partial match of "v3" inside "v3.19.0".
+    pattern = re.compile(
+        r"(?<=" + escaped_action + r"@)" + escaped_pin + r"(?=[^\w.]|\Z)"
+    )
+    new_line, count = pattern.subn(new_pin, line)
+    if count:
+        return new_line
+    return line
+
+
 def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool:
-    """Apply pin updates in place and write the workflow when anything changed."""
+    """Apply pin updates in place using byte-preserving targeted line edits.
+
+    Only the ``@old_pin`` portion of each matching ``uses:`` line is
+    substituted; all other bytes (indentation, comments, quoting, line
+    endings) are left untouched (issue #117).
+
+    When a ``PinReplacement`` carries a ``line`` number, only that line is
+    edited.  When ``line`` is ``None``, every line containing the action@pin
+    is updated (backwards-compatible fallback for callers that do not supply
+    line numbers).
+    """
     if not replacements:
         return False
-    yaml = _yaml_loader()
     try:
-        data = yaml.load(path)
-    except YAMLError as exc:
-        raise WorkflowParseError(f"{path.name}: {exc}") from exc
+        raw = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise WorkflowParseError(f"{path.name}: {exc}") from exc
-    if data is None:
-        return False
-    if not _walk_apply(data, replacements):
+
+    lines = raw.splitlines(keepends=True)
+    changed = False
+
+    for repl in replacements:
+        action = repl.action
+        old_pin = repl.pin
+        new_pin = repl.latest
+        if old_pin == new_pin:
+            continue
+
+        if repl.line is not None:
+            # Targeted single-line edit (preferred path).
+            idx = repl.line - 1  # 1-based → 0-based
+            if 0 <= idx < len(lines):
+                new_line = _apply_pin_to_line(lines[idx], action, old_pin, new_pin)
+                if new_line != lines[idx]:
+                    lines[idx] = new_line
+                    changed = True
+        else:
+            # No line hint — scan all lines for action@pin.
+            for idx, line in enumerate(lines):
+                new_line = _apply_pin_to_line(line, action, old_pin, new_pin)
+                if new_line != line:
+                    lines[idx] = new_line
+                    changed = True
+
+    if not changed:
         return False
     try:
-        with path.open("w", encoding="utf-8", newline="\n") as fh:
-            yaml.dump(data, fh)
+        path.write_text("".join(lines), encoding="utf-8")
     except OSError as exc:
         raise WorkflowParseError(f"{path.name}: {exc}") from exc
     return True

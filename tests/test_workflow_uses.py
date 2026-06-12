@@ -191,3 +191,90 @@ def test_update_workflow_pins_noop_minimal_diff(tmp_path: Path) -> None:
     changed = update_workflow_pins(wf, [])
     assert not changed
     assert wf.read_text(encoding="utf-8") == text
+
+
+# ---------------------------------------------------------------------------
+# Issue #117 — byte-preserving pin edits (no YAML reformat)
+# ---------------------------------------------------------------------------
+
+_SIX_SPACE_WORKFLOW = """\
+name: Release
+on: push
+jobs:
+  release:
+      runs-on: ubuntu-latest
+      steps:
+            - name: Checkout
+              uses: actions/checkout@v2  # keep this comment
+            - name: Upload
+              uses: softprops/action-gh-release@v2.0.0
+            - run: echo hello  # unrelated comment
+"""
+
+
+def test_pin_bump_produces_exactly_one_line_diff(tmp_path: Path) -> None:
+    """Bumping one pin must produce a single-line diff (issue #117).
+
+    A workflow with 6-space-indented steps and inline comments must have
+    exactly one line changed (and only the @ref portion of that line) after
+    a pin bump.  The old ruamel.yaml dump path would reindent the entire
+    block-sequence, producing 51 insertions/51 deletions for a single bump.
+    """
+    wf = tmp_path / "release.yml"
+    wf.write_text(_SIX_SPACE_WORKFLOW, encoding="utf-8")
+
+    changed = update_workflow_pins(
+        wf,
+        [PinReplacement("actions/checkout", "v2", "v3")],
+    )
+
+    assert changed
+    after = wf.read_text(encoding="utf-8")
+    before_lines = _SIX_SPACE_WORKFLOW.splitlines(keepends=True)
+    after_lines = after.splitlines(keepends=True)
+
+    # File length must not change.
+    assert len(after_lines) == len(before_lines), (
+        f"line count changed: {len(before_lines)} -> {len(after_lines)}"
+    )
+
+    # Exactly one line must differ.
+    diffs = [
+        (i, b, a)
+        for i, (b, a) in enumerate(zip(before_lines, after_lines, strict=True), 1)
+        if b != a
+    ]
+    assert len(diffs) == 1, f"expected 1 changed line, got {len(diffs)}: {diffs}"
+
+    _changed_line_num, before_line, after_line = diffs[0]
+    # The changed line must contain the new pin.
+    assert "actions/checkout@v3" in after_line, after_line
+    # The comment must be preserved.
+    assert "# keep this comment" in after_line, after_line
+    # Indentation must be unchanged.
+    assert before_line.index("uses:") == after_line.index("uses:"), (
+        "indentation shifted"
+    )
+
+
+def test_pin_bump_preserves_unrelated_lines(tmp_path: Path) -> None:
+    """Only the targeted action@pin is changed; all other lines are byte-identical."""
+    wf = tmp_path / "release.yml"
+    wf.write_text(_SIX_SPACE_WORKFLOW, encoding="utf-8")
+
+    update_workflow_pins(
+        wf,
+        [PinReplacement("actions/checkout", "v2", "v3")],
+    )
+
+    after = wf.read_text(encoding="utf-8")
+    before_lines = _SIX_SPACE_WORKFLOW.splitlines(keepends=True)
+    after_lines = after.splitlines(keepends=True)
+
+    for i, (b, a) in enumerate(zip(before_lines, after_lines, strict=True), 1):
+        if b == a:
+            continue
+        # Only the checkout line must differ.
+        assert "actions/checkout" in b, (
+            f"unexpected line {i} changed:\n  before: {b!r}\n  after:  {a!r}"
+        )
