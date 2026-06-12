@@ -498,6 +498,197 @@ def test_collect_changes_json_yaml_lockb_fallback(tmp_path: Path) -> None:
     assert "bun.lockb" in names, f"bun.lockb missing from changes: {changes}"
 
 
+# ---------------------------------------------------------------------------
+# Issue #116 — Actions-only commit must not sweep pre-dirty files
+# ---------------------------------------------------------------------------
+
+
+def test_actions_only_does_not_sweep_predirty_lockfile(tmp_path: Path) -> None:
+    """#116: an actions-only pin bump must stage only the workflow file, not a
+    pre-existing dirty yarn.lock that was never touched by this run."""
+    from repo_ops_models import ActionBump
+
+    _init_git_repo(tmp_path)
+    wf_dir = tmp_path / ".github" / "workflows"
+    wf_dir.mkdir(parents=True)
+    wf = wf_dir / "ci.yml"
+    wf.write_text("on: push\njobs: {}\n", encoding="utf-8")
+    # Commit a baseline yarn.lock so it is tracked.
+    yarn_lock = tmp_path / "yarn.lock"
+    yarn_lock.write_text("# baseline\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
+
+    # Operator-kept dirty yarn.lock (1,232 lines untouched by this run).
+    yarn_lock.write_text("# operator edit\n" + "x\n" * 1231, encoding="utf-8")
+    # Run bumps only the workflow.
+    wf.write_text("on: push  # bumped\njobs: {}\n", encoding="utf-8")
+
+    bundle = RepoBundle(
+        git_repo=tmp_path,
+        label="ci-only",
+        workspaces=[],
+        actions=[
+            ActionBump(
+                workflow=".github/workflows/ci.yml",
+                action="actions/checkout",
+                pin="v4",
+                latest="v6",
+            )
+        ],
+    )
+    plan = post_apply_commit.plan_repo_commit(
+        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
+    )
+    assert plan.skipped_reason is None
+    assert plan.files == [".github/workflows/ci.yml"]
+    assert "yarn.lock" not in plan.files
+
+
+# ---------------------------------------------------------------------------
+# Issue #116 — prefix-boundary bug in upgrade_scoped_paths
+# ---------------------------------------------------------------------------
+
+
+def test_upgrade_scoped_paths_prefix_boundary(tmp_path: Path) -> None:
+    """#116: 'packages/foo' prefix must not match 'packages/foobar/yarn.lock'."""
+    _init_git_repo(tmp_path)
+    foo_dir = tmp_path / "packages" / "foo"
+    foo_dir.mkdir(parents=True)
+    foobar_dir = tmp_path / "packages" / "foobar"
+    foobar_dir.mkdir(parents=True)
+
+    ws = Workspace(
+        path=foo_dir,
+        ecosystem="node",
+        manager="yarn",
+        git_repo=tmp_path,
+        label="foo",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("pkg", "1", "2")]
+    bundle = RepoBundle(git_repo=tmp_path, label="boundary", workspaces=[wr])
+
+    # Porcelain includes the sibling workspace's lockfile which must NOT be staged.
+    porcelain = [
+        "packages/foo/yarn.lock",
+        "packages/foobar/yarn.lock",  # sibling — must be excluded
+    ]
+    scoped = post_apply_commit.upgrade_scoped_paths(bundle, porcelain)
+    assert "packages/foo/yarn.lock" in scoped
+    assert "packages/foobar/yarn.lock" not in scoped
+
+
+def test_upgrade_scoped_paths_root_exact_path(tmp_path: Path) -> None:
+    """Root-workspace name match must not fire for a subdirectory path.
+
+    'yarn.lock' at root must be included; 'sub/yarn.lock' must not, because the
+    active workspace is at the repo root and the subdirectory is unrelated.
+    """
+    _init_git_repo(tmp_path)
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="yarn",
+        git_repo=tmp_path,
+        label="root",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("pkg", "1", "2")]
+    bundle = RepoBundle(git_repo=tmp_path, label="root", workspaces=[wr])
+
+    porcelain = ["yarn.lock", "sub/yarn.lock"]
+    scoped = post_apply_commit.upgrade_scoped_paths(bundle, porcelain)
+    assert "yarn.lock" in scoped
+    assert "sub/yarn.lock" not in scoped
+
+
+# ---------------------------------------------------------------------------
+# Issue #116 — classify_commit_subject multi-ecosystem
+# ---------------------------------------------------------------------------
+
+
+def test_classify_mixed_node_and_ci_pins() -> None:
+    """#116: yarn.lock + workflow file must not collapse to chore(ci)-only subject."""
+    files = ["yarn.lock", ".github/workflows/ci.yml"]
+    subject = post_apply_commit.classify_commit_subject(files)
+    # Must mention both Node lockfiles and CI pins.
+    assert "Node" in subject
+    assert "CI" in subject
+    # Must NOT be pure chore(ci) (that was the misattribution bug).
+    assert subject != "chore(ci): bump GitHub Actions pins"
+
+
+def test_classify_go_and_node_mixed() -> None:
+    """Multi-ecosystem deps-only commit should enumerate both."""
+    files = ["go.mod", "go.sum", "yarn.lock"]
+    subject = post_apply_commit.classify_commit_subject(files)
+    assert "Go" in subject
+    assert "Node" in subject
+
+
+def test_classify_single_ecosystem_unchanged() -> None:
+    """Single-ecosystem commits must keep exact existing subject strings."""
+    assert post_apply_commit.classify_commit_subject(["go.mod", "go.sum"]) == (
+        "chore(deps): update Go modules"
+    )
+    assert post_apply_commit.classify_commit_subject(["yarn.lock"]) == (
+        "chore(deps): update Node lockfiles and manifests"
+    )
+    assert post_apply_commit.classify_commit_subject([".github/workflows/ci.yml"]) == (
+        "chore(ci): bump GitHub Actions pins"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Issue #116 — run_post_apply_commits parallelism
+# ---------------------------------------------------------------------------
+
+
+def test_run_post_apply_commits_parallel_outcomes_sorted(tmp_path: Path) -> None:
+    """Outcomes are returned in label order regardless of execution order."""
+    # Build three minimal bundles — each in its own git repo directory.
+    paths = [tmp_path / f"repo{i}" for i in range(3)]
+    bundles: dict[Path, RepoBundle] = {}
+    for p in paths:
+        p.mkdir()
+        _init_git_repo(p)
+        ws = Workspace(
+            path=p, ecosystem="node", manager="npm", git_repo=p, label=p.name
+        )
+        wr = WorkspaceResult(workspace=ws, status="ok")
+        # No changes → each will skip as "no upgrade-scoped changes to commit".
+        bundles[p] = RepoBundle(git_repo=p, label=p.name, workspaces=[wr])
+
+    outcomes, _ = post_apply_commit.run_post_apply_commits(
+        bundles,
+        mode="conventional",
+        dry_run=True,
+        quiet=True,
+        max_workers=3,
+    )
+    labels = [o.label for o in outcomes]
+    assert labels == sorted(labels)
+
+
+def test_run_post_apply_commits_max_workers_accepted(tmp_path: Path) -> None:
+    """max_workers parameter is accepted without error."""
+    _init_git_repo(tmp_path)
+    ws = Workspace(
+        path=tmp_path, ecosystem="node", manager="npm", git_repo=tmp_path, label="w"
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    bundle = RepoBundle(git_repo=tmp_path, label="w", workspaces=[wr])
+    outcomes, _ = post_apply_commit.run_post_apply_commits(
+        {tmp_path: bundle},
+        mode="conventional",
+        dry_run=True,
+        quiet=True,
+        max_workers=1,
+    )
+    assert len(outcomes) == 1
+
+
 def test_collect_changes_no_diff_reports_nothing(tmp_path: Path) -> None:
     """#113 — a clean git diff means no changes were applied. The removed
     checker fallback used to re-run the ecosystem checker here and report
