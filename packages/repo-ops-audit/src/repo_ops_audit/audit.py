@@ -6,11 +6,40 @@ subcommands, then runs the native auditor for each ecosystem:
 
   go      → govulncheck ./...
   node    → npm audit --json / yarn npm audit --json / pnpm audit --json / bun audit
-  py-uv   → uv run pip-audit --format json (if pip-audit importable), else skipped
+  py-uv   → uv run pip-audit --format json (if pip-audit is available), else skipped
   rust    → cargo audit --json
 
 If the required tool is not on PATH the workspace is recorded as "skipped".
 Subprocess calls are always mocked in tests; no network traffic in unit tests.
+
+Severity normalization
+----------------------
+Each ecosystem maps its own severity vocabulary to the canonical four buckets:
+
+  critical / high / moderate / low / **unknown**
+
+  npm / pnpm / yarn
+    JSON key "critical" → critical
+    JSON key "high"     → high
+    JSON key "moderate" / "medium" → moderate
+    anything else       → low
+
+  cargo-audit
+    CVSS score ≥9.0 → critical, ≥7.0 → high, ≥4.0 → moderate, <4.0 → low
+    no CVSS vector  → moderate (score defaults to 5.0)
+
+  govulncheck
+    No per-finding severity is emitted.  Every finding counts as **unknown**,
+    reported in a separate ``unknown`` bucket.  Use ``--fail-on-unknown`` to
+    treat unknown-severity findings as failures.
+
+  pip-audit
+    CVE alias present, no fix   → critical
+    CVE alias present, fix known → high
+    no CVE alias                → moderate
+
+  bun audit
+    Text output extracted by regex ("N critical/high/moderate/low").
 
 Console entry point: ``repo-ops audit`` (see ``--help`` for flags).
 """
@@ -25,6 +54,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from repo_ops_core.cli import (
     add_follow_symlinks_argument,
@@ -69,10 +99,15 @@ class VulnCount:
     high: int = 0
     moderate: int = 0
     low: int = 0
+    unknown: int = 0  # govulncheck: no per-finding severity
 
     @property
     def total(self) -> int:
         return self.critical + self.high + self.moderate + self.low
+
+    @property
+    def total_with_unknown(self) -> int:
+        return self.total + self.unknown
 
     @property
     def worst(self) -> str | None:
@@ -87,6 +122,7 @@ class VulnCount:
             "high": self.high,
             "moderate": self.moderate,
             "low": self.low,
+            "unknown": self.unknown,
         }
 
 
@@ -187,32 +223,27 @@ def _audit_go(ws: str) -> WorkspaceResult:
         )
     rc, stdout, stderr = _run(["govulncheck", "-json", "./..."], ws)
     counts = VulnCount()
-    # govulncheck --json emits one JSON object per line with "finding" type
+    # govulncheck --json emits one JSON object per line.
+    # govulncheck does NOT emit per-finding severity; all findings are counted
+    # in the ``unknown`` bucket.  Use --fail-on-unknown to gate on these.
+    parse_ok = False
     try:
         for line in stdout.splitlines():
             line = line.strip()
             if not line:
                 continue
             obj = json.loads(line)
+            parse_ok = True
             if "finding" in obj:
-                finding = obj["finding"]
-                # govulncheck does not emit per-finding severity; each finding
-                # is "high" equivalent (exploitable module vulnerability).
-                level = finding.get("severity", "high").lower()
-                if level in ("critical",):
-                    counts.critical += 1
-                elif level in ("moderate", "medium"):
-                    counts.moderate += 1
-                elif level in ("low",):
-                    counts.low += 1
-                else:
-                    counts.high += 1
+                counts.unknown += 1
     except (json.JSONDecodeError, ValueError):
-        # Fallback: non-zero exit = has vulns (no count breakdown available)
-        if rc != 0:
-            counts.high += 1
+        pass
 
-    if counts.total == 0 and rc != 0:
+    if not parse_ok and rc != 0:
+        # Fallback: non-zero exit with unparseable output → 1 unknown finding
+        counts.unknown += 1
+
+    if counts.total_with_unknown == 0 and rc != 0:
         return WorkspaceResult(
             label=label,
             path=ws,
@@ -221,7 +252,8 @@ def _audit_go(ws: str) -> WorkspaceResult:
             status="error",
             error=(stderr or stdout or "govulncheck exited non-zero").strip()[:200],
         )
-    status = "vulns" if counts.total > 0 else "ok"
+    has_findings = counts.total_with_unknown > 0
+    status = "vulns" if has_findings else "ok"
     return WorkspaceResult(
         label=label,
         path=ws,
@@ -229,6 +261,27 @@ def _audit_go(ws: str) -> WorkspaceResult:
         manager="go",
         status=status,
         counts=counts,
+    )
+
+
+def _probe_bun_audit(ws: str) -> bool:
+    """Return True when the installed bun supports the ``audit`` subcommand.
+
+    Bun versions prior to a certain release do not have ``bun audit``.  We probe
+    by running ``bun audit --version`` (or the subcommand help) with a short
+    timeout.  A non-zero exit with an "unknown subcommand" style message →
+    False.
+    """
+    rc, stdout, stderr = _run(["bun", "audit", "--help"], ws)
+    combined = (stdout + stderr).lower()
+    # bun emits "unknown command" / "unrecognized subcommand" when audit is absent;
+    # any other non-zero exit (e.g. no package.json) means the subcommand exists.
+    return not (
+        rc != 0
+        and any(
+            kw in combined
+            for kw in ("unknown command", "unrecognized", "no such subcommand")
+        )
     )
 
 
@@ -256,6 +309,18 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
             status="skipped",
             skip_reason=f"{tool} not on PATH",
         )
+
+    # bun: probe for audit subcommand availability before running
+    if manager == "bun" and not _probe_bun_audit(ws):
+        return WorkspaceResult(
+            label=label,
+            path=ws,
+            ecosystem="node",
+            manager=manager,
+            status="skipped",
+            skip_reason="bun audit subcommand not available in this bun version",
+        )
+
     cmd = cmd_map.get(manager, ["npm", "audit", "--json"])
     rc, stdout, stderr = _run(cmd, ws)
     counts = VulnCount()
@@ -312,8 +377,17 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
     )
 
 
-def _parse_npm_audit_json(data: dict) -> VulnCount:  # type: ignore[type-arg]
+def _parse_npm_audit_json(data: dict[str, Any]) -> VulnCount:
     """Parse npm/pnpm/yarn audit JSON into VulnCount.
+
+    Severity mapping
+    ----------------
+    npm/pnpm/yarn JSON severity keys → canonical buckets:
+
+      "critical"           → critical
+      "high"               → high
+      "moderate" / "medium" → moderate
+      (anything else)      → low
 
     Handles both npm v6 (metadata.vulnerabilities) and v7+ (vulnerabilities map).
     pnpm emits the same v7-style format. yarn npm audit --json uses the same schema.
@@ -389,6 +463,15 @@ def _parse_bun_audit_text(text: str) -> VulnCount:
     return counts
 
 
+def _probe_pip_audit(ws: str) -> bool:
+    """Return True when pip-audit is available via ``uv run pip-audit --version``."""
+    rc, stdout, _stderr = _run(["uv", "run", "pip-audit", "--version"], ws)
+    if rc != 0:
+        return False
+    # pip-audit --version outputs something like "pip-audit 2.x.y"
+    return "pip-audit" in (stdout + _stderr).lower() or rc == 0
+
+
 def _audit_py_uv(ws: str) -> WorkspaceResult:
     label = ws
     if shutil.which("uv") is None:
@@ -400,30 +483,30 @@ def _audit_py_uv(ws: str) -> WorkspaceResult:
             status="skipped",
             skip_reason="uv not on PATH",
         )
-    # Check if pip-audit is importable via the workspace's virtual env
-    # We probe with `uv run python -c "import pip_audit"` before the full audit.
-    rc_probe, _, _ = _run(["uv", "run", "python", "-c", "import pip_audit"], ws)
-    if rc_probe != 0:
+    # Probe: is pip-audit available in this uv environment?
+    if not _probe_pip_audit(ws):
         return WorkspaceResult(
             label=label,
             path=ws,
             ecosystem="py-uv",
             manager="uv",
             status="skipped",
-            skip_reason="pip-audit not importable in this uv env",
+            skip_reason="pip-audit not available (uv run pip-audit --version failed)",
         )
     rc, stdout, stderr = _run(
         ["uv", "run", "pip-audit", "--format", "json", "--skip-editable"], ws
     )
     counts = VulnCount()
+    # pip-audit severity mapping:
+    #   CVE alias present, no fix_versions  → critical
+    #   CVE alias present, fix_versions known → high
+    #   no CVE alias                        → moderate
     try:
         data = json.loads(stdout)
         # pip-audit JSON: list of {"name": ..., "version": ..., "vulns": [...]}
         for pkg in data:
             for vuln in pkg.get("vulns", []):
                 fix_versions = vuln.get("fix_versions", [])
-                # pip-audit does not emit CVSS severity; mark as "high" when
-                # the advisory references known exploits, else "moderate".
                 aliases = vuln.get("aliases", [])
                 is_cve = any(str(a).startswith("CVE-") for a in aliases)
                 if is_cve and not fix_versions:
@@ -478,6 +561,12 @@ def _audit_rust(ws: str) -> WorkspaceResult:
         )
     rc, stdout, stderr = _run(["cargo", "audit", "--json"], ws)
     counts = VulnCount()
+    # cargo-audit severity mapping (via CVSS v3 vector → approximated score):
+    #   score ≥9.0 → critical
+    #   score ≥7.0 → high
+    #   score ≥4.0 → moderate
+    #   score < 4.0 → low
+    #   no CVSS vector → moderate (default score 5.0)
     try:
         data = json.loads(stdout)
         # cargo audit --json: {"vulnerabilities": {"list": [...], "count": N, ...}}
@@ -595,19 +684,32 @@ def _worst_severity(results: list[WorkspaceResult]) -> str | None:
     return worst
 
 
-def _exit_code_for(results: list[WorkspaceResult], fail_on: str) -> int:
-    """Return 1 when any result's worst severity >= fail_on threshold, else 0."""
-    if fail_on == "never":
+def _exit_code_for(
+    results: list[WorkspaceResult],
+    fail_on: str,
+    fail_on_unknown: bool = False,
+) -> int:
+    """Return 1 when any result's worst severity >= fail_on threshold, else 0.
+
+    When *fail_on_unknown* is True, any workspace with ``counts.unknown > 0``
+    also triggers a non-zero exit, regardless of *fail_on*.
+    """
+    if fail_on == "never" and not fail_on_unknown:
         return 0
     threshold = _SEV_RANK.get(fail_on, 4)
     for r in results:
-        w = r.counts.worst
-        if w is not None and _SEV_RANK.get(w, 4) <= threshold:
+        if fail_on != "never":
+            w = r.counts.worst
+            if w is not None and _SEV_RANK.get(w, 4) <= threshold:
+                return 1
+        if fail_on_unknown and r.counts.unknown > 0:
             return 1
     return 0
 
 
-def print_audit_report(results: list[WorkspaceResult], roots: list[str]) -> None:
+def print_audit_report(
+    results: list[WorkspaceResult], roots: list[str], *, fail_on_unknown: bool = False
+) -> None:
     vulns = [r for r in results if r.status == "vulns"]
     skipped = [r for r in results if r.status == "skipped"]
     errors = [r for r in results if r.status == "error"]
@@ -636,6 +738,7 @@ def print_audit_report(results: list[WorkspaceResult], roots: list[str]) -> None
     high_w = max(len("high"), 4)
     mod_w = max(len("mod"), 3)
     low_w = max(len("low"), 3)
+    unk_w = max(len("unk"), 3)
     worst_w = max(len("worst"), 8)
     status_w = max(len("status"), 7)
 
@@ -647,6 +750,7 @@ def print_audit_report(results: list[WorkspaceResult], roots: list[str]) -> None
             format_cell("high", high_w, align="right"),
             format_cell("mod", mod_w, align="right"),
             format_cell("low", low_w, align="right"),
+            format_cell("unk", unk_w, align="right"),
             format_cell("worst", worst_w),
             format_cell("status", status_w),
         ]
@@ -686,6 +790,11 @@ def print_audit_report(results: list[WorkspaceResult], roots: list[str]) -> None
                         low_w,
                         align="right",
                     ),
+                    format_cell(
+                        str(r.counts.unknown) if r.status == "vulns" else "-",
+                        unk_w,
+                        align="right",
+                    ),
                     format_cell(worst_str, worst_w),
                     format_cell(status_str, status_w),
                 ]
@@ -696,6 +805,14 @@ def print_audit_report(results: list[WorkspaceResult], roots: list[str]) -> None
     if worst_overall:
         print()
         print(f"Worst severity across fleet: {worst_overall}")
+
+    total_unknown = sum(r.counts.unknown for r in results)
+    if total_unknown > 0:
+        print()
+        print(
+            f"Note: {total_unknown} finding(s) with unknown severity (govulncheck). "
+            "Use --fail-on-unknown to gate on these."
+        )
 
     if skipped:
         print()
@@ -717,6 +834,11 @@ exit codes:
   0  no vulnerabilities at or above --fail-on threshold (default: high)
   1  at least one workspace has vulns at or above the threshold
 
+severity buckets:
+  critical / high / moderate / low  — standard severities
+  unknown  — govulncheck findings (no per-finding severity from this tool)
+             use --fail-on-unknown to treat these as failures
+
 tools used (must be on PATH or workspace is skipped):
   go      govulncheck
   node    npm / yarn / pnpm / bun (per lockfile)
@@ -737,6 +859,16 @@ tools used (must be on PATH or workspace is skipped):
             "(critical/high/moderate/low/never). Default: high."
         ),
     )
+    parser.add_argument(
+        "--fail-on-unknown",
+        action="store_true",
+        default=False,
+        dest="fail_on_unknown",
+        help=(
+            "Exit 1 when any workspace has findings with unknown severity "
+            "(govulncheck). Default: off."
+        ),
+    )
     add_json_argument(parser, dest="json_out")
     add_verbose_argument(parser)
     return parser
@@ -749,6 +881,7 @@ def main(argv: list[str] | None = None) -> int:
 
     roots = resolve_scan_roots(list(args.roots), parser)
     follow_symlinks = bool(getattr(args, "follow_symlinks", False))
+    fail_on_unknown = bool(getattr(args, "fail_on_unknown", False))
     results = run_audit(roots, follow_symlinks=follow_symlinks)
 
     if args.json_out:
@@ -776,13 +909,14 @@ def main(argv: list[str] | None = None) -> int:
                 "skipped": sum(1 for r in results if r.status == "skipped"),
                 "errors": sum(1 for r in results if r.status == "error"),
                 "worst": _worst_severity(results),
+                "total_unknown": sum(r.counts.unknown for r in results),
             },
         }
         print(json.dumps(payload, indent=None if args.compact else 2))
-        return _exit_code_for(results, args.fail_on)
+        return _exit_code_for(results, args.fail_on, fail_on_unknown)
 
-    print_audit_report(results, roots)
-    return _exit_code_for(results, args.fail_on)
+    print_audit_report(results, roots, fail_on_unknown=fail_on_unknown)
+    return _exit_code_for(results, args.fail_on, fail_on_unknown)
 
 
 if __name__ == "__main__":
