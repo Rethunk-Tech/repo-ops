@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 
@@ -10,7 +11,15 @@ from repo_ops_core.process import run
 from repo_ops_js.workspaces import pm_run_prefix
 from repo_ops_models import Workspace
 
-from repo_ops_upgrade.constants import TIMEOUT_VERIFY, YARN_PEER_WARN
+from repo_ops_upgrade.constants import YARN_PEER_WARN, resolve_timeout_verify
+
+_DEP_NAME_RE = re.compile(r"^([A-Za-z0-9_.-]+)")
+
+
+def _dep_name(spec: str) -> str:
+    """Extract the bare package name from a PEP 508 dependency specifier."""
+    m = _DEP_NAME_RE.match(spec.strip())
+    return m.group(1).lower().replace("_", "-") if m else spec.strip().lower()
 
 
 def _pyproject_dev_deps(d: dict) -> set[str]:
@@ -20,14 +29,20 @@ def _pyproject_dev_deps(d: dict) -> set[str]:
         if isinstance(vals, list):
             for spec in vals:
                 if isinstance(spec, str):
-                    dev.add(spec.split("[")[0].strip().lower())
+                    dev.add(_dep_name(spec))
     tool = d.get("tool") or {}
+    # Hatch envs
     hatch_envs = (tool.get("hatch") or {}).get("envs") or {}
     for env_cfg in hatch_envs.values():
         if isinstance(env_cfg, dict):
             for dep in env_cfg.get("dependencies") or []:
                 if isinstance(dep, str):
-                    dev.add(dep.split("[")[0].strip().lower())
+                    dev.add(_dep_name(dep))
+    # uv dev-dependencies
+    uv_dev = (tool.get("uv") or {}).get("dev-dependencies") or []
+    for spec in uv_dev:
+        if isinstance(spec, str):
+            dev.add(_dep_name(spec))
     return dev
 
 
@@ -37,29 +52,54 @@ def _verify_hatch_fast(ws: Workspace) -> str | None:
         return None
     scripts = (d.get("project") or {}).get("scripts") or {}
     dev = _pyproject_dev_deps(d)
+    timeout = resolve_timeout_verify()
+    # "test" script wins outright
     if "test" in scripts:
-        proc = run(["uv", "run", "test"], ws.path, timeout=TIMEOUT_VERIFY)
+        proc = run(["uv", "run", "test"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "uv run test failed"
         return None
+    # pytest runner (explicit dep or tests/ dir)
     if "pytest" in dev or (ws.path / "tests").is_dir():
         proc = run(
-            ["uv", "run", "pytest", "-q", "--co", "-q"], ws.path, timeout=TIMEOUT_VERIFY
+            ["uv", "run", "pytest", "-q", "--co", "-q"], ws.path, timeout=timeout
         )
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "uv run pytest failed"
         return None
+    # "check" or "typecheck" scripts (e.g. mypy / pyright wrappers)
+    for script_key in ("check", "typecheck"):
+        if script_key in scripts:
+            proc = run(["uv", "run", script_key], ws.path, timeout=timeout)
+            if proc.returncode != 0:
+                return (
+                    proc.stderr or proc.stdout
+                ).strip() or f"uv run {script_key} failed"
+            return None
+    # mypy in dev deps
+    if "mypy" in dev:
+        proc = run(["uv", "run", "mypy", "."], ws.path, timeout=timeout)
+        if proc.returncode != 0:
+            return (proc.stderr or proc.stdout).strip() or "uv run mypy failed"
+        return None
+    # ruff in dev deps (lint-only fallback)
     if "ruff" in dev:
-        proc = run(["uv", "run", "ruff", "check", "."], ws.path, timeout=TIMEOUT_VERIFY)
+        proc = run(["uv", "run", "ruff", "check", "."], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "uv run ruff check failed"
     return None
+
+
+_NODE_VERIFY_SCRIPT_ENV = "REPO_OPS_NODE_VERIFY_SCRIPT"
+# Waterfall of default script candidates tried in order.
+_NODE_VERIFY_CANDIDATES = ("ci", "ci:pushgate", "build", "lint")
 
 
 def verify_node(ws: Workspace) -> str | None:
     mgr = ws.manager
     pkg = read_json_file(ws.path / "package.json") or {}
     scripts = pkg.get("scripts") or {}
+    timeout = resolve_timeout_verify()
 
     lock_cmds = {
         "yarn": ["yarn", "install", "--immutable"],
@@ -69,59 +109,92 @@ def verify_node(ws: Workspace) -> str | None:
     }
     lock = lock_cmds.get(mgr)
     if lock:
-        proc = run(lock, ws.path, timeout=TIMEOUT_VERIFY)
+        proc = run(lock, ws.path, timeout=timeout)
         combined = proc.stdout + proc.stderr
         if proc.returncode != 0 or (mgr == "yarn" and YARN_PEER_WARN.search(combined)):
             return combined.strip() or f"{mgr} immutable install failed"
 
-    script_name: str | None = None
-    for candidate in ("ci", "ci:pushgate", "build", "lint"):
-        if candidate in scripts:
-            script_name = candidate
-            break
-    if not script_name and (
-        (ws.path / "biome.json").exists() or (ws.path / "biome.jsonc").exists()
-    ):
-        script_name = "lint" if "lint" in scripts else None
-        if not script_name:
-            for candidate in ("biome:ci",):
-                if candidate in scripts:
-                    script_name = candidate
-                    break
+    # Env override: explicit empty string → skip the script step entirely.
+    env_val = os.environ.get(_NODE_VERIFY_SCRIPT_ENV)
+    if env_val is not None:
+        # Explicitly set to "" → caller opted out of the script step.
+        if env_val.strip() == "":
+            return None
+        script_name: str | None = env_val.strip()
+    else:
+        script_name = None
+        for candidate in _NODE_VERIFY_CANDIDATES:
+            if candidate in scripts:
+                script_name = candidate
+                break
+        if not script_name and (
+            (ws.path / "biome.json").exists() or (ws.path / "biome.jsonc").exists()
+        ):
+            script_name = "lint" if "lint" in scripts else None
+            if not script_name:
+                for candidate in ("biome:ci",):
+                    if candidate in scripts:
+                        script_name = candidate
+                        break
 
     if not script_name:
         return None
 
-    proc = run([*pm_run_prefix(mgr), script_name], ws.path, timeout=TIMEOUT_VERIFY)
+    proc = run([*pm_run_prefix(mgr), script_name], ws.path, timeout=timeout)
     if proc.returncode != 0:
         return (proc.stderr or proc.stdout).strip() or f"{script_name} failed"
     return None
 
 
+def _has_ruff_config(ws: Workspace, d: dict) -> bool:
+    """Return True if ruff is configured in pyproject.toml or present in dev deps."""
+    tool = d.get("tool") or {}
+    if "ruff" in tool:
+        return True
+    dev = _pyproject_dev_deps(d)
+    return "ruff" in dev
+
+
 def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
     mgr = ws.manager
+    timeout = resolve_timeout_verify()
     if mgr in ("yarn", "npm", "bun", "pnpm"):
         return verify_node(ws)
     if mgr == "go":
         proc = run(["go", "mod", "verify"], ws.path, timeout=120)
         if proc.returncode != 0:
             return proc.stderr.strip() or "go mod verify failed"
+        # Default post-upgrade build gate: catches API-breaking bumps that
+        # go mod verify (checksum-only) would pass silently.
+        proc_build = run(["go", "build", "./..."], ws.path, timeout=timeout)
+        if proc_build.returncode != 0:
+            return proc_build.stderr.strip() or "go build ./... failed"
         if verify_test:
-            proc2 = run(["go", "test", "./..."], ws.path, timeout=TIMEOUT_VERIFY)
+            proc2 = run(["go", "test", "./..."], ws.path, timeout=timeout)
             if proc2.returncode != 0:
                 return proc2.stderr.strip() or "go test failed"
         return None
     if mgr == "rust":
-        proc = run(["cargo", "check"], ws.path, timeout=TIMEOUT_VERIFY)
+        proc = run(["cargo", "check"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "cargo check failed"
         return None
     if mgr in ("uv", "hatch"):
-        proc = run(["uv", "sync", "--locked"], ws.path, timeout=TIMEOUT_VERIFY)
+        proc = run(["uv", "sync", "--locked"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "uv sync --locked failed"
         if mgr == "hatch":
             return _verify_hatch_fast(ws)
+        # uv: run ruff check if configured — slot for future per-ecosystem checks.
+        d = read_toml_file(ws.path / "pyproject.toml") or {}
+        if _has_ruff_config(ws, d):
+            proc_ruff = run(
+                ["uv", "run", "ruff", "check", "."], ws.path, timeout=timeout
+            )
+            if proc_ruff.returncode != 0:
+                return (
+                    proc_ruff.stderr or proc_ruff.stdout
+                ).strip() or "ruff check failed"
         return None
     if mgr == "poetry":
         proc = run(["poetry", "check"], ws.path, timeout=120)
@@ -152,11 +225,12 @@ def _verify_pip_tools(ws: Workspace) -> str | None:
     req_txt = ws.path / "requirements.txt"
     if not req_in.exists():
         return None
+    timeout = resolve_timeout_verify()
     if shutil.which("uv"):
         proc = run(
             ["uv", "pip", "compile", str(req_in), "-o", "-", "--quiet"],
             ws.path,
-            timeout=TIMEOUT_VERIFY,
+            timeout=timeout,
         )
         if proc.returncode != 0:
             return proc.stderr.strip() or "uv pip compile failed"
@@ -165,7 +239,7 @@ def _verify_pip_tools(ws: Workspace) -> str | None:
         proc = run(
             ["pip-compile", "--quiet", "-o", "-", str(req_in)],
             ws.path,
-            timeout=TIMEOUT_VERIFY,
+            timeout=timeout,
         )
         if proc.returncode != 0:
             return proc.stderr.strip() or "pip-compile failed"
