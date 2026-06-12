@@ -173,10 +173,87 @@ source = [
 branch = true
 
 # Strict-annotation overrides: packages confirmed clean under disallow_untyped_defs.
-# TODO(ratchet): repo_ops_core (tee.py:15,30), repo_ops_lockfiles (parsers.py:44)
-#   — fix missing annotations then add to [[tool.mypy.overrides]] below.
+# TODO(ratchet): no remaining easy packages; all below are strict.
+#   Deferred (heavy annotation work or complex dynamic patterns):
+#   — none outstanding (all packages now strict)
 [[tool.mypy.overrides]]
 module = ["repo_ops_models.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_core.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_lockfiles.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_go.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_rust.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_inventory.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_pushed.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_js.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_js_npm.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_js_pnpm.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_js_bun.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_js_yarn.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_py.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_py_uv.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_py_poetry.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_py_pip_tools.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_py_hatch.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_upgrade.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_upgrade_remediations_js.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops.*"]
 disallow_untyped_defs = true
 
 [tool.coverage.report]

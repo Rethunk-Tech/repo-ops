@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -55,7 +56,7 @@ def _yarn_up_cmd() -> list[str]:
     return ["yarn", "up", "-R", "*"]
 
 
-def _stderr_tail(proc) -> str:
+def _stderr_tail(proc: subprocess.CompletedProcess[str]) -> str:
     combined = (
         (proc.stderr or "")
         + ("\n" if proc.stderr and proc.stdout else "")
@@ -68,7 +69,9 @@ def _stderr_tail(proc) -> str:
     return f"{tail}\n" if tail else ""
 
 
-def _command_failure(label: str, proc) -> RuntimeError:
+def _command_failure(
+    label: str, proc: subprocess.CompletedProcess[str]
+) -> RuntimeError:
     detail = _stderr_tail(proc)
     msg = proc.stderr.strip() or label
     if detail and detail.strip() not in msg:

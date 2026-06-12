@@ -10,6 +10,7 @@ import concurrent.futures
 import json
 import os
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -366,7 +367,7 @@ def _count_python_manifest_edges(mdir: Path, names: set[str]) -> int:
 # ---------- Walk ----------
 
 
-def find_manifests(root: Path):
+def find_manifests(root: Path) -> Iterator[tuple[Path, list[str]]]:
     for mdir, names in iter_scanned_dirs(root):
         kinds = manifest_kinds(names)
         if kinds:
