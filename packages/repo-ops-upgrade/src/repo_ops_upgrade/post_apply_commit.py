@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -106,9 +107,23 @@ def _manifest_names_for_manager(manager: str) -> frozenset[str]:
 
 
 def upgrade_scoped_paths(bundle: RepoBundle, porcelain: list[str]) -> list[str]:
-    """Porcelain paths that belong to this upgrade (not unrelated dirty files)."""
-    wanted_names: set[str] = set()
-    prefixes: set[str] = set()
+    """Porcelain paths that belong to this upgrade (not unrelated dirty files).
+
+    Only paths this run actually modified are included:
+    - Root-workspace lockfiles/manifests matched by basename (no prefix ambiguity).
+    - Subdirectory-workspace files matched by directory prefix with a "/" boundary
+      so "packages/foo" never matches "packages/foobar". Issue #116 / #prefix-boundary.
+    - Workflow files explicitly bumped by an actions run (exact path match).
+    - When the bundle has actions bumps but no workspaces, only the bumped workflow
+      file(s) are staged — pre-existing dirty files are never swept in. Issue #116.
+    """
+    # root_wanted: basenames valid at the repo root (no subdirectory prefix).
+    root_wanted: set[str] = set()
+    # sub_prefixes: dir prefixes for subdirectory workspaces (with "/" boundary).
+    sub_prefixes: set[str] = set()
+    # action_paths: exact relative paths of bumped workflow files.
+    action_paths: set[str] = set()
+
     for wr in bundle.workspaces:
         if not (wr.changes or wr.remediations):
             continue
@@ -116,29 +131,38 @@ def upgrade_scoped_paths(bundle: RepoBundle, porcelain: list[str]) -> list[str]:
             rel = wr.workspace.path.resolve().relative_to(bundle.git_repo.resolve())
         except ValueError:
             rel = Path(".")
-        wanted_names.update(_lockfile_names_for_manager(wr.workspace.manager))
         if rel == Path("."):
-            # Root workspace: no prefix to scope by, so include the manifest by
-            # name too — otherwise a root bump commits the lockfile but drops the
-            # manifest (partial commit). Issue #108.
-            wanted_names.update(_manifest_names_for_manager(wr.workspace.manager))
+            # Root workspace: scope by basename only; also include the manifest
+            # so a root bump never commits the lockfile while dropping the manifest
+            # (partial commit). Issue #108.
+            root_wanted.update(_lockfile_names_for_manager(wr.workspace.manager))
+            root_wanted.update(_manifest_names_for_manager(wr.workspace.manager))
         else:
-            prefixes.add(str(rel).replace("\\", "/"))
+            # Subdirectory workspace: scope by prefix with a strict "/" boundary
+            # so "packages/foo" cannot match "packages/foobar". Issue #116.
+            sub_prefixes.add(str(rel).replace("\\", "/"))
+
     for ab in bundle.actions:
         if ab.workflow:
-            prefixes.add(ab.workflow.replace("\\", "/"))
+            # Stage only the exact workflow file this run bumped, not every
+            # .github/workflows/ file (which would sweep pre-dirty workflows).
+            action_paths.add(ab.workflow.replace("\\", "/"))
+
     scoped: list[str] = []
     for path in porcelain:
         norm = path.replace("\\", "/")
         base = Path(norm).name
-        if base in wanted_names:
+        # Root-workspace lockfile/manifest: no directory component expected.
+        if base in root_wanted and "/" not in norm:
             scoped.append(path)
             continue
-        if norm.startswith(".github/workflows/"):
+        # Exact bumped workflow file.
+        if norm in action_paths:
             scoped.append(path)
             continue
-        for prefix in prefixes:
-            if prefix == norm or norm.startswith(f"{prefix}/"):
+        # Subdirectory workspace: prefix must match with a "/" boundary.
+        for prefix in sub_prefixes:
+            if norm == prefix or norm.startswith(f"{prefix}/"):
                 scoped.append(path)
                 break
     return scoped
@@ -280,22 +304,26 @@ def _has_actionable_repo_changes(bundle: RepoBundle) -> bool:
 
 
 def classify_commit_subject(files: list[str]) -> str:
-    """One-line Conventional Commits subject from changed paths."""
+    """One-line Conventional Commits subject from changed paths.
+
+    Enumerates ALL matched ecosystems so mixed commits are not misattributed to
+    whichever ecosystem happened to be checked first (e.g. a yarn.lock + workflow
+    commit must not become "chore(ci): bump GitHub Actions pins"). Issue #116.
+    Single-ecosystem commits keep the same subjects as before so existing callers
+    are unaffected. Mixed commits produce a compound subject with scope "deps,ci"
+    or "deps" as appropriate.
+    """
     names = {Path(p).name.lower() for p in files}
-    if any(n.endswith(".yml") or n.endswith(".yaml") for n in names) and any(
+    has_ci = any(n.endswith(".yml") or n.endswith(".yaml") for n in names) and any(
         ".github" in p.replace("\\", "/") for p in files
-    ):
-        return "chore(ci): bump GitHub Actions pins"
-    if any(n in ("go.mod", "go.sum") for n in names):
-        return "chore(deps): update Go modules"
-    if any(n.endswith(".toml") and "cargo" in n for n in names):
-        return "chore(deps): update Rust lockfiles"
-    if any(
+    )
+    has_go = any(n in ("go.mod", "go.sum") for n in names)
+    has_rust = any(n.endswith(".toml") and "cargo" in n for n in names)
+    has_python = any(
         n in ("pyproject.toml", "uv.lock", "poetry.lock", "requirements.txt")
         for n in names
-    ):
-        return "chore(deps): update Python dependencies"
-    if any(
+    )
+    has_node = any(
         n
         in (
             "package.json",
@@ -306,9 +334,46 @@ def classify_commit_subject(files: list[str]) -> str:
             "bun.lockb",
         )
         for n in names
-    ):
-        return "chore(deps): update Node lockfiles and manifests"
-    return "chore(deps): apply repo-ops dependency updates"
+    )
+
+    dep_parts: list[str] = []
+    if has_go:
+        dep_parts.append("Go modules")
+    if has_rust:
+        dep_parts.append("Rust lockfiles")
+    if has_python:
+        dep_parts.append("Python dependencies")
+    if has_node:
+        dep_parts.append("Node lockfiles and manifests")
+
+    has_deps = bool(dep_parts)
+
+    if not has_deps and not has_ci:
+        return "chore(deps): apply repo-ops dependency updates"
+    if has_ci and not has_deps:
+        # Actions-only: keep the original single-ecosystem subject.
+        return "chore(ci): bump GitHub Actions pins"
+    if has_deps and not has_ci:
+        if len(dep_parts) == 1:
+            # Single ecosystem: keep the original subject wording.
+            labels = {
+                "Go modules": "chore(deps): update Go modules",
+                "Rust lockfiles": "chore(deps): update Rust lockfiles",
+                "Python dependencies": "chore(deps): update Python dependencies",
+                "Node lockfiles and manifests": (
+                    "chore(deps): update Node lockfiles and manifests"
+                ),
+            }
+            return labels[dep_parts[0]]
+        # Multiple dep ecosystems, no CI: "deps" scope, enumerate them.
+        parts_str = ", ".join(dep_parts[:-1]) + ", and " + dep_parts[-1]
+        return f"chore(deps): update {parts_str}"
+    # Mixed deps + CI pins.
+    if len(dep_parts) == 1:
+        parts_str = dep_parts[0]
+    else:
+        parts_str = ", ".join(dep_parts[:-1]) + ", and " + dep_parts[-1]
+    return f"chore(deps,ci): update {parts_str} and CI pins"
 
 
 def build_conventional_message(bundle: RepoBundle, files: list[str]) -> str:
@@ -344,20 +409,18 @@ def plan_repo_commit(
     files = porcelain_changed_paths(repo)
     if not files:
         return CommitPlan(repo, bundle.label, "", skipped_reason="clean worktree")
-    if _bundle_started_dirty(bundle):
-        # Repo started dirty (any workspace, or an unrelated file — `started_dirty`
-        # is repo-wide via is_git_dirty). Don't block the whole repo: scope the
-        # commit to this upgrade's own paths so a dirty sibling never drops a clean
-        # workspace's bump, and a pre-existing dirty file is never staged. Issue #108.
-        scoped = upgrade_scoped_paths(bundle, files)
-        if not scoped:
-            return CommitPlan(
-                repo,
-                bundle.label,
-                "",
-                skipped_reason="no upgrade-scoped changes to commit (dirty worktree)",
-            )
-        files = scoped
+    # Always scope to paths this run actually modified so that pre-existing dirty
+    # files (e.g. an operator-kept yarn.lock) are never swept into a commit, even
+    # when the repo was clean at run-start. Issue #116 generalises Issue #108.
+    scoped = upgrade_scoped_paths(bundle, files)
+    if not scoped:
+        skip_reason = (
+            "no upgrade-scoped changes to commit (dirty worktree)"
+            if _bundle_started_dirty(bundle)
+            else "no upgrade-scoped changes to commit"
+        )
+        return CommitPlan(repo, bundle.label, "", skipped_reason=skip_reason)
+    files = scoped
     safe, blocked = filter_safe_paths(files)
     if blocked:
         return CommitPlan(
@@ -443,21 +506,35 @@ def run_post_apply_commits(
     allow_dirty: bool = False,
     commit_on_fail: bool = False,
     quiet: bool = False,
+    max_workers: int = 8,
 ) -> tuple[list[CommitOutcome], int]:
-    """Plan and optionally execute one commit per eligible git repo."""
+    """Plan and optionally execute one commit per eligible git repo.
+
+    Bundles are processed in parallel (each is an independent git repo so commits
+    do not race). Output ordering is deterministic: outcomes are sorted by label
+    before printing, matching the serial behaviour. max_workers caps the thread pool.
+    """
     if mode == "none":
         return [], 0
-    outcomes: list[CommitOutcome] = []
-    exit_code = 0
-    for bundle in sorted(bundles.values(), key=lambda b: b.label):
+
+    sorted_bundles = sorted(bundles.values(), key=lambda b: b.label)
+
+    def _process(bundle: RepoBundle) -> CommitOutcome:
         plan = plan_repo_commit(
             bundle,
             mode=mode,
             allow_dirty=allow_dirty,
             commit_on_fail=commit_on_fail,
         )
-        outcome = execute_commit_plan(plan, dry_run=dry_run)
-        outcomes.append(outcome)
+        return execute_commit_plan(plan, dry_run=dry_run)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit in label order so futures list is already sorted.
+        futures = [executor.submit(_process, b) for b in sorted_bundles]
+        outcomes = [f.result() for f in futures]
+
+    exit_code = 0
+    for outcome in outcomes:
         if outcome.status == "failed":
             exit_code = 1
         if not quiet:
