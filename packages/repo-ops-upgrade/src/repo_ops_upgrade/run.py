@@ -153,6 +153,7 @@ def _run_upgrade_body(
                 skip_remediations=skip_remediations,
                 allow_dirty=args.allow_dirty,
                 on_verify_fail=getattr(args, "on_verify_fail", "keep"),
+                quiet=args.quiet,
             )
         except Exception as exc:
             wr.status = "fail"
@@ -301,6 +302,13 @@ def _run_upgrade_body(
     if include_submodules and pointer_hints and not apply:
         json_pointer_hints = pointer_hints
 
+    exit_code = _resolve_exit_code(
+        bundles,
+        apply=apply,
+        strict_exit=args.strict_exit,
+        has_actionable_work=_has_actionable_work(bundles),
+    )
+
     if use_json:
         mode: Literal["plan", "apply"] = "apply" if apply else "plan"
         compact = bool(getattr(args, "compact", False))
@@ -314,6 +322,7 @@ def _run_upgrade_body(
                 submodules=json_submodules,
                 submodule_pointer_hints=json_pointer_hints,
                 compact=compact,
+                exit_code=exit_code,
             )
             print(written)
         else:
@@ -325,6 +334,7 @@ def _run_upgrade_body(
                 submodules=json_submodules,
                 submodule_pointer_hints=json_pointer_hints,
                 compact=compact,
+                exit_code=exit_code,
             )
     elif not args.quiet:
         top_n = getattr(args, "top", 10)
@@ -341,12 +351,6 @@ def _run_upgrade_body(
                 pointer_hints=pointer_hints,
             )
 
-    exit_code = _resolve_exit_code(
-        bundles,
-        apply=apply,
-        strict_exit=args.strict_exit,
-        has_actionable_work=_has_actionable_work(bundles),
-    )
     if apply:
         commit_mode: Literal["none", "conventional", "agent"] = getattr(
             args, "commit", "none"
@@ -359,6 +363,7 @@ def _run_upgrade_body(
                 allow_dirty=args.allow_dirty,
                 commit_on_fail=getattr(args, "commit_on_fail", False),
                 quiet=args.quiet,
+                max_workers=args.jobs,
             )
             if commit_exit != 0:
                 exit_code = 1 if exit_code == 0 else exit_code
