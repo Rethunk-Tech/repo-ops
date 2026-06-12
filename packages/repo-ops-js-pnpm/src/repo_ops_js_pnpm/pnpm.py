@@ -7,6 +7,7 @@ import os
 import sys
 
 from repo_ops_core.process import run
+from repo_ops_js.guards import assert_targets_resolved
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
@@ -39,11 +40,13 @@ def _bucket_pnpm_pkg(
     target so packages that are only behind latest are treated as actionable
     (matching what ``apply_pnpm`` does when it passes ``--latest``).
     """
-    if _pnpm_update_latest_enabled():
+    if _pnpm_update_latest_enabled():  # noqa: SIM102
         # Treat latest as the upgrade target — mirrors apply_pnpm --latest.
         if latest not in ("?", "") and cur != latest:
             changes.append(Change(name, cur, latest))
-        return
+            return
+        # latest unknown ('?') — fall through to wanted check so a known
+        # in-range bump is not silently omitted (#5).
     if cur != wanted and wanted not in ("?", ""):
         changes.append(Change(name, cur, wanted))
     elif latest not in ("?", "") and cur != latest:
@@ -101,6 +104,7 @@ def check_pnpm(ws: Workspace) -> tuple[list[Change], list[Change]]:
 
 def apply_pnpm(ws: Workspace) -> None:
     # Match npm conservative bumps (semver ranges) unless the user opts into latest.
+    changes, _behind = check_pnpm(ws)
     cmd = ["pnpm", "update", "-r"]
     if _pnpm_update_latest_enabled():
         cmd.append("--latest")
@@ -110,3 +114,5 @@ def apply_pnpm(ws: Workspace) -> None:
     proc2 = run(["pnpm", "install"], ws.path, timeout=TIMEOUT_APPLY)
     if proc2.returncode != 0:
         raise RuntimeError(proc2.stderr.strip() or "pnpm install failed")
+    if changes:
+        assert_targets_resolved(ws, changes, manager="pnpm")
