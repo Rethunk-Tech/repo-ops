@@ -206,7 +206,9 @@ def add_roots_argument(
     )
 
 
-def add_json_argument(parser: argparse._ActionsContainer, dest: str = "json_out") -> None:
+def add_json_argument(
+    parser: argparse._ActionsContainer, dest: str = "json_out"
+) -> None:
     """Add --json flag (common across commands), plus --compact for single-line JSON."""
     parser.add_argument(
         "--json",

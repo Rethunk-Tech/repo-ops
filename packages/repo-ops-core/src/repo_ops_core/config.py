@@ -10,19 +10,17 @@ Python 3.11+ only; skipped with a warning on 3.10 unless ``tomli`` is installed.
 from __future__ import annotations
 
 import os
-import sys
 import warnings
 from pathlib import Path
 from typing import Any, cast
 
+_TOMLLIB_AVAILABLE = False
 try:
-    if sys.version_info >= (3, 11):
-        import tomllib as _tomllib
-    else:
-        import tomllib as _tomllib  # noqa: PLC0415
+    import tomllib as _tomllib
+
     _TOMLLIB_AVAILABLE = True
 except ImportError:
-    _TOMLLIB_AVAILABLE = False
+    pass
 
 # ---------------------------------------------------------------------------
 # TOML loading helpers
@@ -34,9 +32,8 @@ def _load_toml(path: Path) -> dict[str, Any]:
     if not _TOMLLIB_AVAILABLE:
         return {}
     try:
-        import tomllib  # noqa: PLC0415
         with path.open("rb") as fh:
-            data: dict[str, Any] = tomllib.load(fh)
+            data: dict[str, Any] = _tomllib.load(fh)
             return data
     except Exception:
         return {}
