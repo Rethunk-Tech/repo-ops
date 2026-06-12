@@ -281,15 +281,13 @@ def add_upgrade_common_arguments(
     apply: bool,
 ) -> None:
     """Flags shared by repo-ops plan and repo-ops apply."""
-    add_roots_argument(parser)
-    add_json_argument(parser, dest="json")
-    add_json_out_argument(parser)
-    add_flat_argument(parser)
-    add_verbose_argument(parser)
-    add_eco_filter_argument(parser)
-    add_manager_filter_argument(parser)
-    add_follow_symlinks_argument(parser)
-    parser.add_argument(
+    # ---- Selection --------------------------------------------------------
+    sel = parser.add_argument_group("Selection")
+    add_roots_argument(sel)
+    add_flat_argument(sel)
+    add_eco_filter_argument(sel)
+    add_manager_filter_argument(sel)
+    sel.add_argument(
         "--exclude",
         action="append",
         dest="exclude_patterns",
@@ -300,40 +298,16 @@ def add_upgrade_common_arguments(
             "(substring or glob). Repeatable."
         ),
     )
-    parser.add_argument(
-        "-q",
-        "--quiet",
-        action="store_true",
-        help="Suppress per-workspace progress lines (summary still prints).",
-    )
-    parser.add_argument(
-        "--jobs",
-        type=positive_int,
-        default=None,
-        help="Max parallel workers per run (default: min(16, cpu count)).",
-    )
-    parser.add_argument(
-        "--fail-fast",
-        action="store_true",
-        help="Stop scheduling new workspaces after the first failure.",
-    )
-    parser.add_argument(
-        "--actions-lint-level",
-        choices=("block", "warn", "off"),
-        default=None,
-        dest="actions_lint_level",
-        metavar="LEVEL",
-        help=(
-            "How actionlint failures gate pin bumps: block (default, env: "
-            "REPO_OPS_ACTIONS_LINT_LEVEL), warn, or off."
-        ),
-    )
-    parser.add_argument(
+    add_follow_symlinks_argument(sel)
+
+    # ---- Upgrade policy ---------------------------------------------------
+    pol = parser.add_argument_group("Upgrade policy")
+    pol.add_argument(
         "--latest",
         action="store_true",
         help=LATEST_FLAG_HELP,
     )
-    parser.add_argument(
+    pol.add_argument(
         "--yarn-targeted-bump",
         action="store_true",
         dest="yarn_targeted_bump",
@@ -346,7 +320,7 @@ def add_upgrade_common_arguments(
             "Sets REPO_OPS_YARN_TARGETED_BUMP."
         ),
     )
-    parser.add_argument(
+    pol.add_argument(
         "--go-upgrade-mode",
         choices=("patch", "explicit", "mvs"),
         default=None,
@@ -359,49 +333,7 @@ def add_upgrade_common_arguments(
             "REPO_OPS_GO_UPGRADE_MODE for this run."
         ),
     )
-    parser.add_argument(
-        "--allow-dirty",
-        action="store_true",
-        help=(
-            "Process repos with uncommitted changes (default: skip dirty worktrees "
-            "and report them in the summary)."
-        ),
-    )
-    parser.add_argument(
-        "--skip-actions",
-        action="store_true",
-        help="Skip GitHub Actions workflow pin audit (deps only).",
-    )
-    parser.add_argument(
-        "--actions-unpin-sha",
-        action="store_true",
-        dest="actions_unpin_sha",
-        help=(
-            "Opt in to resolving SHA-pinned Actions to version tags on apply. "
-            "By default, SHA pins are preserved (report only) to protect supply-chain hardening."
-        ),
-    )
-    # Backwards-compat alias: --actions-keep-sha was the old flag (it was the default
-    # behaviour is now the default, so this flag becomes a no-op, but kept to avoid
-    # breaking existing scripts that pass it).
-    parser.add_argument(
-        "--actions-keep-sha",
-        action="store_true",
-        dest="actions_keep_sha",
-        help="Deprecated no-op: SHA pins are preserved by default now.",
-    )
-    parser.add_argument(
-        "--actions-refresh-sha",
-        action="store_true",
-        dest="actions_refresh_sha",
-        help=(
-            "Keep SHA-pinned Actions pinned by digest, but advance the digest to "
-            "the newest vN.M.P release within the pin's current major (preserves "
-            "the # vN comment). Dependabot-compatible digest bumps; supersedes "
-            "their SHA-pin PRs. No effect with --actions-unpin-sha."
-        ),
-    )
-    parser.add_argument(
+    pol.add_argument(
         "--actions-upgrade-mode",
         choices=("normalize", "latest"),
         default=None,
@@ -415,7 +347,7 @@ def add_upgrade_common_arguments(
             "--latest umbrella for Actions."
         ),
     )
-    parser.add_argument(
+    pol.add_argument(
         "--actions-tag-style",
         choices=("major", "exact"),
         default="major",
@@ -426,48 +358,74 @@ def add_upgrade_common_arguments(
             "major (default) → @vN; exact → highest @vN.M.P within that major."
         ),
     )
-    parser.add_argument(
-        "--log-file",
-        metavar="PATH",
-        help="Write combined stdout/stderr transcript to PATH (no shell pipe needed).",
+    pol.add_argument(
+        "--actions-unpin-sha",
+        action="store_true",
+        dest="actions_unpin_sha",
+        help=(
+            "Opt in to resolving SHA-pinned Actions to version tags on apply. "
+            "By default, SHA pins are preserved (report only) to protect supply-chain hardening."
+        ),
     )
-    parser.add_argument(
+    # Backwards-compat alias: --actions-keep-sha was the old flag (preservation
+    # is now the default, so this flag becomes a no-op kept to avoid breaking
+    # existing scripts that pass it).
+    pol.add_argument(
+        "--actions-keep-sha",
+        action="store_true",
+        dest="actions_keep_sha",
+        help="Deprecated no-op: SHA pins are preserved by default now.",
+    )
+    pol.add_argument(
+        "--actions-refresh-sha",
+        action="store_true",
+        dest="actions_refresh_sha",
+        help=(
+            "Keep SHA-pinned Actions pinned by digest, but advance the digest to "
+            "the newest vN.M.P release within the pin's current major (preserves "
+            "the # vN comment). Dependabot-compatible digest bumps; supersedes "
+            "their SHA-pin PRs. No effect with --actions-unpin-sha."
+        ),
+    )
+    pol.add_argument(
+        "--skip-actions",
+        action="store_true",
+        help="Skip GitHub Actions workflow pin audit (deps only).",
+    )
+
+    # ---- Safety -----------------------------------------------------------
+    saf = parser.add_argument_group("Safety")
+    saf.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help=(
+            "Process repos with uncommitted changes (default: skip dirty worktrees "
+            "and report them in the summary)."
+        ),
+    )
+    saf.add_argument(
         "--strict-exit",
         action="store_true",
         help="Exit 1 when any workspace is skip or fail (default: fail only).",
     )
-    parser.add_argument(
-        "--top",
-        type=positive_int,
-        default=10,
-        help="Max changes shown per workspace in human output.",
-    )
-    parser.add_argument(
-        "--max-failures",
-        type=int,
-        default=20,
-        metavar="N",
-        dest="max_failures",
-        help="Max failure lines in the end-of-run summary (default: 20).",
-    )
     if apply:
-        parser.add_argument(
+        saf.add_argument(
             "--no-verify",
             action="store_true",
             help="Skip verify gates after apply.",
         )
-        parser.add_argument(
+        saf.add_argument(
             "--skip-remediations",
             default="",
             metavar="IDS",
             help="Comma-separated remediation ids to skip (biome_schema, ...).",
         )
-        parser.add_argument(
+        saf.add_argument(
             "--verify-test",
             action="store_true",
             help="Run go test ./... during verify.",
         )
-        parser.add_argument(
+        saf.add_argument(
             "--on-verify-fail",
             choices=("keep", "revert"),
             default="keep",
@@ -478,15 +436,71 @@ def add_upgrade_common_arguments(
                 "or revert lockfiles and git-tracked paths under the workspace."
             ),
         )
+
+    # ---- Output -----------------------------------------------------------
+    out = parser.add_argument_group("Output")
+    add_json_argument(out, dest="json")
+    add_json_out_argument(out)
+    out.add_argument(
+        "--log-file",
+        metavar="PATH",
+        help="Write combined stdout/stderr transcript to PATH (no shell pipe needed).",
+    )
+    add_verbose_argument(out)
+    out.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress per-workspace progress lines (summary still prints).",
+    )
+    out.add_argument(
+        "--top",
+        type=positive_int,
+        default=10,
+        help="Max changes shown per workspace in human output.",
+    )
+    out.add_argument(
+        "--max-failures",
+        type=int,
+        default=20,
+        metavar="N",
+        dest="max_failures",
+        help="Max failure lines in the end-of-run summary (default: 20).",
+    )
     # --only-outdated applies to both plan and apply: the filter logic in run.py
     # and the human report are mode-agnostic (both read it via getattr), so it is
     # registered unconditionally (#103).
-    parser.add_argument(
+    out.add_argument(
         "--only-outdated",
         action="store_true",
         help="Omit clean workspaces from human output.",
     )
-    parser.add_argument(
+
+    # ---- Execution --------------------------------------------------------
+    exe = parser.add_argument_group("Execution")
+    exe.add_argument(
+        "--jobs",
+        type=positive_int,
+        default=None,
+        help="Max parallel workers per run (default: min(16, cpu count)).",
+    )
+    exe.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="Stop scheduling new workspaces after the first failure.",
+    )
+    exe.add_argument(
+        "--actions-lint-level",
+        choices=("block", "warn", "off"),
+        default=None,
+        dest="actions_lint_level",
+        metavar="LEVEL",
+        help=(
+            "How actionlint failures gate pin bumps: block (default, env: "
+            "REPO_OPS_ACTIONS_LINT_LEVEL), warn, or off."
+        ),
+    )
+    exe.add_argument(
         "--submodules",
         action="store_true",
         help=(
@@ -495,7 +509,7 @@ def add_upgrade_common_arguments(
         ),
     )
     if apply:
-        parser.add_argument(
+        exe.add_argument(
             "--submodule-order",
             choices=("discovery", "children-first"),
             default="discovery",
@@ -506,7 +520,7 @@ def add_upgrade_common_arguments(
                 "or children-first (child git repos before parent umbrellas)."
             ),
         )
-        parser.add_argument(
+        exe.add_argument(
             "--commit",
             choices=("none", "conventional", "agent"),
             default="none",
@@ -518,12 +532,12 @@ def add_upgrade_common_arguments(
                 "repo-ops-upgrade[commit-agent-cursor])."
             ),
         )
-        parser.add_argument(
+        exe.add_argument(
             "--commit-dry-run",
             action="store_true",
             help="With --commit: print intended messages and file lists; no git writes.",
         )
-        parser.add_argument(
+        exe.add_argument(
             "--commit-on-fail",
             action="store_true",
             help=(
