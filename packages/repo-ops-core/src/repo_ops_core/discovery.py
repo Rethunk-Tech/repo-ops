@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import subprocess
 import sys
@@ -55,7 +56,7 @@ def discover_repos(
       number of seconds (float accepted).
     """
     _timeout: float = timeout if timeout is not None else _resolve_find_timeout()
-    common_to_repo: dict[str, str] = {}
+    candidates: list[str] = []
     # .git is in SKIP_DIRS for os.walk-style tools but must not be pruned here:
     # pruning .git prevents ever matching ``-name .git`` on the repo metadata dir.
     prune_names = sorted(SKIP_DIRS - {".git"})
@@ -114,17 +115,49 @@ def discover_repos(
             repo = os.path.realpath(os.path.dirname(git_dir))
             if should_exclude(repo):
                 continue
-            try:
-                common = git_common_dir(repo)
-            except subprocess.TimeoutExpired:
-                print(f"WARN: skipped {repo}: timeout", file=sys.stderr)
-                continue
-            except (FileNotFoundError, OSError) as exc:
-                print(f"WARN: skipped {repo}: {exc}", file=sys.stderr)
-                continue
-            if not common:
-                continue
-            prev = common_to_repo.get(common)
-            if prev is None or len(repo) < len(prev):
-                common_to_repo[common] = repo
+            candidates.append(repo)
+    return _resolve_common_dirs(candidates)
+
+
+def _resolve_one(repo: str) -> tuple[str, str | None]:
+    """Resolve git-common-dir for *repo*; return ``(repo, common)`` or ``(repo, None)``."""
+    try:
+        return repo, git_common_dir(repo)
+    except subprocess.TimeoutExpired:
+        print(f"WARN: skipped {repo}: timeout", file=sys.stderr)
+        return repo, None
+    except (FileNotFoundError, OSError) as exc:
+        print(f"WARN: skipped {repo}: {exc}", file=sys.stderr)
+        return repo, None
+
+
+def _resolve_common_dirs(repos: list[str]) -> dict[str, str]:
+    """Resolve git-common-dir for each repo in parallel, preserving find order.
+
+    Threads are used because each resolution is a short ``git rev-parse`` subprocess
+    (I/O-bound, not CPU-bound) — the GIL is released for the duration of the
+    subprocess call.  Results are sorted back to the original *repos* order before
+    the dedup pass so first-seen-wins semantics are identical to the sequential
+    implementation.
+    """
+    if not repos:
+        return {}
+    # Map original position for stable re-ordering after parallel completion.
+    order: dict[str, int] = {r: i for i, r in enumerate(repos)}
+    max_workers = min(16, len(repos), os.cpu_count() or 1)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_resolve_one, repo): repo for repo in repos}
+        raw: list[tuple[int, str, str | None]] = []
+        for fut in concurrent.futures.as_completed(futures):
+            repo, common = fut.result()
+            raw.append((order[repo], repo, common))
+    # Restore original find order before dedup so first-seen wins deterministically.
+    raw.sort(key=lambda t: t[0])
+    common_to_repo: dict[str, str] = {}
+    for _, repo, common in raw:
+        if not common:
+            continue
+        prev = common_to_repo.get(common)
+        if prev is None or len(repo) < len(prev):
+            common_to_repo[common] = repo
     return common_to_repo
