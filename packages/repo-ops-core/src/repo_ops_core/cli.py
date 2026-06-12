@@ -22,7 +22,7 @@ _FIND_PREDICATE_TOKENS = frozenset(
     }
 )
 
-ECO_FILTER_CHOICES = ("node", "go", "rust", "py")
+ECO_FILTER_CHOICES = ("node", "go", "rust", "py", "container")
 ECO_FILTER_HELP = (
     "Limit inventory rows or upgrade workspaces to one ecosystem "
     f"({'/'.join(ECO_FILTER_CHOICES)})."
@@ -42,6 +42,7 @@ MANAGER_FILTER_CHOICES = (
     "hatch",
     "go",
     "rust",
+    "container",
 )
 MANAGER_FILTER_HELP = (
     "Limit upgrade workspaces to one package manager "

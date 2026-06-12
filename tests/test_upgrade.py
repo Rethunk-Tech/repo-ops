@@ -90,6 +90,7 @@ def test_ecosystem_checker_and_applier_registry_keys():
         "poetry",
         "pip-tools",
         "hatch",
+        "container",
     }
     assert expected == set(registry.CHECKERS.keys())
     assert set(registry.APPLIERS.keys()) == expected

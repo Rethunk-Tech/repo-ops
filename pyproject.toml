@@ -45,6 +45,7 @@ dev = [
   "repo-ops-js-yarn",
   "repo-ops-go",
   "repo-ops-rust",
+  "repo-ops-container",
   "repo-ops-py",
   "repo-ops-py-uv",
   "repo-ops-py-poetry",
@@ -78,6 +79,7 @@ repo-ops-js-bun = { workspace = true }
 repo-ops-js-yarn = { workspace = true }
 repo-ops-go = { workspace = true }
 repo-ops-rust = { workspace = true }
+repo-ops-container = { workspace = true }
 repo-ops-py = { workspace = true }
 repo-ops-py-uv = { workspace = true }
 repo-ops-py-poetry = { workspace = true }
@@ -135,6 +137,7 @@ packages = [
   "repo_ops_js_yarn",
   "repo_ops_go",
   "repo_ops_rust",
+  "repo_ops_container",
   "repo_ops_py",
   "repo_ops_py_uv",
   "repo_ops_py_poetry",
@@ -159,6 +162,7 @@ source = [
   "packages/repo-ops-js-yarn/src",
   "packages/repo-ops-go/src",
   "packages/repo-ops-rust/src",
+  "packages/repo-ops-container/src",
   "packages/repo-ops-py/src",
   "packages/repo-ops-py-uv/src",
   "packages/repo-ops-py-poetry/src",
@@ -194,6 +198,10 @@ disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
 module = ["repo_ops_rust.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_container.*"]
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
