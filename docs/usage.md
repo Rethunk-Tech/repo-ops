@@ -68,3 +68,32 @@ Isolated snapshots copy `.yarn/releases/` (Berry) and `file:../…` siblings fro
 `yarn up -R '*'` delegates to yarn's resolver, which keeps peer/group-constrained direct deps below their newest release; `behind_latest` (#110) reports those. Opt into `--yarn-targeted-bump` (with `--latest`) to *move* the gap instead of only reporting it: for each `behind_latest` dep, repo-ops snapshots the lockfile/manifests, runs a targeted `yarn up <pkg>@latest` + `yarn install`, and keeps the result only when install succeeds **and** the resolved version actually advances. Any failure — install break, or a ghost bump where the lock churns but the resolver holds the old version — restores the snapshot, so the dep stays in `behind_latest` and nothing broken is committed. Successful bumps become normal planned changes (visible in `plan`, applied by `apply`).
 
 Run `repo-ops <subcommand> --help` for all flags.
+
+## Settings reference
+
+One layered lookup per setting: **CLI flag** → **env var** → **config file** → **default**.
+
+Config files (TOML):
+- **Global:** `~/.config/repo-ops/config.toml` (or `$XDG_CONFIG_HOME/repo-ops/config.toml`)
+- **Per-repo:** `[tool.repo-ops]` table in `pyproject.toml` at the repo root
+
+Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
+
+| Setting | Flag | Env var | Config key | Default |
+|---------|------|---------|------------|---------|
+| jobs | `--jobs` | (none) | `jobs` | `min(16, cpu_count)` |
+| go_upgrade_mode | `--go-upgrade-mode` | `REPO_OPS_GO_UPGRADE_MODE` | `go_upgrade_mode` | `patch` |
+| actions_lint_level | `--actions-lint-level` | `REPO_OPS_ACTIONS_LINT_LEVEL` | `actions_lint_level` | `block` |
+| timeout_check | (none) | `REPO_OPS_TIMEOUT_CHECK` | `timeout_check` | `60` |
+| timeout_apply | (none) | `REPO_OPS_TIMEOUT_APPLY` | `timeout_apply` | `300` |
+| timeout_verify | (none) | `REPO_OPS_TIMEOUT_VERIFY` | `timeout_verify` | `120` |
+| find_timeout | (none) | `REPO_OPS_FIND_TIMEOUT` | `find_timeout` | `30` |
+| bun_update_latest | `--latest` | `REPO_OPS_BUN_UPDATE_LATEST` | `bun_update_latest` | `0` |
+| pnpm_update_latest | `--latest` | `REPO_OPS_PNPM_UPDATE_LATEST` | `pnpm_update_latest` | `0` |
+| yarn_update_latest | `--latest` | `REPO_OPS_YARN_UPDATE_LATEST` | `yarn_update_latest` | `0` |
+| yarn_targeted_bump | `--yarn-targeted-bump` | `REPO_OPS_YARN_TARGETED_BUMP` | `yarn_targeted_bump` | `0` |
+| go_work_sync | (none) | `REPO_OPS_GO_WORK_SYNC` | `go_work_sync` | `0` |
+| no_progress | (none) | `REPO_OPS_NO_PROGRESS` | `no_progress` | `0` |
+| node_verify_script | (none) | `REPO_OPS_NODE_VERIFY_SCRIPT` | `node_verify_script` | (none) |
+| commit_agent_provider | (none) | `REPO_OPS_COMMIT_AGENT_PROVIDER` | `commit_agent_provider` | `cursor` |
+| exclude_patterns | `--exclude` | (none) | `exclude` | `[]` |
