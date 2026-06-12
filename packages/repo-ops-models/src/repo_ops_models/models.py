@@ -110,12 +110,16 @@ class RepoBundle:
         bumps = 0
         failures = 0
         behind_latest = 0
+        policy_violations = 0
         # Dedupe the bump count by the same (action, pin) key report.py uses to
         # dedupe displayed rows, so this counter equals the number of rows shown.
         seen: set[tuple[str, str]] = set()
         for ab in self.actions:
             if ab.status == "fail":
                 failures += 1
+                continue
+            if ab.status == "policy":
+                policy_violations += 1
                 continue
             detail_lower = (ab.detail or "").lower()
             # Count "newer major available; not auto-applied" as behind_latest,
@@ -140,6 +144,7 @@ class RepoBundle:
             "bumps": bumps,
             "failures": failures,
             "behind_latest": behind_latest,
+            "policy_violations": policy_violations,
         }
 
     def to_json(self) -> dict[str, Any]:
