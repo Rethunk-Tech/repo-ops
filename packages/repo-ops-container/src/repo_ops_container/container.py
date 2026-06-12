@@ -11,9 +11,22 @@ Design notes
   objects.  Network failures and non-semver tags are recorded report-only
   (detail string prefix ``[report-only]``).
 * Apply: byte-preserving single-line edits — only the tag portion of the
-  matched line changes; never reflows.  SHA-pinned images (``@sha256:...``)
-  are report-only by default; set ``REPO_OPS_CONTAINER_UPDATE_LATEST=1`` to
-  allow cross-major bumps (still no SHA resolution).
+  matched line changes; never reflows.
+* SHA-pinned images: opt-in digest refresh via ``REPO_OPS_CONTAINER_REFRESH_SHA=1``.
+  When enabled, for ``image:tag@sha256:...`` pins, the manifest is queried for
+  the tag and the Docker-Content-Digest is compared; if it differs the digest
+  is updated keeping the same tag (byte-preserving line edit).
+* Compose build.dockerfile: compose services with ``build:`` keys have their
+  referenced Dockerfile included in discovery/check/apply (deduped by resolved
+  path).
+* Registry auth: OCI distribution spec bearer-challenge flow (RFC 6750).
+  On 401 from /v2/<name>/tags/list, the WWW-Authenticate header is parsed for
+  realm/service/scope, then an anonymous token is fetched from that realm.
+  Supports docker.io (special endpoint mapping), ghcr.io, quay.io, gcr.io,
+  mcr.microsoft.com, and any spec-compliant public OCI registry.
+  Basic-auth credentials from ~/.docker/config.json (or $DOCKER_CONFIG) are
+  used when present; credential helpers are out of scope (report-only).
+* ECR and other auth-required registries: still report-only on 401-after-token.
 * Verify: v1 has no verify step; building images is out of scope.
 """
 
@@ -23,6 +36,7 @@ import json
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -60,17 +74,123 @@ def is_container_workspace(directory: Path) -> bool:
 
 
 def find_container_files(directory: Path) -> list[Path]:
-    """Return all Dockerfile* and compose files in *directory* (non-recursive)."""
+    """Return all Dockerfile* and compose files in *directory* (non-recursive).
+
+    Also resolves any Dockerfiles referenced via compose ``build:`` keys and
+    adds them to the result (deduped by resolved path).
+    """
     found: list[Path] = []
+    resolved_paths: set[Path] = set()
+
     try:
         for entry in sorted(directory.iterdir()):
             if not entry.is_file():
                 continue
             if _DOCKERFILE_RE.match(entry.name) or entry.name in _COMPOSE_NAMES:
-                found.append(entry)
+                rp = entry.resolve()
+                if rp not in resolved_paths:
+                    resolved_paths.add(rp)
+                    found.append(entry)
     except PermissionError:
         pass
+
+    # For each compose file found, also collect referenced build Dockerfiles.
+    for cf in list(found):
+        if cf.name in _COMPOSE_NAMES or "compose" in cf.name.lower():
+            for extra in _compose_build_dockerfiles(cf):
+                rp = extra.resolve()
+                if rp not in resolved_paths:
+                    resolved_paths.add(rp)
+                    found.append(extra)
+
     return found
+
+
+# ---------------------------------------------------------------------------
+# Compose build.dockerfile resolution
+# ---------------------------------------------------------------------------
+
+# Matches «  build: ./path» (short string form)
+_COMPOSE_BUILD_STR_RE = re.compile(
+    r'^(?P<indent>[ \t]*)build:\s*(?P<path>["\']?[./][^\s"\']+["\']?)\s*$'
+)
+# Matches «  build:» (block form — next lines have context/dockerfile keys)
+_COMPOSE_BUILD_BLOCK_RE = re.compile(r"^(?P<indent>[ \t]*)build:\s*$")
+_COMPOSE_CONTEXT_RE = re.compile(
+    r'^[ \t]+context:\s*["\']?(?P<path>[^\s"\']+)["\']?\s*$'
+)
+_COMPOSE_DOCKERFILE_RE = re.compile(
+    r'^[ \t]+dockerfile:\s*["\']?(?P<path>[^\s"\']+)["\']?\s*$'
+)
+
+
+def _compose_build_dockerfiles(compose_path: Path) -> list[Path]:
+    """Return Dockerfiles referenced via ``build:`` in *compose_path*.
+
+    Handles:
+    - Short string form: ``build: ./context`` → look for Dockerfile in that dir.
+    - Mapping form: ``build: { context: ..., dockerfile: ... }``
+    """
+    base_dir = compose_path.parent
+    try:
+        text = compose_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+
+    results: list[Path] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        str_m = _COMPOSE_BUILD_STR_RE.match(line)
+        if str_m:
+            # Short string form: build: ./context — default Dockerfile in that dir
+            ctx_path = str_m.group("path").strip("\"'")
+            ctx_dir = (base_dir / ctx_path).resolve()
+            candidate = ctx_dir / "Dockerfile"
+            if candidate.is_file():
+                results.append(candidate)
+            i += 1
+            continue
+
+        block_m = _COMPOSE_BUILD_BLOCK_RE.match(line)
+        if block_m:
+            # Block form: parse following context/dockerfile lines
+            build_indent = block_m.group("indent")
+            context_path: str | None = None
+            dockerfile_path: str | None = None
+            j = i + 1
+            while j < len(lines):
+                sub = lines[j]
+                # Stop when back at same or lesser indentation
+                if sub.strip() and not sub.startswith(build_indent + " "):
+                    break
+                cm = _COMPOSE_CONTEXT_RE.match(sub)
+                if cm:
+                    context_path = cm.group("path").strip("\"'")
+                dm = _COMPOSE_DOCKERFILE_RE.match(sub)
+                if dm:
+                    dockerfile_path = dm.group("path").strip("\"'")
+                j += 1
+
+            # Resolve: context is relative to compose dir; dockerfile is
+            # relative to context (or compose dir if no context).
+            ctx_dir = base_dir
+            if context_path:
+                ctx_dir = (base_dir / context_path).resolve()
+            if dockerfile_path:
+                candidate = (ctx_dir / dockerfile_path).resolve()
+            else:
+                candidate = ctx_dir / "Dockerfile"
+
+            if candidate.is_file():
+                results.append(candidate)
+            i = j
+            continue
+
+        i += 1
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -190,19 +310,158 @@ def _parse_image_refs(path: Path) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Registry HTTP client (stdlib urllib, anonymous only)
+# Registry HTTP client (stdlib urllib)
 # ---------------------------------------------------------------------------
 
 _REGISTRY_TIMEOUT = 10  # seconds
 
+# OCI manifest media types for digest HEAD/GET
+_MANIFEST_ACCEPT = ", ".join(
+    [
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    ]
+)
 
-def _docker_hub_token(image_name: str) -> str | None:
-    """Fetch an anonymous pull token for docker.io."""
-    # image_name may be «library/nginx» or «nginx»
-    scope = f"repository:{image_name}:pull"
-    url = f"https://auth.docker.io/token?service=registry.docker.io&scope={scope}"
+# docker.io special endpoint mapping
+_DOCKER_IO_ALIASES = frozenset(
+    {"docker.io", "index.docker.io", "registry.docker.io", "registry-1.docker.io"}
+)
+_DOCKER_REGISTRY_HOST = "registry-1.docker.io"
+_DOCKER_AUTH_REALM = "https://auth.docker.io/token"
+_DOCKER_AUTH_SERVICE = "registry.docker.io"
+
+
+def _normalize_docker_image(image: str) -> tuple[str, str]:
+    """Return (registry_host, repo_path) for an image reference.
+
+    Examples:
+      ``nginx``            → (``registry-1.docker.io``, ``library/nginx``)
+      ``user/app``         → (``registry-1.docker.io``, ``user/app``)
+      ``ghcr.io/org/img``  → (``ghcr.io``, ``org/img``)
+    """
+    # Detect registry prefix: contains a dot or colon before the first slash,
+    # or is a known docker.io alias.
+    slash = image.find("/")
+    if slash != -1:
+        prefix = image[:slash]
+        rest = image[slash + 1 :]
+        # Is it a host-like prefix? (contains a dot, colon, or is "localhost")
+        if "." in prefix or ":" in prefix or prefix == "localhost":
+            host = prefix
+            if host in _DOCKER_IO_ALIASES:
+                # docker.io library images: docker.io/nginx → library/nginx
+                if "/" not in rest:
+                    return _DOCKER_REGISTRY_HOST, f"library/{rest}"
+                return _DOCKER_REGISTRY_HOST, rest
+            return host, rest
+        # No dot/colon: user/image on docker.io
+        return _DOCKER_REGISTRY_HOST, image
+
+    # No slash at all — official library image on docker.io
+    return _DOCKER_REGISTRY_HOST, f"library/{image}"
+
+
+# ---------------------------------------------------------------------------
+# Docker config.json credential helpers
+# ---------------------------------------------------------------------------
+
+
+def _docker_config_path() -> Path:
+    """Return the path to ~/.docker/config.json (or $DOCKER_CONFIG/config.json)."""
+    docker_config_env = os.environ.get("DOCKER_CONFIG", "")
+    if docker_config_env:
+        return Path(docker_config_env) / "config.json"
+    return Path.home() / ".docker" / "config.json"
+
+
+def _load_docker_config() -> dict[str, Any]:
+    """Load ~/.docker/config.json; return empty dict on any error."""
+    cfg_path = _docker_config_path()
     try:
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})  # noqa: S310
+        return dict(json.loads(cfg_path.read_text(encoding="utf-8")))
+    except Exception:
+        return {}
+
+
+def _basic_auth_for_host(host: str) -> str | None:
+    """Return ``Authorization: Basic <b64>`` value for *host* from docker config.
+
+    Only handles the ``auths[host].auth`` (base64 user:pass) entry.
+    Credential helpers (credsStore/credHelpers) are out of scope.
+    Returns None when no matching entry, no ``auth`` key, or only a helper.
+    """
+    cfg = _load_docker_config()
+    auths: Any = cfg.get("auths", {})
+    if not isinstance(auths, dict):
+        return None
+
+    # Try exact match and common variations.
+    candidates = [host]
+    if host == _DOCKER_REGISTRY_HOST:
+        # docker.io tools register under several aliases
+        candidates += [*_DOCKER_IO_ALIASES, "https://index.docker.io/v1/"]
+    elif "." not in host:
+        # bare short name (unlikely but defensive)
+        pass
+
+    for key in candidates:
+        entry = auths.get(key)
+        if not isinstance(entry, dict):
+            # Try with https:// prefix (some tools store that way)
+            entry = auths.get(f"https://{key}")
+            if not isinstance(entry, dict):
+                continue
+        auth_b64: Any = entry.get("auth")
+        if auth_b64 and isinstance(auth_b64, str):
+            return f"Basic {auth_b64}"
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Generic OCI bearer-challenge token fetch
+# ---------------------------------------------------------------------------
+
+
+def _parse_www_authenticate(header_value: str) -> dict[str, str]:
+    """Parse a ``WWW-Authenticate: Bearer realm=...,service=...,scope=...`` header.
+
+    Returns a dict with the parsed key=value pairs (realm, service, scope).
+    """
+    # Strip "Bearer " prefix
+    value = re.sub(r"^Bearer\s+", "", header_value, flags=re.IGNORECASE)
+    result: dict[str, str] = {}
+    # Parse key="value" or key=value pairs
+    for m in re.finditer(r'(\w+)=(?:"([^"]*)"|([\w:/.@%-]+))', value):
+        key = m.group(1)
+        val = m.group(2) if m.group(2) is not None else m.group(3)
+        result[key] = val
+    return result
+
+
+def _fetch_bearer_token(
+    realm: str,
+    service: str,
+    scope: str,
+    basic_auth: str | None = None,
+) -> str | None:
+    """Fetch a bearer token from *realm* for *service*/*scope*.
+
+    Uses anonymous access unless *basic_auth* is provided (``Basic <b64>``).
+    """
+    params = urllib.parse.urlencode(
+        {"service": service, "scope": scope},
+        quote_via=urllib.parse.quote,
+    )
+    url = f"{realm}?{params}"
+    headers: dict[str, str] = {"Accept": "application/json"}
+    if basic_auth:
+        headers["Authorization"] = basic_auth
+    try:
+        req = urllib.request.Request(url, headers=headers)  # noqa: S310
         with urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT) as resp:  # noqa: S310
             data: dict[str, Any] = json.loads(resp.read())
             token = data.get("token") or data.get("access_token")
@@ -211,48 +470,75 @@ def _docker_hub_token(image_name: str) -> str | None:
         return None
 
 
-def _normalize_docker_image(image: str) -> tuple[str, str]:
-    """Return (registry_host, repo_path) for an image reference.
+def _fetch_token_for_registry(
+    host: str, repo: str, basic_auth: str | None
+) -> str | None:
+    """Fetch an anonymous/basic-auth bearer token using the OCI challenge flow.
 
-    Examples:
-      «nginx»            → («registry-1.docker.io», «library/nginx»)
-      «user/app»         → («registry-1.docker.io», «user/app»)
-      «ghcr.io/org/img»  → («ghcr.io», «org/img»)
+    For docker.io: uses the known auth endpoint directly (avoids an extra RTT).
+    For all other registries: does the standard 401 challenge probe on /v2/.
     """
-    known_registries = ("ghcr.io", "gcr.io", "quay.io", "mcr.microsoft.com")
-    for reg in known_registries:
-        if image.startswith(reg + "/"):
-            repo = image[len(reg) + 1 :]
-            return reg, repo
+    if host == _DOCKER_REGISTRY_HOST:
+        scope = f"repository:{repo}:pull"
+        return _fetch_bearer_token(
+            _DOCKER_AUTH_REALM,
+            _DOCKER_AUTH_SERVICE,
+            scope,
+            basic_auth,
+        )
 
-    # docker.io (default)
-    if "/" not in image:
-        # Official image: library/<name>
-        return "registry-1.docker.io", f"library/{image}"
-    return "registry-1.docker.io", image
+    # Generic: probe /v2/ to trigger the 401 challenge.
+    probe_url = f"https://{host}/v2/"
+    try:
+        req = urllib.request.Request(probe_url, headers={"Accept": "application/json"})  # noqa: S310
+        urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT)  # noqa: S310
+        # 200 OK → no auth needed (unauthenticated push, rare)
+        return None
+    except urllib.error.HTTPError as exc:
+        if exc.code != 401:
+            return None
+        www_auth = exc.headers.get("WWW-Authenticate", "") if exc.headers else ""
+        if not www_auth:
+            return None
+        params = _parse_www_authenticate(www_auth)
+        realm = params.get("realm", "")
+        service = params.get("service", host)
+        # Use repo-scoped scope from the challenge or build a default
+        scope = params.get("scope", f"repository:{repo}:pull")
+        if not realm:
+            return None
+        return _fetch_bearer_token(realm, service, scope, basic_auth)
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Tags fetch (generic registry)
+# ---------------------------------------------------------------------------
 
 
 def _fetch_tags(image: str) -> list[str] | None:
     """Fetch available tags for *image* from its registry.
 
     Returns None on any error (caller treats as report-only).
-    Supports docker.io and ghcr.io (anonymous).
+
+    Supports any OCI distribution-spec compliant registry using the standard
+    bearer-challenge flow.  docker.io's ``library/`` normalization and
+    ``registry-1`` endpoint mapping are preserved.  ECR and other registries
+    that require auth-after-token are report-only.
     """
     host, repo = _normalize_docker_image(image)
+    basic_auth = _basic_auth_for_host(host)
+
+    token = _fetch_token_for_registry(host, repo, basic_auth)
 
     headers: dict[str, str] = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    elif basic_auth:
+        headers["Authorization"] = basic_auth
 
-    if host == "registry-1.docker.io":
-        token = _docker_hub_token(repo)
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        url = f"https://{host}/v2/{repo}/tags/list"
-    elif host == "ghcr.io":
-        url = f"https://{host}/v2/{repo}/tags/list"
-    else:
-        # Unknown registry; report-only
-        return None
-
+    url = f"https://{host}/v2/{repo}/tags/list"
     try:
         req = urllib.request.Request(url, headers=headers)  # noqa: S310
         with urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT) as resp:  # noqa: S310
@@ -263,6 +549,47 @@ def _fetch_tags(image: str) -> list[str] | None:
             return None
     except (urllib.error.URLError, OSError, json.JSONDecodeError, Exception):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Digest refresh (OCI manifest HEAD/GET)
+# ---------------------------------------------------------------------------
+
+
+def _fetch_manifest_digest(image: str, tag: str) -> str | None:
+    """HEAD the manifest for *image*:*tag* and return the Docker-Content-Digest.
+
+    Returns None on any error (caller treats as report-only).
+    Uses the same auth flow as _fetch_tags.
+    """
+    host, repo = _normalize_docker_image(image)
+    basic_auth = _basic_auth_for_host(host)
+    token = _fetch_token_for_registry(host, repo, basic_auth)
+
+    headers: dict[str, str] = {"Accept": _MANIFEST_ACCEPT}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    elif basic_auth:
+        headers["Authorization"] = basic_auth
+
+    url = f"https://{host}/v2/{repo}/manifests/{tag}"
+    # Try HEAD first (cheaper), fall back to GET if HEAD not supported
+    for method in ("HEAD", "GET"):
+        try:
+            req = urllib.request.Request(  # noqa: S310
+                url, headers=headers, method=method
+            )
+            with urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT) as resp:  # noqa: S310
+                digest = resp.headers.get("Docker-Content-Digest", "")
+                if digest:
+                    return str(digest)
+        except urllib.error.HTTPError as exc:
+            if method == "HEAD" and exc.code in (404, 405):
+                continue  # try GET
+            return None
+        except Exception:
+            return None
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -371,8 +698,14 @@ def check_container(ws: Workspace) -> list[Change]:
     ``[report-only]`` so the report layer can distinguish them.
 
     No external processes are spawned; all network calls use stdlib urllib.
+
+    Environment variables:
+    - ``REPO_OPS_CONTAINER_UPDATE_LATEST=1``: allow cross-major bumps.
+    - ``REPO_OPS_CONTAINER_REFRESH_SHA=1``: for ``image:tag@sha256:...`` pins,
+      query the manifest and report/apply a digest update if it has changed.
     """
     allow_cross_major = os.environ.get("REPO_OPS_CONTAINER_UPDATE_LATEST", "") == "1"
+    refresh_sha = os.environ.get("REPO_OPS_CONTAINER_REFRESH_SHA", "") == "1"
     changes: list[Change] = []
     seen: set[tuple[str, str | None]] = set()  # (image, tag) dedup
 
@@ -390,7 +723,7 @@ def check_container(ws: Workspace) -> list[Change]:
                 continue
             seen.add(key)
 
-            # SHA-pinned: report only
+            # SHA-pinned (no tag): report only
             if sha and not tag:
                 changes.append(
                     Change(
@@ -400,15 +733,39 @@ def check_container(ws: Workspace) -> list[Change]:
                     )
                 )
                 continue
+
             if sha and tag:
-                # tag+sha: treat as sha-pinned (conservative)
-                changes.append(
-                    Change(
-                        name=f"{image}:{tag}",
-                        from_ver=tag,
-                        to=f"{_REPORT_ONLY_PREFIX}sha-pinned; digest refresh not yet supported",
+                # tag+sha pin: attempt digest refresh when opt-in
+                if refresh_sha:
+                    new_digest = _fetch_manifest_digest(image, tag)
+                    if new_digest is None:
+                        changes.append(
+                            Change(
+                                name=f"{image}:{tag}",
+                                from_ver=sha,
+                                to=f"{_REPORT_ONLY_PREFIX}digest query failed",
+                            )
+                        )
+                    elif new_digest == sha:
+                        # Already current; no change needed
+                        pass
+                    else:
+                        # Digest has changed — actionable update
+                        changes.append(
+                            Change(
+                                name=f"{image}:{tag}",
+                                from_ver=sha,
+                                to=new_digest,
+                            )
+                        )
+                else:
+                    changes.append(
+                        Change(
+                            name=f"{image}:{tag}",
+                            from_ver=tag,
+                            to=f"{_REPORT_ONLY_PREFIX}sha-pinned; set REPO_OPS_CONTAINER_REFRESH_SHA=1 to refresh digest",
+                        )
                     )
-                )
                 continue
 
             if not tag:
@@ -476,23 +833,43 @@ def _replace_tag_in_line(line: str, image: str, old_tag: str, new_tag: str) -> s
     return line
 
 
+def _replace_digest_in_line(
+    line: str, image: str, tag: str, old_sha: str, new_sha: str
+) -> str:
+    """Byte-preserving single-line digest replacement.
+
+    Replaces the sha256 digest in ``<image>:<tag>@<old_sha>`` with *new_sha*.
+    Never reflows or reformats the line.
+    """
+    old = f"{image}:{tag}@{old_sha}"
+    new = f"{image}:{tag}@{new_sha}"
+    if old in line:
+        return line.replace(old, new, 1)
+    return line
+
+
 def apply_container(ws: Workspace) -> None:
-    """Apply image tag bumps in-place (byte-preserving single-line edits).
+    """Apply image tag bumps and digest refreshes in-place (byte-preserving single-line edits).
 
     No verify step for v1: building images is out of scope.  The apply
     function runs check_container to discover bumps, then rewrites only the
-    tag portion of each matched line — never the entire line.
+    tag or digest portion of each matched line — never the entire line.
 
-    SHA-pinned images are skipped unconditionally (report-only by design).
+    SHA-pinned images without a tag are skipped unconditionally (report-only
+    by design).  Digest refresh requires ``REPO_OPS_CONTAINER_REFRESH_SHA=1``.
     Cross-major bumps require ``REPO_OPS_CONTAINER_UPDATE_LATEST=1``.
     """
     allow_cross_major = os.environ.get("REPO_OPS_CONTAINER_UPDATE_LATEST", "") == "1"
+    refresh_sha = os.environ.get("REPO_OPS_CONTAINER_REFRESH_SHA", "") == "1"
 
     for cf in find_container_files(ws.path):
         refs = _parse_image_refs(cf)
-        # Build a list of (image, old_tag, new_tag) to apply
-        bumps: list[tuple[str, str, str]] = []
+        # Build a list of tag bumps: (image, old_tag, new_tag)
+        # and digest refreshes: (image, tag, old_sha, new_sha)
+        tag_bumps: list[tuple[str, str, str]] = []
+        sha_bumps: list[tuple[str, str, str, str]] = []
         already_queried: dict[tuple[str, str], str | None] = {}
+        already_digest: dict[tuple[str, str], str | None] = {}
 
         for ref in refs:
             if ref["is_stage_ref"]:
@@ -501,6 +878,19 @@ def apply_container(ws: Workspace) -> None:
             tag: str | None = ref["tag"]
             sha: str | None = ref["sha"]
 
+            # tag+sha pin: digest refresh
+            if sha and tag and refresh_sha:
+                digest_key = (image, tag)
+                if digest_key in already_digest:
+                    new_digest = already_digest[digest_key]
+                else:
+                    new_digest = _fetch_manifest_digest(image, tag)
+                    already_digest[digest_key] = new_digest
+                if new_digest and new_digest != sha:
+                    sha_bumps.append((image, tag, sha, new_digest))
+                continue
+
+            # Skip sha-only pins, no-tag, non-semver
             if sha or not tag or not _is_semver_tag(tag):
                 continue
 
@@ -519,9 +909,9 @@ def apply_container(ws: Workspace) -> None:
 
             if new_tag is None:
                 continue
-            bumps.append((image, tag, new_tag))
+            tag_bumps.append((image, tag, new_tag))
 
-        if not bumps:
+        if not tag_bumps and not sha_bumps:
             continue
 
         # Apply bumps in-place (byte-preserving, CRLF-safe).
@@ -531,7 +921,8 @@ def apply_container(ws: Workspace) -> None:
             original = fh.read()
         lines = original.splitlines(keepends=True)
         changed = False
-        for image, old_tag, new_tag in bumps:
+
+        for image, old_tag, new_tag in tag_bumps:
             for i, line in enumerate(lines):
                 updated = _replace_tag_in_line(line, image, old_tag, new_tag)
                 if updated != line:
@@ -539,6 +930,42 @@ def apply_container(ws: Workspace) -> None:
                     changed = True
                     break  # one bump = one line
 
+        for image, tag, old_sha, new_sha in sha_bumps:
+            for i, line in enumerate(lines):
+                updated = _replace_digest_in_line(line, image, tag, old_sha, new_sha)
+                if updated != line:
+                    lines[i] = updated
+                    changed = True
+                    break  # one digest bump = one line
+
         if changed:
             with cf.open("w", encoding="utf-8", newline="") as fh:
                 fh.write("".join(lines))
+
+
+# ---------------------------------------------------------------------------
+# Public re-exports (for tests / callers that import from this module directly)
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "_basic_auth_for_host",
+    "_compose_build_dockerfiles",
+    "_fetch_bearer_token",
+    "_fetch_manifest_digest",
+    "_fetch_tags",
+    "_fetch_token_for_registry",
+    "_is_semver_tag",
+    "_load_docker_config",
+    "_normalize_docker_image",
+    "_parse_compose_images",
+    "_parse_from_lines",
+    "_parse_image_refs",
+    "_parse_www_authenticate",
+    "_replace_digest_in_line",
+    "_replace_tag_in_line",
+    "_resolve_latest_tag",
+    "apply_container",
+    "check_container",
+    "find_container_files",
+    "is_container_workspace",
+]
