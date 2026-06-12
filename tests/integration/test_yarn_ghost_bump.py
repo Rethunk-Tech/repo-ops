@@ -142,22 +142,22 @@ def test_yarn_guard_fires_when_resolutions_block_upgrade() -> None:
 
 
 @pytest.mark.skipif(not _COREPACK_OK, reason=_SKIP_REASON)
-def test_yarn_apply_silent_no_raise_with_resolutions_pin() -> None:
-    """Documents the apply_yarn gap: resolutions block produces no Change, no error.
+def test_yarn_apply_raises_ghost_bump_with_resolutions_pin() -> None:
+    """apply_yarn raises ghost-bump when resolutions block an in-range upgrade (#121).
 
-    ``apply_yarn`` uses lock-file diffing, not node_modules reads.  When
-    ``resolutions`` pins a package, ``yarn up -R '*'`` leaves the lock unchanged,
-    so ``diff_workspace_snapshots`` returns zero Changes and apply returns []
-    silently — no ghost-bump RuntimeError.
-
-    This test pins the observed behaviour.  A future fix should wire
-    ``assert_targets_resolved`` into ``apply_yarn`` (see repo-ops#121).
+    The workspace declares ``is-odd: ">=0.1.0 <2.0.0"`` (allows 1.0.0+) but
+    ``resolutions`` pins it to 0.1.2.  ``check_yarn_snapshot`` (run in an
+    isolated copy without the resolutions constraint) plans an upgrade to a
+    newer version; the real apply leaves node_modules at 0.1.2.
+    ``assert_targets_resolved`` detects the mismatch and raises
+    ``RuntimeError("ghost bump: yarn …")``.
     """
     from repo_ops_js_yarn.yarn import apply_yarn
 
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
 
+        # node-modules linker so node_modules is populated and the guard can read it.
         (root / ".yarnrc.yml").write_text(
             "nodeLinker: node-modules\n", encoding="utf-8"
         )
@@ -190,15 +190,9 @@ def test_yarn_apply_silent_no_raise_with_resolutions_pin() -> None:
             label="yarn-ghost-apply-test",
         )
 
-        # apply_yarn does NOT call assert_targets_resolved — it uses lock-file
-        # diffing.  With resolutions pinning is-odd@0.1.2, yarn up produces no
-        # lock change → returns [] without raising.  This is the open gap.
-        behind = apply_yarn(ws)
-
-        # Documenting observed behaviour: no exception, no changes reported.
-        # When the gap is fixed, this assertion should change to expect a
-        # RuntimeError or a non-empty return.
-        assert behind == [], (
-            "apply_yarn returned non-empty behind list — unexpected for "
-            "conservative mode without REPO_OPS_YARN_UPDATE_LATEST set"
-        )
+        # apply_yarn now calls check_yarn_snapshot in isolation to learn the
+        # intended upgrade targets, then guards node_modules after the real apply.
+        # The resolutions pin keeps is-odd at 0.1.2 while the check phase would
+        # have seen a newer version available → ghost-bump error raised.
+        with pytest.raises(RuntimeError, match="ghost bump"):
+            apply_yarn(ws)

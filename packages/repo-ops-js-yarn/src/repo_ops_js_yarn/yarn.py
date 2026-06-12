@@ -7,11 +7,13 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
+from repo_ops_js.guards import assert_targets_resolved
 from repo_ops_js.overrides import overrides_audit
 from repo_ops_js.workspaces import corepack_prepare
 from repo_ops_lockfiles.parsers import versions_yarn_lock
@@ -33,6 +35,45 @@ _YARN_UPDATE_LATEST_ENV = "REPO_OPS_YARN_UPDATE_LATEST"
 _YARN_TARGETED_BUMP_ENV = "REPO_OPS_YARN_TARGETED_BUMP"
 _TIMEOUT_NPM_INFO = 60
 _TRUE_VALUES = ("1", "true", "yes")
+
+# Yarn 4 defaults to Plug'n'Play when no nodeLinker setting is present.
+# PnP repos have no node_modules, so the ghost-bump guard (which reads the
+# installed version from node_modules) cannot operate.  We detect PnP by:
+#   1. Sentinel files written by PnP at install time (.pnp.cjs / .pnp.loader.mjs)
+#   2. nodeLinker: node-modules (or node-modules-pnp) absent in .yarnrc.yml
+# If either marker is present, we skip the guard and emit a stderr notice.
+_PNP_SENTINELS = (".pnp.cjs", ".pnp.loader.mjs")
+
+
+def _is_pnp_workspace(ws_path: Path) -> bool:
+    """Return True when the yarn workspace uses Plug'n'Play (no node_modules).
+
+    Detection is intentionally conservative: if we cannot determine the linker
+    we assume node-modules is NOT in use (i.e. PnP), to avoid false-fail on
+    layouts we cannot read.  The integration fixture explicitly sets
+    ``nodeLinker: node-modules`` so it is guarded.
+    """
+    # Fast path: PnP sentinel files present after install
+    for sentinel in _PNP_SENTINELS:
+        if (ws_path / sentinel).exists():
+            return True
+    # Check .yarnrc.yml for nodeLinker setting
+    yarnrc = ws_path / ".yarnrc.yml"
+    if yarnrc.is_file():
+        try:
+            content = yarnrc.read_text(encoding="utf-8")
+        except OSError:
+            return True  # can't read config → assume PnP (safe skip)
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("nodeLinker:"):
+                value = stripped[len("nodeLinker:") :].strip().strip('"').strip("'")
+                return value not in ("node-modules",)
+        # nodeLinker not set at all → Yarn 4 default is PnP
+        return True
+    # No .yarnrc.yml — could be Yarn 1/Classic (always node-modules).
+    # Guard is safe; don't skip.
+    return False
 
 
 def _yarn_update_latest_enabled() -> bool:
@@ -375,6 +416,71 @@ def check_yarn_snapshot(
     return changes, snapshot_overrides, behind
 
 
+def _plan_without_resolutions(ws: Workspace) -> list[Change]:
+    """Run an isolated ``yarn up`` with ``resolutions`` stripped from package.json.
+
+    ``resolutions`` (and the legacy ``packageResolutions``) entries pin packages
+    below their natural in-range version.  When we copy the workspace for the
+    check phase and run ``yarn up -R '*'``, those pins are still active in the
+    copy — so the check sees no movement and the ghost goes undetected.
+
+    Stripping ``resolutions`` before the check run lets the resolver freely
+    move each dep to the newest satisfying version.  We then compare resolved
+    versions by package name (not by range key) to avoid the ghost from the
+    diff algorithm treating the same package under two different range headers
+    as independent entries.
+
+    Only direct-dep packages with a concrete upward move are returned.
+    """
+    with tempfile.TemporaryDirectory(prefix="dep-refresh-yarn-guard-") as td:
+        mdir = _copy_yarn_workspace_to_temp(ws, Path(td))
+        lock = mdir / "yarn.lock"
+        # Capture resolved versions before stripping resolutions.
+        before_resolved: dict[str, str] = (
+            _resolved_versions(lock) if lock.is_file() else {}
+        )
+        # Strip resolutions from every package.json in the copy so yarn's
+        # resolver can freely pick the newest in-range version.
+        for pkg_path in _package_json_paths(mdir):
+            try:
+                data = json.loads(pkg_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            changed = False
+            for key in ("resolutions", "packageResolutions"):
+                if key in data:
+                    del data[key]
+                    changed = True
+            if changed:
+                pkg_path.write_text(json.dumps(data), encoding="utf-8")
+        corepack_prepare("yarn", mdir)
+        proc = run(_yarn_up_cmd(), mdir, timeout=resolve_timeout_apply())
+        if proc.returncode != 0:
+            # Check failure means we can't determine intent; skip guard (safe).
+            return []
+        proc2 = run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
+        if proc2.returncode != 0:
+            return []
+        after_resolved: dict[str, str] = (
+            _resolved_versions(lock) if lock.is_file() else {}
+        )
+    # Compare by name; only report concrete upward moves on direct deps.
+    direct = _direct_dep_names(ws.path)
+    result: list[Change] = []
+    for name in direct:
+        before_ver = before_resolved.get(name)
+        after_ver = after_resolved.get(name)
+        if not after_ver or not before_ver or after_ver == before_ver:
+            continue
+        try:
+            moved_up = semver_tuple(after_ver) > semver_tuple(before_ver)
+        except (TypeError, ValueError):
+            moved_up = after_ver != before_ver
+        if moved_up:
+            result.append(Change(name, before_ver, after_ver))
+    return result
+
+
 def apply_yarn(ws: Workspace) -> list[Change]:
     """Apply in workspace; matches check policy (see ``_yarn_up_cmd``).
 
@@ -382,7 +488,26 @@ def apply_yarn(ws: Workspace) -> list[Change]:
     empty in conservative mode or when nothing is behind. With ``--yarn-targeted-bump``
     (issue #111), each still-behind dep gets a reversible targeted bump first, so only
     the deps that truly could not move are returned.
+
+    Ghost-bump guard (#121): before running the real apply, this function
+    probes what packages *would* move in an isolated copy with ``resolutions``
+    stripped.  After the real apply completes (with resolutions in place),
+    those intended targets are verified against the installed versions in
+    ``node_modules``.  Any package that was blocked by a pin raises
+    ``RuntimeError("ghost bump: …")`` so the workspace is marked ``fail``
+    instead of silently succeeding.
+
+    Plug'n'Play repos are skipped: PnP installs have no ``node_modules``
+    directory, so the guard cannot read installed versions.  A diagnostic
+    note is written to stderr in that case.
     """
+    # --- ghost-bump guard: plan what *should* move without resolutions --------
+    # We probe in isolation with resolutions stripped so the resolver freely
+    # advances each dep.  The resulting changes are the intended targets that
+    # the real apply (with resolutions blocking some) must satisfy.
+    guardable = _plan_without_resolutions(ws)
+
+    # --- real apply -----------------------------------------------------------
     corepack_prepare("yarn", ws.path)
     proc = run(_yarn_up_cmd(), ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
@@ -390,6 +515,18 @@ def apply_yarn(ws: Workspace) -> list[Change]:
     proc2 = run(["yarn", "install"], ws.path, timeout=resolve_timeout_apply())
     if proc2.returncode != 0:
         raise _command_failure("yarn install failed", proc2)
+
+    # --- ghost-bump guard: verify installs against plan ----------------------
+    if guardable:
+        if _is_pnp_workspace(ws.path):
+            print(
+                "repo-ops: yarn ghost-bump guard skipped (Plug'n'Play workspace — "
+                "no node_modules to read installed versions from)",
+                file=sys.stderr,
+            )
+        else:
+            assert_targets_resolved(ws, guardable, manager="yarn")
+
     behind = behind_after_up(ws.path)
     _, behind = targeted_bump_behind(ws.path, behind)
     return behind
