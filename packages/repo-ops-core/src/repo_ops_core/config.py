@@ -165,6 +165,13 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
         "commit_agent_provider",
         None,
     ),
+    "commit_umbrella": ("REPO_OPS_COMMIT_UMBRELLA", "commit_umbrella", None),
+    "actions_org_policy": ("REPO_OPS_ACTIONS_ORG_POLICY", "actions_org_policy", None),
+    "container_update_latest": (
+        "REPO_OPS_CONTAINER_UPDATE_LATEST",
+        "container_update_latest",
+        None,
+    ),
 }
 
 # Public table for documentation generation.
@@ -252,6 +259,27 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
         "cursor",
     ),
     ("exclude_patterns", "--exclude", "(none)", "exclude", "[]"),
+    (
+        "commit_umbrella",
+        "--commit-umbrella",
+        "REPO_OPS_COMMIT_UMBRELLA",
+        "commit_umbrella",
+        "0",
+    ),
+    (
+        "actions_org_policy",
+        "--actions-org-policy",
+        "REPO_OPS_ACTIONS_ORG_POLICY",
+        "actions_org_policy",
+        "0",
+    ),
+    (
+        "container_update_latest",
+        "(none)",
+        "REPO_OPS_CONTAINER_UPDATE_LATEST",
+        "container_update_latest",
+        "0",
+    ),
 ]
 
 

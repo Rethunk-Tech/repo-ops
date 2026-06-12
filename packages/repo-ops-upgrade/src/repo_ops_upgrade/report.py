@@ -56,6 +56,8 @@ def build_run_summary(
     packages_upgraded = 0
     behind_latest_by_manager: dict[str, int] = {}
 
+    actions_policy_violations = 0
+
     for bundle in bundles.values():
         for wr in bundle.workspaces:
             packages_upgraded += len(wr.changes)
@@ -80,6 +82,7 @@ def build_run_summary(
         actions_bumps += action_totals["bumps"]
         actions_failures += action_totals["failures"]
         actions_behind_latest += action_totals.get("behind_latest", 0)
+        actions_policy_violations += action_totals.get("policy_violations", 0)
 
     discovery_skipped = len(diagnostics.skipped) if diagnostics else 0
     return {
@@ -90,6 +93,7 @@ def build_run_summary(
         "verify_failures": verify_failures,
         "actions_bumps": actions_bumps,
         "actions_failures": actions_failures,
+        "actions_policy_violations": actions_policy_violations,
         "discovery_skipped": discovery_skipped,
         "packages_upgraded": packages_upgraded,
         "packages_behind_latest": packages_behind_latest,
@@ -330,7 +334,11 @@ def print_human_report(
             summary = repo.actions_summary()
             seen_action_pins: set[tuple[str, str]] = set()
             action_rows: list = []
+            policy_rows: list = []
             for ab in repo.actions:
+                if ab.status == "policy":
+                    policy_rows.append(ab)
+                    continue
                 if ab.pin == ab.latest and ab.status == "ok":
                     continue
                 key = (ab.action, ab.pin)
@@ -338,7 +346,7 @@ def print_human_report(
                     continue
                 seen_action_pins.add(key)
                 action_rows.append(ab)
-            if action_rows:
+            if action_rows or policy_rows:
                 print("  Actions:")
                 for ab in action_rows:
                     # Rows apply never rewrites carry a "report only" detail;
@@ -351,11 +359,19 @@ def print_human_report(
                     print(
                         f"    {ab.workflow}: {ab.action}@{ab.pin} → {ab.latest} [{marker}]"
                     )
+                for ab in policy_rows:
+                    explanation = ab.detail or "org policy violation"
+                    print(
+                        f"    {ab.workflow}: {ab.action}@{ab.pin} [policy] {explanation}"
+                    )
             print(
                 "  Actions: "
                 f"{summary['bumps']} bump(s) "
                 f"({summary['workflows_scanned']} workflow(s) scanned)"
             )
+            policy_count = summary.get("policy_violations", 0)
+            if policy_count:
+                print(f"  Actions policy violations: {policy_count}")
         print()
 
 
@@ -438,6 +454,7 @@ def print_run_footer(
         ("verify failures", summary["verify_failures"]),
         ("actions bumps", summary["actions_bumps"]),
         ("actions failures", summary["actions_failures"]),
+        ("actions policy violations", summary.get("actions_policy_violations", 0)),
         ("discovery skipped", summary["discovery_skipped"]),
     ]
     width = max(len(label) for label, _ in rows)

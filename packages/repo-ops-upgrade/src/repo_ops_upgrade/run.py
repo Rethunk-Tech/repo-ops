@@ -85,6 +85,12 @@ def _run_upgrade_body(
     # which is what produces the behind_latest work-list it consumes.
     if getattr(args, "yarn_targeted_bump", False):
         os.environ["REPO_OPS_YARN_TARGETED_BUMP"] = "1"
+    # --commit-umbrella: opt in to post-commit umbrella pointer bumps (#125).
+    if getattr(args, "commit_umbrella", False):
+        os.environ["REPO_OPS_COMMIT_UMBRELLA"] = "1"
+    # --actions-org-policy: enable org policy enforcement in scan_actions (#125).
+    if getattr(args, "actions_org_policy", False):
+        os.environ["REPO_OPS_ACTIONS_ORG_POLICY"] = "1"
     go_mode = getattr(args, "go_upgrade_mode", None)
     if go_mode:
         os.environ["REPO_OPS_GO_UPGRADE_MODE"] = go_mode

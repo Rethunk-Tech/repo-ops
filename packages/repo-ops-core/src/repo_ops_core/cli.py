@@ -570,6 +570,28 @@ def add_upgrade_common_arguments(
                 "(default: skip failed verify)."
             ),
         )
+        exe.add_argument(
+            "--commit-umbrella",
+            action="store_true",
+            dest="commit_umbrella",
+            help=(
+                "After child commits complete, also commit submodule pointer bumps "
+                "in umbrella repos for each child that received a commit this run. "
+                "Sets REPO_OPS_COMMIT_UMBRELLA=1. No-op when --submodule-order is "
+                "not set or no submodules are detected."
+            ),
+        )
+    exe.add_argument(
+        "--actions-org-policy",
+        action="store_true",
+        dest="actions_org_policy",
+        help=(
+            "Fetch the GitHub org's allowed-actions policy and annotate Actions "
+            "rows that violate it (status=policy). "
+            "Sets REPO_OPS_ACTIONS_ORG_POLICY=1. Requires a GitHub token with "
+            "org read-permissions."
+        ),
+    )
 
 
 def build_upgrade_parser(*, apply: bool) -> argparse.ArgumentParser:
