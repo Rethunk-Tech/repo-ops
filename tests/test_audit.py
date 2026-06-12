@@ -20,6 +20,8 @@ from repo_ops_audit.audit import (
     _exit_code_for,
     _parse_bun_audit_text,
     _parse_npm_audit_json,
+    _probe_bun_audit,
+    _probe_pip_audit,
     _worse,
     build_audit_parser,
     main,
@@ -44,10 +46,23 @@ def test_vulncount_total() -> None:
     assert v.total == 10
 
 
+def test_vulncount_total_with_unknown() -> None:
+    v = VulnCount(critical=1, high=2, moderate=3, low=4, unknown=5)
+    assert v.total == 10
+    assert v.total_with_unknown == 15
+
+
+def test_vulncount_unknown_not_in_total() -> None:
+    v = VulnCount(unknown=3)
+    assert v.total == 0
+    assert v.total_with_unknown == 3
+    assert v.worst is None
+
+
 def test_vulncount_as_dict() -> None:
     v = VulnCount(critical=1, high=0, moderate=2, low=0)
     d = v.as_dict()
-    assert d == {"critical": 1, "high": 0, "moderate": 2, "low": 0}
+    assert d == {"critical": 1, "high": 0, "moderate": 2, "low": 0, "unknown": 0}
 
 
 def test_worse_severity_ordering() -> None:
@@ -121,6 +136,17 @@ def test_parse_npm_audit_json_empty() -> None:
     assert counts.total == 0
 
 
+def test_parse_npm_audit_json_medium_maps_to_moderate() -> None:
+    """'medium' severity key is normalised to moderate."""
+    data = {
+        "advisories": {
+            "1": {"severity": "medium"},
+        }
+    }
+    counts = _parse_npm_audit_json(data)
+    assert counts.moderate == 1
+
+
 # ---------------------------------------------------------------------------
 # bun audit text parsing
 # ---------------------------------------------------------------------------
@@ -139,7 +165,7 @@ def test_parse_bun_audit_text_empty() -> None:
 
 
 # ---------------------------------------------------------------------------
-# CVSS score approximation
+# CVSS score approximation (cargo-audit mapping)
 # ---------------------------------------------------------------------------
 
 
@@ -160,15 +186,41 @@ def test_cvss_to_score_missing_vector_returns_moderate() -> None:
 
 
 # ---------------------------------------------------------------------------
-# go auditor (mocked subprocess)
+# govulncheck: unknown bucket
 # ---------------------------------------------------------------------------
 
 
-def test_audit_go_skipped_when_govulncheck_missing() -> None:
-    with patch("shutil.which", return_value=None):
+def test_audit_go_unknown_bucket_on_finding() -> None:
+    """govulncheck findings go into the 'unknown' bucket, not 'high'."""
+    finding_line = json.dumps({"finding": {"osv": "GO-2024-001"}})
+    with (
+        patch("shutil.which", return_value="/usr/bin/govulncheck"),
+        patch(
+            "repo_ops_audit.audit._run",
+            return_value=(1, finding_line + "\n", ""),
+        ),
+    ):
         result = _audit_go("/some/repo")
-    assert result.status == "skipped"
-    assert "govulncheck" in result.skip_reason
+    assert result.status == "vulns"
+    assert result.counts.unknown >= 1
+    # known buckets must NOT be inflated by govulncheck
+    assert result.counts.high == 0
+    assert result.counts.critical == 0
+
+
+def test_audit_go_unknown_bucket_fallback() -> None:
+    """Unparseable govulncheck output + non-zero exit → 1 unknown finding."""
+    with (
+        patch("shutil.which", return_value="/usr/bin/govulncheck"),
+        patch(
+            "repo_ops_audit.audit._run",
+            return_value=(1, "not json", "some error"),
+        ),
+    ):
+        result = _audit_go("/some/repo")
+    assert result.status == "vulns"
+    assert result.counts.unknown >= 1
+    assert result.counts.high == 0
 
 
 def test_audit_go_ok_no_findings() -> None:
@@ -181,25 +233,109 @@ def test_audit_go_ok_no_findings() -> None:
     ):
         result = _audit_go("/some/repo")
     assert result.status == "ok"
-    assert result.counts.total == 0
+    assert result.counts.total_with_unknown == 0
 
 
-def test_audit_go_vulns_from_findings() -> None:
-    finding_line = json.dumps({"finding": {"osv": "GO-2024-001", "severity": "high"}})
-    with (
-        patch("shutil.which", return_value="/usr/bin/govulncheck"),
-        patch(
-            "repo_ops_audit.audit._run",
-            return_value=(1, finding_line + "\n", ""),
-        ),
-    ):
+# ---------------------------------------------------------------------------
+# Exit-code logic: fail_on_unknown
+# ---------------------------------------------------------------------------
+
+
+def test_exit_code_fail_on_unknown_triggers() -> None:
+    results = [
+        WorkspaceResult(
+            label="a",
+            path="/a",
+            ecosystem="go",
+            manager="go",
+            status="vulns",
+            counts=VulnCount(unknown=2),
+        )
+    ]
+    # Default: fail_on_unknown=False → no exit on unknown
+    assert _exit_code_for(results, "high", fail_on_unknown=False) == 0
+    # With fail_on_unknown=True → exit 1
+    assert _exit_code_for(results, "high", fail_on_unknown=True) == 1
+
+
+def test_exit_code_fail_on_unknown_never_overrides_fail_on_never() -> None:
+    """--fail-on never does NOT suppress --fail-on-unknown."""
+    results = [
+        WorkspaceResult(
+            label="a",
+            path="/a",
+            ecosystem="go",
+            manager="go",
+            status="vulns",
+            counts=VulnCount(unknown=1),
+        )
+    ]
+    assert _exit_code_for(results, "never", fail_on_unknown=True) == 1
+
+
+def test_exit_code_never_is_always_zero() -> None:
+    results = [
+        WorkspaceResult(
+            label="a",
+            path="/a",
+            ecosystem="go",
+            manager="go",
+            status="vulns",
+            counts=VulnCount(critical=5),
+        )
+    ]
+    assert _exit_code_for(results, "never") == 0
+
+
+def test_exit_code_high_triggers_on_critical() -> None:
+    results = [
+        WorkspaceResult(
+            label="a",
+            path="/a",
+            ecosystem="go",
+            manager="go",
+            status="vulns",
+            counts=VulnCount(critical=1),
+        )
+    ]
+    assert _exit_code_for(results, "high") == 1
+
+
+def test_exit_code_critical_ignores_high() -> None:
+    results = [
+        WorkspaceResult(
+            label="a",
+            path="/a",
+            ecosystem="go",
+            manager="go",
+            status="vulns",
+            counts=VulnCount(high=5),
+        )
+    ]
+    assert _exit_code_for(results, "critical") == 0
+
+
+def test_exit_code_ok_results_are_always_zero() -> None:
+    results = [
+        WorkspaceResult(label="a", path="/a", ecosystem="go", manager="go", status="ok")
+    ]
+    assert _exit_code_for(results, "high") == 0
+
+
+# ---------------------------------------------------------------------------
+# go auditor (mocked subprocess)
+# ---------------------------------------------------------------------------
+
+
+def test_audit_go_skipped_when_govulncheck_missing() -> None:
+    with patch("shutil.which", return_value=None):
         result = _audit_go("/some/repo")
-    assert result.status == "vulns"
-    assert result.counts.high >= 1
+    assert result.status == "skipped"
+    assert "govulncheck" in result.skip_reason
 
 
 def test_audit_go_error_on_nonzero_no_parse() -> None:
-    # Unparseable JSON + non-zero exit: fallback increments high count → vulns
+    # Unparseable JSON + non-zero exit → fallback increments unknown count → vulns
     with (
         patch("shutil.which", return_value="/usr/bin/govulncheck"),
         patch(
@@ -208,9 +344,132 @@ def test_audit_go_error_on_nonzero_no_parse() -> None:
         ),
     ):
         result = _audit_go("/some/repo")
-    # The fallback path records 1 high-severity finding on parse failure
     assert result.status == "vulns"
-    assert result.counts.high >= 1
+    assert result.counts.unknown >= 1
+
+
+# ---------------------------------------------------------------------------
+# pip-audit probe
+# ---------------------------------------------------------------------------
+
+
+def test_probe_pip_audit_available() -> None:
+    with patch(
+        "repo_ops_audit.audit._run",
+        return_value=(0, "pip-audit 2.7.0\n", ""),
+    ):
+        assert _probe_pip_audit("/ws") is True
+
+
+def test_probe_pip_audit_unavailable() -> None:
+    with patch(
+        "repo_ops_audit.audit._run",
+        return_value=(1, "", "No such command"),
+    ):
+        assert _probe_pip_audit("/ws") is False
+
+
+def test_audit_py_uv_skipped_when_uv_missing() -> None:
+    with patch("shutil.which", return_value=None):
+        result = _audit_py_uv("/some/repo")
+    assert result.status == "skipped"
+
+
+def test_audit_py_uv_skipped_when_pip_audit_not_available() -> None:
+    """pip-audit unavailable via uv run pip-audit --version → skip."""
+    with (
+        patch("shutil.which", return_value="/usr/bin/uv"),
+        patch(
+            "repo_ops_audit.audit._probe_pip_audit",
+            return_value=False,
+        ),
+    ):
+        result = _audit_py_uv("/some/repo")
+    assert result.status == "skipped"
+    assert "pip-audit" in result.skip_reason
+
+
+def test_audit_py_uv_ok_no_vulns() -> None:
+    pip_audit_out = json.dumps([{"name": "requests", "version": "2.31.0", "vulns": []}])
+    with (
+        patch("shutil.which", return_value="/usr/bin/uv"),
+        patch("repo_ops_audit.audit._probe_pip_audit", return_value=True),
+        patch(
+            "repo_ops_audit.audit._run",
+            return_value=(0, pip_audit_out, ""),
+        ),
+    ):
+        result = _audit_py_uv("/some/repo")
+    assert result.status == "ok"
+
+
+def test_audit_py_uv_vulns() -> None:
+    pip_audit_out = json.dumps(
+        [
+            {
+                "name": "Pillow",
+                "version": "9.0.0",
+                "vulns": [
+                    {
+                        "id": "GHSA-001",
+                        "aliases": ["CVE-2023-001"],
+                        "fix_versions": ["9.1.0"],
+                    }
+                ],
+            }
+        ]
+    )
+    with (
+        patch("shutil.which", return_value="/usr/bin/uv"),
+        patch("repo_ops_audit.audit._probe_pip_audit", return_value=True),
+        patch(
+            "repo_ops_audit.audit._run",
+            return_value=(0, pip_audit_out, ""),
+        ),
+    ):
+        result = _audit_py_uv("/some/repo")
+    assert result.status == "vulns"
+    assert result.counts.high == 1
+
+
+# ---------------------------------------------------------------------------
+# bun availability probe
+# ---------------------------------------------------------------------------
+
+
+def test_probe_bun_audit_available() -> None:
+    with patch(
+        "repo_ops_audit.audit._run",
+        return_value=(0, "Usage: bun audit\n", ""),
+    ):
+        assert _probe_bun_audit("/ws") is True
+
+
+def test_probe_bun_audit_unavailable_unknown_command() -> None:
+    with patch(
+        "repo_ops_audit.audit._run",
+        return_value=(1, "", "error: unknown command: audit"),
+    ):
+        assert _probe_bun_audit("/ws") is False
+
+
+def test_probe_bun_audit_error_not_unknown_cmd_returns_true() -> None:
+    """Non-zero exit that is NOT an 'unknown command' → subcommand assumed present."""
+    with patch(
+        "repo_ops_audit.audit._run",
+        return_value=(1, "", "No package.json found"),
+    ):
+        assert _probe_bun_audit("/ws") is True
+
+
+def test_audit_node_bun_skipped_when_audit_subcommand_absent() -> None:
+    with (
+        patch("shutil.which", return_value="/usr/bin/bun"),
+        patch("repo_ops_audit.audit._probe_bun_audit", return_value=False),
+    ):
+        result = _audit_node("/some/repo", "bun")
+    assert result.status == "skipped"
+    assert "bun audit" in result.skip_reason.lower() or "bun" in result.skip_reason
 
 
 # ---------------------------------------------------------------------------
@@ -261,78 +520,13 @@ def test_audit_node_bun_text_parse() -> None:
     bun_output = "2 vulnerabilities (1 high, 1 moderate)"
     with (
         patch("shutil.which", return_value="/usr/bin/bun"),
+        patch("repo_ops_audit.audit._probe_bun_audit", return_value=True),
         patch("repo_ops_audit.audit._run", return_value=(1, bun_output, "")),
     ):
         result = _audit_node("/some/repo", "bun")
     assert result.status == "vulns"
     assert result.counts.high == 1
     assert result.counts.moderate == 1
-
-
-# ---------------------------------------------------------------------------
-# py-uv auditor (mocked subprocess)
-# ---------------------------------------------------------------------------
-
-
-def test_audit_py_uv_skipped_when_uv_missing() -> None:
-    with patch("shutil.which", return_value=None):
-        result = _audit_py_uv("/some/repo")
-    assert result.status == "skipped"
-
-
-def test_audit_py_uv_skipped_when_pip_audit_not_importable() -> None:
-    with (
-        patch("shutil.which", return_value="/usr/bin/uv"),
-        patch(
-            "repo_ops_audit.audit._run",
-            return_value=(1, "", "No module named pip_audit"),
-        ),
-    ):
-        result = _audit_py_uv("/some/repo")
-    assert result.status == "skipped"
-    assert "pip-audit" in result.skip_reason
-
-
-def test_audit_py_uv_ok_no_vulns() -> None:
-    pip_audit_out = json.dumps([{"name": "requests", "version": "2.31.0", "vulns": []}])
-    # probe returns 0 (importable), audit returns 0 + clean output
-    with (
-        patch("shutil.which", return_value="/usr/bin/uv"),
-        patch(
-            "repo_ops_audit.audit._run",
-            side_effect=[(0, "", ""), (0, pip_audit_out, "")],
-        ),
-    ):
-        result = _audit_py_uv("/some/repo")
-    assert result.status == "ok"
-
-
-def test_audit_py_uv_vulns() -> None:
-    pip_audit_out = json.dumps(
-        [
-            {
-                "name": "Pillow",
-                "version": "9.0.0",
-                "vulns": [
-                    {
-                        "id": "GHSA-001",
-                        "aliases": ["CVE-2023-001"],
-                        "fix_versions": ["9.1.0"],
-                    }
-                ],
-            }
-        ]
-    )
-    with (
-        patch("shutil.which", return_value="/usr/bin/uv"),
-        patch(
-            "repo_ops_audit.audit._run",
-            side_effect=[(0, "", ""), (0, pip_audit_out, "")],
-        ),
-    ):
-        result = _audit_py_uv("/some/repo")
-    assert result.status == "vulns"
-    assert result.counts.high == 1
 
 
 # ---------------------------------------------------------------------------
@@ -409,60 +603,6 @@ def test_audit_rust_vulns() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Exit code logic
-# ---------------------------------------------------------------------------
-
-
-def test_exit_code_never_is_always_zero() -> None:
-    results = [
-        WorkspaceResult(
-            label="a",
-            path="/a",
-            ecosystem="go",
-            manager="go",
-            status="vulns",
-            counts=VulnCount(critical=5),
-        )
-    ]
-    assert _exit_code_for(results, "never") == 0
-
-
-def test_exit_code_high_triggers_on_critical() -> None:
-    results = [
-        WorkspaceResult(
-            label="a",
-            path="/a",
-            ecosystem="go",
-            manager="go",
-            status="vulns",
-            counts=VulnCount(critical=1),
-        )
-    ]
-    assert _exit_code_for(results, "high") == 1
-
-
-def test_exit_code_critical_ignores_high() -> None:
-    results = [
-        WorkspaceResult(
-            label="a",
-            path="/a",
-            ecosystem="go",
-            manager="go",
-            status="vulns",
-            counts=VulnCount(high=5),
-        )
-    ]
-    assert _exit_code_for(results, "critical") == 0
-
-
-def test_exit_code_ok_results_are_always_zero() -> None:
-    results = [
-        WorkspaceResult(label="a", path="/a", ecosystem="go", manager="go", status="ok")
-    ]
-    assert _exit_code_for(results, "high") == 0
-
-
-# ---------------------------------------------------------------------------
 # CLI smoke tests
 # ---------------------------------------------------------------------------
 
@@ -473,6 +613,7 @@ def test_audit_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert exc_info.value.code == 0
     out = capsys.readouterr().out
     assert "--fail-on" in out
+    assert "--fail-on-unknown" in out
 
 
 def test_audit_json_output_empty_roots(tmp_path: pytest.TempPathFactory) -> None:
@@ -490,3 +631,15 @@ def test_audit_parser_fail_on_choices() -> None:
     assert args.fail_on == "never"
     with pytest.raises(SystemExit):
         parser.parse_args(["--fail-on", "invalid"])
+
+
+def test_audit_parser_fail_on_unknown_default_off() -> None:
+    parser = build_audit_parser()
+    args = parser.parse_args([])
+    assert args.fail_on_unknown is False
+
+
+def test_audit_parser_fail_on_unknown_flag() -> None:
+    parser = build_audit_parser()
+    args = parser.parse_args(["--fail-on-unknown"])
+    assert args.fail_on_unknown is True
