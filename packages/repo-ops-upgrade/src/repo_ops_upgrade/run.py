@@ -286,20 +286,34 @@ def _run_upgrade_body(
         )
         # One shared cache for the whole run so each (action, ref) is resolved
         # at most once across all repos — avoids redundant GitHub API calls.
+        # The cache is shared across threads; we copy-in before each slow API
+        # call and merge-in after under lock to avoid dict mutation races.
         run_tag_cache: dict[str, dict | None] = {}
-        for bundle in bundles.values():
+        _tag_cache_lock = threading.Lock()
+
+        def _scan_one_bundle_actions(bundle: RepoBundle) -> None:
             if apply and (bundle.any_fail() or bundle.any_dirty_skip()):
-                continue
-            bundle.actions, bundle.actions_workflows_scanned = actions.scan_actions(
+                return
+            local_cache: dict[str, dict | None] = {}
+            with _tag_cache_lock:
+                local_cache.update(run_tag_cache)
+            bumps, count = actions.scan_actions(
                 bundle.git_repo,
                 apply=apply,
                 keep_sha=keep_sha,
                 refresh_sha=refresh_sha,
                 tag_style=tag_style,
                 upgrade_mode=actions_mode,
-                tag_cache=run_tag_cache,
+                tag_cache=local_cache,
                 lint_level=getattr(args, "actions_lint_level", None),
             )
+            with _tag_cache_lock:
+                run_tag_cache.update(local_cache)
+            bundle.actions = bumps
+            bundle.actions_workflows_scanned = count
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as _actions_pool:
+            list(_actions_pool.map(_scan_one_bundle_actions, list(bundles.values())))
 
     only_outdated = getattr(args, "only_outdated", False)
     if only_outdated:
