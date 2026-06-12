@@ -13,15 +13,16 @@ import os
 import sys
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomllib  # type: ignore[no-redef]
-    except ImportError:
-        tomllib = None  # type: ignore[assignment]
+try:
+    if sys.version_info >= (3, 11):
+        import tomllib as _tomllib
+    else:
+        import tomllib as _tomllib  # noqa: PLC0415
+    _TOMLLIB_AVAILABLE = True
+except ImportError:
+    _TOMLLIB_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # TOML loading helpers
@@ -30,11 +31,13 @@ else:
 
 def _load_toml(path: Path) -> dict[str, Any]:
     """Load a TOML file; return empty dict on any error."""
-    if tomllib is None:
+    if not _TOMLLIB_AVAILABLE:
         return {}
     try:
+        import tomllib  # noqa: PLC0415
         with path.open("rb") as fh:
-            return tomllib.load(fh)
+            data: dict[str, Any] = tomllib.load(fh)
+            return data
     except Exception:
         return {}
 
@@ -64,7 +67,7 @@ def load_global_config() -> dict[str, Any]:
     path = _global_config_path()
     if not path.is_file():
         return {}
-    if tomllib is None:
+    if not _TOMLLIB_AVAILABLE:
         _warn_no_tomllib_once()
         return {}
     return _load_toml(path)
@@ -75,11 +78,12 @@ def load_repo_config(repo_root: Path) -> dict[str, Any]:
     pyproject = repo_root / "pyproject.toml"
     if not pyproject.is_file():
         return {}
-    if tomllib is None:
+    if not _TOMLLIB_AVAILABLE:
         _warn_no_tomllib_once()
         return {}
     raw = _load_toml(pyproject)
-    return raw.get("tool", {}).get("repo-ops", {})
+    tool_section: dict[str, Any] = cast(dict[str, Any], raw.get("tool", {}))
+    return cast(dict[str, Any], tool_section.get("repo-ops", {}))
 
 
 # ---------------------------------------------------------------------------
@@ -106,27 +110,79 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
     "go_work_sync": ("REPO_OPS_GO_WORK_SYNC", "go_work_sync", None),
     "no_progress": ("REPO_OPS_NO_PROGRESS", "no_progress", None),
     "node_verify_script": ("REPO_OPS_NODE_VERIFY_SCRIPT", "node_verify_script", None),
-    "commit_agent_provider": ("REPO_OPS_COMMIT_AGENT_PROVIDER", "commit_agent_provider", None),
+    "commit_agent_provider": (
+        "REPO_OPS_COMMIT_AGENT_PROVIDER",
+        "commit_agent_provider",
+        None,
+    ),
 }
 
 # Public table for documentation generation.
 SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
     # (setting, flag, env_var, config_key, default)
     ("jobs", "--jobs", "(none)", "jobs", "min(16, cpu_count)"),
-    ("go_upgrade_mode", "--go-upgrade-mode", "REPO_OPS_GO_UPGRADE_MODE", "go_upgrade_mode", "patch"),
-    ("actions_lint_level", "--actions-lint-level", "REPO_OPS_ACTIONS_LINT_LEVEL", "actions_lint_level", "block"),
+    (
+        "go_upgrade_mode",
+        "--go-upgrade-mode",
+        "REPO_OPS_GO_UPGRADE_MODE",
+        "go_upgrade_mode",
+        "patch",
+    ),
+    (
+        "actions_lint_level",
+        "--actions-lint-level",
+        "REPO_OPS_ACTIONS_LINT_LEVEL",
+        "actions_lint_level",
+        "block",
+    ),
     ("timeout_check", "(none)", "REPO_OPS_TIMEOUT_CHECK", "timeout_check", "60"),
     ("timeout_apply", "(none)", "REPO_OPS_TIMEOUT_APPLY", "timeout_apply", "300"),
     ("timeout_verify", "(none)", "REPO_OPS_TIMEOUT_VERIFY", "timeout_verify", "120"),
     ("find_timeout", "(none)", "REPO_OPS_FIND_TIMEOUT", "find_timeout", "30"),
-    ("bun_update_latest", "--latest", "REPO_OPS_BUN_UPDATE_LATEST", "bun_update_latest", "0"),
-    ("pnpm_update_latest", "--latest", "REPO_OPS_PNPM_UPDATE_LATEST", "pnpm_update_latest", "0"),
-    ("yarn_update_latest", "--latest", "REPO_OPS_YARN_UPDATE_LATEST", "yarn_update_latest", "0"),
-    ("yarn_targeted_bump", "--yarn-targeted-bump", "REPO_OPS_YARN_TARGETED_BUMP", "yarn_targeted_bump", "0"),
+    (
+        "bun_update_latest",
+        "--latest",
+        "REPO_OPS_BUN_UPDATE_LATEST",
+        "bun_update_latest",
+        "0",
+    ),
+    (
+        "pnpm_update_latest",
+        "--latest",
+        "REPO_OPS_PNPM_UPDATE_LATEST",
+        "pnpm_update_latest",
+        "0",
+    ),
+    (
+        "yarn_update_latest",
+        "--latest",
+        "REPO_OPS_YARN_UPDATE_LATEST",
+        "yarn_update_latest",
+        "0",
+    ),
+    (
+        "yarn_targeted_bump",
+        "--yarn-targeted-bump",
+        "REPO_OPS_YARN_TARGETED_BUMP",
+        "yarn_targeted_bump",
+        "0",
+    ),
     ("go_work_sync", "(none)", "REPO_OPS_GO_WORK_SYNC", "go_work_sync", "0"),
     ("no_progress", "(none)", "REPO_OPS_NO_PROGRESS", "no_progress", "0"),
-    ("node_verify_script", "(none)", "REPO_OPS_NODE_VERIFY_SCRIPT", "node_verify_script", "(none)"),
-    ("commit_agent_provider", "(none)", "REPO_OPS_COMMIT_AGENT_PROVIDER", "commit_agent_provider", "cursor"),
+    (
+        "node_verify_script",
+        "(none)",
+        "REPO_OPS_NODE_VERIFY_SCRIPT",
+        "node_verify_script",
+        "(none)",
+    ),
+    (
+        "commit_agent_provider",
+        "(none)",
+        "REPO_OPS_COMMIT_AGENT_PROVIDER",
+        "commit_agent_provider",
+        "cursor",
+    ),
     ("exclude_patterns", "--exclude", "(none)", "exclude", "[]"),
 ]
 

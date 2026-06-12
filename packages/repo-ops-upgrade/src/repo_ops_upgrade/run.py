@@ -212,7 +212,11 @@ def _run_upgrade_body(
         if children_first:
             # Build a depth map: children have depth 0, parents have depth > 0.
             # Bundles at the same depth are independent and can run in parallel.
-            pending_keys = [key for key in bundle_order if key in bundles and bundles[key].workspaces]
+            pending_keys = [
+                key
+                for key in bundle_order
+                if key in bundles and bundles[key].workspaces
+            ]
             key_set_p = set(pending_keys)
             depth_map: dict[Path, int] = dict.fromkeys(pending_keys, 0)
             budget = len(pending_keys)
@@ -228,7 +232,9 @@ def _run_upgrade_body(
                         depth_map[link.parent] = new_d
                         _changed = True
             sorted_keys = sorted(pending_keys, key=lambda k: depth_map.get(k, 0))
-            for _level, level_keys_iter in groupby(sorted_keys, key=lambda k: depth_map.get(k, 0)):
+            for _level, level_keys_iter in groupby(
+                sorted_keys, key=lambda k: depth_map.get(k, 0)
+            ):
                 if _FAIL_FAST.is_set():
                     break
                 level_keys = list(level_keys_iter)
@@ -240,7 +246,9 @@ def _run_upgrade_body(
                         break
                 else:
                     level_failed = False
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as _level_pool:
+                    with concurrent.futures.ThreadPoolExecutor(
+                        max_workers=args.jobs
+                    ) as _level_pool:
                         for batch in run_bounded_pool(
                             _level_pool,
                             level_bundles,
@@ -350,7 +358,9 @@ def _run_upgrade_body(
             bundle.actions = bumps
             bundle.actions_workflows_scanned = count
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as _actions_pool:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=args.jobs
+        ) as _actions_pool:
             list(_actions_pool.map(_scan_one_bundle_actions, list(bundles.values())))
 
     only_outdated = getattr(args, "only_outdated", False)

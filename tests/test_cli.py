@@ -182,3 +182,22 @@ def test_upgrade_parser_accepts_actions_upgrade_mode() -> None:
     assert parser.parse_args([]).actions_upgrade_mode is None
     args = parser.parse_args(["--actions-upgrade-mode", "latest"])
     assert args.actions_upgrade_mode == "latest"
+
+
+def test_upgrade_parser_actions_lint_level_choices():
+    """--actions-lint-level accepts block/warn/off."""
+    parser = build_upgrade_parser(apply=False)
+    for level in ("block", "warn", "off"):
+        args = parser.parse_args(["--actions-lint-level", level])
+        assert args.actions_lint_level == level
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--actions-lint-level", "invalid"])
+
+
+def test_upgrade_parser_exclude_repeatable():
+    """--exclude is repeatable and stores a list."""
+    parser = build_upgrade_parser(apply=False)
+    args = parser.parse_args(["--exclude", "foo", "--exclude", "bar"])
+    assert args.exclude_patterns == ["foo", "bar"]
+    args_none = parser.parse_args([])
+    assert args_none.exclude_patterns is None

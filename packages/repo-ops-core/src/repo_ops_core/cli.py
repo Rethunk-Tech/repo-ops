@@ -176,7 +176,7 @@ def resolve_scan_roots(
     return resolved
 
 
-def add_follow_symlinks_argument(parser: argparse.ArgumentParser) -> None:
+def add_follow_symlinks_argument(parser: argparse._ActionsContainer) -> None:
     """Add --follow-symlinks for repo discovery via find -L."""
     parser.add_argument(
         "--follow-symlinks",
@@ -189,7 +189,7 @@ def add_follow_symlinks_argument(parser: argparse.ArgumentParser) -> None:
 
 
 def add_roots_argument(
-    parser: argparse.ArgumentParser,
+    parser: argparse._ActionsContainer,
     *,
     default: list[str] | None = None,
     help_text: str | None = None,
@@ -206,7 +206,7 @@ def add_roots_argument(
     )
 
 
-def add_json_argument(parser: argparse.ArgumentParser, dest: str = "json_out") -> None:
+def add_json_argument(parser: argparse._ActionsContainer, dest: str = "json_out") -> None:
     """Add --json flag (common across commands), plus --compact for single-line JSON."""
     parser.add_argument(
         "--json",
@@ -221,7 +221,7 @@ def add_json_argument(parser: argparse.ArgumentParser, dest: str = "json_out") -
     )
 
 
-def add_json_out_argument(parser: argparse.ArgumentParser) -> None:
+def add_json_out_argument(parser: argparse._ActionsContainer) -> None:
     """Add --json-out for plan/apply: write JSON artifact to PATH (requires --json)."""
     parser.add_argument(
         "--json-out",
@@ -231,7 +231,7 @@ def add_json_out_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def add_flat_argument(parser: argparse.ArgumentParser) -> None:
+def add_flat_argument(parser: argparse._ActionsContainer) -> None:
     """Add --flat flag (treat roots as single projects)."""
     parser.add_argument(
         "--flat",
@@ -240,7 +240,7 @@ def add_flat_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def add_eco_filter_argument(parser: argparse.ArgumentParser) -> None:
+def add_eco_filter_argument(parser: argparse._ActionsContainer) -> None:
     """Add --filter for a single ecosystem (node/go/rust/py)."""
     parser.add_argument(
         "--filter",
@@ -251,7 +251,7 @@ def add_eco_filter_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def add_manager_filter_argument(parser: argparse.ArgumentParser) -> None:
+def add_manager_filter_argument(parser: argparse._ActionsContainer) -> None:
     """Add --manager for a single package manager (bun/npm/.../go/rust)."""
     parser.add_argument(
         "--manager",
@@ -262,7 +262,7 @@ def add_manager_filter_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def add_verbose_argument(parser: argparse.ArgumentParser) -> None:
+def add_verbose_argument(parser: argparse._ActionsContainer) -> None:
     """Add --verbose / -v flag; caller must wire via wire_verbose(args) after parse."""
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose subprocess logging"
