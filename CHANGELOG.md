@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-06-12
+
+### Added
+
+- **`repo-ops audit` subcommand:** fleet vulnerability sweep running the native auditor per ecosystem when present (govulncheck, npm/yarn/pnpm/bun audit, pip-audit, cargo audit), normalized severity counts, `--fail-on {critical,high,moderate,low,never}` (default high), human table + JSON.
+- **`repo-ops dependabot` subcommand:** finds open Dependabot PRs (via `gh`) whose bump the repo already satisfies; dry-run report by default, `--close` closes them with a supersession comment.
+- **Container image ecosystem:** Dockerfile `FROM` and compose `image:` pins are discovered as `container` workspaces; tags are checked against docker.io/ghcr.io (anonymous v2 API), bumped in-major with suffix awareness (`-alpine`, `-slim`), byte-preserving single-line edits; SHA-pinned and non-semver tags report-only; cross-major behind `REPO_OPS_CONTAINER_UPDATE_LATEST=1`. No build/verify in v1.
+- **Targeted behind-latest bumps for npm and pnpm** (yarn parity, #122): per-package bump-to-latest with verify + revert-on-fail, preserving manifest range style; gated by `REPO_OPS_NPM_TARGETED_BUMP` / `REPO_OPS_PNPM_TARGETED_BUMP` and `--npm-targeted-bump` / `--pnpm-targeted-bump`.
+- **Go directive/toolchain management:** go.work `go`-directive drift vs member requirements is now a planned Change (apply runs `go work use`); opt-in fleet bumps via `REPO_OPS_GO_DIRECTIVE` (`go mod edit -go` + tidy) and `REPO_OPS_GO_TOOLCHAIN`.
+- **Org Actions-policy audit (opt-in, `REPO_OPS_ACTIONS_ORG_POLICY=1`):** every workflow `uses:` is evaluated against the org's allowed-actions policy (all/local_only/selected with pattern matching); violations report as `policy` rows — catches the "org allowlist silently startup-fails all CI" class.
+- **Umbrella submodule pointer-bump commits (opt-in, `REPO_OPS_COMMIT_UMBRELLA=1`):** after children-first commits, umbrella repos get a `chore(submodules): bump N child pin(s)` commit staging exactly the gitlinks of children committed this run.
+- **Dirty-skip aging:** persistent state (`~/.cache/repo-ops/state.json`) records first-seen date and run count per dirty-skipped repo; skip lines show `(dirty since YYYY-MM-DD, N runs)`; disable with `REPO_OPS_NO_STATE=1`.
+- **Per-repo verify profiles:** `verify.script`, `verify.skip`, `verify.timeout` read from `[tool.repo-ops]` in pyproject.toml or a new `.repo-ops.toml` sidecar (for non-Python repos); precedence env > per-repo > global config.
+- **actionlint verdict caching (#123):** content-hash cache at `~/.cache/repo-ops/actionlint-cache.json` (90-day/4096-entry prune, atomic writes); disable with `REPO_OPS_NO_LINT_CACHE=1`.
+- **yarn ghost-bump integration test (#121)** plus bun/npm/go tier extensions.
+
+### Fixed
+
+- **yarn ghost bumps now detected:** `apply_yarn` resolves intended targets (resolutions-stripped probe) and runs the shared ghost-bump guard after apply — a `resolutions` pin blocking an upgrade now fails the workspace instead of silently reaching commit. Plug'n'Play workspaces honestly skip the guard with a note. (#121)
+- **Env-overridable timeouts apply everywhere (#118):** all plugin checkers/appliers (go, rust, uv, hatch, pip-tools, poetry, yarn, bun, npm, pnpm, remediations) migrated from bare `TIMEOUT_CHECK`/`TIMEOUT_APPLY` constants to the `REPO_OPS_TIMEOUT_*` resolvers.
+
+### Changed
+
+- **mypy `disallow_untyped_defs` enabled for all 20 packages** (#120).
+- **Dead `_walk_apply` YAML-rewrite path removed** (#119).
+
 ## [0.14.0] - 2026-06-12
 
 ### Added
@@ -448,7 +474,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.11.0...v0.12.0
