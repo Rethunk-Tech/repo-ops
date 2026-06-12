@@ -98,6 +98,8 @@ Common flags only — run `repo-ops plan --help` / `repo-ops apply --help` for t
 | `--no-verify` | apply | Skip verify gates |
 | `--on-verify-fail=revert\|keep` | apply | Roll back or keep on verify failure |
 | `--commit=none\|conventional\|agent` | apply | Post-apply commits |
+| `--exclude PATTERN` | plan, apply | Exclude repos matching pattern (repeatable) |
+| `--actions-lint-level block\|warn\|off` | plan, apply | Actionlint gate policy |
 
 Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md#security-and-discovery).
 
