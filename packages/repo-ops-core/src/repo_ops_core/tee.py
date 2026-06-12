@@ -7,12 +7,13 @@ import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import IO
 
 
 class _TeeIO:
     """Write-through wrapper that mirrors bytes to a log file."""
 
-    def __init__(self, stream, log_file) -> None:
+    def __init__(self, stream: IO[str], log_file: IO[str]) -> None:
         self._stream = stream
         self._log = log_file
 
@@ -27,7 +28,7 @@ class _TeeIO:
         self._stream.flush()
         self._log.flush()
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> object:
         return getattr(self._stream, name)
 
 

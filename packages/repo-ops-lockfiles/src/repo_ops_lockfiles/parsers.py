@@ -41,8 +41,10 @@ def versions_npm_lock(p: Path) -> set[str]:
         return out
 
     # v1 fallback
-    def walk(node):
+    def walk(node: dict[str, object]) -> None:
         for name, meta in node.items():
+            if not isinstance(meta, dict):
+                continue
             out.add(f"{name}@{meta.get('version', '?')}")
             walk(meta.get("dependencies") or {})
 
