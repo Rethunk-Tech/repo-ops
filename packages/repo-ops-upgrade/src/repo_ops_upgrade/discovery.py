@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from repo_ops_container.container import is_container_workspace
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.git import git_repo_for, repo_label
@@ -259,6 +260,23 @@ def discover_workspaces_in_root(
             )
         )
 
+    def consider_container(mdir: Path) -> None:
+        if not is_container_workspace(mdir):
+            return
+        git = git_repo_for(mdir)
+        if not git:
+            record_skip(mdir, "container", "not inside a git repo")
+            return
+        found.append(
+            Workspace(
+                path=mdir.resolve(),
+                ecosystem="container",
+                manager="container",
+                git_repo=git.resolve(),
+                label="",
+            )
+        )
+
     def consider_py(mdir: Path) -> None:
         pyp = mdir / "pyproject.toml"
         if not (
@@ -342,6 +360,7 @@ def discover_workspaces_in_root(
             consider_rust(mdir)
         if names & {"pyproject.toml", "requirements.in", "requirements.txt", "Pipfile"}:
             consider_py(mdir)
+        consider_container(mdir)
         # Mark this dir visited unconditionally (not only when a workspace was
         # added) so that skip-only dirs are deduped across nested-repo overlap.
         # Without this, a dir that produces only a record_skip is walked a

@@ -22,6 +22,7 @@ dependencies = [
   "repo-ops-js-yarn",
   "repo-ops-go",
   "repo-ops-rust",
+  "repo-ops-container",
   "repo-ops-py",
   "repo-ops-py-uv",
   "repo-ops-py-poetry",
@@ -47,6 +48,7 @@ repo-ops-js-bun = { workspace = true }
 repo-ops-js-yarn = { workspace = true }
 repo-ops-go = { workspace = true }
 repo-ops-rust = { workspace = true }
+repo-ops-container = { workspace = true }
 repo-ops-py = { workspace = true }
 repo-ops-py-uv = { workspace = true }
 repo-ops-py-poetry = { workspace = true }

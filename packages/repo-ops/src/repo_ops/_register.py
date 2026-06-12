@@ -4,6 +4,7 @@ from __future__ import annotations
 
 
 def register_all() -> None:
+    from repo_ops_container import register as register_container
     from repo_ops_go import register as register_go
     from repo_ops_js_bun import register as register_bun
     from repo_ops_js_npm import register as register_npm
@@ -25,3 +26,4 @@ def register_all() -> None:
     register_poetry()
     register_pip_tools()
     register_hatch()
+    register_container()
