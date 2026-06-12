@@ -9,7 +9,7 @@ import re
 from repo_ops_core.process import run
 from repo_ops_js.guards import assert_targets_resolved
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
+from repo_ops_upgrade.constants import resolve_timeout_apply, resolve_timeout_check
 
 # bun >= 1.3 has no `--json` for `outdated`; it always prints an ANSI-coloured
 # box-drawing table led by a `bun outdated vX (hash)` banner. Parse that table
@@ -125,7 +125,9 @@ def check_bun(ws: Workspace) -> tuple[list[Change], list[Change]]:
     that have a newer ``latest`` version available but are not actioned when
     ``REPO_OPS_BUN_UPDATE_LATEST`` is unset.
     """
-    proc_json = run(["bun", "outdated", "--json"], ws.path, timeout=TIMEOUT_CHECK)
+    proc_json = run(
+        ["bun", "outdated", "--json"], ws.path, timeout=resolve_timeout_check()
+    )
     if proc_json.returncode in (0, 1) and proc_json.stdout.strip():
         try:
             data = json.loads(proc_json.stdout)
@@ -134,7 +136,7 @@ def check_bun(ws: Workspace) -> tuple[list[Change], list[Change]]:
         if isinstance(data, dict):
             return _changes_from_bun_json(proc_json.stdout)
 
-    proc = run(["bun", "outdated"], ws.path, timeout=TIMEOUT_CHECK)
+    proc = run(["bun", "outdated"], ws.path, timeout=resolve_timeout_check())
     if proc.returncode not in (0, 1):
         raise RuntimeError(
             proc.stderr.strip() or proc.stdout.strip() or "bun outdated failed"
@@ -163,7 +165,7 @@ def apply_bun(ws: Workspace) -> None:
         # applied to any changes whose target version IS known (task #3: skip
         # unparseable '?' entries but guard what IS known from the original
         # check output).
-        proc = run(["bun", "update"], ws.path, timeout=TIMEOUT_APPLY)
+        proc = run(["bun", "update"], ws.path, timeout=resolve_timeout_apply())
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "bun update failed")
         # Re-check original changes for known target versions.
@@ -176,7 +178,9 @@ def apply_bun(ws: Workspace) -> None:
         if guardable:
             assert_targets_resolved(ws, guardable, manager="bun")
         return
-    proc = run(["bun", "update", "--", *targets], ws.path, timeout=TIMEOUT_APPLY)
+    proc = run(
+        ["bun", "update", "--", *targets], ws.path, timeout=resolve_timeout_apply()
+    )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
     assert_targets_resolved(ws, requested, manager="bun")
