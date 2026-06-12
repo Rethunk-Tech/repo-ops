@@ -3,6 +3,12 @@
 Config files (TOML, read-only — never written):
   Global:  ~/.config/repo-ops/config.toml  (or $XDG_CONFIG_HOME/repo-ops/config.toml)
   Per-repo: <repo_root>/pyproject.toml [tool.repo-ops] table
+            <repo_root>/.repo-ops.toml   flat keys (same names as above; pyproject wins)
+
+Non-Python repos (no pyproject.toml) use the ``.repo-ops.toml`` sidecar file.
+When both files exist, ``pyproject.toml``'s ``[tool.repo-ops]`` table takes precedence
+over ``.repo-ops.toml`` on a per-key basis (pyproject value wins for any key present
+in both files).
 
 Python 3.11+ only; skipped with a warning on 3.10 unless ``tomli`` is installed.
 """
@@ -70,17 +76,58 @@ def load_global_config() -> dict[str, Any]:
     return _load_toml(path)
 
 
+def load_dot_repo_ops_config(repo_root: Path) -> dict[str, Any]:
+    """Load flat keys from <repo_root>/.repo-ops.toml.
+
+    Intended for non-Python repos that have no pyproject.toml.  The file uses
+    the same key names as the ``[tool.repo-ops]`` table in pyproject.toml but
+    at the top level (flat, no ``[tool.repo-ops]`` wrapper required).
+    """
+    sidecar = repo_root / ".repo-ops.toml"
+    if not sidecar.is_file():
+        return {}
+    if not _TOMLLIB_AVAILABLE:
+        _warn_no_tomllib_once()
+        return {}
+    return _load_toml(sidecar)
+
+
 def load_repo_config(repo_root: Path) -> dict[str, Any]:
-    """Load [tool.repo-ops] from <repo_root>/pyproject.toml."""
+    """Load per-repo config from <repo_root>/pyproject.toml and/or .repo-ops.toml.
+
+    Merge strategy: pyproject.toml ``[tool.repo-ops]`` table wins on a per-key
+    basis over ``.repo-ops.toml``.  Both files are read and merged so that keys
+    absent from pyproject.toml can still be supplied via the sidecar.
+    """
+    sidecar_cfg = load_dot_repo_ops_config(repo_root)
+
     pyproject = repo_root / "pyproject.toml"
     if not pyproject.is_file():
-        return {}
+        return sidecar_cfg
     if not _TOMLLIB_AVAILABLE:
         _warn_no_tomllib_once()
         return {}
     raw = _load_toml(pyproject)
     tool_section: dict[str, Any] = cast(dict[str, Any], raw.get("tool", {}))
-    return cast(dict[str, Any], tool_section.get("repo-ops", {}))
+    pyproject_cfg: dict[str, Any] = cast(
+        dict[str, Any], tool_section.get("repo-ops", {})
+    )
+
+    if not sidecar_cfg:
+        return pyproject_cfg
+
+    # Merge: sidecar as base, pyproject overrides per key.
+    # For dict-valued keys (e.g. the ``verify`` sub-table) merge one level
+    # deeper so that pyproject wins per sub-key rather than replacing the
+    # whole sub-dict.
+    merged: dict[str, Any] = dict(sidecar_cfg)
+    for key, py_val in pyproject_cfg.items():
+        sc_val = merged.get(key)
+        if isinstance(py_val, dict) and isinstance(sc_val, dict):
+            merged[key] = {**sc_val, **py_val}
+        else:
+            merged[key] = py_val
+    return merged
 
 
 # ---------------------------------------------------------------------------
