@@ -187,44 +187,7 @@ class PinReplacement:
     pin: str
     latest: str
     line: int | None = None
-    drop_comment: bool = False  # When True, clear the trailing # vN comment on apply
-
-
-def _walk_apply(
-    node: Any,
-    replacements: list[PinReplacement],
-) -> bool:
-    changed = False
-    if isinstance(node, (CommentedMap, dict)):
-        uses_val = node.get("uses")
-        if isinstance(uses_val, str):
-            parsed = parse_uses_ref(uses_val)
-            if parsed:
-                action, pin = parsed
-                line, _ = _scalar_line_col(uses_val)
-                for repl in replacements:
-                    if action != repl.action or pin != repl.pin:
-                        continue
-                    if repl.line is not None and line != repl.line:
-                        continue
-                    node["uses"] = f"{repl.action}@{repl.latest}"
-                    # Optionally drop the trailing version-hint comment (# vN).
-                    if repl.drop_comment and isinstance(node, CommentedMap):
-                        ca = getattr(node, "ca", None)
-                        if ca is not None:
-                            entry = ca.items.get("uses")
-                            if entry and len(entry) > 2:
-                                entry[2] = None
-                    changed = True
-                    break
-        for child in node.values():
-            if _walk_apply(child, replacements):
-                changed = True
-    elif isinstance(node, (CommentedSeq, list)):
-        for item in node:
-            if _walk_apply(item, replacements):
-                changed = True
-    return changed
+    drop_comment: bool = False  # Unused since byte-preserving rewrite path (issue #117)
 
 
 def _apply_pin_to_line(line: str, action: str, old_pin: str, new_pin: str) -> str:

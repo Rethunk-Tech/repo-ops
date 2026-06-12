@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -49,6 +52,86 @@ ActionsUpgradeMode = Literal["normalize", "latest"]
 ActionsLintLevel = Literal["block", "warn", "off"]
 
 _DEFAULT_LINT_LEVEL: ActionsLintLevel = "block"
+
+# ---------------------------------------------------------------------------
+# Actionlint result cache (issue #123)
+# ---------------------------------------------------------------------------
+
+# Maximum age (seconds) for a cache entry before it is pruned on write.
+_LINT_CACHE_MAX_AGE_S: int = 90 * 24 * 3600  # 90 days
+
+# Maximum number of entries kept in the cache file (simple LRU-by-touch).
+_LINT_CACHE_MAX_ENTRIES: int = 4096
+
+# In-process version string cache (populated on first _run_actionlint call).
+_actionlint_version_cache: str | None = None
+
+
+def _actionlint_cache_path() -> Path:
+    """Return ``$XDG_CACHE_HOME/repo-ops/actionlint-cache.json``."""
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".cache"
+    )
+    return Path(base) / "repo-ops" / "actionlint-cache.json"
+
+
+def _load_lint_cache(path: Path) -> dict[str, dict]:
+    """Load the actionlint cache JSON.  Returns ``{}`` on any error."""
+    try:
+        data: object = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_lint_cache(path: Path, cache: dict[str, dict]) -> None:
+    """Atomically write *cache* to *path*, pruning old entries first."""
+    now = time.time()
+    # Drop entries older than the max age.
+    pruned = {
+        k: v
+        for k, v in cache.items()
+        if isinstance(v, dict) and now - v.get("ts", 0) <= _LINT_CACHE_MAX_AGE_S
+    }
+    # Cap total entries (drop oldest by timestamp).
+    if len(pruned) > _LINT_CACHE_MAX_ENTRIES:
+        sorted_keys = sorted(pruned, key=lambda k: pruned[k].get("ts", 0), reverse=True)
+        pruned = {k: pruned[k] for k in sorted_keys[:_LINT_CACHE_MAX_ENTRIES]}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(pruned, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    except Exception:  # noqa: S110 — best-effort: cache write failure is non-fatal
+        pass
+
+
+def _lint_cache_key(wf_bytes: bytes, version: str) -> str:
+    """Return a cache key: sha256(workflow bytes + NUL + version string)."""
+    h = hashlib.sha256()
+    h.update(wf_bytes)
+    h.update(b"\x00")
+    h.update(version.encode())
+    return h.hexdigest()
+
+
+def _get_actionlint_version() -> str:
+    """Return the ``actionlint --version`` string, cached in-process."""
+    global _actionlint_version_cache
+    if _actionlint_version_cache is not None:
+        return _actionlint_version_cache
+    try:
+        proc = subprocess.run(
+            ["actionlint", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        ver = (proc.stdout.strip() or proc.stderr.strip() or "unknown").splitlines()[0]
+    except Exception:
+        ver = "unknown"
+    _actionlint_version_cache = ver
+    return ver
 
 
 def _read_lint_level_env() -> ActionsLintLevel:
@@ -368,17 +451,63 @@ def _resolve_latest_target(info: dict, tag_style: TagStyle) -> str | None:
     return None
 
 
-def _run_actionlint(wf: Path, repo: Path) -> str | None:
-    """Return a lint error string, or None when lint passes or is unavailable."""
+def _run_actionlint(
+    wf: Path,
+    repo: Path,
+    *,
+    lint_cache: dict[str, dict] | None = None,
+) -> str | None:
+    """Return a lint error string, or None when lint passes or is unavailable.
+
+    When *lint_cache* is provided (and ``REPO_OPS_NO_LINT_CACHE`` is unset),
+    the result is looked up by content-hash before invoking the subprocess and
+    stored after a cache miss.  The cache dict is mutated in place; the caller
+    is responsible for persisting it to disk at the end of the run.
+    """
     if not shutil.which("actionlint"):
         return None
+
+    use_cache = lint_cache is not None and not os.environ.get("REPO_OPS_NO_LINT_CACHE")
+
+    wf_bytes: bytes | None = None
+    cache_key: str | None = None
+
+    if use_cache:
+        try:
+            wf_bytes = wf.read_bytes()
+        except OSError:
+            use_cache = False
+
+    if use_cache and wf_bytes is not None:
+        version = _get_actionlint_version()
+        cache_key = _lint_cache_key(wf_bytes, version)
+        entry = lint_cache.get(cache_key) if lint_cache is not None else None
+        if entry is not None:
+            # Update touch timestamp and return cached verdict.
+            entry["ts"] = time.time()
+            raw = entry.get("result")
+            return raw if isinstance(raw, str) else None
+
+    # Cache miss (or cache disabled) — run the subprocess.
     try:
         proc = run(["actionlint", str(wf)], repo, timeout=60)
     except subprocess.TimeoutExpired:
         return "actionlint timed out"
+
     if proc.returncode != 0:
-        return proc.stderr.strip() or proc.stdout.strip() or "actionlint failed"
-    return None
+        result: str | None = (
+            proc.stderr.strip() or proc.stdout.strip() or "actionlint failed"
+        )
+    else:
+        result = None
+
+    if use_cache and cache_key is not None and lint_cache is not None:
+        lint_cache[cache_key] = {
+            "result": result,
+            "ts": time.time(),
+        }
+
+    return result
 
 
 def scan_actions(
@@ -450,9 +579,21 @@ def scan_actions(
     workflows = discover_workflow_files(repo)
     bumps: list[ActionBump] = []
     _cache: dict[str, dict | None] = tag_cache if tag_cache is not None else {}
+
+    # Load the actionlint result cache once per run (skipped in "off" mode).
+    _lint_cache: dict[str, dict] | None = None
+    _lint_cache_path: Path | None = None
+    if effective_lint_level != "off":
+        _lint_cache_path = _actionlint_cache_path()
+        _lint_cache = _load_lint_cache(_lint_cache_path)
+
     for wf in workflows:
         rel = str(wf.relative_to(repo))
-        lint_err = None if effective_lint_level == "off" else _run_actionlint(wf, repo)
+        lint_err = (
+            None
+            if effective_lint_level == "off"
+            else _run_actionlint(wf, repo, lint_cache=_lint_cache)
+        )
         if lint_err:
             bumps.append(
                 ActionBump(
@@ -741,4 +882,8 @@ def scan_actions(
                         detail=str(exc),
                     )
                 )
+    # Persist the actionlint cache (atomic write; best-effort).
+    if _lint_cache is not None and _lint_cache_path is not None:
+        _save_lint_cache(_lint_cache_path, _lint_cache)
+
     return bumps, len(workflows)
