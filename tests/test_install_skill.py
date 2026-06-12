@@ -113,3 +113,32 @@ def test_validate_dest_allows_unrelated_dest(tmp_path: Path) -> None:
     dest = tmp_path / "b" / "repo-ops"
     # Should not raise — unrelated paths, same final component.
     validate_dest(dest, src)
+
+
+# --- AGENTS.md bundle drift guard ---
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_ROOT_AGENTS_MD = _REPO_ROOT / "AGENTS.md"
+
+
+def test_bundled_agents_md_is_byte_identical_to_root() -> None:
+    """Bundled AGENTS.md must stay in sync with the root copy.
+
+    Edit root AGENTS.md → copy to packages/repo-ops/src/repo_ops/skills/repo-ops/AGENTS.md.
+    This test fails when one is edited without updating the other.
+    """
+    skill = bundled_skill_dir()
+    bundled = skill / "AGENTS.md"
+    assert bundled.is_file(), f"bundled AGENTS.md missing at {bundled}"
+    assert bundled.read_bytes() == _ROOT_AGENTS_MD.read_bytes(), (
+        "Bundled AGENTS.md has drifted from root AGENTS.md. "
+        "Run: cp AGENTS.md packages/repo-ops/src/repo_ops/skills/repo-ops/AGENTS.md"
+    )
+
+
+def test_install_skill_includes_agents_md(tmp_path: Path) -> None:
+    """install-skill copytree must deliver AGENTS.md to the destination."""
+    dest = tmp_path / "skills" / "repo-ops"
+    code = main(["--dest", str(dest), "--target", "cursor"])
+    assert code == 0
+    assert (dest / "AGENTS.md").is_file()
