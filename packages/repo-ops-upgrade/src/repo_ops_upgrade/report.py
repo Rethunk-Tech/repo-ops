@@ -6,6 +6,7 @@ import contextlib
 import json
 import os
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -124,9 +125,11 @@ def build_json_payload(
     diagnostics: DiscoveryDiagnostics | None = None,
     submodules: list[dict[str, str]] | None = None,
     submodule_pointer_hints: list[dict[str, str]] | None = None,
+    exit_code: int | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "schema_version": 1,
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "roots": roots,
         "mode": mode,
         "summary": build_run_summary(bundles, diagnostics=diagnostics),
@@ -134,6 +137,8 @@ def build_json_payload(
         "skipped": list(diagnostics.skipped) if diagnostics else [],
         "repos": [b.to_json() for b in sorted(bundles.values(), key=lambda x: x.label)],
     }
+    if exit_code is not None:
+        payload["exit_code"] = exit_code
     if submodules is not None:
         payload["submodules"] = submodules
     if submodule_pointer_hints is not None:
@@ -150,6 +155,7 @@ def print_json_report(
     submodules: list[dict[str, str]] | None = None,
     submodule_pointer_hints: list[dict[str, str]] | None = None,
     compact: bool = False,
+    exit_code: int | None = None,
 ) -> None:
     payload = build_json_payload(
         bundles,
@@ -158,6 +164,7 @@ def print_json_report(
         diagnostics=diagnostics,
         submodules=submodules,
         submodule_pointer_hints=submodule_pointer_hints,
+        exit_code=exit_code,
     )
     print(json.dumps(payload, indent=None if compact else 2))
 
@@ -172,6 +179,7 @@ def write_json_report(
     submodules: list[dict[str, str]] | None = None,
     submodule_pointer_hints: list[dict[str, str]] | None = None,
     compact: bool = False,
+    exit_code: int | None = None,
 ) -> Path:
     """Write one JSON document to path via temp file + rename. Returns resolved path."""
     path = Path(path).expanduser().resolve()
@@ -183,6 +191,7 @@ def write_json_report(
         diagnostics=diagnostics,
         submodules=submodules,
         submodule_pointer_hints=submodule_pointer_hints,
+        exit_code=exit_code,
     )
     text = json.dumps(payload, indent=None if compact else 2) + "\n"
     fd, tmp_name = tempfile.mkstemp(

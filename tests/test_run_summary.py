@@ -125,6 +125,31 @@ def test_build_json_payload_includes_summary(tmp_path: Path) -> None:
     assert payload["summary"]["failure_count"] == 0
 
 
+def test_build_json_payload_generated_at_and_exit_code(tmp_path: Path) -> None:
+    """generated_at is always present; exit_code only when provided."""
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="npm",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    bundle = _bundle(tmp_path, workspaces=[WorkspaceResult(workspace=ws)])
+    bundles = {tmp_path: bundle}
+
+    payload_no_code = build_json_payload(bundles, roots=["/tmp"], mode="plan")
+    assert "generated_at" in payload_no_code
+    # UTC ISO-8601 ending with Z
+    assert payload_no_code["generated_at"].endswith("Z")
+    assert "exit_code" not in payload_no_code
+
+    payload_with_code = build_json_payload(
+        bundles, roots=["/tmp"], mode="apply", exit_code=1
+    )
+    assert payload_with_code["exit_code"] == 1
+    assert "generated_at" in payload_with_code
+
+
 def test_print_run_footer_includes_actions_failures_row(tmp_path: Path) -> None:
     """#48 — actions_failures must appear in the footer summary table."""
     summary = {
