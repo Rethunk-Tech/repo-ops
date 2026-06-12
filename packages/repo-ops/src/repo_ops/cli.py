@@ -1,4 +1,4 @@
-"""repo-ops dispatcher: inventory, plan, apply, pushed."""
+"""repo-ops dispatcher: inventory, plan, apply, pushed, audit, dependabot."""
 
 from __future__ import annotations
 
@@ -7,7 +7,11 @@ import importlib.metadata
 import sys
 from collections.abc import Callable
 
+from repo_ops_audit.audit import build_audit_parser
+from repo_ops_audit.audit import main as audit_main
 from repo_ops_core.cli import build_upgrade_parser
+from repo_ops_dependabot.dependabot import build_dependabot_parser
+from repo_ops_dependabot.dependabot import main as dependabot_main
 from repo_ops_inventory.scan import build_inventory_parser
 from repo_ops_inventory.scan import main as inventory_main
 from repo_ops_pushed.audit import build_pushed_parser
@@ -28,6 +32,8 @@ _HANDLERS: dict[str, Callable[[list[str] | None], int | None]] = {
     "apply": main_apply,
     "pushed": pushed_main,
     "install-skill": install_skill_main,
+    "audit": audit_main,
+    "dependabot": dependabot_main,
 }
 
 _HELP_BUILDERS: dict[str, Callable[[], argparse.ArgumentParser]] = {
@@ -36,6 +42,8 @@ _HELP_BUILDERS: dict[str, Callable[[], argparse.ArgumentParser]] = {
     "apply": lambda: build_upgrade_parser(apply=True),
     "pushed": build_pushed_parser,
     "install-skill": build_install_skill_parser,
+    "audit": build_audit_parser,
+    "dependabot": build_dependabot_parser,
 }
 
 _SUBCOMMAND_HELP = {
@@ -44,6 +52,8 @@ _SUBCOMMAND_HELP = {
     "apply": "Apply upgrades with verify gates",
     "pushed": "Pushed commits audit",
     "install-skill": "Install Cursor/Claude agent skill for repo-ops",
+    "audit": "Fleet vulnerability sweep (read-only)",
+    "dependabot": "List/close superseded Dependabot PRs",
 }
 
 
@@ -56,9 +66,10 @@ def _resolve_version() -> str:
 
 
 _TOP_LEVEL_DESCRIPTION = """\
-Repository operations for local monorepo roots (inventory, plan, apply, pushed).
+Repository operations for local monorepo roots (inventory, plan, apply, pushed,
+audit, dependabot).
 
-When no root_dir arguments are passed, plan/apply/inventory/pushed scan DEFAULT_ROOTS
+When no root_dir arguments are passed, subcommands scan DEFAULT_ROOTS
 (see repo-ops plan --help). Agents: AGENTS.md quick reference. Humans: HUMANS.md.
 """
 
@@ -67,6 +78,8 @@ examples:
   repo-ops plan --latest
   repo-ops apply --latest --log-file apply.log
   repo-ops inventory --flat /path/to/checkout
+  repo-ops audit --fail-on critical
+  repo-ops dependabot --close
 
 Use repo-ops <subcommand> --help for all flags on that subcommand.
 """
