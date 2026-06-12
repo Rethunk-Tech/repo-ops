@@ -7,11 +7,19 @@ import os
 import sys
 
 from repo_ops_core.process import run
+from repo_ops_core.version_utils import semver_tuple
 from repo_ops_js.guards import assert_targets_resolved
+from repo_ops_lockfiles.snapshots import (
+    resolved_version_from_node_modules,
+    restore_workspace_snapshot,
+    snapshot_workspace_files,
+)
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
 _PNPM_UPDATE_LATEST_ENV = "REPO_OPS_PNPM_UPDATE_LATEST"
+_PNPM_TARGETED_BUMP_ENV = "REPO_OPS_PNPM_TARGETED_BUMP"
+_TRUE_VALUES = ("1", "true", "yes")
 
 
 def _pnpm_update_latest_enabled() -> bool:
@@ -21,6 +29,10 @@ def _pnpm_update_latest_enabled() -> bool:
         "yes",
         "on",
     )
+
+
+def _pnpm_targeted_bump_enabled() -> bool:
+    return os.environ.get(_PNPM_TARGETED_BUMP_ENV, "").strip().lower() in _TRUE_VALUES
 
 
 def _bucket_pnpm_pkg(
@@ -102,9 +114,72 @@ def check_pnpm(ws: Workspace) -> tuple[list[Change], list[Change]]:
     return changes, behind_latest
 
 
-def apply_pnpm(ws: Workspace) -> None:
+def targeted_bump_behind(
+    ws: Workspace, behind: list[Change]
+) -> tuple[list[Change], list[Change]]:
+    """Per-package ``pnpm update --latest <pkg>`` fallback for still-behind deps (#122).
+
+    Mirrors yarn's ``targeted_bump_behind``: for each behind-latest direct dep we
+    snapshot the workspace's lockfile/manifests, run a targeted
+    ``pnpm update --latest <pkg>`` (no ``-r``, single-package scope), and keep
+    the bump only if install succeeds **and** the resolved version in node_modules
+    actually advanced (guards the ghost-bump case where the lock churns but the
+    resolver holds the old version due to an override/resolution entry or a
+    peer/group constraint). On any failure or no-op we restore the snapshot,
+    leaving that package behind.
+
+    ``pnpm update --latest <pkg>`` (without ``-r``) targets only the named
+    package, updates both ``pnpm-lock.yaml`` and the manifest range entry, and
+    exits non-zero on install failure — making it structurally equivalent to
+    ``yarn up <pkg>@latest`` + ``yarn install``.
+
+    Opt-in (``REPO_OPS_PNPM_TARGETED_BUMP``) and reversible per-package: a bump
+    that fights peer constraints is dropped, never committed. Returns
+    ``(applied, still_behind)`` — ``applied`` carries the real resolved version
+    landed.
+    """
+    if not behind or not _pnpm_targeted_bump_enabled():
+        return [], behind
+    applied: list[Change] = []
+    still_behind: list[Change] = []
+    for change in behind:
+        snap = snapshot_workspace_files(ws.path, "pnpm")
+        update = run(
+            ["pnpm", "update", "--latest", change.name],
+            ws.path,
+            timeout=TIMEOUT_APPLY,
+        )
+        landed: str | None = None
+        if update.returncode == 0:
+            landed = resolved_version_from_node_modules(ws.path, change.name)
+        advanced = False
+        if landed:
+            try:
+                advanced = semver_tuple(landed) > semver_tuple(change.from_ver)
+            except (TypeError, ValueError):
+                advanced = landed != change.from_ver
+        if landed and advanced and update.returncode == 0:
+            applied.append(Change(change.name, change.from_ver, landed))
+            assert_targets_resolved(
+                ws, [Change(change.name, change.from_ver, landed)], manager="pnpm"
+            )
+        else:
+            restore_workspace_snapshot(ws.path, snap, "pnpm")
+            still_behind.append(change)
+    return applied, still_behind
+
+
+def apply_pnpm(ws: Workspace) -> list[Change]:
+    """Apply pnpm upgrades; returns still-behind deps after optional targeted bumps.
+
+    With ``REPO_OPS_PNPM_TARGETED_BUMP`` set, each dep that ``pnpm update`` left
+    behind_latest gets a reversible targeted ``pnpm update --latest <pkg>``; only
+    bumps that actually advance the resolved version are kept. Returns the subset
+    of behind_latest that could not be moved (empty in conservative mode or when
+    all behind deps were successfully targeted).
+    """
     # Match npm conservative bumps (semver ranges) unless the user opts into latest.
-    changes, _behind = check_pnpm(ws)
+    changes, behind = check_pnpm(ws)
     cmd = ["pnpm", "update", "-r"]
     if _pnpm_update_latest_enabled():
         cmd.append("--latest")
@@ -116,3 +191,5 @@ def apply_pnpm(ws: Workspace) -> None:
         raise RuntimeError(proc2.stderr.strip() or "pnpm install failed")
     if changes:
         assert_targets_resolved(ws, changes, manager="pnpm")
+    _, behind = targeted_bump_behind(ws, behind)
+    return behind
