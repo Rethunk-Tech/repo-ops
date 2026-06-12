@@ -16,11 +16,8 @@ def test_jobs_default_resolves_to_cpu_count():
         called_with_jobs.append(kwargs["args"].jobs)
         return 0
 
-    with (
-        patch("repo_ops_upgrade.run.DEFAULT_ROOTS", ["/tmp"]),
-        patch("repo_ops_upgrade.run._run_upgrade_body", _fake_body),
-    ):
-        run_upgrade(apply=False, argv=[])
+    with patch("repo_ops_upgrade.run._run_upgrade_body", _fake_body):
+        run_upgrade(apply=False, argv=["/tmp"])
 
     assert len(called_with_jobs) == 1
     expected = min(16, os.cpu_count() or 4)
@@ -37,11 +34,8 @@ def test_jobs_explicit_not_overridden():
         called_with_jobs.append(kwargs["args"].jobs)
         return 0
 
-    with (
-        patch("repo_ops_upgrade.run.DEFAULT_ROOTS", ["/tmp"]),
-        patch("repo_ops_upgrade.run._run_upgrade_body", _fake_body),
-    ):
-        run_upgrade(apply=False, argv=["--jobs", "3"])
+    with patch("repo_ops_upgrade.run._run_upgrade_body", _fake_body):
+        run_upgrade(apply=False, argv=["/tmp", "--jobs", "3"])
 
     assert called_with_jobs[0] == 3
 
