@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import concurrent.futures
+import fnmatch
 import os
+import threading
+from itertools import groupby
 from pathlib import Path
 from typing import Literal
 
@@ -275,6 +278,7 @@ def _run_upgrade_body(
                 tag_style=tag_style,
                 upgrade_mode=actions_mode,
                 tag_cache=run_tag_cache,
+                lint_level=getattr(args, "actions_lint_level", None),
             )
 
     only_outdated = getattr(args, "only_outdated", False)
@@ -389,6 +393,8 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if getattr(args, "json_report_path", None) and not args.json:
         parser.error("--json-out requires --json")
+    if args.jobs is None:
+        args.jobs = min(16, os.cpu_count() or 4)
     wire_verbose(args)
 
     roots = resolve_scan_roots(list(args.roots or DEFAULT_ROOTS), parser)

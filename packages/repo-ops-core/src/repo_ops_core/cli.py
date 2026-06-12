@@ -298,13 +298,24 @@ def add_upgrade_common_arguments(
     parser.add_argument(
         "--jobs",
         type=positive_int,
-        default=8,
-        help="Max parallel workers per run (default: 8).",
+        default=None,
+        help="Max parallel workers per run (default: min(16, cpu count)).",
     )
     parser.add_argument(
         "--fail-fast",
         action="store_true",
         help="Stop scheduling new workspaces after the first failure.",
+    )
+    parser.add_argument(
+        "--actions-lint-level",
+        choices=("block", "warn", "off"),
+        default=None,
+        dest="actions_lint_level",
+        metavar="LEVEL",
+        help=(
+            "How actionlint failures gate pin bumps: block (default, env: "
+            "REPO_OPS_ACTIONS_LINT_LEVEL), warn, or off."
+        ),
     )
     parser.add_argument(
         "--latest",
