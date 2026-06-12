@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from repo_ops_core.state import cache_get_dirty_skip
 from repo_ops_core.table import column_width, format_cell
 from repo_ops_models import RepoBundle, WorkspaceResult
 
@@ -117,6 +118,21 @@ def collect_run_failures(
     return items
 
 
+def _enrich_repo_json_with_aging(
+    bundle: RepoBundle,
+    repo_json: dict[str, Any],
+) -> dict[str, Any]:
+    """Add dirty-skip aging fields to workspace entries that were dirty-skipped."""
+    ws_list = repo_json.get("workspaces", [])
+    for ws_json, wr in zip(ws_list, bundle.workspaces, strict=False):
+        if wr.status == "skip" and wr.error and _DIRTY_SKIP_MARKER in wr.error:
+            entry = cache_get_dirty_skip(wr.workspace.git_repo)
+            if entry:
+                ws_json["dirty_since"] = entry["first_seen"]
+                ws_json["dirty_skip_runs"] = entry["runs"]
+    return repo_json
+
+
 def build_json_payload(
     bundles: dict[Path, RepoBundle],
     *,
@@ -127,6 +143,8 @@ def build_json_payload(
     submodule_pointer_hints: list[dict[str, str]] | None = None,
     exit_code: int | None = None,
 ) -> dict[str, Any]:
+    sorted_bundles = sorted(bundles.values(), key=lambda x: x.label)
+    repos_json = [_enrich_repo_json_with_aging(b, b.to_json()) for b in sorted_bundles]
     payload: dict[str, Any] = {
         "schema_version": 1,
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -135,7 +153,7 @@ def build_json_payload(
         "summary": build_run_summary(bundles, diagnostics=diagnostics),
         "warnings": list(diagnostics.warnings) if diagnostics else [],
         "skipped": list(diagnostics.skipped) if diagnostics else [],
-        "repos": [b.to_json() for b in sorted(bundles.values(), key=lambda x: x.label)],
+        "repos": repos_json,
     }
     if exit_code is not None:
         payload["exit_code"] = exit_code
@@ -263,7 +281,15 @@ def print_human_report(
             behind_n = len(wr.behind_latest)
             print(f"  [{status}] {rel} ({ws.ecosystem}/{ws.manager}) — {n} upgrade(s)")
             if wr.error:
-                print(f"    error: {wr.error}")
+                error_line = wr.error
+                if _DIRTY_SKIP_MARKER in error_line:
+                    entry = cache_get_dirty_skip(ws.git_repo)
+                    if entry:
+                        error_line = (
+                            f"{error_line} "
+                            f"(dirty since {entry['first_seen']}, {entry['runs']} run(s))"
+                        )
+                print(f"    error: {error_line}")
             if wr.verify_error:
                 print(f"    verify: {wr.verify_error}")
             if wr.verify_fail_disposition:
