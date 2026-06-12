@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import re
 import shutil
 import subprocess
@@ -36,6 +37,37 @@ TagStyle = Literal["major", "exact"]
 # newest available major (issue #106), subject to the same tag-style + bare-major
 # safety rules used elsewhere.
 ActionsUpgradeMode = Literal["normalize", "latest"]
+
+# How actionlint failures gate pin bumps for a workflow.
+# ``block`` (default) — a lint failure records a fail row and skips all pin
+#   bumps for that workflow (current behaviour).
+# ``warn`` — records the ActionBump fail row and prints a WARN to stderr, but
+#   still proceeds with pin bumps for that workflow.
+# ``off`` — skips running actionlint entirely.
+# Env var: REPO_OPS_ACTIONS_LINT_LEVEL (values: block | warn | off).
+# A CLI flag (--actions-lint-level) can wire into this parameter later.
+ActionsLintLevel = Literal["block", "warn", "off"]
+
+_DEFAULT_LINT_LEVEL: ActionsLintLevel = "block"
+
+
+def _read_lint_level_env() -> ActionsLintLevel:
+    """Read ``REPO_OPS_ACTIONS_LINT_LEVEL`` from the environment.
+
+    Returns ``"block"`` when the variable is absent or holds an unrecognised
+    value (with a warning printed to stderr in the latter case).
+    """
+    raw = os.environ.get("REPO_OPS_ACTIONS_LINT_LEVEL", "").strip().lower()
+    if not raw:
+        return _DEFAULT_LINT_LEVEL
+    if raw in ("block", "warn", "off"):
+        return raw  # type: ignore[return-value]
+    print(
+        f"WARN: REPO_OPS_ACTIONS_LINT_LEVEL={raw!r} unrecognised; "
+        "defaulting to 'block'",
+        file=sys.stderr,
+    )
+    return _DEFAULT_LINT_LEVEL
 
 
 def discover_workflow_files(repo: Path) -> list[Path]:
@@ -358,6 +390,7 @@ def scan_actions(
     tag_style: TagStyle = "major",
     upgrade_mode: ActionsUpgradeMode = "normalize",
     tag_cache: dict[str, dict | None] | None = None,
+    lint_level: ActionsLintLevel | None = None,
 ) -> tuple[list[ActionBump], int]:
     """Scan GitHub Actions workflow files and produce bump recommendations.
 
@@ -394,8 +427,23 @@ def scan_actions(
         failure).  When provided, entries are reused across calls so each
         (action, ref) is resolved at most once per run.  When omitted, a fresh
         per-call dict is used (preserves test isolation).
+    lint_level:
+        Controls how actionlint failures gate pin bumps.  ``None`` (default) reads
+        from the ``REPO_OPS_ACTIONS_LINT_LEVEL`` environment variable, falling
+        back to ``"block"``.
+
+        * ``"block"`` — lint failure records a fail row and skips all pin bumps
+          for that workflow (current behaviour).
+        * ``"warn"`` — records the fail row and prints a WARN to stderr, but
+          proceeds with pin bumps for the workflow.
+        * ``"off"`` — skips running actionlint entirely.
+
+        A CLI flag (``--actions-lint-level``) can wire into this parameter later.
     """
-    if not shutil.which("actionlint"):
+    effective_lint_level: ActionsLintLevel = (
+        lint_level if lint_level is not None else _read_lint_level_env()
+    )
+    if effective_lint_level != "off" and not shutil.which("actionlint"):
         print(
             "WARN: actionlint not on PATH; skipping action validation", file=sys.stderr
         )
@@ -404,7 +452,7 @@ def scan_actions(
     _cache: dict[str, dict | None] = tag_cache if tag_cache is not None else {}
     for wf in workflows:
         rel = str(wf.relative_to(repo))
-        lint_err = _run_actionlint(wf, repo)
+        lint_err = None if effective_lint_level == "off" else _run_actionlint(wf, repo)
         if lint_err:
             bumps.append(
                 ActionBump(
@@ -416,11 +464,17 @@ def scan_actions(
                     detail=lint_err,
                 )
             )
+            if effective_lint_level == "block":
+                print(
+                    f"WARN: {rel}: actionlint failed; pin bumps skipped for this workflow",
+                    file=sys.stderr,
+                )
+                continue
+            # warn: record fail row above, print WARN, but proceed with pin bumps.
             print(
-                f"WARN: {rel}: actionlint failed; pin bumps skipped for this workflow",
+                f"WARN: {rel}: actionlint failed (lint_level=warn); proceeding with pin bumps",
                 file=sys.stderr,
             )
-            continue
         try:
             pins = parse_workflow_uses(wf, workflow_rel=rel)
         except WorkflowParseError as exc:
