@@ -96,5 +96,54 @@ def test_write_json_report_matches_build_json_payload(tmp_path: Path) -> None:
     )
     assert written == target.resolve()
     on_disk = json.loads(target.read_text(encoding="utf-8"))
+
+    # generated_at is stamped at call time; normalise before comparing structure.
+    assert "generated_at" in on_disk
+    on_disk_normalised = {k: v for k, v in on_disk.items() if k != "generated_at"}
+
     expected = build_json_payload(bundles, roots=["/tmp"], mode="plan")
-    assert on_disk == expected
+    expected_normalised = {k: v for k, v in expected.items() if k != "generated_at"}
+    assert on_disk_normalised == expected_normalised
+
+
+def test_write_json_report_includes_exit_code(tmp_path: Path) -> None:
+    from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
+    from repo_ops_upgrade.report import write_json_report
+
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="npm",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    wr = WorkspaceResult(workspace=ws)
+    bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
+    bundles = {tmp_path: bundle}
+
+    target = tmp_path / "report.json"
+    write_json_report(target, bundles, roots=["/tmp"], mode="plan", exit_code=0)
+    on_disk = json.loads(target.read_text(encoding="utf-8"))
+    assert on_disk["exit_code"] == 0
+    assert "generated_at" in on_disk
+
+
+def test_write_json_report_omits_exit_code_when_none(tmp_path: Path) -> None:
+    from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
+    from repo_ops_upgrade.report import write_json_report
+
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="npm",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    wr = WorkspaceResult(workspace=ws)
+    bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
+    bundles = {tmp_path: bundle}
+
+    target = tmp_path / "report.json"
+    write_json_report(target, bundles, roots=["/tmp"], mode="plan")
+    on_disk = json.loads(target.read_text(encoding="utf-8"))
+    assert "exit_code" not in on_disk

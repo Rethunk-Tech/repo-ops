@@ -98,6 +98,7 @@ def test_plan_json_stdout_parses_without_skip_warn_lines(
     assert payload["mode"] == "plan"
     assert len(payload["skipped"]) >= 1
     assert len(payload["warnings"]) >= 1
+    assert "generated_at" in payload
     assert rc in (0, 1)
 
 

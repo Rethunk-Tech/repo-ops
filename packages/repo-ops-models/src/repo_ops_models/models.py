@@ -36,6 +36,7 @@ class WorkspaceResult:
     verify_fail_disposition: str | None = None
     started_dirty: bool = False
     reverted_ok: bool = True
+    elapsed_s: float | None = None
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -61,6 +62,8 @@ class WorkspaceResult:
             out["verify_fail_disposition"] = self.verify_fail_disposition
         if not self.reverted_ok:
             out["reverted_ok"] = False
+        if self.elapsed_s is not None:
+            out["elapsed_s"] = round(self.elapsed_s, 2)
         return out
 
 
