@@ -101,7 +101,12 @@ def _pkg_json_dep_changes(before: bytes, after: bytes) -> list[Change]:
     except json.JSONDecodeError:
         return []
     changes: list[Change] = []
-    for section in ("dependencies", "devDependencies", "peerDependencies"):
+    for section in (
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
+    ):
         b_sec = (b_pkg.get(section) or {}) if isinstance(b_pkg, dict) else {}
         a_sec = (a_pkg.get(section) or {}) if isinstance(a_pkg, dict) else {}
         for name in set(b_sec) | set(a_sec):
