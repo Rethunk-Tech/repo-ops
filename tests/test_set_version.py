@@ -50,6 +50,21 @@ def test_set_version_scopes_to_project_and_bumps(tmp_path: Path) -> None:
     assert set_version.write_version(pyproject, "0.7.1") is False
 
 
+def test_manifests_count_matches_repo_layout() -> None:
+    """manifests() must include root + all packages/*/pyproject.toml.
+
+    Guards the release script against silent miscount if packages/ is
+    reorganised (added, removed, or renamed without updating set_version).
+    """
+    repo_root = Path(__file__).resolve().parents[1]
+    expected_count = 1 + len(sorted((repo_root / "packages").glob("*/pyproject.toml")))
+    found = set_version.manifests()
+    assert len(found) == expected_count, (
+        f"manifests() returned {len(found)} paths; "
+        f"expected {expected_count} (1 root + {expected_count - 1} packages)"
+    )
+
+
 _PRERELEASE_FIXTURE = '[project]\nname = "demo"\nversion = "0.8.0rc1"\n'
 
 _NORMAL_FIXTURE = '[project]\nname = "normal"\nversion = "0.8.0"\n'
