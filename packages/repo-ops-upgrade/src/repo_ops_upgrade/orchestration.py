@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
+import sys
 import threading
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -31,6 +34,29 @@ logger = logging.getLogger(__name__)
 FAIL_FAST_EVENT = threading.Event()
 OnVerifyFail = Literal["keep", "revert"]
 
+# Protects stderr progress lines so parallel workers never interleave.
+_PROGRESS_LOCK = threading.Lock()
+
+
+def _emit_progress(result: WorkspaceResult, *, elapsed_s: float) -> None:
+    """Emit one [done] line to stderr if progress is enabled.
+
+    Suppressed by ``REPO_OPS_NO_PROGRESS=1`` or when the ``quiet`` parameter
+    is passed to :func:`process_workspace`.  The lock prevents torn lines under
+    parallel execution.
+    """
+    if os.environ.get("REPO_OPS_NO_PROGRESS") == "1":
+        return
+    ws = result.workspace
+    label = ws.label or str(ws.path)
+    n = len(result.changes)
+    line = f"[done] {label} ({ws.manager}) — {n} change(s)"
+    if result.status == "fail":
+        first_err = (result.verify_error or result.error or "failed").splitlines()[0]
+        line = f"{line}, FAIL: {first_err}"
+    with _PROGRESS_LOCK:
+        print(line, file=sys.stderr)
+
 
 def process_workspace(
     result: WorkspaceResult,
@@ -41,6 +67,34 @@ def process_workspace(
     skip_remediations: set[str],
     allow_dirty: bool,
     on_verify_fail: OnVerifyFail = "keep",
+    quiet: bool = False,
+) -> WorkspaceResult:
+    _t0 = time.monotonic()
+    out = _process_workspace_body(
+        result,
+        do_apply=do_apply,
+        do_verify=do_verify,
+        verify_test=verify_test,
+        skip_remediations=skip_remediations,
+        allow_dirty=allow_dirty,
+        on_verify_fail=on_verify_fail,
+    )
+    elapsed = time.monotonic() - _t0
+    out.elapsed_s = elapsed
+    if not quiet:
+        _emit_progress(out, elapsed_s=elapsed)
+    return out
+
+
+def _process_workspace_body(
+    result: WorkspaceResult,
+    *,
+    do_apply: bool,
+    do_verify: bool,
+    verify_test: bool,
+    skip_remediations: set[str],
+    allow_dirty: bool,
+    on_verify_fail: OnVerifyFail,
 ) -> WorkspaceResult:
     ws = result.workspace
     if FAIL_FAST_EVENT.is_set():
