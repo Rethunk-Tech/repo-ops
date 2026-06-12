@@ -64,6 +64,13 @@ def _find_biome_configs(mdir: Path) -> list[Path]:
             for name in ("biome.json", "biome.jsonc"):
                 if (sub / name).exists():
                     configs.append(sub / name)
+        else:
+            # Expand glob pattern (e.g. "packages/*") bounded to workspace root
+            for sub in mdir.glob(pattern):
+                if sub.is_dir():
+                    for name in ("biome.json", "biome.jsonc"):
+                        if (sub / name).exists():
+                            configs.append(sub / name)
     return configs
 
 
@@ -170,7 +177,12 @@ def _playwright_missing_browsers(ws: Workspace) -> bool:
 
 def detect_playwright(ws: Workspace, ctx: dict[str, Any]) -> bool:
     pkg = read_json_file(ws.path / "package.json") or {}
-    deps = {**(pkg.get("dependencies") or {}), **(pkg.get("devDependencies") or {})}
+    deps = {
+        **(pkg.get("dependencies") or {}),
+        **(pkg.get("devDependencies") or {}),
+        **(pkg.get("peerDependencies") or {}),
+        **(pkg.get("optionalDependencies") or {}),
+    }
     if PLAYWRIGHT_PKG not in deps:
         return False
     outdated = {c.name for c in ctx.get("changes", [])}

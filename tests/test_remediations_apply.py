@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -70,3 +71,66 @@ def test_verbose_flag_observed_live(
 
     captured = capsys.readouterr()
     assert "remediation biome_schema: detect=True" in captured.err
+
+
+def test_find_biome_configs_expands_glob_pattern(tmp_path: Path) -> None:
+    """_find_biome_configs expands workspace patterns containing '*' (e.g. packages/*)."""
+    # Write a root package.json with workspaces: ["packages/*"]
+    pkg = {"workspaces": ["packages/*"]}
+    (tmp_path / "package.json").write_text(json.dumps(pkg))
+    # Create two package dirs, one with biome.json and one without
+    (tmp_path / "packages" / "app").mkdir(parents=True)
+    (tmp_path / "packages" / "lib").mkdir(parents=True)
+    (tmp_path / "packages" / "app" / "biome.json").write_text(
+        '{"$schema":"https://biomejs.dev/schemas/1.5.0/schema.json"}'
+    )
+    found = remediations._find_biome_configs(tmp_path)
+    paths = [p.parent.name for p in found]
+    assert "app" in paths  # glob-expanded member with biome.json is discovered
+    assert "lib" not in paths  # member without biome.json is not included
+
+
+def test_detect_playwright_peer_and_optional_deps(tmp_path: Path) -> None:
+    """detect_playwright finds @playwright/test in peerDependencies and optionalDependencies.
+
+    The detect function returns True when the package is present in deps AND
+    _playwright_missing_browsers signals browsers are missing (simulated here).
+    The key invariant under test: packages in peer/optional sections are included
+    in the dep lookup — without the fix those sections were invisible and the
+    function returned False before ever reaching the browser check.
+    """
+    from repo_ops_models import Workspace
+
+    def _ws(path: Path) -> Workspace:
+        return Workspace(
+            path=path, ecosystem="node", manager="bun", git_repo=path, label="t"
+        )
+
+    ctx: dict = {"changes": []}
+
+    # peerDependencies — package found → browser check reached → True
+    peer_dir = tmp_path / "peer"
+    peer_dir.mkdir()
+    (peer_dir / "package.json").write_text(
+        json.dumps({"peerDependencies": {"@playwright/test": "^1.40.0"}})
+    )
+    with patch.object(remediations, "_playwright_missing_browsers", return_value=True):
+        assert remediations.detect_playwright(_ws(peer_dir), ctx) is True
+
+    # optionalDependencies — package found → browser check reached → True
+    opt_dir = tmp_path / "opt"
+    opt_dir.mkdir()
+    (opt_dir / "package.json").write_text(
+        json.dumps({"optionalDependencies": {"@playwright/test": "^1.40.0"}})
+    )
+    with patch.object(remediations, "_playwright_missing_browsers", return_value=True):
+        assert remediations.detect_playwright(_ws(opt_dir), ctx) is True
+
+    # neither section — must exit before browser check (return_value irrelevant)
+    none_dir = tmp_path / "none"
+    none_dir.mkdir()
+    (none_dir / "package.json").write_text(
+        json.dumps({"dependencies": {"react": "^18.0.0"}})
+    )
+    with patch.object(remediations, "_playwright_missing_browsers", return_value=True):
+        assert remediations.detect_playwright(_ws(none_dir), ctx) is False
