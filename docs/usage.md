@@ -12,6 +12,8 @@ Subcommands (entry point in `packages/repo-ops`):
 | `plan` | Outdated deps, Actions pin drift, remediations (no writes) |
 | `apply` | Apply updates, Actions bumps, remediations, verify gates |
 | `pushed` | Commits pushed to remotes in a time window (reflog) |
+| `audit` | Fleet vulnerability sweep per ecosystem (read-only) |
+| `dependabot` | List/close Dependabot PRs superseded by local manifests |
 | `install-skill` | Copy bundled agent skill into Cursor/Claude skill dirs |
 
 Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. Discovery flags (`--flat`, `--follow-symlinks`, actions-only repos): [Security and discovery](#security-and-discovery).
@@ -67,6 +69,50 @@ Isolated snapshots copy `.yarn/releases/` (Berry) and `file:../…` siblings fro
 
 `yarn up -R '*'` delegates to yarn's resolver, which keeps peer/group-constrained direct deps below their newest release; `behind_latest` (#110) reports those. Opt into `--yarn-targeted-bump` (with `--latest`) to *move* the gap instead of only reporting it: for each `behind_latest` dep, repo-ops snapshots the lockfile/manifests, runs a targeted `yarn up <pkg>@latest` + `yarn install`, and keeps the result only when install succeeds **and** the resolved version actually advances. Any failure — install break, or a ghost bump where the lock churns but the resolver holds the old version — restores the snapshot, so the dep stays in `behind_latest` and nothing broken is committed. Successful bumps become normal planned changes (visible in `plan`, applied by `apply`).
 
+### `audit` — fleet vulnerability sweep
+
+`repo-ops audit [root_dir ...]` runs the native auditor for each ecosystem found
+across discovered workspaces (read-only, no lockfile writes).
+
+| Ecosystem | Tool required | Notes |
+|-----------|--------------|-------|
+| `go` | `govulncheck` | `govulncheck -json ./...`; workspace skipped if not on PATH |
+| `node` | `npm` / `yarn` / `pnpm` / `bun` | detected from lockfile; `bun audit` text-parsed (no `--json`) |
+| `py-uv` | `uv` + `pip-audit` | `uv run pip-audit --format json`; skipped when pip-audit not importable |
+| `rust` | `cargo` + `cargo-audit` | `cargo audit --json`; skipped if `cargo audit --version` fails |
+
+Counts are normalised to `{critical, high, moderate, low}` per workspace.
+CVSS severity: govulncheck findings default to `high`; pip-audit maps CVE presence
+to `high`/`critical`; cargo audit maps CVSS vector C/I/A components.
+
+`--fail-on SEVERITY` (default `high`) controls the exit code:
+- `0` when no workspace has vulns at or above the threshold.
+- `1` when at least one workspace has qualifying vulns.
+- `never` always exits 0 (CI-informational mode).
+
+`--json` emits a structured payload with per-workspace counts and a `summary`.
+
+### `dependabot` — Dependabot PR sweep
+
+`repo-ops dependabot [root_dir ...]` discovers repos with a `github.com` remote,
+lists open Dependabot PRs via `gh pr list --author app/dependabot`, and checks
+whether the bump is already satisfied by local lockfiles or manifests.
+
+**Default (dry-run):** prints the "would-close" list with supersession status.
+**`--close`:** closes superseded PRs via `gh pr close <n> --comment "Superseded..."`.
+
+Precision caveats:
+- Version checks are text-search based on lockfile `name@version` strings (npm,
+  yarn, pnpm, bun) and manifest declarations (go.mod `require` blocks,
+  Cargo.lock `[[package]]`). False negatives possible for workspace-hoisted
+  packages or non-standard lockfile entries.
+- Title parsing covers `Bump X from A to B` / `Bumps X from A to B`; non-standard
+  Dependabot titles are reported but never auto-closed.
+- `gh` must be authenticated and on PATH; repos where `gh` fails are reported
+  with an error and skipped.
+
+`--json` emits per-repo PR lists with `superseded`, `current_ver`, and `closed` fields.
+
 Run `repo-ops <subcommand> --help` for all flags.
 
 ## Settings reference
@@ -92,8 +138,14 @@ Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
 | pnpm_update_latest | `--latest` | `REPO_OPS_PNPM_UPDATE_LATEST` | `pnpm_update_latest` | `0` |
 | yarn_update_latest | `--latest` | `REPO_OPS_YARN_UPDATE_LATEST` | `yarn_update_latest` | `0` |
 | yarn_targeted_bump | `--yarn-targeted-bump` | `REPO_OPS_YARN_TARGETED_BUMP` | `yarn_targeted_bump` | `0` |
+| npm_targeted_bump | `--npm-targeted-bump` | `REPO_OPS_NPM_TARGETED_BUMP` | `npm_targeted_bump` | `0` |
+| pnpm_targeted_bump | `--pnpm-targeted-bump` | `REPO_OPS_PNPM_TARGETED_BUMP` | `pnpm_targeted_bump` | `0` |
 | go_work_sync | (none) | `REPO_OPS_GO_WORK_SYNC` | `go_work_sync` | `0` |
 | no_progress | (none) | `REPO_OPS_NO_PROGRESS` | `no_progress` | `0` |
+| no_state | (none) | `REPO_OPS_NO_STATE` | `no_state` | `0` |
+| no_lint_cache | (none) | `REPO_OPS_NO_LINT_CACHE` | `no_lint_cache` | `0` |
+| go_directive | (none) | `REPO_OPS_GO_DIRECTIVE` | `go_directive` | (none) |
+| go_toolchain | (none) | `REPO_OPS_GO_TOOLCHAIN` | `go_toolchain` | (none) |
 | node_verify_script | (none) | `REPO_OPS_NODE_VERIFY_SCRIPT` | `node_verify_script` | (none) |
 | commit_agent_provider | (none) | `REPO_OPS_COMMIT_AGENT_PROVIDER` | `commit_agent_provider` | `cursor` |
 | exclude_patterns | `--exclude` | (none) | `exclude` | `[]` |

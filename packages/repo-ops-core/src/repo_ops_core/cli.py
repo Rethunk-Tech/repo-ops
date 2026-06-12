@@ -324,6 +324,28 @@ def add_upgrade_common_arguments(
         ),
     )
     pol.add_argument(
+        "--npm-targeted-bump",
+        action="store_true",
+        dest="npm_targeted_bump",
+        help=(
+            "npm only, requires --latest: for each direct dep that npm update left "
+            "behind latest, attempt a targeted npm install <pkg>@latest and keep it "
+            "only if the workspace still installs and the version advances. "
+            "Sets REPO_OPS_NPM_TARGETED_BUMP."
+        ),
+    )
+    pol.add_argument(
+        "--pnpm-targeted-bump",
+        action="store_true",
+        dest="pnpm_targeted_bump",
+        help=(
+            "pnpm only, requires --latest: for each direct dep that pnpm update "
+            "--latest left behind, attempt a targeted pnpm add <pkg>@latest and keep "
+            "it only if the workspace still installs and the version advances. "
+            "Sets REPO_OPS_PNPM_TARGETED_BUMP."
+        ),
+    )
+    pol.add_argument(
         "--go-upgrade-mode",
         choices=("patch", "explicit", "mvs"),
         default=None,

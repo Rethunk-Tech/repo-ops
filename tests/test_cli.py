@@ -24,6 +24,8 @@ _MAIN_HELP_TARGETS: list[tuple[str, str, list[str]]] = [
     ("repo_ops_upgrade.run", "main_apply", []),
     ("repo_ops_pushed.audit", "main", []),
     ("repo_ops.install_skill", "main", []),
+    ("repo_ops_audit.audit", "main", []),
+    ("repo_ops_dependabot.dependabot", "main", []),
 ]
 
 
@@ -100,7 +102,15 @@ def test_repo_ops_dispatcher_subcommands_help(capsys) -> None:
     """Dispatcher delegates --help to full subcommand parsers (return 0, no exit)."""
     from repo_ops import cli
 
-    for sub in ("inventory", "plan", "apply", "pushed", "install-skill"):
+    for sub in (
+        "inventory",
+        "plan",
+        "apply",
+        "pushed",
+        "install-skill",
+        "audit",
+        "dependabot",
+    ):
         assert cli.main([sub, "--help"]) == 0
         out = capsys.readouterr().out
         assert "usage: repo-ops" in out
@@ -201,3 +211,14 @@ def test_upgrade_parser_exclude_repeatable():
     assert args.exclude_patterns == ["foo", "bar"]
     args_none = parser.parse_args([])
     assert args_none.exclude_patterns is None
+
+
+def test_upgrade_parser_accepts_npm_pnpm_targeted_bump_flags() -> None:
+    """--npm-targeted-bump and --pnpm-targeted-bump flags are registered."""
+    parser = build_upgrade_parser(apply=False)
+    args = parser.parse_args(["--npm-targeted-bump", "--pnpm-targeted-bump"])
+    assert args.npm_targeted_bump is True
+    assert args.pnpm_targeted_bump is True
+    args_default = parser.parse_args([])
+    assert args_default.npm_targeted_bump is False
+    assert args_default.pnpm_targeted_bump is False

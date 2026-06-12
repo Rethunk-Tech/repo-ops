@@ -96,3 +96,65 @@ def test_settings_table_has_jobs_entry():
     names = [r[0] for r in SETTINGS_TABLE]
     assert "jobs" in names
     assert "actions_lint_level" in names
+
+
+def test_settings_table_has_new_v014_entries() -> None:
+    """New v0.14.0 settings are present in SETTINGS_TABLE."""
+    names = [r[0] for r in SETTINGS_TABLE]
+    for key in (
+        "npm_targeted_bump",
+        "pnpm_targeted_bump",
+        "go_directive",
+        "go_toolchain",
+        "no_state",
+        "no_lint_cache",
+    ):
+        assert key in names, f"Missing SETTINGS_TABLE entry: {key}"
+
+
+def test_settings_table_npm_targeted_bump_env_var() -> None:
+    """npm_targeted_bump maps to REPO_OPS_NPM_TARGETED_BUMP."""
+    row = next(r for r in SETTINGS_TABLE if r[0] == "npm_targeted_bump")
+    assert row[2] == "REPO_OPS_NPM_TARGETED_BUMP"
+
+
+def test_settings_table_pnpm_targeted_bump_env_var() -> None:
+    """pnpm_targeted_bump maps to REPO_OPS_PNPM_TARGETED_BUMP."""
+    row = next(r for r in SETTINGS_TABLE if r[0] == "pnpm_targeted_bump")
+    assert row[2] == "REPO_OPS_PNPM_TARGETED_BUMP"
+
+
+def test_resolve_setting_npm_targeted_bump(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
+    result = resolve_setting("npm_targeted_bump")
+    assert result == "1"
+
+
+def test_resolve_setting_pnpm_targeted_bump(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
+    result = resolve_setting("pnpm_targeted_bump")
+    assert result == "1"
+
+
+def test_resolve_setting_go_directive(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_GO_DIRECTIVE", "1.22")
+    result = resolve_setting("go_directive")
+    assert result == "1.22"
+
+
+def test_resolve_setting_go_toolchain(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_GO_TOOLCHAIN", "go1.22.0")
+    result = resolve_setting("go_toolchain")
+    assert result == "go1.22.0"
+
+
+def test_resolve_setting_no_state(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_NO_STATE", "1")
+    result = resolve_setting("no_state")
+    assert result == "1"
+
+
+def test_resolve_setting_no_lint_cache(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_NO_LINT_CACHE", "1")
+    result = resolve_setting("no_lint_cache")
+    assert result == "1"
