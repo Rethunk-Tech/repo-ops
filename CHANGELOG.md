@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-12
+
+### Added
+
+- **Ghost-bump guard for npm, pnpm, and bun's fallback path:** the post-apply resolution guard (added to bun's targeted path in #112) is now a shared `repo-ops-js` helper wired into `apply_npm`, `apply_pnpm`, and bun's bare-`bun update` fallback — an `overrides`/`resolutions`/exact-pin that blocks the resolver now fails the workspace with a `ghost bump:` error instead of reporting false-green. Pre-release escape closed too: an installed `4.0.0-rc.1` no longer satisfies a stable `4.0.0` target.
+- **Actions lint levels:** `--actions-lint-level {block,warn,off}` (or `REPO_OPS_ACTIONS_LINT_LEVEL`) — `warn` records the actionlint failure but proceeds with pin bumps, so an unrelated shellcheck nit in a `run:` block no longer silently blocks every pin in the workflow.
+- **Go environment-failure classification:** toolchain/workspace problems (go.work `go` directive older than a member requirement, missing replace targets, missing go.sum entries, toolchain constraints) are prefixed `[env] ` with a one-line remediation hint (e.g. ``run `go work use` in <dir>``) instead of raw `go` stderr. Opt-in `REPO_OPS_GO_WORK_SYNC=1` auto-runs `go work use` and retries once.
+- **Stronger verify gates:** Go gains `go build ./...` after `go mod verify`; uv workspaces run `uv run ruff check .` when ruff is configured; Node verify script is overridable via `REPO_OPS_NODE_VERIFY_SCRIPT` (empty value skips); hatch heuristics recognize `check`/`typecheck` scripts and mypy.
+- **`--exclude PATTERN`** (repeatable, substring or glob against repo label/path) to suppress known-broken repos without code edits.
+- **Layered settings:** new `repo_ops_core.config` module with CLI flag > env var > config file > default precedence; per-repo `[tool.repo-ops]` in `pyproject.toml` and global `~/.config/repo-ops/config.toml`; consolidated settings reference table in `docs/usage.md`.
+- **Streaming progress:** one `[done] <label> (<manager>) — N change(s)` stderr line per finished workspace (suppress with `--quiet` or `REPO_OPS_NO_PROGRESS=1`) — no more silent multi-minute runs.
+- **JSON report:** top-level `exit_code` and `generated_at`, plus per-workspace `elapsed_s`.
+- **Integration test tier:** `pytest -m integration` exercises real bun/npm/go against fixture repos (ghost-bump end-to-end, go.work classification, workflow byte-preservation); advisory CI job.
+- **Bundled skill:** `install-skill` now ships `AGENTS.md` alongside `SKILL.md` (offline quick reference), with a byte-identity drift test.
+- **PyPI trusted publishing:** `release.yml` gains an OIDC publish job (requires one-time PyPI trusted-publisher + `pypi` environment setup).
+
+### Fixed
+
+- **Actions-only commits no longer sweep pre-existing dirty files:** the post-apply commit stages only paths this run actually modified (workspace lockfiles/manifests from results plus explicitly bumped workflow paths) — a pre-dirty `yarn.lock` stays dirty instead of riding along in a `chore(ci)` commit. Also fixed sibling-directory prefix matching (`packages/foo` vs `packages/foobar`). (#116)
+- **Pin bumps are byte-preserving:** workflow pin updates now edit only the `uses:` line in the original text instead of round-tripping the whole YAML document — no more 51-line reindent diffs for a one-line bump. (#117)
+- **Mixed-ecosystem commit subjects:** the conventional-commit classifier enumerates all matched ecosystems instead of first-match-wins, so a Go+Node+CI commit is no longer titled `chore(ci)`.
+- **pnpm latest-mode omission:** a package with unknown registry `latest` but a known in-range `wanted` bump is no longer silently dropped from the plan.
+- **Biome remediation in wildcard monorepos:** `workspaces: ["packages/*"]` patterns are now glob-expanded, so `biome migrate` runs after `@biomejs/biome` upgrades in standard monorepos; playwright detection includes `peerDependencies`/`optionalDependencies`; snapshot diffs include `optionalDependencies`.
+
+### Changed
+
+- **Performance:** discovery `rev-parse` fan-out, the post-pool Actions scan, the post-apply commit phase, and children-first submodule ordering (topological levels) all run through bounded thread pools; `--jobs` defaults to `min(16, cpu_count)` instead of a hardcoded 8.
+- **Timeouts env-overridable:** `REPO_OPS_TIMEOUT_CHECK/APPLY/VERIFY`.
+- **CI:** Python 3.13 added to the matrix (3.14 advisory); coverage floor raised 15 → 63 (measured 71%); `disallow_untyped_defs` enabled for `repo_ops_models`.
+
 ## [0.13.0] - 2026-06-11
 
 ### Added
@@ -418,7 +448,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.10.0...v0.11.0
