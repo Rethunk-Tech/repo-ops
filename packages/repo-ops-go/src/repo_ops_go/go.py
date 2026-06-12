@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -203,7 +204,9 @@ def _raise_classified(stderr: str, fallback: str, ws_path: Path) -> None:
     raise RuntimeError(msg)
 
 
-def _run_with_go_work_retry(cmd: list[str], ws: Workspace, timeout: int):
+def _run_with_go_work_retry(
+    cmd: list[str], ws: Workspace, timeout: int
+) -> subprocess.CompletedProcess[str]:
     """Run *cmd* and, on go.work-version-mismatch error, optionally retry once.
 
     When ``REPO_OPS_GO_WORK_SYNC=1`` is set and the first run fails with the

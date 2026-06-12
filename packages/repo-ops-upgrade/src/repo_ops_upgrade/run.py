@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import concurrent.futures
 import fnmatch
 import os
@@ -68,7 +69,7 @@ def _resolve_exit_code(
 def _run_upgrade_body(
     *,
     apply: bool,
-    args,
+    args: argparse.Namespace,
     roots: list[str],
     follow_symlinks: bool = False,
 ) -> int:
