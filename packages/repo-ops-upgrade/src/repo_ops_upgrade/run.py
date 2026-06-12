@@ -210,13 +210,51 @@ def _run_upgrade_body(
 
         children_first = submodule_order == "children-first" and bool(submodule_links)
         if children_first:
-            for bundle in pending_bundles:
+            # Build a depth map: children have depth 0, parents have depth > 0.
+            # Bundles at the same depth are independent and can run in parallel.
+            pending_keys = [key for key in bundle_order if key in bundles and bundles[key].workspaces]
+            key_set_p = set(pending_keys)
+            depth_map: dict[Path, int] = dict.fromkeys(pending_keys, 0)
+            budget = len(pending_keys)
+            _changed = True
+            while _changed and budget > 0:
+                budget -= 1
+                _changed = False
+                for link in submodule_links:
+                    if link.git_repo not in key_set_p or link.parent not in key_set_p:
+                        continue
+                    new_d = depth_map[link.git_repo] + 1
+                    if new_d > depth_map[link.parent]:
+                        depth_map[link.parent] = new_d
+                        _changed = True
+            sorted_keys = sorted(pending_keys, key=lambda k: depth_map.get(k, 0))
+            for _level, level_keys_iter in groupby(sorted_keys, key=lambda k: depth_map.get(k, 0)):
                 if _FAIL_FAST.is_set():
                     break
-                batch = _process_repo(bundle)
-                all_results.extend(batch)
-                if _repo_failed(batch):
-                    break
+                level_keys = list(level_keys_iter)
+                level_bundles = [bundles[k] for k in level_keys]
+                if len(level_bundles) == 1:
+                    batch = _process_repo(level_bundles[0])
+                    all_results.extend(batch)
+                    if _repo_failed(batch):
+                        break
+                else:
+                    level_failed = False
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as _level_pool:
+                        for batch in run_bounded_pool(
+                            _level_pool,
+                            level_bundles,
+                            _process_repo,
+                            max_in_flight=args.jobs,
+                            should_stop=_FAIL_FAST.is_set,
+                            stop_on_result=_repo_failed,
+                        ):
+                            all_results.extend(batch)
+                            if _FAIL_FAST.is_set():
+                                level_failed = True
+                                break
+                    if level_failed:
+                        break
         else:
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
                 for batch in run_bounded_pool(
