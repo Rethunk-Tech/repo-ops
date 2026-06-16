@@ -157,7 +157,7 @@ def test_apply_yarn_guard_ok_when_target_resolved(tmp_path: Path) -> None:
 
 
 def test_apply_yarn_guard_skipped_for_pnp_workspace(
-    tmp_path: Path, capsys: object
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """PnP workspace: guard is skipped and a note is printed to stderr."""
     # .yarnrc.yml without nodeLinker → Yarn 4 default is PnP (no node_modules)

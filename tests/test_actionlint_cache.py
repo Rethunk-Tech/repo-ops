@@ -102,7 +102,7 @@ def test_save_prunes_old_entries(tmp_path: Path) -> None:
     path = tmp_path / "cache.json"
     old_ts = time.time() - _LINT_CACHE_MAX_AGE_S - 1
     fresh_ts = time.time()
-    cache = {
+    cache: dict[str, dict] = {
         "old_key": {"result": None, "ts": old_ts},
         "fresh_key": {"result": "err", "ts": fresh_ts},
     }

@@ -112,7 +112,7 @@ def test_emit_progress_no_torn_lines_under_parallelism(tmp_path: Path) -> None:
     # while calling print, so patching print and re-acquiring _PROGRESS_LOCK = deadlock).
     _collect_lock = threading.Lock()
 
-    def capturing_print(*args, file=None, **kwargs):  # type: ignore[override]
+    def capturing_print(*args, file=None, **kwargs):
         if file is sys.stderr:
             with _collect_lock:
                 lines.append(str(args[0]) if args else "")
@@ -139,7 +139,7 @@ def test_process_workspace_sets_elapsed_s(tmp_path: Path) -> None:
     ws = _make_ws(tmp_path)
     result = WorkspaceResult(workspace=ws)
 
-    def _fake_check(workspace):  # type: ignore[override]
+    def _fake_check(workspace):
         return WorkspaceResult(workspace=workspace, status="ok")
 
     with (
@@ -175,7 +175,7 @@ def test_process_workspace_quiet_suppresses_progress(tmp_path: Path) -> None:
     ws = _make_ws(tmp_path)
     result = WorkspaceResult(workspace=ws)
 
-    def _fake_check(workspace):  # type: ignore[override]
+    def _fake_check(workspace):
         return WorkspaceResult(workspace=workspace, status="ok")
 
     buf = StringIO()

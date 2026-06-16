@@ -47,30 +47,30 @@ def _seed(d: Path, *, pkg_content: str | None = None) -> None:
 
 
 def test_save_flag_for_regular_dep() -> None:
-    pkg = {"dependencies": {"react": "^18.0.0"}}
+    pkg: dict[str, object] = {"dependencies": {"react": "^18.0.0"}}
     assert _save_flag_for("react", pkg) == ["--save"]
 
 
 def test_save_flag_for_dev_dep() -> None:
-    pkg = {"devDependencies": {"typescript": "^5.0.0"}}
+    pkg: dict[str, object] = {"devDependencies": {"typescript": "^5.0.0"}}
     assert _save_flag_for("typescript", pkg) == ["--save-dev"]
 
 
 def test_save_flag_for_optional_dep() -> None:
-    pkg = {"optionalDependencies": {"fsevents": "^2.0.0"}}
+    pkg: dict[str, object] = {"optionalDependencies": {"fsevents": "^2.0.0"}}
     assert _save_flag_for("fsevents", pkg) == ["--save-optional"]
 
 
 def test_save_flag_for_exact_pin_adds_save_exact() -> None:
     """Exact pin (no ^/~) → adds --save-exact to preserve the range style."""
-    pkg = {"dependencies": {"lodash": "4.17.20"}}
+    pkg: dict[str, object] = {"dependencies": {"lodash": "4.17.20"}}
     flags = _save_flag_for("lodash", pkg)
     assert "--save" in flags
     assert "--save-exact" in flags
 
 
 def test_save_flag_for_tilde_range_no_exact() -> None:
-    pkg = {"dependencies": {"axios": "~1.6.0"}}
+    pkg: dict[str, object] = {"dependencies": {"axios": "~1.6.0"}}
     flags = _save_flag_for("axios", pkg)
     assert "--save" in flags
     assert "--save-exact" not in flags
@@ -78,7 +78,7 @@ def test_save_flag_for_tilde_range_no_exact() -> None:
 
 def test_save_flag_for_unknown_package_defaults_to_save() -> None:
     """Package not found in any dep section → defaults to --save."""
-    pkg = {"dependencies": {"other": "^1.0.0"}}
+    pkg: dict[str, object] = {"dependencies": {"other": "^1.0.0"}}
     assert _save_flag_for("unknown-pkg", pkg) == ["--save"]
 
 

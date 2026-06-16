@@ -509,7 +509,7 @@ def test_dependabot_close_calls_gh_pr_close(tmp_path: Path) -> None:
         }
     ]
 
-    def mock_discover(roots: list, **kwargs: object) -> dict:  # type: ignore[type-arg]
+    def mock_discover(roots: list, **kwargs: object) -> dict:
         return {"common": fake_repo}
 
     mock_git_result = MagicMock(returncode=0, stdout="origin/main\n")
