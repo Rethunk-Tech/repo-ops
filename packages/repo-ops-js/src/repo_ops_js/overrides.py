@@ -6,8 +6,10 @@ import re
 from pathlib import Path
 
 from repo_ops_core.filesystem import read_json_file
-from repo_ops_core.version_utils import normalize_version, semver_tuple
+from repo_ops_core.version_utils import normalize_version
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
+
+from repo_ops_js.guards import _semver_lt_pre
 
 
 def _override_package_name(name: str) -> str:
@@ -72,8 +74,9 @@ def overrides_audit(mdir: Path, manager: str) -> list[dict[str, str]]:
                 }
             )
             continue
-        res_norm = normalize_version(resolved)
-        if semver_tuple(pinned_ver) > semver_tuple(res_norm):
+        # Use pre-release-aware comparison so that resolved "4.0.0-rc.1" is
+        # correctly identified as less than a stable pin "4.0.0" (semver §11.3).
+        if _semver_lt_pre(resolved, raw_spec):
             out.append(
                 {
                     "level": "warn",
@@ -85,10 +88,12 @@ def overrides_audit(mdir: Path, manager: str) -> list[dict[str, str]]:
             )
             continue
         # For range pins (^, ~, >=, x-ranges, partial versions, …) the floor
-        # check above already guarantees res_norm >= floor.  Any higher
+        # check above already guarantees resolved >= floor.  Any higher
         # in-range resolution is valid — suppress the stale warning.
         # Only fire for exact pins where the resolved version must match exactly.
-        if _EXACT_RE.match(raw_spec) and res_norm != pinned_ver:
+        # Compare raw values so a pre-release resolved ("4.0.0-rc.1") against an
+        # exact stable pin ("4.0.0") correctly triggers the stale warning.
+        if _EXACT_RE.match(raw_spec) and resolved != raw_spec:
             out.append(
                 {
                     "level": "warn",

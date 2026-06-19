@@ -19,16 +19,11 @@ from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
 _PNPM_UPDATE_LATEST_ENV = "REPO_OPS_PNPM_UPDATE_LATEST"
 _PNPM_TARGETED_BUMP_ENV = "REPO_OPS_PNPM_TARGETED_BUMP"
-_TRUE_VALUES = ("1", "true", "yes")
+_TRUE_VALUES = ("1", "true", "yes", "on")
 
 
 def _pnpm_update_latest_enabled() -> bool:
-    return os.environ.get(_PNPM_UPDATE_LATEST_ENV, "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
+    return os.environ.get(_PNPM_UPDATE_LATEST_ENV, "").strip().lower() in _TRUE_VALUES
 
 
 def _pnpm_targeted_bump_enabled() -> bool:

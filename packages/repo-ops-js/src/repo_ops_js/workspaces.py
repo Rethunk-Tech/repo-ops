@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from repo_ops_core.filesystem import read_json_file
@@ -38,8 +39,6 @@ def parse_package_manager(pkg: dict) -> tuple[str, str] | None:
     if not name or not ver:
         return None
     if name not in KNOWN_PACKAGE_MANAGERS:
-        return None
-    if "/" in name or "\\" in name or name.startswith("."):
         return None
     return name, ver
 
@@ -83,11 +82,21 @@ def detect_node_manager(mdir: Path) -> tuple[str | None, str | None]:
 
 
 def corepack_prepare(manager: str, mdir: Path) -> None:
-    run(["corepack", "enable"], mdir, timeout=60)
+    proc_enable = run(["corepack", "enable"], mdir, timeout=60)
+    if proc_enable.returncode != 0:
+        print(
+            f"WARN corepack enable failed: {proc_enable.stderr.strip()}",
+            file=sys.stderr,
+        )
     pkg = read_json_file(mdir / "package.json") or {}
     pm = (pkg.get("packageManager") or "").strip()
     if pm:
-        run(["corepack", "prepare", pm, "--activate"], mdir, timeout=120)
+        proc_prepare = run(["corepack", "prepare", pm, "--activate"], mdir, timeout=120)
+        if proc_prepare.returncode != 0:
+            print(
+                f"WARN corepack prepare {pm} --activate failed: {proc_prepare.stderr.strip()}",
+                file=sys.stderr,
+            )
 
 
 def yarn_workspace_members(mdir: Path) -> set[str]:
@@ -113,8 +122,6 @@ def path_is_yarn_workspace_child(mdir: Path, root: Path, members: set[str]) -> b
     for pattern in members:
         pat = pattern.replace("*", "")
         if rel == pattern.rstrip("/*") or _under(rel, pat):
-            return True
-        if pattern.endswith("/*") and _under(rel, pattern[:-2]):
             return True
     return False
 

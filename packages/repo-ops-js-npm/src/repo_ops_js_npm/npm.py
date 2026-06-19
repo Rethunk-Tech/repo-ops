@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 from repo_ops_core.process import run
@@ -47,6 +48,7 @@ def _save_flag_for(name: str, pkg_data: dict[str, object]) -> list[str]:
     section_flags = {
         "devDependencies": ["--save-dev"],
         "optionalDependencies": ["--save-optional"],
+        "peerDependencies": ["--save-peer"],
         "dependencies": ["--save"],
     }
     current_spec: str | None = None
@@ -132,7 +134,15 @@ def check_npm(ws: Workspace) -> tuple[list[Change], list[Change]]:
         raise RuntimeError(proc.stderr.strip() or "npm outdated failed")
     if not proc.stdout.strip():
         return [], []
-    data = json.loads(proc.stdout)
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        snippet = proc.stdout[:200].strip()
+        print(
+            f"WARN: npm outdated returned non-JSON output: {snippet!r}",
+            file=sys.stderr,
+        )
+        return [], []
     changes: list[Change] = []
     behind_latest: list[Change] = []
     for name, meta in data.items():

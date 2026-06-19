@@ -20,15 +20,11 @@ _BOX_V = "│"  # │ box drawings light vertical (column separator)
 _DEP_GROUP_SUFFIX_RE = re.compile(r"\s*\((?:dev|peer|optional)\)\s*$")
 _PKG_NAME_RE = re.compile(r"^(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+$")
 _BUN_UPDATE_LATEST_ENV = "REPO_OPS_BUN_UPDATE_LATEST"
+_TRUE_VALUES = ("1", "true", "yes", "on")
 
 
 def _bun_update_latest_enabled() -> bool:
-    return os.environ.get(_BUN_UPDATE_LATEST_ENV, "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
+    return os.environ.get(_BUN_UPDATE_LATEST_ENV, "").strip().lower() in _TRUE_VALUES
 
 
 def _valid_bun_package_name(name: str) -> bool:

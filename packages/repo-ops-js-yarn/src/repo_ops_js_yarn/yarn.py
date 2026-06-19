@@ -34,7 +34,7 @@ _STDERR_TAIL_LINES = 12
 _YARN_UPDATE_LATEST_ENV = "REPO_OPS_YARN_UPDATE_LATEST"
 _YARN_TARGETED_BUMP_ENV = "REPO_OPS_YARN_TARGETED_BUMP"
 _TIMEOUT_NPM_INFO = 60
-_TRUE_VALUES = ("1", "true", "yes")
+_TRUE_VALUES = ("1", "true", "yes", "on")
 
 # Per-run probe cache: resolved workspace path → intended-targets list.
 # Populated by check_yarn_snapshot so that a subsequent apply_yarn in the
@@ -85,7 +85,7 @@ def _is_pnp_workspace(ws_path: Path) -> bool:
             stripped = line.strip()
             if stripped.startswith("nodeLinker:"):
                 value = stripped[len("nodeLinker:") :].strip().strip('"').strip("'")
-                return value not in ("node-modules",)
+                return value not in ("node-modules", "pnpm")
         # nodeLinker not set at all → Yarn 4 default is PnP
         return True
     # No .yarnrc.yml — could be Yarn 1/Classic (always node-modules).
