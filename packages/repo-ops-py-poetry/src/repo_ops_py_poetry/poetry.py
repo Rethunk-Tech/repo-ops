@@ -21,8 +21,10 @@ def check_poetry(ws: Workspace) -> list[Change]:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "poetry update --dry-run failed")
     changes: list[Change] = []
-    for line in proc.stdout.splitlines():
-        m = re.search(r"Updating\s+(\S+)\s+\(([^)]+)\s+->\s+([^)]+)\)", line)
+    for line in (proc.stdout + proc.stderr).splitlines():
+        m = re.search(
+            r"(?:Updating|Upgrading)\s+(\S+)\s+\(([^)]+)\s+->\s+([^)]+)\)", line
+        )
         if m:
             changes.append(Change(m.group(1), m.group(2), m.group(3)))
     return changes

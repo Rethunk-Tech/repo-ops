@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import sys
 from pathlib import Path
 
 from repo_ops_core.process import run
@@ -74,6 +75,7 @@ def _compile_requirements(ws: Workspace, out: Path, req_in: Path) -> None:
         )
         if proc.returncode == 0:
             return
+        print(f"WARN uv pip compile failed: {proc.stderr.strip()}", file=sys.stderr)
     if not shutil.which("pip-compile"):
         raise RuntimeError("pip-compile not on PATH and uv pip compile failed")
     proc = run(
