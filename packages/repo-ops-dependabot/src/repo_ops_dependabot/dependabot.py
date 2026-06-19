@@ -68,6 +68,7 @@ from repo_ops_core.cli import (
     resolve_scan_roots,
     wire_verbose,
 )
+from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.git import repo_label, run_git
 from repo_ops_lockfiles.parsers import (
@@ -329,6 +330,8 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
             resolved[key] = ver
 
     for lockfile in root.rglob("package-lock.json"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
         with contextlib.suppress(Exception):
             for entry in versions_npm_lock(lockfile):
                 if "@" in entry:
@@ -337,6 +340,8 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
                         _update(pkg, ver)
 
     for lockfile in root.rglob("yarn.lock"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
         with contextlib.suppress(Exception):
             for entry in versions_yarn_lock(lockfile):
                 if "@" in entry:
@@ -345,6 +350,8 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
                         _update(pkg, ver)
 
     for lockfile in root.rglob("pnpm-lock.yaml"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
         with contextlib.suppress(Exception):
             for entry in versions_pnpm_lock(lockfile):
                 if "@" in entry:
@@ -353,6 +360,8 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
                         _update(pkg, ver)
 
     for lockfile in root.rglob("bun.lock"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
         with contextlib.suppress(Exception):
             for entry in versions_bun_lock(lockfile):
                 if "@" in entry:
@@ -390,18 +399,26 @@ def _lockfile_versions(repo: str) -> set[str]:
     versions: set[str] = set()
 
     for lockfile in root.rglob("package-lock.json"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
         with contextlib.suppress(Exception):
             versions |= versions_npm_lock(lockfile)
 
     for lockfile in root.rglob("yarn.lock"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
         with contextlib.suppress(Exception):
             versions |= versions_yarn_lock(lockfile)
 
     for lockfile in root.rglob("pnpm-lock.yaml"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
         with contextlib.suppress(Exception):
             versions |= versions_pnpm_lock(lockfile)
 
     for lockfile in root.rglob("bun.lock"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
         with contextlib.suppress(Exception):
             versions |= versions_bun_lock(lockfile)
 
