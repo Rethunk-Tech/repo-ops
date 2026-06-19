@@ -21,7 +21,7 @@ jobs:
         - python-version: "3.14"
           continue-on-error: true
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: astral-sh/setup-uv@v8.2.0
       with:
         python-version: ${{ matrix.python-version }}
@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: astral-sh/setup-uv@v8.2.0
       with:
         python-version: "3.12"
@@ -80,7 +80,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: astral-sh/setup-uv@v8.2.0
       with:
         python-version: "3.12"
