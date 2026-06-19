@@ -346,6 +346,20 @@ def add_upgrade_common_arguments(
         ),
     )
     pol.add_argument(
+        "--yarn-jobs",
+        type=int,
+        default=None,
+        dest="yarn_jobs",
+        metavar="N",
+        help=(
+            "Max concurrent yarn isolated-copy extractions (default 2). Each yarn "
+            "check/guard run copies the workspace to a temp dir and lets Yarn Berry "
+            "extract its cache there; running one per --jobs worker can exhaust /tmp "
+            "(ENOSPC) on large monorepos. Caps the disk-heavy yarn phase without "
+            "slowing other ecosystems. Sets REPO_OPS_YARN_MAX_CONCURRENCY."
+        ),
+    )
+    pol.add_argument(
         "--go-upgrade-mode",
         choices=("patch", "explicit", "mvs"),
         default=None,

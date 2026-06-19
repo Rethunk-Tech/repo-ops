@@ -93,6 +93,10 @@ def _run_upgrade_body(
     # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects (#132).
     if getattr(args, "migrate_to_uv_lock", False):
         os.environ["REPO_OPS_HATCH_MIGRATE_UV_LOCK"] = "1"
+    # --yarn-jobs: cap concurrent yarn isolated-copy extractions to avoid /tmp ENOSPC.
+    yarn_jobs = getattr(args, "yarn_jobs", None)
+    if yarn_jobs is not None:
+        os.environ["REPO_OPS_YARN_MAX_CONCURRENCY"] = str(yarn_jobs)
     # --commit-umbrella: opt in to post-commit umbrella pointer bumps (#125).
     if getattr(args, "commit_umbrella", False):
         os.environ["REPO_OPS_COMMIT_UMBRELLA"] = "1"

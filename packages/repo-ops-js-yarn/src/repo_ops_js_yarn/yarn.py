@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -9,6 +10,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 from repo_ops_core.constants import resolve_timeout_apply
@@ -32,6 +35,50 @@ _YARN_UPDATE_LATEST_ENV = "REPO_OPS_YARN_UPDATE_LATEST"
 _YARN_TARGETED_BUMP_ENV = "REPO_OPS_YARN_TARGETED_BUMP"
 _TIMEOUT_NPM_INFO = 60
 _TRUE_VALUES = ("1", "true", "yes", "on")
+
+# Cap on concurrent yarn isolated-copy extractions. Each check/guard run copies
+# the workspace to /tmp and lets Yarn Berry extract its cache there; running one
+# per --jobs worker can exhaust /tmp (ENOSPC) on large monorepos. This semaphore
+# bounds the disk-heavy extraction phase independently of the workspace-level
+# --jobs pool, so non-yarn ecosystems keep full parallelism.
+_YARN_MAX_CONCURRENCY_ENV = "REPO_OPS_YARN_MAX_CONCURRENCY"
+_DEFAULT_YARN_MAX_CONCURRENCY = 2
+_extraction_sem: threading.BoundedSemaphore | None = None
+_extraction_sem_lock = threading.Lock()
+
+
+def _resolve_yarn_max_concurrency() -> int:
+    """Max concurrent yarn extractions from ``REPO_OPS_YARN_MAX_CONCURRENCY`` (min 1)."""
+    raw = os.environ.get(_YARN_MAX_CONCURRENCY_ENV, "").strip()
+    if not raw:
+        return _DEFAULT_YARN_MAX_CONCURRENCY
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_YARN_MAX_CONCURRENCY
+    return max(1, value)
+
+
+@contextlib.contextmanager
+def _yarn_extraction_slot() -> Iterator[None]:
+    """Hold one extraction slot for the duration of an isolated-copy yarn run.
+
+    Lazily sized from the env on first use (set by ``run`` before the worker
+    pool starts), so the cap reflects ``--yarn-jobs`` for the whole process.
+    """
+    global _extraction_sem
+    if _extraction_sem is None:
+        with _extraction_sem_lock:
+            if _extraction_sem is None:
+                _extraction_sem = threading.BoundedSemaphore(
+                    _resolve_yarn_max_concurrency()
+                )
+    _extraction_sem.acquire()
+    try:
+        yield
+    finally:
+        _extraction_sem.release()
+
 
 # Per-run probe cache: resolved workspace path → intended-targets list.
 # Populated by check_yarn_snapshot so that a subsequent apply_yarn in the
@@ -406,7 +453,10 @@ def check_yarn_snapshot(
     """
     changes: list[Change] = []
     snapshot_overrides: list[dict[str, str]] = []
-    with tempfile.TemporaryDirectory(prefix="dep-refresh-yarn-") as td:
+    with (
+        _yarn_extraction_slot(),
+        tempfile.TemporaryDirectory(prefix="dep-refresh-yarn-") as td,
+    ):
         mdir = _copy_yarn_workspace_to_temp(ws, Path(td))
         before_snap = snapshot_workspace_files(mdir, "yarn")
         corepack_prepare("yarn", mdir)
@@ -456,7 +506,10 @@ def _plan_without_resolutions(ws: Workspace) -> list[Change]:
 
     Only direct-dep packages with a concrete upward move are returned.
     """
-    with tempfile.TemporaryDirectory(prefix="dep-refresh-yarn-guard-") as td:
+    with (
+        _yarn_extraction_slot(),
+        tempfile.TemporaryDirectory(prefix="dep-refresh-yarn-guard-") as td,
+    ):
         mdir = _copy_yarn_workspace_to_temp(ws, Path(td))
         lock = mdir / "yarn.lock"
         # Capture resolved versions before stripping resolutions.

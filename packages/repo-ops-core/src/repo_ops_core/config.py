@@ -163,6 +163,11 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
     "pnpm_update_latest": ("REPO_OPS_PNPM_UPDATE_LATEST", "pnpm_update_latest", None),
     "yarn_update_latest": ("REPO_OPS_YARN_UPDATE_LATEST", "yarn_update_latest", None),
     "yarn_targeted_bump": ("REPO_OPS_YARN_TARGETED_BUMP", "yarn_targeted_bump", None),
+    "yarn_max_concurrency": (
+        "REPO_OPS_YARN_MAX_CONCURRENCY",
+        "yarn_max_concurrency",
+        None,
+    ),
     "npm_targeted_bump": ("REPO_OPS_NPM_TARGETED_BUMP", "npm_targeted_bump", None),
     "pnpm_targeted_bump": ("REPO_OPS_PNPM_TARGETED_BUMP", "pnpm_targeted_bump", None),
     "go_work_sync": ("REPO_OPS_GO_WORK_SYNC", "go_work_sync", None),
@@ -190,6 +195,13 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
 SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
     # (setting, flag, env_var, config_key, default)
     ("jobs", "--jobs", "(none)", "jobs", "min(16, cpu_count)"),
+    (
+        "yarn_max_concurrency",
+        "--yarn-jobs",
+        "REPO_OPS_YARN_MAX_CONCURRENCY",
+        "yarn_max_concurrency",
+        "2",
+    ),
     (
         "go_upgrade_mode",
         "--go-upgrade-mode",
