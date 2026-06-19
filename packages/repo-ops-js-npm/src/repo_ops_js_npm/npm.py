@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_js.guards import assert_targets_resolved
@@ -16,7 +17,6 @@ from repo_ops_lockfiles.snapshots import (
     snapshot_workspace_files,
 )
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
 _NPM_TARGETED_BUMP_ENV = "REPO_OPS_NPM_TARGETED_BUMP"
 _TRUE_VALUES = ("1", "true", "yes")

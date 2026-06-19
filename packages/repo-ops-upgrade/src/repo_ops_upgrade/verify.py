@@ -35,12 +35,13 @@ import shutil
 from typing import Any
 
 from repo_ops_core.config import load_global_config, load_repo_config
+from repo_ops_core.constants import resolve_timeout_verify
 from repo_ops_core.filesystem import read_json_file, read_toml_file
 from repo_ops_core.process import run
 from repo_ops_js.workspaces import pm_run_prefix
 from repo_ops_models import Workspace
 
-from repo_ops_upgrade.constants import YARN_PEER_WARN, resolve_timeout_verify
+from repo_ops_upgrade.constants import YARN_PEER_WARN
 
 logger = logging.getLogger(__name__)
 

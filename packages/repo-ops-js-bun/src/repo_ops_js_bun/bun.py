@@ -6,10 +6,10 @@ import json
 import os
 import re
 
+from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.process import run
 from repo_ops_js.guards import assert_targets_resolved
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import resolve_timeout_apply, resolve_timeout_check
 
 # bun >= 1.3 has no `--json` for `outdated`; it always prints an ANSI-coloured
 # box-drawing table led by a `bun outdated vX (hash)` banner. Parse that table

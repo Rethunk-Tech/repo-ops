@@ -15,8 +15,7 @@ from subprocess import CompletedProcess
 from unittest.mock import patch
 
 import pytest
-from repo_ops_models import Workspace
-from repo_ops_upgrade.constants import (
+from repo_ops_core.constants import (
     _TIMEOUT_APPLY_ENV,
     _TIMEOUT_CHECK_ENV,
     _TIMEOUT_VERIFY_ENV,
@@ -27,6 +26,7 @@ from repo_ops_upgrade.constants import (
     resolve_timeout_check,
     resolve_timeout_verify,
 )
+from repo_ops_models import Workspace
 from repo_ops_upgrade.verify import verify_node, verify_workspace
 
 # ---------------------------------------------------------------------------

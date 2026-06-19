@@ -8,9 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from repo_ops_core.constants import TIMEOUT_CHECK
 from repo_ops_js_pnpm.pnpm import check_pnpm
 from repo_ops_models import Workspace
-from repo_ops_upgrade.constants import TIMEOUT_CHECK
 
 
 def _ws() -> Workspace:

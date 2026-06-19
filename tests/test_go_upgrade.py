@@ -266,8 +266,8 @@ def test_apply_go_explicit_mode_uses_get_separator(tmp_path) -> None:
 
 def test_check_go_passes_timeout_check(tmp_path) -> None:
     """#57 — check_go must pass TIMEOUT_CHECK to run(), not the 300s default."""
+    from repo_ops_core.constants import TIMEOUT_CHECK
     from repo_ops_go.go import check_go
-    from repo_ops_upgrade.constants import TIMEOUT_CHECK
 
     ws = Workspace(
         path=tmp_path,

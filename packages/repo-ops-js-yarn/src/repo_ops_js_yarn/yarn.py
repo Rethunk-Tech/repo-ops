@@ -11,6 +11,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from repo_ops_core.constants import resolve_timeout_apply
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_js.guards import assert_targets_resolved
@@ -23,11 +24,7 @@ from repo_ops_lockfiles.snapshots import (
     snapshot_workspace_files,
 )
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import (
-    YARN_ISOLATED_COPY_SKIP,
-    YARN_ISOLATED_YARN_SKIP,
-    resolve_timeout_apply,
-)
+from repo_ops_upgrade.constants import YARN_ISOLATED_COPY_SKIP, YARN_ISOLATED_YARN_SKIP
 
 FILE_PROTOCOL_RE = re.compile(r"^file:(\.\./.+?)(?:#.*)?$")
 _STDERR_TAIL_LINES = 12

@@ -6,9 +6,9 @@ import re
 import shutil
 import sys
 
+from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import resolve_timeout_apply, resolve_timeout_check
 
 
 def check_poetry(ws: Workspace) -> list[Change]:

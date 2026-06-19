@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core import process
+from repo_ops_core.constants import resolve_timeout_apply
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version, semver_tuple
@@ -25,12 +26,7 @@ from repo_ops_lockfiles.snapshots import (
     resolved_version_from_node_modules,
 )
 from repo_ops_models import Workspace, WorkspaceResult
-from repo_ops_upgrade.constants import (
-    BIOME_PKG,
-    CODEGEN_TRIGGERS,
-    PLAYWRIGHT_PKG,
-    resolve_timeout_apply,
-)
+from repo_ops_upgrade.constants import BIOME_PKG, CODEGEN_TRIGGERS, PLAYWRIGHT_PKG
 
 ApplyResult = tuple[bool, str]
 

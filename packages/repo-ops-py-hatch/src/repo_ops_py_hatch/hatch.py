@@ -8,11 +8,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
 from repo_ops_py.uv_lock import apply_uv_lock, check_uv_lock
-from repo_ops_upgrade.constants import resolve_timeout_apply, resolve_timeout_check
 
 _EXTRAS_PREFERENCE = ("dev", "test", "all", "lint")
 

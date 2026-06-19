@@ -4,16 +4,13 @@ from __future__ import annotations
 
 import re
 
+from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
 
 
 def check_uv_lock(ws: Workspace) -> list[Change]:
     """Run ``uv lock --upgrade --dry-run`` and return the detected changes."""
-    # Lazy import avoids a circular init chain: repo_ops_upgrade.__init__ ->
-    # run.py -> report.py -> discovery.py -> repo_ops_py_uv.uv -> repo_ops_py.uv_lock.
-    from repo_ops_upgrade.constants import resolve_timeout_check
-
     proc = run(
         ["uv", "lock", "--upgrade", "--dry-run"],
         ws.path,
@@ -34,8 +31,6 @@ def check_uv_lock(ws: Workspace) -> list[Change]:
 
 def apply_uv_lock(ws: Workspace) -> None:
     """Run ``uv lock --upgrade`` then ``uv sync``."""
-    from repo_ops_upgrade.constants import resolve_timeout_apply
-
     proc = run(["uv", "lock", "--upgrade"], ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "uv lock --upgrade failed")

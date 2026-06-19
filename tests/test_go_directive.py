@@ -591,8 +591,8 @@ def test_issue_118_timeout_resolvers_used_in_gomod_require_paths(
     tmp_path: Path,
 ) -> None:
     """_gomod_require_paths uses resolve_timeout_check(), honoring env override."""
+    from repo_ops_core.constants import TIMEOUT_CHECK
     from repo_ops_go.go import _gomod_require_paths
-    from repo_ops_upgrade.constants import TIMEOUT_CHECK
 
     ws = _ws(tmp_path)
     captured: list[int] = []
@@ -616,7 +616,7 @@ def test_issue_118_timeout_resolvers_used_in_gomod_require_paths(
 
 def test_issue_118_timeout_resolvers_used_in_apply_go_tidy(tmp_path: Path) -> None:
     """apply_go uses resolve_timeout_apply() for go mod tidy, honoring env override."""
-    from repo_ops_upgrade.constants import TIMEOUT_APPLY
+    from repo_ops_core.constants import TIMEOUT_APPLY
 
     ws = _ws(tmp_path)
     tidy_timeouts: list[int] = []

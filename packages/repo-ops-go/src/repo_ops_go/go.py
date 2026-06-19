@@ -9,14 +9,11 @@ import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
+from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import (
-    GO_UPGRADE_RE,
-    resolve_timeout_apply,
-    resolve_timeout_check,
-)
+from repo_ops_upgrade.constants import GO_UPGRADE_RE
 
 GO_UPGRADE_MODE_ENV = "REPO_OPS_GO_UPGRADE_MODE"
 GO_WORK_SYNC_ENV = "REPO_OPS_GO_WORK_SYNC"

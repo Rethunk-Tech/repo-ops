@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from repo_ops_core.constants import TIMEOUT_CHECK
 from repo_ops_models import Workspace
 from repo_ops_py.uv_lock import check_uv_lock
 from repo_ops_py_hatch.hatch import (
@@ -14,7 +15,6 @@ from repo_ops_py_hatch.hatch import (
     apply_hatch,
     check_hatch,
 )
-from repo_ops_upgrade.constants import TIMEOUT_CHECK
 
 
 def _make_ws(tmp_path: Path) -> Workspace:
