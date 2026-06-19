@@ -126,21 +126,50 @@ def test_discover_all_records_skip_for_unactionable_manifest(tmp_path: Path):
     ), f"unactionable manifest not recorded as skip; skipped={diags.skipped}"
 
 
-def test_discover_all_finds_requirements_txt_only_repo(tmp_path: Path):
-    """Regression for #32: a repo whose only Python manifest is requirements.txt
-    must be discovered as a pip-tools workspace in non-flat mode.  The trigger
-    set on the dir-iter loop previously omitted 'requirements.txt', so these
-    repos were silently ignored before consider_py was ever reached."""
+def test_discover_all_records_skip_for_requirements_txt_only(tmp_path: Path):
+    """Regression for #133: a repo with requirements.txt but no requirements.in
+    must be recorded as a discovery skip (unactionable), NOT silently ok.
+
+    pip-tools cannot compute upgrades without requirements.in; returning [] from
+    check_pip_tools produced a false-green result before this fix.
+    """
     repo = tmp_path / "com.github" / "Acme" / "legacy"
     _git_init(repo)
     (repo / "requirements.txt").write_text("requests==2.31.0\n")
 
-    found = discover_all([str(tmp_path)], flat=False)
+    diags = DiscoveryDiagnostics()
+    found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
+
+    py_found = [ws for ws in found if ws.ecosystem == "py"]
+    assert py_found == [], (
+        f"requirements.txt-only repo must not produce a workspace; got {py_found}"
+    )
+    assert any(
+        s["path"] == str(repo.resolve())
+        and s["ecosystem"] == "py"
+        and "requirements.in" in s["reason"]
+        for s in diags.skipped
+    ), f"expected a py skip with requirements.in mention; skipped={diags.skipped}"
+
+
+def test_discover_all_finds_requirements_txt_only_repo(tmp_path: Path):
+    """Regression for #32: a repo with requirements.txt triggers consider_py so
+    the manifest is reached.  Without requirements.in the repo is now recorded
+    as an unactionable discovery skip (see #133) rather than a false-green
+    workspace — assert the discovery skip is recorded but no workspace is added."""
+    repo = tmp_path / "com.github" / "Acme" / "legacy"
+    _git_init(repo)
+    (repo / "requirements.txt").write_text("requests==2.31.0\n")
+
+    diags = DiscoveryDiagnostics()
+    found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
     py = [ws for ws in found if ws.ecosystem == "py"]
 
-    assert len(py) == 1, f"expected one py workspace, got {[str(w.path) for w in py]}"
-    assert py[0].path == repo.resolve()
-    assert py[0].manager == "pip-tools"
+    # #133: requirements.txt-only → skip, not a workspace
+    assert py == [], f"expected no py workspace (skip), got {[str(w.path) for w in py]}"
+    assert any(s["ecosystem"] == "py" for s in diags.skipped), (
+        f"expected a py discovery skip; skipped={diags.skipped}"
+    )
 
 
 def test_iter_scanned_dirs_skips_node_modules(tmp_path: Path):

@@ -294,10 +294,16 @@ def discover_workspaces_in_root(
             mgr = "uv"
         elif (mdir / "poetry.lock").exists():
             mgr = "poetry"
-        elif (mdir / "requirements.in").exists() or (
-            mdir / "requirements.txt"
-        ).exists():
+        elif (mdir / "requirements.in").exists():
             mgr = "pip-tools"
+        elif (mdir / "requirements.txt").exists():
+            record_skip(
+                mdir,
+                "py",
+                "requirements.in not found; cannot compute upgrades"
+                " (generated requirements.txt only)",
+            )
+            return
         elif pyp.exists():
             d = read_toml_file(pyp) or {}
             build = (d.get("build-system") or {}).get("build-backend", "")
