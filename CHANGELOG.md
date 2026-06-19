@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-06-19
+
 ### Fixed
 
 - **Yarn extraction concurrency cap (`--yarn-jobs` / `REPO_OPS_YARN_MAX_CONCURRENCY`, default 2):** the workspace `--jobs` pool could launch one Yarn Berry isolated-copy extraction per worker, each unpacking its cache into `/tmp` — on large monorepos this exhausted the disk (`ENOSPC`) and failed otherwise-valid yarn checks. Concurrent yarn extractions are now bounded by a process-wide semaphore, independently of `--jobs`, so non-yarn ecosystems keep full parallelism.
