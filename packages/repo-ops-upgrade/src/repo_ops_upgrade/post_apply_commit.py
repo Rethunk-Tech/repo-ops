@@ -146,9 +146,10 @@ def upgrade_scoped_paths(bundle: RepoBundle, porcelain: list[str]) -> list[str]:
             sub_prefixes.add(str(rel).replace("\\", "/"))
 
     for ab in bundle.actions:
-        if ab.workflow:
-            # Stage only the exact workflow file this run bumped, not every
-            # .github/workflows/ file (which would sweep pre-dirty workflows).
+        if ab.workflow and ab.status == "ok" and ab.pin != ab.latest:
+            # Stage only workflow files whose pins were actually changed this run.
+            # Report-only, policy-fail, or already-current bumps (pin == latest)
+            # must not cause a pre-dirty workflow to be staged.
             action_paths.add(ab.workflow.replace("\\", "/"))
 
     scoped: list[str] = []
@@ -288,7 +289,7 @@ def _bundle_apply_ok(
             return False, "fail-fast"
         if wr.status == "fail":
             if wr.verify_error and not commit_on_fail:
-                return False, "verify failed"
+                return False, f"verify failed: {wr.verify_error}"
             if not commit_on_fail:
                 return False, wr.verify_error or wr.error or "apply failed"
     if bundle.any_fail() and not commit_on_fail:

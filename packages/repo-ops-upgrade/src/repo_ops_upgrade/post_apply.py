@@ -72,15 +72,29 @@ def collect_changes_after_apply(ws: Workspace) -> list[Change]:
                 )
                 if proc2.returncode == 0:
                     in_dep_section = False
+                    brace_depth = 0
+                    dep_section_depth = -1
                     for diff_line in proc2.stdout.splitlines():
                         # Detect section header on context or added lines
                         sec_m = re.match(r'^[ +]\s*"([^"]+)":\s*\{', diff_line)
                         if sec_m:
-                            in_dep_section = sec_m.group(1) in _DEP_SECTIONS
+                            brace_depth += 1
+                            if sec_m.group(1) in _DEP_SECTIONS:
+                                in_dep_section = True
+                                dep_section_depth = brace_depth
+                            else:
+                                in_dep_section = False
+                                dep_section_depth = -1
                             continue
-                        # Detect section close
+                        # Detect section close — only exit the dep section when
+                        # returning to the depth at which it opened, so nested
+                        # objects (e.g. peer-dependency ranges with sub-keys) do
+                        # not prematurely reset in_dep_section.
                         if re.match(r"^[ +]\s*\}", diff_line):
-                            in_dep_section = False
+                            if in_dep_section and brace_depth == dep_section_depth:
+                                in_dep_section = False
+                                dep_section_depth = -1
+                            brace_depth = max(0, brace_depth - 1)
                             continue
                         if not in_dep_section:
                             continue

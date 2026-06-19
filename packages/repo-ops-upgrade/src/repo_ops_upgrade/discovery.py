@@ -56,7 +56,7 @@ def path_is_cargo_workspace_child(mdir: Path, root: Path, members: set[str]) -> 
         return False
     for pattern in members:
         pat = pattern.replace("*", "")
-        if rel == pattern.rstrip("/*") or _under(rel, pat):
+        if rel == pattern.removesuffix("/*").removesuffix("/") or _under(rel, pat):
             return True
         if pattern.endswith("/*") and _under(rel, pattern[:-2]):
             return True

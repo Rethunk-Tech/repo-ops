@@ -235,7 +235,7 @@ class TestVerifyScriptFromConfig:
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 class TestVerifySkip:
-    def test_skip_true_returns_skip_message(self, tmp_path: Path) -> None:
+    def test_skip_true_returns_none(self, tmp_path: Path) -> None:
         (tmp_path / ".repo-ops.toml").write_text(
             "[verify]\nskip = true\n", encoding="utf-8"
         )
@@ -251,7 +251,9 @@ class TestVerifySkip:
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
-        assert result == "verify skipped (config)"
+        # skip=true is not a verify failure: returns None so orchestration
+        # does not mark the workspace failed or trigger a revert.
+        assert result is None
         assert not called, "run() must not be called when skip=true"
 
     def test_skip_false_runs_normally(

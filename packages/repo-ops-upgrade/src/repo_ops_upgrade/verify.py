@@ -28,6 +28,7 @@ The env var always wins for one-shot overrides (CI pipelines).
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -40,6 +41,8 @@ from repo_ops_js.workspaces import pm_run_prefix
 from repo_ops_models import Workspace
 
 from repo_ops_upgrade.constants import YARN_PEER_WARN, resolve_timeout_verify
+
+logger = logging.getLogger(__name__)
 
 _DEP_NAME_RE = re.compile(r"^([A-Za-z0-9_.-]+)")
 
@@ -74,13 +77,14 @@ def _pyproject_dev_deps(d: dict) -> set[str]:
     return dev
 
 
-def _verify_hatch_fast(ws: Workspace) -> str | None:
+def _verify_hatch_fast(ws: Workspace, *, timeout: int | None = None) -> str | None:
     d = read_toml_file(ws.path / "pyproject.toml")
     if not d:
         return None
     scripts = (d.get("project") or {}).get("scripts") or {}
     dev = _pyproject_dev_deps(d)
-    timeout = resolve_timeout_verify()
+    if timeout is None:
+        timeout = resolve_timeout_verify()
     # "test" script wins outright
     if "test" in scripts:
         proc = run(["uv", "run", "test"], ws.path, timeout=timeout)
@@ -250,14 +254,15 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
     profile = _load_verify_profile(ws)
 
     if profile.get("skip"):
-        return "verify skipped (config)"
+        logger.info("verify skipped (config) for %s", ws.path)
+        return None
 
     mgr = ws.manager
     timeout = _resolve_verify_timeout_with_profile(profile)
     if mgr in ("yarn", "npm", "bun", "pnpm"):
         return verify_node(ws)
     if mgr == "go":
-        proc = run(["go", "mod", "verify"], ws.path, timeout=120)
+        proc = run(["go", "mod", "verify"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "go mod verify failed"
         # Default post-upgrade build gate: catches API-breaking bumps that
@@ -280,7 +285,7 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
         if proc.returncode != 0:
             return proc.stderr.strip() or "uv sync --locked failed"
         if mgr == "hatch":
-            return _verify_hatch_fast(ws)
+            return _verify_hatch_fast(ws, timeout=timeout)
         # uv: run ruff check if configured — slot for future per-ecosystem checks.
         d = read_toml_file(ws.path / "pyproject.toml") or {}
         if _has_ruff_config(ws, d):
@@ -293,12 +298,12 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
                 ).strip() or "ruff check failed"
         return None
     if mgr == "poetry":
-        proc = run(["poetry", "check"], ws.path, timeout=120)
+        proc = run(["poetry", "check"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "poetry check failed"
         return None
     if mgr == "pip-tools":
-        return _verify_pip_tools(ws)
+        return _verify_pip_tools(ws, timeout=timeout)
     return None
 
 
@@ -315,13 +320,14 @@ def _parse_req_lines(text: str) -> dict[str, str]:
     return versions
 
 
-def _verify_pip_tools(ws: Workspace) -> str | None:
+def _verify_pip_tools(ws: Workspace, *, timeout: int | None = None) -> str | None:
     """Verify pip-tools workspace by recompiling requirements.in and checking for drift."""
     req_in = ws.path / "requirements.in"
     req_txt = ws.path / "requirements.txt"
     if not req_in.exists():
         return None
-    timeout = resolve_timeout_verify()
+    if timeout is None:
+        timeout = resolve_timeout_verify()
     if shutil.which("uv"):
         proc = run(
             ["uv", "pip", "compile", str(req_in), "-o", "-", "--quiet"],

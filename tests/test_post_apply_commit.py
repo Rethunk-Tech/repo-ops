@@ -122,7 +122,7 @@ def test_skips_verify_fail_by_default(tmp_path: Path) -> None:
     plan = post_apply_commit.plan_repo_commit(
         bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
     )
-    assert plan.skipped_reason == "verify failed"
+    assert plan.skipped_reason == "verify failed: build failed"
 
 
 def test_allow_dirty_scopes_commit_to_upgrade_paths(tmp_path: Path) -> None:
