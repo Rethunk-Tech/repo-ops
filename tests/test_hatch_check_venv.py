@@ -8,9 +8,10 @@ from unittest.mock import patch
 
 import pytest
 from repo_ops_models import Workspace
+from repo_ops_py.uv_lock import check_uv_lock
 from repo_ops_py_hatch.hatch import (
-    _check_uv_lock,
     _install_target,
+    apply_hatch,
     check_hatch,
 )
 from repo_ops_upgrade.constants import TIMEOUT_CHECK
@@ -220,7 +221,7 @@ def test_check_hatch_uv_lock_without_uv_warns_and_returns_empty(
 
 
 def test_check_uv_lock_passes_timeout_check(tmp_path: Path) -> None:
-    """#70 — _check_uv_lock must call ``run`` with ``timeout=TIMEOUT_CHECK``."""
+    """#70 — check_uv_lock must call ``run`` with ``timeout=TIMEOUT_CHECK``."""
     ws = _make_ws(tmp_path)
     captured_timeout: list[int | None] = []
 
@@ -230,8 +231,8 @@ def test_check_uv_lock_passes_timeout_check(tmp_path: Path) -> None:
         captured_timeout.append(timeout)
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    with patch("repo_ops_py_hatch.hatch.run", fake_run):
-        _check_uv_lock(ws)
+    with patch("repo_ops_py.uv_lock.run", fake_run):
+        check_uv_lock(ws)
 
     assert captured_timeout == [TIMEOUT_CHECK]
 
@@ -263,4 +264,71 @@ def test_check_hatch_pip_install_uses_timeout_check(tmp_path: Path) -> None:
 
     assert install_timeout == [TIMEOUT_CHECK], (
         f"uv pip install called with timeout={install_timeout}, expected TIMEOUT_CHECK={TIMEOUT_CHECK}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Issue #132 — gate uv.lock creation behind REPO_OPS_HATCH_MIGRATE_UV_LOCK
+# ---------------------------------------------------------------------------
+
+
+def test_apply_hatch_no_uv_lock_no_flag_is_noop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#132 — no uv.lock + flag unset → apply_hatch returns without creating uv.lock."""
+    monkeypatch.delenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", raising=False)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    ws = _make_ws(tmp_path)
+    run_calls: list[list[str]] = []
+
+    def fake_run(
+        cmd: list[str], cwd: object, timeout: object = None, env: object = None
+    ) -> subprocess.CompletedProcess[str]:
+        run_calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
+        patch("repo_ops_py_hatch.hatch.run", fake_run),
+        patch("repo_ops_py.uv_lock.run", fake_run),
+    ):
+        apply_hatch(ws)
+
+    assert not (tmp_path / "uv.lock").exists(), "uv.lock must not be created"
+    assert run_calls == [], f"no subprocess must run; got {run_calls}"
+
+
+def test_apply_hatch_no_uv_lock_with_flag_runs_uv_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#132 — no uv.lock + flag set → apply_hatch runs uv lock then uv lock --upgrade."""
+    monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    ws = _make_ws(tmp_path)
+    run_calls: list[list[str]] = []
+
+    def fake_run(
+        cmd: list[str], cwd: object, timeout: object = None, env: object = None
+    ) -> subprocess.CompletedProcess[str]:
+        run_calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
+        patch("repo_ops_py_hatch.hatch.run", fake_run),
+        patch("repo_ops_py.uv_lock.run", fake_run),
+    ):
+        apply_hatch(ws)
+
+    assert run_calls[0] == ["uv", "lock"], (
+        f"first call must be uv lock; got {run_calls}"
+    )
+    assert ["uv", "lock", "--upgrade"] in run_calls, (
+        f"uv lock --upgrade must run; got {run_calls}"
     )

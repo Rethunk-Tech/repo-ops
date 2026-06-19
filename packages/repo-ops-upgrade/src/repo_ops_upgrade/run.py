@@ -90,6 +90,9 @@ def _run_upgrade_body(
         os.environ["REPO_OPS_NPM_TARGETED_BUMP"] = "1"
     if getattr(args, "pnpm_targeted_bump", False):
         os.environ["REPO_OPS_PNPM_TARGETED_BUMP"] = "1"
+    # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects (#132).
+    if getattr(args, "migrate_to_uv_lock", False):
+        os.environ["REPO_OPS_HATCH_MIGRATE_UV_LOCK"] = "1"
     # --commit-umbrella: opt in to post-commit umbrella pointer bumps (#125).
     if getattr(args, "commit_umbrella", False):
         os.environ["REPO_OPS_COMMIT_UMBRELLA"] = "1"

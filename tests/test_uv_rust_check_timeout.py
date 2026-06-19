@@ -25,7 +25,7 @@ def _ws(tmp_path: Path, ecosystem: str, manager: str) -> Workspace:
 @pytest.mark.parametrize(
     "target, check, ecosystem, manager",
     [
-        ("repo_ops_py_uv.uv.run", check_uv, "py", "uv"),
+        ("repo_ops_py.uv_lock.run", check_uv, "py", "uv"),
         ("repo_ops_rust.rust.run", check_rust, "rust", "cargo"),
     ],
 )

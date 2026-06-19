@@ -49,7 +49,7 @@ def test_timeout_check_env_override_uv(
 
     from repo_ops_py_uv.uv import check_uv
 
-    with patch("repo_ops_py_uv.uv.run", side_effect=_fake_run(captured)):
+    with patch("repo_ops_py.uv_lock.run", side_effect=_fake_run(captured)):
         check_uv(_ws(tmp_path, "py", "uv"))
 
     assert captured, "run() was never called"
@@ -129,7 +129,7 @@ def test_timeout_apply_env_override_uv(
 
     from repo_ops_py_uv.uv import apply_uv
 
-    with patch("repo_ops_py_uv.uv.run", side_effect=_fake_run(captured)):
+    with patch("repo_ops_py.uv_lock.run", side_effect=_fake_run(captured)):
         apply_uv(_ws(tmp_path, "py", "uv"))
 
     assert captured, "run() was never called"
@@ -190,7 +190,7 @@ def test_timeout_check_default_unchanged(
 
     from repo_ops_py_uv.uv import check_uv
 
-    with patch("repo_ops_py_uv.uv.run", side_effect=_fake_run(captured)):
+    with patch("repo_ops_py.uv_lock.run", side_effect=_fake_run(captured)):
         check_uv(_ws(tmp_path, "py", "uv"))
 
     assert captured[0]["timeout"] == TIMEOUT_CHECK

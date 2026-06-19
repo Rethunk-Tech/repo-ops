@@ -413,6 +413,17 @@ def add_upgrade_common_arguments(
         ),
     )
     pol.add_argument(
+        "--migrate-to-uv-lock",
+        action="store_true",
+        dest="migrate_to_uv_lock",
+        help=(
+            "Opt into creating a uv.lock for hatch projects that currently lack one, "
+            "converting them to uv-managed lockfile mode. Without this flag, hatch "
+            "projects without a uv.lock are skipped on apply. "
+            "Sets REPO_OPS_HATCH_MIGRATE_UV_LOCK."
+        ),
+    )
+    pol.add_argument(
         "--skip-actions",
         action="store_true",
         help="Skip GitHub Actions workflow pin audit (deps only).",

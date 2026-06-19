@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import re
+import os
 import shutil
 import sys
 import tempfile
@@ -11,6 +11,7 @@ from pathlib import Path
 from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
+from repo_ops_py.uv_lock import apply_uv_lock, check_uv_lock
 from repo_ops_upgrade.constants import resolve_timeout_apply, resolve_timeout_check
 
 _EXTRAS_PREFERENCE = ("dev", "test", "all", "lint")
@@ -33,40 +34,12 @@ def _install_target(ws_path: Path) -> str:
     return "."
 
 
-def _check_uv_lock(ws: Workspace) -> list[Change]:
-    proc = run(
-        ["uv", "lock", "--upgrade", "--dry-run"],
-        ws.path,
-        timeout=resolve_timeout_check(),
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "uv lock --dry-run failed")
-    changes: list[Change] = []
-    for line in (proc.stdout + proc.stderr).splitlines():
-        if "would upgrade" in line.lower() or "->" in line:
-            m = re.search(r"(\S+)\s+([\d.]+)\s*->\s*([\d.]+)", line)
-            if m:
-                changes.append(Change(m.group(1), m.group(2), m.group(3)))
-    if not changes and "would change" in (proc.stdout + proc.stderr).lower():
-        changes.append(Change("(lockfile)", "current", "upgraded"))
-    return changes
-
-
-def _apply_uv_lock(ws: Workspace) -> None:
-    proc = run(["uv", "lock", "--upgrade"], ws.path, timeout=resolve_timeout_apply())
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "uv lock --upgrade failed")
-    proc2 = run(["uv", "sync"], ws.path, timeout=resolve_timeout_apply())
-    if proc2.returncode != 0:
-        raise RuntimeError(proc2.stderr.strip() or "uv sync failed")
-
-
 def check_hatch(ws: Workspace) -> list[Change]:
     if (ws.path / "uv.lock").exists():
         if not shutil.which("uv"):
             print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
             return []
-        return _check_uv_lock(ws)
+        return check_uv_lock(ws)
     if shutil.which("uv"):
         changes: list[Change] = []
         with tempfile.TemporaryDirectory(prefix="repo-ops-hatch-") as tmp:
@@ -104,12 +77,25 @@ def check_hatch(ws: Workspace) -> list[Change]:
     return []
 
 
+def _migrate_to_uv_lock_enabled() -> bool:
+    """Return True when the operator has opted into creating a uv.lock for hatch projects."""
+    return os.environ.get("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 def apply_hatch(ws: Workspace) -> None:
     if not shutil.which("uv"):
         print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
         return
     if not (ws.path / "uv.lock").exists():
+        if not _migrate_to_uv_lock_enabled():
+            # No uv.lock and migration not opted in: skip silently (no changes).
+            return
         proc = run(["uv", "lock"], ws.path, timeout=resolve_timeout_apply())
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "uv lock failed")
-    _apply_uv_lock(ws)
+    apply_uv_lock(ws)
