@@ -59,20 +59,19 @@ class RepoResult:
     commits: dict[str, None] = field(default_factory=dict)
 
 
-def _reflog_pre_sha(repo: str, ref: str, new_sha: str) -> str | None:
+def _reflog_pre_sha(
+    repo: str, ref: str, new_sha: str, reflog_lines: list[str]
+) -> str | None:
     """Return the OID ``ref`` pointed to immediately before ``new_sha`` was recorded.
 
     Uses ``git rev-parse ref@{n+1}`` for the reflog entry at ``@{n}`` whose new tip
     is ``new_sha``. Returns ``None`` when there is no prior reflog entry (first push).
+
+    ``reflog_lines`` must be the output of ``git reflog show <ref>`` **without**
+    ``--date=unix`` so that ``@{n}`` carries the sequential index git uses for
+    ``ref@{n+1}`` resolution.
     """
-    try:
-        proc = run_git(repo, "reflog", "show", ref)
-    except subprocess.TimeoutExpired:
-        print(f"WARN: skipped {repo} (ref {ref}): timeout", file=sys.stderr)
-        return None
-    if proc.returncode != 0:
-        return None
-    for line in proc.stdout.splitlines():
+    for line in reflog_lines:
         line = line.strip()
         if not line:
             continue
@@ -124,6 +123,19 @@ def pushed_commits_for_repo(repo: str, filters: Filters) -> dict[str, None]:
         if rl.returncode != 0 or not rl.stdout.strip():
             continue
 
+        # Fetch the plain reflog (no --date=unix) once per ref so that _reflog_pre_sha
+        # can use the sequential @{n} indices for ref@{n+1} resolution.  This replaces
+        # the per-push-entry subprocess that _reflog_pre_sha previously spawned itself,
+        # reducing from O(pushes x refs) to O(refs) reflog subprocess calls.
+        try:
+            rl_plain = run_git(repo, "reflog", "show", ref)
+        except subprocess.TimeoutExpired:
+            print(f"WARN: skipped {repo} (ref {ref}): timeout", file=sys.stderr)
+            continue
+        if rl_plain.returncode != 0:
+            continue
+        plain_lines: list[str] = rl_plain.stdout.splitlines()
+
         entries: list[tuple[int, str]] = []
         for line in rl.stdout.splitlines():
             match = PUSH_RE.match(line.strip())
@@ -140,7 +152,7 @@ def pushed_commits_for_repo(repo: str, filters: Filters) -> dict[str, None]:
             # be included in the range and miscounted as this push's commits.
             # _reflog_pre_sha walks the full reflog to find ref@{n+1} for the exact
             # entry where the tip matched new_sha, returning the true pre-push state.
-            old_sha = _reflog_pre_sha(repo, ref, new_sha)
+            old_sha = _reflog_pre_sha(repo, ref, new_sha, plain_lines)
             if old_sha is None:
                 # No parent means this was the very first push; list all commits
                 old_sha = "--root"

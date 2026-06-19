@@ -92,38 +92,59 @@ def test_reflog_pre_sha_uses_rev_parse_parent(monkeypatch):
     old_sha = "a" * 40
     ref = "refs/remotes/origin/main"
 
+    # reflog_lines already provided by caller; only rev-parse goes through run_git
+    reflog_lines = [f"{new_sha} {ref}@{{0}}: update by push"]
+
     def fake_run_git(repo, *args, **kwargs):
         class Fake:
             returncode = 0
             stdout = ""
 
-        if args[:2] == ("reflog", "show"):
-            Fake.stdout = f"{new_sha} {ref}@{{0}}: update by push\n"
-        elif args[0] == "rev-parse":
+        if args[0] == "rev-parse":
             Fake.stdout = f"{old_sha}\n"
         return Fake()
 
     monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
-    assert _reflog_pre_sha("/fake", ref, new_sha) == old_sha
+    assert _reflog_pre_sha("/fake", ref, new_sha, reflog_lines) == old_sha
 
 
 def test_reflog_pre_sha_first_push_returns_none(monkeypatch):
     new_sha = "b" * 40
     ref = "refs/remotes/origin/main"
 
+    # reflog_lines already provided by caller; rev-parse returns non-zero (no parent)
+    reflog_lines = [f"{new_sha} {ref}@{{0}}: update by push"]
+
     def fake_run_git(repo, *args, **kwargs):
         class Fake:
-            returncode = 0
+            returncode = 1
             stdout = ""
 
-        if args[:2] == ("reflog", "show"):
-            Fake.stdout = f"{new_sha} {ref}@{{0}}: update by push\n"
-        elif args[0] == "rev-parse":
-            Fake.returncode = 1
         return Fake()
 
     monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
-    assert _reflog_pre_sha("/fake", ref, new_sha) is None
+    assert _reflog_pre_sha("/fake", ref, new_sha, reflog_lines) is None
+
+
+def test_reflog_pre_sha_abbreviated_sha_match(monkeypatch):
+    """_reflog_pre_sha matches when reflog has an abbreviated (7-char) tip SHA."""
+    new_sha = "b" * 40
+    old_sha = "a" * 40
+    ref = "refs/remotes/origin/main"
+
+    # Reflog line uses 7-char abbreviation (git default); new_sha.startswith(tip) path
+    reflog_lines = [f"{new_sha[:7]} {ref}@{{3}}: update by push"]
+
+    def fake_run_git(repo, *args, **kwargs):
+        class Fake:
+            returncode = 0
+            stdout = f"{old_sha}\n"
+
+        return Fake()
+
+    monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
+    result = _reflog_pre_sha("/fake", ref, new_sha, reflog_lines)
+    assert result == old_sha
 
 
 def test_pushed_commits_for_repo_first_push_uses_root(monkeypatch):
@@ -142,8 +163,11 @@ def test_pushed_commits_for_repo_first_push_uses_root(monkeypatch):
         if cmd := args:
             if cmd[:2] == ("for-each-ref", "--format=%(refname)"):
                 Fake.stdout = f"{ref}\n"
-            elif cmd[:2] == ("reflog", "show"):
+            elif cmd[:2] == ("reflog", "show") and "--date=unix" in cmd:
                 Fake.stdout = f"{new_sha} {ref}@{{{now}}}: update by push\n"
+            elif cmd[:2] == ("reflog", "show"):
+                # Plain reflog (no --date=unix) passed to _reflog_pre_sha
+                Fake.stdout = f"{new_sha} {ref}@{{0}}: update by push\n"
             elif cmd[0] == "rev-parse":
                 Fake.returncode = 1
             elif cmd[0] == "rev-list" and new_sha in cmd:
@@ -173,10 +197,17 @@ def test_pushed_commits_for_repo_from_push_reflog(monkeypatch):
 
         if cmd[:2] == ("for-each-ref", "--format=%(refname)"):
             Fake.stdout = f"{ref}\n"
-        elif cmd[:2] == ("reflog", "show"):
+        elif cmd[:2] == ("reflog", "show") and "--date=unix" in cmd:
+            # Timestamp-format reflog for push-entry filtering
             Fake.stdout = (
                 f"{new_sha[:7]} {ref}@{{{now}}}: update by push\n"
                 f"{old_sha[:7]} {ref}@{{{now - 100}}}: update by push\n"
+            )
+        elif cmd[:2] == ("reflog", "show"):
+            # Plain (sequential-index) reflog passed to _reflog_pre_sha
+            Fake.stdout = (
+                f"{new_sha[:7]} {ref}@{{0}}: update by push\n"
+                f"{old_sha[:7]} {ref}@{{1}}: update by push\n"
             )
         elif cmd[0] == "rev-list":
             Fake.stdout = f"{commit_sha}\n"
@@ -191,9 +222,9 @@ def test_timeout_in_reflog_pre_sha_does_not_abort_scan(monkeypatch):
     """Regression #41: TimeoutExpired in _reflog_pre_sha must not propagate through
     future.result() and abort the whole scan; pushed_commits_for_repo returns gracefully.
 
-    Setup: single ref, single oldest push entry (i+1 >= len(entries)) so the code
-    falls through to _reflog_pre_sha. reflog show inside _reflog_pre_sha returns a
-    matching tip line, driving it to the rev-parse call, which times out.
+    Setup: single ref, single oldest push entry. pushed_commits_for_repo fetches the
+    plain reflog (no --date=unix) and passes those lines to _reflog_pre_sha, which
+    drives into the rev-parse call that times out.
     Expected: no exception raised; commits dict is returned (possibly empty but intact).
     """
     import subprocess
@@ -213,13 +244,13 @@ def test_timeout_in_reflog_pre_sha_does_not_abort_scan(monkeypatch):
         if cmd[:2] == ("for-each-ref", "--format=%(refname)"):
             Fake.stdout = f"{ref}\n"
         elif cmd[:2] == ("reflog", "show") and "--date=unix" in cmd:
-            # Called from pushed_commits_for_repo — single entry, so hits _reflog_pre_sha
+            # Fetched first in pushed_commits_for_repo for timestamp filtering
             Fake.stdout = f"{new_sha} {ref}@{{{now}}}: update by push\n"
         elif cmd[:2] == ("reflog", "show"):
-            # Called from _reflog_pre_sha — return matching tip to reach rev-parse
+            # Fetched second in pushed_commits_for_repo (plain) for _reflog_pre_sha
             Fake.stdout = f"{new_sha} {ref}@{{0}}: update by push\n"
         elif cmd[0] == "rev-parse":
-            # Simulate timeout — this is the newly guarded site
+            # Simulate timeout — _reflog_pre_sha still guards this site
             raise subprocess.TimeoutExpired(cmd=["git", "rev-parse"], timeout=10)
         elif cmd[0] == "rev-list":
             Fake.stdout = f"{commit_sha}\n"
