@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-06-19
+
+### Added
+
+- **`--migrate-to-uv-lock` flag (#132):** hatch projects that lack a `uv.lock` are no longer silently converted to uv-managed on apply — `apply_hatch` no-ops unless this flag opts in to creating the lockfile.
+
+### Changed
+
+- **`--npm-targeted-bump` / `--pnpm-targeted-bump` now take effect (#131):** both flags were advertised ("Sets `REPO_OPS_*_TARGETED_BUMP`") but never wired into their env vars, so they were silent no-ops; `run` now populates them alongside `--yarn-targeted-bump`.
+- **Behind-latest hint is targeted-bump-aware (#131):** once `--yarn-targeted-bump` was requested, the per-line/footer note reports the fallback was attempted and could not move the leftovers, instead of re-suggesting the flag the operator already passed.
+- **`requirements.txt`-only repos reported as an unactionable skip (#133):** a repo with no `requirements.in` is recorded as a discovery skip with a reason rather than a false-green "no upgrades".
+- **uv-lock check/apply deduplicated (#134):** shared logic moved to `repo_ops_py.uv_lock`; `repo-ops-py-uv` and `repo-ops-py-hatch` both delegate to it.
+- **Timeout resolvers relocated to `repo_ops_core.constants` (#136):** removes a base-package-imports-orchestration inversion; `repo_ops_upgrade.constants` re-exports for back-compat.
+- **`pushed` reflog lookup is O(refs), not O(pushes×refs) (#135):** `_reflog_pre_sha` reuses a single per-ref reflog fetch; output is byte-identical.
+
+### Fixed
+
+- **Codebase audit batch** (correctness fixes across all ecosystems): config TOML loads on Python 3.10 (`tomli` fallback); the no-`tomllib` warning fires once; first-run state cache is thread-safe under the worker pool; common-dir dedup keeps the first-seen path; `install-skill --dry-run` exits 0 on an existing target; `verify.skip=true` no longer marks a workspace failed; per-repo `verify.timeout` is honored for hatch/pip-tools/poetry/`go mod verify`; remediations are skipped when an apply already failed; commit scoping never sweeps a pre-dirty workflow; the commit-skip reason carries the real verify error.
+- **JS:** `npm outdated --json` parse is guarded against non-JSON output; targeted bump no longer moves a `peerDependencies` entry into `dependencies`; override audit respects pre-release suffixes; env flags accept `on` consistently; corepack failures are surfaced; the `nodeLinker: pnpm` ghost-bump guard stays active; dead code removed.
+- **Python/Go/Rust/Dependabot:** Poetry 2.x detection (`Upgrading` verb + stderr); PEP 503 name normalization (`.`→`-`); pip-tools warns on a swallowed uv failure; uv/cargo workspace-child suffix matching; `go.work` single-line `use` parsing; Rust pre-release version capture; the dependabot resolved-version scan skips `node_modules`/`vendor`/`.git`.
+
 ## [0.16.0] - 2026-06-12
 
 ### Added
