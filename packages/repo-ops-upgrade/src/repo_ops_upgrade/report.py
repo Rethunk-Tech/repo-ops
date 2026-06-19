@@ -30,12 +30,29 @@ _LATEST_HINT_BY_MANAGER: dict[str, str] = {
     "pnpm": "run with --latest to include",
     # yarn behind-latest is surfaced only after --latest already ran (the resolver
     # kept these back for peer/group constraints), so re-running --latest won't move
-    # them — they need manual attention. (#110)
-    "yarn": "peer/group-constrained; --latest can't move them, bump manually",
+    # them — they need the targeted fallback or a manual bump. (#110, #111, #131)
+    "yarn": (
+        "peer/group-constrained; --latest can't move them — "
+        "pass --yarn-targeted-bump to attempt, or bump manually"
+    ),
     "go": "run with --go-upgrade-mode=explicit to include",
 }
 _LATEST_HINT_NO_MODE = "no latest mode; bump the pin manually"
 _LATEST_HINT_DEFAULT = "run with --latest to include"
+
+
+def _behind_latest_hint(manager: str) -> str:
+    """Per-manager remediation note for behind-latest packages (#102, #131).
+
+    npm has no latest mode; bun/pnpm honour --latest; yarn's leftovers are
+    peer/group-constrained and need --yarn-targeted-bump or a manual bump.
+    Shared by the per-workspace line and the run footer so the two never
+    disagree — and so neither prints a misleading "(latest-mode off)" for
+    packages that latest mode genuinely could not move (#131).
+    """
+    if manager == "npm":
+        return _LATEST_HINT_NO_MODE
+    return _LATEST_HINT_BY_MANAGER.get(manager, _LATEST_HINT_DEFAULT)
 
 
 def build_run_summary(
@@ -310,8 +327,9 @@ def print_human_report(
             if len(wr.changes) > top_n:
                 print(f"    ... and {len(wr.changes) - top_n} more")
             if behind_n > 0:
+                hint = _behind_latest_hint(ws.manager)
                 print(
-                    f"    behind-latest: {behind_n} package(s) not actioned (latest-mode off)"
+                    f"    behind-latest: {behind_n} package(s) not actioned ({hint})"
                 )
                 shown_behind = wr.behind_latest[:top_n]
                 bname_w = column_width([c.name for c in shown_behind], "")
@@ -484,12 +502,7 @@ def print_run_footer(
                 # each (npm has no latest mode; bun/pnpm/yarn honour --latest).
                 for manager in sorted(by_manager):
                     count = by_manager[manager]
-                    if manager == "npm":
-                        manager_hint = _LATEST_HINT_NO_MODE
-                    else:
-                        manager_hint = _LATEST_HINT_BY_MANAGER.get(
-                            manager, _LATEST_HINT_DEFAULT
-                        )
+                    manager_hint = _behind_latest_hint(manager)
                     parts.append(
                         f"{count} {manager} package(s) behind latest ({manager_hint})"
                     )

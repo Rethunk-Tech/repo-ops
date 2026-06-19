@@ -21,6 +21,7 @@ from repo_ops_models import ActionBump, Change, RepoBundle, Workspace, Workspace
 from repo_ops_upgrade import registry
 from repo_ops_upgrade.report import (
     build_run_summary,
+    print_human_report,
     print_run_footer,
 )
 from repo_ops_upgrade.run import main_plan
@@ -270,6 +271,59 @@ def test_footer_per_manager_hints_npm_vs_latest(tmp_path: Path) -> None:
     )
     # bun line: --latest remediation.
     assert "3 bun package(s) behind latest (run with --latest to include)" in out
+
+
+def test_per_line_behind_latest_note_is_manager_aware(tmp_path: Path) -> None:
+    """#131: the per-workspace behind-latest line must not hardcode
+
+    "(latest-mode off)". yarn leftovers surface only after --latest ran, so
+    that label was misleading; the note now matches the manager-aware footer
+    hint and points yarn at --yarn-targeted-bump.
+    """
+    yarn_ws = Workspace(
+        path=tmp_path / "y",
+        ecosystem="node",
+        manager="yarn",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    npm_ws = Workspace(
+        path=tmp_path / "n",
+        ecosystem="node",
+        manager="npm",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    bundle = _bundle(
+        tmp_path,
+        workspaces=[
+            WorkspaceResult(
+                workspace=yarn_ws,
+                behind_latest=[Change("@playwright/test", "1.60.0", "1.61.0")],
+            ),
+            WorkspaceResult(
+                workspace=npm_ws,
+                behind_latest=[Change("lodash", "4.17.21", "5.0.0")],
+            ),
+        ],
+    )
+    buf = io.StringIO()
+    with patch("sys.stdout", buf):
+        print_human_report(
+            {tmp_path: bundle},
+            dry_run=True,
+            only_outdated=False,
+            top_n=10,
+            include_actions=False,
+        )
+    out = buf.getvalue()
+    # The misleading parenthetical is gone entirely.
+    assert "(latest-mode off)" not in out
+    # yarn line points at the targeted-bump remedy (#111/#131).
+    assert "--yarn-targeted-bump" in out
+    assert "peer/group-constrained" in out
+    # npm correctly reports it has no latest mode.
+    assert "no latest mode; bump the pin manually" in out
 
 
 def test_latest_flag_sets_ecosystem_env_vars(tmp_path: Path, monkeypatch) -> None:
