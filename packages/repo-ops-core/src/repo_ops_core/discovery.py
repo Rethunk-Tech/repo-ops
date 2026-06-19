@@ -143,7 +143,10 @@ def _resolve_common_dirs(repos: list[str]) -> dict[str, str]:
     if not repos:
         return {}
     # Map original position for stable re-ordering after parallel completion.
-    order: dict[str, int] = {r: i for i, r in enumerate(repos)}
+    # Use setdefault so duplicate paths keep their first-seen index.
+    order: dict[str, int] = {}
+    for i, r in enumerate(repos):
+        order.setdefault(r, i)
     max_workers = min(16, len(repos), os.cpu_count() or 1)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {pool.submit(_resolve_one, repo): repo for repo in repos}

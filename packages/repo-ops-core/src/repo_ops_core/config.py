@@ -25,8 +25,13 @@ try:
     import tomllib as _tomllib
 
     _TOMLLIB_AVAILABLE = True
-except ImportError:
-    pass
+except ModuleNotFoundError:
+    try:
+        import tomli as _tomllib
+
+        _TOMLLIB_AVAILABLE = True
+    except ModuleNotFoundError:
+        pass
 
 # ---------------------------------------------------------------------------
 # TOML loading helpers
@@ -45,8 +50,15 @@ def _load_toml(path: Path) -> dict[str, Any]:
         return {}
 
 
+_warned: bool = False
+
+
 def _warn_no_tomllib_once() -> None:
     """Emit a one-time warning when tomllib is unavailable (Python < 3.11 + no tomli)."""
+    global _warned
+    if _warned:
+        return
+    _warned = True
     warnings.warn(
         "repo-ops config file support requires Python 3.11+ (or the 'tomli' package on 3.10); "
         "config files will be ignored for this run.",
@@ -196,6 +208,7 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
     ("timeout_apply", "(none)", "REPO_OPS_TIMEOUT_APPLY", "timeout_apply", "300"),
     ("timeout_verify", "(none)", "REPO_OPS_TIMEOUT_VERIFY", "timeout_verify", "120"),
     ("find_timeout", "(none)", "REPO_OPS_FIND_TIMEOUT", "find_timeout", "30"),
+    ("git_timeout", "(none)", "REPO_OPS_GIT_TIMEOUT", "git_timeout", "10"),
     (
         "bun_update_latest",
         "--latest",

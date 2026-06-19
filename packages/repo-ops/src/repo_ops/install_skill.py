@@ -60,7 +60,8 @@ def install_one(
     if dest.exists():
         if not force:
             print(f"skip {dest} (exists; use --force to overwrite)", file=sys.stderr)
-            return 1
+            # A dry run only simulates; an existing target is not a failure.
+            return 0 if dry_run else 1
         if dry_run:
             print(f"would remove {dest}")
         else:

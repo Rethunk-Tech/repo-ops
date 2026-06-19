@@ -26,6 +26,7 @@ import atexit
 import json
 import os
 import tempfile
+import threading
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ from typing import Any
 # Module-level lazy state cache.  None = not yet loaded.
 _CACHE: dict[str, Any] | None = None
 _DIRTY: bool = False  # True once any write has been made to _CACHE
+_LOCK: threading.Lock = threading.Lock()
 
 
 def _state_path() -> Path:
@@ -46,10 +48,16 @@ def _no_state() -> bool:
 
 
 def _ensure_loaded() -> dict[str, Any]:
-    """Return the module-level cache, loading from disk on first call."""
+    """Return the module-level cache, loading from disk on first call.
+
+    Uses a double-checked locking pattern so concurrent threads in
+    run.py's bounded pool only pay the lock cost on the very first call.
+    """
     global _CACHE
     if _CACHE is None:
-        _CACHE = _read_from_disk()
+        with _LOCK:
+            if _CACHE is None:
+                _CACHE = _read_from_disk()
     return _CACHE
 
 
@@ -168,8 +176,9 @@ def cache_record_dirty_skip(repo_path: str | Path, today: date) -> date | None:
     if _no_state():
         return None
     state = _ensure_loaded()
-    first_seen = record_dirty_skip(state, repo_path, today)
-    _DIRTY = True
+    with _LOCK:
+        first_seen = record_dirty_skip(state, repo_path, today)
+        _DIRTY = True
     return first_seen
 
 
@@ -180,10 +189,11 @@ def cache_clear_dirty_skip(repo_path: str | Path) -> None:
         return
     state = _ensure_loaded()
     key = str(repo_path)
-    dirty_skips = state.get("dirty_skips", {})
-    if key in dirty_skips:
-        dirty_skips.pop(key)
-        _DIRTY = True
+    with _LOCK:
+        dirty_skips = state.get("dirty_skips", {})
+        if key in dirty_skips:
+            dirty_skips.pop(key)
+            _DIRTY = True
 
 
 def cache_get_dirty_skip(repo_path: str | Path) -> dict[str, Any] | None:

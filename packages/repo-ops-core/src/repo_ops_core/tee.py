@@ -28,6 +28,9 @@ class _TeeIO:
         self._stream.flush()
         self._log.flush()
 
+    def fileno(self) -> int:
+        return self._stream.fileno()
+
     def __getattr__(self, name: str) -> object:
         return getattr(self._stream, name)
 

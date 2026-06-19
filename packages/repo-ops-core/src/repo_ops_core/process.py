@@ -18,7 +18,7 @@ def set_verbose(enabled: bool) -> None:
 def run(
     cmd: list[str],
     cwd: Path | str,
-    timeout: int = 300,
+    timeout: float = 300,
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     cwd_path = Path(cwd)
