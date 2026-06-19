@@ -39,6 +39,31 @@ _LATEST_HINT_BY_MANAGER: dict[str, str] = {
 }
 _LATEST_HINT_NO_MODE = "no latest mode; bump the pin manually"
 _LATEST_HINT_DEFAULT = "run with --latest to include"
+# yarn behind-latest note when --yarn-targeted-bump was *already* requested:
+# the leftovers are packages the targeted fallback could not move, so pointing
+# the operator back at the flag they already passed would be misleading (#131).
+_YARN_HINT_TARGETED_TRIED = (
+    "peer/group-constrained; --yarn-targeted-bump was attempted but could not "
+    "move them (verify failed or still constrained) — bump manually"
+)
+
+# Env vars that signal a per-package targeted bump was requested this run. Read
+# here (not imported from the manager packages) because repo_ops_upgrade may not
+# import repo_ops_js_* per the import-boundary rules.
+_TARGETED_BUMP_ENV: dict[str, str] = {
+    "yarn": "REPO_OPS_YARN_TARGETED_BUMP",
+    "npm": "REPO_OPS_NPM_TARGETED_BUMP",
+    "pnpm": "REPO_OPS_PNPM_TARGETED_BUMP",
+}
+_TARGETED_BUMP_TRUE = ("1", "true", "yes", "on")
+
+
+def _targeted_bump_requested(manager: str) -> bool:
+    """True when this run opted into the per-package targeted bump for *manager*."""
+    env = _TARGETED_BUMP_ENV.get(manager)
+    if not env:
+        return False
+    return os.environ.get(env, "").strip().lower() in _TARGETED_BUMP_TRUE
 
 
 def _behind_latest_hint(manager: str) -> str:
@@ -49,9 +74,15 @@ def _behind_latest_hint(manager: str) -> str:
     Shared by the per-workspace line and the run footer so the two never
     disagree — and so neither prints a misleading "(latest-mode off)" for
     packages that latest mode genuinely could not move (#131).
+
+    When --yarn-targeted-bump was already requested, the remaining yarn
+    leftovers are ones that fallback could not move, so the note names that
+    outcome instead of re-suggesting the flag the operator already passed (#131).
     """
     if manager == "npm":
         return _LATEST_HINT_NO_MODE
+    if manager == "yarn" and _targeted_bump_requested("yarn"):
+        return _YARN_HINT_TARGETED_TRIED
     return _LATEST_HINT_BY_MANAGER.get(manager, _LATEST_HINT_DEFAULT)
 
 
@@ -328,9 +359,7 @@ def print_human_report(
                 print(f"    ... and {len(wr.changes) - top_n} more")
             if behind_n > 0:
                 hint = _behind_latest_hint(ws.manager)
-                print(
-                    f"    behind-latest: {behind_n} package(s) not actioned ({hint})"
-                )
+                print(f"    behind-latest: {behind_n} package(s) not actioned ({hint})")
                 shown_behind = wr.behind_latest[:top_n]
                 bname_w = column_width([c.name for c in shown_behind], "")
                 bfrom_w = column_width([c.from_ver for c in shown_behind], "")

@@ -81,10 +81,15 @@ def _run_upgrade_body(
         os.environ["REPO_OPS_PNPM_UPDATE_LATEST"] = "1"
         os.environ["REPO_OPS_YARN_UPDATE_LATEST"] = "1"
         os.environ.setdefault("REPO_OPS_GO_UPGRADE_MODE", "explicit")
-    # Opt-in yarn per-package targeted fallback (#111); only meaningful with --latest,
-    # which is what produces the behind_latest work-list it consumes.
+    # Opt-in per-package targeted fallback (#111); only meaningful with --latest,
+    # which is what produces the behind_latest work-list it consumes. All three
+    # managers' flags must populate their env var or the CLI flag is a no-op (#131).
     if getattr(args, "yarn_targeted_bump", False):
         os.environ["REPO_OPS_YARN_TARGETED_BUMP"] = "1"
+    if getattr(args, "npm_targeted_bump", False):
+        os.environ["REPO_OPS_NPM_TARGETED_BUMP"] = "1"
+    if getattr(args, "pnpm_targeted_bump", False):
+        os.environ["REPO_OPS_PNPM_TARGETED_BUMP"] = "1"
     # --commit-umbrella: opt in to post-commit umbrella pointer bumps (#125).
     if getattr(args, "commit_umbrella", False):
         os.environ["REPO_OPS_COMMIT_UMBRELLA"] = "1"

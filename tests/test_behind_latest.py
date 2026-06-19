@@ -326,6 +326,96 @@ def test_per_line_behind_latest_note_is_manager_aware(tmp_path: Path) -> None:
     assert "no latest mode; bump the pin manually" in out
 
 
+def test_yarn_behind_latest_note_when_targeted_bump_already_requested(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """#131: once --yarn-targeted-bump was requested, the yarn behind-latest note
+
+    must report the fallback was tried and could not move the leftovers, instead
+    of re-suggesting the flag the operator already passed.
+    """
+    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
+    yarn_ws = Workspace(
+        path=tmp_path / "y",
+        ecosystem="node",
+        manager="yarn",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    bundle = _bundle(
+        tmp_path,
+        workspaces=[
+            WorkspaceResult(
+                workspace=yarn_ws,
+                behind_latest=[Change("@playwright/test", "1.60.0", "1.61.0")],
+            ),
+        ],
+    )
+    buf = io.StringIO()
+    with patch("sys.stdout", buf):
+        print_human_report(
+            {tmp_path: bundle},
+            dry_run=True,
+            only_outdated=False,
+            top_n=10,
+            include_actions=False,
+        )
+    out = buf.getvalue()
+    assert "--yarn-targeted-bump was attempted but could not move them" in out
+    # Must NOT tell the operator to pass a flag they already passed.
+    assert "pass --yarn-targeted-bump to attempt" not in out
+
+
+def test_targeted_bump_flags_set_env_vars(tmp_path: Path, monkeypatch) -> None:
+    """#131: each --*-targeted-bump flag must populate its env var (else a no-op).
+
+    cli.py advertises "Sets REPO_OPS_*_TARGETED_BUMP" for yarn/npm/pnpm; run.py
+    must wire all three or npm/pnpm targeted-bump is a dead flag.
+    """
+    import os
+
+    for var in (
+        "REPO_OPS_YARN_TARGETED_BUMP",
+        "REPO_OPS_NPM_TARGETED_BUMP",
+        "REPO_OPS_PNPM_TARGETED_BUMP",
+        "REPO_OPS_BUN_UPDATE_LATEST",
+        "REPO_OPS_PNPM_UPDATE_LATEST",
+        "REPO_OPS_YARN_UPDATE_LATEST",
+        "REPO_OPS_GO_UPGRADE_MODE",
+    ):
+        monkeypatch.setenv(var, "__sentinel__")
+        monkeypatch.delenv(var)
+    _bun_workspace(tmp_path)
+    register_all()
+
+    seen: dict[str, str | None] = {}
+
+    def _capture(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
+        seen["yarn"] = os.environ.get("REPO_OPS_YARN_TARGETED_BUMP")
+        seen["npm"] = os.environ.get("REPO_OPS_NPM_TARGETED_BUMP")
+        seen["pnpm"] = os.environ.get("REPO_OPS_PNPM_TARGETED_BUMP")
+        return wr
+
+    with patch(
+        "repo_ops_upgrade.run.orchestration.process_workspace",
+        side_effect=_capture,
+    ):
+        main_plan(
+            [
+                str(tmp_path),
+                "--flat",
+                "--skip-actions",
+                "--quiet",
+                "--latest",
+                "--yarn-targeted-bump",
+                "--npm-targeted-bump",
+                "--pnpm-targeted-bump",
+            ]
+        )
+
+    assert seen == {"yarn": "1", "npm": "1", "pnpm": "1"}
+
+
 def test_latest_flag_sets_ecosystem_env_vars(tmp_path: Path, monkeypatch) -> None:
     """#102: --latest sets the per-ecosystem env vars before workers run."""
     import os
