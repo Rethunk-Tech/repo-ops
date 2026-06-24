@@ -188,6 +188,11 @@ class PinReplacement:
     latest: str
     line: int | None = None
     drop_comment: bool = False  # Unused since byte-preserving rewrite path (issue #117)
+    # Optional comment rewrite for cross-major SHA refresh (#138): when set,
+    # the first element is the old comment text and the second is the new comment
+    # text.  Applied on the same line as the pin replacement (e.g. ``"# v6"``
+    # → ``"# v7"`` when a SHA pin crosses a major boundary).
+    comment_rewrite: tuple[str, str] | None = None
 
 
 def _apply_pin_to_line(line: str, action: str, old_pin: str, new_pin: str) -> str:
@@ -214,6 +219,26 @@ def _apply_pin_to_line(line: str, action: str, old_pin: str, new_pin: str) -> st
     return line
 
 
+def _apply_comment_rewrite_to_line(
+    line: str, old_comment: str, new_comment: str
+) -> str:
+    """Return *line* with the first occurrence of *old_comment* replaced by *new_comment*.
+
+    Used for cross-major SHA refreshes (#138): rewrites the trailing ``# vN``
+    audit hint when the pin advances to a different major.  Only replaces the
+    exact string (word-boundary anchored so ``# v6`` does not clobber
+    ``# v6.0.3``).
+    """
+    escaped = re.escape(old_comment)
+    # The comment must be followed by a non-digit character or end-of-string so
+    # "# v6" does not partially match "# v6.0.3".
+    pattern = re.compile(escaped + r"(?=\D|\Z)")
+    new_line, count = pattern.subn(new_comment, line, count=1)
+    if count:
+        return new_line
+    return line
+
+
 def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool:
     """Apply pin updates in place using byte-preserving targeted line edits.
 
@@ -225,6 +250,10 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
     edited.  When ``line`` is ``None``, every line containing the action@pin
     is updated (backwards-compatible fallback for callers that do not supply
     line numbers).
+
+    When ``comment_rewrite`` is set, the old comment text is also replaced by
+    the new comment text on the same line after the pin replacement — used for
+    cross-major SHA refreshes (#138) to keep the ``# vN`` audit hint accurate.
     """
     if not replacements:
         return False
@@ -248,6 +277,11 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
             idx = repl.line - 1  # 1-based → 0-based
             if 0 <= idx < len(lines):
                 new_line = _apply_pin_to_line(lines[idx], action, old_pin, new_pin)
+                if repl.comment_rewrite is not None:
+                    old_cmt, new_cmt = repl.comment_rewrite
+                    new_line = _apply_comment_rewrite_to_line(
+                        new_line, old_cmt, new_cmt
+                    )
                 if new_line != lines[idx]:
                     lines[idx] = new_line
                     changed = True
@@ -255,6 +289,11 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
             # No line hint — scan all lines for action@pin.
             for idx, line in enumerate(lines):
                 new_line = _apply_pin_to_line(line, action, old_pin, new_pin)
+                if repl.comment_rewrite is not None:
+                    old_cmt, new_cmt = repl.comment_rewrite
+                    new_line = _apply_comment_rewrite_to_line(
+                        new_line, old_cmt, new_cmt
+                    )
                 if new_line != line:
                     lines[idx] = new_line
                     changed = True

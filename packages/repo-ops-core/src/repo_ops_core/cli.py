@@ -423,7 +423,11 @@ def add_upgrade_common_arguments(
             "Keep SHA-pinned Actions pinned by digest, but advance the digest to "
             "the newest vN.M.P release within the pin's current major (preserves "
             "the # vN comment). Dependabot-compatible digest bumps; supersedes "
-            "their SHA-pin PRs. No effect with --actions-unpin-sha."
+            "their SHA-pin PRs within a major. With --latest (or "
+            "--actions-upgrade-mode=latest), also crosses major boundaries: "
+            "re-pins to the newest major's digest and updates the # vN comment "
+            "(supersedes Dependabot's cross-major SHA-pin PRs, e.g. v6→v7). "
+            "No effect with --actions-unpin-sha."
         ),
     )
     pol.add_argument(

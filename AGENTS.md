@@ -132,7 +132,7 @@ Full package map and plugin registration: [docs/architecture.md](docs/architectu
 When changing behavior, keep these aligned with code and docs:
 
 - **Plan vs apply:** plan/check is read-only for lockfiles and workflows; plan may run `corepack prepare` (network) for Yarn checks; Node Corepack runs on apply (`repo_ops_upgrade.registry.apply_workspace`).
-- **SHA-pinned Actions:** preserved by default (report only); unpin to tags only with `--actions-unpin-sha`. Digest bumps within major: `--actions-refresh-sha`.
+- **SHA-pinned Actions:** preserved by default (report only); unpin to tags only with `--actions-unpin-sha`. Digest bumps within major: `--actions-refresh-sha`. Cross-major digest re-pin (supersedes Dependabot major-bump PRs): `--actions-refresh-sha --latest` (or `--actions-upgrade-mode=latest`); updates SHA and `# vN` comment to the new major.
 - **Discovery:** `resolve_scan_roots`, optional `--follow-symlinks`, `--flat`, actions-only repos — [docs/usage.md — Security and discovery](docs/usage.md#security-and-discovery).
 - **Docs tiers:** README (orientation + Documentation table), HUMANS (quickstart + doc links), docs/ (deep reference), this file (agent quick reference + coordination), CONTRIBUTING (commits/style).
 

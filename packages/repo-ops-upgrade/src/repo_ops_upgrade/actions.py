@@ -761,9 +761,12 @@ def scan_actions(
         When True (CLI: ``--actions-refresh-sha``) and the action stays SHA-pinned
         (``keep_sha=True``), advance the digest to the commit of the newest
         ``vN.M.P`` release within the pin's resolved major, preserving the digest
-        pin and the ``# vN`` comment (Dependabot-compatible, issue #109). Ignored
-        when ``keep_sha=False`` (the unpin path takes over). No-op when the major
-        cannot be resolved or no newer in-major digest exists.
+        pin and the ``# vN`` comment (Dependabot-compatible, issue #109). When
+        combined with ``upgrade_mode="latest"``, the digest may also cross a major
+        boundary: if the newest major has a real ``vN.M.P`` release the pin is
+        re-pinned to that commit and the ``# vN`` comment is updated to the new
+        major (#138). Ignored when ``keep_sha=False`` (the unpin path takes over).
+        No-op when the major cannot be resolved or no newer digest exists.
     tag_style:
         ``"major"`` (default) → rewrite SHA pins to ``@vN``.
         ``"exact"`` → rewrite to the highest ``@vN.M.P`` within the resolved major.
@@ -891,9 +894,26 @@ def scan_actions(
                             if info is not None
                             else None
                         )
+                        # Cross-major SHA refresh (#138): when upgrade_mode=latest,
+                        # advance to max_major if it has a real vN.M.P release.
+                        # Falls back to the current major when the newest major has
+                        # no exact tag (same safety check as the unpin path).
+                        target_major = major
+                        if (
+                            upgrade_mode == "latest"
+                            and info is not None
+                            and major is not None
+                        ):
+                            max_major = info.get("max_major")
+                            if max_major is not None and max_major > major:
+                                candidate = _highest_exact_digest_in_major(
+                                    info, max_major
+                                )
+                                if candidate is not None:
+                                    target_major = max_major
                         digest = (
-                            _highest_exact_digest_in_major(info, major)
-                            if info is not None and major is not None
+                            _highest_exact_digest_in_major(info, target_major)
+                            if info is not None and target_major is not None
                             else None
                         )
                         if digest is not None:
@@ -905,6 +925,21 @@ def scan_actions(
                                 len(pin_norm) < 40 and new_sha.startswith(pin_norm)
                             )
                             if not already_current:
+                                cross_major = (
+                                    target_major is not None
+                                    and major is not None
+                                    and target_major != major
+                                )
+                                if cross_major:
+                                    detail_desc = (
+                                        f"cross-major SHA re-pin to {tag} "
+                                        f"(v{major} -> v{target_major}, {new_sha[:12]})"
+                                    )
+                                else:
+                                    detail_desc = (
+                                        f"refresh SHA digest to {tag} within v{major} "
+                                        f"({new_sha[:12]})"
+                                    )
                                 bumps.append(
                                     ActionBump(
                                         workflow=rel,
@@ -912,20 +947,25 @@ def scan_actions(
                                         pin=pin,
                                         latest=new_sha,
                                         status="ok",
-                                        detail=(
-                                            f"refresh SHA digest to {tag} within v{major} "
-                                            f"({new_sha[:12]})"
-                                        ),
+                                        detail=detail_desc,
                                     )
                                 )
                                 if apply:
+                                    comment_rewrite: tuple[str, str] | None = None
+                                    if cross_major and uses.comment:
+                                        # Rewrite the trailing # vN hint to the new major.
+                                        comment_rewrite = (
+                                            f"# v{major}",
+                                            f"# v{target_major}",
+                                        )
                                     replacements.append(
                                         PinReplacement(
                                             action=action,
                                             pin=pin,
                                             latest=new_sha,
                                             line=uses.line or None,
-                                            drop_comment=False,  # keep the # vN hint
+                                            drop_comment=False,
+                                            comment_rewrite=comment_rewrite,
                                         )
                                     )
                                 continue
