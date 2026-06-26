@@ -39,7 +39,7 @@ def check_deno(ws: Workspace) -> list[Change]:
     _PLAIN_RE = re.compile(r"^(\S+)\s+([\d][^\s]*)\s+([\d][^\s]*)")
     # Vertical-bar character used in Deno's box-drawing table output.
     _VBAR = "│"  # │ (BOX DRAWINGS LIGHT VERTICAL)
-    for line in (proc.stdout + proc.stderr).splitlines():
+    for line in proc.stdout.splitlines():
         stripped = line.strip()
         if not stripped:
             continue

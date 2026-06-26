@@ -32,7 +32,7 @@ def check_pdm(ws: Workspace) -> list[Change]:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pdm update --dry-run failed")
     changes: list[Change] = []
-    for line in (proc.stdout + proc.stderr).splitlines():
+    for line in proc.stdout.splitlines():
         # PDM dry-run lines look like:
         #   - requests 2.28.0 -> 2.31.0
         #   ~ requests 2.28.0 -> 2.31.0

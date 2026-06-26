@@ -69,9 +69,36 @@ def test_check_pipenv_warns_when_pipenv_absent(tmp_path: Path, capsys) -> None:
     assert "WARN" in capsys.readouterr().err
 
 
-def test_check_pipenv_raises_on_nonzero_returncode(tmp_path: Path) -> None:
+def test_check_pipenv_warns_when_venv_not_initialised(tmp_path: Path, capsys) -> None:
+    """When 'pipenv --venv' fails (no venv), check_pipenv returns [] + WARN (no raise)."""
+
     def fake_run(cmd, cwd, timeout=None):
-        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="virtual env not found")
+        # Probe fails — venv not yet created
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="No virtualenv has been created")
+
+    with (
+        patch("repo_ops_py.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
+        patch("repo_ops_py.pipenv.run", side_effect=fake_run),
+    ):
+        result = check_pipenv(_ws(tmp_path))
+
+    assert result == []
+    err = capsys.readouterr().err
+    assert "WARN" in err
+
+
+def test_check_pipenv_raises_when_pip_fails(tmp_path: Path) -> None:
+    """When the venv probe succeeds but pip list fails, check_pipenv raises RuntimeError."""
+    call_count = 0
+
+    def fake_run(cmd, cwd, timeout=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # Probe succeeds — venv found at /fake/.venv
+            return subprocess.CompletedProcess(cmd, 0, stdout="/fake/.venv", stderr="")
+        # pip list fails
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="pip failed")
 
     with (
         patch("repo_ops_py.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
@@ -80,18 +107,18 @@ def test_check_pipenv_raises_on_nonzero_returncode(tmp_path: Path) -> None:
         try:
             check_pipenv(_ws(tmp_path))
         except RuntimeError as exc:
-            assert "virtual env not found" in str(exc)
+            assert "pip failed" in str(exc)
         else:
             raise AssertionError("expected RuntimeError")
 
 
-def test_check_pipenv_invokes_correct_command(tmp_path: Path) -> None:
-    """check_pipenv must call 'pipenv run pip list --outdated --format=columns'."""
+def test_check_pipenv_invokes_venv_probe_then_pip(tmp_path: Path) -> None:
+    """check_pipenv probes for the venv first, then calls pip list --outdated --format=json."""
     captured: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=None):
         captured.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="Package Version Latest Type\n---\n", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
         patch("repo_ops_py.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
@@ -99,7 +126,12 @@ def test_check_pipenv_invokes_correct_command(tmp_path: Path) -> None:
     ):
         check_pipenv(_ws(tmp_path))
 
-    assert captured == [["pipenv", "run", "pip", "list", "--outdated", "--format=columns"]]
+    assert len(captured) == 2, f"expected 2 calls (probe + pip), got {captured}"
+    assert captured[0] == ["pipenv", "--venv"], f"first call must be probe; got {captured[0]}"
+    pip_call = captured[1]
+    assert "pip" in pip_call[0], f"second call must invoke pip; got {pip_call}"
+    assert "--outdated" in pip_call
+    assert "--format=json" in pip_call
 
 
 def test_apply_pipenv_runs_pipenv_update(tmp_path: Path) -> None:
