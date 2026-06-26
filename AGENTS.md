@@ -80,7 +80,9 @@ Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode
 
 ### Flags cheat sheet
 
-Common flags only — run `repo-ops plan --help` / `repo-ops apply --help` for the full list.
+Selected flags — `repo-ops <subcommand> --help` is always authoritative.
+
+#### `plan` / `apply` flags
 
 | Flag | Applies to | Purpose |
 |------|------------|---------|
@@ -91,15 +93,56 @@ Common flags only — run `repo-ops plan --help` / `repo-ops apply --help` for t
 | `--allow-dirty` | plan, apply | Process dirty git worktrees |
 | `--skip-actions` | plan, apply | Dependency-only (no Actions pin audit) |
 | `--json` / `--json-out PATH` | all subcommands | JSON report (`--json-out` writes atomically; stdout prints path) |
+| `--compact` | all subcommands | With `--json`: emit compact single-line output instead of pretty-printed |
 | `--log-file PATH` | plan, apply | Combined stdout/stderr transcript |
 | `--strict-exit` | plan, apply | Exit 1 on any skip or fail |
+| `-q` / `--quiet` | plan, apply | Suppress per-workspace progress lines (summary still prints) |
+| `--only-outdated` | plan, apply | Omit clean workspaces from human output |
+| `--max-failures N` | plan, apply | Max failure lines in end-of-run summary (default: 20) |
+| `--fail-fast` | plan, apply | Stop scheduling new workspaces after the first failure |
+| `--yarn-jobs N` | plan, apply | Cap concurrent Yarn isolated-copy extractions (default: 2; prevents ENOSPC on large monorepos) |
+| `--migrate-to-uv-lock` | plan, apply | Opt into creating `uv.lock` for Hatch projects that lack one |
 | `--submodules` | plan, apply | Include submodule metadata in JSON |
 | `--submodule-order=children-first` | apply | Process child repos before parent umbrellas |
 | `--no-verify` | apply | Skip verify gates |
+| `--verify-test` | apply | Run `go test ./...` during verify gates |
 | `--on-verify-fail=revert\|keep` | apply | Roll back or keep on verify failure |
 | `--commit=none\|conventional\|agent` | apply | Post-apply commits |
 | `--exclude PATTERN` | plan, apply | Exclude repos matching pattern (repeatable) |
 | `--actions-lint-level block\|warn\|off` | plan, apply | Actionlint gate policy |
+
+#### `pushed` flags
+
+| Flag | Purpose |
+|------|---------|
+| `--hours HOURS` | Rolling window in hours (default: 24) |
+| `--since ISO8601` | Window start (timezone required, e.g. `2026-05-26T00:00Z`) |
+| `--until ISO8601` | Window end (timezone required; defaults to now) |
+| `--show-shas` | Print commit SHAs (8 chars) grouped by repo after the table |
+| `--show-messages` | Implies `--show-shas`; also print each commit subject (max 100 chars) |
+| `--count-only` | Print only the total commit count |
+
+#### `inventory` flags
+
+| Flag | Purpose |
+|------|---------|
+| `--sort {name,direct,versions,on-disk,edges}` | Sort column (default: `name` asc; others descending) |
+| `--no-cache` | Bypass XDG Go module result cache |
+
+#### `audit` flags
+
+| Flag | Purpose |
+|------|---------|
+| `--fail-on-unknown` | Exit 1 when any workspace has findings with unknown severity (govulncheck); default off |
+
+#### `install-skill` flags
+
+| Flag | Purpose |
+|------|---------|
+| `--target {cursor,claude,both}` | Where to install (default: `both`) |
+| `--force` | Overwrite existing skill directories |
+| `--home DIR` | Override home directory (also `REPO_OPS_HOME` env) |
+| `--dest DIR` | Install directly to this path (testing; ignores `--target` layout) |
 
 Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md#security-and-discovery).
 
