@@ -87,7 +87,7 @@ Selected flags — `repo-ops <subcommand> --help` is always authoritative.
 | Flag | Applies to | Purpose |
 |------|------------|---------|
 | `--flat` | inventory, plan, apply | Single-repo root (no org/proj walk) |
-| `--filter ECO` | inventory, plan, apply | Limit to `node`, `go`, `rust`, or `py` |
+| `--filter ECO` | inventory, plan, apply | Limit to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno` |
 | `--manager MANAGER` | plan, apply | Limit to one package manager |
 | `--latest` | plan, apply | Aggressive cross-range upgrades (see above) |
 | `--allow-dirty` | plan, apply | Process dirty git worktrees |
@@ -95,6 +95,7 @@ Selected flags — `repo-ops <subcommand> --help` is always authoritative.
 | `--json` / `--json-out PATH` | all subcommands | JSON report (`--json-out` writes atomically; stdout prints path) |
 | `--compact` | all subcommands | With `--json`: emit compact single-line output instead of pretty-printed |
 | `--log-file PATH` | plan, apply | Combined stdout/stderr transcript |
+| `--log-level {debug,info,warning,error}` | plan, apply | Set stdlib root logger level; `--verbose` / `-v` implies `debug` when absent |
 | `--strict-exit` | plan, apply | Exit 1 on any skip or fail |
 | `-q` / `--quiet` | plan, apply | Suppress per-workspace progress lines (summary still prints) |
 | `--only-outdated` | plan, apply | Omit clean workspaces from human output |
