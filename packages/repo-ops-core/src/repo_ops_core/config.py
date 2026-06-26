@@ -158,6 +158,7 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
     "timeout_apply": ("REPO_OPS_TIMEOUT_APPLY", "timeout_apply", None),
     "timeout_verify": ("REPO_OPS_TIMEOUT_VERIFY", "timeout_verify", None),
     "find_timeout": ("REPO_OPS_FIND_TIMEOUT", "find_timeout", None),
+    "git_timeout": ("REPO_OPS_GIT_TIMEOUT", "git_timeout", None),
     # Feature flags
     "bun_update_latest": ("REPO_OPS_BUN_UPDATE_LATEST", "bun_update_latest", None),
     "pnpm_update_latest": ("REPO_OPS_PNPM_UPDATE_LATEST", "pnpm_update_latest", None),

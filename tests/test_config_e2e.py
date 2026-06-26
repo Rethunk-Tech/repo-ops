@@ -172,3 +172,95 @@ def test_run_upgrade_global_config_applied(
     monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
     run_mod.run_upgrade(apply=False, argv=["--flat", str(scan_dir)])
     assert captured["lint_level"] == "off"
+
+
+# ---------------------------------------------------------------------------
+# Task A residuals: exclude_patterns + git_timeout (#14)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
+def test_exclude_from_pyproject_reaches_args(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """config-file 'exclude' list is injected into args.exclude_patterns."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nexclude = ["vendor", "node_modules"]\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    captured: dict[str, object] = {}
+
+    def _fake_body(*, apply: bool, args, roots, follow_symlinks: bool = False) -> int:
+        captured["exclude_patterns"] = getattr(args, "exclude_patterns", None)
+        return 0
+
+    monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
+    run_mod.run_upgrade(apply=False, argv=["--flat", str(tmp_path)])
+    assert captured["exclude_patterns"] == ["vendor", "node_modules"]
+
+
+def test_cli_exclude_wins_over_config_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLI --exclude takes precedence over config-file 'exclude'."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nexclude = ["config_vendor"]\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    captured: dict[str, object] = {}
+
+    def _fake_body(*, apply: bool, args, roots, follow_symlinks: bool = False) -> int:
+        captured["exclude_patterns"] = getattr(args, "exclude_patterns", None)
+        return 0
+
+    monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
+    run_mod.run_upgrade(
+        apply=False, argv=["--flat", "--exclude", "cli_vendor", str(tmp_path)]
+    )
+    # CLI value must win; config-file value must be ignored
+    assert captured["exclude_patterns"] == ["cli_vendor"]
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
+def test_git_timeout_from_config_reaches_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """config-file git_timeout is injected into REPO_OPS_GIT_TIMEOUT env var."""
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.repo-ops]\ngit_timeout = 30\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("REPO_OPS_GIT_TIMEOUT", raising=False)
+
+    captured: dict[str, str | None] = {}
+
+    def _fake_body(*, apply: bool, args, roots, follow_symlinks: bool = False) -> int:
+        captured["git_timeout"] = os.environ.get("REPO_OPS_GIT_TIMEOUT")
+        return 0
+
+    monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
+    run_mod.run_upgrade(apply=False, argv=["--flat", str(tmp_path)])
+    assert captured["git_timeout"] == "30"
+
+
+def test_git_timeout_env_wins_over_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Existing REPO_OPS_GIT_TIMEOUT env var is not overwritten by config."""
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.repo-ops]\ngit_timeout = 30\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("REPO_OPS_GIT_TIMEOUT", "5")
+
+    captured: dict[str, str | None] = {}
+
+    def _fake_body(*, apply: bool, args, roots, follow_symlinks: bool = False) -> int:
+        captured["git_timeout"] = os.environ.get("REPO_OPS_GIT_TIMEOUT")
+        return 0
+
+    monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
+    run_mod.run_upgrade(apply=False, argv=["--flat", str(tmp_path)])
+    assert captured["git_timeout"] == "5"

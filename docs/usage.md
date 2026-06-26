@@ -128,12 +128,14 @@ Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
 | Setting | Flag | Env var | Config key | Default |
 |---------|------|---------|------------|---------|
 | jobs | `--jobs` | (none) | `jobs` | `min(16, cpu_count)` |
+| yarn_max_concurrency | `--yarn-jobs` | `REPO_OPS_YARN_MAX_CONCURRENCY` | `yarn_max_concurrency` | `2` |
 | go_upgrade_mode | `--go-upgrade-mode` | `REPO_OPS_GO_UPGRADE_MODE` | `go_upgrade_mode` | `patch` |
 | actions_lint_level | `--actions-lint-level` | `REPO_OPS_ACTIONS_LINT_LEVEL` | `actions_lint_level` | `block` |
 | timeout_check | (none) | `REPO_OPS_TIMEOUT_CHECK` | `timeout_check` | `60` |
 | timeout_apply | (none) | `REPO_OPS_TIMEOUT_APPLY` | `timeout_apply` | `300` |
 | timeout_verify | (none) | `REPO_OPS_TIMEOUT_VERIFY` | `timeout_verify` | `120` |
 | find_timeout | (none) | `REPO_OPS_FIND_TIMEOUT` | `find_timeout` | `30` |
+| git_timeout | (none) | `REPO_OPS_GIT_TIMEOUT` | `git_timeout` | `10` |
 | bun_update_latest | `--latest` | `REPO_OPS_BUN_UPDATE_LATEST` | `bun_update_latest` | `0` |
 | pnpm_update_latest | `--latest` | `REPO_OPS_PNPM_UPDATE_LATEST` | `pnpm_update_latest` | `0` |
 | yarn_update_latest | `--latest` | `REPO_OPS_YARN_UPDATE_LATEST` | `yarn_update_latest` | `0` |

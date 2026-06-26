@@ -41,6 +41,37 @@ from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 _FAIL_FAST = orchestration.FAIL_FAST_EVENT
 
 
+def _get_head_sha(git_repo: Path) -> str | None:
+    """Return the current HEAD SHA for *git_repo*, or ``None`` on any error."""
+    from repo_ops_core.git import run_git
+
+    try:
+        result = run_git(git_repo, "rev-parse", "HEAD")
+        if result.returncode == 0:
+            return result.stdout.strip() or None
+        return None
+    except Exception:
+        return None
+
+
+def _checkpoint_should_skip(bundle: RepoBundle, checkpoint: dict[str, str]) -> bool:
+    """Return ``True`` if *bundle* should be skipped on a ``--resume`` re-run.
+
+    A bundle is skipped when the checkpoint contains its git_repo path mapped
+    to the repo's *current* HEAD SHA — i.e. the apply already completed for
+    this HEAD and nothing new has been pushed since.
+
+    If the current HEAD differs from the checkpointed SHA (e.g. someone
+    force-pushed or new commits landed), the check returns ``False`` and the
+    repo is re-processed normally.
+    """
+    done_sha = checkpoint.get(str(bundle.git_repo))
+    if done_sha is None:
+        return False
+    current_sha = _get_head_sha(bundle.git_repo)
+    return current_sha is not None and current_sha == done_sha
+
+
 def _has_actionable_work(bundles: dict[Path, RepoBundle]) -> bool:
     for bundle in bundles.values():
         for wr in bundle.workspaces:
@@ -218,6 +249,44 @@ def _run_upgrade_body(
                 break
         return results
 
+    # Resume / checkpoint (REPO_OPS_RESUME=1): skip repos that already
+    # completed apply in a previous run at their current HEAD SHA.
+    _resume_mode = apply and os.environ.get("REPO_OPS_RESUME") == "1"
+    _checkpoint: dict[str, str] = {}
+    _checkpoint_lock = threading.Lock()
+    if _resume_mode:
+        from repo_ops_core import state as _cpt_state
+
+        _checkpoint = _cpt_state.load_checkpoint()
+
+    def _process_repo_checkpointed(bundle: RepoBundle) -> list[WorkspaceResult]:
+        """Wrap _process_repo with resume-checkpoint skip logic.
+
+        When REPO_OPS_RESUME=1 and the bundle's git_repo HEAD matches the
+        checkpointed post-apply SHA, all workspaces are returned as "skip"
+        without calling the real process.  After a successful (non-fail) run
+        the repo is added to the checkpoint so future resumes can skip it.
+        """
+        if _resume_mode and _checkpoint_should_skip(bundle, _checkpoint):
+            for wr in bundle.workspaces:
+                wr.status = "skip"
+                wr.error = "resume: already applied"
+            return list(bundle.workspaces)
+
+        results = _process_repo(bundle)
+
+        if _resume_mode and not any(r.status == "fail" for r in results):
+            post_sha = _get_head_sha(bundle.git_repo)
+            if post_sha:
+                from repo_ops_core import state as _cpt_state
+
+                with _checkpoint_lock:
+                    _checkpoint[str(bundle.git_repo)] = post_sha
+                    to_save = dict(_checkpoint)
+                _cpt_state.save_checkpoint(to_save)
+
+        return results
+
     all_results: list[WorkspaceResult] = []
     if apply:
         ordered_bundles = [
@@ -265,7 +334,7 @@ def _run_upgrade_body(
                 level_keys = list(level_keys_iter)
                 level_bundles = [bundles[k] for k in level_keys]
                 if len(level_bundles) == 1:
-                    batch = _process_repo(level_bundles[0])
+                    batch = _process_repo_checkpointed(level_bundles[0])
                     all_results.extend(batch)
                     if _repo_failed(batch):
                         break
@@ -277,7 +346,7 @@ def _run_upgrade_body(
                         for batch in run_bounded_pool(
                             _level_pool,
                             level_bundles,
-                            _process_repo,
+                            _process_repo_checkpointed,
                             max_in_flight=args.jobs,
                             should_stop=_FAIL_FAST.is_set,
                             stop_on_result=_repo_failed,
@@ -293,7 +362,7 @@ def _run_upgrade_body(
                 for batch in run_bounded_pool(
                     pool,
                     pending_bundles,
-                    _process_repo,
+                    _process_repo_checkpointed,
                     max_in_flight=args.jobs,
                     should_stop=_FAIL_FAST.is_set,
                     stop_on_result=_repo_failed,
@@ -596,6 +665,23 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
 
     if args.jobs is None:
         args.jobs = min(16, os.cpu_count() or 4)
+
+    # ``exclude_patterns`` has no env-var channel (lists don't serialize well
+    # to env vars).  When the CLI flag was not given, apply config-file
+    # ``exclude`` directly to args so _run_upgrade_body honours it.
+    # CLI --exclude takes precedence: only merge when args.exclude_patterns is
+    # falsy (None or empty list from argparse default).
+    if not getattr(args, "exclude_patterns", None):
+        _excl_cfg: object = None
+        if _r_cfg and "exclude" in _r_cfg:
+            _excl_cfg = _r_cfg["exclude"]
+        elif _g_cfg and "exclude" in _g_cfg:
+            _excl_cfg = _g_cfg["exclude"]
+        if isinstance(_excl_cfg, list):
+            args.exclude_patterns = [str(p) for p in _excl_cfg]
+        elif isinstance(_excl_cfg, str) and _excl_cfg:
+            args.exclude_patterns = [_excl_cfg]
+
     wire_verbose(args)
 
     roots = resolve_scan_roots(list(args.roots or DEFAULT_ROOTS), parser)
