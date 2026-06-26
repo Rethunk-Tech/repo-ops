@@ -8,14 +8,19 @@ are silently skipped.
 Included hooks
 --------------
 cargo_fix
-    Run ``cargo fmt`` after a dependency bump to normalize formatting across
-    all Rust source files.  ``cargo fmt`` is the safe, formatting-only step;
+    Run ``cargo fmt`` (or ``cargo fmt -- <changed-files>``) after a dependency
+    bump to normalize formatting.  Scoped to the Rust source files touched by
+    the bump so that unrelated crates in a workspace are not reformatted and
+    swept into the ``chore(deps)`` commit.  Falls back to ``cargo fmt`` when
+    git is unavailable.  ``cargo fmt`` is the safe, formatting-only step;
     it is always applicable once Cargo.toml is present and skips cleanly on
     non-Rust workspaces.
 """
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +46,45 @@ def _stderr_tail(text: str, *, max_chars: int = 200) -> str:
     return s if len(s) <= max_chars else s[-max_chars:]
 
 
+def _changed_rust_files(ws: Workspace) -> list[str] | None:
+    """Return absolute paths of .rs files changed since the last commit in *ws*.
+
+    Only files within *ws.path* are returned.  Returns ``None`` when git is
+    unavailable or this is not a git repository — the caller should fall back
+    to whole-workspace ``cargo fmt``.  Returns an empty list when git worked
+    but no ``.rs`` source files changed (typical for a pure dep bump that
+    only touched ``Cargo.toml``/``Cargo.lock``).
+
+    Uses ``subprocess`` directly (not the repo_ops_core.process.run helper)
+    so that tests that mock the process helper can still exercise the fallback
+    path without interference from git calls.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=str(ws.git_repo),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (FileNotFoundError, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    changed: list[str] = []
+    for rel in proc.stdout.splitlines():
+        if not rel.endswith(".rs"):
+            continue
+        abs_path = ws.git_repo / rel
+        try:
+            abs_path.relative_to(ws.path)
+        except ValueError:
+            continue
+        if abs_path.exists():
+            changed.append(str(abs_path))
+    return changed
+
+
 # ── cargo_fix hook ───────────────────────────────────────────────────────────
 
 
@@ -49,12 +93,15 @@ def detect_cargo_fix(ws: Workspace, ctx: dict[str, Any]) -> bool:
 
     Applies only to Rust (``ecosystem == "rust"``) workspaces that have a
     ``Cargo.toml`` at the workspace root.  Triggered when at least one
-    dependency changed (apply) or in plan mode with any candidate.
+    dependency changed (apply) or in plan mode with any candidate.  Skipped
+    when ``cargo`` is not installed.
     """
     if ws.ecosystem != "rust":
         return False
     if not _has_cargo_toml(ws.path):
         return False
+    if shutil.which("cargo") is None:
+        return False  # tool not available — skip, do not fail
     changes = ctx.get("changes", [])
     return bool(changes) or not ctx.get("apply", True)
 
@@ -66,12 +113,24 @@ def report_cargo_fix(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
 
 
 def apply_cargo_fix(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
-    """Run ``cargo fmt`` in the workspace root.
+    """Run cargo fmt on Rust source files changed by the dependency bump.
 
-    ``cargo fmt`` is the safe formatting step run after a dependency bump.
-    It normalises Rust source style without modifying program semantics.
+    Scopes formatting to the ``.rs`` files reported by ``git diff HEAD`` so
+    that unrelated crates in a Cargo workspace are not reformatted and swept
+    into the ``chore(deps)`` commit.  Falls back to ``cargo fmt`` (whole
+    workspace) when git is unavailable or this workspace is not in a git
+    repository.
     """
-    proc = run(["cargo", "fmt"], ws.path, timeout=120)
+    rs_files = _changed_rust_files(ws)
+    if rs_files is None:
+        # git unavailable — fall back to whole-workspace formatting (original behaviour).
+        proc = run(["cargo", "fmt"], ws.path, timeout=120)
+    elif not rs_files:
+        # No .rs source files changed — formatting is a no-op.
+        return True, "cargo fmt: no changed .rs source files (ok)"
+    else:
+        # Pass specific files to rustfmt via cargo fmt's -- passthrough.
+        proc = run(["cargo", "fmt", "--", *rs_files], ws.path, timeout=120)
     if proc.returncode == 0:
         return True, "cargo fmt (ok)"
     err = _stderr_tail(proc.stderr or proc.stdout or "")
