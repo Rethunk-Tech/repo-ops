@@ -1,0 +1,19 @@
+{
+  "version": "3",
+  "packages": {
+    "specifiers": {
+      "jsr:@std/assert@^0.221.0": "jsr:@std/assert@0.221.0",
+      "npm:chalk@^5.0": "npm:chalk@5.2.0"
+    },
+    "jsr": {
+      "@std/assert@0.221.0": {
+        "integrity": "fakehash1"
+      }
+    },
+    "npm": {
+      "chalk@5.2.0": {
+        "integrity": "fakehash2"
+      }
+    }
+  }
+}

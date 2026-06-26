@@ -187,18 +187,41 @@ def versions_pipenv_lock(p: Path) -> set[str]:
 def versions_deno_lock(p: Path) -> set[str]:
     """deno.lock (JSON) → set of resolved package specifiers.
 
-    Handles v3 format (``packages.specifiers`` map of constraint → resolved)
-    and v2 format (``npm`` dict of name@version → metadata).
+    Handles all known lockfile versions:
+
+    - v2: top-level ``npm`` dict keyed by ``name@version``.
+    - v3: ``packages.specifiers`` (constraint → resolved) plus
+      ``packages.npm`` and ``packages.jsr`` sections.
+    - v4/v5 (Deno 2.0+): top-level ``specifiers`` (constraint → resolved)
+      plus top-level ``npm`` and ``jsr`` sections.
     """
     d = read_json_file(p) or {}
     out: set[str] = set()
-    # v3: packages.specifiers maps import-specifier → resolved specifier
-    specifiers = (d.get("packages") or {}).get("specifiers") or {}
-    for resolved in specifiers.values():
+
+    # v4/v5 (Deno 2.0+): specifiers at top level
+    for resolved in (d.get("specifiers") or {}).values():
         if isinstance(resolved, str):
             out.add(resolved)
-    # v2/v3 npm section: keyed by "name@version"
+
+    # v4/v5: jsr section at top level; keys are "@scope/pkg@version"
+    for key in (d.get("jsr") or {}):
+        if isinstance(key, str):
+            out.add(f"jsr:{key}")
+
+    # v2 and v4/v5: npm section at top level; keys are "name@version"
     for npm_key in (d.get("npm") or {}):
         if isinstance(npm_key, str):
             out.add(f"npm:{npm_key}")
+
+    # v3: packages.specifiers maps import-specifier → resolved specifier
+    pkgs = d.get("packages") or {}
+    for resolved in (pkgs.get("specifiers") or {}).values():
+        if isinstance(resolved, str):
+            out.add(resolved)
+
+    # v3: packages.npm section; keys are "name@version"
+    for npm_key in (pkgs.get("npm") or {}):
+        if isinstance(npm_key, str):
+            out.add(f"npm:{npm_key}")
+
     return out
