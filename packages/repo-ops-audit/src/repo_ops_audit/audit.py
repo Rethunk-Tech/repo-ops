@@ -574,6 +574,100 @@ def _parse_bun_audit_text(text: str) -> VulnCount:
 # ---------------------------------------------------------------------------
 
 
+def _extract_min_version_from_constraint(constraint: str) -> str | None:
+    """Extract the minimum exact version from a semver constraint string.
+
+    Handles:
+    - Exact version: ``"1.5.5"`` → ``"1.5.5"``
+    - Lower-bound constraint: ``">= 1.5.5"`` or ``">=1.5.5, <2.0"`` → ``"1.5.5"``
+
+    Returns ``None`` when the constraint cannot be resolved to a concrete version.
+    This function is used by ``_apply_cargo_targeted`` to convert cargo-audit
+    ``patched.requirements`` constraints to the exact version accepted by
+    ``cargo update --precise``.
+    """
+    constraint = constraint.strip()
+    # Already an exact version — starts with a digit.
+    if re.match(r"^\d+\.\d+", constraint):
+        return constraint.split()[0].split(",")[0].strip().rstrip(".,;")
+    # Extract ">=" lower bounds (e.g. ">= 1.5.5" or ">=1.5.5").
+    geqs = re.findall(r">=?\s*([\d]+\.[\d]+(?:\.[\d]+)*)", constraint)
+    if geqs:
+        try:
+            return max(geqs, key=lambda v: tuple(int(x) for x in v.split(".")))
+        except (ValueError, TypeError):
+            return geqs[-1]
+    return None
+
+
+def _apply_py_uv_targeted(
+    ws_path: str, items: list[RemediationItem]
+) -> ApplyOutcome:
+    """Pin advisory-vulnerable packages to their exact safe versions via ``uv add``.
+
+    Runs ``uv add <pkg>==<safe_version>`` for each item.  Stops and returns a
+    ``"fail"`` outcome on the first non-zero exit.
+
+    Unlike the broad ``uv sync --upgrade`` path used by the regular upgrade
+    orchestration, this targets only the specific packages with known
+    vulnerabilities, at exactly the advisory-safe minimum version — avoiding
+    unnecessary version jumps on unrelated dependencies.
+    """
+    added: list[str] = []
+    for item in items:
+        safe = item.safe_version.strip()
+        if not safe:
+            continue
+        rc, _stdout, stderr = _run(["uv", "add", f"{item.package}=={safe}"], ws_path)
+        if rc != 0:
+            return ApplyOutcome(
+                workspace=ws_path,
+                status="fail",
+                error=(
+                    f"uv add {item.package}=={safe}: "
+                    f"{(stderr or _stdout or 'failed')[:200]}"
+                ),
+            )
+        added.append(item.package)
+    return ApplyOutcome(workspace=ws_path, status="ok", changes_count=len(added))
+
+
+def _apply_cargo_targeted(
+    ws_path: str, items: list[RemediationItem]
+) -> ApplyOutcome:
+    """Pin advisory-vulnerable Rust crates to their safe versions via ``cargo update``.
+
+    Parses each item's ``safe_version`` constraint (e.g. ``">= 1.5.5"``) to an
+    exact version and runs ``cargo update -p <crate> --precise <version>``.
+
+    Unlike a broad ``cargo update`` that bumps every dependency, this targets
+    only the specific vulnerable crates identified by ``cargo audit``.
+
+    Items whose constraint cannot be resolved to a concrete version are skipped
+    (non-fatal); if no items can be resolved the outcome is ``"ok"`` with zero
+    changes rather than an error.
+    """
+    updated: list[str] = []
+    for item in items:
+        ver = _extract_min_version_from_constraint(item.safe_version)
+        if not ver:
+            continue  # constraint cannot be resolved to an exact version; skip
+        rc, _stdout, stderr = _run(
+            ["cargo", "update", "-p", item.package, "--precise", ver], ws_path
+        )
+        if rc != 0:
+            return ApplyOutcome(
+                workspace=ws_path,
+                status="fail",
+                error=(
+                    f"cargo update -p {item.package} --precise {ver}: "
+                    f"{(stderr or _stdout or 'failed')[:200]}"
+                ),
+            )
+        updated.append(item.package)
+    return ApplyOutcome(workspace=ws_path, status="ok", changes_count=len(updated))
+
+
 def _extract_remediations_pip_audit(
     data: list[Any], ws: str
 ) -> list[RemediationItem]:
@@ -1180,6 +1274,16 @@ def apply_remediations(
                     mgr = detected
             seen[item.workspace] = (eco, mgr)
 
+    # Build a per-workspace dict of advisory-safe version overrides for JS managers.
+    # These are injected into the targeted-bump module before calling process_workspace
+    # so that targeted_bump_behind uses pkg@safe_version instead of pkg@latest.
+    _js_ws_overrides: dict[str, dict[str, str]] = {}
+    for item in remediations:
+        if item.ecosystem == "node":
+            _js_ws_overrides.setdefault(item.workspace, {})[item.package] = (
+                item.safe_version
+            )
+
     outcomes: list[ApplyOutcome] = []
     for ws_path, (ecosystem, manager) in seen.items():
         if not _try_register_manager(manager):
@@ -1189,6 +1293,37 @@ def apply_remediations(
                 )
             )
             continue
+
+        # For JS workspaces: inject advisory-safe version overrides so the
+        # targeted-bump path uses `pkg@safe_version` instead of `pkg@latest`.
+        _js_clear = None
+        if ecosystem == "node":
+            ws_overrides = _js_ws_overrides.get(ws_path, {})
+            if ws_overrides:
+                if manager == "npm":
+                    from repo_ops_js_npm.npm import (
+                        clear_npm_audit_version_overrides,
+                        set_npm_audit_version_overrides,
+                    )
+
+                    set_npm_audit_version_overrides(ws_overrides)
+                    _js_clear = clear_npm_audit_version_overrides
+                elif manager == "pnpm":
+                    from repo_ops_js_pnpm.pnpm import (
+                        clear_pnpm_audit_version_overrides,
+                        set_pnpm_audit_version_overrides,
+                    )
+
+                    set_pnpm_audit_version_overrides(ws_overrides)
+                    _js_clear = clear_pnpm_audit_version_overrides
+                elif manager == "yarn":
+                    from repo_ops_js_yarn.yarn import (
+                        clear_yarn_audit_version_overrides,
+                        set_yarn_audit_version_overrides,
+                    )
+
+                    set_yarn_audit_version_overrides(ws_overrides)
+                    _js_clear = clear_yarn_audit_version_overrides
 
         path = Path(ws_path)
         git_root = git_repo_for(path) or path
@@ -1221,6 +1356,10 @@ def apply_remediations(
             )
         except Exception as exc:
             outcomes.append(ApplyOutcome(ws_path, "fail", str(exc)))
+        finally:
+            # Always clear JS overrides so they don't bleed into subsequent calls.
+            if _js_clear is not None:
+                _js_clear()
 
     return outcomes
 
