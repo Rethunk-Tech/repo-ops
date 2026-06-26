@@ -32,9 +32,11 @@ Design notes
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
+import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -422,6 +424,147 @@ def _basic_auth_for_host(host: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Credential-helper resolution (ECR, docker-credential-* helpers)
+# ---------------------------------------------------------------------------
+
+# Timeout for credential helper subprocesses (kept short; helpers should be fast).
+_CRED_HELPER_TIMEOUT = 5  # seconds
+
+# ECR registry hostname pattern: <account>.dkr.ecr.<region>.amazonaws.com
+_ECR_HOST_RE = re.compile(
+    r"^(?P<account>\d+)\.dkr\.ecr\.(?P<region>[a-z0-9-]+)\.amazonaws\.com$"
+)
+
+
+def _ecr_region_for_host(host: str) -> str | None:
+    """Return the AWS region for an ECR registry host, or None if not ECR."""
+    m = _ECR_HOST_RE.match(host)
+    return m.group("region") if m else None
+
+
+def _cred_helper_name_for_host(host: str) -> str | None:
+    """Return the Docker credential helper name configured for *host*, or None.
+
+    Checks ``credHelpers[host]`` first (per-host override), then ``credsStore``
+    (global fallback).  Returns the bare helper name *without* the
+    ``docker-credential-`` prefix (e.g. ``"ecr-login"``, ``"osxkeychain"``).
+    Returns None when neither key is configured.
+    """
+    cfg = _load_docker_config()
+    cred_helpers: Any = cfg.get("credHelpers", {})
+    if isinstance(cred_helpers, dict):
+        for key in (host, f"https://{host}"):
+            helper = cred_helpers.get(key)
+            if isinstance(helper, str) and helper:
+                return helper
+    creds_store: Any = cfg.get("credsStore")
+    if isinstance(creds_store, str) and creds_store:
+        return creds_store
+    return None
+
+
+def _run_cred_helper(helper_name: str, host: str) -> str | None:
+    """Run ``docker-credential-<helper> get`` and return a ``Basic`` auth value.
+
+    Docker credential-helper protocol (per spec):
+    - stdin:  the registry hostname (plain hostname, no ``https://``)
+    - stdout: JSON ``{"Username": "...", "Secret": "..."}``
+
+    Returns ``"Basic <b64(user:secret)>"`` on success, None on any failure
+    (binary absent, non-zero exit, bad JSON, empty fields).  All errors are
+    swallowed so callers fall back gracefully to anonymous access.
+    """
+    binary = f"docker-credential-{helper_name}"
+    try:
+        proc = subprocess.run(
+            [binary, "get"],
+            input=host,
+            capture_output=True,
+            text=True,
+            timeout=_CRED_HELPER_TIMEOUT,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        data = json.loads(proc.stdout)
+        username = str(data.get("Username") or "")
+        secret = str(data.get("Secret") or "")
+        if not username or not secret:
+            return None
+        b64 = base64.b64encode(f"{username}:{secret}".encode()).decode()
+        return f"Basic {b64}"
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def _ecr_get_login_password(region: str) -> str | None:
+    """Obtain ECR credentials via ``aws ecr get-login-password --region <region>``.
+
+    Alternative path when ``docker-credential-ecr-login`` is absent but the
+    AWS CLI is available.  ECR username is always ``"AWS"``.
+
+    Returns ``"Basic <b64(AWS:password)>"`` on success, None on any error.
+    Failures are swallowed so the caller falls back to anonymous access.
+    """
+    try:
+        proc = subprocess.run(
+            ["aws", "ecr", "get-login-password", "--region", region],
+            capture_output=True,
+            text=True,
+            timeout=_CRED_HELPER_TIMEOUT,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    password = proc.stdout.strip()
+    if not password:
+        return None
+    b64 = base64.b64encode(f"AWS:{password}".encode()).decode()
+    return f"Basic {b64}"
+
+
+def _resolve_auth_for_host(host: str) -> str | None:
+    """Return the best ``Authorization: Basic <b64>`` value for *host*.
+
+    Resolution order (first non-None result wins):
+
+    1. ``auths[host].auth`` in docker config.json — the existing in-process
+       path; no subprocess spawned.
+    2. ``docker-credential-<helper> get`` via ``credHelpers[host]`` or
+       ``credsStore`` from docker config.json.
+    3. ``aws ecr get-login-password`` when *host* is an ECR endpoint — used
+       when no Docker credential helper is wired but the AWS CLI is available.
+
+    All subprocess calls are bounded by ``_CRED_HELPER_TIMEOUT`` and swallowed
+    on failure, so the caller always falls back to anonymous / bearer-only
+    access gracefully.
+    """
+    # 1. Inline auth (no subprocess)
+    auth = _basic_auth_for_host(host)
+    if auth:
+        return auth
+
+    # 2. Docker credential helper (opt-in: only when helper is configured)
+    helper = _cred_helper_name_for_host(host)
+    if helper:
+        auth = _run_cred_helper(helper, host)
+        if auth:
+            return auth
+
+    # 3. ECR fallback via aws CLI (opt-in: only for ECR hosts + aws on PATH)
+    region = _ecr_region_for_host(host)
+    if region:
+        auth = _ecr_get_login_password(region)
+        if auth:
+            return auth
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Generic OCI bearer-challenge token fetch
 # ---------------------------------------------------------------------------
 
@@ -524,11 +667,12 @@ def _fetch_tags(image: str) -> list[str] | None:
 
     Supports any OCI distribution-spec compliant registry using the standard
     bearer-challenge flow.  docker.io's ``library/`` normalization and
-    ``registry-1`` endpoint mapping are preserved.  ECR and other registries
-    that require auth-after-token are report-only.
+    ``registry-1`` endpoint mapping are preserved.  For private registries
+    (ECR, credential-helper-backed) ``_resolve_auth_for_host`` is called to
+    obtain credentials before the bearer-challenge flow.
     """
     host, repo = _normalize_docker_image(image)
-    basic_auth = _basic_auth_for_host(host)
+    basic_auth = _resolve_auth_for_host(host)
 
     token = _fetch_token_for_registry(host, repo, basic_auth)
 
@@ -560,10 +704,10 @@ def _fetch_manifest_digest(image: str, tag: str) -> str | None:
     """HEAD the manifest for *image*:*tag* and return the Docker-Content-Digest.
 
     Returns None on any error (caller treats as report-only).
-    Uses the same auth flow as _fetch_tags.
+    Uses the same auth flow as _fetch_tags (including credential helpers).
     """
     host, repo = _normalize_docker_image(image)
-    basic_auth = _basic_auth_for_host(host)
+    basic_auth = _resolve_auth_for_host(host)
     token = _fetch_token_for_registry(host, repo, basic_auth)
 
     headers: dict[str, str] = {"Accept": _MANIFEST_ACCEPT}
@@ -950,6 +1094,9 @@ def apply_container(ws: Workspace) -> None:
 __all__ = [
     "_basic_auth_for_host",
     "_compose_build_dockerfiles",
+    "_cred_helper_name_for_host",
+    "_ecr_get_login_password",
+    "_ecr_region_for_host",
     "_fetch_bearer_token",
     "_fetch_manifest_digest",
     "_fetch_tags",
@@ -963,7 +1110,9 @@ __all__ = [
     "_parse_www_authenticate",
     "_replace_digest_in_line",
     "_replace_tag_in_line",
+    "_resolve_auth_for_host",
     "_resolve_latest_tag",
+    "_run_cred_helper",
     "apply_container",
     "check_container",
     "find_container_files",
