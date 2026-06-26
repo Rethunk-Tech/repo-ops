@@ -244,6 +244,9 @@ def test_resume_from_config_file(tmp_path) -> None:
         apply_config_to_env(global_cfg=cfg)
         assert os.environ.get("REPO_OPS_RESUME") == "1"
     finally:
+        # apply_config_to_env writes os.environ directly; monkeypatch.undo()
+        # does not revert that, so pop it to avoid leaking into later tests.
+        os.environ.pop("REPO_OPS_RESUME", None)
         monkeypatch.undo()
 
 
@@ -259,4 +262,8 @@ def test_container_refresh_sha_from_config_file(tmp_path) -> None:
         apply_config_to_env(global_cfg=cfg)
         assert os.environ.get("REPO_OPS_CONTAINER_REFRESH_SHA") == "1"
     finally:
+        # apply_config_to_env writes os.environ directly; monkeypatch.undo()
+        # does not revert that, so pop it to avoid leaking into later tests
+        # (was flipping container digest-refresh on for unrelated tests).
+        os.environ.pop("REPO_OPS_CONTAINER_REFRESH_SHA", None)
         monkeypatch.undo()
