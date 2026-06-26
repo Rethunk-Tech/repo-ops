@@ -13,6 +13,8 @@ PY_MANIFEST_NAMES = frozenset(
     {"pyproject.toml", "requirements.in", "requirements.txt", "Pipfile"}
 )
 
+DENO_MANIFEST_NAMES = frozenset({"deno.json", "deno.jsonc", "deno.lock"})
+
 
 def iter_scanned_dirs(root: Path) -> Iterator[tuple[Path, set[str]]]:
     """Walk *root*, pruning SKIP_DIRS and excluded paths.
@@ -31,7 +33,7 @@ def iter_scanned_dirs(root: Path) -> Iterator[tuple[Path, set[str]]]:
 
 
 def manifest_kinds(names: set[str]) -> list[str]:
-    """Return ecosystem tags signaled by *names* (node, go, rust, py)."""
+    """Return ecosystem tags signaled by *names* (node, go, rust, py, deno)."""
     kinds: list[str] = []
     if "package.json" in names:
         kinds.append("node")
@@ -41,4 +43,6 @@ def manifest_kinds(names: set[str]) -> list[str]:
         kinds.append("rust")
     if names & PY_MANIFEST_NAMES:
         kinds.append("py")
+    if names & DENO_MANIFEST_NAMES:
+        kinds.append("deno")
     return kinds

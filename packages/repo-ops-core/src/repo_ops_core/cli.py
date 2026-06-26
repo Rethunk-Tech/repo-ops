@@ -22,7 +22,7 @@ _FIND_PREDICATE_TOKENS = frozenset(
     }
 )
 
-ECO_FILTER_CHOICES = ("node", "go", "rust", "py", "container", "precommit", "actions")
+ECO_FILTER_CHOICES = ("node", "go", "rust", "py", "deno", "container", "precommit", "actions")
 ECO_FILTER_HELP = (
     "Limit inventory rows or upgrade workspaces to one ecosystem "
     f"({'/'.join(ECO_FILTER_CHOICES)})."
@@ -40,6 +40,9 @@ MANAGER_FILTER_CHOICES = (
     "poetry",
     "pip-tools",
     "hatch",
+    "pdm",
+    "pipenv",
+    "deno",
     "go",
     "rust",
     "container",
@@ -529,6 +532,20 @@ def add_upgrade_common_arguments(
                 "or revert only apply-artifact files (lockfiles and manifests) under the "
                 "workspace; pre-existing dirty edits and untracked files outside that set "
                 "are preserved."
+            ),
+        )
+        # ---- Resume / checkpoint (apply-only) --------------------------------
+        saf.add_argument(
+            "--resume",
+            action="store_true",
+            help=(
+                "Skip repos already applied+committed in a previous run at their "
+                "current HEAD SHA.  Requires --commit (commits must land so that "
+                "the post-commit HEAD is checkpointed; apply-only runs without "
+                "--commit produce no checkpoint entries).  Also honoured via "
+                "REPO_OPS_RESUME=1.  Scope-aware: a resume with a different "
+                "--filter or --manager discards the previous run's checkpoint and "
+                "re-processes all repos."
             ),
         )
 
