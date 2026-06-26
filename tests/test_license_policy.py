@@ -1,0 +1,315 @@
+"""Tests for the repo-ops license subcommand (license-policy gate).
+
+Uses in-memory fixtures; no network or subprocess calls.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+from repo_ops_lockfiles.license_policy import (
+    UNKNOWN_LICENSE,
+    PackageLicense,
+    _extract_pyproject_license,
+    _matches_any,
+    apply_policy,
+    build_license_parser,
+    main,
+    scan_npm_licenses,
+    scan_python_licenses,
+)
+
+# ---------------------------------------------------------------------------
+# Unit: _matches_any
+# ---------------------------------------------------------------------------
+
+
+def test_matches_any_exact() -> None:
+    assert _matches_any("MIT", ["MIT", "Apache-2.0"]) is True
+
+
+def test_matches_any_case_insensitive() -> None:
+    assert _matches_any("mit", ["MIT"]) is True
+    assert _matches_any("MIT", ["mit"]) is True
+
+
+def test_matches_any_punctuation_stripped() -> None:
+    # "Apache-2.0" vs "Apache 2.0" — both normalise to APACHE20
+    assert _matches_any("Apache-2.0", ["Apache 2.0"]) is True
+
+
+def test_matches_any_no_match() -> None:
+    assert _matches_any("GPL-3.0", ["MIT", "Apache-2.0"]) is False
+
+
+# ---------------------------------------------------------------------------
+# Unit: _extract_pyproject_license
+# ---------------------------------------------------------------------------
+
+
+def test_extract_pyproject_license_string() -> None:
+    data = {"project": {"name": "foo", "license": "MIT"}}
+    assert _extract_pyproject_license(data) == "MIT"
+
+
+def test_extract_pyproject_license_dict_text() -> None:
+    data = {"project": {"name": "foo", "license": {"text": "Apache-2.0"}}}
+    assert _extract_pyproject_license(data) == "Apache-2.0"
+
+
+def test_extract_pyproject_license_classifiers() -> None:
+    data = {
+        "project": {
+            "name": "foo",
+            "classifiers": ["License :: OSI Approved :: MIT License"],
+        }
+    }
+    assert _extract_pyproject_license(data) == "MIT License"
+
+
+def test_extract_pyproject_license_poetry_tool() -> None:
+    data = {"tool": {"poetry": {"license": "BSD-3-Clause"}}}
+    assert _extract_pyproject_license(data) == "BSD-3-Clause"
+
+
+def test_extract_pyproject_license_missing() -> None:
+    assert _extract_pyproject_license({}) is None
+    assert _extract_pyproject_license({"project": {}}) is None
+
+
+# ---------------------------------------------------------------------------
+# Unit: scan_npm_licenses (node_modules)
+# ---------------------------------------------------------------------------
+
+
+def _write_nm_pkg(tmp_path: Path, name: str, version: str, lic: str) -> None:
+    pkg_dir = tmp_path / "node_modules" / name
+    pkg_dir.mkdir(parents=True, exist_ok=True)
+    pkg_json = pkg_dir / "package.json"
+    pkg_json.write_text(
+        json.dumps({"name": name, "version": version, "license": lic}),
+        encoding="utf-8",
+    )
+
+
+def test_scan_npm_licenses_basic(tmp_path: Path) -> None:
+    _write_nm_pkg(tmp_path, "lodash", "4.17.21", "MIT")
+    _write_nm_pkg(tmp_path, "express", "4.18.2", "MIT")
+    results = scan_npm_licenses(tmp_path)
+    names = {r.name for r in results}
+    assert "lodash" in names
+    assert "express" in names
+    assert all(r.ecosystem == "npm" for r in results)
+
+
+def test_scan_npm_licenses_unknown_when_missing(tmp_path: Path) -> None:
+    pkg_dir = tmp_path / "node_modules" / "nolic"
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "package.json").write_text(
+        json.dumps({"name": "nolic", "version": "1.0.0"}), encoding="utf-8"
+    )
+    results = scan_npm_licenses(tmp_path)
+    pkg = next(r for r in results if r.name == "nolic")
+    assert pkg.license_id == UNKNOWN_LICENSE
+
+
+def test_scan_npm_licenses_license_dict_type(tmp_path: Path) -> None:
+    pkg_dir = tmp_path / "node_modules" / "legacy"
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "package.json").write_text(
+        json.dumps({"name": "legacy", "version": "1.0.0", "license": {"type": "ISC"}}),
+        encoding="utf-8",
+    )
+    results = scan_npm_licenses(tmp_path)
+    pkg = next(r for r in results if r.name == "legacy")
+    assert pkg.license_id == "ISC"
+
+
+def test_scan_npm_licenses_no_node_modules(tmp_path: Path) -> None:
+    assert scan_npm_licenses(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# Unit: scan_python_licenses (pyproject.toml)
+# ---------------------------------------------------------------------------
+
+
+def test_scan_python_licenses_basic(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "myapp"\nversion = "0.1.0"\nlicense = "Apache-2.0"\n',
+        encoding="utf-8",
+    )
+    results = scan_python_licenses(tmp_path)
+    assert len(results) == 1
+    assert results[0].name == "myapp"
+    assert results[0].license_id == "Apache-2.0"
+    assert results[0].ecosystem == "python"
+
+
+def test_scan_python_licenses_no_name_skipped(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        "[build-system]\nrequires = []\n", encoding="utf-8"
+    )
+    assert scan_python_licenses(tmp_path) == []
+
+
+def test_scan_python_licenses_unknown_when_no_license(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "foo"\nversion = "1.0"\n', encoding="utf-8"
+    )
+    results = scan_python_licenses(tmp_path)
+    assert results[0].license_id == UNKNOWN_LICENSE
+
+
+# ---------------------------------------------------------------------------
+# Unit: apply_policy
+# ---------------------------------------------------------------------------
+
+
+def _pkg(name: str, lic: str) -> PackageLicense:
+    return PackageLicense(
+        name=name,
+        version="1.0",
+        license_id=lic,
+        ecosystem="npm",
+        source="node_modules",
+    )
+
+
+def test_apply_policy_no_lists_allows_all() -> None:
+    pkgs = [_pkg("lodash", "MIT"), _pkg("express", "MIT")]
+    result = apply_policy(pkgs)
+    assert result.violations == []
+    assert result.unknown == []
+    assert len(result.allowed) == 2
+
+
+def test_apply_policy_unknown_always_in_unknown() -> None:
+    pkgs = [_pkg("mystery", UNKNOWN_LICENSE)]
+    result = apply_policy(pkgs)
+    assert len(result.unknown) == 1
+    assert result.violations == []
+
+
+def test_apply_policy_allow_list_violation() -> None:
+    pkgs = [_pkg("lodash", "MIT"), _pkg("gpl-lib", "GPL-3.0")]
+    result = apply_policy(pkgs, allow=["MIT", "Apache-2.0"])
+    violation_names = {p.name for p in result.violations}
+    assert "gpl-lib" in violation_names
+    assert "lodash" not in violation_names
+
+
+def test_apply_policy_deny_list_violation() -> None:
+    pkgs = [_pkg("lodash", "MIT"), _pkg("copyleft", "GPL-3.0")]
+    result = apply_policy(pkgs, deny=["GPL-3.0", "AGPL-3.0"])
+    violation_names = {p.name for p in result.violations}
+    assert "copyleft" in violation_names
+    assert "lodash" not in violation_names
+
+
+def test_apply_policy_deny_overrides_allow() -> None:
+    """When both allow and deny are set, deny takes precedence."""
+    pkgs = [_pkg("dual", "MIT")]
+    # Allow MIT but also deny MIT → MIT is flagged as violation
+    result = apply_policy(pkgs, allow=["MIT", "Apache-2.0"], deny=["MIT"])
+    assert len(result.violations) == 1
+
+
+def test_apply_policy_all_unknown_no_violations() -> None:
+    pkgs = [_pkg("a", UNKNOWN_LICENSE), _pkg("b", UNKNOWN_LICENSE)]
+    result = apply_policy(pkgs, deny=["GPL-3.0"])
+    assert result.violations == []
+    assert len(result.unknown) == 2
+
+
+# ---------------------------------------------------------------------------
+# Integration: happy / violation paths end-to-end
+# ---------------------------------------------------------------------------
+
+
+def test_license_happy_path(tmp_path: Path) -> None:
+    """All MIT packages with MIT allow-list → exit 0."""
+    _write_nm_pkg(tmp_path, "lodash", "4.17.21", "MIT")
+    _write_nm_pkg(tmp_path, "express", "4.18.2", "MIT")
+    rc = main(["--allow", "MIT", "--no-fail-unknown", str(tmp_path)])
+    assert rc == 0
+
+
+def test_license_violation_exit_1(tmp_path: Path) -> None:
+    """GPL package with MIT allow-list → exit 1."""
+    _write_nm_pkg(tmp_path, "gpl-lib", "1.0.0", "GPL-3.0")
+    rc = main(["--allow", "MIT", "--no-fail-unknown", str(tmp_path)])
+    assert rc == 1
+
+
+def test_license_deny_list_exit_1(tmp_path: Path) -> None:
+    """Denied license found → exit 1."""
+    _write_nm_pkg(tmp_path, "copyleft", "1.0.0", "GPL-3.0")
+    rc = main(["--deny", "GPL-3.0", "--no-fail-unknown", str(tmp_path)])
+    assert rc == 1
+
+
+def test_license_unknown_exit_2_without_flag(tmp_path: Path) -> None:
+    """Unknown licenses → exit 2 by default."""
+    _write_nm_pkg(tmp_path, "mystery", "1.0.0", "")
+    rc = main([str(tmp_path)])
+    # unknown license → exit 2
+    assert rc == 2
+
+
+def test_license_unknown_exit_0_with_flag(tmp_path: Path) -> None:
+    """--no-fail-unknown: exit 0 even with unknown licenses."""
+    _write_nm_pkg(tmp_path, "mystery", "1.0.0", "")
+    rc = main(["--no-fail-unknown", str(tmp_path)])
+    assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# CLI: JSON output
+# ---------------------------------------------------------------------------
+
+
+def test_license_json_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_nm_pkg(tmp_path, "lodash", "4.17.21", "MIT")
+    rc = main(["--json", "--compact", "--no-fail-unknown", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+    assert "violations" in payload
+    assert "unknown" in payload
+    assert "summary" in payload
+    assert payload["summary"]["scanned"] >= 1
+
+
+def test_license_json_violation_reported(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_nm_pkg(tmp_path, "gpl-lib", "1.0.0", "GPL-3.0")
+    main(["--json", "--compact", "--allow", "MIT", "--no-fail-unknown", str(tmp_path)])
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+    assert payload["summary"]["violations"] >= 1
+    assert any(v["name"] == "gpl-lib" for v in payload["violations"])
+
+
+# ---------------------------------------------------------------------------
+# CLI: parser flags
+# ---------------------------------------------------------------------------
+
+
+def test_license_parser_flags() -> None:
+    parser = build_license_parser()
+    args = parser.parse_args(["--allow", "MIT,Apache-2.0", "--deny", "GPL"])
+    assert args.allow == "MIT,Apache-2.0"
+    assert args.deny == "GPL"
+
+
+def test_license_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["--help"])
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "--allow" in out
+    assert "--deny" in out
