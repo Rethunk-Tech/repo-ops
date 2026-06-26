@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
@@ -9,10 +10,39 @@ from pathlib import Path
 
 VERBOSE = False
 
+_LOG_LEVEL_NAMES = frozenset({"debug", "info", "warning", "error"})
+
 
 def set_verbose(enabled: bool) -> None:
     global VERBOSE
     VERBOSE = enabled
+
+
+def configure_logging(level: str | None) -> None:
+    """Configure the stdlib root logger for the given *level* string.
+
+    Accepted values: ``'debug'``, ``'info'``, ``'warning'``, ``'error'``
+    (case-insensitive).  Passing ``None`` is a no-op so callers can
+    unconditionally forward ``args.log_level`` even when the argument
+    was not parsed.
+
+    Uses ``logging.basicConfig(force=True)`` (Python ≥ 3.8) so the call
+    is idempotent and safe to invoke after any third-party logging setup.
+    When *level* is ``'debug'``, also sets the process-level VERBOSE flag
+    so subprocess commands are echoed to stderr (same as ``--verbose``).
+    """
+    if level is None:
+        return
+    numeric = getattr(logging, level.upper(), None)
+    if not isinstance(numeric, int):
+        return
+    logging.basicConfig(
+        level=numeric,
+        format="%(levelname)s %(name)s %(message)s",
+        force=True,
+    )
+    if level.lower() == "debug":
+        set_verbose(True)
 
 
 def run(

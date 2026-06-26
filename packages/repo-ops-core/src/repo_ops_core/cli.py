@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from repo_ops_core.constants import DEFAULT_ROOTS
-from repo_ops_core.process import set_verbose
+from repo_ops_core.process import configure_logging, set_verbose
 
 _FIND_PREDICATE_TOKENS = frozenset(
     {
@@ -22,7 +22,7 @@ _FIND_PREDICATE_TOKENS = frozenset(
     }
 )
 
-ECO_FILTER_CHOICES = ("node", "go", "rust", "py", "container")
+ECO_FILTER_CHOICES = ("node", "go", "rust", "py", "container", "precommit", "actions")
 ECO_FILTER_HELP = (
     "Limit inventory rows or upgrade workspaces to one ecosystem "
     f"({'/'.join(ECO_FILTER_CHOICES)})."
@@ -268,17 +268,47 @@ def add_manager_filter_argument(parser: argparse._ActionsContainer) -> None:
     )
 
 
+_LOG_LEVEL_CHOICES = ("debug", "info", "warning", "error")
+
+
 def add_verbose_argument(parser: argparse._ActionsContainer) -> None:
-    """Add --verbose / -v flag; caller must wire via wire_verbose(args) after parse."""
+    """Add --verbose / -v and --log-level flags; wire via wire_verbose(args) after parse."""
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose subprocess logging"
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=list(_LOG_LEVEL_CHOICES),
+        default=None,
+        dest="log_level",
+        metavar="LEVEL",
+        help=(
+            "Set the stdlib root logging level "
+            f"({'/'.join(_LOG_LEVEL_CHOICES)}). "
+            "--verbose/-v implies debug when --log-level is not set."
+        ),
     )
 
 
 def wire_verbose(args: argparse.Namespace) -> None:
-    """Wire parsed --verbose to process.set_verbose (call after parse_args)."""
-    if getattr(args, "verbose", False):
-        set_verbose(True)
+    """Wire parsed --verbose / --log-level to process logging helpers.
+
+    Call after parse_args.  Rules:
+    - ``--log-level LEVEL`` configures the stdlib root logger (and sets
+      VERBOSE when level is debug).
+    - ``--verbose / -v`` enables subprocess echo (VERBOSE=True).  When
+      ``--log-level`` is absent, also implies ``--log-level debug``.
+    - Both flags may be combined: ``-v --log-level warning`` enables
+      subprocess echo at WARNING stdlib level.
+    """
+    log_level: str | None = getattr(args, "log_level", None)
+    verbose: bool = getattr(args, "verbose", False)
+    if log_level is not None:
+        configure_logging(log_level)
+        if verbose:
+            set_verbose(True)
+    elif verbose:
+        configure_logging("debug")
 
 
 def add_upgrade_common_arguments(
