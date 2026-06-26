@@ -12,6 +12,8 @@ from datetime import date
 from pathlib import Path
 from typing import Literal
 
+import repo_ops_upgrade_remediations_js  # noqa: F401 — side-effect: registers JS hooks
+import repo_ops_upgrade_remediations_py  # noqa: F401 — side-effect: registers Python hooks
 from repo_ops_core.filesystem import should_exclude
 from repo_ops_core.git import is_git_dirty
 from repo_ops_core.state import cache_clear_dirty_skip, cache_record_dirty_skip
@@ -21,7 +23,9 @@ from repo_ops_lockfiles.snapshots import (
     snapshot_workspace_files,
 )
 from repo_ops_models import Workspace, WorkspaceResult
-from repo_ops_upgrade_remediations_js import remediations
+from repo_ops_upgrade_remediations_core.remediations import (
+    dispatch as _dispatch_remediations,
+)
 
 from repo_ops_upgrade import registry as ecosystems
 from repo_ops_upgrade import verify as verify_mod
@@ -32,6 +36,30 @@ from repo_ops_upgrade.post_apply import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _RemediationsProxy:
+    """Backward-compat shim so tests can patch ``orchestration.remediations.run_remediations``.
+
+    Pre-existing tests use ``patch("repo_ops_upgrade.orchestration.remediations.run_remediations")``
+    to suppress remediation side-effects during integration tests.  This proxy object
+    is a drop-in attribute replacement for the old ``from ... import remediations``
+    module reference while routing live calls through the global multi-ecosystem dispatch.
+    """
+
+    def run_remediations(
+        self,
+        result: WorkspaceResult,
+        *,
+        apply: bool,
+        skip: set[str],
+    ) -> None:
+        _dispatch_remediations(result, apply=apply, skip=skip)
+
+
+# Module-level ``remediations`` attribute: existing tests patch
+# ``orchestration.remediations.run_remediations`` via this name.
+remediations = _RemediationsProxy()
 
 FAIL_FAST_EVENT = threading.Event()
 OnVerifyFail = Literal["keep", "revert"]

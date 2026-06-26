@@ -14,7 +14,9 @@ dependencies = [
   "repo-ops-models",
   "repo-ops-lockfiles",
   "repo-ops-js",
+  "repo-ops-upgrade-remediations-core",
   "repo-ops-upgrade-remediations-js",
+  "repo-ops-upgrade-remediations-py",
   "repo-ops-container",
   "ruamel.yaml>=0.18",
 ]
@@ -28,5 +30,7 @@ repo-ops-core = { workspace = true }
 repo-ops-models = { workspace = true }
 repo-ops-lockfiles = { workspace = true }
 repo-ops-js = { workspace = true }
+repo-ops-upgrade-remediations-core = { workspace = true }
 repo-ops-upgrade-remediations-js = { workspace = true }
+repo-ops-upgrade-remediations-py = { workspace = true }
 repo-ops-container = { workspace = true }
