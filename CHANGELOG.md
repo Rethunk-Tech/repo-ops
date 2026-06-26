@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **pre-commit `rev:` pin ecosystem:** detects `.pre-commit-config.yaml` / `.pre-commit-config.yml`, queries upstream tags via `git ls-remote`, plans and applies conservative same-major bumps; SHA-pinned and non-semver revs are report-only; opt-in cross-major via `REPO_OPS_PRECOMMIT_UPDATE_LATEST=1`; `precommit` is now a first-class ecosystem in discovery and the upgrade registry.
 - **`--fix-plan` flag for `repo-ops audit`:** prints a remediation checklist of actionable steps per vulnerability finding so agents and operators know exactly which packages to bump.
 - **Container credential-helper + ECR auth:** private ECR registries are now accessible via the Docker credential-helper protocol and AWS ECR token exchange, removing the report-only fallback for authenticated registries.
+- **PR/branch-based apply path (`--pr` / `--pr-base` / `--branch-prefix`):** after a successful apply+commit, creates a branch, pushes, and opens a PR via `gh` instead of direct-committing to the base branch; idempotent on an existing open PR for the same branch.
+- **Multi-ecosystem remediation framework:** new `repo-ops-upgrade-remediations-core` provides an ecosystem-agnostic hook registry and dispatch layer; existing JS hooks are ported onto it; new Python (`ruff --fix`/format), Go (`gofmt`, `go generate`), and Rust (`cargo fmt`) remediation hooks added; `go generate` is opt-in behind `REPO_OPS_REMEDIATE_GO_GENERATE=1` (default off, security); formatters operate only on changed files; a missing formatter tool skips gracefully instead of failing the apply.
+- **`audit --fix`:** applies advisory-safe remediations by delegating to the upgrade orchestration layer; also adds SARIF 2.1.0 output (`--sarif-out`) and a GitHub step-summary writer for native code-scanning integration and per-PR step summaries.
+- **New ecosystems — PDM, pipenv, and Deno:** discovery, check, apply, and upgrade-registry registration for `pdm.lock` (PDM), `Pipfile.lock` (pipenv), and `deno.json`/`deno.lock` (Deno); Deno v4/v5 lockfile format (Deno 2.0+) parsed correctly; Pipfile-only repos surface an accurate skip reason instead of a false-green.
+- **Submodule tag-advancement:** detects and applies advancing a submodule pointer to a newer upstream tag; opt-in cross-major via `REPO_OPS_SUBMODULE_UPDATE_LATEST=1`; dirty guard prevents advancing a submodule with uncommitted local changes; gitlink committed in scope after apply.
+- **Apply resume/checkpoint (`--resume` / `REPO_OPS_RESUME=1`):** skips already-committed repos on a re-run after an interrupted fleet apply; checkpoints are scope-fingerprinted so a changed `--filter` or root set starts fresh rather than replaying a stale checkpoint.
+- **`--log-level` flag:** controls run-time verbosity (`debug`/`info`/`warning`/`error`).
+- **`--filter` expanded and `inventory` pin counts:** `--filter` now accepts `container`, `precommit`, `actions`, and `deno` in addition to existing package-manager choices; `inventory` now surfaces container, actions, pre-commit, and deno pin counts.
+- **Config-file: five `REPO_OPS_*` env gates now readable from `[tool.repo-ops]`:** `REPO_OPS_PRECOMMIT_UPDATE_LATEST`, `REPO_OPS_CONTAINER_UPDATE_LATEST`, `REPO_OPS_REMEDIATE_GO_GENERATE`, `REPO_OPS_RESUME`, and related gates follow CLI flag > env var > config file > default precedence.
 
 ### Changed
 
@@ -22,10 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Coverage floor raised from 63 → 68** in `pyproject.toml`, `ci.yml`, and `release.yml`; release gate now enforces the same threshold.
 - **`--actions-keep-sha` flag removed:** the flag was a dead stub; cross-major SHA re-pin (#138) is controlled by `--actions-upgrade-mode=latest` + the existing `--actions-refresh-sha` flag.
 - **CLI flag docs:** AGENTS.md cheat sheet updated with previously undocumented flags (`--on-verify-fail`, `--actions-refresh-sha`, `--fix-plan`, etc.).
+- **Config-file `exclude` and `git_timeout` keys now honored:** both keys were parsed by the config reader but not applied during product runs; they now reach the runtime with correct precedence alongside the other wired keys.
 
 ### Fixed
 
 - **Cross-major Actions SHA re-pin (#138):** `--actions-refresh-sha` now supersedes Dependabot SHA-pin PRs when combined with `--latest`; regression tests anchoring SHA-specific advancement to digest added.
+- **Revert `git checkout` path guarded by before-snapshot set:** the revert path now only checks out files that were absent from the pre-apply tracked set, preventing inadvertent rollback of pre-existing dirty manifest-basename files.
+- **Config-test env leak eliminated:** `apply_config_to_env` tests now isolate env mutations so container-ecosystem tests are no longer polluted by stale `REPO_OPS_*` values from a prior test in the same process.
+- **Submodule apply correctness:** gitlink paths included in the post-apply commit scope; dirty guard and `--detach` checkout wired into the submodule apply flow (#18).
+- **Pipfile-only repos surface an accurate skip reason** rather than a false-green "no upgrades" when no recognized lockfile is present alongside the `Pipfile`.
+- **Remediations edge cases:** `FileNotFoundError` from a missing tool is treated as a graceful skip rather than a hard fail; `cargo fmt` and `gofmt` scoped to changed files only; `go generate` prunes skip directories.
+- **Deno lockfile v4/v5 (Deno 2.0+):** `versions_deno_lock` now parses the v4/v5 format alongside the legacy format.
+- **PDM, pipenv, and deno wired into CLI filters:** added to `MANAGER_FILTER_CHOICES` and `ECO_FILTER_CHOICES`; `manifest_kinds()` extended to detect deno manifests; pipenv checker no longer creates a venv as a side effect of the check phase.
 
 ## [0.17.1] - 2026-06-19
 
