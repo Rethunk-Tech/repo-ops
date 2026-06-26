@@ -1,4 +1,4 @@
-"""Node lockfile version parsers."""
+"""Lockfile version parsers (Node, Python, Deno)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from repo_ops_core.filesystem import read_json_file
+from repo_ops_core.filesystem import read_json_file, read_toml_file
 
 
 def parse_package_json_direct(p: Path) -> int:
@@ -144,4 +144,61 @@ def versions_bun_lock(p: Path) -> set[str]:
             isinstance(val, list) and val and isinstance(val[0], str) and "@" in val[0]
         ):
             out.add(val[0])
+    return out
+
+
+def versions_pdm_lock(p: Path) -> set[str]:
+    """pdm.lock (TOML) → set of name@version.
+
+    PDM lock files are TOML with a list of ``[[package]]`` entries, each
+    containing ``name`` and ``version`` keys.
+    """
+    d = read_toml_file(p) or {}
+    out: set[str] = set()
+    for pkg in d.get("package", []):
+        if not isinstance(pkg, dict):
+            continue
+        name = pkg.get("name")
+        ver = pkg.get("version")
+        if name and ver:
+            out.add(f"{name}@{ver}")
+    return out
+
+
+def versions_pipenv_lock(p: Path) -> set[str]:
+    """Pipfile.lock (JSON) → set of name@version.
+
+    Pipfile.lock has ``"default"`` and ``"develop"`` sections; each maps
+    package name to a dict with a ``"version"`` key like ``"==2.28.0"``.
+    """
+    d = read_json_file(p) or {}
+    out: set[str] = set()
+    for section in ("default", "develop"):
+        for name, meta in (d.get(section) or {}).items():
+            if not isinstance(meta, dict):
+                continue
+            ver = meta.get("version", "?")
+            # Strip leading "==" or "=" from pinned version specifiers
+            ver = ver.lstrip("=")
+            out.add(f"{name}@{ver}")
+    return out
+
+
+def versions_deno_lock(p: Path) -> set[str]:
+    """deno.lock (JSON) → set of resolved package specifiers.
+
+    Handles v3 format (``packages.specifiers`` map of constraint → resolved)
+    and v2 format (``npm`` dict of name@version → metadata).
+    """
+    d = read_json_file(p) or {}
+    out: set[str] = set()
+    # v3: packages.specifiers maps import-specifier → resolved specifier
+    specifiers = (d.get("packages") or {}).get("specifiers") or {}
+    for resolved in specifiers.values():
+        if isinstance(resolved, str):
+            out.add(resolved)
+    # v2/v3 npm section: keyed by "name@version"
+    for npm_key in (d.get("npm") or {}):
+        if isinstance(npm_key, str):
+            out.add(f"npm:{npm_key}")
     return out

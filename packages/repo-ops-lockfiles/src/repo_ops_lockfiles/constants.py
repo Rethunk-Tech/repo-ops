@@ -10,6 +10,7 @@ NODE_LOCKFILES = (
     "bun.lockb",
     "package.json",
 )
-PY_LOCKFILES = ("uv.lock", "requirements.txt", "poetry.lock")
+PY_LOCKFILES = ("uv.lock", "requirements.txt", "poetry.lock", "pdm.lock", "Pipfile.lock")
 GO_LOCKFILES = ("go.sum", "go.mod")
 RUST_LOCKFILES = ("Cargo.lock",)
+DENO_LOCKFILES = ("deno.lock",)
