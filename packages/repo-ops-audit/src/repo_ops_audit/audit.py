@@ -60,6 +60,7 @@ from repo_ops_core.cli import (
     add_follow_symlinks_argument,
     add_json_argument,
     add_roots_argument,
+    add_sarif_argument,
     add_verbose_argument,
     resolve_scan_roots,
     wire_verbose,
@@ -150,6 +151,24 @@ class RemediationItem:
 
 
 @dataclass
+class ApplyOutcome:
+    """Result of a single workspace apply in ``--fix`` mode."""
+
+    workspace: str
+    status: str  # "ok" | "skip" | "fail"
+    error: str = ""
+    changes_count: int = 0
+
+    def as_dict(self) -> dict[str, str | int]:
+        return {
+            "workspace": self.workspace,
+            "status": self.status,
+            "error": self.error,
+            "changes_count": self.changes_count,
+        }
+
+
+@dataclass
 class WorkspaceResult:
     label: str
     path: str
@@ -165,6 +184,53 @@ class WorkspaceResult:
 # ---------------------------------------------------------------------------
 # Ecosystem detection
 # ---------------------------------------------------------------------------
+
+
+def _eco_to_manager(ecosystem: str) -> str:
+    """Map an audit ecosystem name to the upgrade-registry manager name."""
+    return {
+        "py-uv": "uv",
+        "node": "npm",  # default; detect actual manager from lockfile at call site
+        "rust": "cargo",
+        "go": "go",
+    }.get(ecosystem, ecosystem)
+
+
+def _try_register_manager(manager: str) -> bool:
+    """Lazy-import and register a manager's checker/applier with the upgrade registry.
+
+    Uses the same per-ecosystem ``register()`` entry points as ``repo_ops._register``
+    (the main CLI), but loads only the manager that is actually needed to avoid
+    pulling all ecosystem packages into the audit import tree unconditionally.
+
+    Returns ``True`` if the manager is (or was) registered successfully.
+    Returns ``False`` if the package for that manager is not installed.
+    """
+    from repo_ops_upgrade import registry
+
+    if manager in registry.APPLIERS:
+        return True
+    try:
+        if manager == "npm":
+            from repo_ops_js_npm import register as _r
+        elif manager == "yarn":
+            from repo_ops_js_yarn import register as _r
+        elif manager == "pnpm":
+            from repo_ops_js_pnpm import register as _r
+        elif manager == "bun":
+            from repo_ops_js_bun import register as _r
+        elif manager == "uv":
+            from repo_ops_py_uv import register as _r
+        elif manager == "cargo":
+            from repo_ops_rust import register as _r
+        elif manager == "go":
+            from repo_ops_go import register as _r
+        else:
+            return False
+        _r()
+        return True
+    except ImportError:
+        return False
 
 
 def _detect_node_manager(ws: Path) -> str | None:
@@ -1077,6 +1143,197 @@ def print_fix_plan(remediations: list[RemediationItem]) -> None:
     )
 
 
+def apply_remediations(
+    remediations: list[RemediationItem],
+    *,
+    allow_dirty: bool = False,
+) -> list[ApplyOutcome]:
+    """Apply each remediation's workspace via the upgrade apply machinery.
+
+    For each unique workspace in *remediations*, constructs a :class:`Workspace`
+    object (from ``repo_ops_models``), lazily registers the ecosystem manager
+    with the upgrade registry, and delegates to
+    ``orchestration.process_workspace`` with ``do_apply=True``.
+
+    Only the managers needed by the supplied remediations are imported and
+    registered.  Workspaces whose manager package is unavailable are recorded
+    as ``"skip"`` outcomes rather than raising.
+
+    Default behavior (detect-only, ``--fix-plan``) is unchanged — this
+    function is only called when the user passes ``--fix``.
+    """
+    from repo_ops_core.git import git_repo_for
+    from repo_ops_models import Workspace as _Workspace
+    from repo_ops_models import WorkspaceResult as _UpgradeResult
+    from repo_ops_upgrade import orchestration
+
+    # Deduplicate by workspace path; carry (ecosystem, manager) for each.
+    # For node workspaces, detect the actual package manager from lockfiles.
+    seen: dict[str, tuple[str, str]] = {}
+    for item in remediations:
+        if item.workspace not in seen:
+            eco = item.ecosystem
+            mgr = _eco_to_manager(eco)
+            if eco == "node":
+                detected = _detect_node_manager(Path(item.workspace))
+                if detected:
+                    mgr = detected
+            seen[item.workspace] = (eco, mgr)
+
+    outcomes: list[ApplyOutcome] = []
+    for ws_path, (ecosystem, manager) in seen.items():
+        if not _try_register_manager(manager):
+            outcomes.append(
+                ApplyOutcome(
+                    ws_path, "skip", f"manager {manager!r} package not available"
+                )
+            )
+            continue
+
+        path = Path(ws_path)
+        git_root = git_repo_for(path) or path
+        ws = _Workspace(
+            path=path,
+            ecosystem=ecosystem,
+            manager=manager,
+            git_repo=git_root,
+            label=ws_path,
+        )
+        up_result = _UpgradeResult(workspace=ws)
+        try:
+            final = orchestration.process_workspace(
+                up_result,
+                do_apply=True,
+                do_verify=False,
+                verify_test=False,
+                skip_remediations=set(),
+                allow_dirty=allow_dirty,
+                on_verify_fail="keep",
+                quiet=True,
+            )
+            outcomes.append(
+                ApplyOutcome(
+                    ws_path,
+                    final.status,
+                    final.error or "",
+                    len(final.changes),
+                )
+            )
+        except Exception as exc:
+            outcomes.append(ApplyOutcome(ws_path, "fail", str(exc)))
+
+    return outcomes
+
+
+# ---------------------------------------------------------------------------
+# SARIF 2.1.0 report builder
+# ---------------------------------------------------------------------------
+
+_SARIF_SCHEMA = (
+    "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/"
+    "master/Schemata/sarif-schema-2.1.0.json"
+)
+
+_SEV_TO_SARIF_LEVEL: dict[str | None, str] = {
+    "critical": "error",
+    "high": "error",
+    "moderate": "warning",
+    "low": "note",
+    None: "warning",
+}
+
+
+def build_sarif_report(
+    results: list[WorkspaceResult],
+    remediations: list[RemediationItem],
+) -> dict[str, Any]:
+    """Build a SARIF 2.1.0 document for the audit findings.
+
+    One rule is emitted per unique (advisory-id, ecosystem) pair, where the
+    advisory-id is derived from the package name.  One result is emitted per
+    :class:`RemediationItem`.  Severity is drawn from the worst severity seen
+    in the workspace that produced the finding.
+
+    The SARIF document validates against the official 2.1.0 schema and is
+    suitable for upload to GitHub code-scanning via
+    ``github/codeql-action/upload-sarif``.
+    """
+    # Build a workspace-path → worst-severity index for severity mapping.
+    ws_severity: dict[str, str | None] = {
+        r.path: r.counts.worst for r in results
+    }
+
+    rules: list[dict[str, Any]] = []
+    sarif_results: list[dict[str, Any]] = []
+    seen_rules: set[str] = set()
+
+    for item in remediations:
+        rule_id = f"audit/{item.ecosystem}/{item.package}"
+        if rule_id not in seen_rules:
+            seen_rules.add(rule_id)
+            rules.append(
+                {
+                    "id": rule_id,
+                    "name": item.package,
+                    "shortDescription": {
+                        "text": (
+                            f"Vulnerable {item.ecosystem} dependency: {item.package}"
+                        )
+                    },
+                    "helpUri": "",
+                    "properties": {
+                        "ecosystem": item.ecosystem,
+                        "fix_version": item.safe_version,
+                    },
+                }
+            )
+
+        severity = ws_severity.get(item.workspace)
+        level = _SEV_TO_SARIF_LEVEL.get(severity, "warning")
+        sarif_results.append(
+            {
+                "ruleId": rule_id,
+                "level": level,
+                "message": {
+                    "text": (
+                        f"{item.package} has a known vulnerability in "
+                        f"{item.ecosystem} workspace '{item.workspace}'; "
+                        f"safe version: {item.safe_version}"
+                    )
+                },
+                "locations": [
+                    {
+                        "physicalLocation": {
+                            "artifactLocation": {
+                                "uri": item.workspace,
+                                "uriBaseId": "%SRCROOT%",
+                            }
+                        }
+                    }
+                ],
+            }
+        )
+
+    return {
+        "$schema": _SARIF_SCHEMA,
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "repo-ops-audit",
+                        "informationUri": (
+                            "https://github.com/Rethunk-Tech/repo-ops"
+                        ),
+                        "rules": rules,
+                    }
+                },
+                "results": sarif_results,
+            }
+        ],
+    }
+
+
 def build_audit_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="repo-ops audit",
@@ -1142,6 +1399,32 @@ tools used (must be on PATH or workspace is skipped):
             "Read-only: no dependencies are modified."
         ),
     )
+    parser.add_argument(
+        "--fix",
+        action="store_true",
+        default=False,
+        dest="fix",
+        help=(
+            "Apply remediations: for each workspace that has a known-safe fix "
+            "version, delegate to the upgrade apply machinery "
+            "(repo-ops-upgrade orchestration.process_workspace). "
+            "Each affected workspace is upgraded via its native package manager; "
+            "no commit is made automatically. "
+            "Mutually exclusive intent with --fix-plan (--fix implies the plan). "
+            "Skips workspaces with dirty git worktrees unless --allow-dirty is set."
+        ),
+    )
+    parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        default=False,
+        dest="allow_dirty",
+        help=(
+            "With --fix: apply remediations even when the workspace has "
+            "uncommitted changes (default: skip dirty worktrees)."
+        ),
+    )
+    add_sarif_argument(parser)
     add_json_argument(parser, dest="json_out")
     add_verbose_argument(parser)
     return parser
@@ -1156,10 +1439,43 @@ def main(argv: list[str] | None = None) -> int:
     follow_symlinks = bool(getattr(args, "follow_symlinks", False))
     fail_on_unknown = bool(getattr(args, "fail_on_unknown", False))
     fix_plan = bool(getattr(args, "fix_plan", False))
+    do_fix = bool(getattr(args, "fix", False))
+    allow_dirty = bool(getattr(args, "allow_dirty", False))
+    sarif_out: str | None = getattr(args, "sarif_out", None)
+
+    # --fix implies --fix-plan (collect remediations regardless)
+    if do_fix:
+        fix_plan = True
+
     results = run_audit(roots, follow_symlinks=follow_symlinks)
 
     sev_exit = _exit_code_for(results, args.fail_on, fail_on_unknown)
 
+    # Collect remediations when either fix-plan or fix is active.
+    remediations: list[RemediationItem] = []
+    if fix_plan or sarif_out:
+        remediations = collect_all_remediations(results)
+
+    # --- SARIF output -------------------------------------------------------
+    if sarif_out:
+        sarif_doc = build_sarif_report(results, remediations)
+        Path(sarif_out).write_text(
+            json.dumps(sarif_doc, indent=2), encoding="utf-8"
+        )
+
+    # --- GitHub step-summary (auto when GITHUB_STEP_SUMMARY env var is set) --
+    import os as _os
+
+    if _os.environ.get("GITHUB_STEP_SUMMARY"):
+        from repo_ops_core.report import (
+            build_audit_summary,
+            write_step_summary,
+        )
+
+        summary_md = build_audit_summary(results, remediations, roots=roots)
+        write_step_summary(summary_md)
+
+    # --- JSON output --------------------------------------------------------
     if args.json_out:
         payload: dict[str, Any] = {
             "schema_version": 1,
@@ -1189,22 +1505,39 @@ def main(argv: list[str] | None = None) -> int:
             },
         }
         if fix_plan:
-            remediations = collect_all_remediations(results)
             payload["remediations"] = [r.as_dict() for r in remediations]
             plan_exit = 1 if remediations else 0
         else:
             plan_exit = 0
+
+        # --fix: apply and include outcomes in JSON
+        if do_fix and remediations:
+            apply_outcomes = apply_remediations(remediations, allow_dirty=allow_dirty)
+            payload["apply_outcomes"] = [o.as_dict() for o in apply_outcomes]
+
         print(json.dumps(payload, indent=None if args.compact else 2))
         return sev_exit or plan_exit
 
+    # --- Human output -------------------------------------------------------
     print_audit_report(results, roots, fail_on_unknown=fail_on_unknown)
+    plan_exit = 0
     if fix_plan:
-        remediations = collect_all_remediations(results)
         print()
         print_fix_plan(remediations)
         plan_exit = 1 if remediations else 0
-    else:
-        plan_exit = 0
+
+    if do_fix and remediations:
+        apply_outcomes = apply_remediations(remediations, allow_dirty=allow_dirty)
+        print()
+        print(f"Fix apply — {len(apply_outcomes)} workspace(s) processed:")
+        for outcome in apply_outcomes:
+            status_str = outcome.status
+            if outcome.error:
+                status_str = f"{outcome.status}: {outcome.error[:60]}"
+            elif outcome.status == "ok" and outcome.changes_count:
+                status_str = f"ok ({outcome.changes_count} change(s))"
+            print(f"  {outcome.workspace}: {status_str}")
+
     return sev_exit or plan_exit
 
 

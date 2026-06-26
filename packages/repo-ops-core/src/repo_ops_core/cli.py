@@ -271,6 +271,21 @@ def add_manager_filter_argument(parser: argparse._ActionsContainer) -> None:
 _LOG_LEVEL_CHOICES = ("debug", "info", "warning", "error")
 
 
+def add_sarif_argument(parser: argparse._ActionsContainer) -> None:
+    """Add --sarif-out PATH for SARIF 2.1.0 code-scanning output (audit subparser)."""
+    parser.add_argument(
+        "--sarif-out",
+        metavar="PATH",
+        dest="sarif_out",
+        default=None,
+        help=(
+            "Write SARIF 2.1.0 output to PATH so findings surface in "
+            "GitHub code-scanning. Each remediable vulnerability becomes "
+            "one SARIF result with a rule per advisory package."
+        ),
+    )
+
+
 def add_verbose_argument(parser: argparse._ActionsContainer) -> None:
     """Add --verbose / -v and --log-level flags; wire via wire_verbose(args) after parse."""
     parser.add_argument(
