@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import fnmatch
 import os
 import sys
@@ -17,10 +18,15 @@ from repo_ops_core.cli import (
     resolve_scan_roots,
     wire_verbose,
 )
+from repo_ops_core.config import (
+    apply_config_to_env,
+    load_global_config,
+    load_repo_config,
+)
 from repo_ops_core.constants import DEFAULT_ROOTS
 from repo_ops_core.parallel import run_bounded_pool
 from repo_ops_core.tee import tee_stdout_stderr
-from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
+from repo_ops_models import ActionBump, RepoBundle, Workspace, WorkspaceResult
 
 from repo_ops_upgrade import (
     actions,
@@ -362,16 +368,34 @@ def _run_upgrade_body(
             local_cache: dict[str, dict | None] = {}
             with _tag_cache_lock:
                 local_cache.update(run_tag_cache)
-            bumps, count = actions.scan_actions(
-                bundle.git_repo,
-                apply=apply,
-                keep_sha=keep_sha,
-                refresh_sha=refresh_sha,
-                tag_style=tag_style,
-                upgrade_mode=actions_mode,
-                tag_cache=local_cache,
-                lint_level=getattr(args, "actions_lint_level", None),
-            )
+            try:
+                bumps, count = actions.scan_actions(
+                    bundle.git_repo,
+                    apply=apply,
+                    keep_sha=keep_sha,
+                    refresh_sha=refresh_sha,
+                    tag_style=tag_style,
+                    upgrade_mode=actions_mode,
+                    tag_cache=local_cache,
+                    lint_level=getattr(args, "actions_lint_level", None),
+                )
+            except Exception as exc:
+                # Isolate: a non-WorkflowParseError (e.g. OSError writing a
+                # workflow) must surface as a FAILED actions entry rather than
+                # propagating through the pool and tearing down the whole run
+                # AFTER lockfiles were already mutated on disk (#TASK-2).
+                bundle.actions = [
+                    ActionBump(
+                        workflow="(error)",
+                        action="(worker)",
+                        pin="",
+                        latest="",
+                        status="fail",
+                        detail=str(exc),
+                    )
+                ]
+                bundle.actions_workflows_scanned = 0
+                return
             with _tag_cache_lock:
                 run_tag_cache.update(local_cache)
             bundle.actions = bumps
@@ -510,6 +534,27 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if getattr(args, "json_report_path", None) and not args.json:
         parser.error("--json-out requires --json")
+
+    # Config-file settings layer (CLI flag > env > config file > default, #TASK-1).
+    # Load global + CWD per-repo configs and inject into os.environ for env-var-backed
+    # settings before the flag→env wiring in _run_upgrade_body.  Skips any var that's
+    # already set (user shell or a prior CLI flag).
+    _g_cfg = load_global_config()
+    _r_cfg = load_repo_config(Path.cwd())
+    apply_config_to_env(global_cfg=_g_cfg, repo_cfg=_r_cfg)
+
+    # ``jobs`` has no env-var channel — apply from config directly to args before the
+    # cpu_count fallback so the documented config-file default takes effect.
+    if args.jobs is None:
+        _jobs_val: object = None
+        if _r_cfg and "jobs" in _r_cfg:
+            _jobs_val = _r_cfg["jobs"]
+        elif _g_cfg and "jobs" in _g_cfg:
+            _jobs_val = _g_cfg["jobs"]
+        if _jobs_val is not None:
+            with contextlib.suppress(TypeError, ValueError):
+                args.jobs = max(1, int(_jobs_val))  # type: ignore[arg-type]
+
     if args.jobs is None:
         args.jobs = min(16, os.cpu_count() or 4)
     wire_verbose(args)
