@@ -302,6 +302,7 @@ def discover_workspaces_in_root(
             or (mdir / "requirements.in").exists()
             or (mdir / "requirements.txt").exists()
             or (mdir / "Pipfile").exists()
+            or (mdir / "pdm.lock").exists()
         ):
             return
         for ur, members in uv_roots.items():
@@ -312,6 +313,8 @@ def discover_workspaces_in_root(
             mgr = "uv"
         elif (mdir / "poetry.lock").exists():
             mgr = "poetry"
+        elif (mdir / "pdm.lock").exists():
+            mgr = "pdm"
         elif (mdir / "requirements.in").exists():
             mgr = "pip-tools"
         elif (mdir / "requirements.txt").exists():
@@ -322,11 +325,29 @@ def discover_workspaces_in_root(
                 " (generated requirements.txt only)",
             )
             return
+        elif (mdir / "Pipfile.lock").exists():
+            mgr = "pipenv"
+        elif (mdir / "Pipfile").exists():
+            # Pipfile without Pipfile.lock: pipenv not yet initialised.
+            record_skip(
+                mdir,
+                "py",
+                "Pipfile/pipenv: Pipfile.lock not found; run 'pipenv lock' first",
+            )
+            return
         elif pyp.exists():
             d = read_toml_file(pyp) or {}
             build = (d.get("build-system") or {}).get("build-backend", "")
             if "hatch" in build or (d.get("tool") or {}).get("hatch"):
                 mgr = "hatch"
+            elif (d.get("tool") or {}).get("pdm") is not None:
+                # pyproject.toml with [tool.pdm] but no pdm.lock yet.
+                record_skip(
+                    mdir,
+                    "py",
+                    "pdm.lock not found; run 'pdm lock' first",
+                )
+                return
         if mgr == "uv":
             members = uv_workspace_members(mdir)
             if members:
@@ -336,7 +357,7 @@ def discover_workspaces_in_root(
                 mdir,
                 "py",
                 "pyproject.toml without a recognized manager "
-                "(uv/poetry/pip-tools/hatch)",
+                "(uv/poetry/pdm/pip-tools/hatch/pipenv)",
             )
             return
         git = git_repo_for(mdir)
@@ -348,6 +369,27 @@ def discover_workspaces_in_root(
                 path=mdir.resolve(),
                 ecosystem="py",
                 manager=mgr,
+                git_repo=git.resolve(),
+                label="",
+            )
+        )
+
+    def consider_deno(mdir: Path) -> None:
+        if not (
+            (mdir / "deno.json").exists()
+            or (mdir / "deno.jsonc").exists()
+            or (mdir / "deno.lock").exists()
+        ):
+            return
+        git = git_repo_for(mdir)
+        if not git:
+            record_skip(mdir, "deno", "not inside a git repo")
+            return
+        found.append(
+            Workspace(
+                path=mdir.resolve(),
+                ecosystem="deno",
+                manager="deno",
                 git_repo=git.resolve(),
                 label="",
             )
@@ -382,8 +424,10 @@ def discover_workspaces_in_root(
             consider_go(mdir)
         if "Cargo.toml" in names:
             consider_rust(mdir)
-        if names & {"pyproject.toml", "requirements.in", "requirements.txt", "Pipfile"}:
+        if names & {"pyproject.toml", "requirements.in", "requirements.txt", "Pipfile", "pdm.lock"}:
             consider_py(mdir)
+        if names & {"deno.json", "deno.jsonc", "deno.lock"}:
+            consider_deno(mdir)
         consider_container(mdir)
         consider_precommit(mdir)
         # Mark this dir visited unconditionally (not only when a workspace was

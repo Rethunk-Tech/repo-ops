@@ -206,3 +206,78 @@ def cache_get_dirty_skip(repo_path: str | Path) -> dict[str, Any] | None:
     if isinstance(entry, dict):
         return entry
     return None
+
+
+# ---------------------------------------------------------------------------
+# Apply-checkpoint (REPO_OPS_RESUME)
+# ---------------------------------------------------------------------------
+#
+# Stores {<abs repo path>: <post-apply HEAD SHA>} in a separate file so that
+# a large-fleet apply run can be resumed after a crash.  Each repo whose
+# apply completed without failure is checkpointed immediately (atomic write).
+# On re-run with REPO_OPS_RESUME=1, repos whose current HEAD matches the
+# checkpointed post-apply SHA are skipped — they are already done.
+#
+# The checkpoint lives alongside state.json:
+#   ~/.cache/repo-ops/apply-checkpoint.json
+#
+# Like state.json, the checkpoint respects REPO_OPS_NO_STATE=1 (returns
+# empty dict / writes nothing when disabled).
+
+_CHECKPOINT_LOCK: threading.Lock = threading.Lock()
+
+
+def _checkpoint_path() -> Path:
+    xdg = os.environ.get("XDG_CACHE_HOME", "")
+    base = Path(xdg) if xdg else Path.home() / ".cache"
+    return base / "repo-ops" / "apply-checkpoint.json"
+
+
+def load_checkpoint() -> dict[str, str]:
+    """Load the apply checkpoint from disk.
+
+    Returns a ``{repo_path: post_apply_sha}`` dict, or an empty dict when
+    ``REPO_OPS_NO_STATE=1`` or the file is missing / corrupt.
+    """
+    if _no_state():
+        return {}
+    path = _checkpoint_path()
+    try:
+        text = path.read_text(encoding="utf-8")
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return {str(k): str(v) for k, v in data.items()}
+        return {}
+    except Exception:
+        return {}
+
+
+def save_checkpoint(data: dict[str, str]) -> None:
+    """Persist *data* to the apply-checkpoint file atomically (tmp + rename).
+
+    No-op when ``REPO_OPS_NO_STATE=1`` or on any I/O error (best-effort).
+    Callers are responsible for holding ``_CHECKPOINT_LOCK`` while building
+    the dict snapshot passed here; the write itself does not need the lock
+    because ``os.replace`` is atomic on all POSIX systems.
+    """
+    if _no_state():
+        return
+    path = _checkpoint_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = json.dumps(data, indent=2) + "\n"
+        fd, tmp_name = tempfile.mkstemp(
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        )
+        tmp_path = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+                handle.write(text)
+            os.replace(tmp_path, path)
+        except BaseException:
+            tmp_path.unlink(missing_ok=True)
+            raise
+    except Exception:
+        return  # best-effort; disk write failure must not crash the run
