@@ -41,6 +41,24 @@ from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 _FAIL_FAST = orchestration.FAIL_FAST_EVENT
 
 
+def _scope_fingerprint(args: argparse.Namespace) -> str:
+    """Derive a short string that identifies the effective run scope.
+
+    Used as a fingerprint stored in the checkpoint file so that a resume
+    with a different ``--filter`` / ``--manager`` scope cannot false-skip
+    repos that were never processed by the previous (differently-scoped) run.
+    An empty string means "no filter applied" (full-fleet run).
+    """
+    eco = getattr(args, "eco_filter", None) or ""
+    manager = getattr(args, "manager_filter", None) or ""
+    parts = []
+    if eco:
+        parts.append(f"eco={eco}")
+    if manager:
+        parts.append(f"mgr={manager}")
+    return ",".join(parts)
+
+
 def _get_head_sha(git_repo: Path) -> str | None:
     """Return the current HEAD SHA for *git_repo*, or ``None`` on any error."""
     from repo_ops_core.git import run_git
@@ -249,23 +267,39 @@ def _run_upgrade_body(
                 break
         return results
 
-    # Resume / checkpoint (REPO_OPS_RESUME=1): skip repos that already
-    # completed apply in a previous run at their current HEAD SHA.
-    _resume_mode = apply and os.environ.get("REPO_OPS_RESUME") == "1"
+    # Resume / checkpoint (REPO_OPS_RESUME=1 or --resume): skip repos that
+    # already completed apply+commit in a previous run at their current HEAD.
+    # The scope fingerprint ensures a differently-scoped resume (e.g. different
+    # --filter) does not false-skip repos outside the prior run's scope.
+    _resume_mode = apply and (
+        os.environ.get("REPO_OPS_RESUME") == "1"
+        or getattr(args, "resume", False)
+    )
     _checkpoint: dict[str, str] = {}
     _checkpoint_lock = threading.Lock()
+    _scope = _scope_fingerprint(args)
     if _resume_mode:
         from repo_ops_core import state as _cpt_state
 
         _checkpoint = _cpt_state.load_checkpoint()
+        # Discard stale checkpoint when the run scope changed: a checkpoint
+        # from a narrow --eco-filter run must not skip repos outside that
+        # scope on a differently-scoped (or unfiltered) resume.
+        if _checkpoint.get("_scope") != _scope:
+            _checkpoint = {}
 
     def _process_repo_checkpointed(bundle: RepoBundle) -> list[WorkspaceResult]:
         """Wrap _process_repo with resume-checkpoint skip logic.
 
-        When REPO_OPS_RESUME=1 and the bundle's git_repo HEAD matches the
-        checkpointed post-apply SHA, all workspaces are returned as "skip"
-        without calling the real process.  After a successful (non-fail) run
-        the repo is added to the checkpoint so future resumes can skip it.
+        When REPO_OPS_RESUME=1 (or --resume) and the bundle's git_repo HEAD
+        matches the checkpointed post-commit SHA, all workspaces are returned
+        as "skip" without calling the real process.
+
+        Checkpoint recording is intentionally NOT done here — it happens only
+        after the commit phase completes successfully (see the post-commit block
+        in _run_upgrade_body).  This ensures a crash before commit leaves no
+        checkpoint entry, so the repo is correctly re-applied on the next resume
+        rather than being silently skipped with uncommitted changes.  (Bug #17.1)
         """
         if _resume_mode and _checkpoint_should_skip(bundle, _checkpoint):
             for wr in bundle.workspaces:
@@ -273,19 +307,7 @@ def _run_upgrade_body(
                 wr.error = "resume: already applied"
             return list(bundle.workspaces)
 
-        results = _process_repo(bundle)
-
-        if _resume_mode and not any(r.status == "fail" for r in results):
-            post_sha = _get_head_sha(bundle.git_repo)
-            if post_sha:
-                from repo_ops_core import state as _cpt_state
-
-                with _checkpoint_lock:
-                    _checkpoint[str(bundle.git_repo)] = post_sha
-                    to_save = dict(_checkpoint)
-                _cpt_state.save_checkpoint(to_save)
-
-        return results
+        return _process_repo(bundle)
 
     all_results: list[WorkspaceResult] = []
     if apply:
@@ -487,6 +509,19 @@ def _run_upgrade_body(
                 or wr.remediations
             ]
 
+    # Submodule tag advances (apply-only, opt-in via --submodules).
+    # Runs BEFORE pointer_hints so that staged gitlinks are visible to the
+    # hint scan and are committed by the post-apply commit phase.  Task #18.
+    submodule_gitlink_map: dict[Path, set[str]] = {}
+    if apply and include_submodules and submodule_links:
+        _sub_bumps = submodules.apply_submodule_tag_advances(
+            submodule_links,
+            allow_dirty=args.allow_dirty,
+        )
+        for _bump in _sub_bumps:
+            if _bump.is_actionable:
+                submodule_gitlink_map.setdefault(_bump.parent, set()).add(_bump.path)
+
     pointer_hints: list[dict[str, str]] | None = None
     if submodule_links and (apply or include_submodules):
         pointer_hints = submodules.parent_repos_needing_pointer_commit(
@@ -562,9 +597,30 @@ def _run_upgrade_body(
                 commit_on_fail=getattr(args, "commit_on_fail", False),
                 quiet=args.quiet,
                 max_workers=args.jobs,
+                submodule_gitlink_map=submodule_gitlink_map if submodule_gitlink_map else None,
             )
             if commit_exit != 0:
                 exit_code = 1 if exit_code == 0 else exit_code
+
+            # Checkpoint committed repos NOW (after commit), so that a crash
+            # before reaching this block leaves no entry and the repo is
+            # correctly re-applied on the next resume run.  Only "committed"
+            # outcomes are recorded — skipped/failed repos are never checkpointed
+            # (fixes bugs #17.1 and #17.2).  Lock is held across the disk write
+            # to prevent a lost-update race between concurrent checkpoint saves
+            # (fixes bug #17.4).
+            if _resume_mode:
+                from repo_ops_core import state as _cpt_state
+
+                for _co in child_outcomes:
+                    if _co.status == "committed":
+                        _committed_sha = _get_head_sha(_co.git_repo)
+                        if _committed_sha:
+                            with _checkpoint_lock:
+                                _checkpoint[str(_co.git_repo)] = _committed_sha
+                                _checkpoint["_scope"] = _scope
+                                _to_save = dict(_checkpoint)
+                                _cpt_state.save_checkpoint(_to_save)
             # Umbrella pointer-bump commits: after all child commits complete,
             # commit dirty gitlinks in umbrella repos for children that received
             # commits this run.  Opt-in via REPO_OPS_COMMIT_UMBRELLA=1 env var.
