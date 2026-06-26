@@ -85,6 +85,11 @@ def run_hooks(
                     entry["status"] = "pending"
             else:
                 entry["status"] = "ok"
+        except FileNotFoundError as exc:
+            # Remediation tool is not installed.  Treat as skip so that a
+            # missing formatter never fails an otherwise-successful dep bump.
+            entry["status"] = "skip"
+            entry["detail"] = f"tool not found: {exc}"
         except Exception as exc:
             entry["status"] = "fail"
             entry["detail"] = str(exc)
