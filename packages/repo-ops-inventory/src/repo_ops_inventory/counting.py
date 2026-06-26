@@ -21,7 +21,10 @@ from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
 from repo_ops_lockfiles.parsers import (
     parse_package_json_direct,
     versions_bun_lock,
+    versions_deno_lock,
     versions_npm_lock,
+    versions_pdm_lock,
+    versions_pipenv_lock,
     versions_pnpm_lock,
     versions_yarn_lock,
 )
@@ -289,6 +292,18 @@ def count_python(mdir: Path) -> tuple[int, set[str], str]:
         if name and ver:
             versions.add(f"{name}@{ver}")
         break
+    # pdm.lock (only when uv/poetry lock not already found)
+    if not versions:
+        pdm_lock = mdir / "pdm.lock"
+        if pdm_lock.exists():
+            src_tags.append("pdm")
+            versions = versions_pdm_lock(pdm_lock)
+    # Pipfile.lock (only when no other lockfile found)
+    if not versions:
+        pipfile_lock = mdir / "Pipfile.lock"
+        if pipfile_lock.exists():
+            src_tags.append("pipenv")
+            versions = versions_pipenv_lock(pipfile_lock)
     return direct, versions, "+".join(src_tags) or "none"
 
 
@@ -489,6 +504,45 @@ def count_precommit(proj: Path) -> tuple[int, set[str]]:
     return direct, versions
 
 
+# ---------- Deno ----------
+
+
+def count_deno(mdir: Path) -> tuple[int, set[str]]:
+    """Count Deno dependencies from deno.lock and deno.json/deno.jsonc.
+
+    Returns:
+      (direct_dep_count, set_of_resolved_specifiers)
+
+    Direct deps come from the ``imports`` map in ``deno.json`` or ``deno.jsonc``.
+    Resolved versions come from ``deno.lock`` (all format versions).
+    """
+    direct = 0
+    versions: set[str] = set()
+    # Count direct deps from deno.json / deno.jsonc imports map
+    for cfg_name in ("deno.json", "deno.jsonc"):
+        cfg = mdir / cfg_name
+        if not cfg.exists():
+            continue
+        try:
+            import json as _json
+            import re as _re
+            text = cfg.read_text(encoding="utf-8", errors="replace")
+            # Strip line comments for jsonc
+            if cfg_name.endswith(".jsonc"):
+                text = _re.sub(r"//[^\n]*", "", text)
+            d = _json.loads(text)
+            imports = d.get("imports") or {}
+            direct += len(imports)
+        except Exception:  # noqa: S110 — best-effort: malformed deno.json/deno.jsonc is skipped
+            pass
+        break
+    # Count resolved specifiers from deno.lock
+    lock = mdir / "deno.lock"
+    if lock.exists():
+        versions = versions_deno_lock(lock)
+    return direct, versions
+
+
 # ---------- Walk ----------
 
 
@@ -537,6 +591,11 @@ def _make_row(
             row["direct"] += d
             row["versions"] |= v
             row["kinds"].add(f"py({src})")
+        if "deno" in kinds:
+            d, v = count_deno(mdir)
+            row["direct"] += d
+            row["versions"] |= v
+            row["kinds"].add("deno")
 
     # --- New-ecosystem pin counts (container / actions / pre-commit) ---
     # These scan the project root rather than individual manifest dirs.
