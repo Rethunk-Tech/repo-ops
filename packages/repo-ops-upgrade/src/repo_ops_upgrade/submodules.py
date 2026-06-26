@@ -1,14 +1,18 @@
-"""Git submodule discovery, ordering, and post-apply pointer hints."""
+"""Git submodule discovery, ordering, post-apply pointer hints, and tag-advance detection."""
 
 from __future__ import annotations
 
 import configparser
+import contextlib
 import os
-from dataclasses import dataclass
+import re
+import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.git import git_repo_for, run_git
+from repo_ops_core.version_utils import semver_tuple
 
 SubmoduleOrder = str  # "discovery" | "children-first"
 
@@ -20,12 +24,14 @@ class SubmoduleLink:
     path: str
     git_repo: Path
     parent: Path
+    url: str = field(default="")  # remote URL from .gitmodules; "" when unknown
 
     def to_json(self) -> dict[str, str]:
         return {
             "path": self.path,
             "git_repo": str(self.git_repo.resolve()),
             "parent": str(self.parent.resolve()),
+            "url": self.url,
         }
 
 
@@ -101,7 +107,7 @@ def discover_submodules_under_roots(
             if parent is None:
                 continue
             parent = parent.resolve()
-            for rel_path, _url in _parse_gitmodules_file(gitmodules_path):
+            for rel_path, url in _parse_gitmodules_file(gitmodules_path):
                 child_dir = (parent / rel_path).resolve()
                 child_repo = git_repo_for(child_dir)
                 # Skip uninitialized submodules (.git absent → git_repo_for
@@ -124,6 +130,7 @@ def discover_submodules_under_roots(
                         path=rel_path.replace("\\", "/"),
                         git_repo=child_repo.resolve(),
                         parent=parent,
+                        url=url,
                     )
                 )
     return links
@@ -223,3 +230,333 @@ def _dirty_submodule_paths(parent: Path, submodule_paths: list[str]) -> list[str
             if sub_path in path_set and sub_path not in dirty:
                 dirty.append(sub_path)
     return sorted(set(dirty))
+
+
+# ---------------------------------------------------------------------------
+# Submodule tag-advance detection (plan) and application (apply)
+# ---------------------------------------------------------------------------
+
+#: Prefix that marks non-actionable entries (mirrors precommit and container
+#: ecosystems so the report layer can distinguish them uniformly).
+_REPORT_ONLY_PREFIX = "[report-only] "
+
+#: Environment variable opt-in for cross-major tag advances.
+_SUBMODULE_UPDATE_LATEST_ENV = "REPO_OPS_SUBMODULE_UPDATE_LATEST"
+
+#: Bounded timeout (seconds) for ``git ls-remote`` calls.
+_LS_REMOTE_TIMEOUT = 30
+
+#: Recognises semver-like tags with or without a leading ``v`` and an optional
+#: pre-release / build-metadata suffix (e.g. ``v1.2.3``, ``1.0.0-rc1``).
+_SEMVER_TAG_RE = re.compile(r"^v?(\d+)(?:\.\d+)*(?:[-.][\w.]+)?$")
+
+#: In-process cache: URL → tag list (or None on error).
+#: One entry per unique upstream URL so repeated checks cost only one RTT.
+_SUBMODULE_TAG_CACHE: dict[str, list[str] | None] = {}
+
+
+@dataclass(frozen=True)
+class SubmoduleTagBump:
+    """Potential tag advance for one submodule.
+
+    ``latest_tag`` is either a concrete semver tag (actionable) or a
+    ``[report-only] …`` message (informational) — the same convention used by
+    the precommit and container ecosystems.
+    """
+
+    path: str        # relative path from parent repo
+    url: str         # upstream remote URL from .gitmodules
+    current_tag: str # tag at HEAD, or "" when HEAD has no exact tag
+    latest_tag: str  # target tag, or "[report-only] …" when non-actionable
+    parent: Path     # parent git repo root
+    git_repo: Path   # resolved absolute path to the submodule checkout
+
+    @property
+    def is_actionable(self) -> bool:
+        """True when ``latest_tag`` is a concrete target (not report-only)."""
+        return not self.latest_tag.startswith(_REPORT_ONLY_PREFIX)
+
+    def to_json(self) -> dict[str, str]:
+        return {
+            "path": self.path,
+            "url": self.url,
+            "current_tag": self.current_tag,
+            "latest_tag": self.latest_tag,
+            "parent": str(self.parent),
+            "git_repo": str(self.git_repo),
+            "actionable": str(self.is_actionable).lower(),
+        }
+
+
+def _is_semver_tag(tag: str) -> bool:
+    """True when *tag* looks like a semver version (bare or ``v``-prefixed)."""
+    return bool(_SEMVER_TAG_RE.match(tag))
+
+
+def _has_v_prefix(tag: str) -> bool:
+    return tag.startswith(("v", "V"))
+
+
+def _fetch_remote_tags(url: str, *, timeout: int = _LS_REMOTE_TIMEOUT) -> list[str] | None:
+    """Return annotated tag names for *url* via ``git ls-remote --tags --refs``.
+
+    Results are cached in-process so repeated checks for the same URL cost only
+    one subprocess call.  Returns ``None`` on any error so callers can degrade
+    to report-only without raising.
+    """
+    if url in _SUBMODULE_TAG_CACHE:
+        return _SUBMODULE_TAG_CACHE[url]
+
+    try:
+        proc = subprocess.run(
+            ["git", "ls-remote", "--tags", "--refs", url],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        _SUBMODULE_TAG_CACHE[url] = None
+        return None
+
+    if proc.returncode != 0:
+        _SUBMODULE_TAG_CACHE[url] = None
+        return None
+
+    tags: list[str] = []
+    for line in proc.stdout.splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) == 2 and parts[1].startswith("refs/tags/"):
+            tag = parts[1][len("refs/tags/"):]
+            if tag:
+                tags.append(tag)
+
+    _SUBMODULE_TAG_CACHE[url] = tags
+    return tags
+
+
+def _clear_submodule_tag_cache() -> None:
+    """Clear the in-process tag cache (for use in tests)."""
+    _SUBMODULE_TAG_CACHE.clear()
+
+
+def _current_submodule_tag(git_repo: Path) -> str | None:
+    """Return the exact tag that HEAD points to in *git_repo*, or ``None``.
+
+    Uses ``git describe --tags --exact-match`` which succeeds only when HEAD is
+    directly tagged.  Returns ``None`` for SHA-only pins and untagged HEADs.
+    """
+    try:
+        proc = run_git(git_repo, "describe", "--tags", "--exact-match", "HEAD")
+    except (FileNotFoundError, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    tag = proc.stdout.strip()
+    return tag or None
+
+
+def _resolve_latest_submodule_tag(
+    current_tag: str,
+    available_tags: list[str],
+    *,
+    allow_cross_major: bool = False,
+) -> str | None:
+    """Return the best candidate tag for *current_tag* from *available_tags*.
+
+    Matching rules:
+    - *current_tag* must be semver-like; returns ``None`` otherwise.
+    - Candidates must share the same ``v``-prefix style as *current_tag*.
+    - Conservative (default): same major only.
+    - ``allow_cross_major=True``: pick the global best across all majors.
+    - Returns ``None`` when already at latest or no suitable candidate exists.
+    """
+    if not _is_semver_tag(current_tag):
+        return None
+
+    want_v = _has_v_prefix(current_tag)
+    bare = current_tag.lstrip("vV")
+    try:
+        current_tup = semver_tuple(bare)
+    except Exception:
+        return None
+
+    candidates: list[tuple[tuple[int, ...], str]] = []
+    for tag in available_tags:
+        if not _is_semver_tag(tag):
+            continue
+        if _has_v_prefix(tag) != want_v:
+            continue
+        tag_bare = tag.lstrip("vV")
+        try:
+            tup = semver_tuple(tag_bare)
+        except Exception:  # noqa: S112
+            continue
+        candidates.append((tup, tag))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+
+    if not allow_cross_major:
+        same_major = [
+            (tup, t)
+            for tup, t in candidates
+            if tup and current_tup and tup[0] == current_tup[0]
+        ]
+        if not same_major:
+            return None
+        candidates = same_major
+
+    best_tup, best_tag = candidates[0]
+    if best_tup <= current_tup:
+        return None  # already at latest
+
+    return best_tag
+
+
+def check_submodule_tag_advances(
+    links: list[SubmoduleLink],
+) -> list[SubmoduleTagBump]:
+    """Read-only check: detect available upstream semver tag advances.
+
+    For each submodule in *links*:
+
+    - Determines the current tag at HEAD; report-only when the HEAD has no
+      exact tag (SHA-only pin).
+    - Skips submodules with no URL (cannot resolve upstream).
+    - Queries upstream tags via ``git ls-remote`` with a 30 s timeout; network
+      failures degrade to report-only so the check never raises.
+    - Non-semver current tags are report-only.
+    - Submodules already at the latest semver tag within the same major produce
+      no entry.
+
+    Set ``REPO_OPS_SUBMODULE_UPDATE_LATEST=1`` to allow cross-major advances.
+    """
+    allow_cross_major = os.environ.get(_SUBMODULE_UPDATE_LATEST_ENV, "") == "1"
+    bumps: list[SubmoduleTagBump] = []
+
+    for link in links:
+        url = link.url
+        if not url:
+            # No URL recorded — cannot resolve upstream; skip silently.
+            continue
+
+        current_tag = _current_submodule_tag(link.git_repo)
+
+        if current_tag is None:
+            bumps.append(
+                SubmoduleTagBump(
+                    path=link.path,
+                    url=url,
+                    current_tag="",
+                    latest_tag=(
+                        f"{_REPORT_ONLY_PREFIX}no exact tag at HEAD; "
+                        "pin to a semver tag to enable updates"
+                    ),
+                    parent=link.parent,
+                    git_repo=link.git_repo,
+                )
+            )
+            continue
+
+        if not _is_semver_tag(current_tag):
+            bumps.append(
+                SubmoduleTagBump(
+                    path=link.path,
+                    url=url,
+                    current_tag=current_tag,
+                    latest_tag=f"{_REPORT_ONLY_PREFIX}non-semver tag; manual review required",
+                    parent=link.parent,
+                    git_repo=link.git_repo,
+                )
+            )
+            continue
+
+        tags = _fetch_remote_tags(url)
+        if tags is None:
+            bumps.append(
+                SubmoduleTagBump(
+                    path=link.path,
+                    url=url,
+                    current_tag=current_tag,
+                    latest_tag=f"{_REPORT_ONLY_PREFIX}tag fetch failed (network or git error)",
+                    parent=link.parent,
+                    git_repo=link.git_repo,
+                )
+            )
+            continue
+
+        latest = _resolve_latest_submodule_tag(
+            current_tag, tags, allow_cross_major=allow_cross_major
+        )
+        if latest is None:
+            continue  # already at latest or indeterminate
+
+        bumps.append(
+            SubmoduleTagBump(
+                path=link.path,
+                url=url,
+                current_tag=current_tag,
+                latest_tag=latest,
+                parent=link.parent,
+                git_repo=link.git_repo,
+            )
+        )
+
+    return bumps
+
+
+def apply_submodule_tag_advances(
+    links: list[SubmoduleLink],
+) -> list[SubmoduleTagBump]:
+    """Advance submodule pointers to the latest upstream semver tag.
+
+    Calls ``check_submodule_tag_advances`` to discover actionable bumps, then
+    for each actionable bump:
+
+    1. Fetches the target tag into the submodule clone.
+    2. Checks out the new tag in the submodule (detached HEAD).
+    3. Stages the updated gitlink pointer in the parent repo.
+
+    Non-actionable bumps (SHA-only, non-semver, network errors) are skipped.
+    Subprocess failures for individual submodules are caught so one broken
+    submodule cannot abort advances for the rest.
+
+    Returns the full list of bumps from ``check_submodule_tag_advances``
+    (both applied and report-only), mirroring the precommit/container pattern
+    so the caller can report all findings in one pass.
+    """
+    bumps = check_submodule_tag_advances(links)
+
+    for bump in bumps:
+        if not bump.is_actionable:
+            continue
+        submod_dir = bump.git_repo
+        try:
+            # Fetch only the specific target tag to keep network overhead low.
+            fetch_proc = run_git(
+                submod_dir,
+                "fetch",
+                bump.url,
+                f"refs/tags/{bump.latest_tag}:refs/tags/{bump.latest_tag}",
+                timeout=120,
+            )
+        except (FileNotFoundError, OSError):
+            continue
+        if fetch_proc.returncode != 0:
+            continue
+
+        try:
+            checkout_proc = run_git(submod_dir, "checkout", bump.latest_tag, timeout=30)
+        except (FileNotFoundError, OSError):
+            continue
+        if checkout_proc.returncode != 0:
+            continue
+
+        # Stage the updated gitlink in the parent.  A failure here is unlikely
+        # (checkout succeeded) but non-fatal — the caller can commit manually.
+        with contextlib.suppress(FileNotFoundError, OSError):
+            run_git(bump.parent, "add", bump.path, timeout=30)
+
+    return bumps
