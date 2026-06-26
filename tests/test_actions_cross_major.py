@@ -123,3 +123,104 @@ def test_default_mode_keeps_cross_major_report_only(tmp_path: Path) -> None:
     assert checkout[0].latest == "v6"
     assert "not auto-applied" in (checkout[0].detail or "").lower()
     assert wf.read_text(encoding="utf-8") == original
+
+
+# ---------------------------------------------------------------------------
+# Cross-major SHA-pin refresh (#138)
+# Extends coverage for the keep-sha + latest interaction from the cross-major
+# perspective (SHA-specific depth is in test_actions_sha_refresh.py).
+# ---------------------------------------------------------------------------
+
+_SHA_V4 = "aabbccddeeff00112233445566778899aabbccdd"
+_SHA_V6 = "00112233445566778899aabbccddeeff00112233"
+
+
+def test_sha_pin_cross_major_refresh_under_latest(tmp_path: Path) -> None:
+    """SHA-pinned v4 action advances to v6's digest when --latest + --actions-refresh-sha."""
+    wf_dir = tmp_path / ".github" / "workflows"
+    wf_dir.mkdir(parents=True)
+    wf = wf_dir / "ci.yml"
+    wf.write_text(
+        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_SHA_V4}  # v4\n",
+        encoding="utf-8",
+    )
+    tags_proc = MagicMock(
+        returncode=0,
+        stdout=(
+            f"v6.0.1 {_SHA_V6}\n"
+            f"v6 {_SHA_V6}\n"
+            f"v4.2.1 {_SHA_V4}\n"
+            f"v4 {_SHA_V4}\n"
+        ),
+        stderr="",
+    )
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
+    ):
+        bumps, scanned = scan_actions(
+            tmp_path,
+            apply=True,
+            keep_sha=True,
+            refresh_sha=True,
+            upgrade_mode="latest",
+        )
+
+    assert scanned == 1
+    checkout = [b for b in bumps if b.action == "actions/checkout"]
+    assert len(checkout) == 1
+    b = checkout[0]
+    assert b.pin == _SHA_V4
+    assert b.latest == _SHA_V6
+    assert "cross-major" in (b.detail or "").lower()
+
+    text = wf.read_text(encoding="utf-8")
+    assert _SHA_V6 in text, "v6 digest not written"
+    assert _SHA_V4 not in text, "old v4 digest still present"
+    assert "# v6" in text, "comment not updated to v6"
+    assert "# v4" not in text, "old comment still present"
+
+
+def test_sha_pin_cross_major_refresh_normalize_stays_in_current(tmp_path: Path) -> None:
+    """normalize mode: SHA-pinned v4 stays in v4 even when v6 exists."""
+    wf_dir = tmp_path / ".github" / "workflows"
+    wf_dir.mkdir(parents=True)
+    wf = wf_dir / "ci.yml"
+    _SHA_V4_OLD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    _SHA_V4_NEW = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    wf.write_text(
+        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_SHA_V4_OLD}  # v4\n",
+        encoding="utf-8",
+    )
+    tags_proc = MagicMock(
+        returncode=0,
+        stdout=(
+            f"v6.0.1 {_SHA_V6}\n"
+            f"v4.3.0 {_SHA_V4_NEW}\n"
+            f"v4.2.1 {_SHA_V4_OLD}\n"
+        ),
+        stderr="",
+    )
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
+    ):
+        bumps, _ = scan_actions(
+            tmp_path,
+            apply=True,
+            keep_sha=True,
+            refresh_sha=True,
+            upgrade_mode="normalize",
+        )
+
+    checkout = [b for b in bumps if b.action == "actions/checkout"]
+    assert len(checkout) == 1
+    b = checkout[0]
+    # Must advance within v4 (to v4.3.0's SHA), not jump to v6.
+    assert b.latest == _SHA_V4_NEW
+    assert "cross-major" not in (b.detail or "").lower()
+    text = wf.read_text(encoding="utf-8")
+    assert "# v4" in text
+    assert "# v6" not in text
