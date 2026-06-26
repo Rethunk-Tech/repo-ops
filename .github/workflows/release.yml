@@ -21,7 +21,7 @@ jobs:
     - name: Sync locked dependencies
       run: uv sync --locked --group dev
     - name: Run tests
-      run: uv run pytest -q
+      run: uv run pytest -q --cov --cov-report=term-missing --cov-fail-under=68
     - name: Build installable wheel and sdist
       run: uv build packages/repo-ops
     - name: List artifacts
