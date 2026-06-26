@@ -234,7 +234,7 @@ def test_exact_tag_style_fallback_to_major(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# (e) --actions-keep-sha → no-op (preserves old report-only behavior)
+# (e) keep_sha=True (the default) → SHA pins are report-only
 # ---------------------------------------------------------------------------
 
 

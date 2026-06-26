@@ -406,15 +406,6 @@ def add_upgrade_common_arguments(
             "By default, SHA pins are preserved (report only) to protect supply-chain hardening."
         ),
     )
-    # Backwards-compat alias: --actions-keep-sha was the old flag (preservation
-    # is now the default, so this flag becomes a no-op kept to avoid breaking
-    # existing scripts that pass it).
-    pol.add_argument(
-        "--actions-keep-sha",
-        action="store_true",
-        dest="actions_keep_sha",
-        help="Deprecated no-op: SHA pins are preserved by default now.",
-    )
     pol.add_argument(
         "--actions-refresh-sha",
         action="store_true",
