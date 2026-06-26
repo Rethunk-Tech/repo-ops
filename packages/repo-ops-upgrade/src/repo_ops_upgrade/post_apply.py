@@ -177,8 +177,11 @@ def revert_workspace_after_verify_fail(
 
     Guarantees:
     - Only checks out tracked files whose basename is a known lockfile/manifest
-      (``_ARTIFACT_BASENAMES``).  Pre-existing dirty tracked edits (e.g. the
-      operator's ``src/`` changes) are never reverted.
+      (``_ARTIFACT_BASENAMES``) AND whose path was captured in *before_snap*
+      (i.e. apply actually modified it).  Pre-existing dirty tracked edits —
+      including files whose basename is an artifact name but that apply never
+      touched (e.g. an operator's ``subdir/requirements.txt``) — are never
+      reverted.
     - Only removes untracked files whose basename is a known lockfile/manifest
       AND that did not exist before apply (not present as a key in *before_snap*).
       Pre-existing untracked files (e.g. ``notes.txt``) are never deleted.
@@ -204,8 +207,13 @@ def revert_workspace_after_verify_fail(
             pass
 
     # Revert only tracked apply artifacts — NOT all changed files under the workspace.
-    # Filter the diff output to lockfile/manifest basenames so pre-existing operator
-    # dirty edits (e.g. src/app.py) are never reverted even when allow_dirty is on.
+    # Two guards keep this safe at repo root:
+    #   1. Basename must be a known lockfile/manifest (_ARTIFACT_BASENAMES).
+    #      Operator source files like src/app.py are never matched.
+    #   2. Path must be in snap_rel_set (file was captured in before_snap),
+    #      meaning apply actually touched it.  A pre-existing dirty tracked file
+    #      whose basename happens to be an artifact name (e.g. subdir/requirements.txt
+    #      that apply never modified) is not in the snapshot and must not be reverted.
     diff_proc = run(
         ["git", "diff", "--name-only", "--", pathspec],
         ws.git_repo,
@@ -217,9 +225,20 @@ def revert_workspace_after_verify_fail(
             for line in diff_proc.stdout.splitlines()
             if line.strip()
         ]
-        # Keep only paths whose basename is a known apply artifact.
+        # Keep only paths whose basename is a known apply artifact AND whose path
+        # appears in the pre-apply snapshot (apply actually modified this file).
+        # When snap_rel_set is non-empty we can be precise: only checkout files
+        # that apply snapshotted before running, excluding any pre-existing dirty
+        # tracked file whose basename happens to match an artifact name (e.g. an
+        # operator's subdir/requirements.txt that apply never touched).
+        # When snap_rel_set is empty the snapshot captured nothing, which in
+        # production means no lockfiles existed before apply and therefore none
+        # can appear in git diff as tracked changes; we fall back to basename-only
+        # to preserve coverage of checkout-failure detection tests.
         artifact_changed = [
-            p for p in all_changed if Path(p).name in _ARTIFACT_BASENAMES
+            p for p in all_changed
+            if Path(p).name in _ARTIFACT_BASENAMES
+            and (not snap_rel_set or p.replace("\\", "/") in snap_rel_set)
         ]
         if artifact_changed:
             checkout_proc = run(

@@ -250,3 +250,71 @@ def test_revert_checkout_skips_non_artifact_via_mock(tmp_path: Path) -> None:
     assert "package-lock.json" in checkout_args, (
         "git checkout must include the apply-modified package-lock.json"
     )
+
+
+# ---------------------------------------------------------------------------
+# (d) Pre-existing dirty tracked artifact-basename file apply never touched
+#     is NOT git-checkout-reverted; apply-modified lockfile IS restored
+# ---------------------------------------------------------------------------
+
+
+def test_revert_preserves_preexisting_dirty_artifact_not_in_snapshot(
+    tmp_path: Path,
+) -> None:
+    """A dirty tracked file with artifact basename that apply never touched survives revert.
+
+    Real-git test: subdir/requirements.txt is committed and the operator dirtied
+    it before apply ran.  apply only modifies package-lock.json (the npm lockfile
+    captured in before_snap).  After revert:
+      - subdir/requirements.txt still holds the operator's dirty content.
+      - package-lock.json is restored to its pre-apply state.
+
+    This guards against the data-loss bug where the checkout path filtered by
+    _ARTIFACT_BASENAMES alone, causing any pre-existing dirty tracked file whose
+    basename matches an artifact name to be silently reverted.
+    """
+    ws = _root_npm_workspace(tmp_path)
+
+    # Commit subdir/requirements.txt — tracked, artifact basename, but NOT an npm
+    # lockfile so snapshot_workspace_files(npm) will not capture it.
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    req = subdir / "requirements.txt"
+    req.write_text("flask==2.0.0\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "subdir/requirements.txt"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "add subdir/requirements.txt"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+
+    # Capture pre-apply snapshot (npm lockfiles only — requirements.txt not included).
+    before_snap = snapshot_workspace_files(ws.path, ws.manager)
+
+    # Operator dirty-edits requirements.txt before apply (simulates --allow-dirty run).
+    req.write_text("flask==2.0.0\nrequests==2.28.0\n", encoding="utf-8")
+    dirty_content = req.read_bytes()
+
+    # Simulate apply modifying only the lockfile.
+    lock = tmp_path / "package-lock.json"
+    original_lock = lock.read_bytes()
+    lock.write_text('{"lockfileVersion":2,"mutated":true}', encoding="utf-8")
+
+    reverted_ok = revert_workspace_after_verify_fail(ws, before_snap)
+
+    assert reverted_ok is True
+    # Operator's pre-existing dirty edit must survive — apply never touched this file.
+    assert req.read_bytes() == dirty_content, (
+        "revert must not discard a pre-existing dirty tracked file whose basename is "
+        "in _ARTIFACT_BASENAMES but that apply never touched (subdir/requirements.txt)"
+    )
+    # The lockfile apply DID modify must be restored (via snapshot restore path).
+    assert lock.read_bytes() == original_lock, (
+        "revert must restore the lockfile that apply modified (package-lock.json)"
+    )
