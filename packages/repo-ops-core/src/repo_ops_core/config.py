@@ -190,6 +190,32 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
         "container_update_latest",
         None,
     ),
+    # Apply resume checkpoint (apply-only): skip repos already applied in a prior run.
+    "resume": ("REPO_OPS_RESUME", "resume", None),
+    # Submodule tag-advance: allow cross-major semver tag bumps on submodule pointers.
+    "submodule_update_latest": (
+        "REPO_OPS_SUBMODULE_UPDATE_LATEST",
+        "submodule_update_latest",
+        None,
+    ),
+    # Pre-commit hook upgrades: allow cross-major rev bumps.
+    "precommit_update_latest": (
+        "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
+        "precommit_update_latest",
+        None,
+    ),
+    # Container ecosystem: refresh image digest for SHA-pinned references.
+    "container_refresh_sha": (
+        "REPO_OPS_CONTAINER_REFRESH_SHA",
+        "container_refresh_sha",
+        None,
+    ),
+    # Hatch: opt in to creating uv.lock (also settable via --migrate-to-uv-lock flag).
+    "hatch_migrate_uv_lock": (
+        "REPO_OPS_HATCH_MIGRATE_UV_LOCK",
+        "hatch_migrate_uv_lock",
+        None,
+    ),
 }
 
 # Public table for documentation generation.
@@ -304,6 +330,35 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
         "(none)",
         "REPO_OPS_CONTAINER_UPDATE_LATEST",
         "container_update_latest",
+        "0",
+    ),
+    ("resume", "(none)", "REPO_OPS_RESUME", "resume", "0"),
+    (
+        "submodule_update_latest",
+        "(none)",
+        "REPO_OPS_SUBMODULE_UPDATE_LATEST",
+        "submodule_update_latest",
+        "0",
+    ),
+    (
+        "precommit_update_latest",
+        "(none)",
+        "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
+        "precommit_update_latest",
+        "0",
+    ),
+    (
+        "container_refresh_sha",
+        "(none)",
+        "REPO_OPS_CONTAINER_REFRESH_SHA",
+        "container_refresh_sha",
+        "0",
+    ),
+    (
+        "hatch_migrate_uv_lock",
+        "--migrate-to-uv-lock",
+        "REPO_OPS_HATCH_MIGRATE_UV_LOCK",
+        "hatch_migrate_uv_lock",
         "0",
     ),
 ]

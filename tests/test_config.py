@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 import pytest
@@ -158,3 +159,104 @@ def test_resolve_setting_no_lint_cache(monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_NO_LINT_CACHE", "1")
     result = resolve_setting("no_lint_cache")
     assert result == "1"
+
+
+# --- New env-gate settings (#138) ---
+
+
+def test_settings_table_has_new_env_gate_entries() -> None:
+    """Env-gate settings surfaced in v0.15+ are present in SETTINGS_TABLE."""
+    names = [r[0] for r in SETTINGS_TABLE]
+    for key in (
+        "resume",
+        "submodule_update_latest",
+        "precommit_update_latest",
+        "container_refresh_sha",
+        "hatch_migrate_uv_lock",
+    ):
+        assert key in names, f"Missing SETTINGS_TABLE entry: {key}"
+
+
+def test_settings_table_resume_env_var() -> None:
+    row = next(r for r in SETTINGS_TABLE if r[0] == "resume")
+    assert row[2] == "REPO_OPS_RESUME"
+
+
+def test_settings_table_submodule_update_latest_env_var() -> None:
+    row = next(r for r in SETTINGS_TABLE if r[0] == "submodule_update_latest")
+    assert row[2] == "REPO_OPS_SUBMODULE_UPDATE_LATEST"
+
+
+def test_settings_table_precommit_update_latest_env_var() -> None:
+    row = next(r for r in SETTINGS_TABLE if r[0] == "precommit_update_latest")
+    assert row[2] == "REPO_OPS_PRECOMMIT_UPDATE_LATEST"
+
+
+def test_settings_table_container_refresh_sha_env_var() -> None:
+    row = next(r for r in SETTINGS_TABLE if r[0] == "container_refresh_sha")
+    assert row[2] == "REPO_OPS_CONTAINER_REFRESH_SHA"
+
+
+def test_settings_table_hatch_migrate_uv_lock_env_var() -> None:
+    row = next(r for r in SETTINGS_TABLE if r[0] == "hatch_migrate_uv_lock")
+    assert row[2] == "REPO_OPS_HATCH_MIGRATE_UV_LOCK"
+
+
+def test_resolve_setting_resume(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_RESUME", "1")
+    result = resolve_setting("resume")
+    assert result == "1"
+
+
+def test_resolve_setting_submodule_update_latest(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_SUBMODULE_UPDATE_LATEST", "1")
+    result = resolve_setting("submodule_update_latest")
+    assert result == "1"
+
+
+def test_resolve_setting_precommit_update_latest(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", "1")
+    result = resolve_setting("precommit_update_latest")
+    assert result == "1"
+
+
+def test_resolve_setting_container_refresh_sha(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
+    result = resolve_setting("container_refresh_sha")
+    assert result == "1"
+
+
+def test_resolve_setting_hatch_migrate_uv_lock(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
+    result = resolve_setting("hatch_migrate_uv_lock")
+    assert result == "1"
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
+def test_resume_from_config_file(tmp_path) -> None:
+    """REPO_OPS_RESUME can be set via config file."""
+    from repo_ops_core.config import apply_config_to_env
+
+    cfg = {"resume": True}
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.delenv("REPO_OPS_RESUME", raising=False)
+    try:
+        apply_config_to_env(global_cfg=cfg)
+        assert os.environ.get("REPO_OPS_RESUME") == "1"
+    finally:
+        monkeypatch.undo()
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
+def test_container_refresh_sha_from_config_file(tmp_path) -> None:
+    """REPO_OPS_CONTAINER_REFRESH_SHA can be set via config file."""
+    from repo_ops_core.config import apply_config_to_env
+
+    cfg = {"container_refresh_sha": True}
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.delenv("REPO_OPS_CONTAINER_REFRESH_SHA", raising=False)
+    try:
+        apply_config_to_env(global_cfg=cfg)
+        assert os.environ.get("REPO_OPS_CONTAINER_REFRESH_SHA") == "1"
+    finally:
+        monkeypatch.undo()
