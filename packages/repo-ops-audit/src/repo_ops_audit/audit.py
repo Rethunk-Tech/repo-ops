@@ -127,6 +127,29 @@ class VulnCount:
 
 
 @dataclass
+class RemediationItem:
+    """A single actionable fix surfaced by --fix-plan.
+
+    ``safe_version`` is the known-safe version string emitted by the auditor:
+    an exact version for pip-audit and npm v7+, or a version *constraint*
+    (e.g. ``">= 1.5.5"``) for cargo-audit and npm v6 advisories.
+    """
+
+    package: str
+    safe_version: str
+    ecosystem: str
+    workspace: str
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "package": self.package,
+            "safe_version": self.safe_version,
+            "ecosystem": self.ecosystem,
+            "workspace": self.workspace,
+        }
+
+
+@dataclass
 class WorkspaceResult:
     label: str
     path: str
@@ -136,6 +159,7 @@ class WorkspaceResult:
     skip_reason: str = ""
     counts: VulnCount = field(default_factory=VulnCount)
     error: str = ""
+    remediations: list[RemediationItem] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +315,10 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
         "npm": ["npm", "audit", "--json"],
         "yarn": ["yarn", "npm", "audit", "--json"],
         "pnpm": ["pnpm", "audit", "--json"],
-        "bun": ["bun", "audit"],  # bun audit has no --json as of 1.x
+        # bun audit --json supported since ~1.2.x: prints raw npm-advisory JSON.
+        # Older bun versions that lack --json emit ANSI text; JSON parse failure
+        # triggers the _parse_bun_audit_text fallback below.
+        "bun": ["bun", "audit", "--json"],
     }
     bin_map: dict[str, str] = {
         "npm": "npm",
@@ -349,9 +376,11 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
         )
 
     # npm / pnpm / yarn all emit JSON
+    remediations: list[RemediationItem] = []
     try:
         data = json.loads(stdout)
         counts = _parse_npm_audit_json(data)
+        remediations = _extract_remediations_npm_json(data, ws)
     except (json.JSONDecodeError, ValueError, KeyError):
         if rc != 0:
             return WorkspaceResult(
@@ -374,6 +403,7 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
         manager=manager,
         status=status,
         counts=counts,
+        remediations=remediations,
     )
 
 
@@ -463,6 +493,157 @@ def _parse_bun_audit_text(text: str) -> VulnCount:
     return counts
 
 
+# ---------------------------------------------------------------------------
+# Remediation extraction helpers
+# ---------------------------------------------------------------------------
+
+
+def _extract_remediations_pip_audit(
+    data: list[Any], ws: str
+) -> list[RemediationItem]:
+    """Extract (package → highest known-safe fix_version) from pip-audit JSON.
+
+    pip-audit JSON structure::
+
+        [{"name": "requests", "version": "2.28.0",
+          "vulns": [{"id": "GHSA-...",
+                     "aliases": ["CVE-..."],
+                     "fix_versions": ["2.31.0"]}]}]
+
+    A package may have multiple vulnerabilities each with their own
+    ``fix_versions``.  We take the highest version across all vulns as the
+    single safe target (a package bumped past the highest fix satisfies every
+    advisory simultaneously).
+    """
+    # package name → highest safe version seen
+    best: dict[str, str] = {}
+    for pkg in data:
+        if not isinstance(pkg, dict):
+            continue
+        name = str(pkg.get("name") or "")
+        if not name:
+            continue
+        for vuln in pkg.get("vulns", []):
+            if not isinstance(vuln, dict):
+                continue
+            for fv in vuln.get("fix_versions", []):
+                fv = str(fv).strip()
+                if not fv:
+                    continue
+                prev = best.get(name)
+                if prev is None:
+                    best[name] = fv
+                else:
+                    # Pick higher version; fall back to string compare on error
+                    try:
+                        if tuple(int(x) for x in fv.split(".")) > tuple(
+                            int(x) for x in prev.split(".")
+                        ):
+                            best[name] = fv
+                    except (ValueError, TypeError):
+                        if fv > prev:
+                            best[name] = fv
+    return [
+        RemediationItem(package=pkg, safe_version=ver, ecosystem="py-uv", workspace=ws)
+        for pkg, ver in sorted(best.items())
+    ]
+
+
+def _extract_remediations_npm_json(
+    data: dict[str, Any], ws: str
+) -> list[RemediationItem]:
+    """Extract known-safe fix versions from npm/pnpm/yarn audit JSON.
+
+    Handles two formats:
+
+    v7+ vulnerabilities map
+        ``vulnerabilities.<pkg>.fixAvailable`` can be a dict with ``version``
+        (exact safe version) or ``True``/``False``.
+
+    v6 advisories map
+        ``advisories.<id>.patched_versions`` is a version constraint string
+        (e.g. ``">=4.17.21"``).
+
+    Only entries with a concrete version (or constraint) are included; bare
+    ``fixAvailable: true`` (no version) is not actionable without a registry
+    lookup so it is skipped.
+    """
+    items: dict[str, str] = {}  # package → safe_version
+
+    # v7+ top-level "vulnerabilities" map
+    top_vulns = data.get("vulnerabilities", {})
+    if isinstance(top_vulns, dict):
+        for pkg_name, adv in top_vulns.items():
+            if not isinstance(adv, dict):
+                continue
+            fix = adv.get("fixAvailable")
+            if isinstance(fix, dict):
+                ver = str(fix.get("version") or "").strip()
+                name = str(fix.get("name") or pkg_name).strip()
+                if ver and name:
+                    items.setdefault(name, ver)
+
+    # v6 advisories fallback
+    advisories = data.get("advisories", {})
+    if isinstance(advisories, dict) and not items:
+        for _adv_id, adv in advisories.items():
+            if not isinstance(adv, dict):
+                continue
+            pkg_name = str(adv.get("module_name") or "").strip()
+            patched = str(adv.get("patched_versions") or "").strip()
+            if pkg_name and patched and patched not in ("<none>", ""):
+                items.setdefault(pkg_name, patched)
+
+    return [
+        RemediationItem(package=pkg, safe_version=ver, ecosystem="node", workspace=ws)
+        for pkg, ver in sorted(items.items())
+    ]
+
+
+def _extract_remediations_cargo_json(
+    data: dict[str, Any], ws: str
+) -> list[RemediationItem]:
+    """Extract patched-version requirements from cargo audit JSON.
+
+    cargo audit JSON structure::
+
+        {"vulnerabilities": {"list": [{
+            "advisory": {
+                "package": "regex",
+                "patched": {"requirements": [">= 1.5.5"]}
+            },
+            "package": {"name": "regex", "version": "1.5.4"}
+        }]}}
+
+    ``patched.requirements`` is a list of semver requirement strings.  We join
+    them as a comma-separated constraint (most advisories have exactly one).
+    """
+    items: dict[str, str] = {}
+    vuln_section = data.get("vulnerabilities", {})
+    for vuln in vuln_section.get("list", []):
+        if not isinstance(vuln, dict):
+            continue
+        advisory = vuln.get("advisory", {})
+        if not isinstance(advisory, dict):
+            continue
+        # Package name: prefer advisory.package (str), fall back to package.name
+        pkg_section = vuln.get("package", {})
+        name = str(advisory.get("package") or (pkg_section or {}).get("name") or "").strip()
+        if not name:
+            continue
+        patched = advisory.get("patched") or {}
+        reqs = patched.get("requirements", []) if isinstance(patched, dict) else []
+        if not reqs:
+            continue
+        constraint = ", ".join(str(r) for r in reqs if r)
+        if constraint:
+            items.setdefault(name, constraint)
+    return [
+        RemediationItem(package=pkg, safe_version=ver, ecosystem="rust", workspace=ws)
+        for pkg, ver in sorted(items.items())
+    ]
+
+
 def _probe_pip_audit(ws: str) -> bool:
     """Return True when pip-audit is available via ``uv run pip-audit --version``."""
     rc, stdout, _stderr = _run(["uv", "run", "pip-audit", "--version"], ws)
@@ -501,6 +682,7 @@ def _audit_py_uv(ws: str) -> WorkspaceResult:
     #   CVE alias present, no fix_versions  → critical
     #   CVE alias present, fix_versions known → high
     #   no CVE alias                        → moderate
+    remediations: list[RemediationItem] = []
     try:
         data = json.loads(stdout)
         # pip-audit JSON: list of {"name": ..., "version": ..., "vulns": [...]}
@@ -515,6 +697,7 @@ def _audit_py_uv(ws: str) -> WorkspaceResult:
                     counts.high += 1
                 else:
                     counts.moderate += 1
+        remediations = _extract_remediations_pip_audit(data, ws)
     except (json.JSONDecodeError, ValueError, KeyError, TypeError):
         if rc != 0:
             return WorkspaceResult(
@@ -534,6 +717,7 @@ def _audit_py_uv(ws: str) -> WorkspaceResult:
         manager="uv",
         status=status,
         counts=counts,
+        remediations=remediations,
     )
 
 
@@ -567,6 +751,7 @@ def _audit_rust(ws: str) -> WorkspaceResult:
     #   score ≥4.0 → moderate
     #   score < 4.0 → low
     #   no CVSS vector → moderate (default score 5.0)
+    remediations: list[RemediationItem] = []
     try:
         data = json.loads(stdout)
         # cargo audit --json: {"vulnerabilities": {"list": [...], "count": N, ...}}
@@ -584,6 +769,7 @@ def _audit_rust(ws: str) -> WorkspaceResult:
                 counts.moderate += 1
             else:
                 counts.low += 1
+        remediations = _extract_remediations_cargo_json(data, ws)
     except (json.JSONDecodeError, ValueError, KeyError, TypeError):
         if rc != 0:
             return WorkspaceResult(
@@ -603,6 +789,7 @@ def _audit_rust(ws: str) -> WorkspaceResult:
         manager="cargo",
         status=status,
         counts=counts,
+        remediations=remediations,
     )
 
 
@@ -821,6 +1008,65 @@ def print_audit_report(
             print(f"  {r.label}: {r.skip_reason}")
 
 
+def collect_all_remediations(results: list[WorkspaceResult]) -> list[RemediationItem]:
+    """Flatten per-workspace remediation lists into a single deduplicated list.
+
+    Deduplication key: (package, ecosystem).  When the same package appears in
+    multiple workspaces the *first* entry (by workspace path) is kept so the
+    caller always receives one actionable item per package-per-ecosystem, not
+    one per workspace.  The workspace field therefore records the first
+    workspace where the fixable vulnerability was detected.
+    """
+    seen: set[tuple[str, str]] = set()
+    out: list[RemediationItem] = []
+    for r in results:
+        for item in r.remediations:
+            key = (item.package, item.ecosystem)
+            if key not in seen:
+                seen.add(key)
+                out.append(item)
+    return out
+
+
+def print_fix_plan(remediations: list[RemediationItem]) -> None:
+    """Print a human-readable remediation table to stdout."""
+    if not remediations:
+        print("No actionable remediations found.")
+        return
+    print(f"Fix plan — {len(remediations)} remediation(s):")
+    print()
+    pkg_w = max(len("package"), max(len(r.package) for r in remediations))
+    ver_w = max(len("safe_version"), max(len(r.safe_version) for r in remediations))
+    eco_w = max(len("ecosystem"), max(len(r.ecosystem) for r in remediations))
+    ws_w = max(len("workspace"), max(len(r.workspace) for r in remediations))
+    header = join_row(
+        [
+            format_cell("package", pkg_w),
+            format_cell("safe_version", ver_w),
+            format_cell("ecosystem", eco_w),
+            format_cell("workspace", ws_w),
+        ]
+    )
+    print(header)
+    print("-" * len(header))
+    for r in remediations:
+        print(
+            join_row(
+                [
+                    format_cell(r.package, pkg_w),
+                    format_cell(r.safe_version, ver_w),
+                    format_cell(r.ecosystem, eco_w),
+                    format_cell(r.workspace, ws_w),
+                ]
+            )
+        )
+    print()
+    print(
+        "Note: --fix-plan is read-only. "
+        "Apply integration is a planned follow-up (see repo-ops-audit --fix)."
+    )
+
+
 def build_audit_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="repo-ops audit",
@@ -832,7 +1078,9 @@ def build_audit_parser() -> argparse.ArgumentParser:
         epilog="""\
 exit codes:
   0  no vulnerabilities at or above --fail-on threshold (default: high)
-  1  at least one workspace has vulns at or above the threshold
+     and no actionable remediations when --fix-plan is active
+  1  at least one workspace has vulns at or above the threshold,
+     or --fix-plan is active and at least one remediation is available
 
 severity buckets:
   critical / high / moderate / low  — standard severities
@@ -869,6 +1117,21 @@ tools used (must be on PATH or workspace is skipped):
             "(govulncheck). Default: off."
         ),
     )
+    parser.add_argument(
+        "--fix-plan",
+        action="store_true",
+        default=False,
+        dest="fix_plan",
+        help=(
+            "Emit a machine-readable remediation list: for each vulnerable "
+            "dependency where the auditor reports a known-safe fix version, "
+            "print (package, safe_version, ecosystem, workspace). "
+            "Combined with --json the list is included in the JSON payload "
+            "under the 'remediations' key. "
+            "Exits 1 when any actionable remediations are found. "
+            "Read-only: no dependencies are modified."
+        ),
+    )
     add_json_argument(parser, dest="json_out")
     add_verbose_argument(parser)
     return parser
@@ -882,10 +1145,13 @@ def main(argv: list[str] | None = None) -> int:
     roots = resolve_scan_roots(list(args.roots), parser)
     follow_symlinks = bool(getattr(args, "follow_symlinks", False))
     fail_on_unknown = bool(getattr(args, "fail_on_unknown", False))
+    fix_plan = bool(getattr(args, "fix_plan", False))
     results = run_audit(roots, follow_symlinks=follow_symlinks)
 
+    sev_exit = _exit_code_for(results, args.fail_on, fail_on_unknown)
+
     if args.json_out:
-        payload = {
+        payload: dict[str, Any] = {
             "schema_version": 1,
             "roots": roots,
             "workspaces": [
@@ -912,11 +1178,24 @@ def main(argv: list[str] | None = None) -> int:
                 "total_unknown": sum(r.counts.unknown for r in results),
             },
         }
+        if fix_plan:
+            remediations = collect_all_remediations(results)
+            payload["remediations"] = [r.as_dict() for r in remediations]
+            plan_exit = 1 if remediations else 0
+        else:
+            plan_exit = 0
         print(json.dumps(payload, indent=None if args.compact else 2))
-        return _exit_code_for(results, args.fail_on, fail_on_unknown)
+        return sev_exit or plan_exit
 
     print_audit_report(results, roots, fail_on_unknown=fail_on_unknown)
-    return _exit_code_for(results, args.fail_on, fail_on_unknown)
+    if fix_plan:
+        remediations = collect_all_remediations(results)
+        print()
+        print_fix_plan(remediations)
+        plan_exit = 1 if remediations else 0
+    else:
+        plan_exit = 0
+    return sev_exit or plan_exit
 
 
 if __name__ == "__main__":
