@@ -11,7 +11,11 @@ version = "0.17.1"
 requires-python = ">=3.10"
 dependencies = [
   "repo-ops-core",
+  "repo-ops-models",
+  "repo-ops-upgrade",
 ]
 
 [tool.uv.sources]
 repo-ops-core = { workspace = true }
+repo-ops-models = { workspace = true }
+repo-ops-upgrade = { workspace = true }

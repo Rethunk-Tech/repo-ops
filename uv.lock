@@ -578,10 +578,16 @@ version = "0.17.1"
 source = { editable = "packages/repo-ops-audit" }
 dependencies = [
     { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "repo-ops-core", editable = "packages/repo-ops-core" }]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
+]
 
 [[package]]
 name = "repo-ops-container"
