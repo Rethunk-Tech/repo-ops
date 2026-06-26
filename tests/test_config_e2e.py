@@ -1,0 +1,174 @@
+"""End-to-end tests: [tool.repo-ops] config file keys reach run.py / os.environ.
+
+Task 1: resolve_setting / apply_config_to_env wiring (#TASK-1).
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+import pytest
+import repo_ops_upgrade.run as run_mod
+from repo_ops_core.config import apply_config_to_env
+
+# ---------------------------------------------------------------------------
+# apply_config_to_env unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_apply_config_to_env_sets_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    """String value from repo config reaches os.environ."""
+    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
+    apply_config_to_env(repo_cfg={"go_upgrade_mode": "explicit"})
+    assert os.environ["REPO_OPS_GO_UPGRADE_MODE"] == "explicit"
+
+
+def test_apply_config_to_env_bool_true(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TOML boolean true → '1' in os.environ."""
+    monkeypatch.delenv("REPO_OPS_YARN_TARGETED_BUMP", raising=False)
+    apply_config_to_env(repo_cfg={"yarn_targeted_bump": True})
+    assert os.environ["REPO_OPS_YARN_TARGETED_BUMP"] == "1"
+
+
+def test_apply_config_to_env_bool_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TOML boolean false → '0' in os.environ."""
+    monkeypatch.delenv("REPO_OPS_BUN_UPDATE_LATEST", raising=False)
+    apply_config_to_env(repo_cfg={"bun_update_latest": False})
+    assert os.environ["REPO_OPS_BUN_UPDATE_LATEST"] == "0"
+
+
+def test_apply_config_to_env_skips_if_already_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Existing env var is not overwritten (env > config)."""
+    monkeypatch.setenv("REPO_OPS_GO_UPGRADE_MODE", "patch")
+    apply_config_to_env(repo_cfg={"go_upgrade_mode": "explicit"})
+    assert os.environ["REPO_OPS_GO_UPGRADE_MODE"] == "patch"
+
+
+def test_apply_config_to_env_global_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When repo config is absent, global config fills the env var."""
+    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
+    apply_config_to_env(global_cfg={"go_upgrade_mode": "mvs"}, repo_cfg={})
+    assert os.environ["REPO_OPS_GO_UPGRADE_MODE"] == "mvs"
+
+
+def test_apply_config_to_env_repo_wins_over_global(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Per-repo config key overrides the same key in global config."""
+    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
+    apply_config_to_env(
+        global_cfg={"go_upgrade_mode": "patch"},
+        repo_cfg={"go_upgrade_mode": "explicit"},
+    )
+    assert os.environ["REPO_OPS_GO_UPGRADE_MODE"] == "explicit"
+
+
+def test_apply_config_to_env_integer_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Integer config values (e.g. yarn_max_concurrency) are stringified."""
+    monkeypatch.delenv("REPO_OPS_YARN_MAX_CONCURRENCY", raising=False)
+    apply_config_to_env(repo_cfg={"yarn_max_concurrency": 4})
+    assert os.environ["REPO_OPS_YARN_MAX_CONCURRENCY"] == "4"
+
+
+def test_apply_config_to_env_none_value_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Config key present but None → env var not set (no accidental 'None' string)."""
+    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
+    apply_config_to_env(repo_cfg={"go_upgrade_mode": None})
+    assert "REPO_OPS_GO_UPGRADE_MODE" not in os.environ
+
+
+# ---------------------------------------------------------------------------
+# run_upgrade integration tests: config file → run body
+# ---------------------------------------------------------------------------
+
+
+def test_run_upgrade_jobs_from_pyproject(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """jobs = N in [tool.repo-ops] sets args.jobs for the run (no env var channel)."""
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.repo-ops]\njobs = 3\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    captured: list[int] = []
+
+    def _fake_body(*, apply: bool, args, roots, follow_symlinks: bool = False) -> int:
+        captured.append(args.jobs)
+        return 0
+
+    monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
+    rc = run_mod.run_upgrade(apply=False, argv=["--flat", str(tmp_path)])
+    assert rc == 0
+    assert captured == [3]
+
+
+def test_run_upgrade_go_upgrade_mode_from_pyproject(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """go_upgrade_mode in [tool.repo-ops] reaches os.environ during the run."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\ngo_upgrade_mode = "explicit"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
+
+    captured: dict[str, str | None] = {}
+
+    def _fake_body(*, apply: bool, args, roots, follow_symlinks: bool = False) -> int:
+        captured["go_upgrade_mode"] = os.environ.get("REPO_OPS_GO_UPGRADE_MODE")
+        return 0
+
+    monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
+    run_mod.run_upgrade(apply=False, argv=["--flat", str(tmp_path)])
+    assert captured["go_upgrade_mode"] == "explicit"
+
+
+def test_run_upgrade_env_wins_over_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """User-set env var takes precedence over [tool.repo-ops] config file key."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\ngo_upgrade_mode = "explicit"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("REPO_OPS_GO_UPGRADE_MODE", "patch")
+
+    captured: dict[str, str | None] = {}
+
+    def _fake_body(*, apply: bool, args, roots, follow_symlinks: bool = False) -> int:
+        captured["go_upgrade_mode"] = os.environ.get("REPO_OPS_GO_UPGRADE_MODE")
+        return 0
+
+    monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
+    run_mod.run_upgrade(apply=False, argv=["--flat", str(tmp_path)])
+    # env var must be preserved, not overwritten by config
+    assert captured["go_upgrade_mode"] == "patch"
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
+def test_run_upgrade_global_config_applied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Global config.toml key is applied when no pyproject.toml or CLI override."""
+    cfg_dir = tmp_path / "repo-ops"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.toml").write_text(
+        'actions_lint_level = "off"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("REPO_OPS_ACTIONS_LINT_LEVEL", raising=False)
+
+    scan_dir = tmp_path / "repo"
+    scan_dir.mkdir()
+
+    captured: dict[str, str | None] = {}
+
+    def _fake_body(*, apply: bool, args, roots, follow_symlinks: bool = False) -> int:
+        captured["lint_level"] = os.environ.get("REPO_OPS_ACTIONS_LINT_LEVEL")
+        return 0
+
+    monkeypatch.chdir(scan_dir)
+    monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
+    run_mod.run_upgrade(apply=False, argv=["--flat", str(scan_dir)])
+    assert captured["lint_level"] == "off"

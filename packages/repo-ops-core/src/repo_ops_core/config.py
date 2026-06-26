@@ -308,6 +308,42 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
 ]
 
 
+def apply_config_to_env(
+    *,
+    global_cfg: dict[str, Any] | None = None,
+    repo_cfg: dict[str, Any] | None = None,
+) -> None:
+    """Inject config-file values into ``os.environ`` for env-var-backed settings.
+
+    Called once at process start (by ``run.py`` after arg parsing).  Skips any
+    env var that is already present in the environment (user shell or a CLI-flag
+    path that ran first) so the precedence ``CLI > env > config > default`` is
+    preserved.
+
+    Boolean config values (TOML ``true`` / ``false``) are converted to ``"1"``
+    / ``"0"`` so the existing ``== "1"`` readers in checker modules work
+    unchanged.  Repo config wins over global config on a per-key basis.
+    """
+    for _name, (_env_var, _config_key, _) in _SETTINGS_MAP.items():
+        if _env_var is None:
+            continue  # no env-var channel (e.g. ``jobs``) — caller handles separately
+        if _env_var in os.environ:
+            continue  # user shell or earlier CLI wiring already set it
+        _val: Any = None
+        if repo_cfg and _config_key in repo_cfg:
+            _val = repo_cfg[_config_key]
+        elif global_cfg and _config_key in global_cfg:
+            _val = global_cfg[_config_key]
+        if _val is None:
+            continue
+        if _val is True:
+            os.environ[_env_var] = "1"
+        elif _val is False:
+            os.environ[_env_var] = "0"
+        else:
+            os.environ[_env_var] = str(_val)
+
+
 def resolve_setting(
     name: str,
     *,
