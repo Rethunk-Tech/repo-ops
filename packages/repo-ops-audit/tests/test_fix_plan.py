@@ -508,17 +508,6 @@ def test_audit_parser_fix_plan_flag() -> None:
 
 def test_audit_fix_plan_not_active_by_default(tmp_path: pytest.TempPathFactory) -> None:
     """Without --fix-plan the output must not include remediation sections."""
-    pip_audit_out = json.dumps(
-        [
-            {
-                "name": "Pillow",
-                "version": "9.0.0",
-                "vulns": [
-                    {"id": "GHSA-001", "aliases": ["CVE-2023-001"], "fix_versions": ["9.1.0"]}
-                ],
-            }
-        ]
-    )
     with (
         patch("repo_ops_audit.audit.discover_repos", return_value={}),
     ):

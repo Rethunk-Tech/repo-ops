@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **pre-commit `rev:` pin ecosystem:** detects `.pre-commit-config.yaml` / `.pre-commit-config.yml`, queries upstream tags via `git ls-remote`, plans and applies conservative same-major bumps; SHA-pinned and non-semver revs are report-only; opt-in cross-major via `REPO_OPS_PRECOMMIT_UPDATE_LATEST=1`; `precommit` is now a first-class ecosystem in discovery and the upgrade registry.
+- **`--fix-plan` flag for `repo-ops audit`:** prints a remediation checklist of actionable steps per vulnerability finding so agents and operators know exactly which packages to bump.
+- **Container credential-helper + ECR auth:** private ECR registries are now accessible via the Docker credential-helper protocol and AWS ECR token exchange, removing the report-only fallback for authenticated registries.
+
+### Changed
+
+- **`--on-verify-fail=revert` is artifact-scoped:** revert only touches apply-artifact files (lockfiles and manifests) written during this run; pre-existing dirty edits and untracked files outside that set are preserved.
+- **Config-file layer wired into product run (`apply_config_to_env`):** `[tool.repo-ops]` keys (e.g. `go_upgrade_mode`, `jobs`) now reach the runtime environment with correct precedence (CLI flag > env var > config file > default).
+- **Actions pool workers are isolated:** `_scan_one_bundle_actions` is wrapped in a try/except so unexpected errors (OSError, etc.) surface per-bundle instead of crashing the pool.
+- **`bun audit` switched to `--json`** with ANSI text fallback for structured severity parsing; removes fragile regex on coloured output.
+- **Coverage floor raised from 63 → 68** in `pyproject.toml`, `ci.yml`, and `release.yml`; release gate now enforces the same threshold.
+- **`--actions-keep-sha` flag removed:** the flag was a dead stub; cross-major SHA re-pin (#138) is controlled by `--actions-upgrade-mode=latest` + the existing `--actions-refresh-sha` flag.
+- **CLI flag docs:** AGENTS.md cheat sheet updated with previously undocumented flags (`--on-verify-fail`, `--actions-refresh-sha`, `--fix-plan`, etc.).
+
+### Fixed
+
+- **Cross-major Actions SHA re-pin (#138):** `--actions-refresh-sha` now supersedes Dependabot SHA-pin PRs when combined with `--latest`; regression tests anchoring SHA-specific advancement to digest added.
+
 ## [0.17.1] - 2026-06-19
 
 ### Fixed
