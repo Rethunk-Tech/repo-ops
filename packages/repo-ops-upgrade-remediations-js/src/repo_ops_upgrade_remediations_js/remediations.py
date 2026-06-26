@@ -4,13 +4,9 @@ from __future__ import annotations
 
 import json
 import re
-import sys
-from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from repo_ops_core import process
 from repo_ops_core.constants import resolve_timeout_apply
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
@@ -27,16 +23,15 @@ from repo_ops_lockfiles.snapshots import (
 )
 from repo_ops_models import Workspace, WorkspaceResult
 from repo_ops_upgrade.constants import BIOME_PKG, CODEGEN_TRIGGERS, PLAYWRIGHT_PKG
+from repo_ops_upgrade_remediations_core.remediations import (
+    ApplyResult,
+    RemediationHook,
+    register,
+    run_hooks,
+)
 
-ApplyResult = tuple[bool, str]
-
-
-@dataclass
-class Remediation:
-    id: str
-    detect: Callable[[Workspace, dict[str, Any]], bool]
-    report: Callable[[Workspace, dict[str, Any]], list[str]]
-    apply: Callable[[Workspace, dict[str, Any]], ApplyResult]
+# Backward-compatible alias so existing callers constructing Remediation(...) keep working.
+Remediation = RemediationHook
 
 
 def _stderr_tail(text: str, *, max_chars: int = 200) -> str:
@@ -290,22 +285,34 @@ def apply_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     return True, f"packageManager → {name}@{actual} (ok)"
 
 
-REMEDIATIONS: list[Remediation] = [
-    Remediation("biome_schema", detect_biome, report_biome, apply_biome),
-    Remediation(
+def _biome_files(ws: Workspace) -> list[str]:
+    return [str(p.relative_to(ws.path)) for p in _find_biome_configs(ws.path)]
+
+
+REMEDIATIONS: list[RemediationHook] = [
+    RemediationHook(
+        "biome_schema",
+        detect_biome,
+        report_biome,
+        apply_biome,
+        files=_biome_files,
+    ),
+    RemediationHook(
         "playwright_browsers", detect_playwright, report_playwright, apply_playwright
     ),
-    Remediation("codegen", detect_codegen, report_codegen, apply_codegen),
-    Remediation("package_manager_pin", detect_pm_pin, report_pm_pin, apply_pm_pin),
+    RemediationHook("codegen", detect_codegen, report_codegen, apply_codegen),
+    RemediationHook(
+        "package_manager_pin",
+        detect_pm_pin,
+        report_pm_pin,
+        apply_pm_pin,
+        files=lambda ws: ["package.json"],
+    ),
 ]
 
-
-def _remediation_files(rem_id: str, ws: Workspace) -> list[str]:
-    if rem_id == "biome_schema":
-        return [str(p.relative_to(ws.path)) for p in _find_biome_configs(ws.path)]
-    if rem_id == "package_manager_pin":
-        return ["package.json"]
-    return []
+# Register all JS hooks in the global cross-ecosystem registry on import.
+for _hook in REMEDIATIONS:
+    register(_hook)
 
 
 def run_remediations(
@@ -314,38 +321,10 @@ def run_remediations(
     apply: bool,
     skip: set[str],
 ) -> None:
-    ctx: dict[str, Any] = {"changes": result.changes, "apply": apply}
-    for rem in REMEDIATIONS:
-        if rem.id in skip:
-            continue
-        entry: dict[str, Any] = {"id": rem.id, "status": "ok", "detail": ""}
-        try:
-            detected = rem.detect(result.workspace, ctx)
-            if process.VERBOSE:
-                print(
-                    f"  remediation {rem.id}: detect={detected}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-            if detected:
-                files = _remediation_files(rem.id, result.workspace)
-                if files:
-                    entry["files"] = files
-                if apply:
-                    ok, entry["detail"] = rem.apply(result.workspace, ctx)
-                    entry["status"] = "applied" if ok else "fail"
-                    if not ok:
-                        result.status = "fail"
-                else:
-                    lines = rem.report(result.workspace, ctx)
-                    entry["detail"] = "; ".join(lines)
-                    entry["status"] = "pending"
-            else:
-                entry["status"] = "ok"
-        except Exception as exc:
-            entry["status"] = "fail"
-            entry["detail"] = str(exc)
-            if apply:
-                result.status = "fail"
-        if entry.get("status") != "ok" or entry.get("detail"):
-            result.remediations.append(entry)
+    """Run JS remediation hooks against *result*.
+
+    Delegates to :func:`repo_ops_upgrade_remediations_core.remediations.run_hooks`
+    using the local ``REMEDIATIONS`` list.  Patching ``REMEDIATIONS`` in tests
+    overrides which hooks run without affecting the global registry.
+    """
+    run_hooks(REMEDIATIONS, result, apply=apply, skip=skip)
