@@ -21,6 +21,29 @@ from repo_ops_models import Change, Workspace
 _NPM_TARGETED_BUMP_ENV = "REPO_OPS_NPM_TARGETED_BUMP"
 _TRUE_VALUES = ("1", "true", "yes")
 
+# Audit version overrides: package → advisory-safe version to use instead of @latest.
+# Populated by repo_ops_audit.audit.apply_remediations before the orchestration apply
+# call and cleared in a finally block after.  Empty outside of audit --fix runs.
+# Not thread-safe, but apply_remediations processes workspaces sequentially.
+_AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
+
+
+def set_npm_audit_version_overrides(overrides: dict[str, str]) -> None:
+    """Inject per-package advisory-safe versions for the next targeted-bump call.
+
+    Called by ``repo_ops_audit.audit.apply_remediations`` so that
+    ``targeted_bump_behind`` uses the advisory-safe version (e.g. ``pkg@1.5.5``)
+    rather than always falling back to ``pkg@latest``.
+    """
+    global _AUDIT_VERSION_OVERRIDES
+    _AUDIT_VERSION_OVERRIDES = dict(overrides)
+
+
+def clear_npm_audit_version_overrides() -> None:
+    """Reset audit version overrides after each workspace apply."""
+    global _AUDIT_VERSION_OVERRIDES
+    _AUDIT_VERSION_OVERRIDES = {}
+
 
 def _npm_targeted_bump_enabled() -> bool:
     return os.environ.get(_NPM_TARGETED_BUMP_ENV, "").strip().lower() in _TRUE_VALUES
@@ -95,8 +118,10 @@ def targeted_bump_behind(
     for change in behind:
         snap = snapshot_workspace_files(ws.path, "npm")
         save_flags = _save_flag_for(change.name, pkg_data)
+        # Use the advisory-safe version when set (audit --fix path), else @latest.
+        target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name, "latest")
         install = run(
-            ["npm", "install", *save_flags, f"{change.name}@latest"],
+            ["npm", "install", *save_flags, f"{change.name}@{target_ver}"],
             ws.path,
             timeout=TIMEOUT_APPLY,
         )

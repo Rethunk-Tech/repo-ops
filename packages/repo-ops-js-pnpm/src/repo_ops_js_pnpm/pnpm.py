@@ -21,6 +21,28 @@ _PNPM_UPDATE_LATEST_ENV = "REPO_OPS_PNPM_UPDATE_LATEST"
 _PNPM_TARGETED_BUMP_ENV = "REPO_OPS_PNPM_TARGETED_BUMP"
 _TRUE_VALUES = ("1", "true", "yes", "on")
 
+# Audit version overrides: package → advisory-safe version to use instead of @latest.
+# Populated by repo_ops_audit.audit.apply_remediations before the orchestration apply
+# call and cleared in a finally block after.  Empty outside of audit --fix runs.
+_AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
+
+
+def set_pnpm_audit_version_overrides(overrides: dict[str, str]) -> None:
+    """Inject per-package advisory-safe versions for the next targeted-bump call.
+
+    Called by ``repo_ops_audit.audit.apply_remediations`` so that
+    ``targeted_bump_behind`` uses the advisory-safe version (e.g. ``pnpm add pkg@1.5.5``)
+    rather than always running ``pnpm update --latest pkg`` (which bumps to registry latest).
+    """
+    global _AUDIT_VERSION_OVERRIDES
+    _AUDIT_VERSION_OVERRIDES = dict(overrides)
+
+
+def clear_pnpm_audit_version_overrides() -> None:
+    """Reset audit version overrides after each workspace apply."""
+    global _AUDIT_VERSION_OVERRIDES
+    _AUDIT_VERSION_OVERRIDES = {}
+
 
 def _pnpm_update_latest_enabled() -> bool:
     return os.environ.get(_PNPM_UPDATE_LATEST_ENV, "").strip().lower() in _TRUE_VALUES
@@ -139,11 +161,15 @@ def targeted_bump_behind(
     still_behind: list[Change] = []
     for change in behind:
         snap = snapshot_workspace_files(ws.path, "pnpm")
-        update = run(
-            ["pnpm", "update", "--latest", change.name],
-            ws.path,
-            timeout=TIMEOUT_APPLY,
-        )
+        target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name)
+        if target_ver:
+            # Audit path: pin to advisory-safe version via pnpm add pkg@version.
+            # pnpm add installs an explicit version and updates both manifest and lockfile.
+            cmd = ["pnpm", "add", f"{change.name}@{target_ver}"]
+        else:
+            # Normal targeted-bump path: update to registry latest.
+            cmd = ["pnpm", "update", "--latest", change.name]
+        update = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
         landed: str | None = None
         if update.returncode == 0:
             landed = resolved_version_from_node_modules(ws.path, change.name)

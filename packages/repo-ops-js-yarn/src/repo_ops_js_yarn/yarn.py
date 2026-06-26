@@ -30,6 +30,28 @@ from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import YARN_ISOLATED_COPY_SKIP, YARN_ISOLATED_YARN_SKIP
 
 FILE_PROTOCOL_RE = re.compile(r"^file:(\.\./.+?)(?:#.*)?$")
+
+# Audit version overrides: package → advisory-safe version to use instead of @latest.
+# Populated by repo_ops_audit.audit.apply_remediations before the orchestration apply
+# call and cleared in a finally block after.  Empty outside of audit --fix runs.
+_AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
+
+
+def set_yarn_audit_version_overrides(overrides: dict[str, str]) -> None:
+    """Inject per-package advisory-safe versions for the next targeted-bump call.
+
+    Called by ``repo_ops_audit.audit.apply_remediations`` so that
+    ``targeted_bump_behind`` uses the advisory-safe version (e.g. ``yarn up pkg@1.5.5``)
+    rather than always running ``yarn up pkg@latest``.
+    """
+    global _AUDIT_VERSION_OVERRIDES
+    _AUDIT_VERSION_OVERRIDES = dict(overrides)
+
+
+def clear_yarn_audit_version_overrides() -> None:
+    """Reset audit version overrides after each workspace apply."""
+    global _AUDIT_VERSION_OVERRIDES
+    _AUDIT_VERSION_OVERRIDES = {}
 _STDERR_TAIL_LINES = 12
 _YARN_UPDATE_LATEST_ENV = "REPO_OPS_YARN_UPDATE_LATEST"
 _YARN_TARGETED_BUMP_ENV = "REPO_OPS_YARN_TARGETED_BUMP"
@@ -416,8 +438,10 @@ def targeted_bump_behind(
     still_behind: list[Change] = []
     for change in behind:
         snap = snapshot_workspace_files(mdir, "yarn")
+        # Use the advisory-safe version when set (audit --fix path), else @latest.
+        target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name, "latest")
         up = run(
-            ["yarn", "up", f"{change.name}@latest"],
+            ["yarn", "up", f"{change.name}@{target_ver}"],
             mdir,
             timeout=resolve_timeout_apply(),
         )
