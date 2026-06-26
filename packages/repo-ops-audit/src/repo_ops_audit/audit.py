@@ -353,9 +353,19 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
     counts = VulnCount()
 
     if manager == "bun":
-        # bun audit outputs human-readable text only; parse summary line
-        # e.g. "3 vulnerabilities (1 critical, 2 high)"
-        counts = _parse_bun_audit_text(stdout + stderr)
+        # bun audit --json emits npm-advisory JSON (same schema as npm audit --json).
+        # Older bun versions that predate --json emit ANSI text; json.loads failure
+        # triggers the _parse_bun_audit_text fallback so both paths are handled.
+        _json_ok = False
+        if stdout.strip():
+            try:
+                _bun_data = json.loads(stdout)
+                counts = _parse_npm_audit_json(_bun_data)
+                _json_ok = True
+            except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+                pass
+        if not _json_ok:
+            counts = _parse_bun_audit_text(stdout + stderr)
         status = "vulns" if counts.total > 0 else ("error" if rc != 0 else "ok")
         if status == "error":
             return WorkspaceResult(

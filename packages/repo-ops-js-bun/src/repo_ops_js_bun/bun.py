@@ -11,10 +11,12 @@ from repo_ops_core.process import run
 from repo_ops_js.guards import assert_targets_resolved
 from repo_ops_models import Change, Workspace
 
-# bun >= 1.3 has no `--json` for `outdated`; it always prints an ANSI-coloured
-# box-drawing table led by a `bun outdated vX (hash)` banner. Parse that table
-# rather than whitespace-splitting (which mis-read the banner as a package named
-# "bun" at version "(hash)" and fed `bun update bun@(hash)` -> hard failure).
+# `bun outdated` has no --json flag (as of bun 1.x; the codebase checks
+# opportunistically via check_bun but falls back here when JSON is absent).
+# It always prints an ANSI-coloured box-drawing table led by a
+# `bun outdated vX (hash)` banner.  Parse that table row-by-row rather than
+# whitespace-splitting (which mis-read the banner as a package named "bun" at
+# version "(hash)" and fed `bun update bun@(hash)` → hard failure).
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _BOX_V = "│"  # │ box drawings light vertical (column separator)
 _DEP_GROUP_SUFFIX_RE = re.compile(r"\s*\((?:dev|peer|optional)\)\s*$")
