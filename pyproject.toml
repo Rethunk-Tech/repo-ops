@@ -281,7 +281,7 @@ module = ["repo_ops.*"]
 disallow_untyped_defs = true
 
 [tool.coverage.report]
-fail_under = 63
+fail_under = 68
 show_missing = true
 skip_covered = true
 exclude_lines = [
