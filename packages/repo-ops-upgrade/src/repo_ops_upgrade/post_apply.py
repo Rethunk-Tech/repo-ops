@@ -26,6 +26,19 @@ logger = logging.getLogger(__name__)
 FAILED_WITH_CHANGES = "FAILED_WITH_CHANGES"
 FAILED_CLEAN = "FAILED_CLEAN"
 
+# All lockfile and manifest basenames that apply may create or modify.
+# Used to scope both the tracked-path checkout and the untracked-file clean
+# to apply artifacts only — never touching unrelated operator files.
+# Includes pyproject.toml and Cargo.toml which apply can rewrite but which
+# are not captured by the lockfile-only snapshot constants.
+_ARTIFACT_BASENAMES: frozenset[str] = frozenset(
+    list(NODE_LOCKFILES)
+    + list(PY_LOCKFILES)
+    + list(GO_LOCKFILES)
+    + list(RUST_LOCKFILES)
+    + ["pyproject.toml", "Cargo.toml"]
+)
+
 
 def collect_changes_after_apply(ws: Workspace) -> list[Change]:
     """Lightweight post-apply change detection for remediation context.
@@ -158,6 +171,18 @@ def revert_workspace_after_verify_fail(
 ) -> bool:
     """Restore pre-apply lockfile snapshot and git-tracked paths under the workspace.
 
+    Scoped to the actual apply-artifact path set (lockfiles/manifests captured in
+    *before_snap*, plus any newly-created lockfile/manifest basenames) to avoid
+    touching pre-existing operator edits or unrelated untracked files at repo root.
+
+    Guarantees:
+    - Only checks out tracked files whose basename is a known lockfile/manifest
+      (``_ARTIFACT_BASENAMES``).  Pre-existing dirty tracked edits (e.g. the
+      operator's ``src/`` changes) are never reverted.
+    - Only removes untracked files whose basename is a known lockfile/manifest
+      AND that did not exist before apply (not present as a key in *before_snap*).
+      Pre-existing untracked files (e.g. ``notes.txt``) are never deleted.
+
     Returns True when all revert operations succeeded, False if any git operation
     reported a non-zero exit code (in which case the workspace may be partially
     reverted).
@@ -166,40 +191,86 @@ def revert_workspace_after_verify_fail(
     pathspec = _workspace_git_pathspec(ws)
     reverted_ok = True
 
+    # Build repo-relative path set for files that existed before apply.
+    # Used as the "do not clean" guard: any untracked file whose path already
+    # appears in before_snap was pre-existing and must be left alone.
+    git_repo = ws.git_repo.resolve()
+    snap_rel_set: set[str] = set()
+    for abs_path in before_snap:
+        try:
+            rel = str(abs_path.resolve().relative_to(git_repo)).replace("\\", "/")
+            snap_rel_set.add(rel)
+        except ValueError:
+            pass
+
+    # Revert only tracked apply artifacts — NOT all changed files under the workspace.
+    # Filter the diff output to lockfile/manifest basenames so pre-existing operator
+    # dirty edits (e.g. src/app.py) are never reverted even when allow_dirty is on.
     diff_proc = run(
         ["git", "diff", "--name-only", "--", pathspec],
         ws.git_repo,
         timeout=60,
     )
     if diff_proc.returncode == 0 and diff_proc.stdout.strip():
-        paths = [line.strip() for line in diff_proc.stdout.splitlines() if line.strip()]
-        checkout_proc = run(
-            ["git", "checkout", "--", *paths],
-            ws.git_repo,
-            timeout=120,
-        )
-        if checkout_proc.returncode != 0:
-            logger.warning(
-                "git checkout failed during revert for %s (rc=%d): %s",
-                ws.path,
-                checkout_proc.returncode,
-                (checkout_proc.stderr or checkout_proc.stdout).strip(),
+        all_changed = [
+            line.strip()
+            for line in diff_proc.stdout.splitlines()
+            if line.strip()
+        ]
+        # Keep only paths whose basename is a known apply artifact.
+        artifact_changed = [
+            p for p in all_changed if Path(p).name in _ARTIFACT_BASENAMES
+        ]
+        if artifact_changed:
+            checkout_proc = run(
+                ["git", "checkout", "--", *artifact_changed],
+                ws.git_repo,
+                timeout=120,
             )
-            reverted_ok = False
+            if checkout_proc.returncode != 0:
+                logger.warning(
+                    "git checkout failed during revert for %s (rc=%d): %s",
+                    ws.path,
+                    checkout_proc.returncode,
+                    (checkout_proc.stderr or checkout_proc.stdout).strip(),
+                )
+                reverted_ok = False
 
-    # Remove untracked files created by apply (e.g. new lockfiles) scoped to workspace.
-    clean_proc = run(
-        ["git", "clean", "-fd", "--", pathspec],
+    # Remove only untracked files that apply created — never files the operator
+    # already had before apply ran.  Two guards keep this safe at repo root:
+    #   1. Basename must be a known lockfile/manifest (_ARTIFACT_BASENAMES).
+    #      Operator files like notes.txt, scripts, source files are never matched.
+    #   2. Path must not be in snap_rel_set (file did not exist before apply).
+    #      If a lockfile-named file was pre-existing it stays untouched.
+    ls_proc = run(
+        ["git", "ls-files", "--others", "--exclude-standard", "--", pathspec],
         ws.git_repo,
         timeout=60,
     )
-    if clean_proc.returncode != 0:
-        logger.warning(
-            "git clean failed during revert for %s (rc=%d): %s",
-            ws.path,
-            clean_proc.returncode,
-            (clean_proc.stderr or clean_proc.stdout).strip(),
-        )
-        reverted_ok = False
+    if ls_proc.returncode == 0 and ls_proc.stdout.strip():
+        untracked = [
+            line.strip()
+            for line in ls_proc.stdout.splitlines()
+            if line.strip()
+        ]
+        apply_created = [
+            p for p in untracked
+            if Path(p).name in _ARTIFACT_BASENAMES
+            and p.replace("\\", "/") not in snap_rel_set
+        ]
+        if apply_created:
+            clean_proc = run(
+                ["git", "clean", "-fd", "--", *apply_created],
+                ws.git_repo,
+                timeout=60,
+            )
+            if clean_proc.returncode != 0:
+                logger.warning(
+                    "git clean failed during revert for %s (rc=%d): %s",
+                    ws.path,
+                    clean_proc.returncode,
+                    (clean_proc.stderr or clean_proc.stdout).strip(),
+                )
+                reverted_ok = False
 
     return reverted_ok
