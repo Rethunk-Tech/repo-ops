@@ -35,6 +35,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -238,49 +239,55 @@ def _resolve_latest_precommit_rev(
 # ---------------------------------------------------------------------------
 
 # In-process cache so repeated checks for the same hook repo cost only one RTT.
+# _TAG_CACHE_LOCK serialises all reads and writes so concurrent ThreadPoolExecutor
+# workers for the same URL each pay the subprocess cost at most once (Bug 2 fix).
 _TAG_CACHE: dict[str, list[str] | None] = {}
+_TAG_CACHE_LOCK = threading.Lock()
 
 
 def _fetch_tags_for_repo(repo_url: str, *, timeout: int = _LS_REMOTE_TIMEOUT) -> list[str] | None:
     """Return the list of annotated tags for *repo_url* via ``git ls-remote``.
 
-    Uses an in-process cache so duplicate repos only cost one subprocess call.
+    Uses an in-process cache protected by a threading.Lock so concurrent callers
+    for the same URL only pay the subprocess cost once (cache-stampede safe).
     Returns None on any error (subprocess failure, git not on PATH, etc.).
     """
-    if repo_url in _TAG_CACHE:
-        return _TAG_CACHE[repo_url]
+    with _TAG_CACHE_LOCK:
+        if repo_url in _TAG_CACHE:
+            return _TAG_CACHE[repo_url]
 
-    try:
-        proc = subprocess.run(
-            ["git", "ls-remote", "--tags", "--refs", repo_url],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        _TAG_CACHE[repo_url] = None
-        return None
+        try:
+            proc = subprocess.run(
+                ["git", "ls-remote", "--tags", "--refs", repo_url],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            _TAG_CACHE[repo_url] = None
+            return None
 
-    if proc.returncode != 0:
-        _TAG_CACHE[repo_url] = None
-        return None
+        if proc.returncode != 0:
+            _TAG_CACHE[repo_url] = None
+            return None
 
-    tags: list[str] = []
-    for line in proc.stdout.splitlines():
-        # Format: "<sha>\trefs/tags/<tag>"
-        parts = line.split("\t", 1)
-        if len(parts) == 2 and parts[1].startswith("refs/tags/"):
-            tag = parts[1][len("refs/tags/"):]
-            if tag:
-                tags.append(tag)
+        tags: list[str] = []
+        for line in proc.stdout.splitlines():
+            # Format: "<sha>\trefs/tags/<tag>"
+            parts = line.split("\t", 1)
+            if len(parts) == 2 and parts[1].startswith("refs/tags/"):
+                tag = parts[1][len("refs/tags/"):]
+                if tag:
+                    tags.append(tag)
 
-    _TAG_CACHE[repo_url] = tags
-    return tags
+        _TAG_CACHE[repo_url] = tags
+        return tags
 
 
 def _clear_tag_cache() -> None:
     """Clear the in-process tag cache (used in tests)."""
-    _TAG_CACHE.clear()
+    with _TAG_CACHE_LOCK:
+        _TAG_CACHE.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -377,42 +384,78 @@ def apply_precommit(ws: Workspace) -> None:
     Runs check_precommit to discover actionable bumps, then rewrites only the
     value portion of the matching ``rev:`` line in the config file.  Skips
     report-only entries (SHA pins, non-semver, network failures).
+
+    Correctness notes:
+    - Replacement is keyed by exact line number (from re-parsing the config),
+      not by the rev value string.  Two repos pinned at the same current rev
+      each have their own line-number key, so there is no dict collision and
+      each repo gets its own independent target rev (Bug 1 fix).
+    - Config is read as raw bytes and decoded via latin-1, which maps each byte
+      0-255 to exactly one code point and back — so non-UTF-8 bytes round-trip
+      unchanged regardless of what encoding the file actually uses (Bug 3 fix).
     """
     cfg_path = _find_precommit_config(ws.path)
     if cfg_path is None:
         return
 
     changes = check_precommit(ws)
-    # Keep only actionable changes (no report-only prefix).
+    # Keep only actionable changes (no report-only prefix); also warms tag cache.
     actionable = [c for c in changes if not c.to.startswith(_REPORT_ONLY_PREFIX)]
     if not actionable:
         return
 
-    # Build a mapping from current rev → new rev for quick lookup.
-    # This assumes rev values are unique across repos, which is common.
-    # If two repos happen to share the same rev string, both get updated —
-    # that is the correct behaviour since they will both be behind.
-    rev_bumps: dict[str, str] = {c.from_ver: c.to for c in actionable}
-
+    # Bug 3 fix: read as bytes, decode via latin-1 (lossless — byte N decodes to
+    # U+00NN and re-encodes back to byte N, so non-UTF-8 content is never
+    # replaced with U+FFFD or otherwise corrupted on writeback).
     try:
-        with cfg_path.open("r", encoding="utf-8", errors="replace", newline="") as fh:
-            original = fh.read()
+        raw = cfg_path.read_bytes()
     except OSError:
+        return
+    text = raw.decode("latin-1")
+
+    # Bug 1 fix: re-parse config to get per-entry (repo_url, rev, rev_line_no).
+    # Build a line-number → new_rev map so two repos at the same current rev
+    # each get an independent key and their own target rev.
+    # Tag cache is already warm from check_precommit above, so these calls are
+    # instant cache hits.
+    allow_cross_major = os.environ.get(_UPDATE_LATEST_ENV, "") == "1"
+    repos = _parse_precommit_repos(text)
+
+    line_bumps: dict[int, str] = {}  # 1-indexed rev_line_no → target rev
+    for entry in repos:
+        repo_url: str = entry["repo"]
+        from_ver: str = entry["rev"]
+        rev_line_no: int = entry["rev_line_no"]
+
+        if _is_sha_rev(from_ver) or not _is_semver_like(from_ver):
+            continue
+
+        tags = _fetch_tags_for_repo(repo_url)
+        if tags is None:
+            continue
+
+        new_rev = _resolve_latest_precommit_rev(
+            from_ver, tags, allow_cross_major=allow_cross_major
+        )
+        if new_rev is not None:
+            line_bumps[rev_line_no] = new_rev
+
+    if not line_bumps:
         return
 
     # CRLF-safe: use splitlines(keepends=True) so original line endings survive.
-    lines = original.splitlines(keepends=True)
+    lines = text.splitlines(keepends=True)
     changed = False
 
     for i, line in enumerate(lines):
-        m = _REV_LINE_RE.match(line)
-        if not m:
-            continue
-        indent = m.group(1)
-        old_rev = m.group(2).strip().strip("'\"")
-        new_rev = rev_bumps.get(old_rev)
+        line_no = i + 1  # rev_line_no is 1-indexed
+        new_rev = line_bumps.get(line_no)
         if new_rev is None:
             continue
+        m = _REV_LINE_RE.match(line)
+        if not m:
+            continue  # shouldn't happen; parsed line numbers come from this text
+        indent = m.group(1)
         # Determine quote style from the original value
         raw_val = m.group(2).strip()
         if raw_val.startswith(("'", '"')):
@@ -427,5 +470,5 @@ def apply_precommit(ws: Workspace) -> None:
         changed = True
 
     if changed:
-        with cfg_path.open("w", encoding="utf-8", newline="") as fh:
-            fh.write("".join(lines))
+        # Bug 3 fix: encode as latin-1 to exactly reverse the decode.
+        cfg_path.write_bytes("".join(lines).encode("latin-1"))

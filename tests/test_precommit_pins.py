@@ -521,6 +521,96 @@ def test_apply_precommit_sha_pin_not_modified(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Robustness bug fixes (rev-collision, cache lock, non-UTF-8 round-trip)
+# ---------------------------------------------------------------------------
+
+
+def test_apply_precommit_rev_collision_two_repos_get_own_target(tmp_path: Path) -> None:
+    """Bug 1 fix: two repos pinned at the SAME current rev but with DIFFERENT
+    latest tags must each receive their own correct target — not the same
+    last-write-wins value that the old from_ver-keyed dict produced."""
+    original = (
+        "repos:\n"
+        "- repo: https://github.com/org/repo-a\n"
+        "  rev: v1.0.0\n"
+        "  hooks:\n"
+        "  - id: hook-a\n"
+        "- repo: https://github.com/org/repo-b\n"
+        "  rev: v1.0.0\n"
+        "  hooks:\n"
+        "  - id: hook-b\n"
+    )
+    cfg = tmp_path / ".pre-commit-config.yaml"
+    cfg.write_text(original, encoding="utf-8")
+
+    def fake_run(cmd, **kwargs):
+        # cmd[-1] is the repo URL
+        url = cmd[-1]
+        if "repo-a" in url:
+            return _fake_ls_remote(["v1.0.0", "v1.1.0"])
+        return _fake_ls_remote(["v1.0.0", "v1.2.0"])
+
+    with patch("subprocess.run", side_effect=fake_run):
+        apply_precommit(_make_ws(tmp_path))
+
+    result = cfg.read_text(encoding="utf-8")
+    rev_lines = [ln.strip() for ln in result.splitlines() if ln.strip().startswith("rev:")]
+    assert len(rev_lines) == 2
+    # Each repo must receive its own distinct bump, not the same value.
+    assert "rev: v1.1.0" in rev_lines, f"repo-a target missing from: {rev_lines}"
+    assert "rev: v1.2.0" in rev_lines, f"repo-b target missing from: {rev_lines}"
+
+
+def test_fetch_tags_cache_lock_deduplicates_concurrent() -> None:
+    """Bug 2 fix: concurrent workers for the same repo URL invoke ls-remote exactly
+    once — the threading.Lock prevents cache stampede and duplicate subprocess calls."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    proc = _fake_ls_remote(["v1.0.0"])
+    with patch("subprocess.run", return_value=proc) as mock_run:
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            futures = [
+                ex.submit(_fetch_tags_for_repo, "https://github.com/org/repo")
+                for _ in range(4)
+            ]
+        results = [f.result() for f in futures]
+
+    assert mock_run.call_count == 1, (
+        f"ls-remote called {mock_run.call_count} times; expected 1 (cache lock broken)"
+    )
+    assert all(r == ["v1.0.0"] for r in results)
+
+
+def test_apply_precommit_non_utf8_bytes_round_trip(tmp_path: Path) -> None:
+    """Bug 3 fix: a config containing non-UTF-8 bytes in a comment must survive
+    apply unchanged — the 0xFF byte must be present in the output and the
+    unrelated rev: line must still be updated correctly."""
+    # Embed a raw 0xFF byte in a comment — invalid in UTF-8.
+    original_bytes = (
+        b"# comment with non-utf8 byte: \xff\n"
+        b"repos:\n"
+        b"- repo: https://github.com/org/tool\n"
+        b"  rev: v1.0.0\n"
+        b"  hooks:\n"
+        b"  - id: x\n"
+    )
+    cfg = tmp_path / ".pre-commit-config.yaml"
+    cfg.write_bytes(original_bytes)
+
+    proc = _fake_ls_remote(["v1.0.0", "v1.1.0"])
+    with patch("subprocess.run", return_value=proc):
+        apply_precommit(_make_ws(tmp_path))
+
+    result_bytes = cfg.read_bytes()
+    # Non-UTF-8 byte must be preserved verbatim.
+    assert b"\xff" in result_bytes, "non-UTF-8 byte was corrupted on writeback"
+    # Rev must be updated.
+    assert b"rev: v1.1.0" in result_bytes
+    # Full comment line must be intact.
+    assert b"# comment with non-utf8 byte: \xff" in result_bytes
+
+
+# ---------------------------------------------------------------------------
 # _register.py helper
 # ---------------------------------------------------------------------------
 
