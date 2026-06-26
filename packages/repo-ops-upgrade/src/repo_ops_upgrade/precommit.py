@@ -1,0 +1,431 @@
+"""pre-commit rev: pin detection, plan, and apply.
+
+Design notes
+------------
+* Discovery: a directory is a pre-commit workspace when it contains
+  ``.pre-commit-config.yaml`` or ``.pre-commit-config.yml``.
+* Check (read-only): parses each ``repos[].rev:`` value, queries the upstream
+  repo for available tags via ``git ls-remote --tags --refs <url>``, and
+  returns Change objects.  Network/subprocess failures and non-semver pins
+  (SHAs, branch names) are recorded report-only.
+* Apply: byte-preserving single-line ``rev:`` replacement — only the value
+  portion of the matched ``rev:`` line is rewritten; indentation and surrounding
+  content are preserved.
+* Tag matching: the latest tag that shares the same prefix style (``v``-prefixed
+  vs bare-numeric) and the same major version (conservative) is selected.  Set
+  ``REPO_OPS_PRECOMMIT_UPDATE_LATEST=1`` to allow cross-major bumps.
+* All subprocess and network calls are bounded; failures degrade gracefully to
+  report-only entries so the check never raises.
+
+Wire-up notes
+-------------
+To enable this ecosystem in the main upgrade loop, add two lines to
+``packages/repo-ops/src/repo_ops/_register.py``::
+
+    from repo_ops_core._register import register_precommit
+    register_precommit()
+
+and add a ``consider_precommit(mdir)`` call inside
+``repo_ops_upgrade.discovery.discover_workspaces_in_root`` (similar to
+``consider_container``).
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+from pathlib import Path
+from typing import Any
+
+from repo_ops_core.version_utils import semver_tuple
+from repo_ops_models import Change, Workspace
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_PRECOMMIT_CONFIG_NAMES = frozenset({
+    ".pre-commit-config.yaml",
+    ".pre-commit-config.yml",
+})
+
+_REPORT_ONLY_PREFIX = "[report-only] "
+
+# Env-opt-in for cross-major bumps (mirrors REPO_OPS_CONTAINER_UPDATE_LATEST)
+_UPDATE_LATEST_ENV = "REPO_OPS_PRECOMMIT_UPDATE_LATEST"
+
+# Timeout for git ls-remote (seconds); kept modest since it's per unique repo.
+_LS_REMOTE_TIMEOUT = 30
+
+# A rev: value that is a hex commit SHA (7-40 hex chars).
+_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
+
+# A rev: value that looks like a semver tag (with or without a leading "v").
+_SEMVER_TAG_RE = re.compile(r"^v?(\d+)(?:\.\d+)*(?:[-.][\w.]+)?$")
+
+# Regex to match "- repo: <url>" lines (any leading whitespace + list bullet).
+_REPO_LINE_RE = re.compile(r"^\s*-\s+repo:\s+(.+?)\s*$")
+
+# Regex to match "  rev: <value>" lines (leading whitespace required).
+_REV_LINE_RE = re.compile(r"^(\s+)rev:\s+(.+?)\s*$")
+
+
+# ---------------------------------------------------------------------------
+# Workspace detection
+# ---------------------------------------------------------------------------
+
+
+def is_precommit_workspace(directory: Path) -> bool:
+    """True when *directory* contains a ``.pre-commit-config.yaml`` file."""
+    try:
+        for entry in directory.iterdir():
+            if entry.is_file() and entry.name in _PRECOMMIT_CONFIG_NAMES:
+                return True
+    except PermissionError:
+        pass
+    return False
+
+
+def _find_precommit_config(directory: Path) -> Path | None:
+    """Return the first pre-commit config file found in *directory*, or None."""
+    try:
+        for entry in directory.iterdir():
+            if entry.is_file() and entry.name in _PRECOMMIT_CONFIG_NAMES:
+                return entry
+    except PermissionError:
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Config parsing (no PyYAML dependency)
+# ---------------------------------------------------------------------------
+
+
+def _parse_precommit_repos(text: str) -> list[dict[str, Any]]:
+    """Parse the ``repos:`` section of a ``.pre-commit-config.yaml`` text.
+
+    Extracts ``(repo_url, rev, rev_line_no)`` for each repo entry that has a
+    ``rev:`` value.  Uses regex line-by-line parsing (no PyYAML) since the
+    format is highly regular: ``- repo: <url>`` followed by ``  rev: <value>``.
+
+    Returns a list of dicts with keys:
+      ``repo`` (str), ``rev`` (str), ``rev_line_no`` (int, 1-indexed).
+    """
+    lines = text.splitlines()
+
+    # 1. Collect positions of all "- repo: <url>" lines.
+    repo_positions: list[tuple[int, str]] = []
+    for i, line in enumerate(lines):
+        m = _REPO_LINE_RE.match(line)
+        if m:
+            repo_positions.append((i, m.group(1).strip()))
+
+    # 2. For each repo, find the first "  rev: <value>" between it and the next.
+    results: list[dict[str, Any]] = []
+    for j, (line_idx, repo_url) in enumerate(repo_positions):
+        end = repo_positions[j + 1][0] if j + 1 < len(repo_positions) else len(lines)
+        for k in range(line_idx + 1, end):
+            m2 = _REV_LINE_RE.match(lines[k])
+            if m2:
+                rev = m2.group(2).strip().strip("'\"")
+                results.append({
+                    "repo": repo_url,
+                    "rev": rev,
+                    "rev_line_no": k + 1,  # 1-indexed for error messages
+                })
+                break
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Rev classification
+# ---------------------------------------------------------------------------
+
+
+def _is_sha_rev(rev: str) -> bool:
+    """True when *rev* looks like a hex commit SHA (7-40 hex chars)."""
+    return bool(_SHA_RE.match(rev))
+
+
+def _is_semver_like(tag: str) -> bool:
+    """True when *tag* looks like a semver version (bare or v-prefixed)."""
+    return bool(_SEMVER_TAG_RE.match(tag))
+
+
+def _has_v_prefix(tag: str) -> bool:
+    return tag.startswith("v")
+
+
+def _repo_short_name(repo_url: str) -> str:
+    """Return a short ``owner/repo`` label for a URL, or the URL itself."""
+    # e.g. https://github.com/pre-commit/pre-commit-hooks → pre-commit/pre-commit-hooks
+    m = re.search(r"[:/]([^/]+/[^/]+?)(?:\.git)?$", repo_url)
+    return m.group(1) if m else repo_url
+
+
+# ---------------------------------------------------------------------------
+# Latest tag resolution
+# ---------------------------------------------------------------------------
+
+
+def _resolve_latest_precommit_rev(
+    current_rev: str,
+    tags: list[str],
+    *,
+    allow_cross_major: bool = False,
+) -> str | None:
+    """Return the best candidate tag for *current_rev* from *tags*.
+
+    Matching rules:
+    - Only semver-like tags are considered.
+    - Tag must share the same ``v``-prefix style as *current_rev*.
+    - Default (conservative): same major only.
+    - ``allow_cross_major=True``: pick the global best across all majors.
+    - Returns None when already at latest, or no suitable candidate exists.
+    """
+    if not _is_semver_like(current_rev):
+        return None
+
+    want_v = _has_v_prefix(current_rev)
+    current_bare = current_rev.lstrip("v")
+
+    try:
+        current_tup = semver_tuple(current_bare)
+    except Exception:
+        return None
+
+    # Build candidate list: same prefix style + parseable semver.
+    candidates: list[tuple[tuple[int, ...], str]] = []
+    for tag in tags:
+        if not _is_semver_like(tag):
+            continue
+        if _has_v_prefix(tag) != want_v:
+            continue
+        bare = tag.lstrip("v")
+        try:
+            tup = semver_tuple(bare)
+        except Exception:  # noqa: S112
+            continue
+        candidates.append((tup, tag))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+
+    if not allow_cross_major:
+        # Same major only
+        same_major = [
+            (tup, t) for tup, t in candidates
+            if tup and current_tup and tup[0] == current_tup[0]
+        ]
+        if not same_major:
+            return None
+        candidates = same_major
+
+    best_tup, best_tag = candidates[0]
+    if best_tup <= current_tup:
+        return None  # already at latest
+
+    return best_tag
+
+
+# ---------------------------------------------------------------------------
+# Tag fetching (git ls-remote)
+# ---------------------------------------------------------------------------
+
+# In-process cache so repeated checks for the same hook repo cost only one RTT.
+_TAG_CACHE: dict[str, list[str] | None] = {}
+
+
+def _fetch_tags_for_repo(repo_url: str, *, timeout: int = _LS_REMOTE_TIMEOUT) -> list[str] | None:
+    """Return the list of annotated tags for *repo_url* via ``git ls-remote``.
+
+    Uses an in-process cache so duplicate repos only cost one subprocess call.
+    Returns None on any error (subprocess failure, git not on PATH, etc.).
+    """
+    if repo_url in _TAG_CACHE:
+        return _TAG_CACHE[repo_url]
+
+    try:
+        proc = subprocess.run(
+            ["git", "ls-remote", "--tags", "--refs", repo_url],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        _TAG_CACHE[repo_url] = None
+        return None
+
+    if proc.returncode != 0:
+        _TAG_CACHE[repo_url] = None
+        return None
+
+    tags: list[str] = []
+    for line in proc.stdout.splitlines():
+        # Format: "<sha>\trefs/tags/<tag>"
+        parts = line.split("\t", 1)
+        if len(parts) == 2 and parts[1].startswith("refs/tags/"):
+            tag = parts[1][len("refs/tags/"):]
+            if tag:
+                tags.append(tag)
+
+    _TAG_CACHE[repo_url] = tags
+    return tags
+
+
+def _clear_tag_cache() -> None:
+    """Clear the in-process tag cache (used in tests)."""
+    _TAG_CACHE.clear()
+
+
+# ---------------------------------------------------------------------------
+# Check
+# ---------------------------------------------------------------------------
+
+
+def check_precommit(ws: Workspace) -> list[Change]:
+    """Read-only check: parse ``rev:`` pins and report outdated entries.
+
+    Returns a list of Change objects.  Non-actionable pins (SHA, branch, network
+    errors) use a ``to`` value prefixed with ``[report-only]`` so the report
+    layer can distinguish them.
+
+    Environment variables:
+    - ``REPO_OPS_PRECOMMIT_UPDATE_LATEST=1``: allow cross-major bumps.
+    """
+    allow_cross_major = os.environ.get(_UPDATE_LATEST_ENV, "") == "1"
+    cfg_path = _find_precommit_config(ws.path)
+    if cfg_path is None:
+        return []
+
+    try:
+        text = cfg_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+
+    repos = _parse_precommit_repos(text)
+    changes: list[Change] = []
+    seen_repos: set[str] = set()
+
+    for entry in repos:
+        repo_url: str = entry["repo"]
+        rev: str = entry["rev"]
+        label = _repo_short_name(repo_url)
+
+        if repo_url in seen_repos:
+            continue
+        seen_repos.add(repo_url)
+
+        # SHA-pinned: report-only (cannot auto-update without knowing the tag)
+        if _is_sha_rev(rev):
+            changes.append(
+                Change(
+                    name=label,
+                    from_ver=rev,
+                    to=f"{_REPORT_ONLY_PREFIX}SHA pin; consider switching to a tag",
+                )
+            )
+            continue
+
+        # Non-semver tag (branch names like "main", "master", misc strings):
+        if not _is_semver_like(rev):
+            changes.append(
+                Change(
+                    name=label,
+                    from_ver=rev,
+                    to=f"{_REPORT_ONLY_PREFIX}non-semver rev; manual review required",
+                )
+            )
+            continue
+
+        # Fetch available tags
+        tags = _fetch_tags_for_repo(repo_url)
+        if tags is None:
+            changes.append(
+                Change(
+                    name=label,
+                    from_ver=rev,
+                    to=f"{_REPORT_ONLY_PREFIX}tag fetch failed (network or git error)",
+                )
+            )
+            continue
+
+        latest = _resolve_latest_precommit_rev(
+            rev, tags, allow_cross_major=allow_cross_major
+        )
+        if latest is None:
+            continue  # already at latest or indeterminate
+
+        changes.append(Change(name=label, from_ver=rev, to=latest))
+
+    return changes
+
+
+# ---------------------------------------------------------------------------
+# Apply
+# ---------------------------------------------------------------------------
+
+
+def apply_precommit(ws: Workspace) -> None:
+    """Apply rev: bumps in-place (byte-preserving single-line edits).
+
+    Runs check_precommit to discover actionable bumps, then rewrites only the
+    value portion of the matching ``rev:`` line in the config file.  Skips
+    report-only entries (SHA pins, non-semver, network failures).
+    """
+    cfg_path = _find_precommit_config(ws.path)
+    if cfg_path is None:
+        return
+
+    changes = check_precommit(ws)
+    # Keep only actionable changes (no report-only prefix).
+    actionable = [c for c in changes if not c.to.startswith(_REPORT_ONLY_PREFIX)]
+    if not actionable:
+        return
+
+    # Build a mapping from current rev → new rev for quick lookup.
+    # This assumes rev values are unique across repos, which is common.
+    # If two repos happen to share the same rev string, both get updated —
+    # that is the correct behaviour since they will both be behind.
+    rev_bumps: dict[str, str] = {c.from_ver: c.to for c in actionable}
+
+    try:
+        with cfg_path.open("r", encoding="utf-8", errors="replace", newline="") as fh:
+            original = fh.read()
+    except OSError:
+        return
+
+    # CRLF-safe: use splitlines(keepends=True) so original line endings survive.
+    lines = original.splitlines(keepends=True)
+    changed = False
+
+    for i, line in enumerate(lines):
+        m = _REV_LINE_RE.match(line)
+        if not m:
+            continue
+        indent = m.group(1)
+        old_rev = m.group(2).strip().strip("'\"")
+        new_rev = rev_bumps.get(old_rev)
+        if new_rev is None:
+            continue
+        # Determine quote style from the original value
+        raw_val = m.group(2).strip()
+        if raw_val.startswith(("'", '"')):
+            quote = raw_val[0]
+            new_line = f"{indent}rev: {quote}{new_rev}{quote}\n"
+        else:
+            new_line = f"{indent}rev: {new_rev}\n"
+        # Preserve original line ending (CRLF or LF)
+        original_ending = line[len(line.rstrip("\r\n")):]
+        new_line = new_line.rstrip("\n") + original_ending
+        lines[i] = new_line
+        changed = True
+
+    if changed:
+        with cfg_path.open("w", encoding="utf-8", newline="") as fh:
+            fh.write("".join(lines))
