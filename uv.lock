@@ -31,8 +31,10 @@ members = [
     "repo-ops-rust",
     "repo-ops-upgrade",
     "repo-ops-upgrade-remediations-core",
+    "repo-ops-upgrade-remediations-go",
     "repo-ops-upgrade-remediations-js",
     "repo-ops-upgrade-remediations-py",
+    "repo-ops-upgrade-remediations-rust",
     "repo-ops-workspace",
 ]
 
@@ -897,8 +899,10 @@ dependencies = [
     { name = "repo-ops-lockfiles" },
     { name = "repo-ops-models" },
     { name = "repo-ops-upgrade-remediations-core" },
+    { name = "repo-ops-upgrade-remediations-go" },
     { name = "repo-ops-upgrade-remediations-js" },
     { name = "repo-ops-upgrade-remediations-py" },
+    { name = "repo-ops-upgrade-remediations-rust" },
     { name = "ruamel-yaml" },
 ]
 
@@ -920,8 +924,10 @@ requires-dist = [
     { name = "repo-ops-lockfiles", editable = "packages/repo-ops-lockfiles" },
     { name = "repo-ops-models", editable = "packages/repo-ops-models" },
     { name = "repo-ops-upgrade-remediations-core", editable = "packages/repo-ops-upgrade-remediations-core" },
+    { name = "repo-ops-upgrade-remediations-go", editable = "packages/repo-ops-upgrade-remediations-go" },
     { name = "repo-ops-upgrade-remediations-js", editable = "packages/repo-ops-upgrade-remediations-js" },
     { name = "repo-ops-upgrade-remediations-py", editable = "packages/repo-ops-upgrade-remediations-py" },
+    { name = "repo-ops-upgrade-remediations-rust", editable = "packages/repo-ops-upgrade-remediations-rust" },
     { name = "ruamel-yaml", specifier = ">=0.18" },
 ]
 provides-extras = ["commit-agent-cursor", "agent"]
@@ -939,6 +945,23 @@ dependencies = [
 requires-dist = [
     { name = "repo-ops-core", editable = "packages/repo-ops-core" },
     { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+]
+
+[[package]]
+name = "repo-ops-upgrade-remediations-go"
+version = "0.17.1"
+source = { editable = "packages/repo-ops-upgrade-remediations-go" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade-remediations-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade-remediations-core", editable = "packages/repo-ops-upgrade-remediations-core" },
 ]
 
 [[package]]
@@ -968,6 +991,23 @@ requires-dist = [
 name = "repo-ops-upgrade-remediations-py"
 version = "0.17.1"
 source = { editable = "packages/repo-ops-upgrade-remediations-py" }
+dependencies = [
+    { name = "repo-ops-core" },
+    { name = "repo-ops-models" },
+    { name = "repo-ops-upgrade-remediations-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repo-ops-core", editable = "packages/repo-ops-core" },
+    { name = "repo-ops-models", editable = "packages/repo-ops-models" },
+    { name = "repo-ops-upgrade-remediations-core", editable = "packages/repo-ops-upgrade-remediations-core" },
+]
+
+[[package]]
+name = "repo-ops-upgrade-remediations-rust"
+version = "0.17.1"
+source = { editable = "packages/repo-ops-upgrade-remediations-rust" }
 dependencies = [
     { name = "repo-ops-core" },
     { name = "repo-ops-models" },
@@ -1014,8 +1054,10 @@ dev = [
     { name = "repo-ops-rust" },
     { name = "repo-ops-upgrade" },
     { name = "repo-ops-upgrade-remediations-core" },
+    { name = "repo-ops-upgrade-remediations-go" },
     { name = "repo-ops-upgrade-remediations-js" },
     { name = "repo-ops-upgrade-remediations-py" },
+    { name = "repo-ops-upgrade-remediations-rust" },
     { name = "ruff" },
 ]
 
@@ -1049,8 +1091,10 @@ dev = [
     { name = "repo-ops-rust", editable = "packages/repo-ops-rust" },
     { name = "repo-ops-upgrade", editable = "packages/repo-ops-upgrade" },
     { name = "repo-ops-upgrade-remediations-core", editable = "packages/repo-ops-upgrade-remediations-core" },
+    { name = "repo-ops-upgrade-remediations-go", editable = "packages/repo-ops-upgrade-remediations-go" },
     { name = "repo-ops-upgrade-remediations-js", editable = "packages/repo-ops-upgrade-remediations-js" },
     { name = "repo-ops-upgrade-remediations-py", editable = "packages/repo-ops-upgrade-remediations-py" },
+    { name = "repo-ops-upgrade-remediations-rust", editable = "packages/repo-ops-upgrade-remediations-rust" },
     { name = "ruff", specifier = ">=0.11.0" },
 ]
 
