@@ -511,6 +511,45 @@ def _run_upgrade_body(
                 if umbrella_exit != 0:
                     exit_code = 1 if exit_code == 0 else exit_code
 
+            # PR/branch mode (opt-in via --pr): after commits land, create a
+            # branch, push it, and open a PR for each repo that received a
+            # commit this run. Skipped when --commit-dry-run is active (no
+            # real commits to push). When --pr is absent, this block is never
+            # entered — byte-identical to today's in-place-commit behaviour.
+            if getattr(args, "pr", False):
+                # Lazy import: pr.py pulls in subprocess + gh; avoid the cost
+                # on every apply run when --pr is not set.
+                from repo_ops_upgrade import pr as _pr_mod
+
+                commit_dry_run = getattr(args, "commit_dry_run", False)
+                if commit_dry_run:
+                    if not args.quiet:
+                        print(
+                            "[pr] dry-run: branch/PR creation skipped",
+                            file=sys.stderr,
+                        )
+                else:
+                    committed_repos = {
+                        o.git_repo for o in child_outcomes if o.status == "committed"
+                    }
+                    pr_prefix = getattr(
+                        args, "branch_prefix", _pr_mod.DEFAULT_BRANCH_PREFIX
+                    )
+                    pr_base = getattr(args, "pr_base", None)
+                    for bundle in sorted(bundles.values(), key=lambda b: b.label):
+                        if bundle.git_repo not in committed_repos:
+                            continue
+                        pr_outcome = _pr_mod.run_pr_flow(
+                            bundle.git_repo,
+                            bundle,
+                            branch_prefix=pr_prefix,
+                            base_branch=pr_base,
+                        )
+                        if not args.quiet:
+                            _pr_mod.print_pr_outcome(pr_outcome)
+                        if pr_outcome.status == "failed":
+                            exit_code = 1 if exit_code == 0 else exit_code
+
     if not use_json:
         footer_hints = pointer_hints if apply else None
         if include_submodules and pointer_hints and not apply:

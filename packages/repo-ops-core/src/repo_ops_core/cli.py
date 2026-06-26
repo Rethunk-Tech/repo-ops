@@ -606,6 +606,41 @@ def add_upgrade_common_arguments(
                 "not set or no submodules are detected."
             ),
         )
+
+    # ---- Branch / PR workflow (apply-only, opt-in) ------------------------
+    if apply:
+        pr_grp = parser.add_argument_group("Branch / PR workflow")
+        pr_grp.add_argument(
+            "--pr",
+            action="store_true",
+            dest="pr",
+            help=(
+                "After apply+commit, create a branch and open a PR via gh for each "
+                "repo that received a commit. Requires gh CLI installed and "
+                "authenticated. Default: off (in-place commit only, no push)."
+            ),
+        )
+        pr_grp.add_argument(
+            "--pr-base",
+            default=None,
+            dest="pr_base",
+            metavar="BRANCH",
+            help=(
+                "Base branch for opened PRs (default: repo's default branch as "
+                "reported by gh). Overrides auto-detection when set."
+            ),
+        )
+        pr_grp.add_argument(
+            "--branch-prefix",
+            default="repo-ops/deps",
+            dest="branch_prefix",
+            metavar="PREFIX",
+            help=(
+                "Branch name prefix for PR branches (default: 'repo-ops/deps'). "
+                "Resulting name: {prefix}/{repo-slug}."
+            ),
+        )
+
     exe.add_argument(
         "--actions-org-policy",
         action="store_true",
