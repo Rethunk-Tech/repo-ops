@@ -109,7 +109,12 @@ def _manifest_names_for_manager(manager: str) -> frozenset[str]:
     return frozenset()
 
 
-def upgrade_scoped_paths(bundle: RepoBundle, porcelain: list[str]) -> list[str]:
+def upgrade_scoped_paths(
+    bundle: RepoBundle,
+    porcelain: list[str],
+    *,
+    extra_gitlink_paths: set[str] | None = None,
+) -> list[str]:
     """Porcelain paths that belong to this upgrade (not unrelated dirty files).
 
     Only paths this run actually modified are included:
@@ -119,6 +124,9 @@ def upgrade_scoped_paths(bundle: RepoBundle, porcelain: list[str]) -> list[str]:
     - Workflow files explicitly bumped by an actions run (exact path match).
     - When the bundle has actions bumps but no workspaces, only the bumped workflow
       file(s) are staged — pre-existing dirty files are never swept in. Issue #116.
+    - Submodule gitlink paths explicitly advanced by apply_submodule_tag_advances
+      (passed via ``extra_gitlink_paths``) so pointer bumps are committed alongside
+      dependency updates rather than left staged-but-uncommitted. Task #18.
     """
     # root_wanted: basenames valid at the repo root (no subdirectory prefix).
     root_wanted: set[str] = set()
@@ -162,6 +170,10 @@ def upgrade_scoped_paths(bundle: RepoBundle, porcelain: list[str]) -> list[str]:
             continue
         # Exact bumped workflow file.
         if norm in action_paths:
+            scoped.append(path)
+            continue
+        # Submodule gitlink paths advanced by apply_submodule_tag_advances.
+        if extra_gitlink_paths and norm in extra_gitlink_paths:
             scoped.append(path)
             continue
         # Subdirectory workspace: prefix must match with a "/" boundary.
@@ -403,6 +415,7 @@ def plan_repo_commit(
     mode: CommitMode,
     allow_dirty: bool,
     commit_on_fail: bool,
+    extra_gitlink_paths: set[str] | None = None,
 ) -> CommitPlan:
     repo = bundle.git_repo
     ok, reason = _bundle_apply_ok(bundle, commit_on_fail=commit_on_fail)
@@ -416,7 +429,7 @@ def plan_repo_commit(
     # Always scope to paths this run actually modified so that pre-existing dirty
     # files (e.g. an operator-kept yarn.lock) are never swept into a commit, even
     # when the repo was clean at run-start. Issue #116 generalises Issue #108.
-    scoped = upgrade_scoped_paths(bundle, files)
+    scoped = upgrade_scoped_paths(bundle, files, extra_gitlink_paths=extra_gitlink_paths)
     if not scoped:
         skip_reason = (
             "no upgrade-scoped changes to commit (dirty worktree)"
@@ -511,12 +524,18 @@ def run_post_apply_commits(
     commit_on_fail: bool = False,
     quiet: bool = False,
     max_workers: int = 8,
+    submodule_gitlink_map: dict[Path, set[str]] | None = None,
 ) -> tuple[list[CommitOutcome], int]:
     """Plan and optionally execute one commit per eligible git repo.
 
     Bundles are processed in parallel (each is an independent git repo so commits
     do not race). Output ordering is deterministic: outcomes are sorted by label
     before printing, matching the serial behaviour. max_workers caps the thread pool.
+
+    ``submodule_gitlink_map`` maps a parent git_repo path to the set of submodule
+    relative paths whose gitlinks were staged by apply_submodule_tag_advances.
+    These paths are passed to upgrade_scoped_paths so pointer bumps are committed
+    alongside dependency updates rather than left staged-but-uncommitted. Task #18.
     """
     if mode == "none":
         return [], 0
@@ -524,11 +543,13 @@ def run_post_apply_commits(
     sorted_bundles = sorted(bundles.values(), key=lambda b: b.label)
 
     def _process(bundle: RepoBundle) -> CommitOutcome:
+        gitlinks = (submodule_gitlink_map or {}).get(bundle.git_repo)
         plan = plan_repo_commit(
             bundle,
             mode=mode,
             allow_dirty=allow_dirty,
             commit_on_fail=commit_on_fail,
+            extra_gitlink_paths=gitlinks,
         )
         return execute_commit_plan(plan, dry_run=dry_run)
 
