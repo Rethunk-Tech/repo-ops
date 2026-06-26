@@ -55,6 +55,8 @@ dev = [
   "repo-ops-upgrade-remediations-core",
   "repo-ops-upgrade-remediations-js",
   "repo-ops-upgrade-remediations-py",
+  "repo-ops-upgrade-remediations-go",
+  "repo-ops-upgrade-remediations-rust",
   "repo-ops-inventory",
   "repo-ops-pushed",
   "repo-ops-audit",
@@ -93,6 +95,8 @@ repo-ops-upgrade = { workspace = true }
 repo-ops-upgrade-remediations-core = { workspace = true }
 repo-ops-upgrade-remediations-js = { workspace = true }
 repo-ops-upgrade-remediations-py = { workspace = true }
+repo-ops-upgrade-remediations-go = { workspace = true }
+repo-ops-upgrade-remediations-rust = { workspace = true }
 repo-ops-inventory = { workspace = true }
 repo-ops-pushed = { workspace = true }
 repo-ops-audit = { workspace = true }

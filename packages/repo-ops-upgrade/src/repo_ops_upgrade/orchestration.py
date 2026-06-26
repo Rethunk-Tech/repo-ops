@@ -12,8 +12,10 @@ from datetime import date
 from pathlib import Path
 from typing import Literal
 
+import repo_ops_upgrade_remediations_go  # noqa: F401 — side-effect: registers Go hooks
 import repo_ops_upgrade_remediations_js  # noqa: F401 — side-effect: registers JS hooks
 import repo_ops_upgrade_remediations_py  # noqa: F401 — side-effect: registers Python hooks
+import repo_ops_upgrade_remediations_rust  # noqa: F401 — side-effect: registers Rust hooks
 from repo_ops_core.filesystem import should_exclude
 from repo_ops_core.git import is_git_dirty
 from repo_ops_core.state import cache_clear_dirty_skip, cache_record_dirty_skip
