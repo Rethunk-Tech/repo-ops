@@ -364,6 +364,131 @@ def _count_python_manifest_edges(mdir: Path, names: set[str]) -> int:
     return total
 
 
+# ---------- Container ----------
+
+
+def count_container(proj: Path) -> tuple[int, set[str]]:
+    """Count container image pins (FROM + compose image:) across *proj*.
+
+    Walks the project tree for Dockerfile* and compose files, parses each one
+    using the repo-ops-container parsers, and returns:
+      (direct_pin_count, set_of_"image:tag"_strings)
+
+    Stage references (``FROM <alias>``) are excluded.
+    Lazy-imports from repo_ops_container so the inventory package need not
+    declare it as a hard dependency.
+    """
+    try:
+        from repo_ops_container.container import (  # type: ignore[import]
+            _parse_image_refs,
+            find_container_files,
+        )
+    except ImportError:
+        return 0, set()
+
+    direct = 0
+    versions: set[str] = set()
+    seen: set[Path] = set()
+
+    for dirpath, dirnames, _ in os.walk(proj):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        mdir = Path(dirpath)
+        for fpath in find_container_files(mdir):
+            rp = fpath.resolve()
+            if rp in seen:
+                continue
+            seen.add(rp)
+            try:
+                refs = _parse_image_refs(fpath)
+            except Exception:  # noqa: S112 — best-effort: malformed container file skipped
+                continue
+            for ref in refs:
+                if ref.get("is_stage_ref"):
+                    continue
+                img = ref.get("image") or ""
+                tag = ref.get("tag") or ""
+                sha = ref.get("sha") or ""
+                if not img or (not tag and not sha):
+                    continue
+                pin = f"{img}:{tag}" + (f"@{sha}" if sha else "")
+                versions.add(pin)
+                direct += 1
+
+    return direct, versions
+
+
+# ---------- GitHub Actions ----------
+
+
+def count_actions(proj: Path) -> tuple[int, set[str]]:
+    """Count GitHub Actions ``uses:`` pins in ``.github/workflows/``.
+
+    Returns:
+      (pin_count, set_of_"action@ref"_strings)
+
+    Lazy-imports from repo_ops_upgrade; gracefully returns zeros if unavailable.
+    """
+    try:
+        from repo_ops_upgrade.actions import (  # type: ignore[import]
+            discover_workflow_files,
+        )
+        from repo_ops_upgrade.workflow_uses import (  # type: ignore[import]
+            WorkflowParseError,
+            parse_workflow_uses,
+        )
+    except ImportError:
+        return 0, set()
+
+    direct = 0
+    versions: set[str] = set()
+    for wf in discover_workflow_files(proj):
+        try:
+            pins = parse_workflow_uses(wf)
+        except WorkflowParseError:
+            continue
+        for p in pins:
+            versions.add(f"{p.action}@{p.pin}")
+            direct += 1
+    return direct, versions
+
+
+# ---------- Pre-commit ----------
+
+
+def count_precommit(proj: Path) -> tuple[int, set[str]]:
+    """Count pre-commit ``rev:`` pins in ``.pre-commit-config.yaml`` files.
+
+    Walks the project tree (pruning SKIP_DIRS) and returns:
+      (rev_count, set_of_"repo_url@rev"_strings)
+
+    Lazy-imports from repo_ops_upgrade.precommit.
+    """
+    try:
+        from repo_ops_upgrade.precommit import (  # type: ignore[import]
+            _PRECOMMIT_CONFIG_NAMES,
+            _parse_precommit_repos,
+        )
+    except ImportError:
+        return 0, set()
+
+    direct = 0
+    versions: set[str] = set()
+    for dirpath, dirnames, filenames in os.walk(proj):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        for fname in filenames:
+            if fname not in _PRECOMMIT_CONFIG_NAMES:
+                continue
+            cfg = Path(dirpath) / fname
+            try:
+                text = cfg.read_text(encoding="utf-8", errors="replace")
+                for entry in _parse_precommit_repos(text):
+                    versions.add(f"{entry['repo']}@{entry['rev']}")
+                    direct += 1
+            except Exception:  # noqa: S110 — best-effort: malformed pre-commit config skipped
+                pass
+    return direct, versions
+
+
 # ---------- Walk ----------
 
 
@@ -412,6 +537,27 @@ def _make_row(
             row["direct"] += d
             row["versions"] |= v
             row["kinds"].add(f"py({src})")
+
+    # --- New-ecosystem pin counts (container / actions / pre-commit) ---
+    # These scan the project root rather than individual manifest dirs.
+    d_c, v_c = count_container(proj)
+    if d_c or v_c:
+        row["direct"] += d_c
+        row["versions"] |= v_c
+        row["kinds"].add("container")
+
+    d_a, v_a = count_actions(proj)
+    if d_a or v_a:
+        row["direct"] += d_a
+        row["versions"] |= v_a
+        row["kinds"].add("actions")
+
+    d_p, v_p = count_precommit(proj)
+    if d_p or v_p:
+        row["direct"] += d_p
+        row["versions"] |= v_p
+        row["kinds"].add("precommit")
+
     if not row["kinds"]:
         row["kinds"] = {"-"}
     return row
