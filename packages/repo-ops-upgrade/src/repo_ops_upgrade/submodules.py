@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from repo_ops_core.constants import SKIP_DIRS
-from repo_ops_core.git import git_repo_for, run_git
+from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
 from repo_ops_core.version_utils import semver_tuple
 
 SubmoduleOrder = str  # "discovery" | "children-first"
@@ -509,15 +509,20 @@ def check_submodule_tag_advances(
 
 def apply_submodule_tag_advances(
     links: list[SubmoduleLink],
+    *,
+    allow_dirty: bool = False,
 ) -> list[SubmoduleTagBump]:
     """Advance submodule pointers to the latest upstream semver tag.
 
     Calls ``check_submodule_tag_advances`` to discover actionable bumps, then
     for each actionable bump:
 
-    1. Fetches the target tag into the submodule clone.
-    2. Checks out the new tag in the submodule (detached HEAD).
-    3. Stages the updated gitlink pointer in the parent repo.
+    1. Checks the submodule checkout is clean (skips if dirty and
+       ``allow_dirty=False``, mirroring orchestration.py's guard).
+    2. Fetches the target tag into the submodule clone.
+    3. Checks out the new tag with ``--detach refs/tags/<tag>`` to avoid
+       ambiguity when a branch name shadows a tag name.
+    4. Stages the updated gitlink pointer in the parent repo.
 
     Non-actionable bumps (SHA-only, non-semver, network errors) are skipped.
     Subprocess failures for individual submodules are caught so one broken
@@ -533,6 +538,13 @@ def apply_submodule_tag_advances(
         if not bump.is_actionable:
             continue
         submod_dir = bump.git_repo
+
+        # Dirty-tree guard: skip if the submodule checkout has uncommitted
+        # changes — checking out a new tag over a dirty tree risks data loss.
+        # Mirrors the allow_dirty guard in orchestration.py.
+        if not allow_dirty and is_git_dirty(submod_dir):
+            continue
+
         try:
             # Fetch only the specific target tag to keep network overhead low.
             fetch_proc = run_git(
@@ -548,7 +560,15 @@ def apply_submodule_tag_advances(
             continue
 
         try:
-            checkout_proc = run_git(submod_dir, "checkout", bump.latest_tag, timeout=30)
+            # Use --detach with the full refs/tags/<tag> ref to avoid ambiguity
+            # when a branch name shadows a tag name (ENH #18).
+            checkout_proc = run_git(
+                submod_dir,
+                "checkout",
+                "--detach",
+                f"refs/tags/{bump.latest_tag}",
+                timeout=30,
+            )
         except (FileNotFoundError, OSError):
             continue
         if checkout_proc.returncode != 0:
