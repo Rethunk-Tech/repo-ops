@@ -18,7 +18,7 @@ Subcommands (entry point in `packages/repo-ops`):
 
 Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. Discovery flags (`--flat`, `--follow-symlinks`, actions-only repos): [Security and discovery](#security-and-discovery).
 
-`--json` on every subcommand. For `plan`/`apply`, stdout is one JSON object unless `--json-out PATH` is set (then stdout prints only that path and the report is written to `PATH` atomically). JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to `node`, `go`, `rust`, or `py`. `--submodules` adds `submodules[]` to plan/apply JSON; `apply --submodule-order=children-first` processes child git repos before parent umbrellas when `.gitmodules` is present.
+`--json` on every subcommand. For `plan`/`apply`, stdout is one JSON object unless `--json-out PATH` is set (then stdout prints only that path and the report is written to `PATH` atomically). JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno`. `--log-level {debug,info,warning,error}` sets the stdlib root logger level; `--verbose` / `-v` enables subprocess echo and implies `debug` when `--log-level` is absent. `--submodules` adds `submodules[]` to plan/apply JSON; `apply --submodule-order=children-first` processes child git repos before parent umbrellas when `.gitmodules` is present.
 
 ### Plan vs apply
 
@@ -49,7 +49,12 @@ Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_cor
 | **go** | `REPO_OPS_GO_UPGRADE_MODE=patch` (default) | `explicit` or `mvs` (see below) |
 | **rust** | `cargo update --dry-run` / `cargo update` | — |
 | **python** | Manager-specific (`uv`, poetry, pip-tools, hatch) | See each plugin's check/apply |
+| **pdm** | `pdm update --dry-run` / `pdm update` (in-range); skipped with a WARN when `pdm` is not on PATH | — |
+| **pipenv** | `pipenv run pip list --outdated` / `pipenv update`; skipped with a WARN when `pipenv` is not on PATH | — |
+| **deno** | `deno outdated` / `deno outdated --update` (Deno ≥ 2.x); supports both box-drawing and plain-text output; skipped with a WARN when `deno` is not on PATH | — |
+| **pre-commit** | Checks `.pre-commit-config.yaml` hook revs against latest upstream tags (within-major only by default) | `REPO_OPS_PRECOMMIT_UPDATE_LATEST=1` → allow cross-major rev bumps |
 | **GitHub Actions** | `--actions-upgrade-mode=normalize` (default): normalize exact tag pins to the floating major (`@vN`); a newer major upstream is reported only. SHA pins: report only (preserve digest). | `--actions-upgrade-mode=latest` (or `--latest`) → also apply cross-major bumps; `--actions-unpin-sha` → resolve SHA pins to tags; `--actions-refresh-sha` → advance digest within current major (with `--latest`: cross-major re-pin + comment update); `--actions-tag-style=exact` → highest `@vN.M.P` when unpinning |
+| **container** | Checks `FROM` / `image:` references in Dockerfiles and Compose files; SHA-pinned images are report-only by default | `REPO_OPS_CONTAINER_REFRESH_SHA=1` → advance SHA digest for `image:tag@sha256:…` pins to the latest digest for the same tag (keeps pin hardened, advances to current content) |
 
 ### Go modules
 
@@ -68,6 +73,14 @@ Isolated snapshots copy `.yarn/releases/` (Berry) and `file:../…` siblings fro
 #### Targeted bump fallback (`--yarn-targeted-bump`, #111)
 
 `yarn up -R '*'` delegates to yarn's resolver, which keeps peer/group-constrained direct deps below their newest release; `behind_latest` (#110) reports those. Opt into `--yarn-targeted-bump` (with `--latest`) to *move* the gap instead of only reporting it: for each `behind_latest` dep, repo-ops snapshots the lockfile/manifests, runs a targeted `yarn up <pkg>@latest` + `yarn install`, and keeps the result only when install succeeds **and** the resolved version actually advances. Any failure — install break, or a ghost bump where the lock churns but the resolver holds the old version — restores the snapshot, so the dep stays in `behind_latest` and nothing broken is committed. Successful bumps become normal planned changes (visible in `plan`, applied by `apply`).
+
+### Submodule tag-advance
+
+When `--submodules` is active, `plan` detects available semver tag advances for each discovered submodule (comparing the current registered commit against upstream tags). By default only **within-major** advances are surfaced. Set `REPO_OPS_SUBMODULE_UPDATE_LATEST=1` to also surface and apply **cross-major** tag advances. `apply --submodule-order=children-first` applies submodule pointer updates before parent umbrella commits.
+
+### Apply resume
+
+Set `REPO_OPS_RESUME=1` on `apply` to resume an interrupted bulk run without re-applying repos that already succeeded. After each successful repo, `apply` writes the git HEAD SHA to a checkpoint file in the XDG cache directory. On re-run with `REPO_OPS_RESUME=1`, repos whose current HEAD matches the checkpointed SHA are skipped as `resume: already applied`. If the HEAD has changed since the checkpoint (e.g. a commit landed in the meantime), the checkpoint entry is ignored and the repo is processed normally.
 
 ### `audit` — fleet vulnerability sweep
 
@@ -154,3 +167,8 @@ Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
 | commit_umbrella | `--commit-umbrella` | `REPO_OPS_COMMIT_UMBRELLA` | `commit_umbrella` | `0` |
 | actions_org_policy | `--actions-org-policy` | `REPO_OPS_ACTIONS_ORG_POLICY` | `actions_org_policy` | `0` |
 | container_update_latest | (none) | `REPO_OPS_CONTAINER_UPDATE_LATEST` | `container_update_latest` | `0` |
+| container_refresh_sha | (none) | `REPO_OPS_CONTAINER_REFRESH_SHA` | `container_refresh_sha` | `0` |
+| hatch_migrate_uv_lock | `--migrate-to-uv-lock` | `REPO_OPS_HATCH_MIGRATE_UV_LOCK` | `hatch_migrate_uv_lock` | `0` |
+| precommit_update_latest | (none) | `REPO_OPS_PRECOMMIT_UPDATE_LATEST` | `precommit_update_latest` | `0` |
+| submodule_update_latest | (none) | `REPO_OPS_SUBMODULE_UPDATE_LATEST` | `submodule_update_latest` | `0` |
+| resume | (none) | `REPO_OPS_RESUME` | `resume` | `0` |
