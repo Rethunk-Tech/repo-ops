@@ -43,6 +43,7 @@ MANAGER_FILTER_CHOICES = (
     "go",
     "rust",
     "container",
+    "precommit",
 )
 MANAGER_FILTER_HELP = (
     "Limit upgrade workspaces to one package manager "
@@ -88,7 +89,9 @@ exit codes:
 workflow:
   Prefer plan first (same flags/roots). Dirty git worktrees are skipped
   unless --allow-dirty. On verify failure, default --on-verify-fail=keep
-  leaves changes; use revert to roll back lockfiles and tracked paths.
+  leaves changes; use revert to roll back only apply-artifact files
+  (lockfiles and manifests); pre-existing dirty edits and untracked
+  files outside that set are preserved.
 
 docs:
   Agents: AGENTS.md. Humans: HUMANS.md. Bulk playbook: docs/bulk-maintenance.md.
@@ -478,7 +481,9 @@ def add_upgrade_common_arguments(
             metavar="POLICY",
             help=(
                 "When verify fails after apply: keep changes in the worktree (default) "
-                "or revert lockfiles and git-tracked paths under the workspace."
+                "or revert only apply-artifact files (lockfiles and manifests) under the "
+                "workspace; pre-existing dirty edits and untracked files outside that set "
+                "are preserved."
             ),
         )
 

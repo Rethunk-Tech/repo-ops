@@ -21,6 +21,7 @@ from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 from repo_ops_py_uv.uv import path_is_uv_workspace_child, uv_workspace_members
 
 from repo_ops_upgrade.actions import discover_workflow_files
+from repo_ops_upgrade.precommit import is_precommit_workspace
 
 # ---------- Cargo workspace helpers ----------
 
@@ -277,6 +278,23 @@ def discover_workspaces_in_root(
             )
         )
 
+    def consider_precommit(mdir: Path) -> None:
+        if not is_precommit_workspace(mdir):
+            return
+        git = git_repo_for(mdir)
+        if not git:
+            record_skip(mdir, "precommit", "not inside a git repo")
+            return
+        found.append(
+            Workspace(
+                path=mdir.resolve(),
+                ecosystem="precommit",
+                manager="precommit",
+                git_repo=git.resolve(),
+                label="",
+            )
+        )
+
     def consider_py(mdir: Path) -> None:
         pyp = mdir / "pyproject.toml"
         if not (
@@ -367,6 +385,7 @@ def discover_workspaces_in_root(
         if names & {"pyproject.toml", "requirements.in", "requirements.txt", "Pipfile"}:
             consider_py(mdir)
         consider_container(mdir)
+        consider_precommit(mdir)
         # Mark this dir visited unconditionally (not only when a workspace was
         # added) so that skip-only dirs are deduped across nested-repo overlap.
         # Without this, a dir that produces only a record_skip is walked a
