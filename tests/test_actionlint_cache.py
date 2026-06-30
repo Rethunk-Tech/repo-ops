@@ -163,7 +163,8 @@ def test_cache_hit_skips_subprocess(tmp_path: Path) -> None:
     ):
         result = _run_actionlint(wf, tmp_path, lint_cache=lint_cache)
 
-    assert result == "cached error"
+    # Old cache entries without a "severity" key default to "error".
+    assert result == ("cached error", "error")
     assert not subprocess_called, "subprocess must not be called on cache hit"
 
 
@@ -182,11 +183,12 @@ def test_cache_miss_runs_subprocess_and_stores(tmp_path: Path) -> None:
     ):
         result = _run_actionlint(wf, tmp_path, lint_cache=lint_cache)
 
-    assert result == "lint error text"
+    assert result == ("lint error text", "error")
     # Cache must now contain an entry for this file.
     assert len(lint_cache) == 1
     entry = next(iter(lint_cache.values()))
     assert entry["result"] == "lint error text"
+    assert entry["severity"] == "error"
 
 
 def test_cache_pass_stored_as_none(tmp_path: Path) -> None:

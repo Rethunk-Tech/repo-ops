@@ -14,7 +14,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from repo_ops_upgrade.actions import _read_lint_level_env, scan_actions
+from repo_ops_upgrade.actions import (
+    _classify_actionlint_severity,
+    _read_lint_level_env,
+    scan_actions,
+)
 
 _CHECKOUT_WF = """\
 name: CI
@@ -124,11 +128,11 @@ def test_lint_level_warn_proceeds_with_bumps(tmp_path: Path) -> None:
         bumps, scanned = scan_actions(repo, apply=True, lint_level="warn")
 
     assert scanned == 1
-    # Must still have the actionlint fail row.
+    # Must still have the actionlint warn row (non-fatal at lint_level=warn).
     lint_rows = [b for b in bumps if b.action == "(actionlint)"]
-    assert lint_rows, "expected actionlint fail row"
-    assert lint_rows[0].status == "fail"
-    # Checkout bump MUST be present (proceeded past lint failure).
+    assert lint_rows, "expected actionlint warn row"
+    assert lint_rows[0].status == "warn"
+    # Checkout bump MUST be present (proceeded past lint finding).
     checkout_rows = [b for b in bumps if b.action == "actions/checkout"]
     assert checkout_rows, "expected pin bump row in warn mode"
 
@@ -245,6 +249,132 @@ def test_lint_level_off_applies_rewrite(tmp_path: Path) -> None:
     # v2.0.0 must have been normalized to bare v2.
     assert "actions/checkout@v2" in text, text
     assert "actions/checkout@v2.0.0" not in text, text
+
+
+# ---------------------------------------------------------------------------
+# Regression: shellcheck :warning: under lint_level=block must be non-fatal
+# ---------------------------------------------------------------------------
+
+# A real actionlint finding line for a shellcheck warning (has a proper header).
+_SC_WARNING_STDERR = (
+    ".github/workflows/ci.yml:26:7: shellcheck reported issue in this script: "
+    "SC2034:warning:7:1: i appears unused. Verify use (or export if used externally) [shellcheck]"
+)
+
+# A native actionlint finding (no "shellcheck reported issue").
+_NATIVE_ERROR_STDERR = (
+    ".github/workflows/ci.yml:10:9: "
+    'property "foo" is not defined in object type {} [expression]'
+)
+
+
+def test_lint_level_block_shellcheck_warning_is_nonfatal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """block: a shellcheck :warning: finding must NOT be fatal; pin bumps proceed."""
+    monkeypatch.setenv("REPO_OPS_NO_LINT_CACHE", "1")
+    repo, wf = _wf_dir(tmp_path)
+
+    def fake_run(cmd: list[str], *a: object, **kw: object) -> MagicMock:
+        if cmd and cmd[0] == "actionlint":
+            return MagicMock(returncode=1, stdout="", stderr=_SC_WARNING_STDERR)
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with (
+        patch(
+            "repo_ops_upgrade.actions.shutil.which",
+            side_effect=lambda n: f"/usr/bin/{n}",
+        ),
+        patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
+        patch(
+            "repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout
+        ),
+    ):
+        bumps, scanned = scan_actions(repo, apply=True, lint_level="block")
+
+    assert scanned == 1
+    # (actionlint) row present but status is warn, NOT fail.
+    lint_rows = [b for b in bumps if b.action == "(actionlint)"]
+    assert lint_rows, "expected actionlint warn row"
+    assert lint_rows[0].status == "warn", (
+        f"shellcheck warning must be non-fatal; got status={lint_rows[0].status!r}"
+    )
+    # Checkout bump present — bumps proceeded.
+    checkout_rows = [b for b in bumps if b.action == "actions/checkout"]
+    assert checkout_rows, "expected checkout pin bump row (bumps must proceed)"
+    # File was rewritten.
+    text = wf.read_text(encoding="utf-8")
+    assert "actions/checkout@v2" in text, text
+    assert "actions/checkout@v2.0.0" not in text, text
+
+
+def test_lint_level_block_native_actionlint_error_is_fatal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """block: a native actionlint finding (non-shellcheck) remains fatal."""
+    monkeypatch.setenv("REPO_OPS_NO_LINT_CACHE", "1")
+    repo, wf = _wf_dir(tmp_path)
+    original = wf.read_text(encoding="utf-8")
+
+    def fake_run(cmd: list[str], *a: object, **kw: object) -> MagicMock:
+        if cmd and cmd[0] == "actionlint":
+            return MagicMock(returncode=1, stdout="", stderr=_NATIVE_ERROR_STDERR)
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with (
+        patch(
+            "repo_ops_upgrade.actions.shutil.which",
+            side_effect=lambda n: f"/usr/bin/{n}",
+        ),
+        patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
+        patch(
+            "repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout
+        ),
+    ):
+        bumps, scanned = scan_actions(repo, apply=True, lint_level="block")
+
+    assert scanned == 1
+    # (actionlint) row is fatal.
+    lint_rows = [b for b in bumps if b.action == "(actionlint)"]
+    assert lint_rows, "expected actionlint fail row"
+    assert lint_rows[0].status == "fail", (
+        f"native actionlint error must be fatal; got status={lint_rows[0].status!r}"
+    )
+    # No checkout bump — block skipped bumps.
+    checkout_rows = [b for b in bumps if b.action == "actions/checkout"]
+    assert checkout_rows == [], "expected no pin bump when native error is fatal"
+    # File unchanged.
+    assert wf.read_text(encoding="utf-8") == original
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _classify_actionlint_severity
+# ---------------------------------------------------------------------------
+
+
+def test_classify_empty_is_error() -> None:
+    assert _classify_actionlint_severity("") == "error"
+    assert _classify_actionlint_severity("   ") == "error"
+
+
+def test_classify_sc_warning_is_warning() -> None:
+    assert _classify_actionlint_severity(_SC_WARNING_STDERR) == "warning"
+
+
+def test_classify_native_actionlint_is_error() -> None:
+    assert _classify_actionlint_severity(_NATIVE_ERROR_STDERR) == "error"
+
+
+def test_classify_shellcheck_error_severity_is_error() -> None:
+    line = (
+        "f.yml:1:1: shellcheck reported issue in this script: "
+        "SC1009:error:1:1: parse error [shellcheck]"
+    )
+    assert _classify_actionlint_severity(line) == "error"
+
+
+def test_classify_timeout_message_is_error() -> None:
+    assert _classify_actionlint_severity("actionlint timed out") == "error"
 
 
 # ---------------------------------------------------------------------------

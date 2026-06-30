@@ -49,6 +49,41 @@ _MAJOR_TAG_RE = re.compile(r"^v(\d+)(?:\.|$)")
 # Full 40-hex SHA or short sha<hex> prefix
 _SHA_RE = re.compile(r"^(?:sha[0-9a-f]+|[0-9a-f]{7,40})$", re.IGNORECASE)
 
+# ---------------------------------------------------------------------------
+# actionlint severity classification (issue #117)
+# ---------------------------------------------------------------------------
+
+# Matches the shellcheck severity token inside an actionlint finding line,
+# e.g. "SC2034:warning:" or "SC1009:error:".
+_SC_SEVERITY_RE = re.compile(r"\bSC\d+:(error|warning|info|style):")
+
+# Matches the leading "file:line:col: " header that every actionlint diagnostic
+# line begins with, e.g. ".github/workflows/ci.yml:26:7: ".
+_FINDING_HEADER_RE = re.compile(r"^.+?:\d+:\d+: ")
+
+
+def _classify_actionlint_severity(output: str) -> str:
+    """Classify a non-zero actionlint result as 'error' or 'warning'.
+
+    Returns 'warning' (non-fatal) ONLY when every recognizable diagnostic is a
+    shellcheck finding of warning/info/style severity.  Native actionlint
+    findings, shellcheck :error: findings, and unrecognized output stay 'error'
+    (fatal).
+    """
+    text = (output or "").strip()
+    if not text:
+        return "error"
+    finding_lines = [ln for ln in text.splitlines() if _FINDING_HEADER_RE.match(ln)]
+    if not finding_lines:
+        return "error"  # unrecognized (e.g. "actionlint timed out") → fatal
+    for ln in finding_lines:
+        if "shellcheck reported issue" not in ln:
+            return "error"  # native actionlint finding → fatal
+        m = _SC_SEVERITY_RE.search(ln)
+        if not m or m.group(1) == "error":
+            return "error"  # shellcheck error or unparseable severity → fatal
+    return "warning"
+
 TagStyle = Literal["major", "exact"]
 
 # How the Actions upgrader treats a pin whose major is behind the newest upstream
@@ -678,8 +713,12 @@ def _run_actionlint(
     repo: Path,
     *,
     lint_cache: dict[str, dict] | None = None,
-) -> str | None:
-    """Return a lint error string, or None when lint passes or is unavailable.
+) -> tuple[str, str] | None:
+    """Return ``(message, severity)`` on a finding, or None when lint passes/unavailable.
+
+    *severity* is ``"error"`` (fatal) or ``"warning"`` (non-fatal shellcheck-only
+    finding).  See :func:`_classify_actionlint_severity` for the classification
+    logic.
 
     When *lint_cache* is provided (and ``REPO_OPS_NO_LINT_CACHE`` is unset),
     the result is looked up by content-hash before invoking the subprocess and
@@ -708,28 +747,36 @@ def _run_actionlint(
             # Update touch timestamp and return cached verdict.
             entry["ts"] = time.time()
             raw = entry.get("result")
-            return raw if isinstance(raw, str) else None
+            if isinstance(raw, str) and raw:
+                # Default "error" for old cache entries missing the severity key.
+                return (raw, entry.get("severity") or "error")
+            return None
 
     # Cache miss (or cache disabled) — run the subprocess.
     try:
         proc = run(["actionlint", str(wf)], repo, timeout=60)
     except subprocess.TimeoutExpired:
-        return "actionlint timed out"
+        return ("actionlint timed out", "error")
 
+    result_msg: str | None
+    severity: str | None
     if proc.returncode != 0:
-        result: str | None = (
-            proc.stderr.strip() or proc.stdout.strip() or "actionlint failed"
-        )
+        result_msg = proc.stderr.strip() or proc.stdout.strip() or "actionlint failed"
+        severity = _classify_actionlint_severity(result_msg)
     else:
-        result = None
+        result_msg = None
+        severity = None
 
     if use_cache and cache_key is not None and lint_cache is not None:
         lint_cache[cache_key] = {
-            "result": result,
+            "result": result_msg,
+            "severity": severity,
             "ts": time.time(),
         }
 
-    return result
+    if result_msg is not None and severity is not None:
+        return (result_msg, severity)
+    return None
 
 
 def scan_actions(
@@ -836,33 +883,41 @@ def scan_actions(
 
     for wf in workflows:
         rel = str(wf.relative_to(repo))
-        lint_err = (
+        lint_res = (
             None
             if effective_lint_level == "off"
             else _run_actionlint(wf, repo, lint_cache=_lint_cache)
         )
-        if lint_err:
+        if lint_res:
+            lint_msg, lint_sev = lint_res
+            fatal = (lint_sev == "error") and (effective_lint_level == "block")
             bumps.append(
                 ActionBump(
                     workflow=rel,
                     action="(actionlint)",
                     pin="",
                     latest="",
-                    status="fail",
-                    detail=lint_err,
+                    status="fail" if fatal else "warn",
+                    detail=lint_msg,
                 )
             )
-            if effective_lint_level == "block":
+            if fatal:
                 print(
-                    f"WARN: {rel}: actionlint failed; pin bumps skipped for this workflow",
+                    f"WARN: {rel}: actionlint reported errors; pin bumps skipped for this workflow",
                     file=sys.stderr,
                 )
                 continue
-            # warn: record fail row above, print WARN, but proceed with pin bumps.
-            print(
-                f"WARN: {rel}: actionlint failed (lint_level=warn); proceeding with pin bumps",
-                file=sys.stderr,
-            )
+            # Non-fatal: warning-class finding, or lint_level=warn. Record warn row, proceed.
+            if effective_lint_level == "warn":
+                print(
+                    f"WARN: {rel}: actionlint findings (lint_level=warn); proceeding with pin bumps",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"WARN: {rel}: actionlint reported warnings only; proceeding with pin bumps",
+                    file=sys.stderr,
+                )
         try:
             pins = parse_workflow_uses(wf, workflow_rel=rel)
         except WorkflowParseError as exc:
