@@ -182,6 +182,25 @@ def test_iter_scanned_dirs_skips_node_modules(tmp_path: Path):
     assert not any("node_modules" in str(p) for p in dirs)
 
 
+def test_iter_scanned_dirs_skips_wailsjs(tmp_path: Path) -> None:
+    """Regression: generated Wails wailsjs/ binding dirs must be pruned by the walker."""
+    from repo_ops_core.constants import SKIP_DIRS
+
+    assert "wailsjs" in SKIP_DIRS, "wailsjs must be in SKIP_DIRS"
+    root = tmp_path / "myapp"
+    # Simulate a Wails app layout: root package.json + generated wailsjs/runtime/package.json
+    (root / "wailsjs" / "runtime").mkdir(parents=True)
+    (root / "wailsjs" / "runtime" / "package.json").write_text(
+        '{"name":"@wailsapp/runtime"}', encoding="utf-8"
+    )
+    (root / "package.json").write_text('{"name":"myapp"}', encoding="utf-8")
+    dirs = [mdir for mdir, _ in iter_scanned_dirs(root)]
+    assert root in dirs, "root must be yielded"
+    assert not any("wailsjs" in str(p) for p in dirs), (
+        f"wailsjs/ must be pruned; dirs={dirs}"
+    )
+
+
 def test_discover_node_workspace_member_not_recorded_as_skip(tmp_path: Path):
     """Regression for #49: a yarn/npm workspace member (no own lockfile, no
     packageManager field) must be silently suppressed, NOT recorded as a skip."""

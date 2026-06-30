@@ -25,6 +25,7 @@ SKIP_DIRS = {
     ".nuxt",
     ".svelte-kit",
     ".worktrees",
+    "wailsjs",
 }
 
 EXCLUDE_PATH_FRAGMENTS = (
