@@ -234,7 +234,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -519,7 +519,7 @@ wheels = [
 
 [[package]]
 name = "repo-ops"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops" }
 dependencies = [
     { name = "repo-ops-audit" },
@@ -574,7 +574,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-audit"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-audit" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -591,7 +591,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-container"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-container" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -608,12 +608,12 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-core"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-core" }
 
 [[package]]
 name = "repo-ops-dependabot"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-dependabot" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -628,7 +628,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-go"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-go" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -645,7 +645,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-inventory"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-inventory" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -660,7 +660,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-js"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-js" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -677,7 +677,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-js-bun"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-js-bun" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -696,7 +696,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-js-npm"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-js-npm" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -713,7 +713,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-js-pnpm"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-js-pnpm" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -730,7 +730,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-js-yarn"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-js-yarn" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -751,7 +751,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-lockfiles"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-lockfiles" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -774,12 +774,12 @@ dev = [{ name = "pytest", specifier = ">=8" }]
 
 [[package]]
 name = "repo-ops-models"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-models" }
 
 [[package]]
 name = "repo-ops-pushed"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-pushed" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -790,7 +790,7 @@ requires-dist = [{ name = "repo-ops-core", editable = "packages/repo-ops-core" }
 
 [[package]]
 name = "repo-ops-py"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-py" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -807,7 +807,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-py-hatch"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-py-hatch" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -826,7 +826,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-py-pip-tools"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-py-pip-tools" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -845,7 +845,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-py-poetry"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-py-poetry" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -862,7 +862,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-py-uv"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-py-uv" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -879,7 +879,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-rust"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-rust" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -896,7 +896,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-upgrade"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-upgrade" }
 dependencies = [
     { name = "repo-ops-container" },
@@ -940,7 +940,7 @@ provides-extras = ["commit-agent-cursor", "agent"]
 
 [[package]]
 name = "repo-ops-upgrade-remediations-core"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-upgrade-remediations-core" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -955,7 +955,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-upgrade-remediations-go"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-upgrade-remediations-go" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -972,7 +972,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-upgrade-remediations-js"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-upgrade-remediations-js" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -995,7 +995,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-upgrade-remediations-py"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-upgrade-remediations-py" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -1012,7 +1012,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-upgrade-remediations-rust"
-version = "0.17.1"
+version = "0.17.2"
 source = { editable = "packages/repo-ops-upgrade-remediations-rust" }
 dependencies = [
     { name = "repo-ops-core" },
@@ -1029,7 +1029,7 @@ requires-dist = [
 
 [[package]]
 name = "repo-ops-workspace"
-version = "0.17.1"
+version = "0.17.2"
 source = { virtual = "." }
 
 [package.dev-dependencies]
