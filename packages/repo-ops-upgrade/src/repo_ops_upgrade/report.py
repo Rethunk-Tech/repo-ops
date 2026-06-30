@@ -561,12 +561,16 @@ def print_run_footer(
             print(f"  ... and {remaining} more")
 
     if discovery_skips:
+        # Informational only — these manifests carry nothing to upgrade (no
+        # lockfile / no package manager / outside a git repo). They are NOT
+        # failures or warnings; keep them visually distinct from the Failures
+        # block above so a clean run never reads as if it had problems.
         print()
-        print("Discovery skips (manifest found but not actionable):")
+        print("Skipped (not actionable — informational, no action needed):")
         shown_skips = discovery_skips[: max(0, max_failures)]
         for entry in shown_skips:
             eco = entry.get("ecosystem", "?")
-            print(f"  [{eco}] {entry.get('path', '')}: {entry.get('reason', '')}")
+            print(f"  [{eco}] {entry.get('path', '')} — {entry.get('reason', '')}")
         remaining_skips = len(discovery_skips) - len(shown_skips)
         if remaining_skips > 0:
             print(f"  ... and {remaining_skips} more")
