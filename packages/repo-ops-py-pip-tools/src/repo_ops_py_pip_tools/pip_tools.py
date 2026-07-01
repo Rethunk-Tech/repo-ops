@@ -23,6 +23,7 @@ def check_pip_tools(ws: Workspace) -> list[Change]:
             req_txt.read_text(encoding="utf-8", errors="replace")
         )
     proposed: dict[str, str] = {}
+    uv_failed = False
     if shutil.which("uv"):
         proc = run(
             ["uv", "pip", "compile", str(req_in), "-o", "-", "--upgrade", "--quiet"],
@@ -31,6 +32,11 @@ def check_pip_tools(ws: Workspace) -> list[Change]:
         )
         if proc.returncode == 0 and proc.stdout.strip():
             proposed = parse_requirements_lines(proc.stdout)
+        elif proc.returncode != 0:
+            uv_failed = True
+            print(
+                f"WARN uv pip compile failed: {proc.stderr.strip()}", file=sys.stderr
+            )
     if not proposed and shutil.which("pip-compile"):
         proc = run(
             [
@@ -56,6 +62,8 @@ def check_pip_tools(ws: Workspace) -> list[Change]:
         elif proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "pip-compile failed")
     if not proposed:
+        if uv_failed and not shutil.which("pip-compile"):
+            raise RuntimeError("pip-compile not on PATH and uv pip compile failed")
         return []
     changes: list[Change] = []
     for pkg in sorted(set(current) | set(proposed)):
