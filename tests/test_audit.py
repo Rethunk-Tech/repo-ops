@@ -185,6 +185,15 @@ def test_cvss_to_score_missing_vector_returns_moderate() -> None:
     assert _cvss_to_score("") == 5.0
 
 
+def test_cvss_to_score_confidentiality_only_lands_in_high_bucket() -> None:
+    """#142: a C/I/A-only average previously scored this vector ~3.3 (moderate),
+    letting a real High-severity vuln pass ``--fail-on high``. Its actual CVSS
+    v3.1 base score (full AV/AC/PR/UI/Scope + impact vector) is ~7.5 (high)."""
+    score = _cvss_to_score("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N")
+    assert score == 7.5
+    assert score >= 7.0  # high bucket per _audit_rust's thresholds
+
+
 # ---------------------------------------------------------------------------
 # govulncheck: unknown bucket
 # ---------------------------------------------------------------------------

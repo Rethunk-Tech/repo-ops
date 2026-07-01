@@ -968,25 +968,78 @@ def _audit_rust(ws: str) -> WorkspaceResult:
     )
 
 
-def _cvss_to_score(cvss_vector: str) -> float:
-    """Approximate CVSS base score from vector string.
+# CVSS v3.x base-score metric weights (see the official CVSS v3.1 specification,
+# section 7.4 / Annex A). ``PR`` (Privileges Required) has two weight tables
+# depending on Scope (Unchanged vs Changed).
+_CVSS_AV = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2}
+_CVSS_AC = {"L": 0.77, "H": 0.44}
+_CVSS_PR_SCOPE_UNCHANGED = {"N": 0.85, "L": 0.62, "H": 0.27}
+_CVSS_PR_SCOPE_CHANGED = {"N": 0.85, "L": 0.68, "H": 0.5}
+_CVSS_UI = {"N": 0.85, "R": 0.62}
+_CVSS_CIA = {"N": 0.0, "L": 0.22, "H": 0.56}
 
-    cargo audit embeds the CVSS v3 vector; extract the numeric score from the
-    ``CVSS:3.x/AV:...`` prefix if present, else return 5.0 (moderate bucket).
+_CVSS_VECTOR_RE = re.compile(
+    r"AV:([NALP]).*?AC:([LH]).*?PR:([NLH]).*?UI:([NR]).*?S:([UC]).*?"
+    r"C:([NLH]).*?I:([NLH]).*?A:([NLH])"
+)
+
+
+def _cvss_roundup(value: float) -> float:
+    """CVSS spec ``Roundup()``: round UP to the nearest 0.1 (not nearest)."""
+    int_input = round(value * 100000)
+    if int_input % 10000 == 0:
+        return int_input / 100000.0
+    return (int_input // 10000 + 1) / 10.0
+
+
+def _cvss_to_score(cvss_vector: str) -> float:
+    """Compute the CVSS v3.x base score from a full vector string.
+
+    cargo-audit embeds the advisory's CVSS vector (e.g.
+    ``CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N``) in its JSON output but
+    does not emit a precomputed numeric base score, so it is derived here per
+    the official CVSS v3.1 base-score formula using the FULL
+    exploitability + impact vector (AV/AC/PR/UI/Scope + C/I/A) — not just an
+    average of the Confidentiality/Integrity/Availability impact letters.
+
+    A C/I/A-only average previously under-scored network-exploitable,
+    no-privilege, no-interaction vulnerabilities: e.g.
+    ``C:H/I:N/A:N`` with ``AV:N/AC:L/PR:N/UI:N/S:U`` computed to ~3.3
+    (moderate bucket) under the old approximation, when its real CVSS v3.1
+    base score is ~7.5 (high) — allowing a real High-severity vuln to pass
+    ``--fail-on high`` undetected (repo-ops#142).
+
+    Returns ``5.0`` (moderate bucket) when the vector is missing or cannot be
+    parsed.
     """
-    # cargo audit --json includes "cvss" as e.g. "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
-    # The actual base score is NOT embedded in the vector — we parse severity from
-    # the Confidentiality/Integrity/Availability impacts to approximate.
-    impact_map = {"N": 0.0, "L": 0.22, "H": 0.56}
-    m = re.search(r"C:([NLH])/I:([NLH])/A:([NLH])", cvss_vector)
+    m = _CVSS_VECTOR_RE.search(cvss_vector)
     if not m:
         return 5.0  # moderate
-    c_val = impact_map.get(m.group(1), 0.0)
-    i_val = impact_map.get(m.group(2), 0.0)
-    a_val = impact_map.get(m.group(3), 0.0)
-    # Approximate: high triple-H → ~9.8; partial → proportional estimate
-    approx = (c_val + i_val + a_val) / (3 * 0.56) * 10.0
-    return round(approx, 1)
+    av, ac, pr, ui, scope, c, i, a = m.groups()
+    scope_changed = scope == "C"
+    av_val = _CVSS_AV.get(av, 0.0)
+    ac_val = _CVSS_AC.get(ac, 0.0)
+    pr_val = (_CVSS_PR_SCOPE_CHANGED if scope_changed else _CVSS_PR_SCOPE_UNCHANGED).get(
+        pr, 0.0
+    )
+    ui_val = _CVSS_UI.get(ui, 0.0)
+    c_val = _CVSS_CIA.get(c, 0.0)
+    i_val = _CVSS_CIA.get(i, 0.0)
+    a_val = _CVSS_CIA.get(a, 0.0)
+
+    iss = 1.0 - (1.0 - c_val) * (1.0 - i_val) * (1.0 - a_val)
+    exploitability = 8.22 * av_val * ac_val * pr_val * ui_val
+    if scope_changed:
+        impact = 7.52 * (iss - 0.029) - 3.25 * (iss - 0.02) ** 15
+    else:
+        impact = 6.42 * iss
+    if impact <= 0:
+        return 0.0
+    if scope_changed:
+        base = _cvss_roundup(min(1.08 * (impact + exploitability), 10.0))
+    else:
+        base = _cvss_roundup(min(impact + exploitability, 10.0))
+    return round(base, 1)
 
 
 # ---------------------------------------------------------------------------
