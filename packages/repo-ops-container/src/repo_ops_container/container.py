@@ -691,7 +691,12 @@ def _fetch_tags(image: str) -> list[str] | None:
             if isinstance(tags, list):
                 return [str(t) for t in tags]
             return None
-    except (urllib.error.URLError, OSError, json.JSONDecodeError, Exception):
+    except Exception:
+        # Bare catch-all is intentional (matches this function's "returns None
+        # on any error" contract): URLError/OSError/JSONDecodeError are all
+        # subclasses of Exception and would never be reached ahead of it, but
+        # non-dict JSON bodies (AttributeError on .get) and malformed URLs
+        # (ValueError) are not covered by those three alone.
         return None
 
 

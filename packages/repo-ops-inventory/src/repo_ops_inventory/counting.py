@@ -1,7 +1,7 @@
 """Pure parsing and counting helpers for dependency counting.
 
 Extracted from dep_count.py to remove duplication and enable testing.
-Uses shared repo_ops.constants, filesystem, process.
+Uses shared repo_ops_core.constants, filesystem, process.
 """
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ def _go_cache_path() -> Path:
     base = os.environ.get("XDG_CACHE_HOME") or os.path.join(
         os.path.expanduser("~"), ".cache"
     )
-    return Path(base) / "dep_count" / "go-cache.json"
+    return Path(base) / "repo-ops" / "go-cache.json"
 
 
 def _go_cache_key(mod: Path) -> str:
@@ -398,7 +398,12 @@ def count_container(proj: Path) -> tuple[int, set[str]]:
             _parse_image_refs,
             find_container_files,
         )
-    except ImportError:
+    except (ImportError, AttributeError):
+        # ImportError covers the module/symbol being missing outright.
+        # AttributeError covers a transitive failure while importing
+        # repo_ops_container.container itself (e.g. a renamed symbol it
+        # references internally) -- without it, that would crash this scan
+        # instead of degrading to "container ecosystem unavailable".
         return 0, set()
 
     direct = 0
@@ -451,7 +456,11 @@ def count_actions(proj: Path) -> tuple[int, set[str]]:
             WorkflowParseError,
             parse_workflow_uses,
         )
-    except ImportError:
+    except (ImportError, AttributeError):
+        # AttributeError covers a transitive failure while importing
+        # repo_ops_upgrade.actions/workflow_uses themselves (e.g. a renamed
+        # symbol referenced internally) degrading gracefully instead of
+        # crashing this scan.
         return 0, set()
 
     direct = 0
@@ -483,7 +492,11 @@ def count_precommit(proj: Path) -> tuple[int, set[str]]:
             _PRECOMMIT_CONFIG_NAMES,
             _parse_precommit_repos,
         )
-    except ImportError:
+    except (ImportError, AttributeError):
+        # AttributeError covers a transitive failure while importing
+        # repo_ops_upgrade.precommit itself (e.g. a renamed private symbol
+        # referenced internally) degrading gracefully instead of crashing
+        # this scan.
         return 0, set()
 
     direct = 0

@@ -6,6 +6,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+# Shared marker substring for the dirty-worktree skip error message. Producers
+# that set WorkspaceResult.error for a dirty-skip (e.g. repo_ops_upgrade's
+# orchestration/report modules) should import and use this constant rather
+# than hardcoding the literal, so any_dirty_skip() below stays in sync with
+# the exact wording a future change might make.
+DIRTY_SKIP_MARKER = "dirty git worktree"
+
 
 @dataclass
 class Change:
@@ -102,7 +109,7 @@ class RepoBundle:
 
     def any_dirty_skip(self) -> bool:
         return any(
-            w.status == "skip" and w.error and "dirty git worktree" in w.error
+            w.status == "skip" and w.error and DIRTY_SKIP_MARKER in w.error
             for w in self.workspaces
         )
 
