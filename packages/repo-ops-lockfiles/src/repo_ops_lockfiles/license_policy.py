@@ -4,8 +4,11 @@ Scope (first-cut, best-effort)
 -------------------------------
 - npm: reads package.json under node_modules/** (requires prior npm/yarn/pnpm
   install; no network calls).
-- Python: reads pyproject.toml or setup.cfg in the repo's own packages
-  (direct manifest metadata — no venv introspection).
+- Python: reads the ``license`` field of each ``pyproject.toml`` found in the
+  scanned tree — i.e. the repo's own package manifests, not its resolved
+  dependency tree. This does NOT resolve installed/locked third-party
+  dependency licenses (e.g. via a venv or ``uv.lock``); ``setup.cfg`` is not
+  read.
 - All other ecosystems: reported as UNKNOWN.
 
 Limitations are documented in the output when unknown licenses are found.
@@ -110,7 +113,8 @@ def scan_npm_licenses(root: Path) -> list[PackageLicense]:
 
 
 # ---------------------------------------------------------------------------
-# Python: scan pyproject.toml / setup.cfg for declared license
+# Python: scan pyproject.toml for declared license (manifest-only; does not
+# resolve installed/locked dependency licenses)
 # ---------------------------------------------------------------------------
 
 
@@ -291,7 +295,8 @@ exit codes:
 
 scope (best-effort first-cut):
   npm: reads node_modules/**/package.json (requires prior npm/pnpm/yarn install).
-  Python: reads pyproject.toml files in the tree (direct-manifest license field).
+  Python: reads pyproject.toml files in the tree (direct-manifest license
+    field only; does not resolve installed/locked dependency licenses).
   Go / Rust / Deno / container: not yet supported; reported as unknown.
 
 allow/deny list format:
