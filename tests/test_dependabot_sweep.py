@@ -227,6 +227,10 @@ def test_owner_repo_non_github_returns_none() -> None:
     assert _owner_repo("https://gitlab.com/owner/repo.git") is None
 
 
+def test_owner_repo_tolerates_trailing_slash() -> None:
+    assert _owner_repo("https://github.com/owner/repo/") == "owner/repo"
+
+
 # ---------------------------------------------------------------------------
 # Supersession check (with lockfile_resolved)
 # ---------------------------------------------------------------------------
@@ -544,6 +548,56 @@ def test_dependabot_close_calls_gh_pr_close(tmp_path: Path) -> None:
         mock_close.assert_called_once()
         call_args = mock_close.call_args
         assert call_args[0][1] == 42  # pr_number
+
+
+def test_dependabot_close_comment_when_default_branch_unresolved(
+    tmp_path: Path,
+) -> None:
+    """When origin/HEAD can't be resolved, the close comment must not claim 'main'."""
+    fake_repo = str(tmp_path)
+
+    mock_pr_data = [
+        {
+            "number": 42,
+            "title": "Bump lodash from 4.17.11 to 4.17.21",
+            "headRefName": "dependabot/npm/lodash-4.17.21",
+        }
+    ]
+
+    # symbolic-ref resolution fails (e.g. detached / no origin/HEAD ref)
+    mock_git_result = MagicMock(returncode=1, stdout="")
+    with (
+        patch(
+            "repo_ops_dependabot.dependabot.discover_repos",
+            return_value={"c": fake_repo},
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._github_remote",
+            return_value="https://github.com/owner/repo",
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_list_dependabot_prs",
+            return_value=(mock_pr_data, ""),
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._lockfile_resolved",
+            return_value={"lodash": "4.17.21"},
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._lockfile_versions",
+            return_value=set(),
+        ),
+        patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
+        patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_close_pr", return_value=""
+        ) as mock_close,
+    ):
+        main(["--close", fake_repo])
+        mock_close.assert_called_once()
+        comment = mock_close.call_args[0][2]
+        assert "main" not in comment
+        assert "could not resolve default branch" in comment
 
 
 def test_dependabot_low_confidence_never_closed(tmp_path: Path) -> None:
