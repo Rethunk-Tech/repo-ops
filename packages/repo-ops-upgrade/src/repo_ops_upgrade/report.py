@@ -12,14 +12,13 @@ from typing import Any, Literal
 
 from repo_ops_core.state import cache_get_dirty_skip
 from repo_ops_core.table import column_width, format_cell
-from repo_ops_models import RepoBundle, WorkspaceResult
+from repo_ops_models import DIRTY_SKIP_MARKER, RepoBundle, WorkspaceResult
 
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 
 UpgradeMode = Literal["plan", "apply"]
 
 DEFAULT_MAX_FAILURE_LINES = 20
-_DIRTY_SKIP_MARKER = "dirty git worktree"
 
 # Per-manager remediation advice for packages reported behind latest.
 # bun/pnpm/yarn honour --latest (which sets their per-ecosystem env var);
@@ -115,7 +114,7 @@ def build_run_summary(
                 workspaces_fail += 1
             elif wr.status == "skip":
                 workspaces_skip += 1
-                if wr.error and _DIRTY_SKIP_MARKER in wr.error:
+                if wr.error and DIRTY_SKIP_MARKER in wr.error:
                     dirty_skips += 1
             if wr.verify_error:
                 verify_failures += 1
@@ -177,7 +176,7 @@ def _enrich_repo_json_with_aging(
     """Add dirty-skip aging fields to workspace entries that were dirty-skipped."""
     ws_list = repo_json.get("workspaces", [])
     for ws_json, wr in zip(ws_list, bundle.workspaces, strict=False):
-        if wr.status == "skip" and wr.error and _DIRTY_SKIP_MARKER in wr.error:
+        if wr.status == "skip" and wr.error and DIRTY_SKIP_MARKER in wr.error:
             entry = cache_get_dirty_skip(wr.workspace.git_repo)
             if entry:
                 ws_json["dirty_since"] = entry["first_seen"]
@@ -334,7 +333,7 @@ def print_human_report(
             print(f"  [{status}] {rel} ({ws.ecosystem}/{ws.manager}) — {n} upgrade(s)")
             if wr.error:
                 error_line = wr.error
-                if _DIRTY_SKIP_MARKER in error_line:
+                if DIRTY_SKIP_MARKER in error_line:
                     entry = cache_get_dirty_skip(ws.git_repo)
                     if entry:
                         error_line = (

@@ -1,6 +1,7 @@
 """Shared upgrade/inventory data models."""
 
 from repo_ops_models.models import (
+    DIRTY_SKIP_MARKER,
     ActionBump,
     Change,
     RepoBundle,
@@ -9,6 +10,7 @@ from repo_ops_models.models import (
 )
 
 __all__ = [
+    "DIRTY_SKIP_MARKER",
     "ActionBump",
     "Change",
     "RepoBundle",

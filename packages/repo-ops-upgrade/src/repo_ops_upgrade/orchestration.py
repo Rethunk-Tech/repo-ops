@@ -24,7 +24,7 @@ from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
     snapshot_workspace_files,
 )
-from repo_ops_models import Workspace, WorkspaceResult
+from repo_ops_models import DIRTY_SKIP_MARKER, Workspace, WorkspaceResult
 from repo_ops_upgrade_remediations_core.remediations import (
     dispatch as _dispatch_remediations,
 )
@@ -144,7 +144,7 @@ def _process_workspace_body(
         result.started_dirty = is_git_dirty(ws.git_repo)
         if result.started_dirty and not allow_dirty:
             result.status = "skip"
-            result.error = "dirty git worktree (use --allow-dirty)"
+            result.error = f"{DIRTY_SKIP_MARKER} (use --allow-dirty)"
             cache_record_dirty_skip(ws.git_repo, date.today())
             return result
         # Repo processed cleanly — clear any stale dirty-skip entry.
