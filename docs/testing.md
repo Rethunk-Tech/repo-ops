@@ -10,7 +10,7 @@ uv run python scripts/check_import_boundaries.py
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy packages/repo-ops-core/src packages/repo-ops-models/src packages/repo-ops-lockfiles/src packages/repo-ops-js/src packages/repo-ops-js-npm/src packages/repo-ops-js-pnpm/src packages/repo-ops-js-bun/src packages/repo-ops-js-yarn/src packages/repo-ops-go/src packages/repo-ops-rust/src packages/repo-ops-py/src packages/repo-ops-py-uv/src packages/repo-ops-py-poetry/src packages/repo-ops-py-pip-tools/src packages/repo-ops-py-hatch/src packages/repo-ops-upgrade/src packages/repo-ops-upgrade-remediations-js/src packages/repo-ops-inventory/src packages/repo-ops-pushed/src packages/repo-ops/src
-uv run pytest -q --cov --cov-report=term-missing --cov-fail-under=63
+uv run pytest -q --cov --cov-report=term-missing --cov-fail-under=68
 uv build packages/repo-ops
 ```
 
@@ -18,7 +18,7 @@ Tests: `tests/`; config in root `pyproject.toml`. CI runs the same checks on Pyt
 
 ## Coverage floor
 
-Current ratchet: **63 %** (measured at 67.98 %; floor = floor(actual) − 5). Update `[tool.coverage.report] fail_under` in `pyproject.toml` and `--cov-fail-under` in `.github/workflows/ci.yml` together whenever the floor is raised.
+Current ratchet: **68 %** (raised from 63 % in v0.17.2; floor = floor(actual) − 5 at time of raise). Update `[tool.coverage.report] fail_under` in `pyproject.toml` and `--cov-fail-under` in `.github/workflows/ci.yml` together whenever the floor is raised.
 
 ## Test markers
 

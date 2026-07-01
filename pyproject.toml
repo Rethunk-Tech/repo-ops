@@ -193,9 +193,6 @@ source = [
 branch = true
 
 # Strict-annotation overrides: packages confirmed clean under disallow_untyped_defs.
-# TODO(ratchet): no remaining easy packages; all below are strict.
-#   Deferred (heavy annotation work or complex dynamic patterns):
-#   — none outstanding (all packages now strict)
 [[tool.mypy.overrides]]
 module = ["repo_ops_models.*"]
 disallow_untyped_defs = true
