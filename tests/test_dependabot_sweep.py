@@ -605,6 +605,28 @@ def test_dependabot_skips_non_github_repos(tmp_path: Path) -> None:
         mock_list.assert_not_called()
 
 
+def test_dependabot_main_returns_1_when_gh_unavailable(tmp_path: Path) -> None:
+    """main() must return 1 (not 0) on an unexpected error, e.g. gh missing."""
+    fake_repo = str(tmp_path)
+
+    with (
+        patch(
+            "repo_ops_dependabot.dependabot.discover_repos",
+            return_value={"c": fake_repo},
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._github_remote",
+            return_value="https://github.com/owner/repo",
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot.shutil.which",
+            side_effect=FileNotFoundError("gh"),
+        ),
+    ):
+        rc = main([fake_repo])
+    assert rc == 1
+
+
 def test_dependabot_security_pr_is_flagged(tmp_path: Path) -> None:
     """[Security] PRs have is_security=True in the result."""
     fake_repo = str(tmp_path)

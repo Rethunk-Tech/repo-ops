@@ -1128,21 +1128,37 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     wire_verbose(args)
 
-    roots = resolve_scan_roots(list(args.roots), parser)
-    follow_symlinks = bool(getattr(args, "follow_symlinks", False))
+    scaffold = bool(getattr(args, "scaffold", False))
+    write_flag = bool(getattr(args, "write", False))
+    json_flag = bool(getattr(args, "json_out", False))
+    close_flag = bool(getattr(args, "close", False))
 
-    # Scaffold mode: detect ecosystems and generate dependabot.yml
-    if getattr(args, "scaffold", False):
-        return scaffold_repos(
-            roots,
-            follow_symlinks=follow_symlinks,
-            do_write=bool(getattr(args, "write", False)),
-            schedule=str(getattr(args, "schedule", "weekly")),
-        )
+    if write_flag and not scaffold:
+        parser.error("--write requires --scaffold")
+    if scaffold and json_flag:
+        parser.error("--json is not supported with --scaffold")
+    if scaffold and close_flag:
+        parser.error("--close is not supported with --scaffold (PR-scan mode only)")
 
-    do_close = bool(args.close)
+    try:
+        roots = resolve_scan_roots(list(args.roots), parser)
+        follow_symlinks = bool(getattr(args, "follow_symlinks", False))
 
-    results = scan_repos(roots, follow_symlinks=follow_symlinks, do_close=do_close)
+        # Scaffold mode: detect ecosystems and generate dependabot.yml
+        if scaffold:
+            return scaffold_repos(
+                roots,
+                follow_symlinks=follow_symlinks,
+                do_write=write_flag,
+                schedule=str(getattr(args, "schedule", "weekly")),
+            )
+
+        do_close = close_flag
+
+        results = scan_repos(roots, follow_symlinks=follow_symlinks, do_close=do_close)
+    except Exception as exc:  # noqa: BLE001 - unexpected error contract (exit 1)
+        print(f"repo-ops dependabot: unexpected error: {exc}", file=sys.stderr)
+        return 1
 
     if args.json_out:
         payload: dict[str, object] = {
