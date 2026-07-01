@@ -424,6 +424,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.since is not None and args.until is not None:
         # Both provided: explicit window; --hours is ignored
+        if args.hours is not None:
+            print(
+                "WARNING: --hours is ignored because --since and --until "
+                "are both provided",
+                file=sys.stderr,
+            )
         since_dt = args.since
         until_dt = args.until
     elif args.since is not None:

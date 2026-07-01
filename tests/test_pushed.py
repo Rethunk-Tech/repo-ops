@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,12 +11,17 @@ import pytest
 from repo_ops_core.cli import parse_iso8601
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.git import git_common_dir, repo_label
+from repo_ops_pushed import audit
 from repo_ops_pushed.audit import (
     PUSH_RE,
     Filters,
+    RepoResult,
     _reflog_pre_sha,
     collect_results,
+    main,
+    print_report,
     pushed_commits_for_repo,
+    resolve_subjects,
 )
 
 
@@ -387,3 +393,191 @@ def test_git_common_dir_monkeypatch(monkeypatch):
     result = git_common_dir("/some/repo")
     assert result == "/real/common"
     assert len(calls) == 1
+
+
+# ── resolve_subjects ─────────────────────────────────────────────────────────
+
+
+def test_resolve_subjects_truncates_and_handles_timeout(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Covers the happy path, the >100-char truncation, and the
+    subprocess.TimeoutExpired catch (~232-236) in one pass."""
+    sha_ok = "a" * 40
+    sha_long = "b" * 40
+    sha_timeout = "c" * 40
+    repo = RepoResult(
+        label="r1",
+        path="/fake/repo1",
+        commits={sha_ok: None, sha_long: None, sha_timeout: None},
+    )
+    long_subject = "x" * 150
+
+    def fake_run_git(repo_path, *args, **kwargs):
+        class Fake:
+            returncode = 0
+            stdout = ""
+
+        sha = args[-1]
+        if sha == sha_ok:
+            Fake.stdout = "short subject\n"
+        elif sha == sha_long:
+            Fake.stdout = long_subject + "\n"
+        elif sha == sha_timeout:
+            raise subprocess.TimeoutExpired(cmd=["git", "log"], timeout=10)
+        return Fake()
+
+    monkeypatch.setattr(audit, "run_git", fake_run_git)
+    result = resolve_subjects([repo])
+
+    subs = result["/fake/repo1"]
+    assert subs[sha_ok] == "short subject"
+    assert subs[sha_long] == "x" * 100 + "…"
+    assert subs[sha_timeout] == ""
+    assert f"WARN: skipped /fake/repo1 (log {sha_timeout[:8]}): timeout" in (
+        capsys.readouterr().err
+    )
+
+
+# ── print_report ─────────────────────────────────────────────────────────────
+
+
+def test_print_report_no_pushes(capsys: pytest.CaptureFixture[str]) -> None:
+    print_report({}, [], "24 hours", ["/root"], top_n=10)
+    assert "No pushes recorded in the window." in capsys.readouterr().out
+
+
+def test_print_report_overflow_shas_and_messages(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """3 repos with top_n=2 exercises the '(N other repos)' overflow row, plus
+    --show-shas/--show-messages per-commit dump (with and without a subject)."""
+    repos = [
+        RepoResult(label=f"r{i}", path=f"/fake/r{i}", commits={f"{i:040x}": None})
+        for i in range(3)
+    ]
+    all_commits: dict[str, None] = {}
+    for r in repos:
+        all_commits.update(r.commits)
+
+    monkeypatch.setattr(
+        audit,
+        "resolve_subjects",
+        lambda per_repo: {
+            r.path: {sha: f"subject-{r.label}" for sha in r.commits} for r in per_repo
+        },
+    )
+
+    print_report(
+        all_commits,
+        repos,
+        "24 hours",
+        ["/root"],
+        top_n=2,
+        show_shas=True,
+        show_messages=True,
+    )
+    out = capsys.readouterr().out
+    # Overflow row for the 1 repo beyond top_n=2 (label column is narrow so the
+    # "(1 other repos)" text is truncated — just assert the overflow count shows).
+    assert "(1" in out
+    assert "Total unique commits pushed: 3" in out
+    # Every repo (not just the top-N shown in the table) gets its commits dumped.
+    assert "subject-r0" in out
+    assert "subject-r2" in out
+
+
+# ── main() — window resolution, --json-out, --count-only ───────────────────
+
+
+def test_main_window_resolution_and_hours_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(audit, "collect_results", lambda *a, **kw: ({}, []))
+    root = str(tmp_path)
+
+    # Neither --since/--until: rolling --hours window, no warning.
+    assert main([root, "--hours", "2"]) == 0
+    captured = capsys.readouterr()
+    assert "2 hours" in captured.out
+    assert "WARNING" not in captured.err
+
+    # --since only + --hours: existing warning ("without --until").
+    assert main([root, "--since", "2026-01-01T00:00Z", "--hours", "3"]) == 0
+    err = capsys.readouterr().err
+    assert (
+        "WARNING: --hours is ignored because --since is provided without --until"
+        in err
+    )
+
+    # --until only: window = [now - hours, until); --hours legitimately used, no warning.
+    assert main([root, "--until", "2099-01-01T00:00Z", "--hours", "5"]) == 0
+    assert "WARNING" not in capsys.readouterr().err
+
+    # --since + --until + --hours: --hours silently dropped previously; now warns (the fix).
+    assert (
+        main(
+            [
+                root,
+                "--since",
+                "2026-01-01T00:00Z",
+                "--until",
+                "2026-02-01T00:00Z",
+                "--hours",
+                "4",
+            ]
+        )
+        == 0
+    )
+    err = capsys.readouterr().err
+    assert (
+        "WARNING: --hours is ignored because --since and --until are both provided"
+        in err
+    )
+
+
+def test_main_json_out_requires_json_flag(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        main([str(tmp_path), "--json-out", str(tmp_path / "out.json")])
+
+
+def test_main_count_only_prints_total(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        audit, "collect_results", lambda *a, **kw: ({"a": None, "b": None}, [])
+    )
+    assert main([str(tmp_path), "--count-only"]) == 0
+    assert capsys.readouterr().out.strip() == "2"
+
+
+def test_main_json_out_writes_report_with_messages(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import json
+
+    repo = RepoResult(label="repo1", path="/fake/repo1", commits={"d" * 40: None})
+    monkeypatch.setattr(
+        audit, "collect_results", lambda *a, **kw: ({"d" * 40: None}, [repo])
+    )
+    monkeypatch.setattr(
+        audit,
+        "resolve_subjects",
+        lambda per_repo: {"/fake/repo1": {"d" * 40: "fix: something"}},
+    )
+
+    out_file = tmp_path / "report.json"
+    rc = main(
+        [
+            str(tmp_path),
+            "--json",
+            "--show-messages",
+            "--json-out",
+            str(out_file),
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(out_file.read_text())
+    assert payload["total"] == 1
+    assert payload["repos"][0]["commits_detail"][0]["subject"] == "fix: something"
+    assert capsys.readouterr().out.strip() == str(out_file.resolve())
