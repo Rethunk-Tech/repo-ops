@@ -60,7 +60,7 @@ _SUBCOMMAND_HELP = {
     "apply": "Apply upgrades with verify gates",
     "pushed": "Pushed commits audit",
     "install-skill": "Install Cursor/Claude agent skill for repo-ops",
-    "audit": "Fleet vulnerability sweep (read-only)",
+    "audit": "Fleet vulnerability sweep (read-only unless --fix)",
     "dependabot": "List/close superseded Dependabot PRs (or --scaffold dependabot.yml)",
     "sbom": "Emit CycloneDX/SPDX SBOM from lockfile dependencies (read-only)",
     "license": "Scan dependency licenses and flag policy violations (read-only)",
