@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fleet vulnerability sweep across local git repos.
+"""Fleet vulnerability sweep across local git repos (read-only unless --fix).
 
 Discovers workspaces using the same git-repo discovery machinery as the other
 subcommands, then runs the native auditor for each ecosystem:
@@ -825,7 +825,7 @@ def _probe_pip_audit(ws: str) -> bool:
     if rc != 0:
         return False
     # pip-audit --version outputs something like "pip-audit 2.x.y"
-    return "pip-audit" in (stdout + _stderr).lower() or rc == 0
+    return "pip-audit" in (stdout + _stderr).lower()
 
 
 def _audit_py_uv(ws: str) -> WorkspaceResult:
@@ -1461,12 +1461,19 @@ def build_sarif_report(
 
     The SARIF document validates against the official 2.1.0 schema and is
     suitable for upload to GitHub code-scanning via
-    ``github/codeql-action/upload-sarif``.
+    ``github/codeql-action/upload-sarif``: ``artifactLocation.uri`` is emitted
+    repo-relative (never an absolute host path) with a matching
+    ``run.originalUriBaseIds`` entry for the ``%SRCROOT%`` base, since GitHub
+    code-scanning ingestion resolves ``uriBaseId``-qualified locations against
+    that mapping.
     """
-    # Build a workspace-path → worst-severity index for severity mapping.
-    ws_severity: dict[str, str | None] = {
-        r.path: r.counts.worst for r in results
-    }
+    # Build workspace-path → (worst-severity, repo-relative label) indexes.
+    # ``r.label`` is already computed relative to the scan roots by
+    # ``repo_label`` (see run_audit), so it doubles as a repo-relative URI —
+    # an absolute host path here would not resolve against %SRCROOT% on
+    # GitHub's code-scanning ingestion.
+    ws_severity: dict[str, str | None] = {r.path: r.counts.worst for r in results}
+    ws_label: dict[str, str] = {r.path: r.label for r in results}
 
     rules: list[dict[str, Any]] = []
     sarif_results: list[dict[str, Any]] = []
@@ -1495,6 +1502,11 @@ def build_sarif_report(
 
         severity = ws_severity.get(item.workspace)
         level = _SEV_TO_SARIF_LEVEL.get(severity, "warning")
+        # Repo-relative URI: prefer the pre-computed scan-root-relative label;
+        # fall back to a path stripped of any leading slash so an unmatched
+        # workspace never emits an absolute host path.
+        rel_uri = ws_label.get(item.workspace) or item.workspace.lstrip("/")
+        rel_uri = rel_uri.replace("\\", "/")
         sarif_results.append(
             {
                 "ruleId": rule_id,
@@ -1510,7 +1522,7 @@ def build_sarif_report(
                     {
                         "physicalLocation": {
                             "artifactLocation": {
-                                "uri": item.workspace,
+                                "uri": rel_uri,
                                 "uriBaseId": "%SRCROOT%",
                             }
                         }
@@ -1533,6 +1545,12 @@ def build_sarif_report(
                         "rules": rules,
                     }
                 },
+                # Maps the %SRCROOT% uriBaseId used by every result's
+                # artifactLocation to the checkout root, per SARIF 2.1.0
+                # §3.14. GitHub's code-scanning ingestion substitutes the
+                # actual checkout path for %SRCROOT% at upload time; this
+                # entry keeps the document self-consistent and schema-valid.
+                "originalUriBaseIds": {"%SRCROOT%": {"uri": "file:///"}},
                 "results": sarif_results,
             }
         ],
@@ -1544,7 +1562,7 @@ def build_audit_parser() -> argparse.ArgumentParser:
         prog="repo-ops audit",
         description=(
             "Fleet vulnerability sweep: run the native auditor per ecosystem "
-            "across all discovered workspaces (read-only)."
+            "across all discovered workspaces (read-only unless --fix)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\

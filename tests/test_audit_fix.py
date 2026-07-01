@@ -291,10 +291,14 @@ def test_fix_called_when_flag_passed_and_remediations_exist(
     )
 
     def _mock_run(cmd, cwd):
-        if "pip-audit" in cmd:
-            return 0, pip_audit_out, ""
+        # Check --version FIRST: both the probe (`pip-audit --version`) and the
+        # real audit call (`pip-audit --format json ...`) contain the literal
+        # "pip-audit" list element, so the version probe must be disambiguated
+        # before the broader "pip-audit" membership check.
         if "--version" in cmd:
             return 0, "pip-audit 2.7.0", ""
+        if "pip-audit" in cmd:
+            return 0, pip_audit_out, ""
         return 0, "", ""
 
     mock_outcomes = [ApplyOutcome(workspace="/ws", status="ok", changes_count=1)]
@@ -331,10 +335,14 @@ def test_fix_json_output_includes_apply_outcomes(
     )
 
     def _mock_run(cmd, cwd):
-        if "pip-audit" in cmd:
-            return 0, pip_audit_out, ""
+        # Check --version FIRST: both the probe (`pip-audit --version`) and the
+        # real audit call (`pip-audit --format json ...`) contain the literal
+        # "pip-audit" list element, so the version probe must be disambiguated
+        # before the broader "pip-audit" membership check.
         if "--version" in cmd:
             return 0, "pip-audit 2.7.0", ""
+        if "pip-audit" in cmd:
+            return 0, pip_audit_out, ""
         return 0, "", ""
 
     mock_outcomes = [ApplyOutcome(workspace="/ws", status="ok", changes_count=1)]
