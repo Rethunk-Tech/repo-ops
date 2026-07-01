@@ -973,13 +973,24 @@ def _replace_tag_in_line(line: str, image: str, old_tag: str, new_tag: str) -> s
 
     Replaces only the first occurrence of ``<image>:<old_tag>`` with
     ``<image>:<new_tag>`` in *line*.  Never reflows or reformats the line.
+
+    A match is only accepted at a tag boundary: the character immediately
+    following ``old_tag`` must not continue the tag (digit/letter/``.``/``_``/
+    ``-``), so bumping ``image:1`` never fires on a line containing
+    ``image:1.5``.
     """
     old = f"{image}:{old_tag}"
     new = f"{image}:{new_tag}"
-    # Replace exactly once, at the first occurrence
-    if old in line:
-        return line.replace(old, new, 1)
-    return line
+    start = 0
+    while True:
+        idx = line.find(old, start)
+        if idx == -1:
+            return line
+        end = idx + len(old)
+        if end < len(line) and (line[end].isalnum() or line[end] in "._-"):
+            start = idx + 1
+            continue
+        return line[:idx] + new + line[end:]
 
 
 def _replace_digest_in_line(

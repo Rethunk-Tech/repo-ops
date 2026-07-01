@@ -63,6 +63,20 @@ def test_replace_tag_in_line_comment_untouched() -> None:
     assert "nginx:1.26" in result
 
 
+def test_replace_tag_in_line_no_tag_prefix_collision() -> None:
+    """A bump targeting `image:1` must not fire on a line pinned to `image:1.5`."""
+    line = "FROM nginx:1.5\n"
+    result = _replace_tag_in_line(line, "nginx", "1", "2")
+    assert result == line
+
+
+def test_replace_tag_in_line_skips_collision_then_matches_real_occurrence() -> None:
+    """A later, boundary-correct occurrence of the tag still gets replaced."""
+    line = "FROM nginx:1.5 AS base\nFROM nginx:1 AS final\n"
+    result = _replace_tag_in_line(line, "nginx", "1", "2")
+    assert result == "FROM nginx:1.5 AS base\nFROM nginx:2 AS final\n"
+
+
 # ---------------------------------------------------------------------------
 # apply_container — multi-stage Dockerfile
 # ---------------------------------------------------------------------------
