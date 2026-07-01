@@ -202,6 +202,25 @@ def test_collect_components_empty_dir(tmp_path: Path) -> None:
     assert collect_components(tmp_path) == []
 
 
+def test_collect_components_excludes_cargo_registry(tmp_path: Path) -> None:
+    """Lockfiles under excluded path fragments (e.g. ~/.cargo/registry/) must
+    not be scanned, mirroring discovery.py's should_exclude filtering."""
+    excluded_dir = tmp_path / ".cargo" / "registry" / "src" / "some-crate"
+    excluded_dir.mkdir(parents=True)
+    (excluded_dir / "Cargo.lock").write_text(
+        '[[package]]\nname = "should-not-appear"\nversion = "9.9.9"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "Cargo.lock").write_text(
+        '[[package]]\nname = "serde"\nversion = "1.0.197"\n',
+        encoding="utf-8",
+    )
+    components = collect_components(tmp_path)
+    names = {c["name"] for c in components}
+    assert "serde" in names
+    assert "should-not-appear" not in names
+
+
 # ---------------------------------------------------------------------------
 # SBOM document shape: CycloneDX
 # ---------------------------------------------------------------------------

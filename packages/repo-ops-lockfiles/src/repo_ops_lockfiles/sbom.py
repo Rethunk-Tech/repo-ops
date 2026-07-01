@@ -28,7 +28,7 @@ from repo_ops_core.cli import (
     wire_verbose,
 )
 from repo_ops_core.constants import SKIP_DIRS
-from repo_ops_core.filesystem import read_toml_file
+from repo_ops_core.filesystem import read_toml_file, should_exclude, write_json_atomic
 
 from repo_ops_lockfiles.parsers import (
     versions_bun_lock,
@@ -170,6 +170,9 @@ def collect_components(root: Path) -> list[dict[str, str]]:
     for dirpath_str, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         dp = Path(dirpath_str)
+        if should_exclude(str(dp)):
+            dirnames.clear()
+            continue
         fname_set = set(filenames)
 
         # npm lockfiles (one parser per filename)
@@ -456,16 +459,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         doc = emit_cyclonedx(all_components, root_name, **kwargs)
 
-    indent = None if args.compact else 2
-    text = json.dumps(doc, indent=indent)
-
     output_path: str | None = getattr(args, "output", None)
     if output_path:
-        p = Path(output_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text, encoding="utf-8")
+        write_json_atomic(Path(output_path), doc, compact=args.compact)
     else:
-        print(text)
+        indent = None if args.compact else 2
+        print(json.dumps(doc, indent=indent))
 
     return 0
 
