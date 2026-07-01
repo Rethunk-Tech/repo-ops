@@ -27,18 +27,23 @@ def _resolve_git_timeout() -> float:
 
 
 def run_git(
-    repo: Path | str, *args: str, timeout: float | None = None
+    repo: Path | str,
+    *args: str,
+    timeout: float | None = None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     repo_path = Path(repo)
     if not repo_path.is_dir():
         msg = f"git -C target is not a directory: {repo_path}"
         raise FileNotFoundError(msg)
     effective_timeout = timeout if timeout is not None else _resolve_git_timeout()
+    effective_env = {**os.environ, **env} if env is not None else None
     return subprocess.run(
         ["git", "-C", str(repo_path), *args],
         capture_output=True,
         text=True,
         timeout=effective_timeout,
+        env=effective_env,
     )
 
 

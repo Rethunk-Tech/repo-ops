@@ -309,10 +309,11 @@ def _fetch_remote_tags(url: str, *, timeout: int = _LS_REMOTE_TIMEOUT) -> list[s
 
     try:
         proc = subprocess.run(
-            ["git", "ls-remote", "--tags", "--refs", url],
+            ["git", "ls-remote", "--tags", "--refs", "--", url],
             capture_output=True,
             text=True,
             timeout=timeout,
+            env={**os.environ, "GIT_ALLOW_PROTOCOL": "https:ssh"},
         )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         _SUBMODULE_TAG_CACHE[url] = None
@@ -550,8 +551,10 @@ def apply_submodule_tag_advances(
             fetch_proc = run_git(
                 submod_dir,
                 "fetch",
+                "--",
                 bump.url,
                 f"refs/tags/{bump.latest_tag}:refs/tags/{bump.latest_tag}",
+                env={**os.environ, "GIT_ALLOW_PROTOCOL": "https:ssh"},
                 timeout=120,
             )
         except (FileNotFoundError, OSError):
