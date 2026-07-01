@@ -224,6 +224,21 @@ def test_apply_policy_all_unknown_no_violations() -> None:
     assert len(result.unknown) == 2
 
 
+def test_apply_policy_spdx_or_expression_not_flagged_when_one_branch_clean() -> None:
+    """"GPL-2.0-only OR MIT" satisfies --deny GPL via the MIT branch alone."""
+    pkgs = [_pkg("dual-licensed", "GPL-2.0-only OR MIT")]
+    result = apply_policy(pkgs, deny=["GPL"])
+    assert result.violations == []
+    assert len(result.allowed) == 1
+
+
+def test_apply_policy_spdx_and_expression_flagged_when_any_part_violates() -> None:
+    """"GPL-2.0-only AND MIT" requires both parts, so the GPL part still violates."""
+    pkgs = [_pkg("dual-required", "GPL-2.0-only AND MIT")]
+    result = apply_policy(pkgs, deny=["GPL"])
+    assert len(result.violations) == 1
+
+
 # ---------------------------------------------------------------------------
 # Integration: happy / violation paths end-to-end
 # ---------------------------------------------------------------------------
