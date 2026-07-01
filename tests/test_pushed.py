@@ -464,7 +464,7 @@ def test_print_report_overflow_shas_and_messages(
         audit,
         "resolve_subjects",
         lambda per_repo: {
-            r.path: {sha: f"subject-{r.label}" for sha in r.commits} for r in per_repo
+            r.path: dict.fromkeys(r.commits, f"subject-{r.label}") for r in per_repo
         },
     )
 

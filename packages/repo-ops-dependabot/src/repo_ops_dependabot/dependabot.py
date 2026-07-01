@@ -1160,7 +1160,7 @@ def main(argv: list[str] | None = None) -> int:
         do_close = close_flag
 
         results = scan_repos(roots, follow_symlinks=follow_symlinks, do_close=do_close)
-    except Exception as exc:  # noqa: BLE001 - unexpected error contract (exit 1)
+    except Exception as exc:
         print(f"repo-ops dependabot: unexpected error: {exc}", file=sys.stderr)
         return 1
 

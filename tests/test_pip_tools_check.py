@@ -168,10 +168,9 @@ def test_check_pip_tools_uv_fails_pip_compile_missing_raises(
         patch(
             "repo_ops_py_pip_tools.pip_tools.run",
             return_value=_fake_proc(1, stderr="boom"),
-        ),
+        ),pytest.raises(RuntimeError, match="pip-compile not on PATH")
     ):
-        with pytest.raises(RuntimeError, match="pip-compile not on PATH"):
-            check_pip_tools(_ws(tmp_path))
+        check_pip_tools(_ws(tmp_path))
 
     assert "WARN uv pip compile failed: boom" in capsys.readouterr().err
 
@@ -240,10 +239,9 @@ def test_compile_requirements_uv_fails_pip_compile_missing_raises(
         patch(
             "repo_ops_py_pip_tools.pip_tools.run",
             return_value=_fake_proc(1, stderr="uv broke"),
-        ),
+        ),pytest.raises(RuntimeError, match="pip-compile not on PATH")
     ):
-        with pytest.raises(RuntimeError, match="pip-compile not on PATH"):
-            _compile_requirements(ws, out, req_in)
+        _compile_requirements(ws, out, req_in)
 
     assert "WARN uv pip compile failed: uv broke" in capsys.readouterr().err
 
@@ -281,15 +279,14 @@ def test_compile_requirements_pip_compile_fails_raises(tmp_path: Path) -> None:
         patch(
             "repo_ops_py_pip_tools.pip_tools.run",
             return_value=_fake_proc(1, stderr="pip-compile broke"),
-        ),
+        ),pytest.raises(RuntimeError, match="pip-compile broke")
     ):
-        with pytest.raises(RuntimeError, match="pip-compile broke"):
-            _compile_requirements(ws, out, req_in)
+        _compile_requirements(ws, out, req_in)
 
 
 def test_apply_pip_tools_missing_requirements_in_raises(tmp_path: Path) -> None:
     ws = _ws(tmp_path)
-    with pytest.raises(RuntimeError, match="requirements.in not found"):
+    with pytest.raises(RuntimeError, match=r"requirements\.in not found"):
         apply_pip_tools(ws)
 
 
