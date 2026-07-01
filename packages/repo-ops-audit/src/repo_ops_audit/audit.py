@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fleet vulnerability sweep across local git repos.
+"""Fleet vulnerability sweep across local git repos (read-only unless --fix).
 
 Discovers workspaces using the same git-repo discovery machinery as the other
 subcommands, then runs the native auditor for each ecosystem:
@@ -422,11 +422,15 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
         # bun audit --json emits npm-advisory JSON (same schema as npm audit --json).
         # Older bun versions that predate --json emit ANSI text; json.loads failure
         # triggers the _parse_bun_audit_text fallback so both paths are handled.
+        # The text fallback has no per-package fix-version data, so remediations
+        # stay empty in that path (only the JSON path is actionable for --fix).
         _json_ok = False
+        bun_remediations: list[RemediationItem] = []
         if stdout.strip():
             try:
                 _bun_data = json.loads(stdout)
                 counts = _parse_npm_audit_json(_bun_data)
+                bun_remediations = _extract_remediations_npm_json(_bun_data, ws)
                 _json_ok = True
             except (json.JSONDecodeError, ValueError, KeyError, TypeError):
                 pass
@@ -449,6 +453,7 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
             manager=manager,
             status=status,
             counts=counts,
+            remediations=bun_remediations,
         )
 
     # npm / pnpm / yarn all emit JSON
@@ -820,7 +825,7 @@ def _probe_pip_audit(ws: str) -> bool:
     if rc != 0:
         return False
     # pip-audit --version outputs something like "pip-audit 2.x.y"
-    return "pip-audit" in (stdout + _stderr).lower() or rc == 0
+    return "pip-audit" in (stdout + _stderr).lower()
 
 
 def _audit_py_uv(ws: str) -> WorkspaceResult:
@@ -963,25 +968,78 @@ def _audit_rust(ws: str) -> WorkspaceResult:
     )
 
 
-def _cvss_to_score(cvss_vector: str) -> float:
-    """Approximate CVSS base score from vector string.
+# CVSS v3.x base-score metric weights (see the official CVSS v3.1 specification,
+# section 7.4 / Annex A). ``PR`` (Privileges Required) has two weight tables
+# depending on Scope (Unchanged vs Changed).
+_CVSS_AV = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2}
+_CVSS_AC = {"L": 0.77, "H": 0.44}
+_CVSS_PR_SCOPE_UNCHANGED = {"N": 0.85, "L": 0.62, "H": 0.27}
+_CVSS_PR_SCOPE_CHANGED = {"N": 0.85, "L": 0.68, "H": 0.5}
+_CVSS_UI = {"N": 0.85, "R": 0.62}
+_CVSS_CIA = {"N": 0.0, "L": 0.22, "H": 0.56}
 
-    cargo audit embeds the CVSS v3 vector; extract the numeric score from the
-    ``CVSS:3.x/AV:...`` prefix if present, else return 5.0 (moderate bucket).
+_CVSS_VECTOR_RE = re.compile(
+    r"AV:([NALP]).*?AC:([LH]).*?PR:([NLH]).*?UI:([NR]).*?S:([UC]).*?"
+    r"C:([NLH]).*?I:([NLH]).*?A:([NLH])"
+)
+
+
+def _cvss_roundup(value: float) -> float:
+    """CVSS spec ``Roundup()``: round UP to the nearest 0.1 (not nearest)."""
+    int_input = round(value * 100000)
+    if int_input % 10000 == 0:
+        return int_input / 100000.0
+    return (int_input // 10000 + 1) / 10.0
+
+
+def _cvss_to_score(cvss_vector: str) -> float:
+    """Compute the CVSS v3.x base score from a full vector string.
+
+    cargo-audit embeds the advisory's CVSS vector (e.g.
+    ``CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N``) in its JSON output but
+    does not emit a precomputed numeric base score, so it is derived here per
+    the official CVSS v3.1 base-score formula using the FULL
+    exploitability + impact vector (AV/AC/PR/UI/Scope + C/I/A) — not just an
+    average of the Confidentiality/Integrity/Availability impact letters.
+
+    A C/I/A-only average previously under-scored network-exploitable,
+    no-privilege, no-interaction vulnerabilities: e.g.
+    ``C:H/I:N/A:N`` with ``AV:N/AC:L/PR:N/UI:N/S:U`` computed to ~3.3
+    (moderate bucket) under the old approximation, when its real CVSS v3.1
+    base score is ~7.5 (high) — allowing a real High-severity vuln to pass
+    ``--fail-on high`` undetected (repo-ops#142).
+
+    Returns ``5.0`` (moderate bucket) when the vector is missing or cannot be
+    parsed.
     """
-    # cargo audit --json includes "cvss" as e.g. "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
-    # The actual base score is NOT embedded in the vector — we parse severity from
-    # the Confidentiality/Integrity/Availability impacts to approximate.
-    impact_map = {"N": 0.0, "L": 0.22, "H": 0.56}
-    m = re.search(r"C:([NLH])/I:([NLH])/A:([NLH])", cvss_vector)
+    m = _CVSS_VECTOR_RE.search(cvss_vector)
     if not m:
         return 5.0  # moderate
-    c_val = impact_map.get(m.group(1), 0.0)
-    i_val = impact_map.get(m.group(2), 0.0)
-    a_val = impact_map.get(m.group(3), 0.0)
-    # Approximate: high triple-H → ~9.8; partial → proportional estimate
-    approx = (c_val + i_val + a_val) / (3 * 0.56) * 10.0
-    return round(approx, 1)
+    av, ac, pr, ui, scope, c, i, a = m.groups()
+    scope_changed = scope == "C"
+    av_val = _CVSS_AV.get(av, 0.0)
+    ac_val = _CVSS_AC.get(ac, 0.0)
+    pr_val = (_CVSS_PR_SCOPE_CHANGED if scope_changed else _CVSS_PR_SCOPE_UNCHANGED).get(
+        pr, 0.0
+    )
+    ui_val = _CVSS_UI.get(ui, 0.0)
+    c_val = _CVSS_CIA.get(c, 0.0)
+    i_val = _CVSS_CIA.get(i, 0.0)
+    a_val = _CVSS_CIA.get(a, 0.0)
+
+    iss = 1.0 - (1.0 - c_val) * (1.0 - i_val) * (1.0 - a_val)
+    exploitability = 8.22 * av_val * ac_val * pr_val * ui_val
+    if scope_changed:
+        impact = 7.52 * (iss - 0.029) - 3.25 * (iss - 0.02) ** 15
+    else:
+        impact = 6.42 * iss
+    if impact <= 0:
+        return 0.0
+    if scope_changed:
+        base = _cvss_roundup(min(1.08 * (impact + exploitability), 10.0))
+    else:
+        base = _cvss_roundup(min(impact + exploitability, 10.0))
+    return round(base, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -1324,6 +1382,14 @@ def apply_remediations(
 
                     set_yarn_audit_version_overrides(ws_overrides)
                     _js_clear = clear_yarn_audit_version_overrides
+                elif manager == "bun":
+                    from repo_ops_js_bun.bun import (
+                        clear_bun_audit_version_overrides,
+                        set_bun_audit_version_overrides,
+                    )
+
+                    set_bun_audit_version_overrides(ws_overrides)
+                    _js_clear = clear_bun_audit_version_overrides
 
         path = Path(ws_path)
         git_root = git_repo_for(path) or path
@@ -1395,12 +1461,19 @@ def build_sarif_report(
 
     The SARIF document validates against the official 2.1.0 schema and is
     suitable for upload to GitHub code-scanning via
-    ``github/codeql-action/upload-sarif``.
+    ``github/codeql-action/upload-sarif``: ``artifactLocation.uri`` is emitted
+    repo-relative (never an absolute host path) with a matching
+    ``run.originalUriBaseIds`` entry for the ``%SRCROOT%`` base, since GitHub
+    code-scanning ingestion resolves ``uriBaseId``-qualified locations against
+    that mapping.
     """
-    # Build a workspace-path → worst-severity index for severity mapping.
-    ws_severity: dict[str, str | None] = {
-        r.path: r.counts.worst for r in results
-    }
+    # Build workspace-path → (worst-severity, repo-relative label) indexes.
+    # ``r.label`` is already computed relative to the scan roots by
+    # ``repo_label`` (see run_audit), so it doubles as a repo-relative URI —
+    # an absolute host path here would not resolve against %SRCROOT% on
+    # GitHub's code-scanning ingestion.
+    ws_severity: dict[str, str | None] = {r.path: r.counts.worst for r in results}
+    ws_label: dict[str, str] = {r.path: r.label for r in results}
 
     rules: list[dict[str, Any]] = []
     sarif_results: list[dict[str, Any]] = []
@@ -1429,6 +1502,11 @@ def build_sarif_report(
 
         severity = ws_severity.get(item.workspace)
         level = _SEV_TO_SARIF_LEVEL.get(severity, "warning")
+        # Repo-relative URI: prefer the pre-computed scan-root-relative label;
+        # fall back to a path stripped of any leading slash so an unmatched
+        # workspace never emits an absolute host path.
+        rel_uri = ws_label.get(item.workspace) or item.workspace.lstrip("/")
+        rel_uri = rel_uri.replace("\\", "/")
         sarif_results.append(
             {
                 "ruleId": rule_id,
@@ -1444,7 +1522,7 @@ def build_sarif_report(
                     {
                         "physicalLocation": {
                             "artifactLocation": {
-                                "uri": item.workspace,
+                                "uri": rel_uri,
                                 "uriBaseId": "%SRCROOT%",
                             }
                         }
@@ -1467,6 +1545,12 @@ def build_sarif_report(
                         "rules": rules,
                     }
                 },
+                # Maps the %SRCROOT% uriBaseId used by every result's
+                # artifactLocation to the checkout root, per SARIF 2.1.0
+                # §3.14. GitHub's code-scanning ingestion substitutes the
+                # actual checkout path for %SRCROOT% at upload time; this
+                # entry keeps the document self-consistent and schema-valid.
+                "originalUriBaseIds": {"%SRCROOT%": {"uri": "file:///"}},
                 "results": sarif_results,
             }
         ],
@@ -1478,7 +1562,7 @@ def build_audit_parser() -> argparse.ArgumentParser:
         prog="repo-ops audit",
         description=(
             "Fleet vulnerability sweep: run the native auditor per ecosystem "
-            "across all discovered workspaces (read-only)."
+            "across all discovered workspaces (read-only unless --fix)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\

@@ -185,6 +185,15 @@ def test_cvss_to_score_missing_vector_returns_moderate() -> None:
     assert _cvss_to_score("") == 5.0
 
 
+def test_cvss_to_score_confidentiality_only_lands_in_high_bucket() -> None:
+    """#142: a C/I/A-only average previously scored this vector ~3.3 (moderate),
+    letting a real High-severity vuln pass ``--fail-on high``. Its actual CVSS
+    v3.1 base score (full AV/AC/PR/UI/Scope + impact vector) is ~7.5 (high)."""
+    score = _cvss_to_score("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N")
+    assert score == 7.5
+    assert score >= 7.0  # high bucket per _audit_rust's thresholds
+
+
 # ---------------------------------------------------------------------------
 # govulncheck: unknown bucket
 # ---------------------------------------------------------------------------
@@ -527,6 +536,37 @@ def test_audit_node_bun_text_parse() -> None:
     assert result.status == "vulns"
     assert result.counts.high == 1
     assert result.counts.moderate == 1
+    # Text fallback has no per-package fix-version data.
+    assert result.remediations == []
+
+
+def test_audit_node_bun_json_extracts_remediations() -> None:
+    """#140: bun audit --json is npm-advisory-shaped; a known-safe fix version
+    must surface as a RemediationItem the same way npm/pnpm/yarn do, otherwise
+    apply_remediations never sees a bun workspace to apply overrides to."""
+    bun_output = json.dumps(
+        {
+            "vulnerabilities": {
+                "lodash": {
+                    "via": [{"severity": "high", "url": "https://example/GHSA-1"}],
+                    "fixAvailable": {"name": "lodash", "version": "4.17.21"},
+                }
+            }
+        }
+    )
+    with (
+        patch("shutil.which", return_value="/usr/bin/bun"),
+        patch("repo_ops_audit.audit._probe_bun_audit", return_value=True),
+        patch("repo_ops_audit.audit._run", return_value=(1, bun_output, "")),
+    ):
+        result = _audit_node("/some/repo", "bun")
+    assert result.status == "vulns"
+    assert result.counts.high == 1
+    assert len(result.remediations) == 1
+    rem = result.remediations[0]
+    assert rem.package == "lodash"
+    assert rem.safe_version == "4.17.21"
+    assert rem.ecosystem == "node"
 
 
 # ---------------------------------------------------------------------------

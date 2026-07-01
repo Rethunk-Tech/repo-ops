@@ -511,6 +511,57 @@ def test_apply_remediations_sets_pnpm_overrides(tmp_path: Path) -> None:
     )
 
 
+def test_apply_remediations_sets_bun_overrides(tmp_path: Path) -> None:
+    """#140: apply_remediations must wire advisory-safe version overrides for
+    bun workspaces the same way it does for npm/pnpm/yarn — the missing
+    ``elif manager == "bun"`` branch was the reported silent-skip bug."""
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "bun.lock").write_text("", encoding="utf-8")
+
+    items = [
+        RemediationItem(
+            package="lodash",
+            safe_version="4.17.21",
+            ecosystem="node",
+            workspace=str(tmp_path),
+        )
+    ]
+
+    overrides_captured: list[dict[str, str]] = []
+
+    def _fake_process_workspace(result, **kwargs):
+        from repo_ops_js_bun.bun import _AUDIT_VERSION_OVERRIDES
+
+        overrides_captured.append(dict(_AUDIT_VERSION_OVERRIDES))
+        mock = MagicMock()
+        mock.status = "ok"
+        mock.error = None
+        mock.changes = []
+        return mock
+
+    with (
+        patch("repo_ops_audit.audit._try_register_manager", return_value=True),
+        patch("repo_ops_core.git.git_repo_for", return_value=tmp_path),
+        patch(
+            "repo_ops_upgrade.orchestration.process_workspace",
+            side_effect=_fake_process_workspace,
+        ),
+    ):
+        apply_remediations(items)
+
+    assert overrides_captured, "process_workspace was not called"
+    assert overrides_captured[0].get("lodash") == "4.17.21", (
+        f"expected lodash→4.17.21 in bun overrides; got {overrides_captured[0]}"
+    )
+
+    # Overrides must be cleared after the workspace apply (finally block).
+    from repo_ops_js_bun.bun import _AUDIT_VERSION_OVERRIDES
+
+    assert _AUDIT_VERSION_OVERRIDES == {}, (
+        f"bun overrides should be cleared after apply; got {_AUDIT_VERSION_OVERRIDES}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # _apply_py_uv_targeted: pins Python packages via uv add pkg==version
 # ---------------------------------------------------------------------------

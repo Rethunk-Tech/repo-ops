@@ -24,6 +24,32 @@ _PKG_NAME_RE = re.compile(r"^(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+$")
 _BUN_UPDATE_LATEST_ENV = "REPO_OPS_BUN_UPDATE_LATEST"
 _TRUE_VALUES = ("1", "true", "yes", "on")
 
+# Audit version overrides: package → advisory-safe version to use instead of
+# the check_bun-derived (range-respecting) target. Populated by
+# repo_ops_audit.audit.apply_remediations before the orchestration apply call
+# and cleared in a finally block after (mirrors repo_ops_js_npm.npm's
+# _AUDIT_VERSION_OVERRIDES). Not thread-safe, but apply_remediations processes
+# workspaces sequentially. Empty outside of audit --fix runs.
+_AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
+
+
+def set_bun_audit_version_overrides(overrides: dict[str, str]) -> None:
+    """Inject per-package advisory-safe versions for the next ``apply_bun`` call.
+
+    Called by ``repo_ops_audit.audit.apply_remediations`` so that ``apply_bun``
+    targets the advisory-safe version (e.g. ``pkg@1.5.5``) rather than silently
+    dropping it when ``bun outdated`` doesn't report the package as changed
+    (#140).
+    """
+    global _AUDIT_VERSION_OVERRIDES
+    _AUDIT_VERSION_OVERRIDES = dict(overrides)
+
+
+def clear_bun_audit_version_overrides() -> None:
+    """Reset audit version overrides after each workspace apply."""
+    global _AUDIT_VERSION_OVERRIDES
+    _AUDIT_VERSION_OVERRIDES = {}
+
 
 def _bun_update_latest_enabled() -> bool:
     return os.environ.get(_BUN_UPDATE_LATEST_ENV, "").strip().lower() in _TRUE_VALUES
@@ -143,21 +169,47 @@ def check_bun(ws: Workspace) -> tuple[list[Change], list[Change]]:
 
 
 def apply_bun(ws: Workspace) -> None:
-    """Apply upgrades reported by ``check_bun`` without rewriting ranges to ``latest``."""
+    """Apply upgrades reported by ``check_bun`` without rewriting ranges to ``latest``.
+
+    Advisory-safe version overrides (``set_bun_audit_version_overrides``, wired
+    by ``repo_ops_audit.audit.apply_remediations`` during ``audit --fix``) are
+    applied independent of ``check_bun``'s findings: an overridden package is
+    targeted at its safe version even when ``bun outdated`` reports it as
+    already in-range (empty ``changes``) or only behind on ``latest`` — dropping
+    it in that case was the #140 silent-skip bug.
+    """
     changes, _behind = check_bun(ws)
-    if not changes:
-        return
     targets: list[str] = []
     requested: list[Change] = []
+    seen_names: set[str] = set()
     for ch in changes:
         name = (ch.name or "").strip()
-        version = (ch.to or "").strip()
-        if not name or not version or version in ("?", "latest", "|"):
+        if not name or not _valid_bun_package_name(name):
             continue
-        if not _valid_bun_package_name(name):
+        version = _AUDIT_VERSION_OVERRIDES.get(name) or (ch.to or "").strip()
+        if not version or version in ("?", "latest", "|"):
             continue
         targets.append(f"{name}@{version}")
-        requested.append(ch)
+        requested.append(Change(name, ch.from_ver, version))
+        seen_names.add(name)
+    # Advisory-safe overrides for packages check_bun did NOT report as changed
+    # (already satisfies its declared range, or only behind_latest) must still
+    # be targeted explicitly here — silently dropping them is the #140 bug.
+    for name, safe_version in _AUDIT_VERSION_OVERRIDES.items():
+        name = (name or "").strip()
+        safe_version = (safe_version or "").strip()
+        if (
+            not name
+            or name in seen_names
+            or not safe_version
+            or not _valid_bun_package_name(name)
+        ):
+            continue
+        targets.append(f"{name}@{safe_version}")
+        requested.append(Change(name, "", safe_version))
+        seen_names.add(name)
+    if not changes and not targets:
+        return
     if not targets:
         # Bare ``bun update`` — no per-package target args; the guard is still
         # applied to any changes whose target version IS known (task #3: skip

@@ -157,6 +157,26 @@ def test_sarif_fix_version_in_rule_properties() -> None:
     assert rule["properties"]["fix_version"] == "2.31.0"
 
 
+def test_sarif_artifact_location_is_repo_relative_not_absolute() -> None:
+    """artifactLocation.uri must be repo-relative (uses the scan-root-relative
+    label), not the absolute host path, and run.originalUriBaseIds must map
+    the %SRCROOT% base used by every result — otherwise GitHub code-scanning
+    ingestion cannot resolve the location despite the "upload-ready" claim."""
+    abs_ws = "/home/runner/work/some-repo/some-repo/packages/foo"
+    items = [_make_remediation("requests", "2.31.0", "py-uv", abs_ws)]
+    results = [_make_result(abs_ws)]
+    # build_sarif_report reads WorkspaceResult.label directly (already
+    # computed by run_audit via repo_label); set it explicitly here.
+    results[0].label = "packages/foo"
+    doc = build_sarif_report(results, items)
+    location = doc["runs"][0]["results"][0]["locations"][0]["physicalLocation"]
+    uri = location["artifactLocation"]["uri"]
+    assert uri == "packages/foo"
+    assert not uri.startswith("/")
+    assert location["artifactLocation"]["uriBaseId"] == "%SRCROOT%"
+    assert "%SRCROOT%" in doc["runs"][0]["originalUriBaseIds"]
+
+
 def test_sarif_empty_remediations() -> None:
     """Empty remediations → valid SARIF with no rules and no results."""
     doc = build_sarif_report([], [])
