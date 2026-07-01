@@ -191,7 +191,7 @@ def _github_remote(repo: str) -> str | None:
 def _owner_repo(remote_url: str) -> str | None:
     """Parse 'owner/repo' from a github.com remote URL."""
     # SSH: git@github.com:owner/repo.git
-    m = re.search(r"github\.com[:/]([^/]+/[^/\s]+?)(?:\.git)?$", remote_url)
+    m = re.search(r"github\.com[:/]([^/]+/[^/\s]+?)(?:\.git)?/?$", remote_url)
     if m:
         return m.group(1)
     return None
@@ -694,8 +694,9 @@ def scan_repos(
         lockfile_vers = _lockfile_versions(repo)
         manifest_vers = _manifest_versions(repo)
 
-        # Resolve the default branch name for close comments
-        default_branch = "main"
+        # Resolve the default branch name for close comments.  None when
+        # resolution fails — never assume "main" (wrong on master/trunk repos).
+        default_branch: str | None = None
         proc = run_git(
             repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD", timeout=5
         )
@@ -785,20 +786,22 @@ def scan_repos(
                     continue
                 if pr.low_confidence:
                     continue
-                # For grouped PRs, all rows must be high-confidence (already checked above)
-                if pr.is_grouped and any(row.low_confidence for row in pr.group_rows):
-                    continue
                 pkg_name = pr.bump.package if pr.bump else "dependency group"
                 current_ver = pr.current_ver or "unknown"
+                branch_clause = (
+                    f" on {default_branch}"
+                    if default_branch
+                    else " (could not resolve default branch)"
+                )
                 if pr.is_grouped:
                     comment = (
                         f"Superseded by repo-ops: all {len(pr.group_rows)} packages "
-                        f"in this group are at target versions on {default_branch}"
+                        f"in this group are at target versions{branch_clause}"
                     )
                 else:
                     comment = (
-                        f"Superseded by repo-ops: {pkg_name} is at {current_ver} "
-                        f"on {default_branch}"
+                        f"Superseded by repo-ops: {pkg_name} is at {current_ver}"
+                        f"{branch_clause}"
                     )
                 err = _gh_close_pr(owner_repo_str, pr.number, comment)
                 pr.close_error = err
@@ -1098,7 +1101,8 @@ precision:
             "Detect ecosystems in each discovered repo and generate (or regenerate) "
             ".github/dependabot.yml with the matching package-ecosystem entries. "
             "Default: dry-run only; pass --write to write the file. "
-            "Mutually exclusive with PR scanning (--close is ignored when set)."
+            "Mutually exclusive with PR scanning: --close and --json are invalid "
+            "in combination with --scaffold."
         ),
     )
     parser.add_argument(
@@ -1106,7 +1110,7 @@ precision:
         action="store_true",
         help=(
             "With --scaffold: actually write .github/dependabot.yml. "
-            "Default: dry-run (print what would be written)."
+            "Default: dry-run (print what would be written). Requires --scaffold."
         ),
     )
     parser.add_argument(
@@ -1128,21 +1132,37 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     wire_verbose(args)
 
-    roots = resolve_scan_roots(list(args.roots), parser)
-    follow_symlinks = bool(getattr(args, "follow_symlinks", False))
+    scaffold = bool(getattr(args, "scaffold", False))
+    write_flag = bool(getattr(args, "write", False))
+    json_flag = bool(getattr(args, "json_out", False))
+    close_flag = bool(getattr(args, "close", False))
 
-    # Scaffold mode: detect ecosystems and generate dependabot.yml
-    if getattr(args, "scaffold", False):
-        return scaffold_repos(
-            roots,
-            follow_symlinks=follow_symlinks,
-            do_write=bool(getattr(args, "write", False)),
-            schedule=str(getattr(args, "schedule", "weekly")),
-        )
+    if write_flag and not scaffold:
+        parser.error("--write requires --scaffold")
+    if scaffold and json_flag:
+        parser.error("--json is not supported with --scaffold")
+    if scaffold and close_flag:
+        parser.error("--close is not supported with --scaffold (PR-scan mode only)")
 
-    do_close = bool(args.close)
+    try:
+        roots = resolve_scan_roots(list(args.roots), parser)
+        follow_symlinks = bool(getattr(args, "follow_symlinks", False))
 
-    results = scan_repos(roots, follow_symlinks=follow_symlinks, do_close=do_close)
+        # Scaffold mode: detect ecosystems and generate dependabot.yml
+        if scaffold:
+            return scaffold_repos(
+                roots,
+                follow_symlinks=follow_symlinks,
+                do_write=write_flag,
+                schedule=str(getattr(args, "schedule", "weekly")),
+            )
+
+        do_close = close_flag
+
+        results = scan_repos(roots, follow_symlinks=follow_symlinks, do_close=do_close)
+    except Exception as exc:  # noqa: BLE001 - unexpected error contract (exit 1)
+        print(f"repo-ops dependabot: unexpected error: {exc}", file=sys.stderr)
+        return 1
 
     if args.json_out:
         payload: dict[str, object] = {

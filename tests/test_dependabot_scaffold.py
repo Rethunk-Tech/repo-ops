@@ -269,3 +269,38 @@ def test_dependabot_parser_scaffold_defaults() -> None:
     assert args.scaffold is True
     assert args.write is False
     assert args.schedule == "weekly"
+
+
+# ---------------------------------------------------------------------------
+# CLI: invalid flag combinations (argparse-level validation)
+# ---------------------------------------------------------------------------
+
+
+def test_dependabot_write_without_scaffold_errors(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--write without --scaffold silently no-ops; must be a hard error."""
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--write"])
+    assert exc_info.value.code == 2
+    assert "--write requires --scaffold" in capsys.readouterr().err
+
+
+def test_dependabot_scaffold_with_json_errors(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--scaffold --json silently no-ops (scaffold mode never emits JSON)."""
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--scaffold", "--json"])
+    assert exc_info.value.code == 2
+    assert "--scaffold" in capsys.readouterr().err
+
+
+def test_dependabot_scaffold_with_close_errors(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--scaffold --close silently no-ops (--close is PR-scan mode only)."""
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--scaffold", "--close"])
+    assert exc_info.value.code == 2
+    assert "--close" in capsys.readouterr().err
