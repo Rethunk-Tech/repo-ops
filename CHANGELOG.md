@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.3] - 2026-07-01
+
+### Security
+
+- **Submodule `.gitmodules` URL command injection:** an untrusted `url` field from a scanned repo's `.gitmodules` reached `git ls-remote`/`git fetch` with no `--` separator and no transport restriction, letting a malicious `ext::` URL execute arbitrary commands or a leading-dash URL inject options. Both call sites now insert a `--` separator before the URL and set `GIT_ALLOW_PROTOCOL=https:ssh`.
+
+### Fixed
+
+- **`audit --fix` now actually patches bun workspaces:** bun had no advisory-safe-version override mechanism (unlike npm/pnpm/yarn) and no per-package remediation extraction from `bun audit --json`, so `--fix` silently no-opped for bun-managed repos while reporting success.
+- **CVSS scoring corrected to the full CVSS v3.1 base-score formula:** the previous approximation averaged only the Confidentiality/Integrity/Availability impact letters, under-scoring exploitable-but-narrow-impact vulnerabilities (e.g. a real 7.5 scored ~3.3) — enough to let a High-severity finding pass `--fail-on high` undetected.
+- **`repo-ops dependabot` returns exit code 1 on unexpected errors**, matching its own documented exit-code contract (previously every code path returned 0, even on an unhandled `gh` failure).
+- **license-policy SPDX compound-expression parsing:** `--deny`/`--allow` now correctly evaluate `OR`/`AND` SPDX expressions (e.g. `GPL-2.0-only OR MIT` no longer false-positives against `--deny GPL`) instead of a flat substring match.
+- **`sbom`:** `uv.lock` parsing replaced with a real TOML parse (the previous line-scanner misattributed name/version across nested `[[package.dependencies]]` sub-tables); scan now applies the same exclude-dir filtering as discovery, so home-dir roots no longer pull vendored/cached lockfiles (`~/.cargo/registry`, `~/go/pkg/mod`) into the SBOM; `--output` writes are now atomic.
+- **`container`:** a tag bump could false-match a longer tag sharing the same prefix (e.g. bumping `image:1` firing on a line pinned to `image:1.5`); replacement now requires a tag boundary. Also removed three exception types made dead by an already-present trailing `except Exception`.
+- **`dependabot`:** default-branch resolution failure no longer silently assumes `"main"` in close comments (wrong on master/trunk repos); `--write`/`--json`/`--close` now validate against `--scaffold` instead of silently no-opping on an invalid combination; trailing-slash remote URLs now parse correctly; removed an unreachable grouped-PR guard.
+- **`inventory`:** Go module cache path corrected from a legacy `~/.cache/dep_count/` to the shared `~/.cache/repo-ops/`; cross-package private-symbol imports now fail loudly (`AttributeError`) instead of being silently swallowed by a too-narrow `except ImportError` if a symbol is renamed.
+- **`pip-tools`:** a failing `uv pip compile` with no `pip-compile` fallback available now raises instead of silently reporting no changes, matching the existing `pip-compile`-failure behavior.
+- **`pushed`:** `--hours` is now silently ignored no more — a warning is printed when `--since`+`--until` are both provided and drop it.
+- **audit SARIF output:** `artifactLocation.uri` is now repo-relative with a matching `run.originalUriBaseIds` entry (was an absolute host path, which does not resolve under GitHub code-scanning ingestion despite the "upload-ready" claim); removed an unreachable branch in `_probe_pip_audit`; `audit` subcommand labeling corrected to "(read-only unless --fix)" everywhere it appears.
+- **models:** `RepoBundle.any_dirty_skip()` and its two producers (`orchestration.py`, `report.py`) now share one `DIRTY_SKIP_MARKER` constant instead of three independently-hardcoded copies of the same literal.
+
+### Changed
+
+- Coverage added for previously-uncovered branches in `commit_agent_cursor.py`, `pushed/audit.py` CLI flag combinations, and `pip_tools.py`'s apply path.
+
 ## [0.17.2] - 2026-06-30
 
 ### Added
