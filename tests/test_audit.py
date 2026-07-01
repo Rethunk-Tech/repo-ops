@@ -527,6 +527,37 @@ def test_audit_node_bun_text_parse() -> None:
     assert result.status == "vulns"
     assert result.counts.high == 1
     assert result.counts.moderate == 1
+    # Text fallback has no per-package fix-version data.
+    assert result.remediations == []
+
+
+def test_audit_node_bun_json_extracts_remediations() -> None:
+    """#140: bun audit --json is npm-advisory-shaped; a known-safe fix version
+    must surface as a RemediationItem the same way npm/pnpm/yarn do, otherwise
+    apply_remediations never sees a bun workspace to apply overrides to."""
+    bun_output = json.dumps(
+        {
+            "vulnerabilities": {
+                "lodash": {
+                    "via": [{"severity": "high", "url": "https://example/GHSA-1"}],
+                    "fixAvailable": {"name": "lodash", "version": "4.17.21"},
+                }
+            }
+        }
+    )
+    with (
+        patch("shutil.which", return_value="/usr/bin/bun"),
+        patch("repo_ops_audit.audit._probe_bun_audit", return_value=True),
+        patch("repo_ops_audit.audit._run", return_value=(1, bun_output, "")),
+    ):
+        result = _audit_node("/some/repo", "bun")
+    assert result.status == "vulns"
+    assert result.counts.high == 1
+    assert len(result.remediations) == 1
+    rem = result.remediations[0]
+    assert rem.package == "lodash"
+    assert rem.safe_version == "4.17.21"
+    assert rem.ecosystem == "node"
 
 
 # ---------------------------------------------------------------------------

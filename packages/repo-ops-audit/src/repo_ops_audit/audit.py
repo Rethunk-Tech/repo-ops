@@ -422,11 +422,15 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
         # bun audit --json emits npm-advisory JSON (same schema as npm audit --json).
         # Older bun versions that predate --json emit ANSI text; json.loads failure
         # triggers the _parse_bun_audit_text fallback so both paths are handled.
+        # The text fallback has no per-package fix-version data, so remediations
+        # stay empty in that path (only the JSON path is actionable for --fix).
         _json_ok = False
+        bun_remediations: list[RemediationItem] = []
         if stdout.strip():
             try:
                 _bun_data = json.loads(stdout)
                 counts = _parse_npm_audit_json(_bun_data)
+                bun_remediations = _extract_remediations_npm_json(_bun_data, ws)
                 _json_ok = True
             except (json.JSONDecodeError, ValueError, KeyError, TypeError):
                 pass
@@ -449,6 +453,7 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
             manager=manager,
             status=status,
             counts=counts,
+            remediations=bun_remediations,
         )
 
     # npm / pnpm / yarn all emit JSON
@@ -1324,6 +1329,14 @@ def apply_remediations(
 
                     set_yarn_audit_version_overrides(ws_overrides)
                     _js_clear = clear_yarn_audit_version_overrides
+                elif manager == "bun":
+                    from repo_ops_js_bun.bun import (
+                        clear_bun_audit_version_overrides,
+                        set_bun_audit_version_overrides,
+                    )
+
+                    set_bun_audit_version_overrides(ws_overrides)
+                    _js_clear = clear_bun_audit_version_overrides
 
         path = Path(ws_path)
         git_root = git_repo_for(path) or path
