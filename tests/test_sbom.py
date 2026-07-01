@@ -40,6 +40,32 @@ def test_versions_poetry_uv_lock_basic(tmp_path: Path) -> None:
     assert "certifi@2024.2.2" in result
 
 
+def test_versions_uv_lock_nested_dependencies_not_misattributed(tmp_path: Path) -> None:
+    """Nested [[package.dependencies]] name= lines must not overwrite the
+    top-level package's tracked name before its version is recorded."""
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        "version = 1\n"
+        "\n"
+        "[[package]]\n"
+        'name = "requests"\n'
+        'version = "2.31.0"\n'
+        "\n"
+        "[[package.dependencies]]\n"
+        'name = "certifi"\n'
+        "\n"
+        "[[package.dependencies]]\n"
+        'name = "idna"\n'
+        "\n"
+        "[[package]]\n"
+        'name = "certifi"\n'
+        'version = "2024.2.2"\n',
+        encoding="utf-8",
+    )
+    result = _versions_poetry_uv_lock(lock)
+    assert result == {"requests@2.31.0", "certifi@2024.2.2"}
+
+
 def test_versions_go_sum_basic(tmp_path: Path) -> None:
     gosum = tmp_path / "go.sum"
     gosum.write_text(
@@ -174,6 +200,25 @@ def test_collect_components_go(tmp_path: Path) -> None:
 
 def test_collect_components_empty_dir(tmp_path: Path) -> None:
     assert collect_components(tmp_path) == []
+
+
+def test_collect_components_excludes_cargo_registry(tmp_path: Path) -> None:
+    """Lockfiles under excluded path fragments (e.g. ~/.cargo/registry/) must
+    not be scanned, mirroring discovery.py's should_exclude filtering."""
+    excluded_dir = tmp_path / ".cargo" / "registry" / "src" / "some-crate"
+    excluded_dir.mkdir(parents=True)
+    (excluded_dir / "Cargo.lock").write_text(
+        '[[package]]\nname = "should-not-appear"\nversion = "9.9.9"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "Cargo.lock").write_text(
+        '[[package]]\nname = "serde"\nversion = "1.0.197"\n',
+        encoding="utf-8",
+    )
+    components = collect_components(tmp_path)
+    names = {c["name"] for c in components}
+    assert "serde" in names
+    assert "should-not-appear" not in names
 
 
 # ---------------------------------------------------------------------------

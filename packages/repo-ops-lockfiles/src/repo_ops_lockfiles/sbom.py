@@ -28,6 +28,7 @@ from repo_ops_core.cli import (
     wire_verbose,
 )
 from repo_ops_core.constants import SKIP_DIRS
+from repo_ops_core.filesystem import read_toml_file, should_exclude, write_json_atomic
 
 from repo_ops_lockfiles.parsers import (
     versions_bun_lock,
@@ -45,22 +46,31 @@ from repo_ops_lockfiles.parsers import (
 
 
 def _versions_poetry_uv_lock(p: Path) -> set[str]:
-    """Parse uv.lock or poetry.lock (TOML [[package]] blocks) → name@version."""
+    """Parse uv.lock or poetry.lock (TOML top-level [[package]] entries) → name@version.
+
+    Both lockfiles are valid TOML with a top-level ``[[package]]``
+    array-of-tables. A prior line-based scanner tracked ``name``/``version``
+    across lines and reset only on a literal ``[[package]]`` marker; nested
+    ``[[package.dependencies]]`` sub-tables (present in uv.lock) also contain
+    bare ``name = "..."`` lines, which overwrote the tracked name before the
+    version was flushed and misattributed components. Parsing the TOML
+    structure directly and reading only the top-level ``package`` list
+    entries avoids this.
+    """
     out: set[str] = set()
-    name: str | None = None
-    ver: str | None = None
-    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
-        s = line.strip()
-        if s == "[[package]]":
-            if name and ver:
-                out.add(f"{name}@{ver}")
-            name = ver = None
-        elif s.startswith("name ="):
-            name = s.split("=", 1)[1].strip().strip('"')
-        elif s.startswith("version ="):
-            ver = s.split("=", 1)[1].strip().strip('"')
-    if name and ver:
-        out.add(f"{name}@{ver}")
+    data = read_toml_file(p)
+    if not data:
+        return out
+    packages = data.get("package")
+    if not isinstance(packages, list):
+        return out
+    for entry in packages:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        ver = entry.get("version")
+        if isinstance(name, str) and name and isinstance(ver, str) and ver:
+            out.add(f"{name}@{ver}")
     return out
 
 
@@ -160,6 +170,9 @@ def collect_components(root: Path) -> list[dict[str, str]]:
     for dirpath_str, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         dp = Path(dirpath_str)
+        if should_exclude(str(dp)):
+            dirnames.clear()
+            continue
         fname_set = set(filenames)
 
         # npm lockfiles (one parser per filename)
@@ -446,16 +459,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         doc = emit_cyclonedx(all_components, root_name, **kwargs)
 
-    indent = None if args.compact else 2
-    text = json.dumps(doc, indent=indent)
-
     output_path: str | None = getattr(args, "output", None)
     if output_path:
-        p = Path(output_path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(text, encoding="utf-8")
+        write_json_atomic(Path(output_path), doc, compact=args.compact)
     else:
-        print(text)
+        indent = None if args.compact else 2
+        print(json.dumps(doc, indent=indent))
 
     return 0
 

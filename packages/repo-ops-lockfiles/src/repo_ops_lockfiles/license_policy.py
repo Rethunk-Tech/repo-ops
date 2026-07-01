@@ -4,8 +4,11 @@ Scope (first-cut, best-effort)
 -------------------------------
 - npm: reads package.json under node_modules/** (requires prior npm/yarn/pnpm
   install; no network calls).
-- Python: reads pyproject.toml or setup.cfg in the repo's own packages
-  (direct manifest metadata — no venv introspection).
+- Python: reads the ``license`` field of each ``pyproject.toml`` found in the
+  scanned tree — i.e. the repo's own package manifests, not its resolved
+  dependency tree. This does NOT resolve installed/locked third-party
+  dependency licenses (e.g. via a venv or ``uv.lock``); ``setup.cfg`` is not
+  read.
 - All other ecosystems: reported as UNKNOWN.
 
 Limitations are documented in the output when unknown licenses are found.
@@ -110,7 +113,8 @@ def scan_npm_licenses(root: Path) -> list[PackageLicense]:
 
 
 # ---------------------------------------------------------------------------
-# Python: scan pyproject.toml / setup.cfg for declared license
+# Python: scan pyproject.toml for declared license (manifest-only; does not
+# resolve installed/locked dependency licenses)
 # ---------------------------------------------------------------------------
 
 
@@ -197,6 +201,50 @@ def _matches_any(lic_id: str, patterns: list[str]) -> bool:
     return any(n == _norm(p) or _norm(p) in n for p in patterns)
 
 
+# SPDX compound expression splitting: AND binds tighter than OR, so split on
+# OR first (top level), then split each OR-branch on AND.
+_SPDX_OR_SPLIT = re.compile(r"\s+OR\s+", re.IGNORECASE)
+_SPDX_AND_SPLIT = re.compile(r"\s+AND\s+", re.IGNORECASE)
+
+
+def _split_or(expr: str) -> list[str]:
+    return _SPDX_OR_SPLIT.split(expr)
+
+
+def _split_and(expr: str) -> list[str]:
+    return _SPDX_AND_SPLIT.split(expr)
+
+
+def _license_violates_deny(lic_id: str, deny: list[str]) -> bool:
+    """True when a (possibly compound) SPDX *lic_id* violates the deny list.
+
+    Compound SPDX expressions are parsed at a coarse level (``OR``/``AND``
+    only; no ``WITH`` exception clauses or parenthesised grouping). An
+    OR-expression grants a choice of licenses, so it only violates deny when
+    *every* branch independently violates. An AND-branch requires all its
+    parts simultaneously, so it violates deny when *any* part violates.
+    """
+    branches = _split_or(lic_id)
+    return all(
+        any(_matches_any(part.strip(), deny) for part in _split_and(branch))
+        for branch in branches
+    )
+
+
+def _license_satisfies_allow(lic_id: str, allow: list[str]) -> bool:
+    """True when a (possibly compound) SPDX *lic_id* is fully permitted by allow.
+
+    An AND-branch is allowed only when all of its parts are allowed; an
+    OR-expression is satisfied when at least one branch is fully allowed
+    (the caller may pick that branch).
+    """
+    branches = _split_or(lic_id)
+    return any(
+        all(_matches_any(part.strip(), allow) for part in _split_and(branch))
+        for branch in branches
+    )
+
+
 def apply_policy(
     packages: list[PackageLicense],
     *,
@@ -221,11 +269,11 @@ def apply_policy(
             result.unknown.append(pkg)
             continue
 
-        if deny and _matches_any(pkg.license_id, deny):
+        if deny and _license_violates_deny(pkg.license_id, deny):
             result.violations.append(pkg)
             continue
 
-        if allow and not _matches_any(pkg.license_id, allow):
+        if allow and not _license_satisfies_allow(pkg.license_id, allow):
             result.violations.append(pkg)
             continue
 
@@ -247,7 +295,8 @@ exit codes:
 
 scope (best-effort first-cut):
   npm: reads node_modules/**/package.json (requires prior npm/pnpm/yarn install).
-  Python: reads pyproject.toml files in the tree (direct-manifest license field).
+  Python: reads pyproject.toml files in the tree (direct-manifest license
+    field only; does not resolve installed/locked dependency licenses).
   Go / Rust / Deno / container: not yet supported; reported as unknown.
 
 allow/deny list format:
