@@ -40,6 +40,32 @@ def test_versions_poetry_uv_lock_basic(tmp_path: Path) -> None:
     assert "certifi@2024.2.2" in result
 
 
+def test_versions_uv_lock_nested_dependencies_not_misattributed(tmp_path: Path) -> None:
+    """Nested [[package.dependencies]] name= lines must not overwrite the
+    top-level package's tracked name before its version is recorded."""
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        "version = 1\n"
+        "\n"
+        "[[package]]\n"
+        'name = "requests"\n'
+        'version = "2.31.0"\n'
+        "\n"
+        "[[package.dependencies]]\n"
+        'name = "certifi"\n'
+        "\n"
+        "[[package.dependencies]]\n"
+        'name = "idna"\n'
+        "\n"
+        "[[package]]\n"
+        'name = "certifi"\n'
+        'version = "2024.2.2"\n',
+        encoding="utf-8",
+    )
+    result = _versions_poetry_uv_lock(lock)
+    assert result == {"requests@2.31.0", "certifi@2024.2.2"}
+
+
 def test_versions_go_sum_basic(tmp_path: Path) -> None:
     gosum = tmp_path / "go.sum"
     gosum.write_text(
