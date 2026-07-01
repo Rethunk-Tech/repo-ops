@@ -551,8 +551,10 @@ def apply_submodule_tag_advances(
             fetch_proc = run_git(
                 submod_dir,
                 "fetch",
+                "--",
                 bump.url,
                 f"refs/tags/{bump.latest_tag}:refs/tags/{bump.latest_tag}",
+                env={**os.environ, "GIT_ALLOW_PROTOCOL": "https:ssh"},
                 timeout=120,
             )
         except (FileNotFoundError, OSError):
