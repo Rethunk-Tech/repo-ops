@@ -11,7 +11,7 @@ import sys
 import threading
 from itertools import groupby
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from repo_ops_core.cli import (
     build_upgrade_parser,
@@ -711,14 +711,14 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     # ``jobs`` has no env-var channel — apply from config directly to args before the
     # cpu_count fallback so the documented config-file default takes effect.
     if args.jobs is None:
-        _jobs_val: object = None
+        _jobs_val: Any = None
         if _r_cfg and "jobs" in _r_cfg:
             _jobs_val = _r_cfg["jobs"]
         elif _g_cfg and "jobs" in _g_cfg:
             _jobs_val = _g_cfg["jobs"]
         if _jobs_val is not None:
             with contextlib.suppress(TypeError, ValueError):
-                args.jobs = max(1, int(_jobs_val))  # type: ignore[arg-type]
+                args.jobs = max(1, int(_jobs_val))
 
     if args.jobs is None:
         args.jobs = min(16, os.cpu_count() or 4)

@@ -394,7 +394,7 @@ def count_container(proj: Path) -> tuple[int, set[str]]:
     declare it as a hard dependency.
     """
     try:
-        from repo_ops_container.container import (  # type: ignore[import]
+        from repo_ops_container.container import (
             _parse_image_refs,
             find_container_files,
         )
@@ -449,10 +449,10 @@ def count_actions(proj: Path) -> tuple[int, set[str]]:
     Lazy-imports from repo_ops_upgrade; gracefully returns zeros if unavailable.
     """
     try:
-        from repo_ops_upgrade.actions import (  # type: ignore[import]
+        from repo_ops_upgrade.actions import (
             discover_workflow_files,
         )
-        from repo_ops_upgrade.workflow_uses import (  # type: ignore[import]
+        from repo_ops_upgrade.workflow_uses import (
             WorkflowParseError,
             parse_workflow_uses,
         )
@@ -488,7 +488,7 @@ def count_precommit(proj: Path) -> tuple[int, set[str]]:
     Lazy-imports from repo_ops_upgrade.precommit.
     """
     try:
-        from repo_ops_upgrade.precommit import (  # type: ignore[import]
+        from repo_ops_upgrade.precommit import (
             _PRECOMMIT_CONFIG_NAMES,
             _parse_precommit_repos,
         )

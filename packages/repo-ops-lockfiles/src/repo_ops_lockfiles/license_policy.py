@@ -95,7 +95,11 @@ def scan_npm_licenses(root: Path) -> list[PackageLicense]:
             # DEPRECATED licenses array (rare, old npm packages)
             if isinstance(raw_lic, list):
                 raw_lic = " OR ".join(
-                    (entry.get("type") if isinstance(entry, dict) else str(entry))
+                    (
+                        str(entry.get("type") or UNKNOWN_LICENSE)
+                        if isinstance(entry, dict)
+                        else str(entry)
+                    )
                     for entry in raw_lic
                 )
             lic_id = str(raw_lic).strip() or UNKNOWN_LICENSE
