@@ -13,12 +13,19 @@ from repo_ops_models import Change, Workspace
 
 # `bun outdated` has no --json flag (as of bun 1.x; the codebase checks
 # opportunistically via check_bun but falls back here when JSON is absent).
-# It always prints an ANSI-coloured box-drawing table led by a
-# `bun outdated vX (hash)` banner.  Parse that table row-by-row rather than
-# whitespace-splitting (which mis-read the banner as a package named "bun" at
-# version "(hash)" and fed `bun update bun@(hash)` → hard failure).
+# It always prints a table led by a `bun outdated vX (hash)` banner.  Parse
+# that table row-by-row rather than whitespace-splitting (which mis-read the
+# banner as a package named "bun" at version "(hash)" and fed
+# `bun update bun@(hash)` → hard failure).
+#
+# The column separator depends on bun's terminal capability detection: Unicode
+# box drawing (`│`) on a UTF-8-capable terminal, plain ASCII pipes (`|`)
+# otherwise — CI runners and minimal containers get the ASCII table (#145).
+# Both dialects share the same cell structure, so rows are split on whichever
+# separator leads the line.
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _BOX_V = "│"  # │ box drawings light vertical (column separator)
+_ASCII_V = "|"  # ASCII fallback separator on non-UTF-8 terminals (#145)
 _DEP_GROUP_SUFFIX_RE = re.compile(r"\s*\((?:dev|peer|optional)\)\s*$")
 _PKG_NAME_RE = re.compile(r"^(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+$")
 _BUN_UPDATE_LATEST_ENV = "REPO_OPS_BUN_UPDATE_LATEST"
@@ -103,12 +110,16 @@ def _changes_from_bun_json(stdout: str) -> tuple[list[Change], list[Change]]:
 
 
 def _changes_from_bun_text(stdout: str) -> tuple[list[Change], list[Change]]:
-    """Parse ``bun outdated``'s ANSI box table.
+    """Parse ``bun outdated``'s table (Unicode box drawing or ASCII pipes).
 
     Columns: ``Package │ Current │ Update │ Latest``. ``Update`` is the newest
     version within the package.json range; ``Latest`` ignores the range. Only
-    ``│``-delimited data rows are read, so the banner, the ``Resolving…`` line,
-    the box borders, and the ``Package`` header are all skipped.
+    separator-delimited data rows are read, so the banner, the ``Resolving…``
+    line, the box borders, and the ``Package`` header are all skipped.  On
+    non-UTF-8 terminals (CI runners, minimal containers) bun renders the same
+    table with ASCII ``|`` separators (#145); ASCII border rows
+    (``|-----|-----|``) split into dash-led cells that
+    ``_valid_bun_package_name`` rejects.
 
     Returns ``(changes, behind_latest)`` where ``behind_latest`` contains
     packages that have a newer ``latest`` version available but are not
@@ -120,10 +131,14 @@ def _changes_from_bun_text(stdout: str) -> tuple[list[Change], list[Change]]:
     behind_latest: list[Change] = []
     for raw in stdout.splitlines():
         line = _ANSI_RE.sub("", raw).strip()
-        if not line.startswith(_BOX_V):
+        if line.startswith(_BOX_V):
+            sep = _BOX_V
+        elif line.startswith(_ASCII_V):
+            sep = _ASCII_V
+        else:
             continue
         # "│ name │ current │ update │ latest │" -> ['', name, cur, upd, lat, '']
-        cells = [c.strip() for c in line.split(_BOX_V)]
+        cells = [c.strip() for c in line.split(sep)]
         if len(cells) < 6:
             continue
         name = _DEP_GROUP_SUFFIX_RE.sub("", cells[1]).strip()

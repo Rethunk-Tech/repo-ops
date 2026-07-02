@@ -151,6 +151,34 @@ def test_check_bun_detects_real_bun_dep_but_not_banner() -> None:
     assert all("0d9b296a" not in c.to for c in changes)
 
 
+# Regression #145: on a non-UTF-8 terminal (GitHub Actions runners, minimal
+# containers) bun renders the SAME outdated table with ASCII ``|`` separators
+# instead of Unicode ``│`` box drawing.  The old parser only recognised ``│``
+# rows, so CI parsed ZERO changes and apply_bun returned early — the ghost-bump
+# guard never ran.  Fixture is verbatim `bun outdated` v1.3.14 (0d9b296a)
+# output captured in an ubuntu:24.04 container (no locales installed).
+_ASCII_PIPE_TABLE = (
+    "bun outdated v1.3.14 (0d9b296a)\n"
+    "|--------------------------------------|\n"
+    "| Package  | Current | Update | Latest |\n"
+    "|----------|---------|--------|--------|\n"
+    "| is-odd   | 0.1.2   | 1.0.0  | 3.0.1  |\n"
+    "|--------------------------------------|\n"
+)
+
+
+def test_check_bun_parses_ascii_pipe_table() -> None:
+    """Regression #145: ASCII-pipe table (CI/non-UTF-8 terminal) must parse."""
+    changes, behind_latest = _patched_check(_ASCII_PIPE_TABLE)
+
+    # The single data row parses; update column (1.0.0) is the in-range target.
+    assert [(c.name, c.from_ver, c.to) for c in changes] == [
+        ("is-odd", "0.1.2", "1.0.0")
+    ]
+    # Border/header rows must not leak: no dash-led or "Package" pseudo-names.
+    assert behind_latest == []
+
+
 def test_check_bun_passes_timeout_check() -> None:
     """#90 — both bun outdated calls must use TIMEOUT_CHECK (600s), not the default 300s."""
     captured: list[dict] = []
