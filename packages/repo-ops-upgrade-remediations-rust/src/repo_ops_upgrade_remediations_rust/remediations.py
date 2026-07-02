@@ -107,9 +107,7 @@ def detect_cargo_fix(ws: Workspace, ctx: dict[str, Any]) -> bool:
 
 
 def report_cargo_fix(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
-    return [
-        "REMEDIATE cargo_fix: would run cargo fmt (normalize Rust formatting)"
-    ]
+    return ["REMEDIATE cargo_fix: would run cargo fmt (normalize Rust formatting)"]
 
 
 def apply_cargo_fix(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:

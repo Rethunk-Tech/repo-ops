@@ -73,11 +73,15 @@ def _git_init(path: Path) -> None:
     subprocess.run(["git", "init"], cwd=str(path), check=True, capture_output=True)
     subprocess.run(
         ["git", "config", "user.email", "test@test.com"],
-        cwd=str(path), check=True, capture_output=True,
+        cwd=str(path),
+        check=True,
+        capture_output=True,
     )
     subprocess.run(
         ["git", "config", "user.name", "Test"],
-        cwd=str(path), check=True, capture_output=True,
+        cwd=str(path),
+        check=True,
+        capture_output=True,
     )
 
 
@@ -85,7 +89,9 @@ def _git_commit_all(path: Path, message: str = "initial") -> None:
     subprocess.run(["git", "add", "-A"], cwd=str(path), check=True, capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", message],
-        cwd=str(path), check=True, capture_output=True,
+        cwd=str(path),
+        check=True,
+        capture_output=True,
     )
 
 
@@ -116,8 +122,9 @@ class TestGoGenerateEnvGate:
             go_rem.report_go_generate,
             go_rem.apply_go_generate,
         )
-        env_without_gate = {k: v for k, v in os.environ.items()
-                            if k != "REPO_OPS_REMEDIATE_GO_GENERATE"}
+        env_without_gate = {
+            k: v for k, v in os.environ.items() if k != "REPO_OPS_REMEDIATE_GO_GENERATE"
+        }
         with (
             patch.dict(os.environ, env_without_gate, clear=True),
             patch.object(go_rem, "REMEDIATIONS", [fake_hook]),
@@ -143,8 +150,10 @@ class TestGoGenerateEnvGate:
         with (
             patch.dict(os.environ, {"REPO_OPS_REMEDIATE_GO_GENERATE": "1"}),
             patch.object(go_rem, "REMEDIATIONS", [fake_hook]),
-            patch("repo_ops_upgrade_remediations_go.remediations.run",
-                  return_value=ok_proc) as mock_run,
+            patch(
+                "repo_ops_upgrade_remediations_go.remediations.run",
+                return_value=ok_proc,
+            ) as mock_run,
         ):
             go_rem.run_remediations(result, apply=True, skip=set())
 
@@ -164,8 +173,9 @@ class TestGoGenerateEnvGate:
             go_rem.report_go_generate,
             go_rem.apply_go_generate,
         )
-        env_without_gate = {k: v for k, v in os.environ.items()
-                            if k != "REPO_OPS_REMEDIATE_GO_GENERATE"}
+        env_without_gate = {
+            k: v for k, v in os.environ.items() if k != "REPO_OPS_REMEDIATE_GO_GENERATE"
+        }
         with (
             patch.dict(os.environ, env_without_gate, clear=True),
             patch.object(go_rem, "REMEDIATIONS", [fake_hook]),
@@ -205,8 +215,9 @@ class TestGofmtScopedToChangedFiles:
         }
         ok_proc = _make_proc(0)
 
-        with patch("repo_ops_upgrade_remediations_go.remediations.run",
-                   return_value=ok_proc) as mock_run:
+        with patch(
+            "repo_ops_upgrade_remediations_go.remediations.run", return_value=ok_proc
+        ) as mock_run:
             ok, _ = go_rem.apply_gofmt(ws, ctx)
 
         assert ok is True
@@ -244,9 +255,9 @@ class TestGofmtScopedToChangedFiles:
         assert ok is True
         assert "no changed .go source files" in detail
         # gofmt (via run) must NOT have been called.
-        assert not any(
-            c[0][0][0] == "gofmt" for c in mock_run.call_args_list
-        ), "gofmt must not run when no .go source files changed"
+        assert not any(c[0][0][0] == "gofmt" for c in mock_run.call_args_list), (
+            "gofmt must not run when no .go source files changed"
+        )
 
 
 class TestCargoFmtScopedToChangedFiles:
@@ -265,7 +276,7 @@ class TestCargoFmtScopedToChangedFiles:
 
         # Simulate bump: main.rs is modified.
         (tmp_path / "src" / "main.rs").write_text(
-            "fn main() {\n    println!(\"hello\");\n}\n"
+            'fn main() {\n    println!("hello");\n}\n'
         )
         # lib.rs is untouched.
 
@@ -276,8 +287,9 @@ class TestCargoFmtScopedToChangedFiles:
         }
         ok_proc = _make_proc(0)
 
-        with patch("repo_ops_upgrade_remediations_rust.remediations.run",
-                   return_value=ok_proc) as mock_run:
+        with patch(
+            "repo_ops_upgrade_remediations_rust.remediations.run", return_value=ok_proc
+        ) as mock_run:
             ok, _ = rust_rem.apply_cargo_fix(ws, ctx)
 
         assert ok is True
@@ -315,9 +327,9 @@ class TestCargoFmtScopedToChangedFiles:
 
         assert ok is True
         assert "no changed .rs source files" in detail
-        assert not any(
-            c[0][0][0] == "cargo" for c in mock_run.call_args_list
-        ), "cargo fmt must not run when no .rs source files changed"
+        assert not any(c[0][0][0] == "cargo" for c in mock_run.call_args_list), (
+            "cargo fmt must not run when no .rs source files changed"
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -404,9 +416,7 @@ class TestToolMissingYieldsSkip:
 
     # -- FileNotFoundError path in run_hooks ----------------------------------
 
-    def test_file_not_found_in_apply_yields_skip_not_fail(
-        self, tmp_path: Path
-    ) -> None:
+    def test_file_not_found_in_apply_yields_skip_not_fail(self, tmp_path: Path) -> None:
         """FileNotFoundError raised by apply sets status='skip', not 'fail'."""
         ws = Workspace(
             path=tmp_path,
@@ -434,9 +444,7 @@ class TestToolMissingYieldsSkip:
         assert result.remediations[0]["status"] == "skip"
         assert "tool not found" in result.remediations[0]["detail"]
 
-    def test_go_generate_missing_tool_stays_successful(
-        self, tmp_path: Path
-    ) -> None:
+    def test_go_generate_missing_tool_stays_successful(self, tmp_path: Path) -> None:
         """Missing 'go' binary: detect_go_generate returns False, result stays ok."""
         (tmp_path / "go.mod").write_text("module example.com/m\n")
         (tmp_path / "gen.go").write_text(

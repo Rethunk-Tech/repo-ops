@@ -506,8 +506,7 @@ def test_main_window_resolution_and_hours_warning(
     assert main([root, "--since", "2026-01-01T00:00Z", "--hours", "3"]) == 0
     err = capsys.readouterr().err
     assert (
-        "WARNING: --hours is ignored because --since is provided without --until"
-        in err
+        "WARNING: --hours is ignored because --since is provided without --until" in err
     )
 
     # --until only: window = [now - hours, until); --hours legitimately used, no warning.

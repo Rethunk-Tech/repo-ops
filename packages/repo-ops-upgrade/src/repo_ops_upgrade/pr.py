@@ -191,7 +191,7 @@ def detect_default_branch(repo: Path) -> str:
     if proc2.returncode == 0:
         ref = proc2.stdout.strip()
         if ref.startswith("origin/"):
-            return ref[len("origin/"):]
+            return ref[len("origin/") :]
     return "main"
 
 

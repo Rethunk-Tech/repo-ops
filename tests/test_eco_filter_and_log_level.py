@@ -112,8 +112,7 @@ def test_count_container_counts_image_pins(tmp_path: Path):
     """count_container returns the correct pin count from Dockerfile."""
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        "FROM python:3.12-slim\n"
-        "FROM node:20-alpine AS builder\n",
+        "FROM python:3.12-slim\nFROM node:20-alpine AS builder\n",
         encoding="utf-8",
     )
     direct, versions = count_container(tmp_path)
@@ -183,7 +182,9 @@ def test_inventory_main_filter_precommit_excludes_node(tmp_path: Path, capsys):
     payload = json.loads(out)
     names = [r["name"] for r in payload["rows"]]
     # Only the precommit project should appear after filtering
-    assert not any("proj-node" in n for n in names), "node-only project must be filtered out"
+    assert not any("proj-node" in n for n in names), (
+        "node-only project must be filtered out"
+    )
     assert any("proj-pre" in n for n in names), "precommit project must appear"
 
 

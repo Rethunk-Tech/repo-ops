@@ -306,7 +306,9 @@ def test_fetch_tags_git_not_found() -> None:
 
 
 def test_fetch_tags_timeout() -> None:
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=[], timeout=30)):
+    with patch(
+        "subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=[], timeout=30)
+    ):
         assert _fetch_tags_for_repo("https://github.com/org/repo") is None
 
 
@@ -390,7 +392,9 @@ def test_check_precommit_no_config_no_changes(tmp_path: Path) -> None:
     assert changes == []
 
 
-def test_check_precommit_cross_major_opt_in(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_precommit_cross_major_opt_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", "1")
     (tmp_path / ".pre-commit-config.yaml").write_text(
         "repos:\n- repo: https://github.com/org/tool\n  rev: v1.9.0\n  hooks:\n  - id: x\n"
@@ -554,7 +558,9 @@ def test_apply_precommit_rev_collision_two_repos_get_own_target(tmp_path: Path) 
         apply_precommit(_make_ws(tmp_path))
 
     result = cfg.read_text(encoding="utf-8")
-    rev_lines = [ln.strip() for ln in result.splitlines() if ln.strip().startswith("rev:")]
+    rev_lines = [
+        ln.strip() for ln in result.splitlines() if ln.strip().startswith("rev:")
+    ]
     assert len(rev_lines) == 2
     # Each repo must receive its own distinct bump, not the same value.
     assert "rev: v1.1.0" in rev_lines, f"repo-a target missing from: {rev_lines}"

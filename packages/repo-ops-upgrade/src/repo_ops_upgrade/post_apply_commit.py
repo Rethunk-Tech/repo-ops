@@ -429,7 +429,9 @@ def plan_repo_commit(
     # Always scope to paths this run actually modified so that pre-existing dirty
     # files (e.g. an operator-kept yarn.lock) are never swept into a commit, even
     # when the repo was clean at run-start. Issue #116 generalises Issue #108.
-    scoped = upgrade_scoped_paths(bundle, files, extra_gitlink_paths=extra_gitlink_paths)
+    scoped = upgrade_scoped_paths(
+        bundle, files, extra_gitlink_paths=extra_gitlink_paths
+    )
     if not scoped:
         skip_reason = (
             "no upgrade-scoped changes to commit (dirty worktree)"

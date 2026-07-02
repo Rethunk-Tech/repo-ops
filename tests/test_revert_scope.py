@@ -134,9 +134,7 @@ def test_revert_clean_skips_non_artifact_via_mock(tmp_path: Path) -> None:
 
     clean_calls: list[list[str]] = []
 
-    def _fake_run(
-        cmd: list[str], cwd: Path, **kwargs: object
-    ) -> CompletedProcess[str]:
+    def _fake_run(cmd: list[str], cwd: Path, **kwargs: object) -> CompletedProcess[str]:
         if cmd[:2] == ["git", "diff"]:
             return CompletedProcess(cmd, 0, stdout="", stderr="")
         if cmd[:2] == ["git", "ls-files"]:
@@ -220,9 +218,7 @@ def test_revert_checkout_skips_non_artifact_via_mock(tmp_path: Path) -> None:
 
     checkout_calls: list[list[str]] = []
 
-    def _fake_run(
-        cmd: list[str], cwd: Path, **kwargs: object
-    ) -> CompletedProcess[str]:
+    def _fake_run(cmd: list[str], cwd: Path, **kwargs: object) -> CompletedProcess[str]:
         if cmd[:2] == ["git", "diff"]:
             # diff shows both lockfile and operator's source file as changed.
             return CompletedProcess(

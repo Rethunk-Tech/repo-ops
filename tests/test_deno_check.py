@@ -38,6 +38,7 @@ npm:chalk           5.2.0    5.3.0
 
 def test_check_deno_parses_box_table(tmp_path: Path) -> None:
     """check_deno must parse the box-drawing table format."""
+
     def fake_run(cmd, cwd, timeout=None):
         return subprocess.CompletedProcess(cmd, 0, stdout=_BOX_OUTPUT, stderr="")
 
@@ -55,6 +56,7 @@ def test_check_deno_parses_box_table(tmp_path: Path) -> None:
 
 def test_check_deno_parses_plain_table(tmp_path: Path) -> None:
     """check_deno must parse the plain-text column format."""
+
     def fake_run(cmd, cwd, timeout=None):
         return subprocess.CompletedProcess(cmd, 0, stdout=_PLAIN_OUTPUT, stderr="")
 
@@ -72,7 +74,9 @@ def test_check_deno_parses_plain_table(tmp_path: Path) -> None:
 
 def test_check_deno_returns_empty_when_up_to_date(tmp_path: Path) -> None:
     def fake_run(cmd, cwd, timeout=None):
-        return subprocess.CompletedProcess(cmd, 0, stdout="All packages are up to date.\n", stderr="")
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout="All packages are up to date.\n", stderr=""
+        )
 
     with (
         patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
@@ -94,7 +98,9 @@ def test_check_deno_warns_when_deno_absent(tmp_path: Path, capsys) -> None:
 
 def test_check_deno_raises_on_nonzero_returncode(tmp_path: Path) -> None:
     def fake_run(cmd, cwd, timeout=None):
-        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="deno: command failed")
+        return subprocess.CompletedProcess(
+            cmd, 1, stdout="", stderr="deno: command failed"
+        )
 
     with (
         patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),

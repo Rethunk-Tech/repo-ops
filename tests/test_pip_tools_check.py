@@ -168,7 +168,8 @@ def test_check_pip_tools_uv_fails_pip_compile_missing_raises(
         patch(
             "repo_ops_py_pip_tools.pip_tools.run",
             return_value=_fake_proc(1, stderr="boom"),
-        ),pytest.raises(RuntimeError, match="pip-compile not on PATH")
+        ),
+        pytest.raises(RuntimeError, match="pip-compile not on PATH"),
     ):
         check_pip_tools(_ws(tmp_path))
 
@@ -239,7 +240,8 @@ def test_compile_requirements_uv_fails_pip_compile_missing_raises(
         patch(
             "repo_ops_py_pip_tools.pip_tools.run",
             return_value=_fake_proc(1, stderr="uv broke"),
-        ),pytest.raises(RuntimeError, match="pip-compile not on PATH")
+        ),
+        pytest.raises(RuntimeError, match="pip-compile not on PATH"),
     ):
         _compile_requirements(ws, out, req_in)
 
@@ -279,7 +281,8 @@ def test_compile_requirements_pip_compile_fails_raises(tmp_path: Path) -> None:
         patch(
             "repo_ops_py_pip_tools.pip_tools.run",
             return_value=_fake_proc(1, stderr="pip-compile broke"),
-        ),pytest.raises(RuntimeError, match="pip-compile broke")
+        ),
+        pytest.raises(RuntimeError, match="pip-compile broke"),
     ):
         _compile_requirements(ws, out, req_in)
 
@@ -295,9 +298,7 @@ def test_apply_pip_tools_uses_existing_requirements_txt(tmp_path: Path) -> None:
     (tmp_path / "requirements.in").write_text("requests\n")
     (tmp_path / "requirements.txt").write_text("requests==2.30.0\n")
 
-    with patch(
-        "repo_ops_py_pip_tools.pip_tools._compile_requirements"
-    ) as mock_compile:
+    with patch("repo_ops_py_pip_tools.pip_tools._compile_requirements") as mock_compile:
         apply_pip_tools(ws)
 
     args = mock_compile.call_args[0]
@@ -309,9 +310,7 @@ def test_apply_pip_tools_derives_txt_path_when_no_existing_txt(tmp_path: Path) -
     ws = _ws(tmp_path)
     (tmp_path / "requirements.in").write_text("requests\n")
 
-    with patch(
-        "repo_ops_py_pip_tools.pip_tools._compile_requirements"
-    ) as mock_compile:
+    with patch("repo_ops_py_pip_tools.pip_tools._compile_requirements") as mock_compile:
         apply_pip_tools(ws)
 
     args = mock_compile.call_args[0]

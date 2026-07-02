@@ -39,7 +39,9 @@ def test_apply_config_to_env_bool_false(monkeypatch: pytest.MonkeyPatch) -> None
     assert os.environ["REPO_OPS_BUN_UPDATE_LATEST"] == "0"
 
 
-def test_apply_config_to_env_skips_if_already_set(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apply_config_to_env_skips_if_already_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Existing env var is not overwritten (env > config)."""
     monkeypatch.setenv("REPO_OPS_GO_UPGRADE_MODE", "patch")
     apply_config_to_env(repo_cfg={"go_upgrade_mode": "explicit"})
@@ -53,7 +55,9 @@ def test_apply_config_to_env_global_fallback(monkeypatch: pytest.MonkeyPatch) ->
     assert os.environ["REPO_OPS_GO_UPGRADE_MODE"] == "mvs"
 
 
-def test_apply_config_to_env_repo_wins_over_global(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apply_config_to_env_repo_wins_over_global(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Per-repo config key overrides the same key in global config."""
     monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
     apply_config_to_env(
@@ -70,7 +74,9 @@ def test_apply_config_to_env_integer_value(monkeypatch: pytest.MonkeyPatch) -> N
     assert os.environ["REPO_OPS_YARN_MAX_CONCURRENCY"] == "4"
 
 
-def test_apply_config_to_env_none_value_is_noop(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apply_config_to_env_none_value_is_noop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Config key present but None → env var not set (no accidental 'None' string)."""
     monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
     apply_config_to_env(repo_cfg={"go_upgrade_mode": None})

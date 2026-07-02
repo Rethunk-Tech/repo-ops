@@ -94,7 +94,9 @@ def test_versions_pipenv_lock_strips_eq_prefix():
     """Double-equals (==) version prefix must be stripped from the token."""
     with tempfile.TemporaryDirectory() as tmp:
         p = Path(tmp) / "Pipfile.lock"
-        p.write_text(json.dumps({"default": {"foo": {"version": "==1.2.3"}}, "develop": {}}))
+        p.write_text(
+            json.dumps({"default": {"foo": {"version": "==1.2.3"}}, "develop": {}})
+        )
         result = versions_pipenv_lock(p)
     assert "foo@1.2.3" in result
     assert "foo@==1.2.3" not in result
@@ -145,7 +147,11 @@ def test_versions_deno_lock_v3_specifiers():
 
 def test_versions_deno_lock_v3_npm_section():
     """npm sub-dict keys are also emitted (with npm: prefix)."""
-    data = {"version": "3", "packages": {}, "npm": {"lodash@4.17.21": {"integrity": "x"}}}
+    data = {
+        "version": "3",
+        "packages": {},
+        "npm": {"lodash@4.17.21": {"integrity": "x"}},
+    }
     with tempfile.TemporaryDirectory() as tmp:
         p = Path(tmp) / "deno.lock"
         p.write_text(json.dumps(data))

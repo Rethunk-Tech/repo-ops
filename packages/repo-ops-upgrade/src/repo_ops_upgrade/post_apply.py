@@ -221,9 +221,7 @@ def revert_workspace_after_verify_fail(
     )
     if diff_proc.returncode == 0 and diff_proc.stdout.strip():
         all_changed = [
-            line.strip()
-            for line in diff_proc.stdout.splitlines()
-            if line.strip()
+            line.strip() for line in diff_proc.stdout.splitlines() if line.strip()
         ]
         # Keep only paths whose basename is a known apply artifact AND whose path
         # appears in the pre-apply snapshot (apply actually modified this file).
@@ -236,7 +234,8 @@ def revert_workspace_after_verify_fail(
         # can appear in git diff as tracked changes; we fall back to basename-only
         # to preserve coverage of checkout-failure detection tests.
         artifact_changed = [
-            p for p in all_changed
+            p
+            for p in all_changed
             if Path(p).name in _ARTIFACT_BASENAMES
             and (not snap_rel_set or p.replace("\\", "/") in snap_rel_set)
         ]
@@ -268,12 +267,11 @@ def revert_workspace_after_verify_fail(
     )
     if ls_proc.returncode == 0 and ls_proc.stdout.strip():
         untracked = [
-            line.strip()
-            for line in ls_proc.stdout.splitlines()
-            if line.strip()
+            line.strip() for line in ls_proc.stdout.splitlines() if line.strip()
         ]
         apply_created = [
-            p for p in untracked
+            p
+            for p in untracked
             if Path(p).name in _ARTIFACT_BASENAMES
             and p.replace("\\", "/") not in snap_rel_set
         ]

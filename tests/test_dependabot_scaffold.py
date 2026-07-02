@@ -51,7 +51,9 @@ def test_detect_ecosystems_pip(tmp_path: Path) -> None:
 
 
 def test_detect_ecosystems_gomod(tmp_path: Path) -> None:
-    (tmp_path / "go.mod").write_text("module example.com/app\ngo 1.21\n", encoding="utf-8")
+    (tmp_path / "go.mod").write_text(
+        "module example.com/app\ngo 1.21\n", encoding="utf-8"
+    )
     entries = detect_ecosystems(tmp_path)
     ecos = [e["package-ecosystem"] for e in entries]
     assert "gomod" in ecos

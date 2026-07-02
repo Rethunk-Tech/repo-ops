@@ -55,7 +55,9 @@ def _make_link(
 ) -> SubmoduleLink:
     git_repo = (tmp_path / path).resolve()
     git_repo.mkdir(parents=True, exist_ok=True)
-    return SubmoduleLink(path=path, git_repo=git_repo, parent=tmp_path.resolve(), url=url)
+    return SubmoduleLink(
+        path=path, git_repo=git_repo, parent=tmp_path.resolve(), url=url
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -93,12 +95,16 @@ def test_apply_fetch_isolates_malicious_url(tmp_path: Path, malicious_url: str) 
     link = _make_link(tmp_path, url=malicious_url)
 
     with (
-        patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.0.0"),
+        patch(
+            "repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.0.0"
+        ),
         patch(
             "repo_ops_upgrade.submodules._fetch_remote_tags",
             return_value=["v1.0.0", "v1.1.0"],
         ),
-        patch("repo_ops_upgrade.submodules.run_git", return_value=_ok_proc()) as mock_git,
+        patch(
+            "repo_ops_upgrade.submodules.run_git", return_value=_ok_proc()
+        ) as mock_git,
     ):
         bumps = apply_submodule_tag_advances([link])
 

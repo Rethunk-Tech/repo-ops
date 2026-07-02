@@ -539,6 +539,7 @@ def count_deno(mdir: Path) -> tuple[int, set[str]]:
         try:
             import json as _json
             import re as _re
+
             text = cfg.read_text(encoding="utf-8", errors="replace")
             # Strip line comments for jsonc
             if cfg_name.endswith(".jsonc"):

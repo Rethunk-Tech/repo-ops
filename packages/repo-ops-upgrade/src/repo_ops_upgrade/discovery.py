@@ -425,7 +425,14 @@ def discover_workspaces_in_root(
             consider_go(mdir)
         if "Cargo.toml" in names:
             consider_rust(mdir)
-        if names & {"pyproject.toml", "requirements.in", "requirements.txt", "Pipfile", "Pipfile.lock", "pdm.lock"}:
+        if names & {
+            "pyproject.toml",
+            "requirements.in",
+            "requirements.txt",
+            "Pipfile",
+            "Pipfile.lock",
+            "pdm.lock",
+        }:
             consider_py(mdir)
         if names & {"deno.json", "deno.jsonc", "deno.lock"}:
             consider_deno(mdir)

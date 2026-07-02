@@ -52,6 +52,8 @@ def clear_yarn_audit_version_overrides() -> None:
     """Reset audit version overrides after each workspace apply."""
     global _AUDIT_VERSION_OVERRIDES
     _AUDIT_VERSION_OVERRIDES = {}
+
+
 _STDERR_TAIL_LINES = 12
 _YARN_UPDATE_LATEST_ENV = "REPO_OPS_YARN_UPDATE_LATEST"
 _YARN_TARGETED_BUMP_ENV = "REPO_OPS_YARN_TARGETED_BUMP"

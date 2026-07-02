@@ -52,7 +52,9 @@ def _init_git_repo(path: Path) -> str:
         capture_output=True,
     )
     (path / "README.md").write_text("init\n", encoding="utf-8")
-    subprocess.run(["git", "add", "README.md"], cwd=path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", "README.md"], cwd=path, check=True, capture_output=True
+    )
     subprocess.run(
         ["git", "commit", "-m", "init"],
         cwd=path,
@@ -393,7 +395,9 @@ def test_different_scope_discards_checkpoint(
 # ---------------------------------------------------------------------------
 
 
-def test_scope_fingerprint_empty_for_unfiltered(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scope_fingerprint_empty_for_unfiltered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Unfiltered run produces an empty scope fingerprint."""
     import argparse
 

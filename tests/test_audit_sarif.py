@@ -102,7 +102,9 @@ def test_sarif_one_rule_per_unique_package() -> None:
     """One SARIF rule per unique (ecosystem, package) pair; duplicates collapsed."""
     items = [
         _make_remediation("lodash", "4.17.21", "node", "/ws-a"),
-        _make_remediation("lodash", "4.17.21", "node", "/ws-b"),  # same pkg, different ws
+        _make_remediation(
+            "lodash", "4.17.21", "node", "/ws-b"
+        ),  # same pkg, different ws
         _make_remediation("express", "4.18.0", "node", "/ws-a"),
     ]
     results = [
@@ -145,7 +147,9 @@ def test_sarif_severity_mapping() -> None:
         results = [_make_result("/ws", worst=sev)]
         doc = build_sarif_report(results, items)
         level = doc["runs"][0]["results"][0]["level"]
-        assert level == expected_level, f"severity {sev!r} → expected {expected_level!r}, got {level!r}"
+        assert level == expected_level, (
+            f"severity {sev!r} → expected {expected_level!r}, got {level!r}"
+        )
 
 
 def test_sarif_fix_version_in_rule_properties() -> None:

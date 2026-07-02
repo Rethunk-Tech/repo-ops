@@ -145,7 +145,9 @@ class TestCheckWorkspaceReachability:
             call_n += 1
             if call_n == 1:
                 # venv probe succeeds
-                return subprocess.CompletedProcess(cmd, 0, stdout="/fake/.venv", stderr="")
+                return subprocess.CompletedProcess(
+                    cmd, 0, stdout="/fake/.venv", stderr=""
+                )
             # pip list returns empty JSON array
             return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
 

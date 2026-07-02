@@ -204,12 +204,12 @@ def versions_deno_lock(p: Path) -> set[str]:
             out.add(resolved)
 
     # v4/v5: jsr section at top level; keys are "@scope/pkg@version"
-    for key in (d.get("jsr") or {}):
+    for key in d.get("jsr") or {}:
         if isinstance(key, str):
             out.add(f"jsr:{key}")
 
     # v2 and v4/v5: npm section at top level; keys are "name@version"
-    for npm_key in (d.get("npm") or {}):
+    for npm_key in d.get("npm") or {}:
         if isinstance(npm_key, str):
             out.add(f"npm:{npm_key}")
 
@@ -220,7 +220,7 @@ def versions_deno_lock(p: Path) -> set[str]:
             out.add(resolved)
 
     # v3: packages.npm section; keys are "name@version"
-    for npm_key in (pkgs.get("npm") or {}):
+    for npm_key in pkgs.get("npm") or {}:
         if isinstance(npm_key, str):
             out.add(f"npm:{npm_key}")
 

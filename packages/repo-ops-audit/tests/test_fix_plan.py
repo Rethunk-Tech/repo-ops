@@ -79,9 +79,21 @@ def test_extract_remediations_pip_audit_takes_highest_fix_version() -> None:
             "name": "requests",
             "version": "2.28.0",
             "vulns": [
-                {"id": "GHSA-001", "aliases": ["CVE-2023-001"], "fix_versions": ["2.29.0"]},
-                {"id": "GHSA-002", "aliases": ["CVE-2023-002"], "fix_versions": ["2.31.0"]},
-                {"id": "GHSA-003", "aliases": ["CVE-2022-001"], "fix_versions": ["2.30.0"]},
+                {
+                    "id": "GHSA-001",
+                    "aliases": ["CVE-2023-001"],
+                    "fix_versions": ["2.29.0"],
+                },
+                {
+                    "id": "GHSA-002",
+                    "aliases": ["CVE-2023-002"],
+                    "fix_versions": ["2.31.0"],
+                },
+                {
+                    "id": "GHSA-003",
+                    "aliases": ["CVE-2022-001"],
+                    "fix_versions": ["2.30.0"],
+                },
             ],
         }
     ]
@@ -110,12 +122,16 @@ def test_extract_remediations_pip_audit_multiple_packages() -> None:
         {
             "name": "requests",
             "version": "2.28.0",
-            "vulns": [{"id": "G1", "aliases": ["CVE-2023-001"], "fix_versions": ["2.31.0"]}],
+            "vulns": [
+                {"id": "G1", "aliases": ["CVE-2023-001"], "fix_versions": ["2.31.0"]}
+            ],
         },
         {
             "name": "Pillow",
             "version": "9.0.0",
-            "vulns": [{"id": "G2", "aliases": ["CVE-2023-002"], "fix_versions": ["9.1.0"]}],
+            "vulns": [
+                {"id": "G2", "aliases": ["CVE-2023-002"], "fix_versions": ["9.1.0"]}
+            ],
         },
     ]
     items = _extract_remediations_pip_audit(data, "/ws")
@@ -439,11 +455,19 @@ def test_audit_node_npm_remediations_populated() -> None:
             "vulnerabilities": {
                 "lodash": {
                     "severity": "high",
-                    "via": [{"url": "https://npmjs.com/advisories/1", "severity": "high"}],
-                    "fixAvailable": {"name": "lodash", "version": "4.17.21", "isSemVerMajor": False},
+                    "via": [
+                        {"url": "https://npmjs.com/advisories/1", "severity": "high"}
+                    ],
+                    "fixAvailable": {
+                        "name": "lodash",
+                        "version": "4.17.21",
+                        "isSemVerMajor": False,
+                    },
                 }
             },
-            "metadata": {"vulnerabilities": {"high": 1, "critical": 0, "moderate": 0, "low": 0}},
+            "metadata": {
+                "vulnerabilities": {"high": 1, "critical": 0, "moderate": 0, "low": 0}
+            },
         }
     )
     with (
@@ -452,7 +476,10 @@ def test_audit_node_npm_remediations_populated() -> None:
     ):
         result = _audit_node("/some/repo", "npm")
     assert result.status == "vulns"
-    assert any(r.package == "lodash" and r.safe_version == "4.17.21" for r in result.remediations)
+    assert any(
+        r.package == "lodash" and r.safe_version == "4.17.21"
+        for r in result.remediations
+    )
 
 
 def test_audit_rust_remediations_populated() -> None:
@@ -539,7 +566,11 @@ def test_audit_fix_plan_json_exits_one_when_remediations(
                 "name": "Pillow",
                 "version": "9.0.0",
                 "vulns": [
-                    {"id": "GHSA-001", "aliases": ["CVE-2023-001"], "fix_versions": ["9.1.0"]}
+                    {
+                        "id": "GHSA-001",
+                        "aliases": ["CVE-2023-001"],
+                        "fix_versions": ["9.1.0"],
+                    }
                 ],
             }
         ]
@@ -554,7 +585,10 @@ def test_audit_fix_plan_json_exits_one_when_remediations(
 
     with (
         patch("repo_ops_audit.audit.discover_repos", return_value={"/ws": "/ws"}),
-        patch("repo_ops_audit.audit._detect_workspaces", return_value=[("/ws", "py-uv", "uv")]),
+        patch(
+            "repo_ops_audit.audit._detect_workspaces",
+            return_value=[("/ws", "py-uv", "uv")],
+        ),
         patch("repo_ops_core.git.repo_label", return_value="ws"),
         patch("shutil.which", return_value="/usr/bin/uv"),
         patch("repo_ops_audit.audit._run", side_effect=_mock_run),

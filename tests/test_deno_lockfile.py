@@ -83,8 +83,8 @@ def test_v3_specifiers_captured(tmp_path: Path) -> None:
     versions = versions_deno_lock(_v3_lock(tmp_path))
     # Observed spike values
     assert "jsr:@std/assert@0.221.0" in versions  # from specifiers value
-    assert "npm:chalk@5.2.0" in versions           # from specifiers value
-    assert len(versions) == 2                       # no duplicates from packages.npm
+    assert "npm:chalk@5.2.0" in versions  # from specifiers value
+    assert len(versions) == 2  # no duplicates from packages.npm
 
 
 def test_v4_top_level_specifiers_captured(tmp_path: Path) -> None:
@@ -92,8 +92,8 @@ def test_v4_top_level_specifiers_captured(tmp_path: Path) -> None:
     versions = versions_deno_lock(_v4_lock(tmp_path))
     # Observed spike values
     assert "jsr:@std/assert@1.0.0" in versions  # from specifiers value
-    assert "npm:chalk@5.3.0" in versions         # from specifiers value
-    assert len(versions) == 2                     # deduped with jsr/npm sections
+    assert "npm:chalk@5.3.0" in versions  # from specifiers value
+    assert len(versions) == 2  # deduped with jsr/npm sections
 
 
 def test_v4_jsr_section_captured(tmp_path: Path) -> None:

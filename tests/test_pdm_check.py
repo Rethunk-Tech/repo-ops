@@ -48,7 +48,9 @@ def test_check_pdm_returns_changes_from_dry_run(tmp_path: Path) -> None:
 
 def test_check_pdm_returns_empty_when_up_to_date(tmp_path: Path) -> None:
     def fake_run(cmd, cwd, timeout=None):
-        return subprocess.CompletedProcess(cmd, 0, stdout="All packages are up-to-date.\n", stderr="")
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout="All packages are up-to-date.\n", stderr=""
+        )
 
     with (
         patch("repo_ops_py.pdm.shutil.which", return_value="/usr/bin/pdm"),
@@ -70,7 +72,9 @@ def test_check_pdm_warns_when_pdm_not_on_path(tmp_path: Path, capsys) -> None:
 
 def test_check_pdm_raises_on_nonzero_returncode(tmp_path: Path) -> None:
     def fake_run(cmd, cwd, timeout=None):
-        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="lock file is corrupt")
+        return subprocess.CompletedProcess(
+            cmd, 1, stdout="", stderr="lock file is corrupt"
+        )
 
     with (
         patch("repo_ops_py.pdm.shutil.which", return_value="/usr/bin/pdm"),

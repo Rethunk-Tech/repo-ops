@@ -22,7 +22,16 @@ _FIND_PREDICATE_TOKENS = frozenset(
     }
 )
 
-ECO_FILTER_CHOICES = ("node", "go", "rust", "py", "deno", "container", "precommit", "actions")
+ECO_FILTER_CHOICES = (
+    "node",
+    "go",
+    "rust",
+    "py",
+    "deno",
+    "container",
+    "precommit",
+    "actions",
+)
 ECO_FILTER_HELP = (
     "Limit inventory rows or upgrade workspaces to one ecosystem "
     f"({'/'.join(ECO_FILTER_CHOICES)})."

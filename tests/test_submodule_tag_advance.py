@@ -49,7 +49,9 @@ def _make_link(
 ) -> SubmoduleLink:
     git_repo = (tmp_path / path).resolve()
     git_repo.mkdir(parents=True, exist_ok=True)
-    return SubmoduleLink(path=path, git_repo=git_repo, parent=tmp_path.resolve(), url=url)
+    return SubmoduleLink(
+        path=path, git_repo=git_repo, parent=tmp_path.resolve(), url=url
+    )
 
 
 def _ok_proc(stdout: str = "") -> MagicMock:
@@ -140,9 +142,7 @@ def test_resolve_latest_empty_tags_returns_none() -> None:
 
 def test_fetch_remote_tags_parses_ls_remote_output() -> None:
     stdout = (
-        "abc123\trefs/tags/v1.0.0\n"
-        "def456\trefs/tags/v1.1.0\n"
-        "ghi789\trefs/tags/v2.0.0\n"
+        "abc123\trefs/tags/v1.0.0\ndef456\trefs/tags/v1.1.0\nghi789\trefs/tags/v2.0.0\n"
     )
     with patch("subprocess.run", return_value=_ok_proc(stdout)):
         tags = _fetch_remote_tags("https://example.com/repo.git")
@@ -183,7 +183,10 @@ def test_fetch_remote_tags_cached(tmp_path: Path) -> None:
 
 def test_check_no_url_silently_skipped(tmp_path: Path) -> None:
     link = SubmoduleLink(
-        path="sub", git_repo=(tmp_path / "sub").resolve(), parent=tmp_path.resolve(), url=""
+        path="sub",
+        git_repo=(tmp_path / "sub").resolve(),
+        parent=tmp_path.resolve(),
+        url="",
     )
     (tmp_path / "sub").mkdir()
     bumps = check_submodule_tag_advances([link])
@@ -203,7 +206,9 @@ def test_check_sha_only_pin_is_report_only(tmp_path: Path) -> None:
 
 def test_check_non_semver_tag_is_report_only(tmp_path: Path) -> None:
     link = _make_link(tmp_path)
-    with patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value="main"):
+    with patch(
+        "repo_ops_upgrade.submodules._current_submodule_tag", return_value="main"
+    ):
         bumps = check_submodule_tag_advances([link])
     assert len(bumps) == 1
     assert not bumps[0].is_actionable
@@ -214,7 +219,9 @@ def test_check_non_semver_tag_is_report_only(tmp_path: Path) -> None:
 def test_check_network_failure_is_report_only(tmp_path: Path) -> None:
     link = _make_link(tmp_path)
     with (
-        patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.0.0"),
+        patch(
+            "repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.0.0"
+        ),
         patch("repo_ops_upgrade.submodules._fetch_remote_tags", return_value=None),
     ):
         bumps = check_submodule_tag_advances([link])
@@ -226,7 +233,9 @@ def test_check_network_failure_is_report_only(tmp_path: Path) -> None:
 def test_check_already_at_latest_omitted(tmp_path: Path) -> None:
     link = _make_link(tmp_path)
     with (
-        patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.2.3"),
+        patch(
+            "repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.2.3"
+        ),
         patch(
             "repo_ops_upgrade.submodules._fetch_remote_tags",
             return_value=["v1.2.2", "v1.2.3"],
@@ -239,7 +248,9 @@ def test_check_already_at_latest_omitted(tmp_path: Path) -> None:
 def test_check_actionable_bump_detected(tmp_path: Path) -> None:
     link = _make_link(tmp_path)
     with (
-        patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.0.0"),
+        patch(
+            "repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.0.0"
+        ),
         patch(
             "repo_ops_upgrade.submodules._fetch_remote_tags",
             return_value=["v1.0.0", "v1.1.0", "v1.2.0"],
@@ -258,7 +269,9 @@ def test_check_actionable_bump_detected(tmp_path: Path) -> None:
 def test_check_cross_major_blocked_by_default(tmp_path: Path) -> None:
     link = _make_link(tmp_path)
     with (
-        patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.2.3"),
+        patch(
+            "repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.2.3"
+        ),
         patch(
             "repo_ops_upgrade.submodules._fetch_remote_tags",
             return_value=["v1.2.3", "v2.0.0"],
@@ -269,11 +282,15 @@ def test_check_cross_major_blocked_by_default(tmp_path: Path) -> None:
     assert bumps == []
 
 
-def test_check_cross_major_enabled_via_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_cross_major_enabled_via_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("REPO_OPS_SUBMODULE_UPDATE_LATEST", "1")
     link = _make_link(tmp_path)
     with (
-        patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.2.3"),
+        patch(
+            "repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.2.3"
+        ),
         patch(
             "repo_ops_upgrade.submodules._fetch_remote_tags",
             return_value=["v1.2.3", "v2.0.0"],
@@ -295,21 +312,26 @@ def test_check_multiple_submodules(tmp_path: Path) -> None:
     def _fake_current_tag(git_repo: Path) -> str | None:
         name = git_repo.name
         if name == "sub-a":
-            return "v1.0.0"    # actionable
+            return "v1.0.0"  # actionable
         if name == "sub-b":
-            return None        # SHA-only
-        return "v2.5.0"       # sub-c: already at latest
+            return None  # SHA-only
+        return "v2.5.0"  # sub-c: already at latest
 
     def _fake_fetch(url: str) -> list[str] | None:
         if "a.git" in url:
             return ["v1.0.0", "v1.1.0"]
         if "b.git" in url:
             return ["v1.0.0"]
-        return ["v2.5.0"]     # sub-c
+        return ["v2.5.0"]  # sub-c
 
     with (
-        patch("repo_ops_upgrade.submodules._current_submodule_tag", side_effect=_fake_current_tag),
-        patch("repo_ops_upgrade.submodules._fetch_remote_tags", side_effect=_fake_fetch),
+        patch(
+            "repo_ops_upgrade.submodules._current_submodule_tag",
+            side_effect=_fake_current_tag,
+        ),
+        patch(
+            "repo_ops_upgrade.submodules._fetch_remote_tags", side_effect=_fake_fetch
+        ),
     ):
         bumps = check_submodule_tag_advances(links)
 
@@ -332,12 +354,16 @@ def test_apply_calls_fetch_checkout_add_for_actionable(tmp_path: Path) -> None:
     link = _make_link(tmp_path)
 
     with (
-        patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.0.0"),
+        patch(
+            "repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.0.0"
+        ),
         patch(
             "repo_ops_upgrade.submodules._fetch_remote_tags",
             return_value=["v1.0.0", "v1.1.0"],
         ),
-        patch("repo_ops_upgrade.submodules.run_git", return_value=_ok_proc()) as mock_git,
+        patch(
+            "repo_ops_upgrade.submodules.run_git", return_value=_ok_proc()
+        ) as mock_git,
     ):
         bumps = apply_submodule_tag_advances([link])
 
@@ -364,7 +390,9 @@ def test_apply_skips_git_ops_for_report_only(tmp_path: Path) -> None:
 
     with (
         patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value=None),
-        patch("repo_ops_upgrade.submodules.run_git", return_value=_ok_proc()) as mock_git,
+        patch(
+            "repo_ops_upgrade.submodules.run_git", return_value=_ok_proc()
+        ) as mock_git,
     ):
         bumps = apply_submodule_tag_advances([link])
 
@@ -391,8 +419,13 @@ def test_apply_continues_on_fetch_failure(tmp_path: Path) -> None:
     call_seq = iter([fetch_fail, ok, ok, ok, ok])
 
     with (
-        patch("repo_ops_upgrade.submodules._current_submodule_tag", side_effect=_fake_current),
-        patch("repo_ops_upgrade.submodules._fetch_remote_tags", side_effect=_fake_fetch),
+        patch(
+            "repo_ops_upgrade.submodules._current_submodule_tag",
+            side_effect=_fake_current,
+        ),
+        patch(
+            "repo_ops_upgrade.submodules._fetch_remote_tags", side_effect=_fake_fetch
+        ),
         patch("repo_ops_upgrade.submodules.run_git", side_effect=call_seq),
     ):
         bumps = apply_submodule_tag_advances([link_a, link_b])

@@ -159,9 +159,7 @@ def test_detect_go_generate_false_no_generate_directive(tmp_path: Path) -> None:
 
 def test_detect_go_generate_true_with_directive(tmp_path: Path) -> None:
     (tmp_path / "go.mod").write_text("module example.com/m\n")
-    (tmp_path / "gen.go").write_text(
-        "package main\n//go:generate stringer -type=Foo\n"
-    )
+    (tmp_path / "gen.go").write_text("package main\n//go:generate stringer -type=Foo\n")
     ws = _ws(tmp_path)
     ctx: dict[str, Any] = {"changes": [_fake_change("pkg")], "apply": True}
     assert go_rem.detect_go_generate(ws, ctx) is True

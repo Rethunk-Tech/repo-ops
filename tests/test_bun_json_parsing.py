@@ -115,9 +115,7 @@ def test_bun_text_parser_correct_versions() -> None:
 
 def test_bun_text_parser_behind_latest_when_update_eq_current() -> None:
     """Packages where Update == Current but Latest > Current go to behind_latest."""
-    fixture = (
-        f"{_BOX_V} esbuild  {_BOX_V} 0.21.5  {_BOX_V} 0.21.5  {_BOX_V} 0.24.0  {_BOX_V}\n"
-    )
+    fixture = f"{_BOX_V} esbuild  {_BOX_V} 0.21.5  {_BOX_V} 0.21.5  {_BOX_V} 0.24.0  {_BOX_V}\n"
     changes, behind = _changes_from_bun_text(fixture)
     assert changes == []
     assert len(behind) == 1
@@ -170,36 +168,38 @@ def test_valid_bun_package_name_scoped_accepted() -> None:
 # bun audit: JSON-first path in _audit_node
 # ---------------------------------------------------------------------------
 
-_NPM_AUDIT_JSON_WITH_VULNS = json.dumps({
-    "auditReportVersion": 2,
-    "vulnerabilities": {
-        "lodash": {
-            "name": "lodash",
-            "severity": "high",
-            "via": [
-                {
-                    "source": 1469,
-                    "name": "lodash",
-                    "dependency": "lodash",
-                    "title": "Prototype Pollution",
-                    "url": "https://npmjs.com/advisories/1469",
-                    "severity": "high",
-                    "range": "<4.17.19",
-                }
-            ],
-        }
-    },
-    "metadata": {
+_NPM_AUDIT_JSON_WITH_VULNS = json.dumps(
+    {
+        "auditReportVersion": 2,
         "vulnerabilities": {
-            "info": 0,
-            "low": 0,
-            "moderate": 0,
-            "high": 1,
-            "critical": 0,
-            "total": 1,
-        }
-    },
-})
+            "lodash": {
+                "name": "lodash",
+                "severity": "high",
+                "via": [
+                    {
+                        "source": 1469,
+                        "name": "lodash",
+                        "dependency": "lodash",
+                        "title": "Prototype Pollution",
+                        "url": "https://npmjs.com/advisories/1469",
+                        "severity": "high",
+                        "range": "<4.17.19",
+                    }
+                ],
+            }
+        },
+        "metadata": {
+            "vulnerabilities": {
+                "info": 0,
+                "low": 0,
+                "moderate": 0,
+                "high": 1,
+                "critical": 0,
+                "total": 1,
+            }
+        },
+    }
+)
 
 
 def test_audit_bun_uses_json_when_parseable() -> None:
@@ -255,9 +255,13 @@ def test_audit_bun_json_empty_stdout_falls_back_to_text_stderr() -> None:
 
 def test_audit_bun_zero_vulns_json() -> None:
     """JSON with zero counts + rc=0 → status ok."""
-    clean_json = json.dumps({
-        "metadata": {"vulnerabilities": {"critical": 0, "high": 0, "moderate": 0, "low": 0}}
-    })
+    clean_json = json.dumps(
+        {
+            "metadata": {
+                "vulnerabilities": {"critical": 0, "high": 0, "moderate": 0, "low": 0}
+            }
+        }
+    )
     with (
         patch("repo_ops_audit.audit.shutil.which", return_value="/usr/bin/bun"),
         patch("repo_ops_audit.audit._probe_bun_audit", return_value=True),

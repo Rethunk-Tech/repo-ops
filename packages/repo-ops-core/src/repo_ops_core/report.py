@@ -76,9 +76,7 @@ def build_audit_summary(
     skip_count = sum(1 for r in results if getattr(r, "status", None) == "skipped")
     err_count = sum(1 for r in results if getattr(r, "status", None) == "error")
 
-    lines.append(
-        "| Total | Clean | Vulns | Skipped | Errors |"
-    )
+    lines.append("| Total | Clean | Vulns | Skipped | Errors |")
     lines.append("|-------|-------|-------|---------|--------|")
     lines.append(
         f"| {total} | {ok_count} | {vuln_count} | {skip_count} | {err_count} |"

@@ -34,9 +34,7 @@ def check_pip_tools(ws: Workspace) -> list[Change]:
             proposed = parse_requirements_lines(proc.stdout)
         elif proc.returncode != 0:
             uv_failed = True
-            print(
-                f"WARN uv pip compile failed: {proc.stderr.strip()}", file=sys.stderr
-            )
+            print(f"WARN uv pip compile failed: {proc.stderr.strip()}", file=sys.stderr)
     if not proposed and shutil.which("pip-compile"):
         proc = run(
             [

@@ -80,7 +80,7 @@ def test_branch_name_deterministic_same_label() -> None:
 def test_branch_name_truncated_at_60_plus_prefix() -> None:
     long_label = "a" * 80
     name = compute_branch_name(long_label, prefix="p")
-    slug_part = name[len("p/"):]
+    slug_part = name[len("p/") :]
     assert len(slug_part) <= 60
 
 
@@ -281,9 +281,7 @@ def test_open_or_update_pr_noop_when_exists(tmp_path: Path) -> None:
         pytest.fail("gh pr create must not be called when PR exists")
 
     with patch("repo_ops_upgrade.pr._run_gh", side_effect=_gh_side):
-        status, url = open_or_update_pr(
-            tmp_path, "b", base="main", title="T", body="B"
-        )
+        status, url = open_or_update_pr(tmp_path, "b", base="main", title="T", body="B")
     assert status == "exists"
     assert url == existing_url
 
@@ -295,9 +293,7 @@ def test_open_or_update_pr_returns_failed_on_create_error(tmp_path: Path) -> Non
         return _fail("gh pr create: authentication required")
 
     with patch("repo_ops_upgrade.pr._run_gh", side_effect=_gh_side):
-        status, err = open_or_update_pr(
-            tmp_path, "b", base="main", title="T", body="B"
-        )
+        status, err = open_or_update_pr(tmp_path, "b", base="main", title="T", body="B")
     assert status == "failed"
     assert "authentication" in (err or "")
 
@@ -370,17 +366,20 @@ def test_run_pr_flow_idempotent_existing_pr(tmp_path: Path) -> None:
     existing_url = "https://github.com/org/my-repo/pull/5"
 
     effects = [
-        _ok("gh version 2"),       # gh --version
-        _fail(),                    # rev-parse: branch not local
-        _ok(),                      # checkout -b
-        _ok(),                      # push
-        _ok("main\n"),              # detect default branch
-        _ok(existing_url + "\n"),   # gh pr view: PR exists → no-op
+        _ok("gh version 2"),  # gh --version
+        _fail(),  # rev-parse: branch not local
+        _ok(),  # checkout -b
+        _ok(),  # push
+        _ok("main\n"),  # detect default branch
+        _ok(existing_url + "\n"),  # gh pr view: PR exists → no-op
     ]
 
     with (
         patch("subprocess.run", side_effect=[effects[0]]),
-        patch("repo_ops_upgrade.pr.run_git", side_effect=[effects[1], effects[2], effects[3]]),
+        patch(
+            "repo_ops_upgrade.pr.run_git",
+            side_effect=[effects[1], effects[2], effects[3]],
+        ),
         patch("repo_ops_upgrade.pr._run_gh", side_effect=[effects[4], effects[5]]),
     ):
         outcome = run_pr_flow(tmp_path, bundle)
@@ -399,14 +398,14 @@ def test_run_pr_flow_idempotent_existing_branch(tmp_path: Path) -> None:
         "subprocess": [_ok("gh version 2")],
         "git": [
             _ok("abc123"),  # rev-parse: branch EXISTS
-            _ok(),          # checkout (no -b)
-            _ok(),          # push
-            _fail(),        # origin/HEAD: not set
+            _ok(),  # checkout (no -b)
+            _ok(),  # push
+            _fail(),  # origin/HEAD: not set
         ],
         "gh": [
-            _ok("main\n"),          # gh repo view
-            _fail(),                # gh pr view: no PR
-            _ok(pr_url + "\n"),     # gh pr create
+            _ok("main\n"),  # gh repo view
+            _fail(),  # gh pr view: no PR
+            _ok(pr_url + "\n"),  # gh pr create
         ],
     }
 
@@ -445,9 +444,9 @@ def test_run_pr_flow_push_failure(tmp_path: Path) -> None:
 
     effects_sub = [_ok("gh version 2")]
     effects_git = [
-        _fail(),                # rev-parse: no local branch
-        _ok(),                  # checkout -b
-        _fail("push rejected"), # push failure
+        _fail(),  # rev-parse: no local branch
+        _ok(),  # checkout -b
+        _fail("push rejected"),  # push failure
     ]
 
     with (
@@ -467,8 +466,8 @@ def test_run_pr_flow_pr_create_auth_error(tmp_path: Path) -> None:
 
     effects_git = [_fail(), _ok(), _ok(), _fail()]
     effects_gh = [
-        _ok("main\n"),           # detect default branch
-        _fail(),                  # gh pr view: no PR
+        _ok("main\n"),  # detect default branch
+        _fail(),  # gh pr view: no PR
         _fail("authentication required"),  # gh pr create fails
     ]
 
@@ -519,7 +518,9 @@ def test_pr_flags_accepted_by_parser() -> None:
     from repo_ops_core.cli import build_upgrade_parser
 
     parser = build_upgrade_parser(apply=True)
-    args = parser.parse_args(["--pr", "--pr-base", "develop", "--branch-prefix", "bumps"])
+    args = parser.parse_args(
+        ["--pr", "--pr-base", "develop", "--branch-prefix", "bumps"]
+    )
     assert args.pr is True
     assert args.pr_base == "develop"
     assert args.branch_prefix == "bumps"

@@ -146,12 +146,7 @@ def test_sha_pin_cross_major_refresh_under_latest(tmp_path: Path) -> None:
     )
     tags_proc = MagicMock(
         returncode=0,
-        stdout=(
-            f"v6.0.1 {_SHA_V6}\n"
-            f"v6 {_SHA_V6}\n"
-            f"v4.2.1 {_SHA_V4}\n"
-            f"v4 {_SHA_V4}\n"
-        ),
+        stdout=(f"v6.0.1 {_SHA_V6}\nv6 {_SHA_V6}\nv4.2.1 {_SHA_V4}\nv4 {_SHA_V4}\n"),
         stderr="",
     )
 
@@ -195,11 +190,7 @@ def test_sha_pin_cross_major_refresh_normalize_stays_in_current(tmp_path: Path) 
     )
     tags_proc = MagicMock(
         returncode=0,
-        stdout=(
-            f"v6.0.1 {_SHA_V6}\n"
-            f"v4.3.0 {_SHA_V4_NEW}\n"
-            f"v4.2.1 {_SHA_V4_OLD}\n"
-        ),
+        stdout=(f"v6.0.1 {_SHA_V6}\nv4.3.0 {_SHA_V4_NEW}\nv4.2.1 {_SHA_V4_OLD}\n"),
         stderr="",
     )
 

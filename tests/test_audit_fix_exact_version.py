@@ -179,7 +179,9 @@ def test_npm_targeted_bump_uses_safe_version_from_override(
     assert install_cmds, "expected at least one npm install call"
     # Must use the advisory-safe version, NOT @latest.
     install_joined = " ".join(install_cmds[0])
-    assert "lodash@4.17.21" in install_joined, f"expected pkg@version in: {install_joined}"
+    assert "lodash@4.17.21" in install_joined, (
+        f"expected pkg@version in: {install_joined}"
+    )
     assert "lodash@latest" not in install_joined
     assert applied == [Change("lodash", "4.17.20", "4.17.21")]
     assert still_behind == []
@@ -666,9 +668,9 @@ def test_apply_cargo_targeted_calls_cargo_update_precise() -> None:
 
     cmd_strs = [" ".join(c) for c in captured_cmds]
     # Expect: cargo update -p regex --precise 1.5.5
-    assert any(
-        "cargo update -p regex --precise 1.5.5" in s for s in cmd_strs
-    ), f"expected precise cargo update; got {cmd_strs}"
+    assert any("cargo update -p regex --precise 1.5.5" in s for s in cmd_strs), (
+        f"expected precise cargo update; got {cmd_strs}"
+    )
 
 
 def test_apply_cargo_targeted_exact_version_string() -> None:

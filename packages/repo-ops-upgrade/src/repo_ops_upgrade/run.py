@@ -272,8 +272,7 @@ def _run_upgrade_body(
     # The scope fingerprint ensures a differently-scoped resume (e.g. different
     # --filter) does not false-skip repos outside the prior run's scope.
     _resume_mode = apply and (
-        os.environ.get("REPO_OPS_RESUME") == "1"
-        or getattr(args, "resume", False)
+        os.environ.get("REPO_OPS_RESUME") == "1" or getattr(args, "resume", False)
     )
     _checkpoint: dict[str, str] = {}
     _checkpoint_lock = threading.Lock()
@@ -597,7 +596,9 @@ def _run_upgrade_body(
                 commit_on_fail=getattr(args, "commit_on_fail", False),
                 quiet=args.quiet,
                 max_workers=args.jobs,
-                submodule_gitlink_map=submodule_gitlink_map if submodule_gitlink_map else None,
+                submodule_gitlink_map=submodule_gitlink_map
+                if submodule_gitlink_map
+                else None,
             )
             if commit_exit != 0:
                 exit_code = 1 if exit_code == 0 else exit_code

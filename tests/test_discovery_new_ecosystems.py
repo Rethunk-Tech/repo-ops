@@ -23,9 +23,7 @@ def test_pipfile_only_produces_accurate_skip(tmp_path: Path) -> None:
     'pyproject.toml without a recognized manager' skip reason."""
     repo = tmp_path / "org" / "pipfile-only"
     _git_init(repo)
-    (repo / "Pipfile").write_text(
-        '[packages]\nrequests = "*"\n'
-    )
+    (repo / "Pipfile").write_text('[packages]\nrequests = "*"\n')
 
     diags = DiscoveryDiagnostics()
     found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
@@ -53,9 +51,7 @@ def test_discover_pdm_with_pdm_lock(tmp_path: Path) -> None:
     """A repo with pyproject.toml + pdm.lock is discovered as manager=pdm."""
     repo = tmp_path / "org" / "pdm-project"
     _git_init(repo)
-    (repo / "pyproject.toml").write_text(
-        "[project]\nname = 'mylib'\n\n[tool.pdm]\n"
-    )
+    (repo / "pyproject.toml").write_text("[project]\nname = 'mylib'\n\n[tool.pdm]\n")
     (repo / "pdm.lock").write_text(
         "[metadata]\nlock_version = '4.4.1'\n\n[[package]]\nname = 'requests'\nversion = '2.31.0'\n"
     )
@@ -83,7 +79,9 @@ def test_discover_pdm_lock_without_pyproject_triggers_py(tmp_path: Path) -> None
     assert len(pdm_found) == 1, f"expected one pdm workspace; found={pdm_found}"
 
 
-def test_discover_pdm_tool_section_without_lock_skips_accurately(tmp_path: Path) -> None:
+def test_discover_pdm_tool_section_without_lock_skips_accurately(
+    tmp_path: Path,
+) -> None:
     """pyproject.toml with [tool.pdm] but no pdm.lock → skip with accurate message."""
     repo = tmp_path / "org" / "pdm-no-lock"
     _git_init(repo)
@@ -93,7 +91,9 @@ def test_discover_pdm_tool_section_without_lock_skips_accurately(tmp_path: Path)
     found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
 
     py_found = [ws for ws in found if ws.ecosystem == "py"]
-    assert py_found == [], f"must not produce a workspace without pdm.lock; got {py_found}"
+    assert py_found == [], (
+        f"must not produce a workspace without pdm.lock; got {py_found}"
+    )
 
     py_skips = [s for s in diags.skipped if s["ecosystem"] == "py"]
     assert py_skips, "must record a skip"
@@ -119,7 +119,9 @@ def test_discover_pipenv_with_lock(tmp_path: Path) -> None:
     found = discover_all([str(tmp_path)], flat=False)
     pipenv_found = [ws for ws in found if ws.manager == "pipenv"]
 
-    assert len(pipenv_found) == 1, f"expected one pipenv workspace; found={pipenv_found}"
+    assert len(pipenv_found) == 1, (
+        f"expected one pipenv workspace; found={pipenv_found}"
+    )
     assert pipenv_found[0].ecosystem == "py"
     assert pipenv_found[0].path == repo.resolve()
 

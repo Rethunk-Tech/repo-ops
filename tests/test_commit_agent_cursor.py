@@ -27,7 +27,9 @@ def _bundle(tmp_path: Path) -> RepoBundle:
     return RepoBundle(git_repo=tmp_path, label="demo-repo")
 
 
-def test_missing_api_key_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_missing_api_key_raises(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.delenv("CURSOR_API_KEY", raising=False)
     provider = CursorCommitAgentProvider()
     with pytest.raises(RuntimeError, match="CURSOR_API_KEY"):
@@ -43,9 +45,7 @@ def test_cursor_sdk_not_installed_raises(
     monkeypatch.setitem(sys.modules, "cursor_sdk", None)
     provider = CursorCommitAgentProvider()
     with pytest.raises(RuntimeError, match="cursor-sdk is not installed"):
-        provider.draft_commit_message(
-            _bundle(tmp_path), ["a.txt"], api_key="test-key"
-        )
+        provider.draft_commit_message(_bundle(tmp_path), ["a.txt"], api_key="test-key")
 
 
 def _install_fake_cursor_sdk(
@@ -82,9 +82,7 @@ def test_draft_commit_message_success_via_wrapper(
     _install_fake_cursor_sdk(monkeypatch, result, captured)
 
     files = [f"pkg{i}/file.txt" for i in range(45)]  # exercise >40 truncation
-    message = draft_message_with_agent(
-        _bundle(tmp_path), files, api_key="test-key"
-    )
+    message = draft_message_with_agent(_bundle(tmp_path), files, api_key="test-key")
 
     assert message.startswith("feat(x): bump deps\n\n")
     assert "Automated post-apply commit (cursor commit-agent)." in message
@@ -123,7 +121,7 @@ def test_draft_commit_message_error_status_raises(
     [
         ("", "chore(deps): apply repo-ops dependency updates"),
         ("   \n  \n", "chore(deps): apply repo-ops dependency updates"),
-        ('`feat(x): bump deps`', "feat(x): bump deps"),
+        ("`feat(x): bump deps`", "feat(x): bump deps"),
         ("\n\n  fix(y): thing  \nbody line", "fix(y): thing"),
         ("word1   word2\tword3", "word1 word2 word3"),
         ("x" * 100, "x" * 69 + "..."),

@@ -105,7 +105,9 @@ def _make_item(
     )
 
 
-def _mock_upgrade_result(status: str = "ok", changes: int = 0, error: str = "") -> MagicMock:
+def _mock_upgrade_result(
+    status: str = "ok", changes: int = 0, error: str = ""
+) -> MagicMock:
     """Build a mock WorkspaceResult (upgrade model) for process_workspace."""
     result = MagicMock()
     result.status = status
@@ -114,7 +116,9 @@ def _mock_upgrade_result(status: str = "ok", changes: int = 0, error: str = "") 
     return result
 
 
-def test_apply_remediations_delegates_to_process_workspace(tmp_path: pytest.TempPathFactory) -> None:
+def test_apply_remediations_delegates_to_process_workspace(
+    tmp_path: pytest.TempPathFactory,
+) -> None:
     """apply_remediations calls orchestration.process_workspace for each workspace."""
     items = [_make_item(workspace=str(tmp_path))]
     mock_final = _mock_upgrade_result("ok", changes=1)
@@ -135,7 +139,9 @@ def test_apply_remediations_delegates_to_process_workspace(tmp_path: pytest.Temp
     assert outcomes[0].changes_count == 1
 
 
-def test_apply_remediations_deduplicates_workspaces(tmp_path: pytest.TempPathFactory) -> None:
+def test_apply_remediations_deduplicates_workspaces(
+    tmp_path: pytest.TempPathFactory,
+) -> None:
     """Multiple RemediationItems for the same workspace → single apply call."""
     ws = str(tmp_path)
     items = [
@@ -191,7 +197,9 @@ def test_apply_remediations_fail_on_exception(tmp_path: pytest.TempPathFactory) 
     assert "apply failed for test" in outcomes[0].error
 
 
-def test_apply_remediations_passes_allow_dirty(tmp_path: pytest.TempPathFactory) -> None:
+def test_apply_remediations_passes_allow_dirty(
+    tmp_path: pytest.TempPathFactory,
+) -> None:
     """allow_dirty=True is forwarded to process_workspace."""
     items = [_make_item(workspace=str(tmp_path))]
     mock_final = _mock_upgrade_result("ok")
@@ -210,7 +218,9 @@ def test_apply_remediations_passes_allow_dirty(tmp_path: pytest.TempPathFactory)
     assert call_kwargs.get("allow_dirty") is True
 
 
-def test_apply_remediations_detects_node_manager(tmp_path: pytest.TempPathFactory) -> None:
+def test_apply_remediations_detects_node_manager(
+    tmp_path: pytest.TempPathFactory,
+) -> None:
     """For node ecosystem, the actual node manager is detected from the workspace."""
     # Simulate a pnpm workspace
     (tmp_path / "pnpm-lock.yaml").touch()
@@ -284,7 +294,11 @@ def test_fix_called_when_flag_passed_and_remediations_exist(
                 "name": "Pillow",
                 "version": "9.0.0",
                 "vulns": [
-                    {"id": "GHSA-001", "aliases": ["CVE-2023-001"], "fix_versions": ["9.1.0"]}
+                    {
+                        "id": "GHSA-001",
+                        "aliases": ["CVE-2023-001"],
+                        "fix_versions": ["9.1.0"],
+                    }
                 ],
             }
         ]
@@ -305,11 +319,16 @@ def test_fix_called_when_flag_passed_and_remediations_exist(
 
     with (
         patch("repo_ops_audit.audit.discover_repos", return_value={"/ws": "/ws"}),
-        patch("repo_ops_audit.audit._detect_workspaces", return_value=[("/ws", "py-uv", "uv")]),
+        patch(
+            "repo_ops_audit.audit._detect_workspaces",
+            return_value=[("/ws", "py-uv", "uv")],
+        ),
         patch("repo_ops_core.git.repo_label", return_value="ws"),
         patch("shutil.which", return_value="/usr/bin/uv"),
         patch("repo_ops_audit.audit._run", side_effect=_mock_run),
-        patch("repo_ops_audit.audit.apply_remediations", return_value=mock_outcomes) as mock_apply,
+        patch(
+            "repo_ops_audit.audit.apply_remediations", return_value=mock_outcomes
+        ) as mock_apply,
     ):
         main(["--fix", "--fail-on", "never", str(tmp_path)])
 
@@ -328,7 +347,11 @@ def test_fix_json_output_includes_apply_outcomes(
                 "name": "Pillow",
                 "version": "9.0.0",
                 "vulns": [
-                    {"id": "GHSA-001", "aliases": ["CVE-2023-001"], "fix_versions": ["9.1.0"]}
+                    {
+                        "id": "GHSA-001",
+                        "aliases": ["CVE-2023-001"],
+                        "fix_versions": ["9.1.0"],
+                    }
                 ],
             }
         ]
@@ -349,7 +372,10 @@ def test_fix_json_output_includes_apply_outcomes(
 
     with (
         patch("repo_ops_audit.audit.discover_repos", return_value={"/ws": "/ws"}),
-        patch("repo_ops_audit.audit._detect_workspaces", return_value=[("/ws", "py-uv", "uv")]),
+        patch(
+            "repo_ops_audit.audit._detect_workspaces",
+            return_value=[("/ws", "py-uv", "uv")],
+        ),
         patch("repo_ops_core.git.repo_label", return_value="ws"),
         patch("shutil.which", return_value="/usr/bin/uv"),
         patch("repo_ops_audit.audit._run", side_effect=_mock_run),

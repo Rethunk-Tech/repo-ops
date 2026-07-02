@@ -46,10 +46,12 @@ from repo_ops_models import Change, Workspace
 # Constants
 # ---------------------------------------------------------------------------
 
-_PRECOMMIT_CONFIG_NAMES = frozenset({
-    ".pre-commit-config.yaml",
-    ".pre-commit-config.yml",
-})
+_PRECOMMIT_CONFIG_NAMES = frozenset(
+    {
+        ".pre-commit-config.yaml",
+        ".pre-commit-config.yml",
+    }
+)
 
 _REPORT_ONLY_PREFIX = "[report-only] "
 
@@ -131,11 +133,13 @@ def _parse_precommit_repos(text: str) -> list[dict[str, Any]]:
             m2 = _REV_LINE_RE.match(lines[k])
             if m2:
                 rev = m2.group(2).strip().strip("'\"")
-                results.append({
-                    "repo": repo_url,
-                    "rev": rev,
-                    "rev_line_no": k + 1,  # 1-indexed for error messages
-                })
+                results.append(
+                    {
+                        "repo": repo_url,
+                        "rev": rev,
+                        "rev_line_no": k + 1,  # 1-indexed for error messages
+                    }
+                )
                 break
 
     return results
@@ -220,7 +224,8 @@ def _resolve_latest_precommit_rev(
     if not allow_cross_major:
         # Same major only
         same_major = [
-            (tup, t) for tup, t in candidates
+            (tup, t)
+            for tup, t in candidates
             if tup and current_tup and tup[0] == current_tup[0]
         ]
         if not same_major:
@@ -245,7 +250,9 @@ _TAG_CACHE: dict[str, list[str] | None] = {}
 _TAG_CACHE_LOCK = threading.Lock()
 
 
-def _fetch_tags_for_repo(repo_url: str, *, timeout: int = _LS_REMOTE_TIMEOUT) -> list[str] | None:
+def _fetch_tags_for_repo(
+    repo_url: str, *, timeout: int = _LS_REMOTE_TIMEOUT
+) -> list[str] | None:
     """Return the list of annotated tags for *repo_url* via ``git ls-remote``.
 
     Uses an in-process cache protected by a threading.Lock so concurrent callers
@@ -276,7 +283,7 @@ def _fetch_tags_for_repo(repo_url: str, *, timeout: int = _LS_REMOTE_TIMEOUT) ->
             # Format: "<sha>\trefs/tags/<tag>"
             parts = line.split("\t", 1)
             if len(parts) == 2 and parts[1].startswith("refs/tags/"):
-                tag = parts[1][len("refs/tags/"):]
+                tag = parts[1][len("refs/tags/") :]
                 if tag:
                     tags.append(tag)
 
@@ -464,7 +471,7 @@ def apply_precommit(ws: Workspace) -> None:
         else:
             new_line = f"{indent}rev: {new_rev}\n"
         # Preserve original line ending (CRLF or LF)
-        original_ending = line[len(line.rstrip("\r\n")):]
+        original_ending = line[len(line.rstrip("\r\n")) :]
         new_line = new_line.rstrip("\n") + original_ending
         lines[i] = new_line
         changed = True

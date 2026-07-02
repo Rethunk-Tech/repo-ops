@@ -30,6 +30,7 @@ certifi    2022.12.7 2023.7.22 wheel
 
 def test_check_pipenv_parses_outdated_output(tmp_path: Path) -> None:
     """check_pipenv must parse the tabular output of pip list --outdated."""
+
     def fake_run(cmd, cwd, timeout=None):
         return subprocess.CompletedProcess(cmd, 0, stdout=_OUTDATED_OUTPUT, stderr="")
 
@@ -74,7 +75,9 @@ def test_check_pipenv_warns_when_venv_not_initialised(tmp_path: Path, capsys) ->
 
     def fake_run(cmd, cwd, timeout=None):
         # Probe fails — venv not yet created
-        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="No virtualenv has been created")
+        return subprocess.CompletedProcess(
+            cmd, 1, stdout="", stderr="No virtualenv has been created"
+        )
 
     with (
         patch("repo_ops_py.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
@@ -127,7 +130,9 @@ def test_check_pipenv_invokes_venv_probe_then_pip(tmp_path: Path) -> None:
         check_pipenv(_ws(tmp_path))
 
     assert len(captured) == 2, f"expected 2 calls (probe + pip), got {captured}"
-    assert captured[0] == ["pipenv", "--venv"], f"first call must be probe; got {captured[0]}"
+    assert captured[0] == ["pipenv", "--venv"], (
+        f"first call must be probe; got {captured[0]}"
+    )
     pip_call = captured[1]
     assert "pip" in pip_call[0], f"second call must invoke pip; got {pip_call}"
     assert "--outdated" in pip_call

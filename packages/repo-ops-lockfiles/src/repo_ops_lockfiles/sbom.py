@@ -398,8 +398,7 @@ def build_sbom_parser() -> argparse.ArgumentParser:
     add_roots_argument(
         parser,
         help_text=(
-            "Root directory to scan for lockfiles. "
-            "When omitted, uses DEFAULT_ROOTS."
+            "Root directory to scan for lockfiles. When omitted, uses DEFAULT_ROOTS."
         ),
     )
     parser.add_argument(

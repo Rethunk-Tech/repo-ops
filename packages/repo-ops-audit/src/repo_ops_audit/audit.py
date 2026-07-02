@@ -605,9 +605,7 @@ def _extract_min_version_from_constraint(constraint: str) -> str | None:
     return None
 
 
-def _apply_py_uv_targeted(
-    ws_path: str, items: list[RemediationItem]
-) -> ApplyOutcome:
+def _apply_py_uv_targeted(ws_path: str, items: list[RemediationItem]) -> ApplyOutcome:
     """Pin advisory-vulnerable packages to their exact safe versions via ``uv add``.
 
     Runs ``uv add <pkg>==<safe_version>`` for each item.  Stops and returns a
@@ -637,9 +635,7 @@ def _apply_py_uv_targeted(
     return ApplyOutcome(workspace=ws_path, status="ok", changes_count=len(added))
 
 
-def _apply_cargo_targeted(
-    ws_path: str, items: list[RemediationItem]
-) -> ApplyOutcome:
+def _apply_cargo_targeted(ws_path: str, items: list[RemediationItem]) -> ApplyOutcome:
     """Pin advisory-vulnerable Rust crates to their safe versions via ``cargo update``.
 
     Parses each item's ``safe_version`` constraint (e.g. ``">= 1.5.5"``) to an
@@ -673,9 +669,7 @@ def _apply_cargo_targeted(
     return ApplyOutcome(workspace=ws_path, status="ok", changes_count=len(updated))
 
 
-def _extract_remediations_pip_audit(
-    data: list[Any], ws: str
-) -> list[RemediationItem]:
+def _extract_remediations_pip_audit(data: list[Any], ws: str) -> list[RemediationItem]:
     """Extract (package → highest known-safe fix_version) from pip-audit JSON.
 
     pip-audit JSON structure::
@@ -803,7 +797,9 @@ def _extract_remediations_cargo_json(
             continue
         # Package name: prefer advisory.package (str), fall back to package.name
         pkg_section = vuln.get("package", {})
-        name = str(advisory.get("package") or (pkg_section or {}).get("name") or "").strip()
+        name = str(
+            advisory.get("package") or (pkg_section or {}).get("name") or ""
+        ).strip()
         if not name:
             continue
         patched = advisory.get("patched") or {}
@@ -1019,9 +1015,9 @@ def _cvss_to_score(cvss_vector: str) -> float:
     scope_changed = scope == "C"
     av_val = _CVSS_AV.get(av, 0.0)
     ac_val = _CVSS_AC.get(ac, 0.0)
-    pr_val = (_CVSS_PR_SCOPE_CHANGED if scope_changed else _CVSS_PR_SCOPE_UNCHANGED).get(
-        pr, 0.0
-    )
+    pr_val = (
+        _CVSS_PR_SCOPE_CHANGED if scope_changed else _CVSS_PR_SCOPE_UNCHANGED
+    ).get(pr, 0.0)
     ui_val = _CVSS_UI.get(ui, 0.0)
     c_val = _CVSS_CIA.get(c, 0.0)
     i_val = _CVSS_CIA.get(i, 0.0)
@@ -1539,9 +1535,7 @@ def build_sarif_report(
                 "tool": {
                     "driver": {
                         "name": "repo-ops-audit",
-                        "informationUri": (
-                            "https://github.com/Rethunk-Tech/repo-ops"
-                        ),
+                        "informationUri": ("https://github.com/Rethunk-Tech/repo-ops"),
                         "rules": rules,
                     }
                 },
@@ -1682,9 +1676,7 @@ def main(argv: list[str] | None = None) -> int:
     # --- SARIF output -------------------------------------------------------
     if sarif_out:
         sarif_doc = build_sarif_report(results, remediations)
-        Path(sarif_out).write_text(
-            json.dumps(sarif_doc, indent=2), encoding="utf-8"
-        )
+        Path(sarif_out).write_text(json.dumps(sarif_doc, indent=2), encoding="utf-8")
 
     # --- GitHub step-summary (auto when GITHUB_STEP_SUMMARY env var is set) --
     import os as _os

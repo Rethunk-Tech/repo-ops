@@ -264,12 +264,12 @@ class SubmoduleTagBump:
     the precommit and container ecosystems.
     """
 
-    path: str        # relative path from parent repo
-    url: str         # upstream remote URL from .gitmodules
-    current_tag: str # tag at HEAD, or "" when HEAD has no exact tag
+    path: str  # relative path from parent repo
+    url: str  # upstream remote URL from .gitmodules
+    current_tag: str  # tag at HEAD, or "" when HEAD has no exact tag
     latest_tag: str  # target tag, or "[report-only] …" when non-actionable
-    parent: Path     # parent git repo root
-    git_repo: Path   # resolved absolute path to the submodule checkout
+    parent: Path  # parent git repo root
+    git_repo: Path  # resolved absolute path to the submodule checkout
 
     @property
     def is_actionable(self) -> bool:
@@ -297,7 +297,9 @@ def _has_v_prefix(tag: str) -> bool:
     return tag.startswith(("v", "V"))
 
 
-def _fetch_remote_tags(url: str, *, timeout: int = _LS_REMOTE_TIMEOUT) -> list[str] | None:
+def _fetch_remote_tags(
+    url: str, *, timeout: int = _LS_REMOTE_TIMEOUT
+) -> list[str] | None:
     """Return annotated tag names for *url* via ``git ls-remote --tags --refs``.
 
     Results are cached in-process so repeated checks for the same URL cost only
@@ -327,7 +329,7 @@ def _fetch_remote_tags(url: str, *, timeout: int = _LS_REMOTE_TIMEOUT) -> list[s
     for line in proc.stdout.splitlines():
         parts = line.split("\t", 1)
         if len(parts) == 2 and parts[1].startswith("refs/tags/"):
-            tag = parts[1][len("refs/tags/"):]
+            tag = parts[1][len("refs/tags/") :]
             if tag:
                 tags.append(tag)
 

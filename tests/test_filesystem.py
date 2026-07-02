@@ -22,7 +22,9 @@ def test_write_json_atomic_happy_path(tmp_path: Path) -> None:
     assert list(target.parent.glob(f".{target.name}.*.tmp")) == []
 
 
-def test_write_json_atomic_rollback_on_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_write_json_atomic_rollback_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     target = tmp_path / "report.json"
 
     def boom(*_args: object, **_kwargs: object) -> None:

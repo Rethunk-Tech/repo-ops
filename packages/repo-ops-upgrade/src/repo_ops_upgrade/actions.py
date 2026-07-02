@@ -84,6 +84,7 @@ def _classify_actionlint_severity(output: str) -> str:
             return "error"  # shellcheck error or unparseable severity → fatal
     return "warning"
 
+
 TagStyle = Literal["major", "exact"]
 
 # How the Actions upgrader treats a pin whose major is behind the newest upstream

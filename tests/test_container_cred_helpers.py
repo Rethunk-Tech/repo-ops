@@ -53,19 +53,23 @@ def _docker_cfg(tmp_path: Path, cfg: dict) -> None:
     (tmp_path / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
 
 
-def _make_http_response(body: bytes, headers: dict[str, str] | None = None) -> MagicMock:
+def _make_http_response(
+    body: bytes, headers: dict[str, str] | None = None
+) -> MagicMock:
     resp = MagicMock()
     resp.read.return_value = body
     resp.headers = MagicMock()
-    resp.headers.get = (lambda h, d="": (headers or {}).get(h, d))
+    resp.headers.get = lambda h, d="": (headers or {}).get(h, d)
     resp.__enter__ = lambda s: s
     resp.__exit__ = MagicMock(return_value=False)
     return resp
 
 
-def _make_http_error(code: int, headers: dict[str, str] | None = None) -> urllib.error.HTTPError:
+def _make_http_error(
+    code: int, headers: dict[str, str] | None = None
+) -> urllib.error.HTTPError:
     hdrs: Any = MagicMock()
-    hdrs.get = (lambda h, d="": (headers or {}).get(h, d))
+    hdrs.get = lambda h, d="": (headers or {}).get(h, d)
     return urllib.error.HTTPError(url="http://x", code=code, msg="", hdrs=hdrs, fp=None)
 
 
@@ -95,10 +99,13 @@ def test_cred_helper_creds_store_fallback(tmp_path: Path) -> None:
 
 
 def test_cred_helper_per_host_overrides_creds_store(tmp_path: Path) -> None:
-    _docker_cfg(tmp_path, {
-        "credHelpers": {"special.io": "special-helper"},
-        "credsStore": "osxkeychain",
-    })
+    _docker_cfg(
+        tmp_path,
+        {
+            "credHelpers": {"special.io": "special-helper"},
+            "credsStore": "osxkeychain",
+        },
+    )
     with patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}):
         assert _cred_helper_name_for_host("special.io") == "special-helper"
 
@@ -153,7 +160,9 @@ def test_run_cred_helper_binary_not_found() -> None:
 
 
 def test_run_cred_helper_timeout() -> None:
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=[], timeout=5)):
+    with patch(
+        "subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=[], timeout=5)
+    ):
         assert _run_cred_helper("slow-helper", "ghcr.io") is None
 
 
@@ -162,7 +171,9 @@ def test_run_cred_helper_nonzero_exit() -> None:
     proc.returncode = 1
     proc.stdout = "error: not logged in"
     with patch("subprocess.run", return_value=proc):
-        assert _run_cred_helper("ecr-login", "123.dkr.ecr.us-east-1.amazonaws.com") is None
+        assert (
+            _run_cred_helper("ecr-login", "123.dkr.ecr.us-east-1.amazonaws.com") is None
+        )
 
 
 def test_run_cred_helper_bad_json() -> None:
@@ -188,7 +199,10 @@ def test_run_cred_helper_empty_fields() -> None:
 
 
 def test_ecr_region_standard_host() -> None:
-    assert _ecr_region_for_host("123456789012.dkr.ecr.us-east-1.amazonaws.com") == "us-east-1"
+    assert (
+        _ecr_region_for_host("123456789012.dkr.ecr.us-east-1.amazonaws.com")
+        == "us-east-1"
+    )
 
 
 def test_ecr_region_eu_west() -> None:
@@ -252,10 +266,13 @@ def test_ecr_get_login_password_empty_output() -> None:
 def test_resolve_auth_inline_wins(tmp_path: Path) -> None:
     """Inline auths[host].auth takes priority over credential helpers."""
     b64 = base64.b64encode(b"user:inline").decode()
-    _docker_cfg(tmp_path, {
-        "auths": {"ghcr.io": {"auth": b64}},
-        "credsStore": "osxkeychain",
-    })
+    _docker_cfg(
+        tmp_path,
+        {
+            "auths": {"ghcr.io": {"auth": b64}},
+            "credsStore": "osxkeychain",
+        },
+    )
     with (
         patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}),
         patch("subprocess.run") as mock_run,
@@ -362,7 +379,9 @@ def test_fetch_tags_uses_cred_helper_for_private_registry(tmp_path: Path) -> Non
     assert tags == ["1.0", "1.1"]
 
 
-def test_check_container_ecr_private_image(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_container_ecr_private_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """ECR image: aws ecr get-login-password is used when no docker config."""
     ecr_host = "123456789012.dkr.ecr.us-west-2.amazonaws.com"
     (tmp_path / "Dockerfile").write_text(f"FROM {ecr_host}/myapp:1.0\n")

@@ -31,8 +31,8 @@ from repo_ops_lockfiles.sbom import (
 def test_versions_poetry_uv_lock_basic(tmp_path: Path) -> None:
     lock = tmp_path / "poetry.lock"
     lock.write_text(
-        "[[package]]\nname = \"requests\"\nversion = \"2.31.0\"\n"
-        "\n[[package]]\nname = \"certifi\"\nversion = \"2024.2.2\"\n",
+        '[[package]]\nname = "requests"\nversion = "2.31.0"\n'
+        '\n[[package]]\nname = "certifi"\nversion = "2024.2.2"\n',
         encoding="utf-8",
     )
     result = _versions_poetry_uv_lock(lock)
@@ -69,8 +69,7 @@ def test_versions_uv_lock_nested_dependencies_not_misattributed(tmp_path: Path) 
 def test_versions_go_sum_basic(tmp_path: Path) -> None:
     gosum = tmp_path / "go.sum"
     gosum.write_text(
-        "golang.org/x/net v0.17.0 h1:abc=\n"
-        "golang.org/x/net v0.17.0/go.mod h1:xyz=\n",
+        "golang.org/x/net v0.17.0 h1:abc=\ngolang.org/x/net v0.17.0/go.mod h1:xyz=\n",
         encoding="utf-8",
     )
     result = _versions_go_sum(gosum)
@@ -81,8 +80,8 @@ def test_versions_go_sum_basic(tmp_path: Path) -> None:
 def test_versions_cargo_lock_basic(tmp_path: Path) -> None:
     lock = tmp_path / "Cargo.lock"
     lock.write_text(
-        "[[package]]\nname = \"serde\"\nversion = \"1.0.197\"\n"
-        "\n[[package]]\nname = \"tokio\"\nversion = \"1.36.0\"\n",
+        '[[package]]\nname = "serde"\nversion = "1.0.197"\n'
+        '\n[[package]]\nname = "tokio"\nversion = "1.36.0"\n',
         encoding="utf-8",
     )
     result = _versions_cargo_lock(lock)
@@ -179,7 +178,7 @@ def test_collect_components_deduplicates_by_purl(tmp_path: Path) -> None:
 def test_collect_components_rust(tmp_path: Path) -> None:
     cargo_lock = tmp_path / "Cargo.lock"
     cargo_lock.write_text(
-        "[[package]]\nname = \"serde\"\nversion = \"1.0.197\"\n",
+        '[[package]]\nname = "serde"\nversion = "1.0.197"\n',
         encoding="utf-8",
     )
     components = collect_components(tmp_path)
@@ -364,7 +363,9 @@ def test_sbom_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert "--output" in out
 
 
-def test_sbom_cyclonedx_stdout(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_sbom_cyclonedx_stdout(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     (tmp_path / "package-lock.json").write_text(_NPM_LOCK_CONTENT, encoding="utf-8")
     rc = main(["--format", "cyclonedx", "--compact", str(tmp_path)])
     assert rc == 0

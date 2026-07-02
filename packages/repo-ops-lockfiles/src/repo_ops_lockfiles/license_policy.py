@@ -79,8 +79,7 @@ def scan_npm_licenses(root: Path) -> list[PackageLicense]:
         dirnames[:] = [
             d
             for d in dirnames
-            if d not in _NM_SKIP
-            and not (dp != nm and d == "node_modules")
+            if d not in _NM_SKIP and not (dp != nm and d == "node_modules")
         ]
         if "package.json" not in filenames or dp == nm:
             continue
@@ -379,7 +378,9 @@ def main(argv: list[str] | None = None) -> int:
         all_packages.extend(scan_npm_licenses(root))
         all_packages.extend(scan_python_licenses(root))
 
-    result = apply_policy(all_packages, allow=allow_list or None, deny=deny_list or None)
+    result = apply_policy(
+        all_packages, allow=allow_list or None, deny=deny_list or None
+    )
 
     if args.json_out:
         payload: dict[str, object] = {
