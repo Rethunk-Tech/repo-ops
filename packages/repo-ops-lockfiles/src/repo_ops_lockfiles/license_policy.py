@@ -1,14 +1,15 @@
 """License-policy gate: scan dependency licenses and report/flag violations.
 
-Scope (first-cut, best-effort)
--------------------------------
+Scope (best-effort)
+-------------------
 - npm: reads package.json under node_modules/** (requires prior npm/yarn/pnpm
   install; no network calls).
 - Python: reads the ``license`` field of each ``pyproject.toml`` found in the
-  scanned tree — i.e. the repo's own package manifests, not its resolved
-  dependency tree. This does NOT resolve installed/locked third-party
-  dependency licenses (e.g. via a venv or ``uv.lock``); ``setup.cfg`` is not
-  read.
+  scanned tree (the repo's own package manifests), plus the locked third-party
+  dependency set of each ``uv.lock``, resolving license ids from an adjacent
+  virtualenv's ``*.dist-info/METADATA`` when one exists (#144).  Offline-first:
+  locked packages without installed metadata are reported as UNKNOWN rather
+  than resolved over the network.  ``setup.cfg`` is not read.
 - All other ecosystems: reported as UNKNOWN.
 
 Limitations are documented in the output when unknown licenses are found.
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import email
 import json
 import os
 import re
@@ -187,6 +189,122 @@ def scan_python_licenses(root: Path) -> list[PackageLicense]:
 
 
 # ---------------------------------------------------------------------------
+# Python: resolve locked third-party dependency licenses from uv.lock plus an
+# adjacent virtualenv's *.dist-info/METADATA (#144).  Offline-first: no
+# network; locked packages without installed metadata stay UNKNOWN.
+# ---------------------------------------------------------------------------
+
+_PY_NAME_NORM_RE = re.compile(r"[-_.]+")
+
+
+def _norm_py_name(name: str) -> str:
+    """PEP 503 package-name normalisation (lowercase; runs of ``-_.`` → ``-``)."""
+    return _PY_NAME_NORM_RE.sub("-", name).lower()
+
+
+def _license_from_metadata(text: str) -> str | None:
+    """Extract a license id from a dist-info METADATA document.
+
+    Preference order: PEP 639 ``License-Expression`` (a proper SPDX
+    expression), then a ``License ::`` trove classifier, then a short classic
+    ``License`` header — multi-line or very long values are license body text
+    pasted into the field, not an identifier, and are ignored.
+    """
+    msg = email.message_from_string(text)
+    expr = msg.get("License-Expression")
+    if expr and expr.strip():
+        return expr.strip()
+    for clf in msg.get_all("Classifier") or []:
+        if clf.startswith("License ::"):
+            parts = clf.split("::")
+            if len(parts) >= 3:
+                label = parts[-1].strip()
+                if label:
+                    return label
+    lic = (msg.get("License") or "").strip()
+    if lic and lic.upper() != UNKNOWN_LICENSE and "\n" not in lic and len(lic) <= 64:
+        return lic
+    return None
+
+
+def _dist_info_license_index(lock_dir: Path) -> dict[str, str]:
+    """Map normalised package name → license id from venv dist-info METADATA.
+
+    Looks for ``.venv`` / ``venv`` next to the lockfile, in both the POSIX
+    (``lib/python*/site-packages``) and Windows (``Lib/site-packages``)
+    layouts.  Versions are intentionally not matched against the lock: license
+    metadata comes from whatever is installed (best-effort).
+    """
+    index: dict[str, str] = {}
+    for venv_name in (".venv", "venv"):
+        venv = lock_dir / venv_name
+        if not venv.is_dir():
+            continue
+        site_packages = list(venv.glob("lib/python*/site-packages"))
+        site_packages.append(venv / "Lib" / "site-packages")
+        for sp in site_packages:
+            if not sp.is_dir():
+                continue
+            for dist_info in sp.glob("*.dist-info"):
+                # "{name}-{version}.dist-info"; the name part never contains
+                # "-" (wheel escaping replaces runs of -_. with _).
+                dist_name = dist_info.name[: -len(".dist-info")].rsplit("-", 1)[0]
+                meta = dist_info / "METADATA"
+                with contextlib.suppress(OSError):
+                    lic = _license_from_metadata(
+                        meta.read_text(encoding="utf-8", errors="replace")
+                    )
+                    if lic:
+                        index[_norm_py_name(dist_name)] = lic
+    return index
+
+
+def scan_python_dep_licenses(root: Path) -> list[PackageLicense]:
+    """Return PackageLicense for third-party packages locked in uv.lock files.
+
+    For each ``uv.lock`` under *root*, every resolved ``[[package]]`` entry is
+    reported except workspace members (``editable``/``virtual`` sources — those
+    are the repo's own manifests, covered by :func:`scan_python_licenses`).
+    License ids come from an adjacent virtualenv's dist-info metadata when
+    present; packages without installed metadata are UNKNOWN (offline-first,
+    no network resolution).
+    """
+    results: list[PackageLicense] = []
+    for dirpath_str, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        if "uv.lock" not in filenames:
+            continue
+        lock_dir = Path(dirpath_str)
+        data = read_toml_file(lock_dir / "uv.lock") or {}
+        packages = data.get("package")
+        if not isinstance(packages, list):
+            continue
+        licenses = _dist_info_license_index(lock_dir)
+        for entry in packages:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            source = entry.get("source")
+            if isinstance(source, dict) and (
+                "editable" in source or "virtual" in source
+            ):
+                continue
+            lic = licenses.get(_norm_py_name(name))
+            results.append(
+                PackageLicense(
+                    name=name,
+                    version=str(entry.get("version") or "?"),
+                    license_id=lic or UNKNOWN_LICENSE,
+                    ecosystem="python",
+                    source="uv.lock+dist-info" if lic else "uv.lock",
+                )
+            )
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Policy evaluation
 # ---------------------------------------------------------------------------
 
@@ -296,10 +414,11 @@ exit codes:
   1  policy violations found (denied / not in allow-list)
   2  unknown licenses found (and --no-fail-unknown not set)
 
-scope (best-effort first-cut):
+scope (best-effort):
   npm: reads node_modules/**/package.json (requires prior npm/pnpm/yarn install).
-  Python: reads pyproject.toml files in the tree (direct-manifest license
-    field only; does not resolve installed/locked dependency licenses).
+  Python: reads pyproject.toml manifests in the tree, plus each uv.lock's
+    locked third-party packages with licenses resolved from an adjacent
+    venv's *.dist-info/METADATA (offline; UNKNOWN without installed metadata).
   Go / Rust / Deno / container: not yet supported; reported as unknown.
 
 allow/deny list format:
@@ -381,6 +500,7 @@ def main(argv: list[str] | None = None) -> int:
         root = Path(root_str)
         all_packages.extend(scan_npm_licenses(root))
         all_packages.extend(scan_python_licenses(root))
+        all_packages.extend(scan_python_dep_licenses(root))
 
     result = apply_policy(
         all_packages, allow=allow_list or None, deny=deny_list or None
@@ -440,7 +560,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  ... and {len(result.unknown) - 20} more")
             print(
                 "\nNote: license data is best-effort (npm: node_modules; "
-                "Python: pyproject.toml; other ecosystems: unsupported)."
+                "Python: pyproject.toml + uv.lock/venv dist-info; "
+                "other ecosystems: unsupported)."
             )
 
     if result.violations:

@@ -13,11 +13,13 @@ from repo_ops_lockfiles.license_policy import (
     UNKNOWN_LICENSE,
     PackageLicense,
     _extract_pyproject_license,
+    _license_from_metadata,
     _matches_any,
     apply_policy,
     build_license_parser,
     main,
     scan_npm_licenses,
+    scan_python_dep_licenses,
     scan_python_licenses,
 )
 
@@ -161,6 +163,118 @@ def test_scan_python_licenses_unknown_when_no_license(tmp_path: Path) -> None:
     )
     results = scan_python_licenses(tmp_path)
     assert results[0].license_id == UNKNOWN_LICENSE
+
+
+# ---------------------------------------------------------------------------
+# Unit: scan_python_dep_licenses (uv.lock + venv dist-info, #144)
+# ---------------------------------------------------------------------------
+
+# Header formats verbatim from real dist-info METADATA files (uv-managed venv):
+# packaging 26.2 uses PEP 639 License-Expression; coverage 7.14.3 a classic
+# License header; older wheels only carry the trove classifier.
+_UV_LOCK = """\
+version = 1
+
+[[package]]
+name = "packaging"
+version = "26.2"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "coverage"
+version = "7.14.3"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "typing-extensions"
+version = "4.12.2"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "certifi"
+version = "2026.6.17"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "myapp"
+version = "0.1.0"
+source = { editable = "packages/myapp" }
+"""
+
+
+def _write_dist_info(sp: Path, dist: str, version: str, metadata: str) -> None:
+    di = sp / f"{dist}-{version}.dist-info"
+    di.mkdir(parents=True)
+    (di / "METADATA").write_text(metadata, encoding="utf-8")
+
+
+def test_scan_python_dep_licenses_uv_lock_with_venv(tmp_path: Path) -> None:
+    """Locked third-party deps resolve licenses from venv dist-info METADATA.
+
+    Covers: License-Expression (PEP 639), classic License header, classifier
+    fallback, missing dist-info → UNKNOWN, editable workspace-member exclusion,
+    and PEP 503 name normalisation (typing_extensions dir ↔ typing-extensions).
+    """
+    (tmp_path / "uv.lock").write_text(_UV_LOCK, encoding="utf-8")
+    sp = tmp_path / ".venv" / "lib" / "python3.12" / "site-packages"
+    _write_dist_info(
+        sp,
+        "packaging",
+        "26.2",
+        "Metadata-Version: 2.4\nName: packaging\nVersion: 26.2\n"
+        "License-Expression: Apache-2.0 OR BSD-2-Clause\n\nbody\n",
+    )
+    _write_dist_info(
+        sp,
+        "coverage",
+        "7.14.3",
+        "Metadata-Version: 2.1\nName: coverage\nVersion: 7.14.3\n"
+        "License: Apache-2.0\n\nbody\n",
+    )
+    _write_dist_info(
+        sp,
+        "typing_extensions",
+        "4.12.2",
+        "Metadata-Version: 2.1\nName: typing_extensions\nVersion: 4.12.2\n"
+        "Classifier: License :: OSI Approved :: Python Software Foundation License\n"
+        "\nbody\n",
+    )
+    # certifi is locked but has no dist-info; myapp is an editable member.
+
+    results = scan_python_dep_licenses(tmp_path)
+
+    by_name = {p.name: p for p in results}
+    assert set(by_name) == {"packaging", "coverage", "typing-extensions", "certifi"}
+    assert by_name["packaging"].license_id == "Apache-2.0 OR BSD-2-Clause"
+    assert by_name["packaging"].source == "uv.lock+dist-info"
+    assert by_name["packaging"].version == "26.2"
+    assert by_name["coverage"].license_id == "Apache-2.0"
+    assert by_name["typing-extensions"].license_id == (
+        "Python Software Foundation License"
+    )
+    assert by_name["certifi"].license_id == UNKNOWN_LICENSE
+    assert by_name["certifi"].source == "uv.lock"
+    assert all(p.ecosystem == "python" for p in results)
+
+
+def test_scan_python_dep_licenses_no_venv_all_unknown(tmp_path: Path) -> None:
+    """Without a venv, locked packages are reported UNKNOWN (offline; no network)."""
+    (tmp_path / "uv.lock").write_text(_UV_LOCK, encoding="utf-8")
+    results = scan_python_dep_licenses(tmp_path)
+    assert len(results) == 4  # editable myapp still excluded
+    assert all(p.license_id == UNKNOWN_LICENSE for p in results)
+    assert all(p.source == "uv.lock" for p in results)
+
+
+def test_license_from_metadata_rejects_pasted_license_body() -> None:
+    """A multi-line License header (pasted license text) is not an identifier."""
+    text = (
+        "Metadata-Version: 2.1\nName: legacy\nVersion: 1.0\n"
+        "License: Permission is hereby granted, free of charge, to any person\n"
+        "        obtaining a copy of this software and associated documentation\n"
+        "\nbody\n"
+    )
+    assert _license_from_metadata(text) is None
 
 
 # ---------------------------------------------------------------------------
