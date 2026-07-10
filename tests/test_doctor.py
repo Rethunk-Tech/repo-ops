@@ -1,0 +1,274 @@
+"""Tests for repo-ops doctor (toolchain/auth preflight)."""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
+from repo_ops_doctor import doctor
+from repo_ops_doctor.doctor import (
+    BinarySpec,
+    build_doctor_parser,
+    main,
+    probe_all,
+    probe_binary,
+    probe_gh_auth,
+)
+
+
+def _fake_which_all_present(name: str) -> str | None:
+    return f"/usr/bin/{name}"
+
+
+def _fake_run_version(cmd: list[str], **_kwargs: object) -> MagicMock:
+    return MagicMock(returncode=0, stdout=f"{cmd[0]} version 1.2.3\n", stderr="")
+
+
+# ---------------------------------------------------------------------------
+# All-present happy path
+# ---------------------------------------------------------------------------
+
+
+def test_probe_all_present_reports_found_with_path_and_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", _fake_which_all_present)
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run_version)
+
+    results = probe_all()
+
+    assert results  # non-empty static table
+    assert all(r.found for r in results)
+    for r in results:
+        if r.name == "gofmt":
+            # gofmt has no safe version invocation (version_args=()); skipped.
+            assert r.version is None
+        else:
+            assert r.version is not None
+        assert r.path == f"/usr/bin/{r.name}"
+
+
+def test_main_all_present_exits_zero_and_prints_table(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", _fake_which_all_present)
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run_version)
+
+    code = main([])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "binaries found" in out
+    assert "gh auth: authenticated" in out
+    assert "Missing:" not in out
+
+
+# ---------------------------------------------------------------------------
+# Missing tool + --strict
+# ---------------------------------------------------------------------------
+
+
+def _fake_which_missing_poetry(name: str) -> str | None:
+    if name == "poetry":
+        return None
+    return f"/usr/bin/{name}"
+
+
+def test_missing_binary_reported_but_default_exit_zero(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", _fake_which_missing_poetry)
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run_version)
+
+    code = main([])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Missing: poetry" in out
+
+
+def test_missing_binary_with_strict_exits_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", _fake_which_missing_poetry)
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run_version)
+
+    assert main(["--strict"]) == 1
+
+
+def test_no_missing_binaries_with_strict_exits_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", _fake_which_all_present)
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run_version)
+
+    assert main(["--strict"]) == 0
+
+
+# ---------------------------------------------------------------------------
+# --json shape
+# ---------------------------------------------------------------------------
+
+
+def test_json_output_shape(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", _fake_which_missing_poetry)
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run_version)
+
+    code = main(["--json", "--compact"])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+    assert payload["schema_version"] == 1
+    assert payload["missing"] == ["poetry"]
+    assert payload["total_count"] == len(payload["binaries"])
+    assert payload["found_count"] == payload["total_count"] - 1
+    names = {b["name"] for b in payload["binaries"]}
+    assert {"git", "gh", "uv", "poetry", "npm", "go", "cargo"} <= names
+    poetry_entry = next(b for b in payload["binaries"] if b["name"] == "poetry")
+    assert poetry_entry == {
+        "name": "poetry",
+        "ecosystem": "python",
+        "found": False,
+        "path": None,
+        "version": None,
+    }
+    assert payload["gh_auth"]["checked"] is True
+    assert payload["gh_auth"]["authenticated"] is True
+
+
+def test_json_out_writes_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", _fake_which_all_present)
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run_version)
+    out_path = tmp_path / "doctor.json"
+
+    code = main(["--json", "--json-out", str(out_path)])
+
+    assert code == 0
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1
+    printed = capsys.readouterr().out.strip()
+    assert printed == str(out_path)
+
+
+def test_json_out_requires_json_flag() -> None:
+    with pytest.raises(SystemExit):
+        main(["--json-out", "/tmp/doctor.json"])
+
+
+# ---------------------------------------------------------------------------
+# gh auth: unauthenticated / missing / probe failure
+# ---------------------------------------------------------------------------
+
+
+def test_probe_gh_auth_unauthenticated(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fake_run(cmd: list[str], **_kwargs: object) -> MagicMock:
+        assert cmd == ["/usr/bin/gh", "auth", "status"]
+        return MagicMock(
+            returncode=1, stdout="", stderr="You are not logged into any hosts"
+        )
+
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run)
+
+    status = probe_gh_auth("/usr/bin/gh")
+
+    assert status.checked is True
+    assert status.authenticated is False
+    assert status.detail == "You are not logged into any hosts"
+
+
+def test_probe_gh_auth_missing_gh_skips_check() -> None:
+    status = probe_gh_auth(None)
+    assert status.checked is False
+    assert status.authenticated is None
+    assert status.detail is None
+
+
+def test_probe_gh_auth_timeout_reports_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fake_run_timeout(cmd: list[str], **_kwargs: object) -> MagicMock:
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=15)
+
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run_timeout)
+
+    status = probe_gh_auth("/usr/bin/gh")
+
+    assert status.checked is True
+    assert status.authenticated is None
+    assert status.detail is not None
+
+
+def test_main_reports_gh_unauthenticated_in_human_and_json(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", _fake_which_all_present)
+
+    def _fake_run(cmd: list[str], **_kwargs: object) -> MagicMock:
+        if cmd[1:] == ["auth", "status"]:
+            return MagicMock(returncode=1, stdout="", stderr="not logged in")
+        return _fake_run_version(cmd)
+
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run)
+
+    code = main([])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "gh auth: NOT authenticated" in out
+
+    code = main(["--json", "--compact"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["gh_auth"] == {
+        "checked": True,
+        "authenticated": False,
+        "detail": "not logged in",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Individual probe helpers / edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_probe_binary_missing_returns_no_path_or_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", lambda _name: None)
+    result = probe_binary(BinarySpec("nonexistent-tool", "test"))
+    assert result.found is False
+    assert result.path is None
+    assert result.version is None
+
+
+def test_probe_version_failure_leaves_version_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", lambda _name: "/usr/bin/broken-tool")
+
+    def _fake_run_error(cmd: list[str], **_kwargs: object) -> MagicMock:
+        raise OSError("exec failed")
+
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run_error)
+
+    result = probe_binary(BinarySpec("broken-tool", "test"))
+    assert result.found is True
+    assert result.path == "/usr/bin/broken-tool"
+    assert result.version is None
+
+
+def test_doctor_help_exits_zero() -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--help"])
+    assert exc_info.value.code == 0
+
+
+def test_build_doctor_parser_defaults() -> None:
+    parser = build_doctor_parser()
+    args = parser.parse_args([])
+    assert args.strict is False
+    assert args.json_out is False
+    assert args.compact is False
