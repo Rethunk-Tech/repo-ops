@@ -10,7 +10,15 @@ Scope (best-effort)
   virtualenv's ``*.dist-info/METADATA`` when one exists (#144).  Offline-first:
   locked packages without installed metadata are reported as UNKNOWN rather
   than resolved over the network.  ``setup.cfg`` is not read.
-- All other ecosystems: reported as UNKNOWN.
+- Go: go.sum module@version pairs resolved via LICENSE* files in the local
+  GOMODCACHE (offline; classified from license text heuristics).
+- Rust: Cargo.lock crates resolved via ``cargo metadata``'s ``license`` field
+  (offline/``--offline``; skipped gracefully when ``cargo`` is unavailable).
+- Deno: deno.lock ``npm:`` specifiers resolved via the ``package.json``
+  ``license`` field cached under DENO_DIR's npm registry mirror (offline);
+  ``jsr:``/``http(s):`` specifiers have no local license source.
+- container images: no local license source; reported UNKNOWN and excluded
+  from the ``--fail-unknown`` exit-2 bucket (see ``NO_EXTRACTOR_ECOSYSTEMS``).
 
 Limitations are documented in the output when unknown licenses are found.
 """
@@ -23,6 +31,8 @@ import email
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,6 +45,8 @@ from repo_ops_core.cli import (
 )
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.filesystem import read_toml_file
+
+from repo_ops_lockfiles.parsers import versions_deno_lock
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -305,8 +317,305 @@ def scan_python_dep_licenses(root: Path) -> list[PackageLicense]:
 
 
 # ---------------------------------------------------------------------------
+# Go: classify LICENSE* files in the local GOMODCACHE (offline; no network)
+# ---------------------------------------------------------------------------
+
+_GO_LICENSE_FILENAMES = ("LICENSE", "LICENSE.txt", "LICENSE.md", "COPYING")
+
+# Coarse, offline license-text classifier: (SPDX id, required substrings) in
+# priority order.  Best-effort only — a handful of distinguishing phrases per
+# license family, checked most-specific-first (e.g. BSD-3-Clause's "endorse
+# or promote" clause before the more general BSD-2-Clause text it contains).
+_LICENSE_TEXT_SIGNATURES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Apache-2.0", ("Apache License", "Version 2.0")),
+    ("MPL-2.0", ("Mozilla Public License", "2.0")),
+    ("GPL-3.0", ("GNU GENERAL PUBLIC LICENSE", "Version 3")),
+    ("GPL-2.0", ("GNU GENERAL PUBLIC LICENSE", "Version 2")),
+    ("LGPL-3.0", ("GNU LESSER GENERAL PUBLIC LICENSE", "Version 3")),
+    ("LGPL-2.1", ("GNU LESSER GENERAL PUBLIC LICENSE", "Version 2.1")),
+    (
+        "BSD-3-Clause",
+        (
+            "Redistribution and use in source and binary forms",
+            "endorse or promote products derived",
+        ),
+    ),
+    ("BSD-2-Clause", ("Redistribution and use in source and binary forms",)),
+    ("MIT", ("Permission is hereby granted, free of charge",)),
+    (
+        "ISC",
+        ("Permission to use, copy, modify, and/or distribute this software",),
+    ),
+    (
+        "Unlicense",
+        ("This is free and unencumbered software released into the public domain",),
+    ),
+)
+
+
+def _classify_license_text(text: str) -> str:
+    """Best-effort SPDX id from raw LICENSE file text (offline heuristics)."""
+    for spdx_id, needles in _LICENSE_TEXT_SIGNATURES:
+        if all(n in text for n in needles):
+            return spdx_id
+    return UNKNOWN_LICENSE
+
+
+def _go_escape(s: str) -> str:
+    """Go module-cache path escaping: uppercase → ``!`` + lowercase, ``!`` → ``!!``.
+
+    Mirrors ``golang.org/x/mod/module.EscapePath``: module paths and versions
+    with uppercase letters (e.g. ``github.com/BurntSushi/toml``) are stored
+    on disk case-escaped (``github.com/!burnt!sushi/toml``) so the cache is
+    usable on case-insensitive filesystems.
+    """
+    out: list[str] = []
+    for ch in s:
+        if ch == "!":
+            out.append("!!")
+        elif ch.isupper():
+            out.append("!" + ch.lower())
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _default_gomodcache() -> Path:
+    env = os.environ.get("GOMODCACHE", "").strip()
+    if env:
+        return Path(env)
+    gopath = os.environ.get("GOPATH", "").strip()
+    if gopath:
+        return Path(gopath) / "pkg" / "mod"
+    return Path.home() / "go" / "pkg" / "mod"
+
+
+def resolve_go_license(module: str, version: str, gomodcache: Path | None = None) -> str:
+    """Classify a Go module's license from its LICENSE* file in GOMODCACHE.
+
+    Offline/local-only: modules not present in the cache (never ``go build``/
+    ``go mod download``-ed locally) resolve to :data:`UNKNOWN_LICENSE`.
+    """
+    cache = gomodcache if gomodcache is not None else _default_gomodcache()
+    mod_dir = cache / f"{_go_escape(module)}@{_go_escape(version)}"
+    if not mod_dir.is_dir():
+        return UNKNOWN_LICENSE
+    for fname in _GO_LICENSE_FILENAMES:
+        candidate = mod_dir / fname
+        if candidate.is_file():
+            with contextlib.suppress(OSError):
+                return _classify_license_text(
+                    candidate.read_text(encoding="utf-8", errors="replace")
+                )
+    return UNKNOWN_LICENSE
+
+
+def _iter_go_sum_entries(p: Path) -> set[tuple[str, str]]:
+    """go.sum → set of (module, version); ``/go.mod`` annotation lines collapse
+    onto the same version as their module's regular entry."""
+    out: set[tuple[str, str]] = set()
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            mod = parts[0]
+            ver = parts[1].split("/")[0]
+            out.add((mod, ver))
+    return out
+
+
+def scan_go_licenses(root: Path, *, gomodcache: Path | None = None) -> list[PackageLicense]:
+    """Return PackageLicense entries for go.sum modules, classified via GOMODCACHE."""
+    results: list[PackageLicense] = []
+    cache = gomodcache if gomodcache is not None else _default_gomodcache()
+    seen: set[tuple[str, str]] = set()
+    for dirpath_str, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        if "go.sum" not in filenames:
+            continue
+        for mod, ver in _iter_go_sum_entries(Path(dirpath_str) / "go.sum"):
+            if (mod, ver) in seen:
+                continue
+            seen.add((mod, ver))
+            lic = resolve_go_license(mod, ver, gomodcache=cache)
+            results.append(
+                PackageLicense(
+                    name=mod,
+                    version=ver,
+                    license_id=lic,
+                    ecosystem="go",
+                    source="go.sum+GOMODCACHE" if lic != UNKNOWN_LICENSE else "go.sum",
+                )
+            )
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Rust: license field via `cargo metadata` (offline; graceful skip)
+# ---------------------------------------------------------------------------
+
+
+def _run_cargo_metadata(manifest_dir: Path) -> dict[str, object] | None:
+    """Run ``cargo metadata --offline`` in *manifest_dir*; None on any failure.
+
+    Graceful skip covers: no local ``cargo`` binary, non-zero exit (e.g.
+    dependencies not yet fetched so ``--offline`` cannot resolve them), a
+    timeout, or unparsable output.
+    """
+    if shutil.which("cargo") is None:
+        return None
+    try:
+        proc = subprocess.run(
+            ["cargo", "metadata", "--format-version", "1", "--offline"],
+            cwd=manifest_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0 or not proc.stdout:
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def scan_rust_licenses(root: Path) -> list[PackageLicense]:
+    """Return PackageLicense entries for Cargo.lock crates via `cargo metadata`.
+
+    Requires a local ``cargo`` binary and an already-fetched dependency cache
+    (``--offline``); skips gracefully (no results for that tree) when either
+    is unavailable. Path/workspace-local crates (``source`` is null) are
+    excluded — they are the repo's own manifests, not locked dependencies.
+    """
+    results: list[PackageLicense] = []
+    for dirpath_str, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        if "Cargo.lock" not in filenames or "Cargo.toml" not in filenames:
+            continue
+        data = _run_cargo_metadata(Path(dirpath_str))
+        if not data:
+            continue
+        for pkg in data.get("packages") or []:
+            if not isinstance(pkg, dict):
+                continue
+            if pkg.get("source") is None:
+                continue  # path/workspace-local crate, not a locked dependency
+            name = pkg.get("name")
+            ver = pkg.get("version")
+            if not isinstance(name, str) or not name or not isinstance(ver, str):
+                continue
+            lic = pkg.get("license")
+            lic_id = lic.strip() if isinstance(lic, str) and lic.strip() else None
+            results.append(
+                PackageLicense(
+                    name=name,
+                    version=ver,
+                    license_id=lic_id or UNKNOWN_LICENSE,
+                    ecosystem="rust",
+                    source="cargo-metadata",
+                )
+            )
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Deno: npm: specifiers resolved via DENO_DIR's npm registry cache (offline)
+# ---------------------------------------------------------------------------
+
+
+def _default_deno_dir() -> Path:
+    env = os.environ.get("DENO_DIR", "").strip()
+    if env:
+        return Path(env)
+    xdg_cache = os.environ.get("XDG_CACHE_HOME", "").strip()
+    base = Path(xdg_cache) if xdg_cache else Path.home() / ".cache"
+    return base / "deno"
+
+
+def _split_npm_specifier(entry: str) -> tuple[str, str]:
+    """Split "name@version" or "@scope/name@version" into (name, version)."""
+    if entry.startswith("@"):
+        second_at = entry.find("@", 1)
+        if second_at == -1:
+            return entry, ""
+        return entry[:second_at], entry[second_at + 1 :]
+    at = entry.find("@")
+    if at == -1:
+        return entry, ""
+    return entry[:at], entry[at + 1 :]
+
+
+def resolve_deno_npm_license(
+    pkg_name: str, version: str, deno_dir: Path | None = None
+) -> str:
+    """Read the ``license`` field of a cached npm ``package.json`` (offline).
+
+    Looks under ``DENO_DIR/npm/registry.npmjs.org/<pkg>/<version>/package.json``
+    (Deno's local npm-compat cache layout). Missing/unresolvable → UNKNOWN.
+    """
+    cache = deno_dir if deno_dir is not None else _default_deno_dir()
+    pkg_json = cache / "npm" / "registry.npmjs.org" / pkg_name / version / "package.json"
+    if not pkg_json.is_file():
+        return UNKNOWN_LICENSE
+    with contextlib.suppress(Exception):
+        data = json.loads(pkg_json.read_text(encoding="utf-8", errors="replace"))
+        raw_lic = data.get("license") or UNKNOWN_LICENSE
+        if isinstance(raw_lic, dict):
+            raw_lic = raw_lic.get("type") or UNKNOWN_LICENSE
+        return str(raw_lic).strip() or UNKNOWN_LICENSE
+    return UNKNOWN_LICENSE
+
+
+def scan_deno_licenses(root: Path, *, deno_dir: Path | None = None) -> list[PackageLicense]:
+    """Return PackageLicense entries for deno.lock ``npm:`` specifiers.
+
+    Only ``npm:`` specifiers are resolvable offline (via the cached
+    package.json's ``license`` field); ``jsr:``/``http(s):`` specifiers have
+    no local license source and are not reported (no manifest to read).
+    """
+    results: list[PackageLicense] = []
+    cache = deno_dir if deno_dir is not None else _default_deno_dir()
+    for dirpath_str, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        if "deno.lock" not in filenames:
+            continue
+        for entry in versions_deno_lock(Path(dirpath_str) / "deno.lock"):
+            if not entry.startswith("npm:"):
+                continue
+            name, ver = _split_npm_specifier(entry[len("npm:") :])
+            if not name or not ver:
+                continue
+            lic = resolve_deno_npm_license(name, ver, deno_dir=cache)
+            results.append(
+                PackageLicense(
+                    name=name,
+                    version=ver,
+                    license_id=lic,
+                    ecosystem="deno",
+                    source="deno.lock+DENO_DIR" if lic != UNKNOWN_LICENSE else "deno.lock",
+                )
+            )
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Policy evaluation
 # ---------------------------------------------------------------------------
+
+# Ecosystems with no local license extractor: their UNKNOWN entries are
+# excluded from the --fail-unknown exit-2 gate (they would always be
+# UNKNOWN — no offline metadata source exists — so failing on them is just
+# noise). Currently: container images (no manifest to read offline).
+NO_EXTRACTOR_ECOSYSTEMS = frozenset({"container"})
+
+
+def _fail_gate_unknown(unknown: list[PackageLicense]) -> list[PackageLicense]:
+    """Subset of *unknown* that should count toward --fail-unknown's exit 2."""
+    return [p for p in unknown if p.ecosystem not in NO_EXTRACTOR_ECOSYSTEMS]
 
 # Normalise SPDX-ish identifiers for comparison
 _SPDX_NORM = re.compile(r"[^A-Za-z0-9]")
@@ -412,14 +721,22 @@ _LICENSE_EPILOG = """\
 exit codes:
   0  no violations and no unknown licenses (or --no-fail-unknown)
   1  policy violations found (denied / not in allow-list)
-  2  unknown licenses found (and --no-fail-unknown not set)
+  2  unknown licenses found in an ecosystem with a local extractor
+     (and --no-fail-unknown not set); container images never trigger this
 
 scope (best-effort):
   npm: reads node_modules/**/package.json (requires prior npm/pnpm/yarn install).
   Python: reads pyproject.toml manifests in the tree, plus each uv.lock's
     locked third-party packages with licenses resolved from an adjacent
     venv's *.dist-info/METADATA (offline; UNKNOWN without installed metadata).
-  Go / Rust / Deno / container: not yet supported; reported as unknown.
+  Go: go.sum module@version pairs resolved via LICENSE* files in GOMODCACHE
+    (offline; local module cache only, default ~/go/pkg/mod).
+  Rust: Cargo.lock crates resolved via `cargo metadata --offline` (requires
+    a local cargo and an already-fetched dependency cache).
+  Deno: deno.lock npm: specifiers resolved via DENO_DIR's npm registry cache
+    (offline); jsr:/http(s): specifiers have no local license source.
+  container: no local license source; reported unknown but excluded from
+    the --fail-unknown exit-2 bucket (see NO_EXTRACTOR_ECOSYSTEMS).
 
 allow/deny list format:
   SPDX identifiers, comma-separated, case-insensitive.
@@ -501,6 +818,9 @@ def main(argv: list[str] | None = None) -> int:
         all_packages.extend(scan_npm_licenses(root))
         all_packages.extend(scan_python_licenses(root))
         all_packages.extend(scan_python_dep_licenses(root))
+        all_packages.extend(scan_go_licenses(root))
+        all_packages.extend(scan_rust_licenses(root))
+        all_packages.extend(scan_deno_licenses(root))
 
     result = apply_policy(
         all_packages, allow=allow_list or None, deny=deny_list or None
@@ -561,12 +881,15 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 "\nNote: license data is best-effort (npm: node_modules; "
                 "Python: pyproject.toml + uv.lock/venv dist-info; "
-                "other ecosystems: unsupported)."
+                "Go: go.sum + GOMODCACHE LICENSE files; "
+                "Rust: Cargo.lock + cargo metadata; "
+                "Deno: deno.lock npm: specifiers + DENO_DIR cache; "
+                "container images: unsupported, excluded from --fail-unknown)."
             )
 
     if result.violations:
         return 1
-    if result.unknown and not args.no_fail_unknown:
+    if result.unknown and not args.no_fail_unknown and _fail_gate_unknown(result.unknown):
         return 2
     return 0
 
