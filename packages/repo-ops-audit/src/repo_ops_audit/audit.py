@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -64,6 +65,11 @@ from repo_ops_core.cli import (
     add_verbose_argument,
     resolve_scan_roots,
     wire_verbose,
+)
+from repo_ops_core.config import (
+    apply_config_to_env,
+    load_global_config,
+    load_repo_config,
 )
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.git import repo_label
@@ -1176,6 +1182,17 @@ def _worst_severity(results: list[WorkspaceResult]) -> str | None:
     return worst
 
 
+def _flag_explicit(argv_list: list[str], flag: str) -> bool:
+    """Return True when *flag* (e.g. ``"--fail-on"``) was explicitly passed in argv.
+
+    Used to distinguish "user passed the flag" from "argparse default kicked
+    in" without changing the parser's own defaults (which existing tests
+    assert directly against ``build_audit_parser().parse_args([])``). Matches
+    both ``--flag value`` and ``--flag=value`` forms.
+    """
+    return any(a == flag or a.startswith(flag + "=") for a in argv_list)
+
+
 def _exit_code_for(
     results: list[WorkspaceResult],
     fail_on: str,
@@ -1747,13 +1764,31 @@ tools used (must be on PATH or workspace is skipped):
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv_list = list(argv) if argv is not None else sys.argv[1:]
     parser = build_audit_parser()
     args = parser.parse_args(argv)
     wire_verbose(args)
 
+    # Config-driven fail-on gates: promote TOML config-file values (global +
+    # per-repo) into REPO_OPS_AUDIT_FAIL_ON / REPO_OPS_AUDIT_FAIL_ON_UNKNOWN
+    # env vars (never overriding an already-set env var), then resolve with
+    # precedence CLI flag > env > default. The parser's own defaults
+    # ("high" / False) are left untouched so callers using build_audit_parser()
+    # directly still see them; the env layer is applied here in main() only.
+    apply_config_to_env(
+        global_cfg=load_global_config(), repo_cfg=load_repo_config(Path.cwd())
+    )
+    fail_on = args.fail_on
+    if not _flag_explicit(argv_list, "--fail-on"):
+        env_fail_on = os.environ.get("REPO_OPS_AUDIT_FAIL_ON", "").strip()
+        if env_fail_on:
+            fail_on = env_fail_on
+
     roots = resolve_scan_roots(list(args.roots), parser)
     follow_symlinks = bool(getattr(args, "follow_symlinks", False))
     fail_on_unknown = bool(getattr(args, "fail_on_unknown", False))
+    if not _flag_explicit(argv_list, "--fail-on-unknown"):
+        fail_on_unknown = os.environ.get("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", "") == "1"
     fix_plan = bool(getattr(args, "fix_plan", False))
     do_fix = bool(getattr(args, "fix", False))
     allow_dirty = bool(getattr(args, "allow_dirty", False))
@@ -1765,7 +1800,7 @@ def main(argv: list[str] | None = None) -> int:
 
     results = run_audit(roots, follow_symlinks=follow_symlinks)
 
-    sev_exit = _exit_code_for(results, args.fail_on, fail_on_unknown)
+    sev_exit = _exit_code_for(results, fail_on, fail_on_unknown)
 
     # Collect remediations when either fix-plan or fix is active.
     remediations: list[RemediationItem] = []
@@ -1778,9 +1813,7 @@ def main(argv: list[str] | None = None) -> int:
         Path(sarif_out).write_text(json.dumps(sarif_doc, indent=2), encoding="utf-8")
 
     # --- GitHub step-summary (auto when GITHUB_STEP_SUMMARY env var is set) --
-    import os as _os
-
-    if _os.environ.get("GITHUB_STEP_SUMMARY"):
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
         from repo_ops_core.report import (
             build_audit_summary,
             write_step_summary,
