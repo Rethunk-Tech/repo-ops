@@ -135,6 +135,12 @@ def _run_upgrade_body(
         os.environ["REPO_OPS_BUN_UPDATE_LATEST"] = "1"
         os.environ["REPO_OPS_PNPM_UPDATE_LATEST"] = "1"
         os.environ["REPO_OPS_YARN_UPDATE_LATEST"] = "1"
+        # Cross-major gates for the non-JS ecosystems the --latest umbrella also
+        # covers: container image tags, pre-commit hook revs, and submodule tag
+        # pointers all read their own REPO_OPS_*_UPDATE_LATEST env var.
+        os.environ["REPO_OPS_CONTAINER_UPDATE_LATEST"] = "1"
+        os.environ["REPO_OPS_PRECOMMIT_UPDATE_LATEST"] = "1"
+        os.environ["REPO_OPS_SUBMODULE_UPDATE_LATEST"] = "1"
         os.environ.setdefault("REPO_OPS_GO_UPGRADE_MODE", "explicit")
     # Opt-in per-package targeted fallback (#111); only meaningful with --latest,
     # which is what produces the behind_latest work-list it consumes. All three
