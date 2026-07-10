@@ -673,6 +673,46 @@ def _apply_cargo_targeted(ws_path: str, items: list[RemediationItem]) -> ApplyOu
     return ApplyOutcome(workspace=ws_path, status="ok", changes_count=len(updated))
 
 
+def _apply_go_targeted(ws_path: str, items: list[RemediationItem]) -> ApplyOutcome:
+    """Bump vulnerable Go modules to their fixed versions via ``go get`` + ``go mod tidy``.
+
+    Runs ``go get <module>@<fixed_version>`` for each item, then a single
+    ``go mod tidy`` to reconcile ``go.sum``/indirect requires after retargeting.
+
+    Unlike cargo's constraint strings, govulncheck's ``fixed_version`` is
+    already an exact version — no constraint parsing needed. Stops and
+    returns a ``"fail"`` outcome on the first non-zero ``go get`` exit.
+    ``go mod tidy`` only runs when at least one ``go get`` succeeded, so a
+    call with no resolvable items is a no-op ``"ok"`` outcome with zero
+    changes.
+    """
+    updated: list[str] = []
+    for item in items:
+        ver = item.safe_version.strip()
+        if not ver:
+            continue
+        rc, _stdout, stderr = _run(["go", "get", f"{item.package}@{ver}"], ws_path)
+        if rc != 0:
+            return ApplyOutcome(
+                workspace=ws_path,
+                status="fail",
+                error=(
+                    f"go get {item.package}@{ver}: "
+                    f"{(stderr or _stdout or 'failed')[:200]}"
+                ),
+            )
+        updated.append(item.package)
+    if updated:
+        rc, _stdout, stderr = _run(["go", "mod", "tidy"], ws_path)
+        if rc != 0:
+            return ApplyOutcome(
+                workspace=ws_path,
+                status="fail",
+                error=f"go mod tidy: {(stderr or _stdout or 'failed')[:200]}",
+            )
+    return ApplyOutcome(workspace=ws_path, status="ok", changes_count=len(updated))
+
+
 def _extract_remediations_pip_audit(data: list[Any], ws: str) -> list[RemediationItem]:
     """Extract (package → highest known-safe fix_version) from pip-audit JSON.
 
@@ -1379,8 +1419,26 @@ def apply_remediations(
                 item.safe_version
             )
 
+    # Go workspaces bypass the registry/orchestration path entirely: apply
+    # directly via `go get`/`go mod tidy` (mirrors the standalone
+    # `_apply_cargo_targeted` pattern) rather than going through
+    # `repo_ops_go`'s registered applier, which has no targeted-bump concept.
+    _go_ws_items: dict[str, list[RemediationItem]] = {}
+    for item in remediations:
+        if item.ecosystem == "go":
+            _go_ws_items.setdefault(item.workspace, []).append(item)
+
     outcomes: list[ApplyOutcome] = []
     for ws_path, (ecosystem, manager) in seen.items():
+        if ecosystem == "go":
+            if shutil.which("go") is None:
+                outcomes.append(ApplyOutcome(ws_path, "skip", "go not on PATH"))
+            else:
+                outcomes.append(
+                    _apply_go_targeted(ws_path, _go_ws_items.get(ws_path, []))
+                )
+            continue
+
         if not _try_register_manager(manager):
             outcomes.append(
                 ApplyOutcome(
