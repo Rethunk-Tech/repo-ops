@@ -20,7 +20,7 @@ Subcommands (entry point in `packages/repo-ops`):
 
 Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. Discovery flags (`--flat`, `--follow-symlinks`, actions-only repos): [Security and discovery](#security-and-discovery).
 
-`--json` on every subcommand. For `plan`/`apply`, stdout is one JSON object unless `--json-out PATH` is set (then stdout prints only that path and the report is written to `PATH` atomically). JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno`. `--log-level {debug,info,warning,error}` sets the stdlib root logger level; `--verbose` / `-v` enables subprocess echo and implies `debug` when `--log-level` is absent. `--submodules` adds `submodules[]` to plan/apply JSON; `apply --submodule-order=children-first` processes child git repos before parent umbrellas when `.gitmodules` is present.
+`--json` is available on every subcommand except `sbom` (which emits its report via `--format`/`--output` instead). `--json-out PATH` (writes the report atomically to `PATH`; stdout prints only that path) is available on `inventory`, `plan`, `apply`, and `pushed` — for `plan`/`apply`, stdout is otherwise one JSON object. JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno`. `--log-level {debug,info,warning,error}` sets the stdlib root logger level; `--verbose` / `-v` enables subprocess echo and implies `debug` when `--log-level` is absent. `--submodules` adds `submodules[]` to plan/apply JSON; `apply --submodule-order=children-first` processes child git repos before parent umbrellas when `.gitmodules` is present.
 
 ### Plan vs apply
 
@@ -47,7 +47,7 @@ Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_cor
 | **npm** | `npm update` (semver ranges in manifests) | — |
 | **pnpm** | `pnpm update -r` (within ranges) | `REPO_OPS_PNPM_UPDATE_LATEST=1` → adds `--latest` |
 | **yarn** | `yarn up` (Berry, in-range bumps in isolated plan snapshots) | `REPO_OPS_YARN_UPDATE_LATEST=1` → `yarn up -R '*'`; reports direct deps yarn's resolver kept behind their newest published version as `behind_latest` (#110). Add `--yarn-targeted-bump` (`REPO_OPS_YARN_TARGETED_BUMP=1`) to also *move* those gaps: a reversible per-package `yarn up <pkg>@latest`, kept only if the workspace still installs and the version actually advances (#111) |
-| **bun** | `bun update` (within ranges) | `REPO_OPS_BUN_UPDATE_LATEST=1` → includes out-of-range "latest" packages |
+| **bun** | `bun update` (within ranges) | `REPO_OPS_BUN_UPDATE_LATEST=1` → includes out-of-range "latest" packages. Add `--bun-targeted-bump` (`REPO_OPS_BUN_TARGETED_BUMP=1`) to also *move* deps `bun update --latest` left behind: a reversible per-package `bun add <pkg>@latest`, kept only if the workspace still installs and the version actually advances |
 | **go** | `REPO_OPS_GO_UPGRADE_MODE=patch` (default) | `explicit` or `mvs` (see below) |
 | **rust** | `cargo update --dry-run` / `cargo update` | — |
 | **python** | Manager-specific (`uv`, poetry, pip-tools, hatch) | See each plugin's check/apply |
@@ -180,6 +180,7 @@ Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
 | yarn_targeted_bump | `--yarn-targeted-bump` | `REPO_OPS_YARN_TARGETED_BUMP` | `yarn_targeted_bump` | `0` |
 | npm_targeted_bump | `--npm-targeted-bump` | `REPO_OPS_NPM_TARGETED_BUMP` | `npm_targeted_bump` | `0` |
 | pnpm_targeted_bump | `--pnpm-targeted-bump` | `REPO_OPS_PNPM_TARGETED_BUMP` | `pnpm_targeted_bump` | `0` |
+| bun_targeted_bump | `--bun-targeted-bump` | `REPO_OPS_BUN_TARGETED_BUMP` | `bun_targeted_bump` | `0` |
 | go_work_sync | (none) | `REPO_OPS_GO_WORK_SYNC` | `go_work_sync` | `0` |
 | no_progress | (none) | `REPO_OPS_NO_PROGRESS` | `no_progress` | `0` |
 | no_state | (none) | `REPO_OPS_NO_STATE` | `no_state` | `0` |

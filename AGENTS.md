@@ -30,7 +30,7 @@ Conventions and quick reference for AI coding agents (Cursor, Claude Code, etc.)
 
 ### DEFAULT_ROOTS
 
-When no trailing `root_dir` arguments are passed, `inventory`, `plan`, `apply`, and `pushed` scan [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_ops_core/constants.py):
+When no trailing `root_dir` arguments are passed, every subcommand except `install-skill` (`inventory`, `plan`, `apply`, `pushed`, `audit`, `dependabot`, `sbom`, `license`) scans [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_ops_core/constants.py):
 
 - `/usr/local/src`
 - `~/Projects`
@@ -77,10 +77,11 @@ repo-ops apply --submodule-order=children-first --submodules /path/to/umbrella
 `--latest` opts into aggressive / cross-range upgrades for this run:
 
 - Sets `REPO_OPS_BUN_UPDATE_LATEST`, `REPO_OPS_PNPM_UPDATE_LATEST`, `REPO_OPS_YARN_UPDATE_LATEST`
+- Also flips the cross-major gates for non-JS ecosystems: `REPO_OPS_CONTAINER_UPDATE_LATEST`, `REPO_OPS_PRECOMMIT_UPDATE_LATEST`, `REPO_OPS_SUBMODULE_UPDATE_LATEST`
 - Defaults `REPO_OPS_GO_UPGRADE_MODE` to `explicit` when unset
 - Sets GitHub Actions to `--actions-upgrade-mode=latest`
 
-Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode` wins over the umbrella for that ecosystem. npm has no latest mode (semver ranges only). Details: `repo-ops plan --help` and [docs/usage.md — Ecosystem upgrade modes](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply).
+Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode` wins over the umbrella for that ecosystem. npm has no latest mode (semver ranges only). Targeted-bump fallbacks (move `behind_latest` gaps instead of only reporting them) exist for all four JS package managers: `--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, `--bun-targeted-bump`. Details: `repo-ops plan --help` and [docs/usage.md — Ecosystem upgrade modes](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply).
 
 ### Flags cheat sheet
 
@@ -96,7 +97,8 @@ Selected flags — `repo-ops <subcommand> --help` is always authoritative.
 | `--latest` | plan, apply | Aggressive cross-range upgrades (see above) |
 | `--allow-dirty` | plan, apply | Process dirty git worktrees |
 | `--skip-actions` | plan, apply | Dependency-only (no Actions pin audit) |
-| `--json` / `--json-out PATH` | all subcommands | JSON report (`--json-out` writes atomically; stdout prints path) |
+| `--json` | all subcommands except `sbom` | JSON report (`sbom` uses `--format`/`--output` instead) |
+| `--json-out PATH` | inventory, plan, apply, pushed | Writes report atomically to `PATH`; stdout prints only that path |
 | `--compact` | all subcommands | With `--json`: emit compact single-line output instead of pretty-printed |
 | `--log-file PATH` | plan, apply | Combined stdout/stderr transcript |
 | `--log-level {debug,info,warning,error}` | plan, apply | Set stdlib root logger level; `--verbose` / `-v` implies `debug` when absent |
