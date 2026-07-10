@@ -12,6 +12,7 @@ from datetime import date
 from pathlib import Path
 from typing import Literal
 
+import repo_ops_upgrade_remediations_deno  # noqa: F401 — side-effect: registers Deno hooks
 import repo_ops_upgrade_remediations_go  # noqa: F401 — side-effect: registers Go hooks
 import repo_ops_upgrade_remediations_js  # noqa: F401 — side-effect: registers JS hooks
 import repo_ops_upgrade_remediations_py  # noqa: F401 — side-effect: registers Python hooks
