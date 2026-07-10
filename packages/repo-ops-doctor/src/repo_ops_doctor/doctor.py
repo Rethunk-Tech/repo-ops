@@ -2,9 +2,11 @@
 """Toolchain/auth preflight: probe the binaries repo-ops shells out to.
 
 Read-only, no scan roots. Resolves each known binary via ``shutil.which``,
-capturing its resolved path and a best-effort version string (first line of
-``<tool> --version``, timeout-guarded and tolerant of tools that print to
-stderr or exit non-zero). ``gh`` additionally gets a ``gh auth status`` check
+capturing its resolved path and a best-effort version string (typically the
+first line of ``<tool> --version``, with per-tool overrides — ``go version``
+takes no dashes and ``gofmt`` has no version flag at all, so its probe is
+skipped; timeout-guarded and tolerant of tools that print to stderr or exit
+non-zero). ``gh`` additionally gets a ``gh auth status`` check
 so agents can tell "not installed" apart from "installed but unauthenticated"
 before a ``dependabot``/``pr``-mode run fails partway through.
 
