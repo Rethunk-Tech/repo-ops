@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`--latest` umbrella now covers all cross-range gates:** container image, pre-commit hook, and submodule tag cross-major upgrades (`REPO_OPS_CONTAINER_UPDATE_LATEST`, `REPO_OPS_PRECOMMIT_UPDATE_LATEST`, `REPO_OPS_SUBMODULE_UPDATE_LATEST`) are flipped by `--latest` instead of being reachable only via raw env/config.
+- **`--bun-targeted-bump`:** bun gains the same behind-latest targeted-bump fallback yarn/npm/pnpm already had (`bun add <pkg>@<version>` with lockfile snapshot/restore); `apply_bun` no longer discards the behind-latest list it computed. Configurable as `bun_targeted_bump` in `[tool.repo-ops]`.
+- **`audit --fix` remediates Go:** fixed versions are extracted from govulncheck findings and applied via `go get <module>@<fixed>` + `go mod tidy`, mirroring the cargo path; graceful skip when `go` is absent. Go was the last scan-only audit ecosystem.
+- **audit fail gates are config-readable:** `audit_fail_on` / `audit_fail_on_unknown` in `[tool.repo-ops]` (env: `REPO_OPS_AUDIT_FAIL_ON`, `REPO_OPS_AUDIT_FAIL_ON_UNKNOWN`) with CLI > env > config > default precedence.
+- **`license` resolves Go/Rust/Deno:** licenses are read offline from local caches (GOMODCACHE LICENSE classification, `cargo metadata`, DENO_DIR npm cache); ecosystems with no extractor (container) are reported unknown but no longer force `--fail-unknown` exit 2.
+- **`sbom` emits pin components:** container image pins (`pkg:oci`) and GitHub Actions `uses:` pins (`pkg:github`) now appear in both CycloneDX and SPDX output, reusing the existing parsers.
+- **`inventory` counts submodule pins:** git submodule gitlinks surface as a new `submodule` ecosystem alongside container/actions/pre-commit pins, resolved locally from `.gitmodules` + `git ls-tree`.
+- **`deno fmt` post-upgrade remediation hook** (`repo-ops-upgrade-remediations-deno`): scoped to changed files, graceful skip when deno is absent, wired into orchestration like the go/js/py/rust hooks.
+
+### Fixed
+
+- **npm/pnpm behind-latest hints are targeted-bump-aware**, matching yarn (#131 parity): once the targeted-bump flag was passed, the hint reports the fallback was attempted instead of re-suggesting a flag or claiming "no latest mode" applies; bun joins the same map.
+- **Targeted-bump ghost-version guard (bun/npm):** when `assert_targets_resolved` detects a ghost bump after an apparently successful install, the workspace snapshot is now restored and the package returns to the still-behind list instead of the exception leaving a corrupted lockfile.
+- **Stale `container` module docstring** claimed credential helpers and ECR auth were report-only; both shipped in 0.17.2 — the docstring now describes the credential-helper/ECR flow.
+
+### Changed
+
+- **Docs describe the full 9-subcommand surface:** `audit`, `dependabot`, `sbom`, and `license` added to README/AGENTS/usage tables and the CLI description; `sbom`/`license` gained usage sections; audit and install-skill flag tables corrected; the orphaned architecture doc is linked from HUMANS; `--json`/`--json-out`/DEFAULT_ROOTS scope claims qualified; the bundled skill AGENTS.md re-synced.
+- **Import-boundary checker supports narrow allowlists:** `repo_ops_lockfiles` may import only `repo_ops_upgrade.workflow_uses` (for the sbom Actions-pin reuse) instead of a blanket package ban.
+- **Coverage:** new targeted tests for remediations-js detect/report logic, core process verbose/error paths, uv-lock check parsing, dependabot URL/gh-absent/lockfile-scan helpers, poetry tool-absent/update parsing, the bun JSON parser and audit override helpers, the license CLI entrypoint and new extractors, sbom pins, inventory deno/flat/submodule paths, and the `--latest` umbrella/hint parity. `REPO_OPS_*` env vars are now isolated between tests via an autouse fixture.
+
 ## [0.17.3] - 2026-07-01
 
 ### Security
