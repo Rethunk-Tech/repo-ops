@@ -6,6 +6,13 @@ name@version pairs, then emits a standards-valid SBOM document.
 
 Inline parsers supplement the shared set for lockfile types not yet exposed
 in parsers.py (uv.lock/poetry.lock, go.sum, Cargo.lock).
+
+Also includes container image pins (Dockerfile ``FROM`` / compose
+``image:``, emitted as ``pkg:oci`` purls) and GitHub Actions ``uses:`` pins
+under ``.github/workflows`` (emitted as ``pkg:github`` purls), reusing the
+repo-ops-container and repo-ops-upgrade parsers when they are importable;
+both are best-effort and degrade to "no components of that kind" rather
+than failing the scan when a parser is unavailable.
 """
 
 from __future__ import annotations
@@ -130,6 +137,16 @@ def _purl_cargo(name: str, version: str) -> str:
     return f"pkg:cargo/{name}@{version}"
 
 
+def _purl_oci(name: str, ref: str) -> str:
+    """pkg:oci purl; *ref* is a digest (``sha256:...``) or a tag."""
+    return f"pkg:oci/{name}@{ref}"
+
+
+def _purl_github(owner_repo: str, ref: str) -> str:
+    """pkg:github purl; *owner_repo* is ``owner/repo`` (an Actions action ref)."""
+    return f"pkg:github/{owner_repo}@{ref}"
+
+
 # ---------------------------------------------------------------------------
 # Component collection
 # ---------------------------------------------------------------------------
@@ -166,6 +183,25 @@ def collect_components(root: Path) -> list[dict[str, str]]:
             "purl": purl,
             "bom-ref": f"{ecosystem}:{name}@{version}",
         }
+
+    # Container + Actions parsers are optional (best-effort, lazily imported
+    # once): a missing/incompatible sibling package degrades to "no
+    # components of that kind" rather than failing the whole scan.
+    try:
+        from repo_ops_container.container import (
+            _parse_image_refs,
+            find_container_files,
+        )
+    except (ImportError, AttributeError):
+        find_container_files = None
+        _parse_image_refs = None
+
+    try:
+        from repo_ops_upgrade.workflow_uses import parse_workflow_uses
+    except ImportError:
+        parse_workflow_uses = None
+
+    seen_container_files: set[Path] = set()
 
     for dirpath_str, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
@@ -240,6 +276,47 @@ def collect_components(root: Path) -> list[dict[str, str]]:
                         if "@" in raw:
                             nm, ver = _split_nv(raw)
                             _add(nm, ver, _purl_npm(nm, ver), "npm")
+
+        # Container image pins (Dockerfile FROM / compose image:)
+        if find_container_files is not None and _parse_image_refs is not None:
+            for fpath in find_container_files(dp):
+                rp = fpath.resolve()
+                if rp in seen_container_files:
+                    continue
+                seen_container_files.add(rp)
+                with contextlib.suppress(Exception):
+                    for ref in _parse_image_refs(fpath):
+                        if ref.get("is_stage_ref"):
+                            continue
+                        image = ref.get("image")
+                        pin = ref.get("sha") or ref.get("tag")
+                        if not image or not pin:
+                            continue
+                        _add(image, pin, _purl_oci(image, pin), "oci")
+
+        # GitHub Actions `uses:` pins under .github/workflows
+        if (
+            parse_workflow_uses is not None
+            and dp.name == "workflows"
+            and dp.parent.name == ".github"
+        ):
+            for wf_name in sorted(fname_set):
+                if not wf_name.endswith((".yml", ".yaml")):
+                    continue
+                with contextlib.suppress(Exception):
+                    for pin in parse_workflow_uses(dp / wf_name):
+                        action = pin.action
+                        # Only marketplace/repo action refs (owner/repo) are
+                        # packages; local (./path) and reusable-workflow refs
+                        # with extra path segments are not.
+                        if action.startswith(".") or action.count("/") != 1:
+                            continue
+                        _add(
+                            action,
+                            pin.pin,
+                            _purl_github(action, pin.pin),
+                            "github-actions",
+                        )
 
     return sorted(seen.values(), key=lambda c: (c["name"], c["version"]))
 
@@ -381,6 +458,10 @@ scope:
   Walks lockfiles under root_dir (npm, Python, Go, Rust, Deno).
   De-duplicates by purl across multiple lockfiles in the same tree.
   Go and Rust packages are included only when go.sum / Cargo.lock is present.
+  Also includes container image pins (Dockerfile FROM / compose image:, as
+  pkg:oci purls) and GitHub Actions `uses:` pins under .github/workflows
+  (as pkg:github purls); both best-effort, included when their local
+  parsers are importable.
 """
 
 
