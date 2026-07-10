@@ -26,9 +26,7 @@ _ENV_PREFIX = "REPO_OPS_"
 
 
 @pytest.fixture(autouse=True)
-def _isolate_state_store(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _isolate_state_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point the XDG cache (and thus the repo-ops state store) at a tmp dir.
 
     Tests that care about the store's location still override
