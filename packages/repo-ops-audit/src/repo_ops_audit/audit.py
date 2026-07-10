@@ -317,6 +317,7 @@ def _audit_go(ws: str) -> WorkspaceResult:
     # govulncheck does NOT emit per-finding severity; all findings are counted
     # in the ``unknown`` bucket.  Use --fail-on-unknown to gate on these.
     parse_ok = False
+    findings: list[dict[str, Any]] = []
     try:
         for line in stdout.splitlines():
             line = line.strip()
@@ -326,6 +327,7 @@ def _audit_go(ws: str) -> WorkspaceResult:
             parse_ok = True
             if "finding" in obj:
                 counts.unknown += 1
+                findings.append(obj["finding"])
     except (json.JSONDecodeError, ValueError):
         pass
 
@@ -344,6 +346,7 @@ def _audit_go(ws: str) -> WorkspaceResult:
         )
     has_findings = counts.total_with_unknown > 0
     status = "vulns" if has_findings else "ok"
+    remediations = _extract_remediations_govulncheck_json(findings, ws)
     return WorkspaceResult(
         label=label,
         path=ws,
@@ -351,6 +354,7 @@ def _audit_go(ws: str) -> WorkspaceResult:
         manager="go",
         status=status,
         counts=counts,
+        remediations=remediations,
     )
 
 
@@ -811,6 +815,43 @@ def _extract_remediations_cargo_json(
             items.setdefault(name, constraint)
     return [
         RemediationItem(package=pkg, safe_version=ver, ecosystem="rust", workspace=ws)
+        for pkg, ver in sorted(items.items())
+    ]
+
+
+def _extract_remediations_govulncheck_json(
+    findings: list[dict[str, Any]], ws: str
+) -> list[RemediationItem]:
+    """Extract fixed-version remediations from govulncheck ``finding`` objects.
+
+    govulncheck ``-json`` emits one JSON object per line; ``finding`` entries
+    look like::
+
+        {"finding": {"osv": "GO-2023-1795", "fixed_version": "v1.9.1",
+                      "trace": [{"module": "golang.org/x/net", "version": "v1.8.0"}]}}
+
+    ``fixed_version`` is the OSV-recommended safe version; ``trace[0].module``
+    is the vulnerable module (the frame closest to the vulnerable symbol
+    itself). Findings missing either field are skipped (non-fatal) —
+    govulncheck sometimes reports findings with no resolvable fix (e.g. an
+    unfixed advisory) or no trace (module-only scans).
+    """
+    items: dict[str, str] = {}
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        fixed = str(finding.get("fixed_version") or "").strip()
+        if not fixed:
+            continue
+        trace = finding.get("trace") or []
+        if not trace or not isinstance(trace[0], dict):
+            continue
+        module = str(trace[0].get("module") or "").strip()
+        if not module:
+            continue
+        items.setdefault(module, fixed)
+    return [
+        RemediationItem(package=pkg, safe_version=ver, ecosystem="go", workspace=ws)
         for pkg, ver in sorted(items.items())
     ]
 
