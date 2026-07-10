@@ -15,7 +15,7 @@ repo-ops inventory --help
 
 - [uv](https://docs.astral.sh/uv/) and Python >= 3.10
 - Git on `PATH`
-- Optional: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, …) and `gh` / `actionlint` for Actions pin audits
+- Optional: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, …) and `gh` / `actionlint` for Actions pin audits — run `repo-ops doctor` to see which are found and whether `gh` is authenticated
 
 ## Documentation
 
