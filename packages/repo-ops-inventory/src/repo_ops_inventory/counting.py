@@ -7,6 +7,7 @@ Uses shared repo_ops_core.constants, filesystem, process.
 from __future__ import annotations
 
 import concurrent.futures
+import configparser
 import json
 import os
 import re
@@ -16,6 +17,7 @@ from typing import Any
 
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.filesystem import read_toml_file
+from repo_ops_core.git import git_repo_for, run_git
 from repo_ops_core.process import run
 from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
 from repo_ops_lockfiles.parsers import (
@@ -517,6 +519,74 @@ def count_precommit(proj: Path) -> tuple[int, set[str]]:
     return direct, versions
 
 
+# ---------- Submodules ----------
+
+
+def _parse_gitmodules(gitmodules_path: Path) -> list[str]:
+    """Return submodule paths declared in a ``.gitmodules`` file."""
+    parser = configparser.ConfigParser()
+    try:
+        parser.read(gitmodules_path, encoding="utf-8")
+    except Exception:
+        return []
+    paths: list[str] = []
+    for section in parser.sections():
+        if not section.startswith("submodule "):
+            continue
+        path = (parser.get(section, "path", fallback="") or "").strip()
+        if path:
+            paths.append(path)
+    return paths
+
+
+def count_submodule(proj: Path) -> tuple[int, set[str]]:
+    """Count git submodule gitlink pins declared under *proj*.
+
+    Walks the project tree for ``.gitmodules`` files, parses each entry's
+    declared submodule ``path``, and resolves the pinned commit for that path
+    via ``git ls-tree HEAD <path>`` run against the git repo that owns the
+    ``.gitmodules`` file (its worktree root).
+
+    Returns:
+      (pin_count, set_of_"path@sha"_strings)
+
+    Entirely local (no network, no repo_ops_upgrade import — see AGENTS.md
+    layering rules). Gracefully returns zeros for entries whose repo root or
+    gitlink can't be resolved (uninitialized submodule, unstaged path, or git
+    itself unavailable).
+    """
+    direct = 0
+    versions: set[str] = set()
+
+    for dirpath, dirnames, filenames in os.walk(proj):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        if ".gitmodules" not in filenames:
+            continue
+        gitmodules_path = Path(dirpath) / ".gitmodules"
+        repo_root = git_repo_for(gitmodules_path.parent)
+        if repo_root is None:
+            continue
+        for sub_path in _parse_gitmodules(gitmodules_path):
+            try:
+                proc = run_git(repo_root, "ls-tree", "HEAD", sub_path, timeout=30)
+            except (FileNotFoundError, OSError):
+                continue
+            if proc.returncode != 0:
+                continue
+            line = proc.stdout.strip()
+            if not line:
+                continue
+            # Gitlink entries look like: "160000 commit <sha>\t<path>"
+            parts = line.split()
+            if len(parts) < 3 or parts[0] != "160000":
+                continue
+            sha = parts[2]
+            versions.add(f"{sub_path}@{sha}")
+            direct += 1
+
+    return direct, versions
+
+
 # ---------- Deno ----------
 
 
@@ -611,7 +681,7 @@ def _make_row(
             row["versions"] |= v
             row["kinds"].add("deno")
 
-    # --- New-ecosystem pin counts (container / actions / pre-commit) ---
+    # --- New-ecosystem pin counts (container / actions / pre-commit / submodule) ---
     # These scan the project root rather than individual manifest dirs.
     d_c, v_c = count_container(proj)
     if d_c or v_c:
@@ -630,6 +700,12 @@ def _make_row(
         row["direct"] += d_p
         row["versions"] |= v_p
         row["kinds"].add("precommit")
+
+    d_s, v_s = count_submodule(proj)
+    if d_s or v_s:
+        row["direct"] += d_s
+        row["versions"] |= v_s
+        row["kinds"].add("submodule")
 
     if not row["kinds"]:
         row["kinds"] = {"-"}
