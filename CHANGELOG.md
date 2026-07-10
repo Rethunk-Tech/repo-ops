@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`repo-ops doctor`:** read-only toolchain/auth preflight — probes the ~19 binaries the plugins shell out to (resolved path + version, grouped by ecosystem) and `gh auth status`, so missing tools surface up front instead of as silent per-repo skips. `--strict` exits 1 on any missing binary; `--json`/`--json-out`/`--compact` follow the existing conventions.
+- **Staleness scoring:** plans and applies persist per-repo behind-latest history in the state store and report `staleness_score` (behind-latest count × days since the repo first fell behind) and `new_behind_since_last_run` in JSON, plus a top-3 staleness footer line; entries self-prune after two clean runs, and `REPO_OPS_NO_STATE=1` disables persistence.
 - **`--latest` umbrella now covers all cross-range gates:** container image, pre-commit hook, and submodule tag cross-major upgrades (`REPO_OPS_CONTAINER_UPDATE_LATEST`, `REPO_OPS_PRECOMMIT_UPDATE_LATEST`, `REPO_OPS_SUBMODULE_UPDATE_LATEST`) are flipped by `--latest` instead of being reachable only via raw env/config.
 - **`--bun-targeted-bump`:** bun gains the same behind-latest targeted-bump fallback yarn/npm/pnpm already had (`bun add <pkg>@<version>` with lockfile snapshot/restore); `apply_bun` no longer discards the behind-latest list it computed. Configurable as `bun_targeted_bump` in `[tool.repo-ops]`.
 - **`audit --fix` remediates Go:** fixed versions are extracted from govulncheck findings and applied via `go get <module>@<fixed>` + `go mod tidy`, mirroring the cargo path; graceful skip when `go` is absent. Go was the last scan-only audit ecosystem.
