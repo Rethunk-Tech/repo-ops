@@ -14,6 +14,7 @@ Python module paths for importing `repo-ops` packages programmatically.
 | Push audit | `repo_ops_pushed.audit` |
 | Audit | `repo_ops_audit` |
 | Dependabot | `repo_ops_dependabot` |
+| Doctor (toolchain/auth preflight) | `repo_ops_doctor` |
 | Lockfiles | `repo_ops_lockfiles` |
 | Node helpers | `repo_ops_js` |
 | Shared | `repo_ops_core` |

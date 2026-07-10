@@ -16,11 +16,12 @@ Subcommands (entry point in `packages/repo-ops`):
 | `dependabot` | List/close Dependabot PRs superseded by local manifests |
 | `sbom` | Emit CycloneDX/SPDX SBOM from lockfile dependencies (read-only) |
 | `license` | Scan dependency licenses and flag policy violations (read-only) |
+| `doctor` | Toolchain/auth preflight: probe known binaries and `gh` auth (read-only) |
 | `install-skill` | Copy bundled agent skill into Cursor/Claude skill dirs |
 
 Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. Discovery flags (`--flat`, `--follow-symlinks`, actions-only repos): [Security and discovery](#security-and-discovery).
 
-`--json` is available on every subcommand except `sbom` (which emits its report via `--format`/`--output` instead). `--json-out PATH` (writes the report atomically to `PATH`; stdout prints only that path) is available on `inventory`, `plan`, `apply`, and `pushed` — for `plan`/`apply`, stdout is otherwise one JSON object. JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno`. `--log-level {debug,info,warning,error}` sets the stdlib root logger level; `--verbose` / `-v` enables subprocess echo and implies `debug` when `--log-level` is absent. `--submodules` adds `submodules[]` to plan/apply JSON; `apply --submodule-order=children-first` processes child git repos before parent umbrellas when `.gitmodules` is present.
+`--json` is available on every subcommand except `sbom` (which emits its report via `--format`/`--output` instead). `--json-out PATH` (writes the report atomically to `PATH`; stdout prints only that path) is available on `inventory`, `plan`, `apply`, `pushed`, and `doctor` — for `plan`/`apply`, stdout is otherwise one JSON object. JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno`. `--log-level {debug,info,warning,error}` sets the stdlib root logger level; `--verbose` / `-v` enables subprocess echo and implies `debug` when `--log-level` is absent. `--submodules` adds `submodules[]` to plan/apply JSON; `apply --submodule-order=children-first` processes child git repos before parent umbrellas when `.gitmodules` is present.
 
 ### Plan vs apply
 
@@ -150,6 +151,24 @@ policy violations (read-only; no network calls).
   (default: exit `2`).
 - `--json` — emit JSON instead of human-readable output (`--compact` for
   single-line).
+
+### `doctor` — toolchain/auth preflight
+
+`repo-ops doctor` probes the binaries repo-ops shells out to across all
+ecosystems (read-only; no scan roots, no `root_dir` arguments): `git`, `gh`,
+`uv`, `pip-compile`, `poetry`, `pipenv`, `pdm`, `pip-audit`, `npm`, `pnpm`,
+`yarn`, `bun`, `corepack`, `deno`, `go`, `gofmt`, `govulncheck`, `cargo`,
+`actionlint`. Each is resolved via `shutil.which`; found binaries also get a
+best-effort version string (first line of `<tool> --version`, timeout-guarded).
+`gh` additionally gets a `gh auth status` check so agents can tell "not
+installed" apart from "installed but unauthenticated" before a
+`dependabot`/`pr`-mode run fails partway through.
+
+- `--strict` — exit `1` when any probed binary is missing (default: exit `0`
+  regardless of missing binaries).
+- `--json` — emit a structured payload (`binaries[]`, `gh_auth`, `missing[]`,
+  `found_count`, `total_count`); `--compact` for single-line output.
+- `--json-out PATH` — write the report atomically to `PATH` (requires `--json`).
 
 Run `repo-ops <subcommand> --help` for all flags.
 

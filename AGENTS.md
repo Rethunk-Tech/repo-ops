@@ -26,11 +26,12 @@ Conventions and quick reference for AI coding agents (Cursor, Claude Code, etc.)
 | List/close superseded Dependabot PRs | `repo-ops dependabot` |
 | Emit CycloneDX/SPDX SBOM | `repo-ops sbom` |
 | Scan dependency licenses | `repo-ops license` |
+| Toolchain/auth preflight | `repo-ops doctor` |
 | Install bundled agent skill | `repo-ops install-skill` |
 
 ### DEFAULT_ROOTS
 
-When no trailing `root_dir` arguments are passed, every subcommand except `install-skill` (`inventory`, `plan`, `apply`, `pushed`, `audit`, `dependabot`, `sbom`, `license`) scans [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_ops_core/constants.py):
+When no trailing `root_dir` arguments are passed, every subcommand except `install-skill` and `doctor` (`inventory`, `plan`, `apply`, `pushed`, `audit`, `dependabot`, `sbom`, `license`) scans [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_ops_core/constants.py):
 
 - `/usr/local/src`
 - `~/Projects`
@@ -154,6 +155,14 @@ Selected flags — `repo-ops <subcommand> --help` is always authoritative.
 | `--dest DIR` | Install directly to this path (testing; ignores `--target` layout) |
 | `--dry-run` | Print planned installs without writing files |
 
+#### `doctor` flags
+
+| Flag | Purpose |
+|------|---------|
+| `--strict` | Exit 1 when any probed binary is missing (default: exit 0 regardless) |
+
+`doctor` is read-only and takes no `root_dir` arguments (no scan roots in v1). It probes the binaries repo-ops shells out to (git, gh, uv, pip-compile, poetry, pipenv, pdm, pip-audit, npm, pnpm, yarn, bun, corepack, deno, go, gofmt, govulncheck, cargo, actionlint) for found/missing, resolved path, and version, plus a `gh auth status` check.
+
 Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md#security-and-discovery).
 
 ### What NOT to do
@@ -178,7 +187,7 @@ Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md
 
 Full package map and plugin registration: [docs/architecture.md](docs/architecture.md).
 
-**uv workspace** (`packages/*`): installable meta package `packages/repo-ops` (`repo-ops` on PyPI); repo root is not installable (`package = false`). Console script **`repo-ops`** dispatches to `inventory`, `plan`, `apply`, `pushed`, `install-skill`, `audit`, `dependabot`, `sbom`, `license`.
+**uv workspace** (`packages/*`): installable meta package `packages/repo-ops` (`repo-ops` on PyPI); repo root is not installable (`package = false`). Console script **`repo-ops`** dispatches to `inventory`, `plan`, `apply`, `pushed`, `install-skill`, `audit`, `dependabot`, `sbom`, `license`, `doctor`.
 
 ## Agent invariants (behavior)
 

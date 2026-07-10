@@ -16,6 +16,7 @@ Package layout and filesystem map for the `repo-ops` uv workspace under `package
 - `packages/repo-ops-inventory/`, `repo-ops-pushed/` — inventory and push audit
 - `packages/repo-ops-audit/` — fleet vulnerability sweep across ecosystems (`repo_ops_audit`)
 - `packages/repo-ops-dependabot/` — list/close Dependabot PRs superseded by local manifests (`repo_ops_dependabot`)
+- `packages/repo-ops-doctor/` — toolchain/auth preflight: probe known binaries and `gh` auth (`repo_ops_doctor`)
 - `packages/repo-ops/` — meta CLI (`repo_ops.cli`, `repo_ops._register`, bundled skill under `repo_ops/skills/`)
 - `tests/` — unit tests with mocked subprocess (pure-unit tier); a git-touching tier exercises real git operations; future `integration` tests (bun/yarn/go network calls) will carry the `@pytest.mark.integration` marker. `packages/repo-ops-lockfiles/tests/` — parser unit tests
 - Root `pyproject.toml` / `uv.lock` — workspace manifest only
