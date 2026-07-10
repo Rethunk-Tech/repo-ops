@@ -217,6 +217,16 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
         "hatch_migrate_uv_lock",
         None,
     ),
+    # Audit fail-on gates: readable from [tool.repo-ops] so CI can pin the
+    # severity threshold without repeating --fail-on / --fail-on-unknown on
+    # every invocation. Consumed by repo_ops_audit's main() (CLI flag > env >
+    # config > default); repo_ops_core only owns the settings-table rows.
+    "audit_fail_on": ("REPO_OPS_AUDIT_FAIL_ON", "audit_fail_on", None),
+    "audit_fail_on_unknown": (
+        "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
+        "audit_fail_on_unknown",
+        None,
+    ),
 }
 
 # Public table for documentation generation.
@@ -367,6 +377,20 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
         "--migrate-to-uv-lock",
         "REPO_OPS_HATCH_MIGRATE_UV_LOCK",
         "hatch_migrate_uv_lock",
+        "0",
+    ),
+    (
+        "audit_fail_on",
+        "--fail-on",
+        "REPO_OPS_AUDIT_FAIL_ON",
+        "audit_fail_on",
+        "high",
+    ),
+    (
+        "audit_fail_on_unknown",
+        "--fail-on-unknown",
+        "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
+        "audit_fail_on_unknown",
         "0",
     ),
 ]
