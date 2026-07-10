@@ -19,7 +19,9 @@ def _ws(tmp_path: Path) -> Workspace:
 
 def _fake_run(stdout: str = "", stderr: str = "", returncode: int = 0):
     def _run(cmd, cwd, timeout=None, env=None):
-        return subprocess.CompletedProcess(cmd, returncode, stdout=stdout, stderr=stderr)
+        return subprocess.CompletedProcess(
+            cmd, returncode, stdout=stdout, stderr=stderr
+        )
 
     return _run
 
@@ -48,7 +50,9 @@ def test_check_uv_lock_falls_back_to_lockfile_only_change(tmp_path: Path) -> Non
 
 def test_check_uv_lock_raises_runtime_error_on_nonzero_exit(tmp_path: Path) -> None:
     with (
-        patch.object(uv_lock, "run", _fake_run(stderr="resolution failed", returncode=1)),
+        patch.object(
+            uv_lock, "run", _fake_run(stderr="resolution failed", returncode=1)
+        ),
         pytest.raises(RuntimeError, match="resolution failed"),
     ):
         uv_lock.check_uv_lock(_ws(tmp_path))
