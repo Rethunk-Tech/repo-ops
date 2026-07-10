@@ -14,6 +14,8 @@ Subcommands (entry point in `packages/repo-ops`):
 | `pushed` | Commits pushed to remotes in a time window (reflog) |
 | `audit` | Fleet vulnerability sweep per ecosystem (read-only) |
 | `dependabot` | List/close Dependabot PRs superseded by local manifests |
+| `sbom` | Emit CycloneDX/SPDX SBOM from lockfile dependencies (read-only) |
+| `license` | Scan dependency licenses and flag policy violations (read-only) |
 | `install-skill` | Copy bundled agent skill into Cursor/Claude skill dirs |
 
 Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. Discovery flags (`--flat`, `--follow-symlinks`, actions-only repos): [Security and discovery](#security-and-discovery).
@@ -125,6 +127,29 @@ Precision caveats:
   with an error and skipped.
 
 `--json` emits per-repo PR lists with `superseded`, `current_ver`, and `closed` fields.
+
+### `sbom` — CycloneDX/SPDX SBOM export
+
+`repo-ops sbom [root_dir ...]` builds a Software Bill of Materials from
+discovered lockfile dependencies (read-only; no network calls).
+
+- `--format cyclonedx|spdx` — output format (default: `cyclonedx`).
+- `--output PATH` — write the SBOM to `PATH` instead of stdout.
+- `--compact` — emit single-line JSON instead of pretty-printed.
+
+### `license` — dependency license policy scan
+
+`repo-ops license [root_dir ...]` classifies dependency licenses and flags
+policy violations (read-only; no network calls).
+
+- `--allow LIST` — comma-separated SPDX identifiers that are permitted; any
+  license not in this list is flagged.
+- `--deny LIST` — comma-separated SPDX identifiers that are forbidden; any
+  license in this list is flagged.
+- `--no-fail-unknown` — exit `0` even when unknown licenses are found
+  (default: exit `2`).
+- `--json` — emit JSON instead of human-readable output (`--compact` for
+  single-line).
 
 Run `repo-ops <subcommand> --help` for all flags.
 

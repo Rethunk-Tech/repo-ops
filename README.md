@@ -18,7 +18,7 @@ Install and run the unified **`repo-ops`** CLI — [HUMANS.md](HUMANS.md).
 
 ## Highlights
 
-- Single CLI: `inventory`, `plan`, `apply`, `pushed`, and `install-skill` (bundled agent skill for Cursor/Claude)
+- Single CLI: `inventory`, `plan`, `apply`, `pushed`, `audit`, `dependabot`, `sbom`, `license`, and `install-skill` (bundled agent skill for Cursor/Claude)
 - Plan is read-only; apply runs ecosystem updates, optional Corepack for Node, and verify gates
 - GitHub Actions pin drift in plan/apply by default (`--skip-actions` to omit); actions-only repos (workflows, no manifests) included
 - Discovery: validated scan roots, optional `--follow-symlinks`, `--flat` and actions-only repos; conservative pnpm/yarn unless `--latest` or env opt-in (see [usage](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply))

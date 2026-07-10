@@ -77,7 +77,7 @@ def _resolve_version() -> str:
 
 _TOP_LEVEL_DESCRIPTION = """\
 Repository operations for local monorepo roots (inventory, plan, apply, pushed,
-audit, dependabot).
+audit, dependabot, sbom, license).
 
 When no root_dir arguments are passed, subcommands scan DEFAULT_ROOTS
 (see repo-ops plan --help). Agents: AGENTS.md quick reference. Humans: HUMANS.md.

@@ -22,6 +22,10 @@ Conventions and quick reference for AI coding agents (Cursor, Claude Code, etc.)
 | Plan drift (no writes) | `repo-ops plan` |
 | Apply updates + verify | `repo-ops apply` |
 | Pushed-commit audit | `repo-ops pushed` |
+| Fleet vulnerability sweep | `repo-ops audit` |
+| List/close superseded Dependabot PRs | `repo-ops dependabot` |
+| Emit CycloneDX/SPDX SBOM | `repo-ops sbom` |
+| Scan dependency licenses | `repo-ops license` |
 | Install bundled agent skill | `repo-ops install-skill` |
 
 ### DEFAULT_ROOTS
@@ -169,7 +173,7 @@ Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md
 
 Full package map and plugin registration: [docs/architecture.md](docs/architecture.md).
 
-**uv workspace** (`packages/*`): installable meta package `packages/repo-ops` (`repo-ops` on PyPI); repo root is not installable (`package = false`). Console script **`repo-ops`** dispatches to `inventory`, `plan`, `apply`, `pushed`, `install-skill`.
+**uv workspace** (`packages/*`): installable meta package `packages/repo-ops` (`repo-ops` on PyPI); repo root is not installable (`package = false`). Console script **`repo-ops`** dispatches to `inventory`, `plan`, `apply`, `pushed`, `install-skill`, `audit`, `dependabot`, `sbom`, `license`.
 
 ## Agent invariants (behavior)
 
