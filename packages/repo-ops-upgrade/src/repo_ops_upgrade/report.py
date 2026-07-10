@@ -53,6 +53,7 @@ _TARGETED_BUMP_ENV: dict[str, str] = {
     "yarn": "REPO_OPS_YARN_TARGETED_BUMP",
     "npm": "REPO_OPS_NPM_TARGETED_BUMP",
     "pnpm": "REPO_OPS_PNPM_TARGETED_BUMP",
+    "bun": "REPO_OPS_BUN_TARGETED_BUMP",
 }
 _TARGETED_BUMP_TRUE = ("1", "true", "yes", "on")
 

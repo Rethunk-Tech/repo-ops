@@ -8,7 +8,13 @@ import re
 
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.process import run
+from repo_ops_core.version_utils import semver_tuple
 from repo_ops_js.guards import assert_targets_resolved
+from repo_ops_lockfiles.snapshots import (
+    resolved_version_from_node_modules,
+    restore_workspace_snapshot,
+    snapshot_workspace_files,
+)
 from repo_ops_models import Change, Workspace
 
 # `bun outdated` has no --json flag (as of bun 1.x; the codebase checks
@@ -29,6 +35,7 @@ _ASCII_V = "|"  # ASCII fallback separator on non-UTF-8 terminals (#145)
 _DEP_GROUP_SUFFIX_RE = re.compile(r"\s*\((?:dev|peer|optional)\)\s*$")
 _PKG_NAME_RE = re.compile(r"^(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+$")
 _BUN_UPDATE_LATEST_ENV = "REPO_OPS_BUN_UPDATE_LATEST"
+_BUN_TARGETED_BUMP_ENV = "REPO_OPS_BUN_TARGETED_BUMP"
 _TRUE_VALUES = ("1", "true", "yes", "on")
 
 # Audit version overrides: package → advisory-safe version to use instead of
@@ -60,6 +67,12 @@ def clear_bun_audit_version_overrides() -> None:
 
 def _bun_update_latest_enabled() -> bool:
     return os.environ.get(_BUN_UPDATE_LATEST_ENV, "").strip().lower() in _TRUE_VALUES
+
+
+def _bun_targeted_bump_enabled() -> bool:
+    return (
+        os.environ.get(_BUN_TARGETED_BUMP_ENV, "").strip().lower() in _TRUE_VALUES
+    )
 
 
 def _valid_bun_package_name(name: str) -> bool:
@@ -183,7 +196,57 @@ def check_bun(ws: Workspace) -> tuple[list[Change], list[Change]]:
     return _changes_from_bun_text(proc.stdout)
 
 
-def apply_bun(ws: Workspace) -> None:
+def targeted_bump_behind(
+    ws: Workspace, behind: list[Change]
+) -> tuple[list[Change], list[Change]]:
+    """Per-package ``bun add <pkg>@<version>`` fallback for still-behind deps.
+
+    Mirrors npm's ``targeted_bump_behind``: for each behind-latest direct dep we
+    snapshot the workspace's lockfile/manifests, run a targeted
+    ``bun add <pkg>@<version>``, and keep the bump only if install succeeds
+    **and** the resolved version in node_modules actually advanced (guards the
+    ghost-bump case where the lock churns but the resolver holds the old
+    version due to an override/exact-pin). On any failure or no-op we restore
+    the snapshot, leaving that package behind.
+
+    Opt-in (``REPO_OPS_BUN_TARGETED_BUMP``) and reversible per-package: a bump
+    that fights peer constraints is dropped, never committed. Returns
+    ``(applied, still_behind)`` — ``applied`` carries the real resolved version
+    landed.
+    """
+    if not behind or not _bun_targeted_bump_enabled():
+        return [], behind
+    applied: list[Change] = []
+    still_behind: list[Change] = []
+    for change in behind:
+        snap = snapshot_workspace_files(ws.path, "bun")
+        target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name, "latest")
+        install = run(
+            ["bun", "add", f"{change.name}@{target_ver}"],
+            ws.path,
+            timeout=resolve_timeout_apply(),
+        )
+        landed: str | None = None
+        if install.returncode == 0:
+            landed = resolved_version_from_node_modules(ws.path, change.name)
+        advanced = False
+        if landed:
+            try:
+                advanced = semver_tuple(landed) > semver_tuple(change.from_ver)
+            except (TypeError, ValueError):
+                advanced = landed != change.from_ver
+        if landed and advanced and install.returncode == 0:
+            applied.append(Change(change.name, change.from_ver, landed))
+            assert_targets_resolved(
+                ws, [Change(change.name, change.from_ver, landed)], manager="bun"
+            )
+        else:
+            restore_workspace_snapshot(ws.path, snap, "bun")
+            still_behind.append(change)
+    return applied, still_behind
+
+
+def apply_bun(ws: Workspace) -> list[Change]:
     """Apply upgrades reported by ``check_bun`` without rewriting ranges to ``latest``.
 
     Advisory-safe version overrides (``set_bun_audit_version_overrides``, wired
@@ -192,8 +255,14 @@ def apply_bun(ws: Workspace) -> None:
     targeted at its safe version even when ``bun outdated`` reports it as
     already in-range (empty ``changes``) or only behind on ``latest`` — dropping
     it in that case was the #140 silent-skip bug.
+
+    With ``REPO_OPS_BUN_TARGETED_BUMP`` set, each dep that ``check_bun`` left
+    behind_latest gets a reversible targeted ``bun add <pkg>@latest``; only
+    bumps that actually advance the resolved version are kept. Returns the
+    subset of behind_latest that could not be moved (empty when the flag is
+    off or all behind deps were successfully targeted).
     """
-    changes, _behind = check_bun(ws)
+    changes, behind = check_bun(ws)
     targets: list[str] = []
     requested: list[Change] = []
     seen_names: set[str] = set()
@@ -224,7 +293,8 @@ def apply_bun(ws: Workspace) -> None:
         requested.append(Change(name, "", safe_version))
         seen_names.add(name)
     if not changes and not targets:
-        return
+        _, behind = targeted_bump_behind(ws, behind)
+        return behind
     if not targets:
         # Bare ``bun update`` — no per-package target args; the guard is still
         # applied to any changes whose target version IS known (task #3: skip
@@ -242,10 +312,13 @@ def apply_bun(ws: Workspace) -> None:
         ]
         if guardable:
             assert_targets_resolved(ws, guardable, manager="bun")
-        return
+        _, behind = targeted_bump_behind(ws, behind)
+        return behind
     proc = run(
         ["bun", "update", "--", *targets], ws.path, timeout=resolve_timeout_apply()
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
     assert_targets_resolved(ws, requested, manager="bun")
+    _, behind = targeted_bump_behind(ws, behind)
+    return behind

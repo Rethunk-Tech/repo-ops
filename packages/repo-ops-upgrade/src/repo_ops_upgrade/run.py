@@ -143,7 +143,7 @@ def _run_upgrade_body(
         os.environ["REPO_OPS_SUBMODULE_UPDATE_LATEST"] = "1"
         os.environ.setdefault("REPO_OPS_GO_UPGRADE_MODE", "explicit")
     # Opt-in per-package targeted fallback (#111); only meaningful with --latest,
-    # which is what produces the behind_latest work-list it consumes. All three
+    # which is what produces the behind_latest work-list it consumes. All four
     # managers' flags must populate their env var or the CLI flag is a no-op (#131).
     if getattr(args, "yarn_targeted_bump", False):
         os.environ["REPO_OPS_YARN_TARGETED_BUMP"] = "1"
@@ -151,6 +151,8 @@ def _run_upgrade_body(
         os.environ["REPO_OPS_NPM_TARGETED_BUMP"] = "1"
     if getattr(args, "pnpm_targeted_bump", False):
         os.environ["REPO_OPS_PNPM_TARGETED_BUMP"] = "1"
+    if getattr(args, "bun_targeted_bump", False):
+        os.environ["REPO_OPS_BUN_TARGETED_BUMP"] = "1"
     # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects (#132).
     if getattr(args, "migrate_to_uv_lock", False):
         os.environ["REPO_OPS_HATCH_MIGRATE_UV_LOCK"] = "1"

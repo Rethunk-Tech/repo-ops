@@ -406,6 +406,17 @@ def add_upgrade_common_arguments(
         ),
     )
     pol.add_argument(
+        "--bun-targeted-bump",
+        action="store_true",
+        dest="bun_targeted_bump",
+        help=(
+            "bun only, requires --latest: for each direct dep that bun update left "
+            "behind latest, attempt a targeted bun add <pkg>@latest and keep it "
+            "only if the workspace still installs and the version advances. "
+            "Sets REPO_OPS_BUN_TARGETED_BUMP."
+        ),
+    )
+    pol.add_argument(
         "--yarn-jobs",
         type=int,
         default=None,
