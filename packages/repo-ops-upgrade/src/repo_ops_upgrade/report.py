@@ -6,11 +6,11 @@ import contextlib
 import json
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from repo_ops_core.state import cache_get_dirty_skip
+from repo_ops_core.state import cache_get_dirty_skip, cache_get_staleness
 from repo_ops_core.table import column_width, format_cell
 from repo_ops_models import DIRTY_SKIP_MARKER, RepoBundle, WorkspaceResult
 
@@ -156,7 +156,7 @@ def build_run_summary(
         actions_policy_violations += action_totals.get("policy_violations", 0)
 
     discovery_skipped = len(diagnostics.skipped) if diagnostics else 0
-    return {
+    summary: dict[str, Any] = {
         "workspaces_ok": workspaces_ok,
         "workspaces_fail": workspaces_fail,
         "workspaces_skip": workspaces_skip,
@@ -172,6 +172,30 @@ def build_run_summary(
         "actions_behind_latest": actions_behind_latest,
         "failure_count": count_failures(bundles),
     }
+    # Top-3 staleness scores (behind-count x days-behind, from the state
+    # store).  Only attached when at least one repo scores above zero, so an
+    # empty store leaves the summary dict — and every consumer's output —
+    # byte-identical to before this field existed.
+    staleness_top = _collect_staleness_top(bundles)
+    if staleness_top:
+        summary["staleness_top"] = staleness_top
+    return summary
+
+
+def _collect_staleness_top(
+    bundles: dict[Path, RepoBundle],
+    *,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    """Top-``limit`` repos by staleness score (score > 0 only), best first."""
+    today = date.today()
+    scored: list[dict[str, Any]] = []
+    for bundle in bundles.values():
+        info = cache_get_staleness(bundle.git_repo, today)
+        if info and info["staleness_score"] > 0:
+            scored.append({"repo": bundle.label, "score": info["staleness_score"]})
+    scored.sort(key=lambda item: (-item["score"], item["repo"]))
+    return scored[:limit]
 
 
 def collect_run_failures(
@@ -208,6 +232,27 @@ def _enrich_repo_json_with_aging(
     return repo_json
 
 
+def _enrich_repo_json_with_staleness(
+    bundle: RepoBundle,
+    repo_json: dict[str, Any],
+) -> dict[str, Any]:
+    """Add repo-level staleness fields read back from the state store.
+
+    Sibling of :func:`_enrich_repo_json_with_aging`.  Fields are only added
+    when the store tracks the repo (it was seen behind latest at some point),
+    so payloads from an empty store are unchanged:
+
+    - ``staleness_score`` — behind-count x days since first seen behind
+    - ``new_behind_since_last_run`` — behind-latest packages that appeared
+      since the previous recorded run
+    """
+    info = cache_get_staleness(bundle.git_repo, date.today())
+    if info is not None:
+        repo_json["staleness_score"] = info["staleness_score"]
+        repo_json["new_behind_since_last_run"] = info["new_behind_since_last_run"]
+    return repo_json
+
+
 def build_json_payload(
     bundles: dict[Path, RepoBundle],
     *,
@@ -219,7 +264,12 @@ def build_json_payload(
     exit_code: int | None = None,
 ) -> dict[str, Any]:
     sorted_bundles = sorted(bundles.values(), key=lambda x: x.label)
-    repos_json = [_enrich_repo_json_with_aging(b, b.to_json()) for b in sorted_bundles]
+    repos_json = [
+        _enrich_repo_json_with_staleness(
+            b, _enrich_repo_json_with_aging(b, b.to_json())
+        )
+        for b in sorted_bundles
+    ]
     payload: dict[str, Any] = {
         "schema_version": 1,
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -572,6 +622,17 @@ def print_run_footer(
         print()
         for part in parts:
             print(f"  behind-latest: {part}")
+
+    # One-line staleness roll-up: top-3 repos by behind-count x days-behind.
+    # ``staleness_top`` is only present in the summary when some repo scores
+    # above zero, so an empty state store keeps the footer byte-identical.
+    staleness_top = summary.get("staleness_top") or []
+    if staleness_top:
+        rendered = ", ".join(
+            f"{item['repo']} {item['score']}" for item in staleness_top
+        )
+        print()
+        print(f"  staleness: {rendered} (behind-count x days-behind)")
 
     if failures:
         print()
