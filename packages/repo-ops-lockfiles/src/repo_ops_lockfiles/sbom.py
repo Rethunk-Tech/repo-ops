@@ -25,8 +25,10 @@ import os
 import re
 import sys
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from repo_ops_core.cli import (
     add_roots_argument,
@@ -187,17 +189,23 @@ def collect_components(root: Path) -> list[dict[str, str]]:
     # Container + Actions parsers are optional (best-effort, lazily imported
     # once): a missing/incompatible sibling package degrades to "no
     # components of that kind" rather than failing the whole scan.
+    find_container_files: Callable[[Path], list[Path]] | None
+    _parse_image_refs: Callable[[Path], list[dict[str, Any]]] | None
     try:
-        from repo_ops_container.container import (
-            _parse_image_refs,
-            find_container_files,
-        )
+        from repo_ops_container.container import _parse_image_refs as _pir
+        from repo_ops_container.container import find_container_files as _fcf
+
+        find_container_files = _fcf
+        _parse_image_refs = _pir
     except (ImportError, AttributeError):
         find_container_files = None
         _parse_image_refs = None
 
+    parse_workflow_uses: Callable[[Path], list[Any]] | None
     try:
-        from repo_ops_upgrade.workflow_uses import parse_workflow_uses
+        from repo_ops_upgrade.workflow_uses import parse_workflow_uses as _pwu
+
+        parse_workflow_uses = _pwu
     except ImportError:
         parse_workflow_uses = None
 

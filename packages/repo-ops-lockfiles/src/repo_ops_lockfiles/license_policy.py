@@ -390,7 +390,9 @@ def _default_gomodcache() -> Path:
     return Path.home() / "go" / "pkg" / "mod"
 
 
-def resolve_go_license(module: str, version: str, gomodcache: Path | None = None) -> str:
+def resolve_go_license(
+    module: str, version: str, gomodcache: Path | None = None
+) -> str:
     """Classify a Go module's license from its LICENSE* file in GOMODCACHE.
 
     Offline/local-only: modules not present in the cache (never ``go build``/
@@ -423,7 +425,9 @@ def _iter_go_sum_entries(p: Path) -> set[tuple[str, str]]:
     return out
 
 
-def scan_go_licenses(root: Path, *, gomodcache: Path | None = None) -> list[PackageLicense]:
+def scan_go_licenses(
+    root: Path, *, gomodcache: Path | None = None
+) -> list[PackageLicense]:
     """Return PackageLicense entries for go.sum modules, classified via GOMODCACHE."""
     results: list[PackageLicense] = []
     cache = gomodcache if gomodcache is not None else _default_gomodcache()
@@ -499,7 +503,10 @@ def scan_rust_licenses(root: Path) -> list[PackageLicense]:
         data = _run_cargo_metadata(Path(dirpath_str))
         if not data:
             continue
-        for pkg in data.get("packages") or []:
+        packages = data.get("packages")
+        if not isinstance(packages, list):
+            continue
+        for pkg in packages:
             if not isinstance(pkg, dict):
                 continue
             if pkg.get("source") is None:
@@ -558,7 +565,9 @@ def resolve_deno_npm_license(
     (Deno's local npm-compat cache layout). Missing/unresolvable → UNKNOWN.
     """
     cache = deno_dir if deno_dir is not None else _default_deno_dir()
-    pkg_json = cache / "npm" / "registry.npmjs.org" / pkg_name / version / "package.json"
+    pkg_json = (
+        cache / "npm" / "registry.npmjs.org" / pkg_name / version / "package.json"
+    )
     if not pkg_json.is_file():
         return UNKNOWN_LICENSE
     with contextlib.suppress(Exception):
@@ -570,7 +579,9 @@ def resolve_deno_npm_license(
     return UNKNOWN_LICENSE
 
 
-def scan_deno_licenses(root: Path, *, deno_dir: Path | None = None) -> list[PackageLicense]:
+def scan_deno_licenses(
+    root: Path, *, deno_dir: Path | None = None
+) -> list[PackageLicense]:
     """Return PackageLicense entries for deno.lock ``npm:`` specifiers.
 
     Only ``npm:`` specifiers are resolvable offline (via the cached
@@ -596,7 +607,9 @@ def scan_deno_licenses(root: Path, *, deno_dir: Path | None = None) -> list[Pack
                     version=ver,
                     license_id=lic,
                     ecosystem="deno",
-                    source="deno.lock+DENO_DIR" if lic != UNKNOWN_LICENSE else "deno.lock",
+                    source="deno.lock+DENO_DIR"
+                    if lic != UNKNOWN_LICENSE
+                    else "deno.lock",
                 )
             )
     return results
@@ -616,6 +629,7 @@ NO_EXTRACTOR_ECOSYSTEMS = frozenset({"container"})
 def _fail_gate_unknown(unknown: list[PackageLicense]) -> list[PackageLicense]:
     """Subset of *unknown* that should count toward --fail-unknown's exit 2."""
     return [p for p in unknown if p.ecosystem not in NO_EXTRACTOR_ECOSYSTEMS]
+
 
 # Normalise SPDX-ish identifiers for comparison
 _SPDX_NORM = re.compile(r"[^A-Za-z0-9]")
@@ -889,7 +903,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if result.violations:
         return 1
-    if result.unknown and not args.no_fail_unknown and _fail_gate_unknown(result.unknown):
+    if (
+        result.unknown
+        and not args.no_fail_unknown
+        and _fail_gate_unknown(result.unknown)
+    ):
         return 2
     return 0
 

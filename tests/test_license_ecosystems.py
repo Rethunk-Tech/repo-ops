@@ -109,7 +109,7 @@ def _cargo_metadata_json(packages: list[dict[str, object]]) -> str:
 def test_scan_rust_licenses_via_mocked_cargo_metadata(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "Cargo.toml").write_text("[package]\nname = \"app\"\n", encoding="utf-8")
+    (tmp_path / "Cargo.toml").write_text('[package]\nname = "app"\n', encoding="utf-8")
     (tmp_path / "Cargo.lock").write_text("# fake lock\n", encoding="utf-8")
 
     proc = MagicMock()
@@ -151,7 +151,7 @@ def test_scan_rust_licenses_via_mocked_cargo_metadata(
 def test_scan_rust_licenses_skips_gracefully_without_cargo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / "Cargo.toml").write_text("[package]\nname = \"app\"\n", encoding="utf-8")
+    (tmp_path / "Cargo.toml").write_text('[package]\nname = "app"\n', encoding="utf-8")
     (tmp_path / "Cargo.lock").write_text("# fake lock\n", encoding="utf-8")
     monkeypatch.setattr("shutil.which", lambda _name: None)
     assert scan_rust_licenses(tmp_path) == []
