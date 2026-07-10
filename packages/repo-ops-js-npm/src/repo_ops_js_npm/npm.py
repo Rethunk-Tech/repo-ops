@@ -135,10 +135,17 @@ def targeted_bump_behind(
             except (TypeError, ValueError):
                 advanced = landed != change.from_ver
         if landed and advanced and install.returncode == 0:
-            applied.append(Change(change.name, change.from_ver, landed))
-            assert_targets_resolved(
-                ws, [Change(change.name, change.from_ver, landed)], manager="npm"
-            )
+            resolved_change = Change(change.name, change.from_ver, landed)
+            try:
+                assert_targets_resolved(ws, [resolved_change], manager="npm")
+            except RuntimeError:
+                # Ghost bump: the guard itself found the target unresolved
+                # (e.g. a second read disagrees with the first). Restore the
+                # snapshot instead of leaving a corrupted lockfile on disk.
+                restore_workspace_snapshot(ws.path, snap, "npm")
+                still_behind.append(change)
+            else:
+                applied.append(resolved_change)
         else:
             restore_workspace_snapshot(ws.path, snap, "npm")
             still_behind.append(change)
