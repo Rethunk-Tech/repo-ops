@@ -12,7 +12,6 @@ PACKAGES = ROOT / "packages"
 
 FORBIDDEN: dict[str, set[str]] = {
     "repo_ops_lockfiles": {
-        "repo_ops_upgrade",
         "repo_ops_inventory",
         "repo_ops_js",
         "repo_ops_js_npm",
@@ -43,6 +42,13 @@ PM_PREFIXES = (
 )
 
 ALLOWED_UPGRADE_SUBMODULES = frozenset({"registry", "constants"})
+
+# Packages allowed to reach a narrow set of repo_ops_upgrade submodules
+# instead of the blanket FORBIDDEN ban (e.g. sbom reuses the Actions
+# `uses:` pin parser rather than duplicating it).
+ALLOWED_UPGRADE_SUBMODULES_BY_PKG: dict[str, frozenset[str]] = {
+    "repo_ops_lockfiles": frozenset({"workflow_uses"}),
+}
 
 
 def _top_level(name: str) -> str:
@@ -83,6 +89,15 @@ def main() -> int:
             if mod_root in FORBIDDEN:
                 for bad in imports & FORBIDDEN[mod_root]:
                     errors.append(f"{py}: must not import {bad}")
+            narrow = ALLOWED_UPGRADE_SUBMODULES_BY_PKG.get(mod_root)
+            if narrow is not None and "repo_ops_upgrade" in imports:
+                disallowed = upgrade_subs - narrow
+                if disallowed or not upgrade_subs:
+                    found = sorted(disallowed) if disallowed else "bare import"
+                    errors.append(
+                        f"{py}: may only use repo_ops_upgrade."
+                        f"{', '.join(sorted(narrow))} (found {found})"
+                    )
             if mod_root in PM_PREFIXES:
                 for other in PM_PREFIXES:
                     if other != mod_root and other in imports:
