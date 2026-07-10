@@ -70,9 +70,7 @@ def _bun_update_latest_enabled() -> bool:
 
 
 def _bun_targeted_bump_enabled() -> bool:
-    return (
-        os.environ.get(_BUN_TARGETED_BUMP_ENV, "").strip().lower() in _TRUE_VALUES
-    )
+    return os.environ.get(_BUN_TARGETED_BUMP_ENV, "").strip().lower() in _TRUE_VALUES
 
 
 def _valid_bun_package_name(name: str) -> bool:
