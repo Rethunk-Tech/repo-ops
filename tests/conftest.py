@@ -31,8 +31,15 @@ def _isolate_state_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
     Tests that care about the store's location still override
     ``XDG_CACHE_HOME`` themselves; this just guarantees no test ever reads
-    or flushes into the real ``~/.cache/repo-ops/state.json``.
+    or flushes into the real ``~/.cache/repo-ops/state.json``. The module's
+    in-memory cache is also reset — the path redirect alone would let one
+    test's loaded state leak into the next via ``_CACHE``.
     """
+    from repo_ops_core import state as state_mod
+
+    state_mod._CACHE = None
+    state_mod._DIRTY = False
+    state_mod._BEHIND_RUN_SEEN.clear()
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
 
 
