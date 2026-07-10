@@ -13,6 +13,7 @@ members = [
     "repo-ops-container",
     "repo-ops-core",
     "repo-ops-dependabot",
+    "repo-ops-doctor",
     "repo-ops-go",
     "repo-ops-inventory",
     "repo-ops-js",
@@ -531,6 +532,7 @@ dependencies = [
     { name = "repo-ops-container" },
     { name = "repo-ops-core" },
     { name = "repo-ops-dependabot" },
+    { name = "repo-ops-doctor" },
     { name = "repo-ops-go" },
     { name = "repo-ops-inventory" },
     { name = "repo-ops-js" },
@@ -557,6 +559,7 @@ requires-dist = [
     { name = "repo-ops-container", editable = "packages/repo-ops-container" },
     { name = "repo-ops-core", editable = "packages/repo-ops-core" },
     { name = "repo-ops-dependabot", editable = "packages/repo-ops-dependabot" },
+    { name = "repo-ops-doctor", editable = "packages/repo-ops-doctor" },
     { name = "repo-ops-go", editable = "packages/repo-ops-go" },
     { name = "repo-ops-inventory", editable = "packages/repo-ops-inventory" },
     { name = "repo-ops-js", editable = "packages/repo-ops-js" },
@@ -630,6 +633,17 @@ requires-dist = [
     { name = "repo-ops-core", editable = "packages/repo-ops-core" },
     { name = "repo-ops-lockfiles", editable = "packages/repo-ops-lockfiles" },
 ]
+
+[[package]]
+name = "repo-ops-doctor"
+version = "0.17.3"
+source = { editable = "packages/repo-ops-doctor" }
+dependencies = [
+    { name = "repo-ops-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "repo-ops-core", editable = "packages/repo-ops-core" }]
 
 [[package]]
 name = "repo-ops-go"
@@ -1066,6 +1080,7 @@ dev = [
     { name = "repo-ops-container" },
     { name = "repo-ops-core" },
     { name = "repo-ops-dependabot" },
+    { name = "repo-ops-doctor" },
     { name = "repo-ops-go" },
     { name = "repo-ops-inventory" },
     { name = "repo-ops-js" },
@@ -1104,6 +1119,7 @@ dev = [
     { name = "repo-ops-container", editable = "packages/repo-ops-container" },
     { name = "repo-ops-core", editable = "packages/repo-ops-core" },
     { name = "repo-ops-dependabot", editable = "packages/repo-ops-dependabot" },
+    { name = "repo-ops-doctor", editable = "packages/repo-ops-doctor" },
     { name = "repo-ops-go", editable = "packages/repo-ops-go" },
     { name = "repo-ops-inventory", editable = "packages/repo-ops-inventory" },
     { name = "repo-ops-js", editable = "packages/repo-ops-js" },

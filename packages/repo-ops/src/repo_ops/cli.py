@@ -12,6 +12,8 @@ from repo_ops_audit.audit import main as audit_main
 from repo_ops_core.cli import build_upgrade_parser
 from repo_ops_dependabot.dependabot import build_dependabot_parser
 from repo_ops_dependabot.dependabot import main as dependabot_main
+from repo_ops_doctor.doctor import build_doctor_parser
+from repo_ops_doctor.doctor import main as doctor_main
 from repo_ops_inventory.scan import build_inventory_parser
 from repo_ops_inventory.scan import main as inventory_main
 from repo_ops_lockfiles.license_policy import build_license_parser
@@ -40,6 +42,7 @@ _HANDLERS: dict[str, Callable[[list[str] | None], int | None]] = {
     "dependabot": dependabot_main,
     "sbom": sbom_main,
     "license": license_main,
+    "doctor": doctor_main,
 }
 
 _HELP_BUILDERS: dict[str, Callable[[], argparse.ArgumentParser]] = {
@@ -52,6 +55,7 @@ _HELP_BUILDERS: dict[str, Callable[[], argparse.ArgumentParser]] = {
     "dependabot": build_dependabot_parser,
     "sbom": build_sbom_parser,
     "license": build_license_parser,
+    "doctor": build_doctor_parser,
 }
 
 _SUBCOMMAND_HELP = {
@@ -64,6 +68,7 @@ _SUBCOMMAND_HELP = {
     "dependabot": "List/close superseded Dependabot PRs (or --scaffold dependabot.yml)",
     "sbom": "Emit CycloneDX/SPDX SBOM from lockfile dependencies (read-only)",
     "license": "Scan dependency licenses and flag policy violations (read-only)",
+    "doctor": "Toolchain/auth preflight: probe known binaries and gh auth (read-only)",
 }
 
 
@@ -77,7 +82,7 @@ def _resolve_version() -> str:
 
 _TOP_LEVEL_DESCRIPTION = """\
 Repository operations for local monorepo roots (inventory, plan, apply, pushed,
-audit, dependabot, sbom, license).
+audit, dependabot, sbom, license, doctor).
 
 When no root_dir arguments are passed, subcommands scan DEFAULT_ROOTS
 (see repo-ops plan --help). Agents: AGENTS.md quick reference. Humans: HUMANS.md.
@@ -93,6 +98,7 @@ examples:
   repo-ops dependabot --scaffold --write
   repo-ops sbom --format cyclonedx --output sbom.json /path/to/checkout
   repo-ops license --allow MIT,Apache-2.0,ISC /path/to/checkout
+  repo-ops doctor --strict
 
 Use repo-ops <subcommand> --help for all flags on that subcommand.
 """

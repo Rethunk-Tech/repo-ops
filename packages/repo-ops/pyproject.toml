@@ -34,6 +34,7 @@ dependencies = [
   "repo-ops-pushed",
   "repo-ops-audit",
   "repo-ops-dependabot",
+  "repo-ops-doctor",
 ]
 
 [project.scripts]
@@ -62,3 +63,4 @@ repo-ops-inventory = { workspace = true }
 repo-ops-pushed = { workspace = true }
 repo-ops-audit = { workspace = true }
 repo-ops-dependabot = { workspace = true }
+repo-ops-doctor = { workspace = true }
