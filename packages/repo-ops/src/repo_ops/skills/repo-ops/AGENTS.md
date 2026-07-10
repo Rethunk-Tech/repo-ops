@@ -22,11 +22,15 @@ Conventions and quick reference for AI coding agents (Cursor, Claude Code, etc.)
 | Plan drift (no writes) | `repo-ops plan` |
 | Apply updates + verify | `repo-ops apply` |
 | Pushed-commit audit | `repo-ops pushed` |
+| Fleet vulnerability sweep | `repo-ops audit` |
+| List/close superseded Dependabot PRs | `repo-ops dependabot` |
+| Emit CycloneDX/SPDX SBOM | `repo-ops sbom` |
+| Scan dependency licenses | `repo-ops license` |
 | Install bundled agent skill | `repo-ops install-skill` |
 
 ### DEFAULT_ROOTS
 
-When no trailing `root_dir` arguments are passed, `inventory`, `plan`, `apply`, and `pushed` scan [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_ops_core/constants.py):
+When no trailing `root_dir` arguments are passed, every subcommand except `install-skill` (`inventory`, `plan`, `apply`, `pushed`, `audit`, `dependabot`, `sbom`, `license`) scans [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_ops_core/constants.py):
 
 - `/usr/local/src`
 - `~/Projects`
@@ -73,10 +77,11 @@ repo-ops apply --submodule-order=children-first --submodules /path/to/umbrella
 `--latest` opts into aggressive / cross-range upgrades for this run:
 
 - Sets `REPO_OPS_BUN_UPDATE_LATEST`, `REPO_OPS_PNPM_UPDATE_LATEST`, `REPO_OPS_YARN_UPDATE_LATEST`
+- Also flips the cross-major gates for non-JS ecosystems: `REPO_OPS_CONTAINER_UPDATE_LATEST`, `REPO_OPS_PRECOMMIT_UPDATE_LATEST`, `REPO_OPS_SUBMODULE_UPDATE_LATEST`
 - Defaults `REPO_OPS_GO_UPGRADE_MODE` to `explicit` when unset
 - Sets GitHub Actions to `--actions-upgrade-mode=latest`
 
-Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode` wins over the umbrella for that ecosystem. npm has no latest mode (semver ranges only). Details: `repo-ops plan --help` and [docs/usage.md — Ecosystem upgrade modes](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply).
+Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode` wins over the umbrella for that ecosystem. npm has no latest mode (semver ranges only). Targeted-bump fallbacks (move `behind_latest` gaps instead of only reporting them) exist for all four JS package managers: `--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, `--bun-targeted-bump`. Details: `repo-ops plan --help` and [docs/usage.md — Ecosystem upgrade modes](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply).
 
 ### Flags cheat sheet
 
@@ -92,7 +97,8 @@ Selected flags — `repo-ops <subcommand> --help` is always authoritative.
 | `--latest` | plan, apply | Aggressive cross-range upgrades (see above) |
 | `--allow-dirty` | plan, apply | Process dirty git worktrees |
 | `--skip-actions` | plan, apply | Dependency-only (no Actions pin audit) |
-| `--json` / `--json-out PATH` | all subcommands | JSON report (`--json-out` writes atomically; stdout prints path) |
+| `--json` | all subcommands except `sbom` | JSON report (`sbom` uses `--format`/`--output` instead) |
+| `--json-out PATH` | inventory, plan, apply, pushed | Writes report atomically to `PATH`; stdout prints only that path |
 | `--compact` | all subcommands | With `--json`: emit compact single-line output instead of pretty-printed |
 | `--log-file PATH` | plan, apply | Combined stdout/stderr transcript |
 | `--log-level {debug,info,warning,error}` | plan, apply | Set stdlib root logger level; `--verbose` / `-v` implies `debug` when absent |
@@ -134,7 +140,9 @@ Selected flags — `repo-ops <subcommand> --help` is always authoritative.
 
 | Flag | Purpose |
 |------|---------|
+| `--fail-on SEVERITY` | Exit 1 when any workspace has a vulnerability at or above `SEVERITY` (`critical`, `high`, `moderate`, `low`, `never`); default `high` |
 | `--fail-on-unknown` | Exit 1 when any workspace has findings with unknown severity (govulncheck); default off |
+| `--fix` | Apply remediations via `repo-ops-upgrade` orchestration (no auto-commit); skips dirty worktrees unless `--allow-dirty` |
 
 #### `install-skill` flags
 
@@ -144,6 +152,7 @@ Selected flags — `repo-ops <subcommand> --help` is always authoritative.
 | `--force` | Overwrite existing skill directories |
 | `--home DIR` | Override home directory (also `REPO_OPS_HOME` env) |
 | `--dest DIR` | Install directly to this path (testing; ignores `--target` layout) |
+| `--dry-run` | Print planned installs without writing files |
 
 Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md#security-and-discovery).
 
@@ -169,7 +178,7 @@ Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md
 
 Full package map and plugin registration: [docs/architecture.md](docs/architecture.md).
 
-**uv workspace** (`packages/*`): installable meta package `packages/repo-ops` (`repo-ops` on PyPI); repo root is not installable (`package = false`). Console script **`repo-ops`** dispatches to `inventory`, `plan`, `apply`, `pushed`, `install-skill`.
+**uv workspace** (`packages/*`): installable meta package `packages/repo-ops` (`repo-ops` on PyPI); repo root is not installable (`package = false`). Console script **`repo-ops`** dispatches to `inventory`, `plan`, `apply`, `pushed`, `install-skill`, `audit`, `dependabot`, `sbom`, `license`.
 
 ## Agent invariants (behavior)
 
