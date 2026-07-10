@@ -21,12 +21,23 @@ Design notes
   path).
 * Registry auth: OCI distribution spec bearer-challenge flow (RFC 6750).
   On 401 from /v2/<name>/tags/list, the WWW-Authenticate header is parsed for
-  realm/service/scope, then an anonymous token is fetched from that realm.
-  Supports docker.io (special endpoint mapping), ghcr.io, quay.io, gcr.io,
+  realm/service/scope, then a token is fetched from that realm (anonymous, or
+  authenticated when credentials are resolved — see below). Supports
+  docker.io (special endpoint mapping), ghcr.io, quay.io, gcr.io,
   mcr.microsoft.com, and any spec-compliant public OCI registry.
-  Basic-auth credentials from ~/.docker/config.json (or $DOCKER_CONFIG) are
-  used when present; credential helpers are out of scope (report-only).
-* ECR and other auth-required registries: still report-only on 401-after-token.
+* Credential resolution (``_resolve_auth_for_host``), first match wins:
+  1. ``auths[host].auth`` in ``~/.docker/config.json`` (or ``$DOCKER_CONFIG``)
+     — inline basic-auth, no subprocess.
+  2. Docker credential helper — ``docker-credential-<helper> get`` via
+     ``credHelpers[host]`` (per-host) or ``credsStore`` (global fallback),
+     e.g. ``docker-credential-ecr-login``, ``docker-credential-osxkeychain``.
+  3. ECR fallback — for ``<account>.dkr.ecr.<region>.amazonaws.com`` hosts,
+     ``aws ecr get-login-password --region <region>`` when the AWS CLI is on
+     PATH and no Docker credential helper is configured.
+  All subprocess calls are bounded (5s timeout) and failures are swallowed;
+  registries that resolve no credentials fall back to anonymous access, and
+  any host that still gets 401-after-token is reported read-only (detail
+  string prefix ``[report-only]``).
 * Verify: v1 has no verify step; building images is out of scope.
 """
 

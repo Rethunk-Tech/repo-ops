@@ -12,6 +12,8 @@ Python module paths for importing `repo-ops` packages programmatically.
 | GitHub Actions pins | `repo_ops_upgrade.actions` |
 | Inventory | `repo_ops_inventory.scan` |
 | Push audit | `repo_ops_pushed.audit` |
+| Audit | `repo_ops_audit` |
+| Dependabot | `repo_ops_dependabot` |
 | Lockfiles | `repo_ops_lockfiles` |
 | Node helpers | `repo_ops_js` |
 | Shared | `repo_ops_core` |

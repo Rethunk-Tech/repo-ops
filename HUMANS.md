@@ -23,6 +23,7 @@ repo-ops inventory --help
 |----------|---------|
 | [Installation](docs/installation.md) | Runtime install, development setup, agent skill, verify install, environment |
 | [Usage](docs/usage.md) | Subcommands, JSON output, plan vs apply, security/discovery, ecosystem upgrade modes |
+| [Architecture](docs/architecture.md) | Package layout and filesystem map for the uv workspace |
 | [Bulk maintenance](docs/bulk-maintenance.md) | Submodule umbrellas and multi-repo apply playbook |
 | [Programmatic imports](docs/programmatic-imports.md) | Python module paths for programmatic use |
 | [Testing](docs/testing.md) | Verification and CI commands |

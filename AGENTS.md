@@ -138,7 +138,9 @@ Selected flags — `repo-ops <subcommand> --help` is always authoritative.
 
 | Flag | Purpose |
 |------|---------|
+| `--fail-on SEVERITY` | Exit 1 when any workspace has a vulnerability at or above `SEVERITY` (`critical`, `high`, `moderate`, `low`, `never`); default `high` |
 | `--fail-on-unknown` | Exit 1 when any workspace has findings with unknown severity (govulncheck); default off |
+| `--fix` | Apply remediations via `repo-ops-upgrade` orchestration (no auto-commit); skips dirty worktrees unless `--allow-dirty` |
 
 #### `install-skill` flags
 
@@ -148,6 +150,7 @@ Selected flags — `repo-ops <subcommand> --help` is always authoritative.
 | `--force` | Overwrite existing skill directories |
 | `--home DIR` | Override home directory (also `REPO_OPS_HOME` env) |
 | `--dest DIR` | Install directly to this path (testing; ignores `--target` layout) |
+| `--dry-run` | Print planned installs without writing files |
 
 Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md#security-and-discovery).
 
