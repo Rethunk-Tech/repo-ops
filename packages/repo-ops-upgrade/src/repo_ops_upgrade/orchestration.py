@@ -19,7 +19,11 @@ import repo_ops_upgrade_remediations_py  # noqa: F401 — side-effect: registers
 import repo_ops_upgrade_remediations_rust  # noqa: F401 — side-effect: registers Rust hooks
 from repo_ops_core.filesystem import should_exclude
 from repo_ops_core.git import is_git_dirty
-from repo_ops_core.state import cache_clear_dirty_skip, cache_record_dirty_skip
+from repo_ops_core.state import (
+    cache_clear_dirty_skip,
+    cache_record_behind_latest,
+    cache_record_dirty_skip,
+)
 from repo_ops_js.overrides import overrides_audit
 from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
@@ -114,6 +118,17 @@ def process_workspace(
     )
     elapsed = time.monotonic() - _t0
     out.elapsed_s = elapsed
+    if out.status == "ok":
+        # Feed the staleness store (plan and apply both compute behind_latest).
+        # Skipped/failed workspaces carry no fresh behind data, so recording
+        # only ok results keeps a dirty-skipped repo from spuriously resetting
+        # its first-behind aging clock.
+        cache_record_behind_latest(
+            out.workspace.git_repo,
+            out.workspace.manager,
+            len(out.behind_latest),
+            date.today(),
+        )
     if not quiet:
         _emit_progress(out, elapsed_s=elapsed)
     return out

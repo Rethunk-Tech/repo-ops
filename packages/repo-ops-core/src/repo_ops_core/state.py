@@ -8,6 +8,14 @@ Schema (version 1)::
     {
       "dirty_skips": {
         "<abs repo path>": {"first_seen": "YYYY-MM-DD", "runs": N}
+      },
+      "behind_latest": {
+        "<abs repo path>": {
+          "first_behind": "YYYY-MM-DD",
+          "prev_total": N,
+          "by_manager": {"<manager>": N},
+          "runs": N
+        }
       }
     }
 
@@ -206,6 +214,159 @@ def cache_get_dirty_skip(repo_path: str | Path) -> dict[str, Any] | None:
     if isinstance(entry, dict):
         return entry
     return None
+
+
+# ---------------------------------------------------------------------------
+# Behind-latest staleness tracking
+# ---------------------------------------------------------------------------
+#
+# Mirrors the dirty-skip pattern: orchestration records per-workspace
+# behind-latest counts as workspaces complete; report enrichment reads the
+# per-repo roll-up back out.  Only what scoring needs is kept — the date a
+# repo was first seen behind (``first_behind``), the last run's per-manager
+# behind counts (``by_manager``), the previous run's total (``prev_total``,
+# for the since-last-run delta), and a run counter — never unbounded history.
+#
+# Entries are only created for repos that actually report packages behind
+# latest, and a repo whose last run reported zero behind has its
+# ``first_behind`` reset (popped) at the next run's rotation, so a repo that
+# catches up and later falls behind again ages from the new date.
+
+# Repos whose behind-latest entry has been rotated this process ("this run").
+# The first workspace of a repo in a run rotates the previous run's totals
+# into ``prev_total``; subsequent workspaces of the same repo accumulate.
+_BEHIND_RUN_SEEN: set[str] = set()
+
+
+def record_behind_latest(
+    state: dict[str, Any],
+    repo_path: str | Path,
+    manager: str,
+    count: int,
+    today: date,
+    *,
+    new_run: bool,
+) -> dict[str, Any] | None:
+    """Record a workspace's behind-latest *count* for *repo_path* in *state*.
+
+    ``new_run=True`` rotates the entry first: the previous run's total moves
+    to ``prev_total``, per-manager counts reset, the run counter increments,
+    and ``first_behind`` is popped when the previous run reported 0 behind.
+    A rotated entry left with nothing behind, nothing previously behind and
+    no first-behind date is pruned entirely.
+
+    Never creates an entry for a repo with nothing behind.  Returns the
+    surviving entry, or ``None`` when pruned, absent, or state is disabled.
+    """
+    if _no_state():
+        return None
+    key = str(repo_path)
+    table: dict[str, Any] = state.setdefault("behind_latest", {})
+    entry = table.get(key)
+    if entry is None:
+        if count <= 0:
+            return None
+        entry = {"prev_total": 0, "by_manager": {}, "runs": 0}
+        table[key] = entry
+        new_run = True
+    if new_run:
+        old: dict[str, Any] = entry.get("by_manager") or {}
+        old_total = sum(v for v in old.values() if isinstance(v, int))
+        if old_total == 0:
+            # Previous run reported nothing behind — restart the aging clock.
+            entry.pop("first_behind", None)
+        entry["prev_total"] = old_total
+        entry["by_manager"] = {}
+        entry["runs"] = entry.get("runs", 0) + 1
+        if count <= 0 and old_total == 0 and "first_behind" not in entry:
+            # Fully caught up for two runs — nothing left worth scoring.
+            del table[key]
+            return None
+    if count > 0:
+        by_manager: dict[str, Any] = entry["by_manager"]
+        by_manager[manager] = by_manager.get(manager, 0) + count
+        entry.setdefault("first_behind", today.isoformat())
+    return entry
+
+
+def cache_record_behind_latest(
+    repo_path: str | Path,
+    manager: str,
+    count: int,
+    today: date,
+) -> None:
+    """Record a workspace's behind-latest count against the module-level cache.
+
+    The first call for a repo in this process rotates the previous run's
+    totals; later calls (other workspaces of the same repo) accumulate.
+    No-op — and leaves the store untouched — when the repo has no existing
+    entry and *count* is 0, so clean repos never bloat the state file.
+    """
+    global _DIRTY
+    if _no_state():
+        return
+    state = _ensure_loaded()
+    key = str(repo_path)
+    with _LOCK:
+        existing = state.get("behind_latest") or {}
+        if key not in existing and count <= 0:
+            return
+        new_run = key not in _BEHIND_RUN_SEEN
+        entry = record_behind_latest(
+            state, repo_path, manager, count, today, new_run=new_run
+        )
+        if entry is not None:
+            _BEHIND_RUN_SEEN.add(key)
+        _DIRTY = True
+
+
+def cache_get_staleness(repo_path: str | Path, today: date) -> dict[str, Any] | None:
+    """Return computed staleness for *repo_path*, or ``None`` when untracked.
+
+    Read-only.  The result dict carries:
+
+    - ``total_behind`` — last recorded run's total behind-latest count
+    - ``by_manager`` — that total split per package manager
+    - ``first_behind`` — ISO date the repo was first seen behind (``None``
+      when nothing is currently behind)
+    - ``runs`` — number of runs recorded for the repo
+    - ``staleness_score`` — ``total_behind * days_since_first_behind``,
+      rounded to 1 decimal; ``0.0`` when nothing is behind
+    - ``new_behind_since_last_run`` — ``max(0, total - previous run total)``
+    """
+    if _no_state():
+        return None
+    state = _ensure_loaded()
+    with _LOCK:
+        table = state.get("behind_latest") or {}
+        entry = table.get(str(repo_path))
+        if not isinstance(entry, dict):
+            return None
+        by_manager = {
+            str(k): v
+            for k, v in (entry.get("by_manager") or {}).items()
+            if isinstance(v, int)
+        }
+        total = sum(by_manager.values())
+        first_behind = entry.get("first_behind") if total > 0 else None
+        score = 0.0
+        if total > 0 and isinstance(first_behind, str):
+            try:
+                days = max(0, (today - date.fromisoformat(first_behind)).days)
+            except ValueError:
+                days = 0
+            score = round(float(total * days), 1)
+        prev = entry.get("prev_total")
+        prev_total = prev if isinstance(prev, int) else 0
+        runs = entry.get("runs")
+        return {
+            "total_behind": total,
+            "by_manager": by_manager,
+            "first_behind": first_behind if isinstance(first_behind, str) else None,
+            "runs": runs if isinstance(runs, int) else 0,
+            "staleness_score": score,
+            "new_behind_since_last_run": max(0, total - prev_total),
+        }
 
 
 # ---------------------------------------------------------------------------
