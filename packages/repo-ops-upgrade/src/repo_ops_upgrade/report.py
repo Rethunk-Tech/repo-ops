@@ -38,13 +38,33 @@ _LATEST_HINT_BY_MANAGER: dict[str, str] = {
 }
 _LATEST_HINT_NO_MODE = "no latest mode; bump the pin manually"
 _LATEST_HINT_DEFAULT = "run with --latest to include"
-# yarn behind-latest note when --yarn-targeted-bump was *already* requested:
-# the leftovers are packages the targeted fallback could not move, so pointing
-# the operator back at the flag they already passed would be misleading (#131).
+# Per-manager behind-latest note when that manager's --*-targeted-bump was
+# *already* requested this run: the leftovers are packages the targeted
+# fallback could not move, so pointing the operator back at the flag they
+# already passed would be misleading (#131, extended to npm/pnpm/bun once
+# they gained the same fallback).
 _YARN_HINT_TARGETED_TRIED = (
     "peer/group-constrained; --yarn-targeted-bump was attempted but could not "
     "move them (verify failed or still constrained) — bump manually"
 )
+_NPM_HINT_TARGETED_TRIED = (
+    "no latest mode; --npm-targeted-bump was attempted but could not move "
+    "them (install failed or version did not advance) — bump manually"
+)
+_PNPM_HINT_TARGETED_TRIED = (
+    "--pnpm-targeted-bump was attempted but could not move them "
+    "(install failed or still constrained) — bump manually"
+)
+_BUN_HINT_TARGETED_TRIED = (
+    "--bun-targeted-bump was attempted but could not move them "
+    "(install failed or still constrained) — bump manually"
+)
+_TARGETED_TRIED_HINT: dict[str, str] = {
+    "yarn": _YARN_HINT_TARGETED_TRIED,
+    "npm": _NPM_HINT_TARGETED_TRIED,
+    "pnpm": _PNPM_HINT_TARGETED_TRIED,
+    "bun": _BUN_HINT_TARGETED_TRIED,
+}
 
 # Env vars that signal a per-package targeted bump was requested this run. Read
 # here (not imported from the manager packages) because repo_ops_upgrade may not
@@ -75,14 +95,17 @@ def _behind_latest_hint(manager: str) -> str:
     disagree — and so neither prints a misleading "(latest-mode off)" for
     packages that latest mode genuinely could not move (#131).
 
-    When --yarn-targeted-bump was already requested, the remaining yarn
+    When a manager's own --*-targeted-bump was already requested (yarn, and
+    now npm/pnpm/bun once they gained the same fallback), the remaining
     leftovers are ones that fallback could not move, so the note names that
-    outcome instead of re-suggesting the flag the operator already passed (#131).
+    outcome instead of re-suggesting the flag the operator already passed
+    (#131).
     """
+    tried = _TARGETED_TRIED_HINT.get(manager)
+    if tried and _targeted_bump_requested(manager):
+        return tried
     if manager == "npm":
         return _LATEST_HINT_NO_MODE
-    if manager == "yarn" and _targeted_bump_requested("yarn"):
-        return _YARN_HINT_TARGETED_TRIED
     return _LATEST_HINT_BY_MANAGER.get(manager, _LATEST_HINT_DEFAULT)
 
 
