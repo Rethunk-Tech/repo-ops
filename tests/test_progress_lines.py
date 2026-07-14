@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops_models import Workspace, WorkspaceResult
-from repo_ops_upgrade.orchestration import _emit_progress
+from repo_ops_upgrade.orchestration import _emit_progress, _format_elapsed
 
 
 def _make_ws(
@@ -23,6 +23,18 @@ def _make_ws(
         git_repo=tmp_path,
         label=label,
     )
+
+
+def test_format_elapsed_under_one_minute() -> None:
+    assert _format_elapsed(0.0) == "0.0s"
+    assert _format_elapsed(1.23) == "1.2s"
+    assert _format_elapsed(59.94) == "59.9s"
+
+
+def test_format_elapsed_one_minute_and_above() -> None:
+    assert _format_elapsed(60.0) == "1m 0s"
+    assert _format_elapsed(83.4) == "1m 23s"
+    assert _format_elapsed(125.6) == "2m 6s"
 
 
 def test_emit_progress_ok_workspace(tmp_path: Path) -> None:
@@ -38,7 +50,20 @@ def test_emit_progress_ok_workspace(tmp_path: Path) -> None:
     assert "my-repo" in line
     assert "npm" in line
     assert "0 change(s)" in line
+    assert "in 1.2s" in line
     assert "FAIL" not in line
+
+
+def test_emit_progress_includes_minute_duration(tmp_path: Path) -> None:
+    ws = _make_ws(tmp_path, label="slow-repo", manager="yarn")
+    result = WorkspaceResult(workspace=ws, status="ok")
+
+    buf = StringIO()
+    with patch.object(sys, "stderr", buf):
+        _emit_progress(result, elapsed_s=125.6)
+
+    line = buf.getvalue().strip()
+    assert "[done] slow-repo (yarn) — 0 change(s) in 2m 6s" == line
 
 
 def test_emit_progress_fail_workspace(tmp_path: Path) -> None:
@@ -51,6 +76,7 @@ def test_emit_progress_fail_workspace(tmp_path: Path) -> None:
 
     line = buf.getvalue().strip()
     assert "[done]" in line
+    assert "in 0.5s" in line
     assert "FAIL: build failed: exit 1" in line
 
 

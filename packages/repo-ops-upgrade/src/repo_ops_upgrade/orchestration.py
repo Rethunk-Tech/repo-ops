@@ -75,6 +75,15 @@ OnVerifyFail = Literal["keep", "revert"]
 _PROGRESS_LOCK = threading.Lock()
 
 
+def _format_elapsed(elapsed_s: float) -> str:
+    """Human-readable duration for progress lines (glanceable slow-repo spotting)."""
+    if elapsed_s < 60:
+        return f"{elapsed_s:.1f}s"
+    minutes = int(elapsed_s // 60)
+    seconds = elapsed_s % 60
+    return f"{minutes}m {seconds:.0f}s"
+
+
 def _emit_progress(result: WorkspaceResult, *, elapsed_s: float) -> None:
     """Emit one [done] line to stderr if progress is enabled.
 
@@ -87,7 +96,8 @@ def _emit_progress(result: WorkspaceResult, *, elapsed_s: float) -> None:
     ws = result.workspace
     label = ws.label or str(ws.path)
     n = len(result.changes)
-    line = f"[done] {label} ({ws.manager}) — {n} change(s)"
+    duration = _format_elapsed(elapsed_s)
+    line = f"[done] {label} ({ws.manager}) — {n} change(s) in {duration}"
     if result.status == "fail":
         first_err = (result.verify_error or result.error or "failed").splitlines()[0]
         line = f"{line}, FAIL: {first_err}"

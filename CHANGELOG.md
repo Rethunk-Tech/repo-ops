@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`[done]` progress lines include per-repo duration** (`in 1.2s` / `in 2m 6s`) so slow workspaces are glanceable during plan/apply runs. JSON `elapsed_s` was already present.
+
 ## [0.18.0] - 2026-07-10
 
 ### Added
