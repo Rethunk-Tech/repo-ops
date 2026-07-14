@@ -121,6 +121,27 @@ def clear_probe_cache() -> None:
     _probe_cache.clear()
 
 
+def _workspace_declares_resolutions(ws: Workspace) -> bool:
+    """Return True when any workspace package.json pins via resolutions.
+
+    The ghost-bump probe exists only to detect pins that silently block
+    ``yarn up``. When no ``resolutions`` / ``packageResolutions`` entries
+    exist, a second isolated install is pure overhead — skip it.
+    """
+    for pkg_path in _package_json_paths(ws.path):
+        try:
+            data = json.loads(pkg_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        for key in ("resolutions", "packageResolutions"):
+            res = data.get(key)
+            if isinstance(res, dict) and res:
+                return True
+    return False
+
+
 # Yarn 4 defaults to Plug'n'Play when no nodeLinker setting is present.
 # PnP repos have no node_modules, so the ghost-bump guard (which reads the
 # installed version from node_modules) cannot operate.  We detect PnP by:
@@ -511,7 +532,12 @@ def check_yarn_snapshot(
                 changes.append(c)
     # Pre-compute the ghost-bump guard probe and cache it so apply_yarn can
     # skip its own isolated copy when check ran first in the same process.
-    probe = _plan_without_resolutions(ws)
+    # No resolutions ⇒ nothing for the guard to detect; skip the second isolate.
+    probe = (
+        _plan_without_resolutions(ws)
+        if _workspace_declares_resolutions(ws)
+        else []
+    )
     _probe_cache[str(ws.path.resolve())] = probe
     return changes, snapshot_overrides, behind
 
@@ -611,7 +637,12 @@ def apply_yarn(ws: Workspace) -> list[Change]:
     # (e.g. direct invocations in integration tests or --apply-only runs).
     cache_key = str(ws.path.resolve())
     cached = _probe_cache.get(cache_key)
-    guardable = cached if cached is not None else _plan_without_resolutions(ws)
+    if cached is not None:
+        guardable = cached
+    elif _workspace_declares_resolutions(ws):
+        guardable = _plan_without_resolutions(ws)
+    else:
+        guardable = []
 
     # --- real apply -----------------------------------------------------------
     corepack_prepare("yarn", ws.path)

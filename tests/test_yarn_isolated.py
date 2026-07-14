@@ -10,7 +10,9 @@ from repo_ops_js_yarn.yarn import (
     _isolated_yarn_ignore,
     _layout_root,
     _package_json_paths,
+    _workspace_declares_resolutions,
 )
+from repo_ops_models import Workspace
 from repo_ops_upgrade.constants import YARN_ISOLATED_COPY_SKIP
 
 
@@ -67,3 +69,38 @@ def test_package_json_paths_includes_workspace_packages(tmp_path: Path) -> None:
     paths = _package_json_paths(root)
     assert root / "package.json" in paths
     assert pkg / "package.json" in paths
+
+
+def test_workspace_declares_resolutions_false_without_pins(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        json.dumps({"dependencies": {"left-pad": "^1.0.0"}}),
+        encoding="utf-8",
+    )
+    ws = Workspace(
+        path=tmp_path,
+        git_repo=tmp_path,
+        ecosystem="node",
+        manager="yarn",
+        label="tmp",
+    )
+    assert _workspace_declares_resolutions(ws) is False
+
+
+def test_workspace_declares_resolutions_true_with_pins(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "dependencies": {"left-pad": "^1.0.0"},
+                "resolutions": {"left-pad": "1.0.1"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    ws = Workspace(
+        path=tmp_path,
+        git_repo=tmp_path,
+        ecosystem="node",
+        manager="yarn",
+        label="tmp",
+    )
+    assert _workspace_declares_resolutions(ws) is True
