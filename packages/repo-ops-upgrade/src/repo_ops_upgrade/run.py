@@ -416,12 +416,16 @@ def _run_upgrade_body(
                 stop_on_result=_workspace_failed,
             )
 
-    path_to_result = {r.workspace.path: r for r in all_results}
+    # Key by (path, manager): a single directory can host multiple ecosystems
+    # (e.g. npm + container). Path-only keys let the last worker overwrite the
+    # earlier result, dropping non-container workspaces from --json/--json-out (#146).
+    path_to_result = {(r.workspace.path, r.workspace.manager): r for r in all_results}
     for bundle in bundles.values():
         updated: list[WorkspaceResult] = []
         for wr in bundle.workspaces:
-            if wr.workspace.path in path_to_result:
-                updated.append(path_to_result[wr.workspace.path])
+            key = (wr.workspace.path, wr.workspace.manager)
+            if key in path_to_result:
+                updated.append(path_to_result[key])
             elif _FAIL_FAST.is_set():
                 wr.status = "skip"
                 wr.error = "fail-fast"

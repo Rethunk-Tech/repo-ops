@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from repo_ops._register import register_all
 from repo_ops_upgrade.report import build_json_payload
-from repo_ops_upgrade.run import main_plan
+from repo_ops_upgrade.run import main_apply, main_plan
 
 
 def _init_git_repo(path: Path) -> None:
@@ -70,6 +70,59 @@ def test_json_out_requires_json(tmp_path: Path) -> None:
             assert exc.code != 0
         else:
             raise AssertionError("expected SystemExit")
+
+
+def test_apply_json_out_keeps_colocated_npm_and_container(tmp_path: Path) -> None:
+    """Co-located ecosystems must both survive result reconciliation (#146).
+
+    A directory with package.json + Dockerfile yields two WorkspaceResults that
+    share a path. Path-only keys in the post-pool map used to overwrite the
+    earlier (npm) result with the later (container) one, so --json-out dropped
+    the non-container workspace.
+    """
+    _init_git_repo(tmp_path)
+    (tmp_path / "package.json").write_text(
+        '{"name":"root","packageManager":"npm@10.0.0"}',
+        encoding="utf-8",
+    )
+    (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "Dockerfile").write_text("FROM alpine:3.19\n", encoding="utf-8")
+
+    out_file = tmp_path / "apply.json"
+    register_all()
+    seen_managers: list[str] = []
+
+    def _stamp(wr, **_kwargs):
+        seen_managers.append(wr.workspace.manager)
+        wr.status = "ok"
+        wr.error = f"processed:{wr.workspace.manager}"
+        return wr
+
+    with patch(
+        "repo_ops_upgrade.run.orchestration.process_workspace",
+        side_effect=_stamp,
+    ):
+        rc = main_apply(
+            [
+                str(tmp_path),
+                "--flat",
+                "--skip-actions",
+                "--json",
+                f"--json-out={out_file}",
+            ]
+        )
+
+    assert rc == 0
+    assert "npm" in seen_managers
+    assert "container" in seen_managers
+
+    payload = json.loads(out_file.read_text(encoding="utf-8"))
+    workspaces = [ws for repo in payload["repos"] for ws in repo["workspaces"]]
+    managers = {ws["manager"] for ws in workspaces}
+    assert managers == {"npm", "container"}
+    by_manager = {ws["manager"]: ws for ws in workspaces}
+    assert by_manager["npm"]["error"] == "processed:npm"
+    assert by_manager["container"]["error"] == "processed:container"
 
 
 def test_write_json_report_matches_build_json_payload(tmp_path: Path) -> None:

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`apply`/`plan` `--json`/`--json-out` no longer drops co-located non-container workspaces:** result reconciliation keyed only by path, so a Dockerfile next to `package.json` (or any other manifest) overwrote the earlier ecosystem's result with the container one. Keys are now `(path, manager)`. (#146)
+
 ### Changed
 
 - **`[done]` progress lines include per-repo duration** (`in 1.2s` / `in 2m 6s`) so slow workspaces are glanceable during plan/apply runs. JSON `elapsed_s` was already present.
