@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-07-14
+
 ### Fixed
 
 - **`apply`/`plan` `--json`/`--json-out` no longer drops co-located non-container workspaces:** result reconciliation keyed only by path, so a Dockerfile next to `package.json` (or any other manifest) overwrote the earlier ecosystem's result with the container one. Keys are now `(path, manager)`. (#146)
@@ -619,7 +621,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.17.3...v0.18.0
 [0.17.3]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.17.2...v0.17.3
 [0.17.2]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.17.1...v0.17.2
