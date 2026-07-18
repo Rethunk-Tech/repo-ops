@@ -1,4 +1,4 @@
-"""Integration test: workflow YAML byte-preservation on pin update (issue #117).
+"""Unit test: workflow YAML byte-preservation on pin update (issue #117).
 
 A real YAML fixture with 6-space indentation and a trailing comment is written to
 disk.  ``scan_actions`` runs with ``apply=True`` and a pre-populated ``tag_cache``
@@ -15,10 +15,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-import pytest
 from repo_ops_upgrade.actions import scan_actions
-
-pytestmark = pytest.mark.integration
 
 # A workflow with non-standard 6-space indentation and a trailing comment.
 # Only ``astral-sh/setup-uv@v5.4.0`` has a newer in-major exact tag (v5.5.0)
