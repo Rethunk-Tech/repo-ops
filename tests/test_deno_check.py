@@ -76,9 +76,7 @@ def test_check_deno_parses_update_vs_latest_columns(
     monkeypatch.delenv("REPO_OPS_DENO_UPDATE_LATEST", raising=False)
 
     def fake_run(cmd, cwd, timeout=None):
-        return subprocess.CompletedProcess(
-            cmd, 0, stdout=_BOX_BEHIND_LATEST, stderr=""
-        )
+        return subprocess.CompletedProcess(cmd, 0, stdout=_BOX_BEHIND_LATEST, stderr="")
 
     with (
         patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
@@ -97,9 +95,7 @@ def test_check_deno_latest_mode_promotes_behind(tmp_path: Path, monkeypatch) -> 
     monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "1")
 
     def fake_run(cmd, cwd, timeout=None):
-        return subprocess.CompletedProcess(
-            cmd, 0, stdout=_BOX_BEHIND_LATEST, stderr=""
-        )
+        return subprocess.CompletedProcess(cmd, 0, stdout=_BOX_BEHIND_LATEST, stderr="")
 
     with (
         patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
@@ -265,9 +261,7 @@ def test_apply_deno_calls_ghost_bump_guard(tmp_path: Path) -> None:
 
     def fake_run(cmd, cwd, timeout=None):
         if cmd == ["deno", "outdated"]:
-            return subprocess.CompletedProcess(
-                cmd, 0, stdout=_BOX_OUTPUT, stderr=""
-            )
+            return subprocess.CompletedProcess(cmd, 0, stdout=_BOX_OUTPUT, stderr="")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     def fake_guard(ws, requested, manager="js"):

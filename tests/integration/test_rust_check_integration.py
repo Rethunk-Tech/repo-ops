@@ -57,7 +57,9 @@ def test_check_rust_runs_cargo_dry_run(tmp_path) -> None:
         if any(
             kw in combined for kw in ("dial", "connect", "network", "timeout", "i/o")
         ):
-            pytest.skip(f"cargo generate-lockfile failed (network): {proc.stderr[:200]}")
+            pytest.skip(
+                f"cargo generate-lockfile failed (network): {proc.stderr[:200]}"
+            )
         pytest.fail(f"cargo generate-lockfile failed: {proc.stderr[:400]}")
 
     ws = Workspace(

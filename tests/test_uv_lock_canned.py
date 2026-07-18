@@ -60,7 +60,9 @@ def test_check_uv_lock_raises_runtime_error_on_nonzero_exit(tmp_path: Path) -> N
 
 def test_check_uv_lock_parses_prerelease_versions(tmp_path: Path) -> None:
     """F214 — pre-release / local version identifiers must parse."""
-    stdout = "would upgrade foo 1.0.0a1 -> 1.0.0b2\nwould upgrade bar 1.0.0+local -> 1.0.1\n"
+    stdout = (
+        "would upgrade foo 1.0.0a1 -> 1.0.0b2\nwould upgrade bar 1.0.0+local -> 1.0.1\n"
+    )
     with patch.object(uv_lock, "run", _fake_run(stdout=stdout)):
         changes = uv_lock.check_uv_lock(_ws(tmp_path))
     assert len(changes) == 2
@@ -86,9 +88,7 @@ def test_apply_uv_lock_runs_upgrade_then_sync(tmp_path: Path) -> None:
 def test_apply_uv_lock_raises_on_upgrade_failure(tmp_path: Path) -> None:
     """F153 — nonzero uv lock --upgrade raises RuntimeError."""
     with (
-        patch.object(
-            uv_lock, "run", _fake_run(stderr="upgrade failed", returncode=1)
-        ),
+        patch.object(uv_lock, "run", _fake_run(stderr="upgrade failed", returncode=1)),
         pytest.raises(RuntimeError, match="upgrade failed"),
     ):
         uv_lock.apply_uv_lock(_ws(tmp_path))

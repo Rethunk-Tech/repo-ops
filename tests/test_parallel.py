@@ -29,6 +29,7 @@ def test_run_bounded_pool_raising_task_does_not_abort_pool(caplog):
     assert len(results) == 2
     assert any("worker failed" in rec.message for rec in caplog.records)
 
+
 def test_run_bounded_pool_stop_on_result_multiple_done_no_keyerror():
     """stop_on_result must not KeyError when wait() returns several done futures."""
     wait_calls = 0

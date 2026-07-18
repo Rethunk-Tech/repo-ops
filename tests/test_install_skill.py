@@ -209,8 +209,7 @@ def test_rewrite_install_links_rewrites_relative_doc_paths() -> None:
     assert f"]({_GITHUB_BLOB}HUMANS.md)" in out
     assert f"]({_GITHUB_BLOB}docs/usage.md#anchor)" in out
     assert (
-        f"]({_GITHUB_BLOB}packages/repo-ops-core/src/repo_ops_core/constants.py)"
-        in out
+        f"]({_GITHUB_BLOB}packages/repo-ops-core/src/repo_ops_core/constants.py)" in out
     )
     assert "[keep](CONTRIBUTING.md)" in out
 
@@ -222,5 +221,8 @@ def test_install_skill_rewrites_agents_links_on_install(tmp_path: Path) -> None:
     agents = (dest / "AGENTS.md").read_text(encoding="utf-8")
     assert f"]({_GITHUB_BLOB}HUMANS.md)" in agents
     assert f"]({_GITHUB_BLOB}docs/usage.md" in agents
-    assert f"]({_GITHUB_BLOB}packages/repo-ops-core/src/repo_ops_core/constants.py)" in agents
+    assert (
+        f"]({_GITHUB_BLOB}packages/repo-ops-core/src/repo_ops_core/constants.py)"
+        in agents
+    )
     assert "[CONTRIBUTING.md](CONTRIBUTING.md)" in agents

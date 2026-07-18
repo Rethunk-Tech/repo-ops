@@ -212,9 +212,7 @@ def test_inventory_json_out_writes_file_and_prints_path_only(
 
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
     out_file = tmp_path / "inventory.json"
-    rc = inventory_main(
-        [str(tmp_path), "--flat", "--json", f"--json-out={out_file}"]
-    )
+    rc = inventory_main([str(tmp_path), "--flat", "--json", f"--json-out={out_file}"])
     assert rc == 0
     assert capsys.readouterr().out.strip() == str(out_file.resolve())
     payload = json.loads(out_file.read_text(encoding="utf-8"))

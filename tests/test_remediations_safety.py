@@ -238,9 +238,7 @@ class TestGoGenerateDispatchPathGate:
         }
         with (
             patch.dict(os.environ, env_without_gate, clear=True),
-            patch(
-                "repo_ops_upgrade_remediations_go.remediations.run"
-            ) as mock_run,
+            patch("repo_ops_upgrade_remediations_go.remediations.run") as mock_run,
             patch.object(go_rem.shutil, "which", return_value="/usr/bin/go"),
         ):
             core.dispatch(result, apply=True, skip=set(), _registry=[fake_hook])
@@ -248,9 +246,7 @@ class TestGoGenerateDispatchPathGate:
         called_cmds = [c[0][0] for c in mock_run.call_args_list]
         assert ["go", "generate", "./..."] not in called_cmds
 
-    def test_core_dispatch_runs_go_generate_when_gate_set(
-        self, tmp_path: Path
-    ) -> None:
+    def test_core_dispatch_runs_go_generate_when_gate_set(self, tmp_path: Path) -> None:
         result = self._setup_ws(tmp_path)
         ok_proc = _make_proc(0)
         fake_hook = go_rem.RemediationHook(
@@ -290,9 +286,7 @@ class TestGoGenerateDispatchPathGate:
         }
         with (
             patch.dict(os.environ, env_without_gate, clear=True),
-            patch(
-                "repo_ops_upgrade_remediations_go.remediations.run"
-            ) as mock_run,
+            patch("repo_ops_upgrade_remediations_go.remediations.run") as mock_run,
             patch.object(go_rem.shutil, "which", return_value="/usr/bin/go"),
             patch(
                 "repo_ops_upgrade.orchestration._dispatch_remediations",

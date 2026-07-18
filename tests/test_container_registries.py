@@ -331,9 +331,7 @@ def test_fetch_token_mcr_challenge_flow() -> None:
         return token_resp
 
     with patch("urllib.request.urlopen", side_effect=side_effect):
-        result = _fetch_token_for_registry(
-            "mcr.microsoft.com", "dotnet/runtime", None
-        )
+        result = _fetch_token_for_registry("mcr.microsoft.com", "dotnet/runtime", None)
 
     assert result == "mcr_token"
     assert call_count == 2

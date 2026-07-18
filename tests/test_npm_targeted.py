@@ -303,9 +303,7 @@ def test_targeted_bump_uses_save_dev_for_dev_dep(tmp_path: Path, monkeypatch) ->
     assert "typescript@latest" in install_cmds[0]
 
 
-def test_targeted_bump_uses_save_peer_for_peer_dep(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_targeted_bump_uses_save_peer_for_peer_dep(tmp_path: Path, monkeypatch) -> None:
     """Peer dep → npm install --save-peer <pkg>@latest."""
     pkg_content = json.dumps({"peerDependencies": {"react": "^18.0.0"}})
     _seed(tmp_path, pkg_content=pkg_content)

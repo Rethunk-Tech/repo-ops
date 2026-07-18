@@ -152,7 +152,9 @@ class TestCheckWorkspaceReachability:
             return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
 
         with (
-            patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
+            patch(
+                "repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"
+            ),
             patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
         ):
             result = check_workspace(_ws(tmp_path, "pipenv", "py"))

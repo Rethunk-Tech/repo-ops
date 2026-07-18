@@ -58,9 +58,7 @@ def _parse_deno_outdated(stdout: str) -> tuple[list[Change], list[Change]]:
     changes: list[Change] = []
     behind_latest: list[Change] = []
     # Plain text: "name  current  update  latest" OR "name  current  latest"
-    _PLAIN_4 = re.compile(
-        r"^(\S+)\s+([\d][^\s]*)\s+([\d][^\s]*)\s+([\d][^\s]*)"
-    )
+    _PLAIN_4 = re.compile(r"^(\S+)\s+([\d][^\s]*)\s+([\d][^\s]*)\s+([\d][^\s]*)")
     _PLAIN_3 = re.compile(r"^(\S+)\s+([\d][^\s]*)\s+([\d][^\s]*)")
     # Vertical-bar character used in Deno's box-drawing table output.
     _VBAR = "│"  # │ (BOX DRAWINGS LIGHT VERTICAL)
@@ -89,17 +87,17 @@ def _parse_deno_outdated(stdout: str) -> tuple[list[Change], list[Change]]:
             target = latest if want_latest else update_ver
             if target and cur != target:
                 changes.append(Change(name, cur, target))
-            elif (
-                not want_latest
-                and latest
-                and cur != latest
-                and update_ver == cur
-            ):
+            elif not want_latest and latest and cur != latest and update_ver == cur:
                 behind_latest.append(Change(name, cur, latest))
             continue
         m4 = _PLAIN_4.match(stripped)
         if m4:
-            name, cur, update_ver, latest = m4.group(1), m4.group(2), m4.group(3), m4.group(4)
+            name, cur, update_ver, latest = (
+                m4.group(1),
+                m4.group(2),
+                m4.group(3),
+                m4.group(4),
+            )
             if name.lower() in ("package", "name"):
                 continue
             target = latest if want_latest else update_ver
@@ -146,8 +144,7 @@ def apply_deno(ws: Workspace) -> list[Change]:
     guardable = [
         ch
         for ch in planned
-        if (ch.to or "").strip() not in ("", "?", "latest")
-        and (ch.name or "").strip()
+        if (ch.to or "").strip() not in ("", "?", "latest") and (ch.name or "").strip()
     ]
     if guardable:
         # Deno may not populate node_modules; assert_targets_resolved skips when

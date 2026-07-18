@@ -172,7 +172,9 @@ def _check_remediations(
         allowed_subs = REMEDIATIONS_UPGRADE_SUBMODULES.get(mod_root)
         if allowed_subs is None:
             found = sorted(upgrade_subs) if upgrade_subs else "bare import"
-            errors.append(f"{py}: remediations package must not import repo_ops_upgrade ({found})")
+            errors.append(
+                f"{py}: remediations package must not import repo_ops_upgrade ({found})"
+            )
         else:
             bad_subs = upgrade_subs - allowed_subs
             if bad_subs or not upgrade_subs:

@@ -135,10 +135,7 @@ def report_gofmt(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
     if go_files is None:
         argv = "gofmt -w ."
     elif not go_files:
-        return [
-            "REMEDIATE gofmt: no changed .go source files "
-            "(would skip formatting)"
-        ]
+        return ["REMEDIATE gofmt: no changed .go source files (would skip formatting)"]
     else:
         argv = "gofmt -w " + " ".join(go_files)
     return [f"REMEDIATE gofmt: would run {argv} (normalize Go formatting)"]

@@ -14,9 +14,7 @@ import repo_ops
 _SKILL_DIR_NAME = "repo-ops"
 _TARGETS = ("cursor", "claude", "both")
 _GITHUB_BLOB_BASE = "https://github.com/Rethunk-Tech/repo-ops/blob/main/"
-_INSTALL_LINK_RE = re.compile(
-    r"\]\(((?:HUMANS\.md|docs/|packages/)[^)]*)\)"
-)
+_INSTALL_LINK_RE = re.compile(r"\]\(((?:HUMANS\.md|docs/|packages/)[^)]*)\)")
 
 
 def bundled_skill_dir() -> Path:

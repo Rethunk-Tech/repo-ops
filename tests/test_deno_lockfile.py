@@ -79,7 +79,9 @@ def test_deno_fixture_files_on_disk() -> None:
         path = FIXTURE_DIR / name
         assert path.exists(), f"missing fixture {name}"
         versions = versions_deno_lock(path)
-        assert len(versions) == count, f"{name}: expected {count}, got {sorted(versions)}"
+        assert len(versions) == count, (
+            f"{name}: expected {count}, got {sorted(versions)}"
+        )
 
 
 def test_deno_fixture_files_are_valid_json() -> None:

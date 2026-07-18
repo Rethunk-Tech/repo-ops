@@ -532,7 +532,9 @@ def test_collect_components_logs_parse_failure(
     # with unreadable content — use chmod if needed. Simpler: patch _versions_go_sum.
     from repo_ops_lockfiles import sbom as sbom_mod
 
-    (tmp_path / "go.sum").write_text("golang.org/x/net v0.17.0 h1:abc=\n", encoding="utf-8")
+    (tmp_path / "go.sum").write_text(
+        "golang.org/x/net v0.17.0 h1:abc=\n", encoding="utf-8"
+    )
 
     def _boom(_p: Path) -> set[str]:
         raise RuntimeError("simulated parse failure")

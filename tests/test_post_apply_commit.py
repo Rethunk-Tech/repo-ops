@@ -362,9 +362,7 @@ def test_register_commit_agent_provider_round_trip(
     class _StubProvider:
         name = "stub-wave2"
 
-        def draft_commit_message(
-            self, bundle: RepoBundle, files: list[str]
-        ) -> str:
+        def draft_commit_message(self, bundle: RepoBundle, files: list[str]) -> str:
             return "chore(deps): stub"
 
     providers._ensure_builtin_providers()

@@ -214,9 +214,7 @@ def test_check_pipenv_json_keyerror_falls_back_without_raise(
 def test_check_pipenv_invalid_json_falls_back_to_columns(tmp_path: Path) -> None:
     """F160 — JSONDecodeError falls back to column-format parsing."""
     column_out = (
-        "Package Version Latest\n"
-        "------- ------- ------\n"
-        "requests 2.28.0 2.31.0\n"
+        "Package Version Latest\n------- ------- ------\nrequests 2.28.0 2.31.0\n"
     )
 
     def fake_run(cmd, cwd, timeout=None):

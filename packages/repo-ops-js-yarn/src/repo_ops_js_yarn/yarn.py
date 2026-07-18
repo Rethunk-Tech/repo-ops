@@ -510,11 +510,7 @@ def check_yarn_snapshot(
     # Pre-compute the ghost-bump guard probe and cache it so apply_yarn can
     # skip its own isolated copy when check ran first in the same process.
     # No resolutions ⇒ nothing for the guard to detect; skip the second isolate.
-    probe = (
-        _plan_without_resolutions(ws)
-        if _workspace_declares_resolutions(ws)
-        else []
-    )
+    probe = _plan_without_resolutions(ws) if _workspace_declares_resolutions(ws) else []
     _probe_cache[str(ws.path.resolve())] = probe
     return changes, snapshot_overrides, behind
 

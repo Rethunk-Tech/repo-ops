@@ -291,7 +291,11 @@ def test_probe_cargo_audit_missing_when_cargo_absent(
 def test_probe_cargo_audit_missing_when_subcommand_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/cargo" if name == "cargo" else f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        doctor.shutil,
+        "which",
+        lambda name: "/usr/bin/cargo" if name == "cargo" else f"/usr/bin/{name}",
+    )
 
     def _fake_run(cmd: list[str], **_kwargs: object) -> MagicMock:
         if cmd[1:] == ["audit", "--version"]:
@@ -311,7 +315,9 @@ def test_missing_cargo_audit_with_strict_exits_one(
 
     def _fake_run(cmd: list[str], **_kwargs: object) -> MagicMock:
         if cmd[1:] == ["audit", "--version"]:
-            return MagicMock(returncode=1, stdout="", stderr="cargo-audit not installed")
+            return MagicMock(
+                returncode=1, stdout="", stderr="cargo-audit not installed"
+            )
         if cmd[1:] == ["auth", "status"]:
             return MagicMock(returncode=0, stdout="ok", stderr="")
         return _fake_run_version(cmd)

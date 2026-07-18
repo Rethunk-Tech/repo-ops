@@ -111,7 +111,9 @@ def test_apply_npm_audit_override_absent_from_outdated() -> None:
     finally:
         clear_npm_audit_version_overrides()
 
-    install_cmds = [c for c in calls if c[:2] == ["npm", "install"] and "pkg@1.2.3" in c]
+    install_cmds = [
+        c for c in calls if c[:2] == ["npm", "install"] and "pkg@1.2.3" in c
+    ]
     assert install_cmds, f"expected npm install pkg@1.2.3, got {calls}"
     # No bare npm update when only audit overrides were applied.
     assert not any(c == ["npm", "update"] for c in calls)

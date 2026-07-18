@@ -160,7 +160,9 @@ def test_main_returns_nonzero_on_synthetic_violation(
     assert check_import_boundaries.main() == 1
 
 
-def test_main_returns_zero_when_clean(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_returns_zero_when_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     pkg = tmp_path / "repo-ops-doctor" / "src" / "repo_ops_doctor"
     pkg.mkdir(parents=True)
     (pkg / "doctor.py").write_text(

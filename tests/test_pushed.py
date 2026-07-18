@@ -627,7 +627,9 @@ def test_pushed_show_shas_without_messages(
     """F090: --show-shas prints short SHAs without requiring --show-messages."""
     sha = "abcdef0123456789" + "0" * 24
     repo = RepoResult(label="repo1", path="/fake/repo1", commits={sha: None})
-    monkeypatch.setattr(audit, "collect_results", lambda *a, **kw: ({sha: None}, [repo]))
+    monkeypatch.setattr(
+        audit, "collect_results", lambda *a, **kw: ({sha: None}, [repo])
+    )
     assert main([str(tmp_path), "--show-shas"]) == 0
     out = capsys.readouterr().out
     assert "abcdef01" in out
@@ -645,7 +647,9 @@ def test_pushed_no_merges_and_author_passed_to_filters(
         return {}, []
 
     monkeypatch.setattr(audit, "collect_results", fake_collect)
-    assert main([str(tmp_path), "--author", "Alice", "--no-merges", "--count-only"]) == 0
+    assert (
+        main([str(tmp_path), "--author", "Alice", "--no-merges", "--count-only"]) == 0
+    )
     assert len(seen) == 1
     assert seen[0].author == "Alice"
     assert seen[0].no_merges is True

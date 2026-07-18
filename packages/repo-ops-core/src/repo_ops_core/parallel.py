@@ -49,6 +49,7 @@ def run_bounded_pool(
             futures.keys(),
             return_when=concurrent.futures.FIRST_COMPLETED,
         )
+        stop_requested = False
         for fut in done:
             item = futures.pop(fut)
             try:
@@ -61,9 +62,14 @@ def run_bounded_pool(
                 continue
             results.append(result)
             if stop_on_result and stop_on_result(result):
+                stop_requested = True
+                # Cancel only work not already in this completed batch; keep
+                # draining the rest of *done* so multi-complete waits stay safe.
                 for pending_fut in list(futures):
                     if pending_fut not in done:
                         pending_fut.cancel()
-                futures.clear()
+                        futures.pop(pending_fut, None)
                 pending.clear()
+        if stop_requested:
+            futures.clear()
     return results

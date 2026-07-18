@@ -13,7 +13,7 @@ from repo_ops_py_uv.uv import (
 
 def test_uv_workspace_members_reads_globs(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text(
-        "[tool.uv.workspace]\nmembers = [\"packages/*\", \"apps/web\"]\n",
+        '[tool.uv.workspace]\nmembers = ["packages/*", "apps/web"]\n',
         encoding="utf-8",
     )
     assert uv_workspace_members(tmp_path) == {"packages/*", "apps/web"}
