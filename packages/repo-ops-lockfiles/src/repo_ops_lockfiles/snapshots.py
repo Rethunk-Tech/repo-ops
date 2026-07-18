@@ -10,10 +10,24 @@ from repo_ops_core.version_utils import normalize_version
 from repo_ops_models import Change
 
 from repo_ops_lockfiles.constants import (
+    DENO_LOCKFILES,
     GO_LOCKFILES,
     NODE_LOCKFILES,
     PY_LOCKFILES,
     RUST_LOCKFILES,
+)
+
+# Coarse Change entries for lockfiles that lack structured per-package diffs.
+# package.json and yarn.lock are handled with dedicated parsers above.
+_COARSE_DIFF_LOCKFILES = frozenset(
+    {
+        *NODE_LOCKFILES,
+        *PY_LOCKFILES,
+        *GO_LOCKFILES,
+        *RUST_LOCKFILES,
+        *DENO_LOCKFILES,
+    }
+    - {"package.json", "yarn.lock"}
 )
 
 
@@ -78,12 +92,14 @@ def snapshot_workspace_files(mdir: Path, manager: str) -> dict[Path, bytes]:
     names: tuple[str, ...]
     if manager in ("yarn", "npm", "pnpm", "bun"):
         names = NODE_LOCKFILES
-    elif manager in ("uv", "hatch", "pip-tools", "poetry"):
+    elif manager in ("uv", "hatch", "pip-tools", "poetry", "pdm", "pipenv"):
         names = PY_LOCKFILES
     elif manager == "go":
         names = GO_LOCKFILES
     elif manager == "rust":
         names = RUST_LOCKFILES
+    elif manager == "deno":
+        names = DENO_LOCKFILES
     else:
         names = ()
     out: dict[Path, bytes] = {}
@@ -161,22 +177,7 @@ def diff_workspace_snapshots(
                 if c.name not in seen:
                     seen.add(c.name)
                     changes.append(c)
-        elif (
-            path.name
-            in (
-                "package-lock.json",
-                "pnpm-lock.yaml",
-                "bun.lock",
-                "bun.lockb",
-                "uv.lock",
-                "poetry.lock",
-                "requirements.txt",
-                "go.mod",
-                "go.sum",
-                "Cargo.lock",
-            )
-            and path.name not in seen
-        ):
+        elif path.name in _COARSE_DIFF_LOCKFILES and path.name not in seen:
             seen.add(path.name)
             changes.append(Change(path.name, "changed", "changed"))
     return changes

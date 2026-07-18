@@ -314,3 +314,26 @@ def test_revert_preserves_preexisting_dirty_artifact_not_in_snapshot(
     assert lock.read_bytes() == original_lock, (
         "revert must restore the lockfile that apply modified (package-lock.json)"
     )
+
+
+# ---------------------------------------------------------------------------
+# Snapshot scope: pdm / pipenv / deno managers capture their lockfiles (F012)
+# ---------------------------------------------------------------------------
+
+
+def test_snapshot_captures_pdm_lock(tmp_path: Path) -> None:
+    (tmp_path / "pdm.lock").write_text('[[package]]\nname = "x"\nversion = "1"\n')
+    snap = snapshot_workspace_files(tmp_path, "pdm")
+    assert any(p.name == "pdm.lock" for p in snap)
+
+
+def test_snapshot_captures_pipfile_lock(tmp_path: Path) -> None:
+    (tmp_path / "Pipfile.lock").write_text("{}")
+    snap = snapshot_workspace_files(tmp_path, "pipenv")
+    assert any(p.name == "Pipfile.lock" for p in snap)
+
+
+def test_snapshot_captures_deno_lock(tmp_path: Path) -> None:
+    (tmp_path / "deno.lock").write_text("{}")
+    snap = snapshot_workspace_files(tmp_path, "deno")
+    assert any(p.name == "deno.lock" for p in snap)

@@ -5,9 +5,12 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+from repo_ops_lockfiles.constants import DENO_LOCKFILES, PY_LOCKFILES
 from repo_ops_lockfiles.snapshots import (
     _diff_lock_text,
+    diff_workspace_snapshots,
     resolved_version_from_node_modules,
+    snapshot_workspace_files,
 )
 
 
@@ -65,3 +68,38 @@ def test_diff_lock_text_scoped_package() -> None:
     assert changes[0].name == "@babel/core"
     assert changes[0].from_ver == "7.22.0"
     assert changes[0].to == "7.23.0"
+
+
+def test_snapshot_workspace_files_pdm(tmp_path: Path) -> None:
+    lock = tmp_path / "pdm.lock"
+    lock.write_text('[[package]]\nname = "x"\nversion = "1"\n', encoding="utf-8")
+    snap = snapshot_workspace_files(tmp_path, "pdm")
+    assert lock in snap
+    assert "pdm.lock" in PY_LOCKFILES
+
+
+def test_snapshot_workspace_files_pipenv(tmp_path: Path) -> None:
+    lock = tmp_path / "Pipfile.lock"
+    lock.write_text("{}", encoding="utf-8")
+    snap = snapshot_workspace_files(tmp_path, "pipenv")
+    assert lock in snap
+
+
+def test_snapshot_workspace_files_deno(tmp_path: Path) -> None:
+    lock = tmp_path / "deno.lock"
+    lock.write_text("{}", encoding="utf-8")
+    snap = snapshot_workspace_files(tmp_path, "deno")
+    assert lock in snap
+    assert DENO_LOCKFILES == ("deno.lock",)
+
+
+def test_diff_workspace_snapshots_coarse_pdm_pipenv_deno(tmp_path: Path) -> None:
+    """pdm.lock / Pipfile.lock / deno.lock byte changes emit coarse Change rows."""
+    for name, manager in (
+        ("pdm.lock", "pdm"),
+        ("Pipfile.lock", "pipenv"),
+        ("deno.lock", "deno"),
+    ):
+        p = tmp_path / name
+        changes = diff_workspace_snapshots({p: b"old"}, {p: b"new"}, manager)
+        assert any(c.name == name for c in changes), f"expected coarse change for {name}"
