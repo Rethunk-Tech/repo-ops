@@ -623,7 +623,7 @@ def test_apply_precommit_non_utf8_bytes_round_trip(tmp_path: Path) -> None:
 
 def test_register_precommit_registers_with_upgrade_registry() -> None:
     """register_precommit() adds 'precommit' to the upgrade registry."""
-    from repo_ops_core._register import register_precommit
+    from repo_ops._register import register_precommit
     from repo_ops_upgrade import registry as upgrade_registry
 
     # Remove any pre-existing registration to make the test idempotent.

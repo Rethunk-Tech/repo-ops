@@ -1,4 +1,4 @@
-"""Tests for repo_ops_core.filesystem.write_json_atomic."""
+"""Tests for repo_ops_core.filesystem helpers."""
 
 from __future__ import annotations
 
@@ -6,7 +6,12 @@ import json
 from pathlib import Path
 
 import pytest
-from repo_ops_core.filesystem import write_json_atomic
+from repo_ops_core.filesystem import (
+    read_json_file,
+    read_toml_file,
+    should_exclude,
+    write_json_atomic,
+)
 
 
 def test_write_json_atomic_happy_path(tmp_path: Path) -> None:
@@ -39,3 +44,32 @@ def test_write_json_atomic_rollback_on_failure(
     # temp file must be cleaned up, not left behind
     assert list(tmp_path.glob(f".{target.name}.*.tmp")) == []
     assert list(tmp_path.iterdir()) == []
+
+
+def test_should_exclude_matches_known_fragments() -> None:
+    assert should_exclude("/home/me/node_modules/pkg") is True
+    assert should_exclude("/usr/local/src/com.github/Rethunk-Tech/repo-ops") is False
+
+
+def test_read_json_file_happy_and_invalid(tmp_path: Path) -> None:
+    good = tmp_path / "ok.json"
+    good.write_text('{"x": 1}\n', encoding="utf-8")
+    assert read_json_file(good) == {"x": 1}
+
+    bad = tmp_path / "bad.json"
+    bad.write_text("not-json", encoding="utf-8")
+    assert read_json_file(bad) is None
+
+    arr = tmp_path / "arr.json"
+    arr.write_text("[1, 2]\n", encoding="utf-8")
+    assert read_json_file(arr) is None
+
+
+def test_read_toml_file_happy_and_invalid(tmp_path: Path) -> None:
+    good = tmp_path / "ok.toml"
+    good.write_text('name = "demo"\n', encoding="utf-8")
+    assert read_toml_file(good) == {"name": "demo"}
+
+    bad = tmp_path / "bad.toml"
+    bad.write_text("[[[broken", encoding="utf-8")
+    assert read_toml_file(bad) is None

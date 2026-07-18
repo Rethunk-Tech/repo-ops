@@ -225,3 +225,12 @@ def test_empty_store_keeps_report_output_unchanged(tmp_path, monkeypatch):
     cache_record_behind_latest(repo, "npm", 3, date.today())
     assert cache_get_staleness(repo, date.today()) is None
     _reset_module_cache()
+
+
+def test_save_state_writes_schema_version(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)
+    _reset_module_cache()
+    state_mod.save_state({"dirty_skips": {}})
+    loaded = state_mod.load_state()
+    assert loaded.get("version") == state_mod.STATE_SCHEMA_VERSION

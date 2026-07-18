@@ -10,10 +10,13 @@ from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics, discover_all
 
 
-def test_discover_repos_skips_non_dirs_and_returns_dict():
+def test_discover_repos_skips_non_dirs_and_returns_dict(capsys):
     result = discover_repos(["/nonexistent/path/that/does/not/exist"])
     assert isinstance(result, dict)
     assert all(isinstance(k, str) and isinstance(v, str) for k, v in result.items())
+    err = capsys.readouterr().err
+    assert "root is not a directory" in err
+    assert "nonexistent/path/that/does/not/exist" in err
 
 
 def test_discover_repos_with_tmp_layout_and_monkeypatch(tmp_path: Path):
