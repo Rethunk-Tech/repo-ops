@@ -12,13 +12,15 @@ Package layout and filesystem map for the `repo-ops` uv workspace under `package
 - `packages/repo-ops-go/`, `repo-ops-rust/`, `repo-ops-py*/` — ecosystem plugins
 - `packages/repo-ops-container/` — Dockerfile/compose image pin check and apply (`repo_ops_container`)
 - `packages/repo-ops-upgrade/` — plan/apply (`run.py`), `discovery`, `orchestration`, `registry`, `actions`, `verify`, `report`, `post_apply`
-- `packages/repo-ops-upgrade-remediations-{core,js,go,py,rust}/` — per-ecosystem remediations
+- `packages/repo-ops-upgrade-remediations-{core,js,go,py,rust,deno}/` — per-ecosystem remediations
 - `packages/repo-ops-inventory/`, `repo-ops-pushed/` — inventory and push audit
 - `packages/repo-ops-audit/` — fleet vulnerability sweep across ecosystems (`repo_ops_audit`)
 - `packages/repo-ops-dependabot/` — list/close Dependabot PRs superseded by local manifests (`repo_ops_dependabot`)
 - `packages/repo-ops-doctor/` — toolchain/auth preflight: probe known binaries and `gh` auth (`repo_ops_doctor`)
 - `packages/repo-ops/` — meta CLI (`repo_ops.cli`, `repo_ops._register`, bundled skill under `repo_ops/skills/`)
-- `tests/` — unit tests with mocked subprocess (pure-unit tier); a git-touching tier exercises real git operations; future `integration` tests (bun/yarn/go network calls) will carry the `@pytest.mark.integration` marker. `packages/repo-ops-lockfiles/tests/` — parser unit tests
+- `tests/` — unit tests with mocked subprocess (pure-unit tier); a git-touching tier exercises real git operations; `tests/integration/` holds `@pytest.mark.integration` tests (bun/yarn/go network calls) run via `pytest -m integration` in CI
+- `packages/repo-ops-lockfiles/tests/` — lockfile parser unit tests
+- `packages/repo-ops-audit/tests/` — audit subcommand unit tests (parser, fix-plan, SARIF)
 - Root `pyproject.toml` / `uv.lock` — workspace manifest only
 
 Ecosystem plugins register via `repo_ops._register.register_all()` before CLI dispatch. Programmatic import paths: [docs/programmatic-imports.md](programmatic-imports.md). Do not add top-level scripts; route through workspace packages and the `repo-ops` entry point.
