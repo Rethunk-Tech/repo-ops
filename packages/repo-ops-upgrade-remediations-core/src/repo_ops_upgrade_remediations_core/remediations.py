@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -32,6 +33,18 @@ class RemediationHook:
     report: Callable[[Any, dict[str, Any]], list[str]]
     apply: Callable[[Any, dict[str, Any]], ApplyResult]
     files: Callable[[Any], list[str]] | None = field(default=None)
+
+
+# compat: intentional alias — tests/callers construct Remediation(...) (JS legacy).
+Remediation = RemediationHook
+
+
+def stderr_tail(text: str, *, max_chars: int = 200) -> str:
+    """Return a short trailing snippet of *text* for remediation failure details."""
+    s = (text or "").strip()
+    if not s:
+        return "non-zero exit"
+    return s if len(s) <= max_chars else s[-max_chars:]
 
 
 # Global registry — populated by ecosystem packages on import.
@@ -111,6 +124,13 @@ def dispatch(
     All hooks registered via :func:`register` across every imported ecosystem
     package are executed.  Pass *_registry* in tests to supply an isolated list
     without touching the global state.
+
+    ``go_generate`` is **default-off** on this production path: it is added to
+    the effective skip set unless ``REPO_OPS_REMEDIATE_GO_GENERATE=1`` is set.
+    (Ecosystem ``go.run_remediations`` applies the same gate for direct callers.)
     """
+    effective_skip = set(skip)
+    if os.environ.get("REPO_OPS_REMEDIATE_GO_GENERATE", "") != "1":
+        effective_skip.add("go_generate")
     hooks = _registry if _registry is not None else list(_GLOBAL_REGISTRY)
-    run_hooks(hooks, result, apply=apply, skip=skip)
+    run_hooks(hooks, result, apply=apply, skip=effective_skip)

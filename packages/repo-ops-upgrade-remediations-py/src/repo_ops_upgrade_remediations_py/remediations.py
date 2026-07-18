@@ -8,11 +8,13 @@ Included hooks
 ruff_fix
     Run ``ruff check --fix`` + ``ruff format`` after a dependency bump in a
     project that has a ruff configuration (``ruff.toml`` or ``[tool.ruff]``
-    in ``pyproject.toml``).  Skipped when ruff is not configured.
+    in ``pyproject.toml``).  Skipped when ruff is not configured or when the
+    ``ruff`` binary is not installed.
 """
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,7 @@ from repo_ops_upgrade_remediations_core.remediations import (
     RemediationHook,
     register,
     run_hooks,
+    stderr_tail,
 )
 
 
@@ -45,12 +48,15 @@ def detect_ruff(ws: Workspace, ctx: dict[str, Any]) -> bool:
     Applies only to Python (``ecosystem == "py"``) workspaces that already
     have a ruff configuration.  The presence of any dependency change is
     sufficient trigger — a version bump may introduce new lint rules or
-    formatting requirements that ruff can fix automatically.
+    formatting requirements that ruff can fix automatically.  Skipped when
+    ``ruff`` is not installed.
     """
     if ws.ecosystem != "py":
         return False
     if not _has_ruff_config(ws.path):
         return False
+    if shutil.which("ruff") is None:
+        return False  # tool not available — skip, do not fail
     # Only trigger when something actually changed (apply) or when in plan mode
     # with at least one change candidate.
     changes = ctx.get("changes", [])
@@ -63,13 +69,6 @@ def report_ruff(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
     ]
 
 
-def _stderr_tail(text: str, *, max_chars: int = 200) -> str:
-    s = (text or "").strip()
-    if not s:
-        return "non-zero exit"
-    return s if len(s) <= max_chars else s[-max_chars:]
-
-
 def apply_ruff(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     """Run ``ruff check --fix`` then ``ruff format`` in the workspace root."""
     fix_proc = run(["ruff", "check", "--fix", "."], ws.path, timeout=120)
@@ -79,11 +78,11 @@ def apply_ruff(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     err_parts: list[str] = []
     if fix_proc.returncode != 0:
         err_parts.append(
-            f"check --fix: {_stderr_tail(fix_proc.stderr or fix_proc.stdout or '')}"
+            f"check --fix: {stderr_tail(fix_proc.stderr or fix_proc.stdout or '')}"
         )
     if fmt_proc.returncode != 0:
         err_parts.append(
-            f"format: {_stderr_tail(fmt_proc.stderr or fmt_proc.stdout or '')}"
+            f"format: {stderr_tail(fmt_proc.stderr or fmt_proc.stdout or '')}"
         )
     return False, f"ruff (failed: {'; '.join(err_parts)})"
 

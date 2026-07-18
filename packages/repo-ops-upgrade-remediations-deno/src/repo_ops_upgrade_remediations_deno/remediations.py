@@ -33,6 +33,7 @@ from repo_ops_upgrade_remediations_core.remediations import (
     RemediationHook,
     register,
     run_hooks,
+    stderr_tail,
 )
 
 DENO_CONFIG_NAMES = ("deno.json", "deno.jsonc", "deno.lock")
@@ -54,13 +55,6 @@ DENO_FMT_EXTENSIONS = (
 def _has_deno_config(path: Path) -> bool:
     """True when *path* contains a Deno config file."""
     return any((path / name).exists() for name in DENO_CONFIG_NAMES)
-
-
-def _stderr_tail(text: str, *, max_chars: int = 200) -> str:
-    s = (text or "").strip()
-    if not s:
-        return "non-zero exit"
-    return s if len(s) <= max_chars else s[-max_chars:]
 
 
 def _changed_deno_files(ws: Workspace) -> list[str] | None:
@@ -91,6 +85,11 @@ def _changed_deno_files(ws: Workspace) -> list[str] | None:
     changed: list[str] = []
     for rel in proc.stdout.splitlines():
         if not rel.endswith(DENO_FMT_EXTENSIONS):
+            continue
+        # Config/lock bumps are not "source" reformats — skip so pure dep
+        # updates that only touch deno.json / deno.lock become a no-op.
+        basename = Path(rel).name
+        if basename in DENO_CONFIG_NAMES:
             continue
         abs_path = ws.git_repo / rel
         try:
@@ -146,7 +145,7 @@ def apply_deno_fix(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
         proc = run(["deno", "fmt", *changed_files], ws.path, timeout=120)
     if proc.returncode == 0:
         return True, "deno fmt (ok)"
-    err = _stderr_tail(proc.stderr or proc.stdout or "")
+    err = stderr_tail(proc.stderr or proc.stdout or "")
     return False, f"deno fmt (failed: {err})"
 
 

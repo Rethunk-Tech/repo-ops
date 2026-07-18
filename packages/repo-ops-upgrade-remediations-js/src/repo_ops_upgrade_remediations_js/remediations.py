@@ -28,19 +28,11 @@ from repo_ops_upgrade_remediations_core.remediations import (
     RemediationHook,
     register,
     run_hooks,
+    stderr_tail,
 )
 
-# Backward-compatible alias so existing callers constructing Remediation(...) keep working.
+# compat: intentional alias — tests/test_remediations_apply.py constructs Remediation(...).
 Remediation = RemediationHook
-
-
-def _stderr_tail(text: str, *, max_chars: int = 200) -> str:
-    s = (text or "").strip()
-    if not s:
-        return "non-zero exit"
-    if len(s) <= max_chars:
-        return s
-    return s[-max_chars:]
 
 
 def _find_biome_configs(mdir: Path) -> list[Path]:
@@ -87,6 +79,8 @@ def _schema_version_from_config(p: Path) -> str | None:
 
 
 def detect_biome(ws: Workspace, ctx: dict[str, Any]) -> bool:
+    if ws.ecosystem != "node":
+        return False
     if not _find_biome_configs(ws.path):
         return False
     outdated = {c.name for c in ctx.get("changes", [])}
@@ -125,7 +119,7 @@ def apply_biome(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
         proc = run(cmd, ws.path, timeout=resolve_timeout_apply())
         if proc.returncode != 0:
             ok = False
-            last_err = _stderr_tail(proc.stderr or proc.stdout or "")
+            last_err = stderr_tail(proc.stderr or proc.stdout or "")
     if ok:
         return True, "biome migrate --write (ok)"
     return False, f"biome migrate --write (failed: {last_err})"
@@ -167,6 +161,8 @@ def _playwright_missing_browsers(ws: Workspace) -> bool:
 
 
 def detect_playwright(ws: Workspace, ctx: dict[str, Any]) -> bool:
+    if ws.ecosystem != "node":
+        return False
     pkg = read_json_file(ws.path / "package.json") or {}
     deps = {
         **(pkg.get("dependencies") or {}),
@@ -181,6 +177,10 @@ def detect_playwright(ws: Workspace, ctx: dict[str, Any]) -> bool:
         return True
     if _playwright_version_changed(ws, ctx):
         return True
+    # Browser dry-run shells out (network-capable). Gate to apply mode so
+    # plan/detect never triggers a PM subprocess just to probe browsers.
+    if not ctx.get("apply", True):
+        return False
     return _playwright_missing_browsers(ws)
 
 
@@ -196,11 +196,13 @@ def apply_playwright(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     cmd = f"{ws.manager} exec playwright install"
     if proc.returncode == 0:
         return True, f"{cmd} (ok)"
-    err = _stderr_tail(proc.stderr or proc.stdout or "")
+    err = stderr_tail(proc.stderr or proc.stdout or "")
     return False, f"{cmd} (failed: {err})"
 
 
 def detect_codegen(ws: Workspace, ctx: dict[str, Any]) -> bool:
+    if ws.ecosystem != "node":
+        return False
     pkg = read_json_file(ws.path / "package.json") or {}
     scripts = pkg.get("scripts") or {}
     if not any(k in scripts for k in ("generate:proto", "generate:openapi")):
@@ -229,7 +231,7 @@ def apply_codegen(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
             proc = run([*prefix, script], ws.path, timeout=resolve_timeout_apply())
             if proc.returncode != 0:
                 ok = False
-                last_err = _stderr_tail(proc.stderr or proc.stdout or "")
+                last_err = stderr_tail(proc.stderr or proc.stdout or "")
     if ok:
         return True, f"{ws.manager} run codegen (ok)"
     return False, f"{ws.manager} run codegen (failed: {last_err})"
@@ -246,6 +248,8 @@ def _pm_runtime_version(name: str, ws: Workspace) -> str | None:
 
 
 def detect_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> bool:
+    if ws.ecosystem != "node":
+        return False
     pkg = read_json_file(ws.path / "package.json") or {}
     pm_field = parse_package_manager(pkg)
     if not pm_field:

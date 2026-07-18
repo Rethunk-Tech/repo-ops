@@ -35,6 +35,7 @@ from repo_ops_upgrade_remediations_core.remediations import (
     RemediationHook,
     register,
     run_hooks,
+    stderr_tail,
 )
 
 # Directories that should never be scanned for //go:generate directives.
@@ -67,13 +68,6 @@ def _has_go_generate(path: Path) -> bool:
     except OSError:
         pass
     return False
-
-
-def _stderr_tail(text: str, *, max_chars: int = 200) -> str:
-    s = (text or "").strip()
-    if not s:
-        return "non-zero exit"
-    return s if len(s) <= max_chars else s[-max_chars:]
 
 
 def _changed_go_files(ws: Workspace) -> list[str] | None:
@@ -137,7 +131,17 @@ def detect_gofmt(ws: Workspace, ctx: dict[str, Any]) -> bool:
 
 
 def report_gofmt(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
-    return ["REMEDIATE gofmt: would run gofmt -w . (normalize Go formatting)"]
+    go_files = _changed_go_files(ws)
+    if go_files is None:
+        argv = "gofmt -w ."
+    elif not go_files:
+        return [
+            "REMEDIATE gofmt: no changed .go source files "
+            "(would skip formatting)"
+        ]
+    else:
+        argv = "gofmt -w " + " ".join(go_files)
+    return [f"REMEDIATE gofmt: would run {argv} (normalize Go formatting)"]
 
 
 def apply_gofmt(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
@@ -158,9 +162,10 @@ def apply_gofmt(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     else:
         cmd = ["gofmt", "-w", *go_files]
     proc = run(cmd, ws.path, timeout=120)
+    argv = " ".join(cmd)
     if proc.returncode == 0:
-        return True, "gofmt -w . (ok)"
-    err = _stderr_tail(proc.stderr or proc.stdout or "")
+        return True, f"{argv} (ok)"
+    err = stderr_tail(proc.stderr or proc.stdout or "")
     return False, f"gofmt (failed: {err})"
 
 
@@ -202,7 +207,7 @@ def apply_go_generate(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     proc = run(["go", "generate", "./..."], ws.path, timeout=300)
     if proc.returncode == 0:
         return True, "go generate ./... (ok)"
-    err = _stderr_tail(proc.stderr or proc.stdout or "")
+    err = stderr_tail(proc.stderr or proc.stdout or "")
     return False, f"go generate (failed: {err})"
 
 

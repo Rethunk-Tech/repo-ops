@@ -31,19 +31,13 @@ from repo_ops_upgrade_remediations_core.remediations import (
     RemediationHook,
     register,
     run_hooks,
+    stderr_tail,
 )
 
 
 def _has_cargo_toml(path: Path) -> bool:
     """True when *path* contains a Cargo.toml file."""
     return (path / "Cargo.toml").exists()
-
-
-def _stderr_tail(text: str, *, max_chars: int = 200) -> str:
-    s = (text or "").strip()
-    if not s:
-        return "non-zero exit"
-    return s if len(s) <= max_chars else s[-max_chars:]
 
 
 def _changed_rust_files(ws: Workspace) -> list[str] | None:
@@ -131,7 +125,7 @@ def apply_cargo_fix(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
         proc = run(["cargo", "fmt", "--", *rs_files], ws.path, timeout=120)
     if proc.returncode == 0:
         return True, "cargo fmt (ok)"
-    err = _stderr_tail(proc.stderr or proc.stdout or "")
+    err = stderr_tail(proc.stderr or proc.stdout or "")
     return False, f"cargo fmt (failed: {err})"
 
 
