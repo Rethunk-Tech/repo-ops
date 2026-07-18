@@ -45,13 +45,19 @@ from repo_ops_upgrade.post_apply import (
 logger = logging.getLogger(__name__)
 
 
-class _RemediationsProxy:
-    """Backward-compat shim so tests can patch ``orchestration.remediations.run_remediations``.
+# Env gate for go generate on the production dispatch path (orchestration →
+# remediations-core.dispatch).  Kept here because go.run_remediations is not
+# on the apply path; do not weaken that helper's own effective_skip.
+_GO_GENERATE_ENV = "REPO_OPS_REMEDIATE_GO_GENERATE"
 
-    Pre-existing tests use ``patch("repo_ops_upgrade.orchestration.remediations.run_remediations")``
-    to suppress remediation side-effects during integration tests.  This proxy object
-    is a drop-in attribute replacement for the old ``from ... import remediations``
-    module reference while routing live calls through the global multi-ecosystem dispatch.
+
+class _RemediationsProxy:
+    """Intentional test seam: tests patch ``orchestration.remediations.run_remediations``.
+
+    # compat: patch site for test_progress_lines / test_staleness_state /
+    # test_on_verify_fail — keep this proxy rather than migrating every call site.
+    Routes live calls through remediations-core.dispatch while enforcing the
+    go_generate env gate that go.run_remediations already applies.
     """
 
     def run_remediations(
@@ -61,7 +67,12 @@ class _RemediationsProxy:
         apply: bool,
         skip: set[str],
     ) -> None:
-        _dispatch_remediations(result, apply=apply, skip=skip)
+        effective_skip = set(skip)
+        # go_generate is default-off on the production dispatch path so
+        # //go:generate never runs during fleet apply unless explicitly opted in.
+        if os.environ.get(_GO_GENERATE_ENV, "") != "1":
+            effective_skip.add("go_generate")
+        _dispatch_remediations(result, apply=apply, skip=effective_skip)
 
 
 # Module-level ``remediations`` attribute: existing tests patch
@@ -211,7 +222,14 @@ def _process_workspace_body(
                         reverted_ok = revert_workspace_after_verify_fail(
                             ws, before_snap
                         )
-                    except (RuntimeError, OSError, ValueError) as exc:
+                    except (
+                        RuntimeError,
+                        OSError,
+                        ValueError,
+                        subprocess.SubprocessError,
+                    ) as exc:
+                        # Align with apply-path catch set so git timeouts
+                        # classify as revert failure rather than worker crash.
                         logger.warning("revert after verify fail failed: %s", exc)
                         reverted_ok = False
                         prefix = result.error or ""
