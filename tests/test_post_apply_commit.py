@@ -125,6 +125,21 @@ def test_skips_verify_fail_by_default(tmp_path: Path) -> None:
     assert plan.skipped_reason == "verify failed: build failed"
 
 
+def test_commit_on_fail_true_proceeds_after_verify_fail(tmp_path: Path) -> None:
+    """--commit-on-fail allows commits when verify_error is set (F041)."""
+    bundle = _bundle(tmp_path)
+    bundle.workspaces[0].status = "fail"
+    bundle.workspaces[0].verify_error = "build failed"
+    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
+    (tmp_path / "package-lock.json").write_text('{"v":1}', encoding="utf-8")
+    subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
+    plan = post_apply_commit.plan_repo_commit(
+        bundle, mode="conventional", allow_dirty=False, commit_on_fail=True
+    )
+    assert plan.skipped_reason is None
+    assert "package-lock.json" in plan.files
+
+
 def test_allow_dirty_scopes_commit_to_upgrade_paths(tmp_path: Path) -> None:
     bundle = _bundle(tmp_path, started_dirty=True)
     (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
@@ -337,6 +352,30 @@ def test_default_provider_is_cursor() -> None:
     assert providers.commit_agent_provider_name() == "cursor"
     provider = providers.resolve_commit_agent_provider()
     assert provider.name == "cursor"
+
+
+def test_register_commit_agent_provider_round_trip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Third-party providers register + resolve (F206)."""
+
+    class _StubProvider:
+        name = "stub-wave2"
+
+        def draft_commit_message(
+            self, bundle: RepoBundle, files: list[str]
+        ) -> str:
+            return "chore(deps): stub"
+
+    providers._ensure_builtin_providers()
+    providers.register_commit_agent_provider("stub-wave2", _StubProvider)
+    try:
+        monkeypatch.setenv(providers.COMMIT_AGENT_PROVIDER_ENV, "stub-wave2")
+        resolved = providers.resolve_commit_agent_provider()
+        assert resolved.name == "stub-wave2"
+        assert "stub-wave2" in providers.known_commit_agent_providers()
+    finally:
+        providers._FACTORIES.pop("stub-wave2", None)
 
 
 def test_cursor_provider_missing_sdk_message(
@@ -710,3 +749,63 @@ def test_collect_changes_no_diff_reports_nothing(tmp_path: Path) -> None:
         changes = collect_changes_after_apply(ws)
 
     assert changes == [], f"clean diff must yield no changes, got {changes}"
+
+
+def test_pdm_root_lock_and_manifest_in_commit_scope(tmp_path: Path) -> None:
+    """pdm.lock + pyproject.toml are staged for root pdm workspaces (F049)."""
+    _init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    (tmp_path / "pdm.lock").write_text("[[package]]\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
+    (tmp_path / "pdm.lock").write_text("[[package]]\nname = 'x'\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.1"\n', encoding="utf-8"
+    )
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="py",
+        manager="pdm",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("requests", "2.0", "2.1")]
+    bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
+    plan = post_apply_commit.plan_repo_commit(
+        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
+    )
+    assert plan.skipped_reason is None
+    assert set(plan.files) == {"pdm.lock", "pyproject.toml"}
+
+
+def test_pipenv_root_lock_and_manifest_in_commit_scope(tmp_path: Path) -> None:
+    """Pipfile.lock + Pipfile are staged for root pipenv workspaces (F049)."""
+    _init_git_repo(tmp_path)
+    (tmp_path / "Pipfile").write_text('[packages]\nrequests = "*"\n', encoding="utf-8")
+    (tmp_path / "Pipfile.lock").write_text('{"default":{}}', encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
+    (tmp_path / "Pipfile.lock").write_text(
+        '{"default":{"requests":{}}}', encoding="utf-8"
+    )
+    (tmp_path / "Pipfile").write_text(
+        '[packages]\nrequests = "==2.1"\n', encoding="utf-8"
+    )
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="py",
+        manager="pipenv",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("requests", "2.0", "2.1")]
+    bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
+    plan = post_apply_commit.plan_repo_commit(
+        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
+    )
+    assert plan.skipped_reason is None
+    assert set(plan.files) == {"Pipfile.lock", "Pipfile"}
