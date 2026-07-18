@@ -57,14 +57,16 @@ def test_detect_ruff_true_via_ruff_toml(tmp_path: Path) -> None:
     (tmp_path / "ruff.toml").write_text("line-length = 88\n")
     ws = _ws(tmp_path)
     ctx: dict[str, Any] = {"changes": [_fake_change("httpx")], "apply": True}
-    assert py_rem.detect_ruff(ws, ctx) is True
+    with patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"):
+        assert py_rem.detect_ruff(ws, ctx) is True
 
 
 def test_detect_ruff_true_via_dot_ruff_toml(tmp_path: Path) -> None:
     (tmp_path / ".ruff.toml").write_text("line-length = 88\n")
     ws = _ws(tmp_path)
     ctx: dict[str, Any] = {"changes": [_fake_change("httpx")], "apply": True}
-    assert py_rem.detect_ruff(ws, ctx) is True
+    with patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"):
+        assert py_rem.detect_ruff(ws, ctx) is True
 
 
 def test_detect_ruff_true_via_pyproject_tool_ruff(tmp_path: Path) -> None:
@@ -73,7 +75,8 @@ def test_detect_ruff_true_via_pyproject_tool_ruff(tmp_path: Path) -> None:
     )
     ws = _ws(tmp_path)
     ctx: dict[str, Any] = {"changes": [_fake_change("httpx")], "apply": True}
-    assert py_rem.detect_ruff(ws, ctx) is True
+    with patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"):
+        assert py_rem.detect_ruff(ws, ctx) is True
 
 
 def test_detect_ruff_false_when_no_changes(tmp_path: Path) -> None:
@@ -81,7 +84,8 @@ def test_detect_ruff_false_when_no_changes(tmp_path: Path) -> None:
     (tmp_path / "ruff.toml").write_text("line-length = 88\n")
     ws = _ws(tmp_path)
     ctx: dict[str, Any] = {"changes": [], "apply": True}
-    assert py_rem.detect_ruff(ws, ctx) is False
+    with patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"):
+        assert py_rem.detect_ruff(ws, ctx) is False
 
 
 def test_detect_ruff_true_plan_mode_no_changes(tmp_path: Path) -> None:
@@ -89,7 +93,17 @@ def test_detect_ruff_true_plan_mode_no_changes(tmp_path: Path) -> None:
     (tmp_path / "ruff.toml").write_text("line-length = 88\n")
     ws = _ws(tmp_path)
     ctx: dict[str, Any] = {"changes": [], "apply": False}
-    assert py_rem.detect_ruff(ws, ctx) is True
+    with patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"):
+        assert py_rem.detect_ruff(ws, ctx) is True
+
+
+def test_detect_ruff_false_when_ruff_absent(tmp_path: Path) -> None:
+    """Gracefully skip detection when the ruff binary is not installed."""
+    (tmp_path / "ruff.toml").write_text("line-length = 88\n")
+    ws = _ws(tmp_path)
+    ctx: dict[str, Any] = {"changes": [_fake_change("httpx")], "apply": True}
+    with patch.object(py_rem.shutil, "which", return_value=None):
+        assert py_rem.detect_ruff(ws, ctx) is False
 
 
 # ── report_ruff ──────────────────────────────────────────────────────────────
@@ -194,7 +208,10 @@ def test_run_remediations_plan_mode(tmp_path: Path) -> None:
         py_rem.report_ruff,
         py_rem.apply_ruff,
     )
-    with patch.object(py_rem, "REMEDIATIONS", [fake]):
+    with (
+        patch.object(py_rem, "REMEDIATIONS", [fake]),
+        patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"),
+    ):
         py_rem.run_remediations(result, apply=False, skip=set())
 
     assert len(result.remediations) == 1
@@ -218,6 +235,7 @@ def test_run_remediations_apply_mode(tmp_path: Path) -> None:
     )
     with (
         patch.object(py_rem, "REMEDIATIONS", [fake]),
+        patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"),
         patch("repo_ops_upgrade_remediations_py.remediations.run") as mock_run,
     ):
         mock_run.side_effect = [fix_ok, fmt_ok]

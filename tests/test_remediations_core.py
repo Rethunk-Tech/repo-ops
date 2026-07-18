@@ -189,11 +189,29 @@ def test_dispatch_empty_registry_no_op(tmp_path: Path) -> None:
 
 
 def test_dispatch_global_registry_populated(tmp_path: Path) -> None:
-    """After importing the JS + PY ecosystem packages, global registry is non-empty."""
+    """After importing orchestration ecosystem set, registry has unique expected hooks."""
+    # Match orchestration import set (side-effect registration).
+    import repo_ops_upgrade_remediations_deno  # noqa: F401
+    import repo_ops_upgrade_remediations_go  # noqa: F401
     import repo_ops_upgrade_remediations_js  # noqa: F401
     import repo_ops_upgrade_remediations_py  # noqa: F401
+    import repo_ops_upgrade_remediations_rust  # noqa: F401
 
-    assert len(core._GLOBAL_REGISTRY) >= 1
+    ids = [h.id for h in core._GLOBAL_REGISTRY]
+    expected = {
+        "biome_schema",
+        "playwright_browsers",
+        "codegen",
+        "package_manager_pin",
+        "ruff_fix",
+        "gofmt",
+        "go_generate",
+        "cargo_fix",
+        "deno_fix",
+    }
+    assert expected.issubset(set(ids)), f"missing hooks: {expected - set(ids)}"
+    # Hook ids must be unique after full orchestration import set.
+    assert len(ids) == len(set(ids)), f"duplicate hook ids in registry: {ids}"
 
 
 # ── VERBOSE flag observable through run_hooks ──────────────────────────────

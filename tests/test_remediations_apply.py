@@ -106,7 +106,8 @@ def test_detect_playwright_peer_and_optional_deps(tmp_path: Path) -> None:
             path=path, ecosystem="node", manager="bun", git_repo=path, label="t"
         )
 
-    ctx: dict = {"changes": []}
+    # apply=True so the browser dry-run path is eligible (plan mode skips it).
+    ctx: dict = {"changes": [], "apply": True}
 
     # peerDependencies — package found → browser check reached → True
     peer_dir = tmp_path / "peer"
@@ -134,3 +135,116 @@ def test_detect_playwright_peer_and_optional_deps(tmp_path: Path) -> None:
     )
     with patch.object(remediations, "_playwright_missing_browsers", return_value=True):
         assert remediations.detect_playwright(_ws(none_dir), ctx) is False
+
+
+def test_detect_playwright_skips_browser_probe_in_plan_mode(tmp_path: Path) -> None:
+    """Plan mode must not shell out to playwright install --dry-run."""
+    (tmp_path / "package.json").write_text(
+        json.dumps({"devDependencies": {"@playwright/test": "^1.40.0"}})
+    )
+    ws = _sample_workspace(tmp_path)
+    ctx: dict = {"changes": [], "apply": False}
+    with patch.object(remediations, "_playwright_missing_browsers") as mock_browsers:
+        assert remediations.detect_playwright(ws, ctx) is False
+        mock_browsers.assert_not_called()
+
+
+def test_js_detect_requires_node_ecosystem(tmp_path: Path) -> None:
+    """JS detect hooks are no-ops for non-node ecosystems even with package.json."""
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "devDependencies": {"@biomejs/biome": "1.5.0", "@playwright/test": "1"},
+                "scripts": {"generate:proto": "buf generate"},
+                "packageManager": "pnpm@8.0.0",
+            }
+        )
+    )
+    (tmp_path / "biome.json").write_text(
+        json.dumps({"$schema": "https://biomejs.dev/schemas/1.4.0/schema.json"})
+    )
+    go_ws = Workspace(
+        path=tmp_path,
+        ecosystem="go",
+        manager="go",
+        git_repo=tmp_path,
+        label="test",
+    )
+    ctx: dict = {
+        "changes": [
+            type("C", (), {"name": "@biomejs/biome", "from_ver": "1", "to": "2"})()
+        ],
+        "apply": True,
+    }
+    assert remediations.detect_biome(go_ws, ctx) is False
+    assert remediations.detect_playwright(go_ws, ctx) is False
+    assert remediations.detect_codegen(go_ws, ctx) is False
+    assert remediations.detect_pm_pin(go_ws, ctx) is False
+
+
+def _make_proc(returncode: int, stdout: str = "", stderr: str = ""):
+    from unittest.mock import MagicMock
+
+    p = MagicMock()
+    p.returncode = returncode
+    p.stdout = stdout
+    p.stderr = stderr
+    return p
+
+
+def test_apply_biome_success(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(json.dumps({}))
+    (tmp_path / "biome.json").write_text("{}")
+    ws = _sample_workspace(tmp_path)
+    with patch(
+        "repo_ops_upgrade_remediations_js.remediations.run",
+        return_value=_make_proc(0),
+    ) as mock_run:
+        ok, detail = remediations.apply_biome(ws, {})
+    assert ok is True
+    assert "(ok)" in detail
+    cmd = mock_run.call_args[0][0]
+    assert "biome" in cmd and "migrate" in cmd and "--write" in cmd
+
+
+def test_apply_playwright_success(tmp_path: Path) -> None:
+    ws = _sample_workspace(tmp_path)
+    with patch(
+        "repo_ops_upgrade_remediations_js.remediations.run",
+        return_value=_make_proc(0),
+    ) as mock_run:
+        ok, detail = remediations.apply_playwright(ws, {})
+    assert ok is True
+    assert "playwright install" in detail
+    assert "(ok)" in detail
+    cmd = mock_run.call_args[0][0]
+    assert "playwright" in cmd and "install" in cmd
+
+
+def test_apply_codegen_success(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        json.dumps({"scripts": {"generate:proto": "buf generate"}})
+    )
+    ws = _sample_workspace(tmp_path)
+    with patch(
+        "repo_ops_upgrade_remediations_js.remediations.run",
+        return_value=_make_proc(0),
+    ) as mock_run:
+        ok, detail = remediations.apply_codegen(ws, {})
+    assert ok is True
+    assert "(ok)" in detail
+    assert mock_run.call_count == 1
+    assert "generate:proto" in mock_run.call_args[0][0]
+
+
+def test_apply_pm_pin_success(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        json.dumps({"packageManager": "bun@1.0.0"}, indent=2) + "\n"
+    )
+    ws = _sample_workspace(tmp_path)
+    with patch.object(remediations, "_pm_runtime_version", return_value="1.1.0"):
+        ok, detail = remediations.apply_pm_pin(ws, {})
+    assert ok is True
+    assert "bun@1.1.0" in detail
+    pkg = json.loads((tmp_path / "package.json").read_text())
+    assert pkg["packageManager"] == "bun@1.1.0"
