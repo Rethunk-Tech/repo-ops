@@ -86,7 +86,16 @@ Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode
 
 ### Flags cheat sheet
 
-Selected flags — `repo-ops <subcommand> --help` is always authoritative.
+**Agent-critical flags only** — `repo-ops <subcommand> --help` is authoritative; do not mirror full flag tables here.
+
+#### Shared output & discovery
+
+| Flag | Applies to | Purpose |
+|------|------------|---------|
+| `--json` | all subcommands except `sbom` | JSON report (`sbom` uses `--format`/`--output` instead) |
+| `--json-out PATH` | inventory, plan, apply, pushed, doctor | Writes report atomically to `PATH`; stdout prints only that path |
+| `--compact` | all subcommands | With `--json`: emit compact single-line output instead of pretty-printed |
+| `--follow-symlinks` | plan, apply, pushed, audit, dependabot | Follow symlinks when discovering git repos (default: do not) |
 
 #### `plan` / `apply` flags
 
@@ -98,25 +107,20 @@ Selected flags — `repo-ops <subcommand> --help` is always authoritative.
 | `--latest` | plan, apply | Aggressive cross-range upgrades (see above) |
 | `--allow-dirty` | plan, apply | Process dirty git worktrees |
 | `--skip-actions` | plan, apply | Dependency-only (no Actions pin audit) |
-| `--json` | all subcommands except `sbom` | JSON report (`sbom` uses `--format`/`--output` instead) |
-| `--json-out PATH` | inventory, plan, apply, pushed | Writes report atomically to `PATH`; stdout prints only that path |
-| `--compact` | all subcommands | With `--json`: emit compact single-line output instead of pretty-printed |
 | `--log-file PATH` | plan, apply | Combined stdout/stderr transcript |
-| `--log-level {debug,info,warning,error}` | plan, apply | Set stdlib root logger level; `--verbose` / `-v` implies `debug` when absent |
-| `--strict-exit` | plan, apply | Exit 1 on any skip or fail |
-| `-q` / `--quiet` | plan, apply | Suppress per-workspace progress lines (summary still prints) |
-| `--only-outdated` | plan, apply | Omit clean workspaces from human output |
-| `--max-failures N` | plan, apply | Max failure lines in end-of-run summary (default: 20) |
-| `--fail-fast` | plan, apply | Stop scheduling new workspaces after the first failure |
-| `--yarn-jobs N` | plan, apply | Cap concurrent Yarn isolated-copy extractions (default: 2; prevents ENOSPC on large monorepos) |
 | `--migrate-to-uv-lock` | plan, apply | Opt into creating `uv.lock` for Hatch projects that lack one |
 | `--submodules` | plan, apply | Include submodule metadata in JSON |
 | `--submodule-order=children-first` | apply | Process child repos before parent umbrellas |
 | `--no-verify` | apply | Skip verify gates |
-| `--verify-test` | apply | Run `go test ./...` during verify gates |
 | `--on-verify-fail=revert\|keep` | apply | Roll back or keep on verify failure |
 | `--commit=none\|conventional\|agent` | apply | Post-apply commits |
 | `--exclude PATTERN` | plan, apply | Exclude repos matching pattern (repeatable) |
+| `--go-upgrade-mode MODE` | plan, apply | Go upgrade policy: `patch` (default), `explicit`, or `mvs` |
+| `--actions-upgrade-mode MODE` | plan, apply | Actions cross-major policy: `normalize` (default) or `latest` |
+| `--actions-tag-style STYLE` | plan, apply | Tag style when unpinning SHA pins: `major` (default) or `exact` |
+| `--actions-unpin-sha` | plan, apply | Resolve SHA-pinned Actions to version tags on apply |
+| `--actions-refresh-sha` | plan, apply | Bump digest pins within major; with `--latest` crosses major |
+| `--actions-org-policy` | plan, apply | Fetch org allowed-actions policy and flag violations |
 | `--actions-lint-level block\|warn\|off` | plan, apply | Actionlint gate policy |
 
 #### `pushed` flags
@@ -139,11 +143,39 @@ Selected flags — `repo-ops <subcommand> --help` is always authoritative.
 
 #### `audit` flags
 
+Default scan is read-only; `--fix` applies remediations (no auto-commit).
+
 | Flag | Purpose |
 |------|---------|
 | `--fail-on SEVERITY` | Exit 1 when any workspace has a vulnerability at or above `SEVERITY` (`critical`, `high`, `moderate`, `low`, `never`); default `high` |
 | `--fail-on-unknown` | Exit 1 when any workspace has findings with unknown severity (govulncheck); default off |
-| `--fix` | Apply remediations via `repo-ops-upgrade` orchestration (no auto-commit); skips dirty worktrees unless `--allow-dirty` |
+| `--fix-plan` | Read-only remediation list; with `--json` populates `remediations` key; exit 1 when actionable |
+| `--fix` | Apply remediations via `repo-ops-upgrade` orchestration; skips dirty worktrees unless `--allow-dirty` |
+| `--sarif-out PATH` | Write SARIF 2.1.0 output for GitHub code-scanning |
+
+#### `dependabot` flags
+
+| Flag | Purpose |
+|------|---------|
+| `--close` | Close superseded Dependabot PRs via `gh pr close` (default: dry-run) |
+| `--scaffold` | Generate `.github/dependabot.yml` entries for detected ecosystems (default: dry-run) |
+| `--write` | With `--scaffold`: write the file (requires `--scaffold`) |
+| `--schedule INTERVAL` | Schedule for scaffolded entries: `daily`, `weekly` (default), or `monthly` |
+
+#### `sbom` flags
+
+| Flag | Purpose |
+|------|---------|
+| `--format FORMAT` | SBOM format: `cyclonedx` (default) or `spdx` |
+| `--output PATH` | Write SBOM to `PATH` instead of stdout |
+
+#### `license` flags
+
+| Flag | Purpose |
+|------|---------|
+| `--allow LICENSES` | Comma-separated SPDX IDs permitted; others flagged |
+| `--deny LICENSES` | Comma-separated SPDX IDs forbidden |
+| `--no-fail-unknown` | Exit 0 even when unknown licenses are found (default: exit 2) |
 
 #### `install-skill` flags
 
@@ -160,6 +192,9 @@ Selected flags — `repo-ops <subcommand> --help` is always authoritative.
 | Flag | Purpose |
 |------|---------|
 | `--strict` | Exit 1 when any probed binary is missing (default: exit 0 regardless) |
+| `--json` | JSON report (see shared output flags above) |
+| `--compact` | With `--json`: compact single-line output |
+| `--json-out PATH` | With `--json`: write report atomically to `PATH` |
 
 `doctor` is read-only and takes no `root_dir` arguments (no scan roots in v1). It probes the binaries repo-ops shells out to (git, gh, uv, pip-compile, poetry, pipenv, pdm, pip-audit, npm, pnpm, yarn, bun, corepack, deno, go, gofmt, govulncheck, cargo, actionlint) for found/missing, resolved path, and version, plus a `gh auth status` check.
 
