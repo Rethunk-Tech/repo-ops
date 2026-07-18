@@ -32,7 +32,7 @@ def check_poetry(ws: Workspace) -> list[Change]:
 
 def apply_poetry(ws: Workspace) -> None:
     if not shutil.which("poetry"):
-        raise RuntimeError(f"WARN {ws.path}: poetry not on PATH")
+        raise RuntimeError(f"poetry not on PATH for {ws.path}")
     proc = run(["poetry", "update"], ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "poetry update failed")
