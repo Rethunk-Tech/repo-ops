@@ -19,7 +19,7 @@ from repo_ops_lockfiles.snapshots import (
 from repo_ops_models import Change, Workspace
 
 _NPM_TARGETED_BUMP_ENV = "REPO_OPS_NPM_TARGETED_BUMP"
-_TRUE_VALUES = ("1", "true", "yes")
+_TRUE_VALUES = ("1", "true", "yes", "on")
 
 # Audit version overrides: package → advisory-safe version to use instead of @latest.
 # Populated by repo_ops_audit.audit.apply_remediations before the orchestration apply
@@ -29,11 +29,11 @@ _AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 
 
 def set_npm_audit_version_overrides(overrides: dict[str, str]) -> None:
-    """Inject per-package advisory-safe versions for the next targeted-bump call.
+    """Inject per-package advisory-safe versions for the next apply / targeted-bump.
 
     Called by ``repo_ops_audit.audit.apply_remediations`` so that
-    ``targeted_bump_behind`` uses the advisory-safe version (e.g. ``pkg@1.5.5``)
-    rather than always falling back to ``pkg@latest``.
+    ``apply_npm`` / ``targeted_bump_behind`` uses the advisory-safe version
+    (e.g. ``pkg@1.5.5``) rather than always falling back to ``pkg@latest``.
     """
     global _AUDIT_VERSION_OVERRIDES
     _AUDIT_VERSION_OVERRIDES = dict(overrides)
@@ -152,14 +152,11 @@ def targeted_bump_behind(
     return applied, still_behind
 
 
-def check_npm(ws: Workspace) -> tuple[list[Change], list[Change]]:
-    """Check for outdated npm packages.
+def _npm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
+    """Parse ``npm outdated --json`` into ``(changes, behind_latest)``.
 
-    Returns ``(changes, behind_latest)`` where ``changes`` contains packages
-    with in-range upgrades (``wanted`` > ``current``) and ``behind_latest``
-    holds packages whose ``latest`` exceeds ``current`` but the in-range
-    ``wanted`` version equals ``current`` (i.e. only a range-breaking bump
-    is available).
+    Shared by :func:`check_npm` (plan, may promote behind) and :func:`apply_npm`
+    (always uses the raw split so the ghost-bump guard stays correct).
     """
     proc = run(["npm", "outdated", "--json"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode not in (0, 1):
@@ -192,23 +189,94 @@ def check_npm(ws: Workspace) -> tuple[list[Change], list[Change]]:
     return changes, behind_latest
 
 
+def check_npm(ws: Workspace) -> tuple[list[Change], list[Change]]:
+    """Check for outdated npm packages.
+
+    Returns ``(changes, behind_latest)`` where ``changes`` contains packages
+    with in-range upgrades (``wanted`` > ``current``) and ``behind_latest``
+    holds packages whose ``latest`` exceeds ``current`` but the in-range
+    ``wanted`` version equals ``current`` (i.e. only a range-breaking bump
+    is available).
+
+    When ``REPO_OPS_NPM_TARGETED_BUMP`` is set, behind_latest candidates are
+    promoted into ``changes`` for plan preview parity with yarn (which runs
+    targeted bumps on an isolated copy during plan). Apply uses
+    :func:`_npm_outdated` directly so this promotion does not affect guards.
+    """
+    changes, behind = _npm_outdated(ws)
+    if _npm_targeted_bump_enabled() and behind:
+        for c in behind:
+            if not any(existing.name == c.name for existing in changes):
+                changes.append(c)
+        return changes, []
+    return changes, behind
+
+
+def _apply_npm_audit_overrides(ws: Workspace) -> set[str]:
+    """Install advisory-safe pins from ``_AUDIT_VERSION_OVERRIDES`` (#140 / bun parity).
+
+    Independent of ``REPO_OPS_NPM_TARGETED_BUMP`` so ``audit --fix`` pins are not
+    silently skipped when the user did not also opt into targeted bump.
+    """
+    handled: set[str] = set()
+    if not _AUDIT_VERSION_OVERRIDES:
+        return handled
+    pkg_data = _read_pkg_json(ws.path)
+    requested: list[Change] = []
+    for name, safe_version in list(_AUDIT_VERSION_OVERRIDES.items()):
+        name = (name or "").strip()
+        safe_version = (safe_version or "").strip()
+        if not name or not safe_version:
+            continue
+        save_flags = _save_flag_for(name, pkg_data)
+        install = run(
+            ["npm", "install", *save_flags, f"{name}@{safe_version}"],
+            ws.path,
+            timeout=TIMEOUT_APPLY,
+        )
+        if install.returncode != 0:
+            raise RuntimeError(
+                install.stderr.strip()
+                or f"npm install {name}@{safe_version} failed (audit override)"
+            )
+        requested.append(Change(name, "", safe_version))
+        handled.add(name)
+    if requested:
+        assert_targets_resolved(ws, requested, manager="npm")
+    return handled
+
+
 def apply_npm(ws: Workspace) -> list[Change]:
     """Apply npm upgrades; returns still-behind deps after optional targeted bumps.
+
+    Advisory-safe version overrides (``set_npm_audit_version_overrides``, wired
+    by ``repo_ops_audit.audit.apply_remediations`` during ``audit --fix``) are
+    applied independent of ``check_npm``'s findings and of the targeted-bump
+    flag — dropping them when outdated is empty was the silent-skip bug (#140).
 
     With ``REPO_OPS_NPM_TARGETED_BUMP`` set, each dep that ``npm update`` left
     behind_latest gets a reversible targeted ``npm install <pkg>@latest``; only
     bumps that actually advance the resolved version are kept. Returns the subset
-    of behind_latest that could not be moved (empty in conservative mode or when
-    all behind deps were successfully targeted).
+    of behind_latest that could not be moved (the full behind list when targeted
+    bump is unset, or the remaining gaps after targeted bump runs).
     """
-    changes, behind = check_npm(ws)
-    proc = run(["npm", "update"], ws.path, timeout=TIMEOUT_APPLY)
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "npm update failed")
-    proc2 = run(["npm", "install"], ws.path, timeout=TIMEOUT_APPLY)
-    if proc2.returncode != 0:
-        raise RuntimeError(proc2.stderr.strip() or "npm install failed")
-    if changes:
-        assert_targets_resolved(ws, changes, manager="npm")
+    # Raw outdated split — do not use check_npm (plan may promote behind→changes).
+    changes, behind = _npm_outdated(ws)
+    handled = _apply_npm_audit_overrides(ws)
+    if handled:
+        changes = [c for c in changes if c.name not in handled]
+        behind = [c for c in behind if c.name not in handled]
+    # Preserve prior always-update behavior when no audit overrides were applied;
+    # when ONLY overrides were applied and there are no remaining in-range
+    # changes, skip the bare npm update (bun parity).
+    if changes or not handled:
+        proc = run(["npm", "update"], ws.path, timeout=TIMEOUT_APPLY)
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.strip() or "npm update failed")
+        proc2 = run(["npm", "install"], ws.path, timeout=TIMEOUT_APPLY)
+        if proc2.returncode != 0:
+            raise RuntimeError(proc2.stderr.strip() or "npm install failed")
+        if changes:
+            assert_targets_resolved(ws, changes, manager="npm")
     _, behind = targeted_bump_behind(ws, behind)
     return behind

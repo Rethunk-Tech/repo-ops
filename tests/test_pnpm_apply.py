@@ -7,10 +7,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from repo_ops_js_pnpm.pnpm import _bucket_pnpm_pkg, apply_pnpm
+from repo_ops_js_pnpm.pnpm import (
+    _bucket_pnpm_pkg,
+    apply_pnpm,
+    clear_pnpm_audit_version_overrides,
+    set_pnpm_audit_version_overrides,
+)
 from repo_ops_models import Change, Workspace
 
 _RESOLVER_PATH = "repo_ops_js.guards.resolved_version_from_node_modules"
+_OUTDATED = "repo_ops_js_pnpm.pnpm._pnpm_outdated"
 
 
 def _ws() -> Workspace:
@@ -40,10 +46,7 @@ def test_apply_pnpm_raises_on_ghost_bump_overrides_pin() -> None:
     """
     with (
         patch("repo_ops_js_pnpm.pnpm.run", _fake_run_ok),
-        patch(
-            "repo_ops_js_pnpm.pnpm.check_pnpm",
-            return_value=([Change("axios", "1.6.0", "1.7.0")], []),
-        ),
+        patch(_OUTDATED, return_value=([Change("axios", "1.6.0", "1.7.0")], [])),
         patch(_RESOLVER_PATH, return_value="1.6.0"),
         pytest.raises(RuntimeError) as exc_info,
     ):
@@ -57,10 +60,7 @@ def test_apply_pnpm_ok_when_resolved_at_target() -> None:
     for resolved in ("1.7.0", "1.8.0"):
         with (
             patch("repo_ops_js_pnpm.pnpm.run", _fake_run_ok),
-            patch(
-                "repo_ops_js_pnpm.pnpm.check_pnpm",
-                return_value=([Change("axios", "1.6.0", "1.7.0")], []),
-            ),
+            patch(_OUTDATED, return_value=([Change("axios", "1.6.0", "1.7.0")], [])),
             patch(_RESOLVER_PATH, return_value=resolved),
         ):
             apply_pnpm(_ws())  # must not raise
@@ -70,13 +70,34 @@ def test_apply_pnpm_guard_skipped_when_resolver_returns_none() -> None:
     """When node_modules is absent/unreadable, the guard skips without raising."""
     with (
         patch("repo_ops_js_pnpm.pnpm.run", _fake_run_ok),
-        patch(
-            "repo_ops_js_pnpm.pnpm.check_pnpm",
-            return_value=([Change("vue", "3.0.0", "3.5.0")], []),
-        ),
+        patch(_OUTDATED, return_value=([Change("vue", "3.0.0", "3.5.0")], [])),
         patch(_RESOLVER_PATH, return_value=None),
     ):
         apply_pnpm(_ws())  # must not raise
+
+
+def test_apply_pnpm_audit_override_absent_from_outdated() -> None:
+    """#140: audit-safe pin must install even when outdated reports nothing."""
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    set_pnpm_audit_version_overrides({"pkg": "1.2.3"})
+    try:
+        with (
+            patch("repo_ops_js_pnpm.pnpm.run", fake_run),
+            patch(_OUTDATED, return_value=([], [])),
+            patch(_RESOLVER_PATH, return_value="1.2.3"),
+        ):
+            apply_pnpm(_ws())
+    finally:
+        clear_pnpm_audit_version_overrides()
+
+    add_cmds = [c for c in calls if c[:2] == ["pnpm", "add"] and "pkg@1.2.3" in c]
+    assert add_cmds, f"expected pnpm add pkg@1.2.3, got {calls}"
+    assert not any(c[:2] == ["pnpm", "update"] for c in calls)
 
 
 # ---------------------------------------------------------------------------

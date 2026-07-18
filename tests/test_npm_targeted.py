@@ -15,6 +15,7 @@ from repo_ops_js_npm.npm import (
 from repo_ops_models import Change, Workspace
 
 _RESOLVER_PATH = "repo_ops_lockfiles.snapshots.resolved_version_from_node_modules"
+_OUTDATED = "repo_ops_js_npm.npm._npm_outdated"
 
 _REACT_BEHIND = [Change("react", "18.0.0", "19.0.0")]
 
@@ -44,6 +45,11 @@ def _seed(d: Path, *, pkg_content: str | None = None) -> None:
 # ---------------------------------------------------------------------------
 # _save_flag_for unit tests
 # ---------------------------------------------------------------------------
+
+
+def test_save_flag_for_peer_dep() -> None:
+    pkg: dict[str, object] = {"peerDependencies": {"react": "^18.0.0"}}
+    assert _save_flag_for("react", pkg) == ["--save-peer"]
 
 
 def test_save_flag_for_regular_dep() -> None:
@@ -200,7 +206,7 @@ def test_targeted_bump_reverts_when_resolver_returns_none(
 def test_apply_npm_returns_empty_behind_when_targeted_disabled(
     monkeypatch,
 ) -> None:
-    """With targeted bump disabled, apply_npm returns [] for behind_latest."""
+    """With targeted bump disabled, apply_npm returns the full behind_latest list."""
     monkeypatch.delenv("REPO_OPS_NPM_TARGETED_BUMP", raising=False)
     ws = Workspace(
         path=Path("/tmp/proj"),
@@ -211,10 +217,7 @@ def test_apply_npm_returns_empty_behind_when_targeted_disabled(
     )
     with (
         patch("repo_ops_js_npm.npm.run", _fake_run_ok),
-        patch(
-            "repo_ops_js_npm.npm.check_npm",
-            return_value=([], [Change("react", "18.0.0", "19.0.0")]),
-        ),
+        patch(_OUTDATED, return_value=([], [Change("react", "18.0.0", "19.0.0")])),
     ):
         behind = apply_npm(ws)
     # targeted bump disabled → still-behind is the full original behind list.
@@ -228,19 +231,46 @@ def test_apply_npm_targeted_clears_behind(tmp_path: Path, monkeypatch) -> None:
     ws = _ws(tmp_path)
     with (
         patch("repo_ops_js_npm.npm.run", side_effect=_npm_install_run(tmp_path)),
-        patch(
-            "repo_ops_js_npm.npm.check_npm",
-            return_value=([], [Change("react", "18.0.0", "19.0.0")]),
-        ),
+        patch(_OUTDATED, return_value=([], [Change("react", "18.0.0", "19.0.0")])),
         patch(_RESOLVER_PATH, return_value="19.0.0"),
     ):
         behind = apply_npm(ws)
     assert behind == []
 
 
-# ---------------------------------------------------------------------------
-# save-flag selection integrated into targeted_bump command
-# ---------------------------------------------------------------------------
+def test_check_npm_promotes_behind_when_targeted_enabled(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Plan preview: targeted-bump candidates appear in changes (yarn parity)."""
+    from repo_ops_js_npm.npm import check_npm
+
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
+    with patch(
+        _OUTDATED,
+        return_value=(
+            [Change("lodash", "4.17.20", "4.17.21")],
+            [Change("react", "18.0.0", "19.0.0")],
+        ),
+    ):
+        changes, behind = check_npm(_ws(tmp_path))
+    assert behind == []
+    names = {c.name for c in changes}
+    assert "lodash" in names
+    assert "react" in names
+
+
+def test_targeted_bump_accepts_on_env_value(tmp_path: Path, monkeypatch) -> None:
+    """REPO_OPS_NPM_TARGETED_BUMP=on must enable the gate (parity with pnpm/bun/yarn)."""
+    _seed(tmp_path)
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "on")
+    ws = _ws(tmp_path)
+    with (
+        patch("repo_ops_js_npm.npm.run", side_effect=_npm_install_run(tmp_path)),
+        patch(_RESOLVER_PATH, return_value="19.0.0"),
+    ):
+        applied, still_behind = targeted_bump_behind(ws, _REACT_BEHIND)
+    assert applied == [Change("react", "18.0.0", "19.0.0")]
+    assert still_behind == []
 
 
 def test_targeted_bump_uses_save_dev_for_dev_dep(tmp_path: Path, monkeypatch) -> None:
@@ -271,6 +301,37 @@ def test_targeted_bump_uses_save_dev_for_dev_dep(tmp_path: Path, monkeypatch) ->
     assert install_cmds, "expected at least one npm install call"
     assert "--save-dev" in install_cmds[0]
     assert "typescript@latest" in install_cmds[0]
+
+
+def test_targeted_bump_uses_save_peer_for_peer_dep(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Peer dep → npm install --save-peer <pkg>@latest."""
+    pkg_content = json.dumps({"peerDependencies": {"react": "^18.0.0"}})
+    _seed(tmp_path, pkg_content=pkg_content)
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
+    ws = _ws(tmp_path)
+    captured_cmds: list[list[str]] = []
+
+    def _capture_run(cmd, cwd, timeout=600, env=None):
+        captured_cmds.append(list(cmd))
+        nm = tmp_path / "node_modules" / "react"
+        nm.mkdir(parents=True, exist_ok=True)
+        (nm / "package.json").write_text(
+            json.dumps({"version": "19.0.0"}), encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch("repo_ops_js_npm.npm.run", side_effect=_capture_run),
+        patch(_RESOLVER_PATH, return_value="19.0.0"),
+    ):
+        targeted_bump_behind(ws, _REACT_BEHIND)
+
+    install_cmds = [c for c in captured_cmds if "install" in c]
+    assert install_cmds, "expected at least one npm install call"
+    assert "--save-peer" in install_cmds[0]
+    assert "react@latest" in install_cmds[0]
 
 
 def test_targeted_bump_uses_save_exact_for_exact_pin(

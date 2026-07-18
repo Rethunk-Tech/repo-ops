@@ -116,9 +116,25 @@ def _node_modules_yarnrc(tmp_path: Path) -> None:
     )
 
 
+def _resolutions_pkg(tmp_path: Path) -> None:
+    """Write a package.json with resolutions so the ghost-bump probe is eligible."""
+    import json
+
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "demo",
+                "resolutions": {"is-odd": "0.1.2"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_apply_yarn_guard_raises_on_blocked_target(tmp_path: Path) -> None:
     """Guard fires: probe planned is-odd→1.0.0, node_modules still at 0.1.2 → error."""
     _node_modules_yarnrc(tmp_path)
+    _resolutions_pkg(tmp_path)
     planned = [Change("is-odd", "0.1.2", "1.0.0")]
 
     with (
@@ -142,6 +158,7 @@ def test_apply_yarn_guard_raises_on_blocked_target(tmp_path: Path) -> None:
 def test_apply_yarn_guard_ok_when_target_resolved(tmp_path: Path) -> None:
     """No error when node_modules has the requested version (real upgrade)."""
     _node_modules_yarnrc(tmp_path)
+    _resolutions_pkg(tmp_path)
     planned = [Change("is-odd", "0.1.2", "1.0.0")]
 
     with (
@@ -162,6 +179,7 @@ def test_apply_yarn_guard_skipped_for_pnp_workspace(
     """PnP workspace: guard is skipped and a note is printed to stderr."""
     # .yarnrc.yml without nodeLinker → Yarn 4 default is PnP (no node_modules)
     (tmp_path / ".yarnrc.yml").write_text("enableGlobalCache: true\n", encoding="utf-8")
+    _resolutions_pkg(tmp_path)
     planned = [Change("lodash", "4.17.20", "4.17.21")]
     guard_calls: list[object] = []
 
@@ -187,6 +205,7 @@ def test_apply_yarn_guard_skipped_for_pnp_workspace(
 def test_apply_yarn_guard_not_called_when_no_targets(tmp_path: Path) -> None:
     """No guardable changes (empty probe output) → assert_targets_resolved not called."""
     _node_modules_yarnrc(tmp_path)
+    _resolutions_pkg(tmp_path)
     guard_calls: list[object] = []
 
     def fake_guard(ws: object, requested: object, manager: str = "js") -> None:
@@ -233,6 +252,7 @@ def test_probe_cache_populated_by_check_skip_in_apply(tmp_path: Path) -> None:
     """check_yarn_snapshot populates the cache; apply_yarn reuses it (probe not invoked)."""
     clear_probe_cache()
     _node_modules_yarnrc(tmp_path)
+    _resolutions_pkg(tmp_path)
     ws = _ws(tmp_path)
     planned = [Change("lodash", "4.17.20", "4.17.21")]
 
@@ -266,6 +286,7 @@ def test_probe_cache_fallback_when_check_not_run(tmp_path: Path) -> None:
     """apply_yarn without a prior check falls back to _plan_without_resolutions."""
     clear_probe_cache()
     _node_modules_yarnrc(tmp_path)
+    _resolutions_pkg(tmp_path)
     ws = _ws(tmp_path)
     planned = [Change("is-odd", "0.1.2", "1.0.0")]
 
@@ -299,6 +320,8 @@ def test_probe_cache_keyed_per_workspace(
     (ws_b_path / ".yarnrc.yml").write_text(
         "nodeLinker: node-modules\n", encoding="utf-8"
     )
+    _resolutions_pkg(ws_a_path)
+    _resolutions_pkg(ws_b_path)
     ws_a = _ws(ws_a_path)
     ws_b = Workspace(
         path=ws_b_path,
@@ -356,6 +379,7 @@ def test_probe_cache_clear_works(tmp_path: Path) -> None:
     """clear_probe_cache() empties the dict; next apply falls back to the probe."""
     clear_probe_cache()
     _node_modules_yarnrc(tmp_path)
+    _resolutions_pkg(tmp_path)
     ws = _ws(tmp_path)
     planned = [Change("lodash", "4.17.20", "4.17.21")]
 

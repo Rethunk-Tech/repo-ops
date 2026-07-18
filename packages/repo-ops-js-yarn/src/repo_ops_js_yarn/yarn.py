@@ -18,7 +18,7 @@ from repo_ops_core.constants import resolve_timeout_apply
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_js.guards import assert_targets_resolved
-from repo_ops_js.overrides import overrides_audit
+from repo_ops_js.overrides import overrides_audit, package_json_paths
 from repo_ops_js.workspaces import corepack_prepare
 from repo_ops_lockfiles.parsers import versions_yarn_lock
 from repo_ops_lockfiles.snapshots import (
@@ -28,6 +28,9 @@ from repo_ops_lockfiles.snapshots import (
 )
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import YARN_ISOLATED_COPY_SKIP, YARN_ISOLATED_YARN_SKIP
+
+# Compat alias: tests historically imported the private yarn helper.
+_package_json_paths = package_json_paths
 
 FILE_PROTOCOL_RE = re.compile(r"^file:(\.\./.+?)(?:#.*)?$")
 
@@ -128,7 +131,7 @@ def _workspace_declares_resolutions(ws: Workspace) -> bool:
     ``yarn up``. When no ``resolutions`` / ``packageResolutions`` entries
     exist, a second isolated install is pure overhead — skip it.
     """
-    for pkg_path in _package_json_paths(ws.path):
+    for pkg_path in package_json_paths(ws.path):
         try:
             data = json.loads(pkg_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -233,36 +236,10 @@ def _isolated_yarn_ignore(src: str, names: list[str]) -> set[str]:
     return ignored
 
 
-def _package_json_paths(ws_path: Path) -> list[Path]:
-    root_pkg = ws_path / "package.json"
-    if not root_pkg.is_file():
-        return []
-    paths = [root_pkg]
-    try:
-        data = json.loads(root_pkg.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return paths
-    workspaces = data.get("workspaces")
-    if isinstance(workspaces, dict):
-        patterns = workspaces.get("packages") or []
-    elif isinstance(workspaces, list):
-        patterns = workspaces
-    else:
-        patterns = []
-    for pattern in patterns:
-        if not isinstance(pattern, str):
-            continue
-        for match in ws_path.glob(pattern):
-            pkg = match / "package.json" if match.is_dir() else match
-            if pkg.is_file() and pkg not in paths:
-                paths.append(pkg)
-    return paths
-
-
 def _file_protocol_targets(ws_path: Path) -> list[Path]:
     targets: list[Path] = []
     seen: set[Path] = set()
-    for pkg_json in _package_json_paths(ws_path):
+    for pkg_json in package_json_paths(ws_path):
         try:
             data = json.loads(pkg_json.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -347,7 +324,7 @@ def _copy_yarn_workspace_to_temp(ws: Workspace, temp_root: Path) -> Path:
 def _direct_dep_names(ws_path: Path) -> set[str]:
     """Direct dependency names declared across the workspace's package.json files."""
     names: set[str] = set()
-    for pkg_json in _package_json_paths(ws_path):
+    for pkg_json in package_json_paths(ws_path):
         try:
             data = json.loads(pkg_json.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -570,7 +547,7 @@ def _plan_without_resolutions(ws: Workspace) -> list[Change]:
         )
         # Strip resolutions from every package.json in the copy so yarn's
         # resolver can freely pick the newest in-range version.
-        for pkg_path in _package_json_paths(mdir):
+        for pkg_path in package_json_paths(mdir):
             try:
                 data = json.loads(pkg_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
@@ -646,6 +623,9 @@ def apply_yarn(ws: Workspace) -> list[Change]:
 
     # --- real apply -----------------------------------------------------------
     corepack_prepare("yarn", ws.path)
+    # Advisory-safe pins from audit --fix (#140 parity with bun): apply even
+    # when check/behind reported nothing and REPO_OPS_YARN_TARGETED_BUMP is off.
+    audit_handled = _apply_yarn_audit_overrides(ws)
     proc = run(_yarn_up_cmd(), ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         raise _command_failure("yarn up failed", proc)
@@ -665,5 +645,46 @@ def apply_yarn(ws: Workspace) -> list[Change]:
             assert_targets_resolved(ws, guardable, manager="yarn")
 
     behind = behind_after_up(ws.path)
+    if audit_handled:
+        behind = [c for c in behind if c.name not in audit_handled]
     _, behind = targeted_bump_behind(ws.path, behind)
     return behind
+
+
+def _apply_yarn_audit_overrides(ws: Workspace) -> set[str]:
+    """Install advisory-safe versions from ``_AUDIT_VERSION_OVERRIDES``.
+
+    Independent of ``REPO_OPS_YARN_TARGETED_BUMP`` so ``audit --fix`` pins are
+    not silently skipped when the user did not also opt into targeted bump.
+    Returns the set of package names that were targeted.
+    """
+    handled: set[str] = set()
+    if not _AUDIT_VERSION_OVERRIDES:
+        return handled
+    mdir = ws.path
+    requested: list[Change] = []
+    for name, safe_version in list(_AUDIT_VERSION_OVERRIDES.items()):
+        name = (name or "").strip()
+        safe_version = (safe_version or "").strip()
+        if not name or not safe_version:
+            continue
+        up = run(
+            ["yarn", "up", f"{name}@{safe_version}"],
+            mdir,
+            timeout=resolve_timeout_apply(),
+        )
+        if up.returncode != 0:
+            raise _command_failure(
+                f"yarn up {name}@{safe_version} failed (audit override)", up
+            )
+        install = run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
+        if install.returncode != 0:
+            raise _command_failure(
+                f"yarn install after audit override {name}@{safe_version} failed",
+                install,
+            )
+        requested.append(Change(name, "", safe_version))
+        handled.add(name)
+    if requested and not _is_pnp_workspace(mdir):
+        assert_targets_resolved(ws, requested, manager="yarn")
+    return handled

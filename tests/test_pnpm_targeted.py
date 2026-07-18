@@ -11,6 +11,7 @@ from repo_ops_js_pnpm.pnpm import apply_pnpm, targeted_bump_behind
 from repo_ops_models import Change, Workspace
 
 _RESOLVER_PATH = "repo_ops_lockfiles.snapshots.resolved_version_from_node_modules"
+_OUTDATED = "repo_ops_js_pnpm.pnpm._pnpm_outdated"
 
 _VUE_BEHIND = [Change("vue", "3.0.0", "4.0.0")]
 
@@ -187,7 +188,7 @@ def test_targeted_bump_uses_update_latest_command(tmp_path: Path, monkeypatch) -
 def test_apply_pnpm_returns_empty_behind_when_targeted_disabled(
     monkeypatch,
 ) -> None:
-    """With targeted bump disabled, apply_pnpm returns [] for behind_latest."""
+    """With targeted bump disabled, apply_pnpm returns the full behind_latest list."""
     monkeypatch.delenv("REPO_OPS_PNPM_TARGETED_BUMP", raising=False)
     monkeypatch.delenv("REPO_OPS_PNPM_UPDATE_LATEST", raising=False)
     ws = Workspace(
@@ -199,10 +200,7 @@ def test_apply_pnpm_returns_empty_behind_when_targeted_disabled(
     )
     with (
         patch("repo_ops_js_pnpm.pnpm.run", _fake_run_ok),
-        patch(
-            "repo_ops_js_pnpm.pnpm.check_pnpm",
-            return_value=([], [Change("vue", "3.0.0", "4.0.0")]),
-        ),
+        patch(_OUTDATED, return_value=([], [Change("vue", "3.0.0", "4.0.0")])),
     ):
         behind = apply_pnpm(ws)
     # targeted bump disabled → still-behind is the full original behind list.
@@ -217,11 +215,36 @@ def test_apply_pnpm_targeted_clears_behind(tmp_path: Path, monkeypatch) -> None:
     ws = _ws(tmp_path)
     with (
         patch("repo_ops_js_pnpm.pnpm.run", side_effect=_pnpm_update_run(tmp_path)),
-        patch(
-            "repo_ops_js_pnpm.pnpm.check_pnpm",
-            return_value=([], [Change("vue", "3.0.0", "4.0.0")]),
-        ),
+        patch(_OUTDATED, return_value=([], [Change("vue", "3.0.0", "4.0.0")])),
         patch(_RESOLVER_PATH, return_value="4.0.0"),
     ):
         behind = apply_pnpm(ws)
     assert behind == []
+
+
+def test_pnpm_targeted_bump_restores_snapshot_when_guard_raises(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Guard raise must restore lockfile (npm/bun parity — F046)."""
+    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
+    _seed(tmp_path)
+    original_lock = (tmp_path / "pnpm-lock.yaml").read_bytes()
+    ws = _ws(tmp_path)
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        (tmp_path / "pnpm-lock.yaml").write_text("mutated-lock\n", encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    def fake_guard(ws, requested, manager="pnpm"):
+        raise RuntimeError("ghost bump: pnpm upgrade blocked")
+
+    with (
+        patch("repo_ops_js_pnpm.pnpm.run", fake_run),
+        patch(_RESOLVER_PATH, return_value="4.0.0"),
+        patch("repo_ops_js_pnpm.pnpm.assert_targets_resolved", fake_guard),
+    ):
+        applied, still_behind = targeted_bump_behind(ws, _VUE_BEHIND)
+
+    assert applied == []
+    assert still_behind == _VUE_BEHIND
+    assert (tmp_path / "pnpm-lock.yaml").read_bytes() == original_lock
