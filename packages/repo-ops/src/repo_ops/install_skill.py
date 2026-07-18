@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -12,6 +13,10 @@ import repo_ops
 
 _SKILL_DIR_NAME = "repo-ops"
 _TARGETS = ("cursor", "claude", "both")
+_GITHUB_BLOB_BASE = "https://github.com/Rethunk-Tech/repo-ops/blob/main/"
+_INSTALL_LINK_RE = re.compile(
+    r"\]\(((?:HUMANS\.md|docs/|packages/)[^)]*)\)"
+)
 
 
 def bundled_skill_dir() -> Path:
@@ -50,6 +55,24 @@ def destinations_for(target: str, home: Path) -> list[tuple[str, Path]]:
     return [(target, destination_for(target, home))]
 
 
+def rewrite_install_links(text: str) -> str:
+    """Rewrite relative HUMANS/docs/packages links to canonical GitHub blob URLs."""
+
+    def _replace(match: re.Match[str]) -> str:
+        rel = match.group(1)
+        return f"]({_GITHUB_BLOB_BASE}{rel})"
+
+    return _INSTALL_LINK_RE.sub(_replace, text)
+
+
+def _rewrite_markdown_links(dest: Path) -> None:
+    for md in dest.rglob("*.md"):
+        original = md.read_text(encoding="utf-8")
+        rewritten = rewrite_install_links(original)
+        if rewritten != original:
+            md.write_text(rewritten, encoding="utf-8")
+
+
 def install_one(
     src: Path,
     dest: Path,
@@ -73,6 +96,7 @@ def install_one(
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dest)
+    _rewrite_markdown_links(dest)
     print(f"installed {dest}")
     return 0
 

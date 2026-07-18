@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 from repo_ops import install_skill
-from repo_ops.install_skill import bundled_skill_dir, main, validate_dest
+from repo_ops.install_skill import (
+    bundled_skill_dir,
+    main,
+    rewrite_install_links,
+    validate_dest,
+)
+
+_GITHUB_BLOB = "https://github.com/Rethunk-Tech/repo-ops/blob/main/"
 
 
 def test_bundled_skill_dir_contains_skill_md() -> None:
@@ -39,6 +46,20 @@ def test_install_skill_skip_without_force(tmp_path: Path) -> None:
     assert (dest / "SKILL.md").read_text(encoding="utf-8") == "placeholder"
 
 
+def test_install_skill_dry_run_skip_when_dest_exists(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dest = tmp_path / "repo-ops"
+    dest.mkdir()
+    (dest / "SKILL.md").write_text("placeholder", encoding="utf-8")
+    code = main(["--dest", str(dest), "--dry-run"])
+    assert code == 0
+    assert (dest / "SKILL.md").read_text(encoding="utf-8") == "placeholder"
+    err = capsys.readouterr().err
+    assert "skip" in err
+    assert str(dest) in err
+
+
 def test_install_skill_force_overwrites(tmp_path: Path) -> None:
     dest = tmp_path / "repo-ops"
     dest.mkdir()
@@ -56,6 +77,39 @@ def test_install_skill_home_layout(
     code = main(["--target", "cursor"])
     assert code == 0
     assert (tmp_path / ".cursor" / "skills" / "repo-ops" / "SKILL.md").is_file()
+
+
+@pytest.mark.parametrize("target", ["claude", "both"])
+def test_install_skill_target_layouts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    monkeypatch.setattr(install_skill, "resolve_home", lambda _home=None: tmp_path)
+    code = main(["--target", target])
+    assert code == 0
+    if target in ("claude", "both"):
+        assert (tmp_path / ".claude" / "skills" / "repo-ops" / "SKILL.md").is_file()
+    if target in ("cursor", "both"):
+        assert (tmp_path / ".cursor" / "skills" / "repo-ops" / "SKILL.md").is_file()
+
+
+def test_install_skill_home_flag_overrides_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "custom-home"
+    monkeypatch.delenv("REPO_OPS_HOME", raising=False)
+    code = main(["--target", "cursor", "--home", str(home)])
+    assert code == 0
+    assert (home / ".cursor" / "skills" / "repo-ops" / "SKILL.md").is_file()
+
+
+def test_install_skill_repo_ops_home_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "env-home"
+    monkeypatch.setenv("REPO_OPS_HOME", str(home))
+    code = main(["--target", "claude"])
+    assert code == 0
+    assert (home / ".claude" / "skills" / "repo-ops" / "SKILL.md").is_file()
 
 
 def test_install_skill_rejects_unsafe_dest(tmp_path: Path) -> None:
@@ -142,3 +196,31 @@ def test_install_skill_includes_agents_md(tmp_path: Path) -> None:
     code = main(["--dest", str(dest), "--target", "cursor"])
     assert code == 0
     assert (dest / "AGENTS.md").is_file()
+
+
+def test_rewrite_install_links_rewrites_relative_doc_paths() -> None:
+    sample = (
+        "[HUMANS.md](HUMANS.md) "
+        "[usage](docs/usage.md#anchor) "
+        "[core](packages/repo-ops-core/src/repo_ops_core/constants.py) "
+        "[keep](CONTRIBUTING.md)"
+    )
+    out = rewrite_install_links(sample)
+    assert f"]({_GITHUB_BLOB}HUMANS.md)" in out
+    assert f"]({_GITHUB_BLOB}docs/usage.md#anchor)" in out
+    assert (
+        f"]({_GITHUB_BLOB}packages/repo-ops-core/src/repo_ops_core/constants.py)"
+        in out
+    )
+    assert "[keep](CONTRIBUTING.md)" in out
+
+
+def test_install_skill_rewrites_agents_links_on_install(tmp_path: Path) -> None:
+    dest = tmp_path / "skills" / "repo-ops"
+    code = main(["--dest", str(dest), "--target", "cursor"])
+    assert code == 0
+    agents = (dest / "AGENTS.md").read_text(encoding="utf-8")
+    assert f"]({_GITHUB_BLOB}HUMANS.md)" in agents
+    assert f"]({_GITHUB_BLOB}docs/usage.md" in agents
+    assert f"]({_GITHUB_BLOB}packages/repo-ops-core/src/repo_ops_core/constants.py)" in agents
+    assert "[CONTRIBUTING.md](CONTRIBUTING.md)" in agents
