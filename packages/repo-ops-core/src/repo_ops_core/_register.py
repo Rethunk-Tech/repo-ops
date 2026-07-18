@@ -1,52 +1,26 @@
-"""Registration helpers for ecosystem plugins that are not yet in the main bundle.
+"""Registration helpers relocated to ``repo_ops._register``.
 
-Currently provides:
-
-  ``register_precommit()``
-    Registers the pre-commit rev-pin checker/applier with the upgrade registry.
-
-  ``register_pdm()``
-    Registers the PDM (Python Dependency Manager) checker/applier.
-
-  ``register_pipenv()``
-    Registers the pipenv checker/applier.
-
-  ``register_deno()``
-    Registers the Deno checker/applier.
-
-Call each from ``repo_ops._register.register_all()``.
+Core previously imported ``repo_ops_upgrade`` / ``repo_ops_py`` / ``repo_ops_js``
+here to register precommit/pdm/pipenv/deno. That upward dependency is removed;
+call ``repo_ops._register.register_all()`` (or the named helpers there) instead.
 """
 
 from __future__ import annotations
 
-
-def register_precommit() -> None:
-    """Register the pre-commit rev-pin checker and applier with the upgrade registry."""
-    from repo_ops_upgrade import registry
-    from repo_ops_upgrade.precommit import apply_precommit, check_precommit
-
-    registry.register("precommit", check_precommit, apply_precommit)
-
-
-def register_pdm() -> None:
-    """Register the PDM checker and applier with the upgrade registry."""
-    from repo_ops_py.pdm import apply_pdm, check_pdm
-    from repo_ops_upgrade import registry
-
-    registry.register("pdm", check_pdm, apply_pdm)
+_MOVED = frozenset(
+    {
+        "register_precommit",
+        "register_pdm",
+        "register_pipenv",
+        "register_deno",
+    }
+)
 
 
-def register_pipenv() -> None:
-    """Register the pipenv checker and applier with the upgrade registry."""
-    from repo_ops_py.pipenv import apply_pipenv, check_pipenv
-    from repo_ops_upgrade import registry
-
-    registry.register("pipenv", check_pipenv, apply_pipenv)
-
-
-def register_deno() -> None:
-    """Register the Deno checker and applier with the upgrade registry."""
-    from repo_ops_js.deno import apply_deno, check_deno
-    from repo_ops_upgrade import registry
-
-    registry.register("deno", check_deno, apply_deno)
+def __getattr__(name: str) -> object:
+    if name in _MOVED:
+        raise AttributeError(
+            f"{name} moved to repo_ops._register; import it from there "
+            "(or call repo_ops._register.register_all())."
+        )
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

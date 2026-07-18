@@ -67,6 +67,8 @@ class WorkspaceResult:
             out["verify_error"] = self.verify_error
         if self.verify_fail_disposition is not None:
             out["verify_fail_disposition"] = self.verify_fail_disposition
+        if self.started_dirty:
+            out["started_dirty"] = True
         if not self.reverted_ok:
             out["reverted_ok"] = False
         if self.elapsed_s is not None:

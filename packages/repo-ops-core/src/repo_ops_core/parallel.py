@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 from collections.abc import Callable
 from typing import TypeVar
 
 T = TypeVar("T")
 R = TypeVar("R")
+
+_LOG = logging.getLogger(__name__)
 
 
 def run_bounded_pool(
@@ -24,6 +27,9 @@ def run_bounded_pool(
     When *should_stop* returns true, no new tasks are submitted. When
     *stop_on_result* returns true for a completed result, pending work is
     cancelled and the pool drains.
+
+    Worker exceptions are logged and skipped (the failed item is omitted from
+    the returned list) so one bad workspace does not abort the fleet run.
     """
     results: list[R] = []
     pending: list[T] = list(items)
@@ -44,11 +50,14 @@ def run_bounded_pool(
             return_when=concurrent.futures.FIRST_COMPLETED,
         )
         for fut in done:
-            if fut in futures:
-                futures.pop(fut)
+            item = futures.pop(fut, None)
             try:
                 result = fut.result()
-            except Exception:  # noqa: S112 — best-effort: skip failed task result
+            except Exception:
+                _LOG.exception(
+                    "run_bounded_pool worker failed for item=%r",
+                    item,
+                )
                 continue
             results.append(result)
             if stop_on_result and stop_on_result(result):

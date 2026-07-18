@@ -3,11 +3,28 @@
 from __future__ import annotations
 
 import argparse
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 from repo_ops_core.constants import DEFAULT_ROOTS
-from repo_ops_core.process import configure_logging, set_verbose
+from repo_ops_core.process import LOG_LEVEL_NAMES, configure_logging, set_verbose
+
+
+class _StoreTrueSetEnv(argparse.Action):
+    """``store_true`` that also sets ``os.environ[const] = "1`` when the flag is used."""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: object,
+        option_string: str | None = None,
+    ) -> None:
+        setattr(namespace, self.dest, True)
+        if isinstance(self.const, str) and self.const:
+            os.environ[self.const] = "1"
+
 
 _FIND_PREDICATE_TOKENS = frozenset(
     {
@@ -280,7 +297,7 @@ def add_manager_filter_argument(parser: argparse._ActionsContainer) -> None:
     )
 
 
-_LOG_LEVEL_CHOICES = ("debug", "info", "warning", "error")
+_LOG_LEVEL_CHOICES = tuple(sorted(LOG_LEVEL_NAMES))
 
 
 def add_sarif_argument(parser: argparse._ActionsContainer) -> None:
@@ -501,6 +518,30 @@ def add_upgrade_common_arguments(
             "converting them to uv-managed lockfile mode. Without this flag, hatch "
             "projects without a uv.lock are skipped on apply. "
             "Sets REPO_OPS_HATCH_MIGRATE_UV_LOCK."
+        ),
+    )
+    pol.add_argument(
+        "--container-update-latest",
+        action=_StoreTrueSetEnv,
+        const="REPO_OPS_CONTAINER_UPDATE_LATEST",
+        default=False,
+        dest="container_update_latest",
+        nargs=0,
+        help=(
+            "Allow cross-major container image tag bumps (sets "
+            "REPO_OPS_CONTAINER_UPDATE_LATEST). Also implied by --latest."
+        ),
+    )
+    pol.add_argument(
+        "--container-refresh-sha",
+        action=_StoreTrueSetEnv,
+        const="REPO_OPS_CONTAINER_REFRESH_SHA",
+        default=False,
+        dest="container_refresh_sha",
+        nargs=0,
+        help=(
+            "Refresh digests for SHA-pinned container image references "
+            "(sets REPO_OPS_CONTAINER_REFRESH_SHA)."
         ),
     )
     pol.add_argument(

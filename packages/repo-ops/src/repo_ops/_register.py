@@ -3,14 +3,40 @@
 from __future__ import annotations
 
 
+def register_precommit() -> None:
+    """Register the pre-commit rev-pin checker and applier with the upgrade registry."""
+    from repo_ops_upgrade import registry
+    from repo_ops_upgrade.precommit import apply_precommit, check_precommit
+
+    registry.register("precommit", check_precommit, apply_precommit)
+
+
+def register_pdm() -> None:
+    """Register the PDM checker and applier with the upgrade registry."""
+    from repo_ops_py.pdm import apply_pdm, check_pdm
+    from repo_ops_upgrade import registry
+
+    registry.register("pdm", check_pdm, apply_pdm)
+
+
+def register_pipenv() -> None:
+    """Register the pipenv checker and applier with the upgrade registry."""
+    from repo_ops_py.pipenv import apply_pipenv, check_pipenv
+    from repo_ops_upgrade import registry
+
+    registry.register("pipenv", check_pipenv, apply_pipenv)
+
+
+def register_deno() -> None:
+    """Register the Deno checker and applier with the upgrade registry."""
+    from repo_ops_js.deno import apply_deno, check_deno
+    from repo_ops_upgrade import registry
+
+    registry.register("deno", check_deno, apply_deno)
+
+
 def register_all() -> None:
     from repo_ops_container import register as register_container
-    from repo_ops_core._register import (
-        register_deno,
-        register_pdm,
-        register_pipenv,
-        register_precommit,
-    )
     from repo_ops_go import register as register_go
     from repo_ops_js_bun import register as register_bun
     from repo_ops_js_npm import register as register_npm

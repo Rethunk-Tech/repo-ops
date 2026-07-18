@@ -6,6 +6,7 @@ Stores a small JSON document at ``$XDG_CACHE_HOME/repo-ops/state.json``
 Schema (version 1)::
 
     {
+      "version": 1,
       "dirty_skips": {
         "<abs repo path>": {"first_seen": "YYYY-MM-DD", "runs": N}
       },
@@ -43,6 +44,16 @@ from typing import Any
 _CACHE: dict[str, Any] | None = None
 _DIRTY: bool = False  # True once any write has been made to _CACHE
 _LOCK: threading.Lock = threading.Lock()
+
+#: Schema version stamped into state.json on every write.
+STATE_SCHEMA_VERSION = 1
+
+
+def _stamp_version(state: dict[str, Any]) -> dict[str, Any]:
+    """Return a shallow copy of *state* with ``version`` set for disk writes."""
+    stamped = dict(state)
+    stamped["version"] = STATE_SCHEMA_VERSION
+    return stamped
 
 
 def _state_path() -> Path:
@@ -96,7 +107,7 @@ def _write_to_disk(state: dict[str, Any]) -> None:
     path = _state_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        text = json.dumps(state, indent=2) + "\n"
+        text = json.dumps(_stamp_version(state), indent=2) + "\n"
         fd, tmp_name = tempfile.mkstemp(
             dir=path.parent,
             prefix=f".{path.name}.",

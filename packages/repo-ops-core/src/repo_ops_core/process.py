@@ -10,7 +10,7 @@ from pathlib import Path
 
 VERBOSE = False
 
-_LOG_LEVEL_NAMES = frozenset({"debug", "info", "warning", "error"})
+LOG_LEVEL_NAMES = frozenset({"debug", "info", "warning", "error"})
 
 
 def set_verbose(enabled: bool) -> None:
@@ -33,7 +33,10 @@ def configure_logging(level: str | None) -> None:
     """
     if level is None:
         return
-    numeric = getattr(logging, level.upper(), None)
+    normalized = level.lower()
+    if normalized not in LOG_LEVEL_NAMES:
+        return
+    numeric = getattr(logging, normalized.upper(), None)
     if not isinstance(numeric, int):
         return
     logging.basicConfig(
@@ -41,7 +44,7 @@ def configure_logging(level: str | None) -> None:
         format="%(levelname)s %(name)s %(message)s",
         force=True,
     )
-    if level.lower() == "debug":
+    if normalized == "debug":
         set_verbose(True)
 
 
