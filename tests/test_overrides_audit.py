@@ -110,3 +110,35 @@ def test_range_override_in_range_resolution_produces_no_stale_warning(
     stale2 = [r for r in results2 if "stale" in r.get("detail", "")]
     assert len(stale2) == 1, f"exact-pin mismatch must still warn: {results2}"
     assert "semver-exact-pkg" in stale2[0]["detail"]
+
+
+def test_overrides_audit_scans_workspace_member_manifests(tmp_path: Path) -> None:
+    """Monorepo pins in packages/*/package.json must surface (F150)."""
+    root = tmp_path
+    (root / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "root",
+                "private": True,
+                "workspaces": ["packages/*"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    member = root / "packages" / "app"
+    member.mkdir(parents=True)
+    (member / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "app",
+                "overrides": {"lodash": "1.0.0"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    _install_pkg(root, "lodash", "2.0.0")
+    results = overrides_audit(root, "npm")
+    stale = [r for r in results if "stale" in r.get("detail", "")]
+    assert len(stale) == 1, f"expected member override stale warning, got: {results}"
+    assert "[npm]" in stale[0]["detail"]
+    assert "lodash" in stale[0]["detail"]

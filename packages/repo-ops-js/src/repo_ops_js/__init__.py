@@ -1,7 +1,7 @@
 """Node.js workspace helpers."""
 
 from repo_ops_js.guards import assert_targets_resolved
-from repo_ops_js.overrides import overrides_audit
+from repo_ops_js.overrides import overrides_audit, package_json_paths
 from repo_ops_js.workspaces import (
     corepack_prepare,
     detect_node_manager,
@@ -19,6 +19,7 @@ __all__ = [
     "detect_node_manager",
     "lockfile_manager",
     "overrides_audit",
+    "package_json_paths",
     "parse_package_manager",
     "pm_exec_prefix",
     "pm_run_prefix",
