@@ -504,6 +504,8 @@ def main(argv: list[str] | None = None) -> int:
                 ]
             return entry
 
+        total = len(all_commits)
+        repos_with_pushes = len(per_repo)
         payload = {
             "schema_version": 1,
             "window": {
@@ -511,8 +513,13 @@ def main(argv: list[str] | None = None) -> int:
                 "until": until_dt.isoformat(),
             },
             "roots": roots,
-            "total": len(all_commits),
-            "repos_with_pushes": len(per_repo),
+            "total": total,
+            "repos_with_pushes": repos_with_pushes,
+            # ``summary`` mirrors human footer roll-up (docs/usage.md JSON contract).
+            "summary": {
+                "total": total,
+                "repos_with_pushes": repos_with_pushes,
+            },
             # Consumers slice from "repos" themselves; "top" key removed.
             "repos": [_repo_entry(r) for r in per_repo],
         }
