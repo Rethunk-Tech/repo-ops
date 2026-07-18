@@ -15,7 +15,7 @@ Thank you for contributing. Orientation: [README.md](README.md). Install, usage,
 
 ## Git for agents
 
-The rethunk-git MCP server is registered as **`plugin-rethunk-git-rethunk-git`**.
+The rethunk-git MCP server is registered as **`plugin-rethunk-git-git`**.
 
 - Use **`batch_commit`** and **`git_status`** from that server. No shell `git commit` / `git add` unless the user opts into shell git for the session.
 - **`workspaceRoot`:** absolute path to the repo (for example `/usr/local/src/com.github/Rethunk-Tech/repo-ops`).
