@@ -151,6 +151,41 @@ def test_check_rust_parses_stderr_updates(monkeypatch):
     assert changes[0].to == "1.0.200"
 
 
+def test_apply_rust_invokes_cargo_update(monkeypatch):
+    """apply_rust runs cargo update and surfaces stderr on failure."""
+    import pytest
+    from repo_ops_models import Workspace
+    from repo_ops_rust.rust import apply_rust
+
+    ws = Workspace(
+        path=Path("/tmp"),
+        ecosystem="rust",
+        manager="rust",
+        git_repo=Path("/tmp"),
+        label="",
+    )
+    calls: list[list[str]] = []
+
+    def fake_run_ok(cmd, cwd, timeout=600, env=None):
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with patch("repo_ops_rust.rust.run", fake_run_ok):
+        apply_rust(ws)
+    assert calls == [["cargo", "update"]]
+
+    def fake_run_fail(cmd, cwd, timeout=600, env=None):
+        return subprocess.CompletedProcess(
+            cmd, 1, stdout="", stderr="error: no Cargo.toml found"
+        )
+
+    with (
+        patch("repo_ops_rust.rust.run", fake_run_fail),
+        pytest.raises(RuntimeError, match="no Cargo.toml"),
+    ):
+        apply_rust(ws)
+
+
 def test_is_git_dirty_clean_repo(tmp_path):
     from repo_ops_core.git import is_git_dirty
 

@@ -1,4 +1,10 @@
-"""Rust/Cargo upgrade check/apply."""
+"""Rust/Cargo upgrade check/apply.
+
+Cargo has no cross-range / aggressive upgrade mode under fleet ``--latest``.
+``REPO_OPS_*_UPDATE_LATEST`` and ``--latest`` do not change cargo behavior;
+``cargo update`` always resolves within existing ``Cargo.toml`` / lockfile
+constraints. Prefer honest docs over inventing a half-mode gate.
+"""
 
 from __future__ import annotations
 
