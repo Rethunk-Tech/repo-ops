@@ -2,14 +2,17 @@
 
 Scope (best-effort)
 -------------------
-- npm: reads package.json under node_modules/** (requires prior npm/yarn/pnpm
-  install; no network calls).
+- npm: prefers package.json under node_modules/** when installed; otherwise
+  falls back to lockfile-resolved packages (package-lock.json, yarn.lock,
+  pnpm-lock.yaml, bun.lock) so CI trees without an install are not a false
+  clean. Lockfile-only entries without an embedded license field are UNKNOWN.
 - Python: reads the ``license`` field of each ``pyproject.toml`` found in the
   scanned tree (the repo's own package manifests), plus the locked third-party
-  dependency set of each ``uv.lock``, resolving license ids from an adjacent
-  virtualenv's ``*.dist-info/METADATA`` when one exists (#144).  Offline-first:
-  locked packages without installed metadata are reported as UNKNOWN rather
-  than resolved over the network.  ``setup.cfg`` is not read.
+  dependency set of each ``uv.lock`` / ``poetry.lock`` / ``pdm.lock`` /
+  ``Pipfile.lock``, resolving license ids from an adjacent virtualenv's
+  ``*.dist-info/METADATA`` when one exists (#144).  Offline-first: locked
+  packages without installed metadata are reported as UNKNOWN rather than
+  resolved over the network.  ``setup.cfg`` is not read.
 - Go: go.sum module@version pairs resolved via LICENSE* files in the local
   GOMODCACHE (offline; classified from license text heuristics).
 - Rust: Cargo.lock crates resolved via ``cargo metadata``'s ``license`` field
@@ -17,8 +20,6 @@ Scope (best-effort)
 - Deno: deno.lock ``npm:`` specifiers resolved via the ``package.json``
   ``license`` field cached under DENO_DIR's npm registry mirror (offline);
   ``jsr:``/``http(s):`` specifiers have no local license source.
-- container images: no local license source; reported UNKNOWN and excluded
-  from the ``--fail-unknown`` exit-2 bucket (see ``NO_EXTRACTOR_ECOSYSTEMS``).
 
 Limitations are documented in the output when unknown licenses are found.
 """
@@ -44,9 +45,17 @@ from repo_ops_core.cli import (
     wire_verbose,
 )
 from repo_ops_core.constants import SKIP_DIRS
-from repo_ops_core.filesystem import read_toml_file
+from repo_ops_core.filesystem import read_json_file, read_toml_file
 
-from repo_ops_lockfiles.parsers import versions_deno_lock
+from repo_ops_lockfiles.parsers import (
+    versions_bun_lock,
+    versions_deno_lock,
+    versions_npm_lock,
+    versions_pdm_lock,
+    versions_pipenv_lock,
+    versions_pnpm_lock,
+    versions_yarn_lock,
+)
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -73,14 +82,51 @@ class PolicyResult:
 
 
 # ---------------------------------------------------------------------------
-# npm: scan node_modules for package.json license fields
+# npm: scan node_modules for package.json license fields; lockfile fallback
 # ---------------------------------------------------------------------------
 
 # node_modules subdirs we never descend into
 _NM_SKIP = SKIP_DIRS - {"node_modules"}
 
+_NPM_LOCK_PARSERS: tuple[tuple[str, object], ...] = (
+    ("package-lock.json", versions_npm_lock),
+    ("yarn.lock", versions_yarn_lock),
+    ("pnpm-lock.yaml", versions_pnpm_lock),
+    ("bun.lock", versions_bun_lock),
+)
 
-def scan_npm_licenses(root: Path) -> list[PackageLicense]:
+
+def _normalize_npm_license(raw: object) -> str:
+    """Coerce package.json / lockfile license values to a string SPDX-ish id."""
+    if isinstance(raw, dict):
+        raw = raw.get("type") or UNKNOWN_LICENSE
+    if isinstance(raw, list):
+        raw = " OR ".join(
+            (
+                str(entry.get("type") or UNKNOWN_LICENSE)
+                if isinstance(entry, dict)
+                else str(entry)
+            )
+            for entry in raw
+        )
+    lic_id = str(raw or UNKNOWN_LICENSE).strip() or UNKNOWN_LICENSE
+    return lic_id
+
+
+def _split_nv(entry: str) -> tuple[str, str]:
+    """Split name@version (handles scoped @scope/pkg@ver)."""
+    if entry.startswith("@"):
+        second_at = entry.find("@", 1)
+        if second_at == -1:
+            return entry, ""
+        return entry[:second_at], entry[second_at + 1 :]
+    at = entry.find("@")
+    if at == -1:
+        return entry, ""
+    return entry[:at], entry[at + 1 :]
+
+
+def _scan_node_modules_licenses(root: Path) -> list[PackageLicense]:
     """Return PackageLicense entries for every package.json under node_modules."""
     results: list[PackageLicense] = []
     nm = root / "node_modules"
@@ -102,21 +148,7 @@ def scan_npm_licenses(root: Path) -> list[PackageLicense]:
             data = json.loads(pkg_json.read_text(encoding="utf-8", errors="replace"))
             pkg_name = str(data.get("name") or dp.name)
             pkg_ver = str(data.get("version") or "?")
-            raw_lic = data.get("license") or UNKNOWN_LICENSE
-            # SPDX license object: {"type": "MIT"}
-            if isinstance(raw_lic, dict):
-                raw_lic = raw_lic.get("type") or UNKNOWN_LICENSE
-            # DEPRECATED licenses array (rare, old npm packages)
-            if isinstance(raw_lic, list):
-                raw_lic = " OR ".join(
-                    (
-                        str(entry.get("type") or UNKNOWN_LICENSE)
-                        if isinstance(entry, dict)
-                        else str(entry)
-                    )
-                    for entry in raw_lic
-                )
-            lic_id = str(raw_lic).strip() or UNKNOWN_LICENSE
+            lic_id = _normalize_npm_license(data.get("license"))
             results.append(
                 PackageLicense(
                     name=pkg_name,
@@ -127,6 +159,118 @@ def scan_npm_licenses(root: Path) -> list[PackageLicense]:
                 )
             )
     return results
+
+
+def _licenses_from_package_lock(lock: Path) -> list[PackageLicense]:
+    """Extract licenses from package-lock.json ``packages`` / v1 deps maps."""
+    results: list[PackageLicense] = []
+    d = read_json_file(lock)
+    if not d:
+        return results
+    pkgs = d.get("packages")
+    if isinstance(pkgs, dict):
+        for path, meta in pkgs.items():
+            if not path or not isinstance(meta, dict):
+                continue
+            name = meta.get("name") or path.rsplit("node_modules/", 1)[-1]
+            ver = str(meta.get("version") or "?")
+            if "license" in meta:
+                lic_id = _normalize_npm_license(meta.get("license"))
+                source = "package-lock.json"
+            else:
+                lic_id = UNKNOWN_LICENSE
+                source = "package-lock.json"
+            results.append(
+                PackageLicense(
+                    name=str(name),
+                    version=ver,
+                    license_id=lic_id,
+                    ecosystem="npm",
+                    source=source,
+                )
+            )
+        return results
+
+    # v1 fallback — no license fields; enumerate versions as UNKNOWN
+    for entry in versions_npm_lock(lock):
+        name, ver = _split_nv(entry)
+        if not name or not ver:
+            continue
+        results.append(
+            PackageLicense(
+                name=name,
+                version=ver,
+                license_id=UNKNOWN_LICENSE,
+                ecosystem="npm",
+                source="package-lock.json",
+            )
+        )
+    return results
+
+
+def _licenses_from_npm_version_lock(
+    lock: Path, *, parser: object, source: str
+) -> list[PackageLicense]:
+    """Enumerate name@version from a lockfile parser; license UNKNOWN offline."""
+    results: list[PackageLicense] = []
+    with contextlib.suppress(Exception):
+        for entry in parser(lock):  # type: ignore[operator]
+            name, ver = _split_nv(entry)
+            if not name or not ver:
+                continue
+            results.append(
+                PackageLicense(
+                    name=name,
+                    version=ver,
+                    license_id=UNKNOWN_LICENSE,
+                    ecosystem="npm",
+                    source=source,
+                )
+            )
+    return results
+
+
+def _scan_npm_lockfile_licenses(root: Path) -> list[PackageLicense]:
+    """Lockfile-only npm license scan (no node_modules install required)."""
+    results: list[PackageLicense] = []
+    seen: set[tuple[str, str]] = set()
+    for dirpath_str, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dp = Path(dirpath_str)
+        fname_set = set(filenames)
+        batch: list[PackageLicense] = []
+        if "package-lock.json" in fname_set:
+            batch.extend(_licenses_from_package_lock(dp / "package-lock.json"))
+        else:
+            for lf_name, parser in _NPM_LOCK_PARSERS[1:]:
+                if lf_name not in fname_set:
+                    continue
+                batch.extend(
+                    _licenses_from_npm_version_lock(
+                        dp / lf_name, parser=parser, source=lf_name
+                    )
+                )
+        for pkg in batch:
+            key = (pkg.name, pkg.version)
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(pkg)
+    return results
+
+
+def scan_npm_licenses(root: Path) -> list[PackageLicense]:
+    """Return npm PackageLicense entries from node_modules or lockfiles.
+
+    Prefers an installed ``node_modules`` tree when it yields packages. When
+    there is no install (or it is empty) but a Node lockfile is present,
+    falls back to lockfile-resolved packages so CI trees are not a false
+    clean scan.
+    """
+    installed = _scan_node_modules_licenses(root)
+    if installed:
+        return installed
+    return _scan_npm_lockfile_licenses(root)
 
 
 # ---------------------------------------------------------------------------
@@ -272,47 +416,85 @@ def _dist_info_license_index(lock_dir: Path) -> dict[str, str]:
 
 
 def scan_python_dep_licenses(root: Path) -> list[PackageLicense]:
-    """Return PackageLicense for third-party packages locked in uv.lock files.
+    """Return PackageLicense for third-party packages locked in Python lockfiles.
 
-    For each ``uv.lock`` under *root*, every resolved ``[[package]]`` entry is
-    reported except workspace members (``editable``/``virtual`` sources — those
-    are the repo's own manifests, covered by :func:`scan_python_licenses`).
-    License ids come from an adjacent virtualenv's dist-info metadata when
-    present; packages without installed metadata are UNKNOWN (offline-first,
-    no network resolution).
+    Scans ``uv.lock``, ``poetry.lock``, ``pdm.lock``, and ``Pipfile.lock`` under
+    *root*. For uv.lock, workspace members (``editable``/``virtual`` sources)
+    are skipped — those are the repo's own manifests, covered by
+    :func:`scan_python_licenses`. License ids come from an adjacent
+    virtualenv's dist-info metadata when present; packages without installed
+    metadata are UNKNOWN (offline-first, no network resolution).
     """
     results: list[PackageLicense] = []
+    seen: set[tuple[str, str]] = set()
+
+    def _add(name: str, version: str, lock_name: str, licenses: dict[str, str]) -> None:
+        key = (_norm_py_name(name), version)
+        if key in seen:
+            return
+        seen.add(key)
+        lic = licenses.get(_norm_py_name(name))
+        results.append(
+            PackageLicense(
+                name=name,
+                version=version,
+                license_id=lic or UNKNOWN_LICENSE,
+                ecosystem="python",
+                source=f"{lock_name}+dist-info" if lic else lock_name,
+            )
+        )
+
     for dirpath_str, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        if "uv.lock" not in filenames:
-            continue
         lock_dir = Path(dirpath_str)
-        data = read_toml_file(lock_dir / "uv.lock") or {}
-        packages = data.get("package")
-        if not isinstance(packages, list):
+        fname_set = set(filenames)
+        if not fname_set & {"uv.lock", "poetry.lock", "pdm.lock", "Pipfile.lock"}:
             continue
         licenses = _dist_info_license_index(lock_dir)
-        for entry in packages:
-            if not isinstance(entry, dict):
-                continue
-            name = entry.get("name")
-            if not isinstance(name, str) or not name:
-                continue
-            source = entry.get("source")
-            if isinstance(source, dict) and (
-                "editable" in source or "virtual" in source
-            ):
-                continue
-            lic = licenses.get(_norm_py_name(name))
-            results.append(
-                PackageLicense(
-                    name=name,
-                    version=str(entry.get("version") or "?"),
-                    license_id=lic or UNKNOWN_LICENSE,
-                    ecosystem="python",
-                    source="uv.lock+dist-info" if lic else "uv.lock",
-                )
-            )
+
+        if "uv.lock" in fname_set:
+            data = read_toml_file(lock_dir / "uv.lock") or {}
+            packages = data.get("package")
+            if isinstance(packages, list):
+                for entry in packages:
+                    if not isinstance(entry, dict):
+                        continue
+                    name = entry.get("name")
+                    if not isinstance(name, str) or not name:
+                        continue
+                    source = entry.get("source")
+                    if isinstance(source, dict) and (
+                        "editable" in source or "virtual" in source
+                    ):
+                        continue
+                    _add(name, str(entry.get("version") or "?"), "uv.lock", licenses)
+
+        if "poetry.lock" in fname_set:
+            data = read_toml_file(lock_dir / "poetry.lock") or {}
+            packages = data.get("package")
+            if isinstance(packages, list):
+                for entry in packages:
+                    if not isinstance(entry, dict):
+                        continue
+                    name = entry.get("name")
+                    if not isinstance(name, str) or not name:
+                        continue
+                    _add(
+                        name, str(entry.get("version") or "?"), "poetry.lock", licenses
+                    )
+
+        if "pdm.lock" in fname_set:
+            for entry in versions_pdm_lock(lock_dir / "pdm.lock"):
+                name, ver = _split_nv(entry)
+                if name and ver:
+                    _add(name, ver, "pdm.lock", licenses)
+
+        if "Pipfile.lock" in fname_set:
+            for entry in versions_pipenv_lock(lock_dir / "Pipfile.lock"):
+                name, ver = _split_nv(entry)
+                if name and ver:
+                    _add(name, ver, "Pipfile.lock", licenses)
+
     return results
 
 
@@ -619,16 +801,14 @@ def scan_deno_licenses(
 # Policy evaluation
 # ---------------------------------------------------------------------------
 
-# Ecosystems with no local license extractor: their UNKNOWN entries are
-# excluded from the --fail-unknown exit-2 gate (they would always be
-# UNKNOWN — no offline metadata source exists — so failing on them is just
-# noise). Currently: container images (no manifest to read offline).
-NO_EXTRACTOR_ECOSYSTEMS = frozenset({"container"})
-
 
 def _fail_gate_unknown(unknown: list[PackageLicense]) -> list[PackageLicense]:
-    """Subset of *unknown* that should count toward --fail-unknown's exit 2."""
-    return [p for p in unknown if p.ecosystem not in NO_EXTRACTOR_ECOSYSTEMS]
+    """Subset of *unknown* that should count toward --fail-unknown's exit 2.
+
+    All ecosystems scanned by this module have a local extractor path, so
+    every UNKNOWN entry participates in the gate.
+    """
+    return list(unknown)
 
 
 # Normalise SPDX-ish identifiers for comparison
@@ -735,22 +915,22 @@ _LICENSE_EPILOG = """\
 exit codes:
   0  no violations and no unknown licenses (or --no-fail-unknown)
   1  policy violations found (denied / not in allow-list)
-  2  unknown licenses found in an ecosystem with a local extractor
-     (and --no-fail-unknown not set); container images never trigger this
+  2  unknown licenses found (and --no-fail-unknown not set)
 
 scope (best-effort):
-  npm: reads node_modules/**/package.json (requires prior npm/pnpm/yarn install).
-  Python: reads pyproject.toml manifests in the tree, plus each uv.lock's
-    locked third-party packages with licenses resolved from an adjacent
-    venv's *.dist-info/METADATA (offline; UNKNOWN without installed metadata).
+  npm: prefers node_modules/**/package.json when installed; otherwise falls
+    back to package-lock.json / yarn.lock / pnpm-lock.yaml / bun.lock
+    (lockfile-only trees; embedded license when present, else UNKNOWN).
+  Python: reads pyproject.toml manifests in the tree, plus each
+    uv.lock / poetry.lock / pdm.lock / Pipfile.lock locked third-party
+    packages with licenses resolved from an adjacent venv's
+    *.dist-info/METADATA (offline; UNKNOWN without installed metadata).
   Go: go.sum module@version pairs resolved via LICENSE* files in GOMODCACHE
     (offline; local module cache only, default ~/go/pkg/mod).
   Rust: Cargo.lock crates resolved via `cargo metadata --offline` (requires
     a local cargo and an already-fetched dependency cache).
   Deno: deno.lock npm: specifiers resolved via DENO_DIR's npm registry cache
     (offline); jsr:/http(s): specifiers have no local license source.
-  container: no local license source; reported unknown but excluded from
-    the --fail-unknown exit-2 bucket (see NO_EXTRACTOR_ECOSYSTEMS).
 
 allow/deny list format:
   SPDX identifiers, comma-separated, case-insensitive.
@@ -893,12 +1073,11 @@ def main(argv: list[str] | None = None) -> int:
             if len(result.unknown) > 20:
                 print(f"  ... and {len(result.unknown) - 20} more")
             print(
-                "\nNote: license data is best-effort (npm: node_modules; "
-                "Python: pyproject.toml + uv.lock/venv dist-info; "
+                "\nNote: license data is best-effort (npm: node_modules or lockfile; "
+                "Python: pyproject.toml + uv/poetry/pdm/Pipfile locks + venv dist-info; "
                 "Go: go.sum + GOMODCACHE LICENSE files; "
                 "Rust: Cargo.lock + cargo metadata; "
-                "Deno: deno.lock npm: specifiers + DENO_DIR cache; "
-                "container images: unsupported, excluded from --fail-unknown)."
+                "Deno: deno.lock npm: specifiers + DENO_DIR cache)."
             )
 
     if result.violations:

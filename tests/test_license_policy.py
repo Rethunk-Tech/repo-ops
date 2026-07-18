@@ -133,6 +133,70 @@ def test_scan_npm_licenses_no_node_modules(tmp_path: Path) -> None:
     assert scan_npm_licenses(tmp_path) == []
 
 
+def test_scan_npm_licenses_lockfile_fallback_package_lock(tmp_path: Path) -> None:
+    """Without node_modules, package-lock.json packages are still scanned (F010)."""
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/lodash": {
+                        "name": "lodash",
+                        "version": "4.17.21",
+                        "license": "MIT",
+                    },
+                    "node_modules/mystery": {
+                        "name": "mystery",
+                        "version": "1.0.0",
+                    },
+                    "": {"name": "root"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    results = scan_npm_licenses(tmp_path)
+    by_name = {r.name: r for r in results}
+    assert by_name["lodash"].license_id == "MIT"
+    assert by_name["lodash"].source == "package-lock.json"
+    assert by_name["mystery"].license_id == UNKNOWN_LICENSE
+    assert all(r.ecosystem == "npm" for r in results)
+
+
+def test_scan_npm_licenses_lockfile_fallback_yarn(tmp_path: Path) -> None:
+    """yarn.lock without install yields UNKNOWN entries (fail-closed, not empty)."""
+    (tmp_path / "yarn.lock").write_text(
+        'lodash@^4.17.21:\n  version "4.17.21"\n',
+        encoding="utf-8",
+    )
+    results = scan_npm_licenses(tmp_path)
+    assert len(results) == 1
+    assert results[0].name == "lodash"
+    assert results[0].license_id == UNKNOWN_LICENSE
+    assert results[0].source == "yarn.lock"
+
+
+def test_scan_npm_licenses_prefers_node_modules_over_lockfile(tmp_path: Path) -> None:
+    _write_nm_pkg(tmp_path, "lodash", "4.17.21", "MIT")
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/express": {
+                        "name": "express",
+                        "version": "4.18.2",
+                        "license": "MIT",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    results = scan_npm_licenses(tmp_path)
+    names = {r.name for r in results}
+    assert names == {"lodash"}
+    assert all(r.source == "node_modules" for r in results)
+
+
 # ---------------------------------------------------------------------------
 # Unit: scan_python_licenses (pyproject.toml)
 # ---------------------------------------------------------------------------
@@ -264,6 +328,47 @@ def test_scan_python_dep_licenses_no_venv_all_unknown(tmp_path: Path) -> None:
     assert len(results) == 4  # editable myapp still excluded
     assert all(p.license_id == UNKNOWN_LICENSE for p in results)
     assert all(p.source == "uv.lock" for p in results)
+
+
+def test_scan_python_dep_licenses_poetry_lock(tmp_path: Path) -> None:
+    (tmp_path / "poetry.lock").write_text(
+        '[[package]]\nname = "requests"\nversion = "2.31.0"\n'
+        '\n[[package]]\nname = "certifi"\nversion = "2024.2.2"\n',
+        encoding="utf-8",
+    )
+    results = scan_python_dep_licenses(tmp_path)
+    by_name = {p.name: p for p in results}
+    assert set(by_name) == {"requests", "certifi"}
+    assert all(p.source == "poetry.lock" for p in results)
+    assert all(p.license_id == UNKNOWN_LICENSE for p in results)
+
+
+def test_scan_python_dep_licenses_pdm_lock(tmp_path: Path) -> None:
+    (tmp_path / "pdm.lock").write_text(
+        '[[package]]\nname = "httpx"\nversion = "0.27.0"\n',
+        encoding="utf-8",
+    )
+    results = scan_python_dep_licenses(tmp_path)
+    assert len(results) == 1
+    assert results[0].name == "httpx"
+    assert results[0].source == "pdm.lock"
+
+
+def test_scan_python_dep_licenses_pipfile_lock(tmp_path: Path) -> None:
+    (tmp_path / "Pipfile.lock").write_text(
+        json.dumps(
+            {
+                "default": {"flask": {"version": "==3.0.0"}},
+                "develop": {"pytest": {"version": "==8.0.0"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    results = scan_python_dep_licenses(tmp_path)
+    by_name = {p.name: p for p in results}
+    assert set(by_name) == {"flask", "pytest"}
+    assert by_name["flask"].version == "3.0.0"
+    assert by_name["flask"].source == "Pipfile.lock"
 
 
 def test_license_from_metadata_rejects_pasted_license_body() -> None:

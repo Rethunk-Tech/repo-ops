@@ -14,7 +14,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from repo_ops_lockfiles.license_policy import (
-    NO_EXTRACTOR_ECOSYSTEMS,
     UNKNOWN_LICENSE,
     PackageLicense,
     _classify_license_text,
@@ -212,23 +211,12 @@ def test_scan_deno_licenses_npm_specifiers_only(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Unknown-exclusion gate: container ecosystem never forces --fail-unknown
+# Unknown-exclusion gate: all scanned ecosystems participate in --fail-unknown
 # ---------------------------------------------------------------------------
 
 
-def test_no_extractor_ecosystems_contains_container() -> None:
-    assert "container" in NO_EXTRACTOR_ECOSYSTEMS
-
-
-def test_fail_gate_unknown_excludes_container() -> None:
+def test_fail_gate_unknown_passes_through_all_ecosystems() -> None:
     unknown = [
-        PackageLicense(
-            name="base-image",
-            version="latest",
-            license_id=UNKNOWN_LICENSE,
-            ecosystem="container",
-            source="dockerfile",
-        ),
         PackageLicense(
             name="mystery-lib",
             version="1.0.0",
@@ -236,20 +224,18 @@ def test_fail_gate_unknown_excludes_container() -> None:
             ecosystem="npm",
             source="node_modules",
         ),
+        PackageLicense(
+            name="mystery-py",
+            version="2.0.0",
+            license_id=UNKNOWN_LICENSE,
+            ecosystem="python",
+            source="uv.lock",
+        ),
     ]
     gated = _fail_gate_unknown(unknown)
-    assert len(gated) == 1
-    assert gated[0].name == "mystery-lib"
+    assert len(gated) == 2
+    assert {p.name for p in gated} == {"mystery-lib", "mystery-py"}
 
 
-def test_fail_gate_unknown_empty_when_only_container() -> None:
-    unknown = [
-        PackageLicense(
-            name="base-image",
-            version="latest",
-            license_id=UNKNOWN_LICENSE,
-            ecosystem="container",
-            source="dockerfile",
-        )
-    ]
-    assert _fail_gate_unknown(unknown) == []
+def test_fail_gate_unknown_empty_when_no_unknown() -> None:
+    assert _fail_gate_unknown([]) == []
