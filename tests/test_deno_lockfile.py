@@ -1,6 +1,11 @@
 """TDD tests for Deno lockfile parser (all format versions).
 
+On-disk fixtures under ``tests/fixtures/deno_v*.lock`` are the single source of
+truth; tmp-path tests copy from those files so drift is caught by
+``test_deno_fixture_files_on_disk``.
+
 Fixture spike output (run against tests/fixtures/):
+  v2 versions: ['npm:chalk@5.1.0']                           (count=1)
   v3 versions: ['jsr:@std/assert@0.221.0', 'npm:chalk@5.2.0']  (count=2)
   v4 versions: ['jsr:@std/assert@1.0.0', 'npm:chalk@5.3.0']    (count=2)
 """
@@ -13,118 +18,76 @@ from pathlib import Path
 import pytest
 from repo_ops_lockfiles.parsers import versions_deno_lock
 
-# -- fixtures ----------------------------------------------------------------
-
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
-
-def _v3_lock(tmp_path: Path) -> Path:
-    p = tmp_path / "deno_v3.lock"
-    p.write_text(
-        json.dumps(
-            {
-                "version": "3",
-                "packages": {
-                    "specifiers": {
-                        "jsr:@std/assert@^0.221.0": "jsr:@std/assert@0.221.0",
-                        "npm:chalk@^5.0": "npm:chalk@5.2.0",
-                    },
-                    "jsr": {"@std/assert@0.221.0": {"integrity": "fakehash1"}},
-                    "npm": {"chalk@5.2.0": {"integrity": "fakehash2"}},
-                },
-            }
-        )
-    )
-    return p
+_DENO_FIXTURES = ("deno_v2.lock", "deno_v3.lock", "deno_v4.lock")
 
 
-def _v4_lock(tmp_path: Path) -> Path:
-    p = tmp_path / "deno_v4.lock"
-    p.write_text(
-        json.dumps(
-            {
-                "version": "4",
-                "specifiers": {
-                    "jsr:@std/assert@^1.0": "jsr:@std/assert@1.0.0",
-                    "npm:chalk@^5.0": "npm:chalk@5.3.0",
-                },
-                "jsr": {"@std/assert@1.0.0": {"integrity": "fakehash3"}},
-                "npm": {"chalk@5.3.0": {"integrity": "fakehash4", "dependencies": {}}},
-            }
-        )
-    )
-    return p
-
-
-def _v2_lock(tmp_path: Path) -> Path:
-    p = tmp_path / "deno_v2.lock"
-    p.write_text(
-        json.dumps(
-            {
-                "version": "2",
-                "npm": {
-                    "chalk@5.1.0": {
-                        "integrity": "fakehash5",
-                        "dependencies": {},
-                    }
-                },
-                "redirects": {},
-            }
-        )
-    )
-    return p
-
-
-# -- tests -------------------------------------------------------------------
+def _copy_lock_fixture(tmp_path: Path, fixture_name: str) -> Path:
+    """Copy a canonical on-disk Deno lock fixture into *tmp_path*."""
+    src = FIXTURE_DIR / fixture_name
+    if not src.exists():
+        pytest.skip(f"fixture file not found: {fixture_name}")
+    dest = tmp_path / fixture_name
+    dest.write_bytes(src.read_bytes())
+    return dest
 
 
 def test_v3_specifiers_captured(tmp_path: Path) -> None:
     """v3: packages.specifiers → resolved specifier strings are captured."""
-    versions = versions_deno_lock(_v3_lock(tmp_path))
-    # Observed spike values
-    assert "jsr:@std/assert@0.221.0" in versions  # from specifiers value
-    assert "npm:chalk@5.2.0" in versions  # from specifiers value
-    assert len(versions) == 2  # no duplicates from packages.npm
+    versions = versions_deno_lock(_copy_lock_fixture(tmp_path, "deno_v3.lock"))
+    assert "jsr:@std/assert@0.221.0" in versions
+    assert "npm:chalk@5.2.0" in versions
+    assert len(versions) == 2
 
 
 def test_v4_top_level_specifiers_captured(tmp_path: Path) -> None:
     """v4: top-level specifiers → resolved specifier strings are captured."""
-    versions = versions_deno_lock(_v4_lock(tmp_path))
-    # Observed spike values
-    assert "jsr:@std/assert@1.0.0" in versions  # from specifiers value
-    assert "npm:chalk@5.3.0" in versions  # from specifiers value
-    assert len(versions) == 2  # deduped with jsr/npm sections
+    versions = versions_deno_lock(_copy_lock_fixture(tmp_path, "deno_v4.lock"))
+    assert "jsr:@std/assert@1.0.0" in versions
+    assert "npm:chalk@5.3.0" in versions
+    assert len(versions) == 2
 
 
 def test_v4_jsr_section_captured(tmp_path: Path) -> None:
     """v4: top-level jsr section keys are captured as jsr:@scope/pkg@version."""
-    versions = versions_deno_lock(_v4_lock(tmp_path))
+    versions = versions_deno_lock(_copy_lock_fixture(tmp_path, "deno_v4.lock"))
     assert "jsr:@std/assert@1.0.0" in versions
 
 
 def test_v4_npm_section_captured(tmp_path: Path) -> None:
     """v4: top-level npm section keys are captured as npm:name@version."""
-    versions = versions_deno_lock(_v4_lock(tmp_path))
+    versions = versions_deno_lock(_copy_lock_fixture(tmp_path, "deno_v4.lock"))
     assert "npm:chalk@5.3.0" in versions
 
 
 def test_v2_npm_captured(tmp_path: Path) -> None:
     """v2: top-level npm dict keys are captured as npm:name@version."""
-    versions = versions_deno_lock(_v2_lock(tmp_path))
+    versions = versions_deno_lock(_copy_lock_fixture(tmp_path, "deno_v2.lock"))
     assert "npm:chalk@5.1.0" in versions
     assert len(versions) == 1
 
 
-def test_v3_and_v4_both_green_with_fixture_files() -> None:
-    """Fixture files (tests/fixtures/) return expected counts."""
-    v3_path = FIXTURE_DIR / "deno_v3.lock"
-    v4_path = FIXTURE_DIR / "deno_v4.lock"
-    if not v3_path.exists() or not v4_path.exists():
-        pytest.skip("fixture files not found")
-    v3 = versions_deno_lock(v3_path)
-    v4 = versions_deno_lock(v4_path)
-    assert len(v3) == 2, f"v3 fixture: expected 2, got {sorted(v3)}"
-    assert len(v4) == 2, f"v4 fixture: expected 2, got {sorted(v4)}"
+def test_deno_fixture_files_on_disk() -> None:
+    """On-disk fixtures return expected version counts (sync guard)."""
+    expected_counts = {
+        "deno_v2.lock": 1,
+        "deno_v3.lock": 2,
+        "deno_v4.lock": 2,
+    }
+    for name, count in expected_counts.items():
+        path = FIXTURE_DIR / name
+        assert path.exists(), f"missing fixture {name}"
+        versions = versions_deno_lock(path)
+        assert len(versions) == count, f"{name}: expected {count}, got {sorted(versions)}"
+
+
+def test_deno_fixture_files_are_valid_json() -> None:
+    """Every on-disk Deno lock fixture must be parseable JSON."""
+    for name in _DENO_FIXTURES:
+        path = FIXTURE_DIR / name
+        assert path.exists(), f"missing fixture {name}"
+        json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_empty_lockfile_returns_empty_set(tmp_path: Path) -> None:

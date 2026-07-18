@@ -1,0 +1,10 @@
+{
+  "version": "2",
+  "npm": {
+    "chalk@5.1.0": {
+      "integrity": "fakehash5",
+      "dependencies": {}
+    }
+  },
+  "redirects": {}
+}
