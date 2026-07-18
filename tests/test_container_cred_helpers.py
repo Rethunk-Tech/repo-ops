@@ -116,6 +116,48 @@ def test_cred_helper_none_when_nothing_configured(tmp_path: Path) -> None:
         assert _cred_helper_name_for_host("ghcr.io") is None
 
 
+def test_cred_helper_docker_io_alias_for_registry_1(tmp_path: Path) -> None:
+    """credHelpers keyed as docker.io resolve when host is registry-1.docker.io."""
+    _docker_cfg(tmp_path, {"credHelpers": {"docker.io": "desktop"}})
+    with patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}):
+        assert _cred_helper_name_for_host("registry-1.docker.io") == "desktop"
+
+
+def test_cred_helper_index_docker_io_v1_alias(tmp_path: Path) -> None:
+    """credHelpers keyed as https://index.docker.io/v1/ resolve for Hub OCI host."""
+    _docker_cfg(
+        tmp_path, {"credHelpers": {"https://index.docker.io/v1/": "osxkeychain"}}
+    )
+    with patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}):
+        assert _cred_helper_name_for_host("registry-1.docker.io") == "osxkeychain"
+
+
+def test_resolve_auth_docker_io_cred_helper_uses_hub_login_url(
+    tmp_path: Path,
+) -> None:
+    """Hub helper lookup passes https://index.docker.io/v1/ on stdin."""
+    _docker_cfg(tmp_path, {"credHelpers": {"docker.io": "desktop"}})
+    helper_proc = MagicMock(spec=subprocess.CompletedProcess)
+    helper_proc.returncode = 0
+    helper_proc.stdout = json.dumps({"Username": "user", "Secret": "tok"})
+
+    with (
+        patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}),
+        patch("subprocess.run", return_value=helper_proc) as mock_run,
+    ):
+        result = _resolve_auth_for_host("registry-1.docker.io")
+
+    mock_run.assert_called_once_with(
+        ["docker-credential-desktop", "get"],
+        input="https://index.docker.io/v1/",
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    expected = base64.b64encode(b"user:tok").decode()
+    assert result == f"Basic {expected}"
+
+
 def test_cred_helper_no_config_file(tmp_path: Path) -> None:
     with patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}):
         # config.json missing — _load_docker_config returns {} — no helper

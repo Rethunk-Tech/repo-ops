@@ -272,6 +272,106 @@ def test_fetch_tags_challenge_flow_quay(tmp_path: Path) -> None:
     assert tags == ["1.0", "1.1", "1.2"]
 
 
+def test_fetch_tags_challenge_flow_gcr(tmp_path: Path) -> None:
+    """_fetch_tags for gcr.io: probe→401→token→tags/list success."""
+    probe_error = _make_http_error(
+        401,
+        headers={
+            "WWW-Authenticate": (
+                'Bearer realm="https://gcr.io/v2/token",service="gcr.io",'
+                'scope="repository:project/img:pull"'
+            )
+        },
+    )
+    token_resp = _make_http_response(json.dumps({"token": "gcr_token"}).encode())
+    tags_resp = _make_http_response(
+        json.dumps({"name": "project/img", "tags": ["1.0", "1.1"]}).encode()
+    )
+
+    call_n = 0
+
+    def side_effect(req: Any, timeout: int = 10) -> Any:
+        nonlocal call_n
+        call_n += 1
+        if call_n == 1:
+            raise probe_error
+        if call_n == 2:
+            url = req.full_url if hasattr(req, "full_url") else str(req)
+            assert "gcr.io" in url
+            return token_resp
+        return tags_resp
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        tags = _fetch_tags("gcr.io/project/img")
+
+    assert tags == ["1.0", "1.1"]
+
+
+def test_fetch_token_mcr_challenge_flow() -> None:
+    """mcr.microsoft.com: probe→401→parse challenge→fetch token."""
+    probe_error = _make_http_error(
+        401,
+        headers={
+            "WWW-Authenticate": (
+                'Bearer realm="https://mcr.microsoft.com/v2/auth",'
+                'service="mcr.microsoft.com",'
+                'scope="repository:dotnet/runtime:pull"'
+            )
+        },
+    )
+    token_resp = _make_http_response(json.dumps({"token": "mcr_token"}).encode())
+
+    call_count = 0
+
+    def side_effect(req: Any, timeout: int = 10) -> Any:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise probe_error
+        return token_resp
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        result = _fetch_token_for_registry(
+            "mcr.microsoft.com", "dotnet/runtime", None
+        )
+
+    assert result == "mcr_token"
+    assert call_count == 2
+
+
+def test_fetch_tags_challenge_flow_mcr(tmp_path: Path) -> None:
+    """_fetch_tags for mcr.microsoft.com uses the generic bearer challenge path."""
+    probe_error = _make_http_error(
+        401,
+        headers={
+            "WWW-Authenticate": (
+                'Bearer realm="https://mcr.microsoft.com/v2/auth",'
+                'service="mcr.microsoft.com"'
+            )
+        },
+    )
+    token_resp = _make_http_response(json.dumps({"token": "mcr_token"}).encode())
+    tags_resp = _make_http_response(
+        json.dumps({"name": "dotnet/runtime", "tags": ["8.0", "8.0.1"]}).encode()
+    )
+
+    call_n = 0
+
+    def side_effect(req: Any, timeout: int = 10) -> Any:
+        nonlocal call_n
+        call_n += 1
+        if call_n == 1:
+            raise probe_error
+        if call_n == 2:
+            return token_resp
+        return tags_resp
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        tags = _fetch_tags("mcr.microsoft.com/dotnet/runtime")
+
+    assert tags == ["8.0", "8.0.1"]
+
+
 def test_fetch_tags_with_basic_auth(tmp_path: Path) -> None:
     """_fetch_tags uses Basic auth from docker config."""
     creds = base64.b64encode(b"user:pass").decode()

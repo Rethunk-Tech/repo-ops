@@ -399,11 +399,34 @@ def _load_docker_config() -> dict[str, Any]:
         return {}
 
 
+def _docker_config_host_keys(host: str) -> list[str]:
+    """Candidate ``auths`` / ``credHelpers`` keys for *host*.
+
+    Docker Hub normalizes to ``registry-1.docker.io`` for OCI calls, but
+    config.json commonly keys helpers/auths as ``docker.io`` or
+    ``https://index.docker.io/v1/``.
+    """
+    candidates = [host]
+    if host == _DOCKER_REGISTRY_HOST:
+        candidates += [*_DOCKER_IO_ALIASES, "https://index.docker.io/v1/"]
+    return candidates
+
+
+def _cred_helper_get_server(host: str) -> str:
+    """Registry URL passed on stdin to ``docker-credential-* get``.
+
+    Docker Hub helpers expect the canonical Hub login URL, not the OCI host.
+    """
+    if host == _DOCKER_REGISTRY_HOST or host in _DOCKER_IO_ALIASES:
+        return "https://index.docker.io/v1/"
+    return host
+
+
 def _basic_auth_for_host(host: str) -> str | None:
     """Return ``Authorization: Basic <b64>`` value for *host* from docker config.
 
     Only handles the ``auths[host].auth`` (base64 user:pass) entry.
-    Credential helpers (credsStore/credHelpers) are out of scope.
+    Credential helpers are resolved separately by ``_resolve_auth_for_host``.
     Returns None when no matching entry, no ``auth`` key, or only a helper.
     """
     cfg = _load_docker_config()
@@ -411,16 +434,7 @@ def _basic_auth_for_host(host: str) -> str | None:
     if not isinstance(auths, dict):
         return None
 
-    # Try exact match and common variations.
-    candidates = [host]
-    if host == _DOCKER_REGISTRY_HOST:
-        # docker.io tools register under several aliases
-        candidates += [*_DOCKER_IO_ALIASES, "https://index.docker.io/v1/"]
-    elif "." not in host:
-        # bare short name (unlikely but defensive)
-        pass
-
-    for key in candidates:
+    for key in _docker_config_host_keys(host):
         entry = auths.get(key)
         if not isinstance(entry, dict):
             # Try with https:// prefix (some tools store that way)
@@ -456,7 +470,8 @@ def _ecr_region_for_host(host: str) -> str | None:
 def _cred_helper_name_for_host(host: str) -> str | None:
     """Return the Docker credential helper name configured for *host*, or None.
 
-    Checks ``credHelpers[host]`` first (per-host override), then ``credsStore``
+    Checks ``credHelpers[host]`` first (per-host override, including Docker Hub
+    aliases when *host* is ``registry-1.docker.io``), then ``credsStore``
     (global fallback).  Returns the bare helper name *without* the
     ``docker-credential-`` prefix (e.g. ``"ecr-login"``, ``"osxkeychain"``).
     Returns None when neither key is configured.
@@ -464,8 +479,12 @@ def _cred_helper_name_for_host(host: str) -> str | None:
     cfg = _load_docker_config()
     cred_helpers: Any = cfg.get("credHelpers", {})
     if isinstance(cred_helpers, dict):
-        for key in (host, f"https://{host}"):
+        for key in _docker_config_host_keys(host):
             helper = cred_helpers.get(key)
+            if isinstance(helper, str) and helper:
+                return helper
+            # Try with https:// prefix (some tools store that way)
+            helper = cred_helpers.get(f"https://{key}")
             if isinstance(helper, str) and helper:
                 return helper
     creds_store: Any = cfg.get("credsStore")
@@ -561,7 +580,7 @@ def _resolve_auth_for_host(host: str) -> str | None:
     # 2. Docker credential helper (opt-in: only when helper is configured)
     helper = _cred_helper_name_for_host(host)
     if helper:
-        auth = _run_cred_helper(helper, host)
+        auth = _run_cred_helper(helper, _cred_helper_get_server(host))
         if auth:
             return auth
 
@@ -857,7 +876,9 @@ def check_container(ws: Workspace) -> list[Change]:
     non-semver tags, network errors) use a ``to`` value prefixed with
     ``[report-only]`` so the report layer can distinguish them.
 
-    No external processes are spawned; all network calls use stdlib urllib.
+    Registry queries use stdlib urllib.  Credential resolution may spawn
+    bounded subprocesses (``docker-credential-*``, ``aws ecr get-login-password``)
+    when helpers are configured; see ``_resolve_auth_for_host``.
 
     Environment variables:
     - ``REPO_OPS_CONTAINER_UPDATE_LATEST=1``: allow cross-major bumps.
@@ -1022,69 +1043,30 @@ def _replace_digest_in_line(
 def apply_container(ws: Workspace) -> None:
     """Apply image tag bumps and digest refreshes in-place (byte-preserving single-line edits).
 
-    No verify step for v1: building images is out of scope.  The apply
-    function runs check_container to discover bumps, then rewrites only the
-    tag or digest portion of each matched line — never the entire line.
+    No verify step for v1: building images is out of scope.  Reuses
+    ``check_container`` for discovery so plan and apply share one resolution
+    path, then rewrites only the tag or digest portion of each matched line.
 
     SHA-pinned images without a tag are skipped unconditionally (report-only
     by design).  Digest refresh requires ``REPO_OPS_CONTAINER_REFRESH_SHA=1``.
     Cross-major bumps require ``REPO_OPS_CONTAINER_UPDATE_LATEST=1``.
     """
-    allow_cross_major = os.environ.get("REPO_OPS_CONTAINER_UPDATE_LATEST", "") == "1"
-    refresh_sha = os.environ.get("REPO_OPS_CONTAINER_REFRESH_SHA", "") == "1"
+    # Reuse check_container so tag/digest resolution cannot drift from plan.
+    tag_bumps: list[tuple[str, str, str]] = []
+    sha_bumps: list[tuple[str, str, str, str]] = []
+    for ch in check_container(ws):
+        if ch.to.startswith(_REPORT_ONLY_PREFIX):
+            continue
+        image, tag = ch.name.rsplit(":", 1)
+        if ch.from_ver.startswith("sha256:"):
+            sha_bumps.append((image, tag, ch.from_ver, ch.to))
+        else:
+            tag_bumps.append((image, ch.from_ver, ch.to))
+
+    if not tag_bumps and not sha_bumps:
+        return
 
     for cf in find_container_files(ws.path):
-        refs = _parse_image_refs(cf)
-        # Build a list of tag bumps: (image, old_tag, new_tag)
-        # and digest refreshes: (image, tag, old_sha, new_sha)
-        tag_bumps: list[tuple[str, str, str]] = []
-        sha_bumps: list[tuple[str, str, str, str]] = []
-        already_queried: dict[tuple[str, str], str | None] = {}
-        already_digest: dict[tuple[str, str], str | None] = {}
-
-        for ref in refs:
-            if ref["is_stage_ref"]:
-                continue
-            image: str = ref["image"]
-            tag: str | None = ref["tag"]
-            sha: str | None = ref["sha"]
-
-            # tag+sha pin: digest refresh
-            if sha and tag and refresh_sha:
-                digest_key = (image, tag)
-                if digest_key in already_digest:
-                    new_digest = already_digest[digest_key]
-                else:
-                    new_digest = _fetch_manifest_digest(image, tag)
-                    already_digest[digest_key] = new_digest
-                if new_digest and new_digest != sha:
-                    sha_bumps.append((image, tag, sha, new_digest))
-                continue
-
-            # Skip sha-only pins, no-tag, non-semver
-            if sha or not tag or not _is_semver_tag(tag):
-                continue
-
-            cache_key = (image, tag)
-            if cache_key in already_queried:
-                new_tag = already_queried[cache_key]
-            else:
-                available = _fetch_tags(image)
-                if available is None:
-                    already_queried[cache_key] = None
-                    continue
-                new_tag = _resolve_latest_tag(
-                    tag, available, allow_cross_major=allow_cross_major
-                )
-                already_queried[cache_key] = new_tag
-
-            if new_tag is None:
-                continue
-            tag_bumps.append((image, tag, new_tag))
-
-        if not tag_bumps and not sha_bumps:
-            continue
-
         # Apply bumps in-place (byte-preserving, CRLF-safe).
         # Use newline="" so Python does not translate \r\n → \n on read or
         # \n → OS newline on write; the file's own line endings are preserved.
@@ -1115,31 +1097,10 @@ def apply_container(ws: Workspace) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Public re-exports (for tests / callers that import from this module directly)
+# Public API. Underscored helpers remain importable for unit tests.
 # ---------------------------------------------------------------------------
 
 __all__ = [
-    "_basic_auth_for_host",
-    "_compose_build_dockerfiles",
-    "_cred_helper_name_for_host",
-    "_ecr_get_login_password",
-    "_ecr_region_for_host",
-    "_fetch_bearer_token",
-    "_fetch_manifest_digest",
-    "_fetch_tags",
-    "_fetch_token_for_registry",
-    "_is_semver_tag",
-    "_load_docker_config",
-    "_normalize_docker_image",
-    "_parse_compose_images",
-    "_parse_from_lines",
-    "_parse_image_refs",
-    "_parse_www_authenticate",
-    "_replace_digest_in_line",
-    "_replace_tag_in_line",
-    "_resolve_auth_for_host",
-    "_resolve_latest_tag",
-    "_run_cred_helper",
     "apply_container",
     "check_container",
     "find_container_files",
