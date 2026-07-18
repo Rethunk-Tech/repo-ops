@@ -88,3 +88,6 @@ Thumbs.db
 
 # Local tool / runtime caches (project-specific additions go below)
 .pytest_cache/
+
+# Orchestration wave scratch (contracts, FINDINGS.jsonl)
+.orchestrate/
