@@ -40,6 +40,7 @@ from repo_ops_inventory.counting import (
     _go_cache_path,
     _kind_matches,
     load_go_cache,
+    restrict_row_to_eco,
     save_go_cache,
     scan,
 )
@@ -157,7 +158,7 @@ def _add_inventory_arguments(parser: argparse.ArgumentParser) -> None:
     add_verbose_argument(parser)
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None) -> int:
     parser = build_inventory_parser()
     args = parser.parse_args(argv)
     wire_verbose(args)
@@ -180,12 +181,14 @@ def main(argv: list[str] | None = None) -> None:
     if not args.no_cache and go_cache is not None:
         save_go_cache(cache_path, go_cache)
 
+    if args.eco_filter:
+        all_rows = [r for r in all_rows if _kind_matches(r["kinds"], args.eco_filter)]
+        for r in all_rows:
+            restrict_row_to_eco(r, args.eco_filter)
+
     for r in all_rows:
         r["kinds_s"] = ",".join(sorted(r["kinds"]))
         r["versions_n"] = len(r["versions"])
-
-    if args.eco_filter:
-        all_rows = [r for r in all_rows if _kind_matches(r["kinds"], args.eco_filter)]
 
     sort_key = args.sort
     if sort_key == "name":
@@ -201,13 +204,14 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.json_out:
         # --json always emits ALL rows (--top only caps human output).
-        td = tv = ti = te = 0
+        td = tv = ti = te = tm = 0
         json_rows = []
         for r in all_rows:
             json_rows.append(
                 {
                     "name": r["name"],
                     "kinds": sorted(r["kinds"]),
+                    "manifests": r["manifests"],
                     "direct": r["direct"],
                     "versions": r["versions_n"],
                     "on_disk": r["installed"],
@@ -218,16 +222,24 @@ def main(argv: list[str] | None = None) -> None:
             tv += r["versions_n"]
             ti += r["installed"]
             te += r["edges"]
+            tm += r["manifests"]
+        totals = {
+            "manifests": tm,
+            "direct": td,
+            "versions": tv,
+            "on_disk": ti,
+            "edges": te,
+        }
         # Build the payload once so the stdout and --json-out paths can never
         # diverge on schema_version/roots/totals (#101 + #104).
+        # ``summary`` mirrors the human footer roll-up (docs/usage.md JSON contract).
         payload = {
             "schema_version": 1,
             "rows": json_rows,
-            "totals": {
-                "direct": td,
-                "versions": tv,
-                "on_disk": ti,
-                "edges": te,
+            "totals": totals,
+            "summary": {
+                "projects": len(json_rows),
+                **totals,
             },
             "roots": scanned_roots,
         }
@@ -239,10 +251,11 @@ def main(argv: list[str] | None = None) -> None:
             print(written)
         else:
             print(json.dumps(payload, indent=None if args.compact else 2))
-        return
+        return 0
 
     _print_inventory_table(all_rows, args.top)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

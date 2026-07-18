@@ -1,6 +1,6 @@
 """Pure parsing and counting helpers for dependency counting.
 
-Extracted from dep_count.py to remove duplication and enable testing.
+Inventory scan helpers for the ``repo-ops inventory`` subcommand.
 Uses shared repo_ops_core.constants, filesystem, process.
 """
 
@@ -11,12 +11,14 @@ import configparser
 import json
 import os
 import re
+import subprocess
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 from repo_ops_core.constants import SKIP_DIRS
-from repo_ops_core.filesystem import read_toml_file
+from repo_ops_core.filesystem import read_toml_file, write_json_atomic
 from repo_ops_core.git import git_repo_for, run_git
 from repo_ops_core.process import run
 from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
@@ -30,6 +32,46 @@ from repo_ops_lockfiles.parsers import (
     versions_pnpm_lock,
     versions_yarn_lock,
 )
+
+
+def _versions_bun_lockb(mdir: Path) -> tuple[set[str], str]:
+    """Best-effort parse of legacy binary ``bun.lockb``.
+
+    Invokes ``bun <lockb>`` which dumps a yarn.lock-compatible text lockfile to
+    stdout when the binary is readable. On missing bun, dump failure, or empty
+    parse, returns an empty version set with lock kind ``bun(bin:unsupported)``
+    so callers never silently report zeros for an unreadable binary lockfile.
+    """
+    lockb = mdir / "bun.lockb"
+    try:
+        proc = run(["bun", str(lockb)], cwd=mdir, timeout=60)
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return set(), "bun(bin:unsupported)"
+    text = (proc.stdout or "").strip()
+    if proc.returncode != 0 or not text:
+        return set(), "bun(bin:unsupported)"
+    # Refuse obvious error banners that some bun builds still exit 0 on.
+    if text.lower().startswith("error") or "InvalidLockfile" in (proc.stderr or ""):
+        return set(), "bun(bin:unsupported)"
+    tmp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            suffix=".lock",
+            delete=False,
+        ) as handle:
+            handle.write(proc.stdout)
+            tmp_path = Path(handle.name)
+        versions = versions_yarn_lock(tmp_path)
+    except Exception:
+        return set(), "bun(bin:unsupported)"
+    finally:
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
+    if not versions:
+        return set(), "bun(bin:unsupported)"
+    return versions, "bun(bin)"
 
 
 def count_node(mdir: Path) -> tuple[int, set[str], str]:
@@ -49,7 +91,7 @@ def count_node(mdir: Path) -> tuple[int, set[str], str]:
         versions = versions_yarn_lock(mdir / "yarn.lock")
         lock = "yarn"
     elif (mdir / "bun.lockb").exists():
-        lock = "bun(bin)"
+        versions, lock = _versions_bun_lockb(mdir)
     return direct, versions, lock
 
 
@@ -121,10 +163,7 @@ def load_go_cache(cache_path: Path) -> dict[str, Any]:
 
 def save_go_cache(cache_path: Path, cache: dict) -> None:
     try:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = cache_path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(cache, indent=2))
-        os.replace(tmp, cache_path)
+        write_json_atomic(cache_path, cache, compact=False)
     except Exception:  # noqa: S110 — best-effort: malformed-cache write silently skipped
         pass
 
@@ -590,6 +629,42 @@ def count_submodule(proj: Path) -> tuple[int, set[str]]:
 # ---------- Deno ----------
 
 
+def _strip_jsonc_line_comments(text: str) -> str:
+    """Strip ``//`` line comments from JSONC, ignoring ``//`` inside strings.
+
+    Does not strip block comments (``/* ... */``). Sufficient for Deno config
+    files that use line comments only.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    in_string = False
+    while i < n:
+        c = text[i]
+        if in_string:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                in_string = False
+            i += 1
+            continue
+        if c == '"':
+            in_string = True
+            out.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def count_deno(mdir: Path) -> tuple[int, set[str]]:
     """Count Deno dependencies from deno.lock and deno.json/deno.jsonc.
 
@@ -607,14 +682,10 @@ def count_deno(mdir: Path) -> tuple[int, set[str]]:
         if not cfg.exists():
             continue
         try:
-            import json as _json
-            import re as _re
-
             text = cfg.read_text(encoding="utf-8", errors="replace")
-            # Strip line comments for jsonc
             if cfg_name.endswith(".jsonc"):
-                text = _re.sub(r"//[^\n]*", "", text)
-            d = _json.loads(text)
+                text = _strip_jsonc_line_comments(text)
+            d = json.loads(text)
             imports = d.get("imports") or {}
             direct += len(imports)
         except Exception:  # noqa: S110 — best-effort: malformed deno.json/deno.jsonc is skipped
@@ -637,6 +708,85 @@ def find_manifests(root: Path) -> Iterator[tuple[Path, list[str]]]:
             yield mdir, kinds
 
 
+def _eco_bucket(row: dict[str, Any], eco: str) -> dict[str, Any]:
+    """Return (and create) the per-ecosystem metrics bucket on *row*."""
+    by_eco: dict[str, Any] = row.setdefault("by_eco", {})
+    bucket = by_eco.get(eco)
+    if bucket is None:
+        bucket = {
+            "direct": 0,
+            "versions": set(),
+            "installed": 0,
+            "edges": 0,
+            "manifests": 0,
+        }
+        by_eco[eco] = bucket
+    return bucket
+
+
+def _credit_eco(
+    row: dict[str, Any],
+    eco: str,
+    *,
+    direct: int = 0,
+    versions: set[str] | None = None,
+    installed: int = 0,
+    edges: int = 0,
+    manifests: int = 0,
+) -> None:
+    bucket = _eco_bucket(row, eco)
+    bucket["direct"] += direct
+    if versions:
+        bucket["versions"] |= versions
+    bucket["installed"] += installed
+    bucket["edges"] += edges
+    bucket["manifests"] += manifests
+
+
+def _python_edges_for_mdir(mdir: Path) -> int:
+    """Dependency-edge count for a single Python manifest directory."""
+    if (mdir / "uv.lock").exists():
+        return _count_uv_lock_edges(mdir / "uv.lock")
+    if (mdir / "poetry.lock").exists():
+        return _count_poetry_lock_edges(mdir / "poetry.lock")
+    names: set[str] = set()
+    if (mdir / "pyproject.toml").exists():
+        names.add("pyproject.toml")
+    for reqname in (
+        "requirements.txt",
+        "requirements-dev.txt",
+        "requirements-test.txt",
+    ):
+        if (mdir / reqname).exists():
+            names.add(reqname)
+    return _count_python_manifest_edges(mdir, names)
+
+
+def restrict_row_to_eco(row: dict[str, Any], eco: str) -> None:
+    """Recompute row metrics from the matching ecosystem bucket (in-place).
+
+    Used after ``--filter`` so a node+precommit project filtered to precommit
+    no longer reports node direct/versions/on-disk/edges in the retained row.
+    """
+    by_eco = row.get("by_eco") or {}
+    bucket = by_eco.get(eco)
+    if bucket is None:
+        row["direct"] = 0
+        row["versions"] = set()
+        row["installed"] = 0
+        row["edges"] = 0
+        row["manifests"] = 0
+    else:
+        row["direct"] = bucket["direct"]
+        row["versions"] = set(bucket["versions"])
+        row["installed"] = bucket["installed"]
+        row["edges"] = bucket["edges"]
+        row["manifests"] = bucket["manifests"]
+    row["kinds"] = {k for k in row["kinds"] if k == eco or k.startswith(eco + "(")}
+    if not row["kinds"]:
+        row["kinds"] = {"-"}
+
+
 def _make_row(
     name: str,
     proj: Path,
@@ -652,34 +802,57 @@ def _make_row(
         "installed": 0,
         "edges": 0,
         "manifests": 0,
+        "by_eco": {},
     }
     row["edges"] = count_dep_edges(proj)
     for mdir, kinds in find_manifests(proj):
         row["manifests"] += 1
         if "node" in kinds:
             d, v, lock = count_node(mdir)
+            installed = count_installed_node(mdir)
             row["direct"] += d
             row["versions"] |= v
-            row["installed"] += count_installed_node(mdir)
+            row["installed"] += installed
             row["kinds"].add(f"node({lock})")
+            # Node edges in count_dep_edges are package.json direct deps.
+            _credit_eco(
+                row,
+                "node",
+                direct=d,
+                versions=v,
+                installed=installed,
+                edges=d,
+                manifests=1,
+            )
         if "go" in kinds:
             go_tasks.append((row, mdir, go_cache))
             row["kinds"].add("go")
+            _credit_eco(row, "go", manifests=1)
         if "rust" in kinds:
             d, v = count_rust(mdir)
             row["direct"] += d
             row["versions"] |= v
             row["kinds"].add("rust")
+            _credit_eco(row, "rust", direct=d, versions=v, manifests=1)
         if "py" in kinds:
             d, v, src = count_python(mdir)
             row["direct"] += d
             row["versions"] |= v
             row["kinds"].add(f"py({src})")
+            _credit_eco(
+                row,
+                "py",
+                direct=d,
+                versions=v,
+                edges=_python_edges_for_mdir(mdir),
+                manifests=1,
+            )
         if "deno" in kinds:
             d, v = count_deno(mdir)
             row["direct"] += d
             row["versions"] |= v
             row["kinds"].add("deno")
+            _credit_eco(row, "deno", direct=d, versions=v, manifests=1)
 
     # --- New-ecosystem pin counts (container / actions / pre-commit / submodule) ---
     # These scan the project root rather than individual manifest dirs.
@@ -688,24 +861,28 @@ def _make_row(
         row["direct"] += d_c
         row["versions"] |= v_c
         row["kinds"].add("container")
+        _credit_eco(row, "container", direct=d_c, versions=v_c)
 
     d_a, v_a = count_actions(proj)
     if d_a or v_a:
         row["direct"] += d_a
         row["versions"] |= v_a
         row["kinds"].add("actions")
+        _credit_eco(row, "actions", direct=d_a, versions=v_a)
 
     d_p, v_p = count_precommit(proj)
     if d_p or v_p:
         row["direct"] += d_p
         row["versions"] |= v_p
         row["kinds"].add("precommit")
+        _credit_eco(row, "precommit", direct=d_p, versions=v_p)
 
     d_s, v_s = count_submodule(proj)
     if d_s or v_s:
         row["direct"] += d_s
         row["versions"] |= v_s
         row["kinds"].add("submodule")
+        _credit_eco(row, "submodule", direct=d_s, versions=v_s)
 
     if not row["kinds"]:
         row["kinds"] = {"-"}
@@ -762,6 +939,7 @@ def scan(
                     d, v = 0, set()
                 row["direct"] += d
                 row["versions"] |= v
+                _credit_eco(row, "go", direct=d, versions=v)
 
     return rows
 
