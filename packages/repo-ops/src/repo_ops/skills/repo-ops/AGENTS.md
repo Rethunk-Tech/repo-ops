@@ -10,9 +10,11 @@ Conventions and quick reference for AI coding agents (Cursor, Claude Code, etc.)
 
 | User request | Run immediately |
 |--------------|-----------------|
-| `/repo-ops apply --latest` | `repo-ops apply --latest --log-file apply.log` |
-| `repo-ops plan --latest` (preview drift) | `repo-ops plan --latest --log-file plan.log` |
+| `/repo-ops apply --latest` | `repo-ops apply $FULL_SWEEP_FLAGS --log-file apply.log` |
+| `repo-ops plan --latest` (preview drift) | `repo-ops plan $FULL_SWEEP_FLAGS --log-file plan.log` |
 | Update deps in one checkout | `repo-ops plan --flat /path` then `repo-ops apply --flat /path` |
+
+`$FULL_SWEEP_FLAGS` = `--latest --actions-refresh-sha --container-refresh-sha --yarn-targeted-bump --npm-targeted-bump --pnpm-targeted-bump --bun-targeted-bump` — see **Full-coverage sweep** below. `--latest` alone silently skips container digest refresh and JS targeted-bump gap-closing; a plain `--latest` run will under-report drift every single time unless the caller also knows to add these.
 
 ### Subcommands
 
@@ -60,6 +62,12 @@ repo-ops apply --log-file apply.log /path/to/root
 repo-ops plan --latest
 repo-ops apply --latest --log-file apply.log
 
+# Full-coverage sweep — the actual recommended default for routine bulk maintenance
+# (--latest alone misses container digest refresh and JS targeted-bump gap-closing)
+repo-ops apply --latest --actions-refresh-sha --container-refresh-sha \
+  --yarn-targeted-bump --npm-targeted-bump --pnpm-targeted-bump --bun-targeted-bump \
+  --log-file apply.log
+
 # Submodule umbrellas: plan first, apply children before parent
 repo-ops plan --submodules --json --json-out plan.json /path/to/umbrella
 repo-ops apply --submodule-order=children-first --submodules /path/to/umbrella
@@ -83,6 +91,18 @@ repo-ops apply --submodule-order=children-first --submodules /path/to/umbrella
 - Sets GitHub Actions to `--actions-upgrade-mode=latest`
 
 Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode` wins over the umbrella for that ecosystem. npm has no latest mode (semver ranges only). Targeted-bump fallbacks (move `behind_latest` gaps instead of only reporting them) exist for all four JS package managers: `--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, `--bun-targeted-bump`. Details: `repo-ops plan --help` and [docs/usage.md — Ecosystem upgrade modes](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply).
+
+**`--latest` does NOT imply `--actions-refresh-sha`, `--container-refresh-sha`, or any `--*-targeted-bump` flag.** Each is independently opt-in even though `--latest` sounds like it should cover them — this has caused real missed-update incidents (a whole session's worth of `repo-ops` runs silently skipped container digest refresh and JS targeted-bump gap-closing because `--latest` alone was assumed to be complete). For routine bulk maintenance, always reach for the **full-coverage sweep** combo in Essential invocations above, not bare `--latest`.
+
+### Full-coverage sweep — what each flag actually catches
+
+| Flag | Catches | Why it's easy to forget |
+|------|---------|--------------------------|
+| `--actions-refresh-sha` | Digest bumps for SHA-pinned GitHub Actions | Not implied by `--latest`; silently report-only without it |
+| `--container-refresh-sha` | Digest bumps for SHA-pinned container base images (`FROM image@sha256:...`) | No mention in the default flag set at all; easy to never discover without reading `apply --help` end to end |
+| `--yarn-targeted-bump` / `--npm-targeted-bump` / `--pnpm-targeted-bump` / `--bun-targeted-bump` | Moves `behind_latest` peer/group-constrained packages instead of only reporting them | `--latest` still leaves these packages in the `behind_latest` report bucket, which reads as "handled" if the summary counts aren't checked closely |
+
+A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinned; set REPO_OPS_CONTAINER_REFRESH_SHA=1 to refresh digest` line are the tells that one of these flags is missing from the invocation — never treat a `--latest`-only run as a complete sweep.
 
 ### Flags cheat sheet
 
@@ -122,6 +142,9 @@ Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode
 | `--actions-refresh-sha` | plan, apply | Bump digest pins within major; with `--latest` crosses major |
 | `--actions-org-policy` | plan, apply | Fetch org allowed-actions policy and flag violations |
 | `--actions-lint-level block\|warn\|off` | plan, apply | Actionlint gate policy |
+| `--container-update-latest` | plan, apply | Allow cross-major container image tag bumps (implied by `--latest`) |
+| `--container-refresh-sha` | plan, apply | Refresh digests for SHA-pinned container image references — **not** implied by `--latest`, always pass explicitly |
+| `--yarn-targeted-bump` / `--npm-targeted-bump` / `--pnpm-targeted-bump` / `--bun-targeted-bump` | plan, apply | Move `behind_latest` peer/group-constrained packages instead of only reporting them — **not** implied by `--latest`, always pass explicitly |
 
 #### `pushed` flags
 
