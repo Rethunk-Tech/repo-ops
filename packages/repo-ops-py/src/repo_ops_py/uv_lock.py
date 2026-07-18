@@ -21,7 +21,11 @@ def check_uv_lock(ws: Workspace) -> list[Change]:
     changes: list[Change] = []
     for line in (proc.stdout + proc.stderr).splitlines():
         if "would upgrade" in line.lower() or "->" in line:
-            m = re.search(r"(\S+)\s+([\d.]+)\s*->\s*([\d.]+)", line)
+            # Allow pre-release / local identifiers (e.g. 1.2.3a1, 1.0.0+local).
+            m = re.search(
+                r"(\S+)\s+([0-9][^\s]*)\s*->\s*([0-9][^\s]*)",
+                line,
+            )
             if m:
                 changes.append(Change(m.group(1), m.group(2), m.group(3)))
     if not changes and "would change" in (proc.stdout + proc.stderr).lower():
