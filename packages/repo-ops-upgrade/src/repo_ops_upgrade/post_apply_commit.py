@@ -81,7 +81,7 @@ def is_forbidden_commit_path(path: str) -> bool:
 def _lockfile_names_for_manager(manager: str) -> frozenset[str]:
     if manager in ("yarn", "npm", "pnpm", "bun"):
         return frozenset(NODE_LOCKFILES)
-    if manager in ("uv", "hatch", "pip-tools", "poetry"):
+    if manager in ("uv", "hatch", "pip-tools", "poetry", "pdm", "pipenv"):
         return frozenset(PY_LOCKFILES)
     if manager == "go":
         return frozenset(GO_LOCKFILES)
@@ -100,8 +100,10 @@ def _manifest_names_for_manager(manager: str) -> frozenset[str]:
     """
     if manager in ("yarn", "npm", "pnpm", "bun"):
         return frozenset({"package.json"})
-    if manager in ("uv", "hatch", "pip-tools", "poetry"):
+    if manager in ("uv", "hatch", "pip-tools", "poetry", "pdm"):
         return frozenset({"pyproject.toml"})
+    if manager == "pipenv":
+        return frozenset({"Pipfile"})
     if manager == "go":
         return frozenset({"go.mod"})
     if manager == "rust":

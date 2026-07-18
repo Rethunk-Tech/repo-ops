@@ -36,7 +36,7 @@ _ARTIFACT_BASENAMES: frozenset[str] = frozenset(
     + list(PY_LOCKFILES)
     + list(GO_LOCKFILES)
     + list(RUST_LOCKFILES)
-    + ["pyproject.toml", "Cargo.toml"]
+    + ["pyproject.toml", "Cargo.toml", "Pipfile"]
 )
 
 
