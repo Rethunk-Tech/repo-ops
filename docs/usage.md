@@ -60,6 +60,10 @@ Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_cor
 | **GitHub Actions** | `--actions-upgrade-mode=normalize` (default): normalize exact tag pins to the floating major (`@vN`); a newer major upstream is reported only. SHA pins: report only (preserve digest). | `--actions-upgrade-mode=latest` (or `--latest`) → also apply cross-major bumps; `--actions-unpin-sha` → resolve SHA pins to tags; `--actions-refresh-sha` → advance digest within current major (with `--latest`: cross-major re-pin + comment update); `--actions-tag-style=exact` → highest `@vN.M.P` when unpinning |
 | **container** | Checks `FROM` / `image:` references in Dockerfiles and Compose files; SHA-pinned images are report-only by default | `REPO_OPS_CONTAINER_UPDATE_LATEST=1` (or `--latest`) → allow cross-major tag bumps; `REPO_OPS_CONTAINER_REFRESH_SHA=1` → advance SHA digest for `image:tag@sha256:…` pins to the latest digest for the same tag (keeps pin hardened, advances to current content) |
 
+#### Hatch and `--migrate-to-uv-lock`
+
+Hatch workspaces without a `uv.lock` are not upgraded unless `--migrate-to-uv-lock` (or `REPO_OPS_HATCH_MIGRATE_UV_LOCK=1`) opts in to creating one. On apply **verify**, when hatch has no `uv.lock`, verify intentionally skips `uv sync --locked` (nothing to lock against until migration) and runs only hatch fast gates (`check`/`typecheck` scripts, ruff, mypy when configured).
+
 ### Go modules
 
 `REPO_OPS_GO_UPGRADE_MODE` (default `patch`) aligns plan and apply:
