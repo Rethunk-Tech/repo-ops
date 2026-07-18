@@ -85,7 +85,7 @@ jobs:
     - name: Enable Corepack (yarn)
       run: corepack enable
     - uses: oven-sh/setup-bun@v2
-    - uses: actions/setup-go@v6
+    - uses: actions/setup-go@v7
       with:
         go-version: "stable"
     - name: Install govulncheck
