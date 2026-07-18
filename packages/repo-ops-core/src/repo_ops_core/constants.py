@@ -55,17 +55,20 @@ DEFAULT_ROOTS = [
 # ---------------------------------------------------------------------------
 # Env-overridable timeout resolvers.
 # Shared across all ecosystem plugins (uv, rust, go, yarn, bun, poetry, …).
-# Follow the same pattern as repo_ops_core.discovery._resolve_find_timeout /
-# REPO_OPS_FIND_TIMEOUT.
+# Canonical defaults are 60 s (aligned with SETTINGS_TABLE / resolve_setting).
 # ---------------------------------------------------------------------------
 
-TIMEOUT_CHECK = 600
-TIMEOUT_APPLY = 600
-TIMEOUT_VERIFY = 900
+TIMEOUT_CHECK = 60
+TIMEOUT_APPLY = 60
+TIMEOUT_VERIFY = 60
+FIND_TIMEOUT = 60
+GIT_TIMEOUT = 10
 
 _TIMEOUT_CHECK_ENV = "REPO_OPS_TIMEOUT_CHECK"
 _TIMEOUT_APPLY_ENV = "REPO_OPS_TIMEOUT_APPLY"
 _TIMEOUT_VERIFY_ENV = "REPO_OPS_TIMEOUT_VERIFY"
+_FIND_TIMEOUT_ENV = "REPO_OPS_FIND_TIMEOUT"
+_GIT_TIMEOUT_ENV = "REPO_OPS_GIT_TIMEOUT"
 
 
 def _resolve_timeout(env_var: str, default: int) -> int:
@@ -94,3 +97,13 @@ def resolve_timeout_apply() -> int:
 def resolve_timeout_verify() -> int:
     """Return TIMEOUT_VERIFY, overridable via ``REPO_OPS_TIMEOUT_VERIFY``."""
     return _resolve_timeout(_TIMEOUT_VERIFY_ENV, TIMEOUT_VERIFY)
+
+
+def resolve_find_timeout() -> float:
+    """Return FIND_TIMEOUT, overridable via ``REPO_OPS_FIND_TIMEOUT``."""
+    return float(_resolve_timeout(_FIND_TIMEOUT_ENV, FIND_TIMEOUT))
+
+
+def resolve_git_timeout() -> float:
+    """Return GIT_TIMEOUT, overridable via ``REPO_OPS_GIT_TIMEOUT``."""
+    return float(_resolve_timeout(_GIT_TIMEOUT_ENV, GIT_TIMEOUT))

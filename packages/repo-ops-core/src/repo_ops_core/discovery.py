@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from repo_ops_core.constants import SKIP_DIRS
+from repo_ops_core.constants import SKIP_DIRS, resolve_find_timeout
 from repo_ops_core.filesystem import should_exclude
 from repo_ops_core.git import git_common_dir
 
@@ -16,20 +16,6 @@ from repo_ops_core.git import git_common_dir
 #: Accepts any value parseable as a positive float; invalid values are silently
 #: ignored and the default of 60 s is used instead.
 FIND_TIMEOUT_ENV = "REPO_OPS_FIND_TIMEOUT"
-_DEFAULT_FIND_TIMEOUT: float = 60.0
-
-
-def _resolve_find_timeout() -> float:
-    """Return the find timeout from *REPO_OPS_FIND_TIMEOUT* env var, or 60 s."""
-    raw = os.environ.get(FIND_TIMEOUT_ENV, "").strip()
-    if raw:
-        try:
-            value = float(raw)
-            if value > 0:
-                return value
-        except ValueError:
-            pass
-    return _DEFAULT_FIND_TIMEOUT
 
 
 def discover_repos(
@@ -54,8 +40,11 @@ def discover_repos(
     * Pass ``timeout=<seconds>`` directly to this function.
     * Set the ``REPO_OPS_FIND_TIMEOUT`` environment variable to a positive
       number of seconds (float accepted).
+
+    Missing or non-directory roots emit a WARN on stderr and are skipped
+    (same spirit as CLI ``resolve_scan_roots``, which rejects them hard).
     """
-    _timeout: float = timeout if timeout is not None else _resolve_find_timeout()
+    _timeout: float = timeout if timeout is not None else resolve_find_timeout()
     candidates: list[str] = []
     # .git is in SKIP_DIRS for os.walk-style tools but must not be pruned here:
     # pruning .git prevents ever matching ``-name .git`` on the repo metadata dir.
@@ -69,6 +58,10 @@ def discover_repos(
     for root in roots:
         root_path = Path(root).expanduser().resolve()
         if not root_path.is_dir():
+            print(
+                f"WARN: discover_repos: root is not a directory (skipped): {root_path}",
+                file=sys.stderr,
+            )
             continue
         # Build find: prune SKIP_DIRS (not .git), match .git dirs, then prune .git
         cmd = ["find"]

@@ -6,24 +6,7 @@ import os
 import subprocess
 from pathlib import Path
 
-#: Environment variable that overrides the default git subprocess timeout (seconds).
-#: Accepts any value parseable as a positive float; invalid values are silently
-#: ignored and the built-in default of 10 s is used instead.
-_GIT_TIMEOUT_ENV = "REPO_OPS_GIT_TIMEOUT"
-_DEFAULT_GIT_TIMEOUT: float = 10.0
-
-
-def _resolve_git_timeout() -> float:
-    """Return the git timeout from *REPO_OPS_GIT_TIMEOUT* env var, or 10 s."""
-    raw = os.environ.get(_GIT_TIMEOUT_ENV, "").strip()
-    if raw:
-        try:
-            value = float(raw)
-            if value > 0:
-                return value
-        except ValueError:
-            pass
-    return _DEFAULT_GIT_TIMEOUT
+from repo_ops_core.constants import resolve_git_timeout
 
 
 def run_git(
@@ -36,7 +19,7 @@ def run_git(
     if not repo_path.is_dir():
         msg = f"git -C target is not a directory: {repo_path}"
         raise FileNotFoundError(msg)
-    effective_timeout = timeout if timeout is not None else _resolve_git_timeout()
+    effective_timeout = timeout if timeout is not None else resolve_git_timeout()
     effective_env = {**os.environ, **env} if env is not None else None
     return subprocess.run(
         ["git", "-C", str(repo_path), *args],

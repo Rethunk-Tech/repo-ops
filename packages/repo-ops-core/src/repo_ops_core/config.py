@@ -10,7 +10,10 @@ When both files exist, ``pyproject.toml``'s ``[tool.repo-ops]`` table takes prec
 over ``.repo-ops.toml`` on a per-key basis (pyproject value wins for any key present
 in both files).
 
-Python 3.11+ only; skipped with a warning on 3.10 unless ``tomli`` is installed.
+TOML parsing uses the stdlib ``tomllib`` on Python 3.11+, or the third-party
+``tomli`` package on 3.10. When neither is available, config files are skipped
+with a one-time warning (sidecar keys already loaded before a pyproject probe
+are still returned — see ``load_repo_config``).
 """
 
 from __future__ import annotations
@@ -19,6 +22,14 @@ import os
 import warnings
 from pathlib import Path
 from typing import Any, cast
+
+from repo_ops_core.constants import (
+    FIND_TIMEOUT,
+    GIT_TIMEOUT,
+    TIMEOUT_APPLY,
+    TIMEOUT_CHECK,
+    TIMEOUT_VERIFY,
+)
 
 _TOMLLIB_AVAILABLE = False
 try:
@@ -117,8 +128,10 @@ def load_repo_config(repo_root: Path) -> dict[str, Any]:
     if not pyproject.is_file():
         return sidecar_cfg
     if not _TOMLLIB_AVAILABLE:
+        # pyproject cannot be parsed, but a sidecar already loaded above must
+        # still apply (non-Python repos often use only .repo-ops.toml).
         _warn_no_tomllib_once()
-        return {}
+        return sidecar_cfg
     raw = _load_toml(pyproject)
     tool_section: dict[str, Any] = cast(dict[str, Any], raw.get("tool", {}))
     pyproject_cfg: dict[str, Any] = cast(
@@ -146,19 +159,20 @@ def load_repo_config(repo_root: Path) -> dict[str, Any]:
 # Settings resolution
 # ---------------------------------------------------------------------------
 
-# Maps setting name → (env_var, config_key, default)
+# Maps setting name → (env_var, config_key, default).
+# Timeout defaults match repo_ops_core.constants (single source of truth).
 _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
     # Execution
     "jobs": (None, "jobs", None),  # resolved to min(16, cpu_count) when None
     # Upgrade policy
     "go_upgrade_mode": ("REPO_OPS_GO_UPGRADE_MODE", "go_upgrade_mode", None),
     "actions_lint_level": ("REPO_OPS_ACTIONS_LINT_LEVEL", "actions_lint_level", None),
-    # Timeouts
-    "timeout_check": ("REPO_OPS_TIMEOUT_CHECK", "timeout_check", None),
-    "timeout_apply": ("REPO_OPS_TIMEOUT_APPLY", "timeout_apply", None),
-    "timeout_verify": ("REPO_OPS_TIMEOUT_VERIFY", "timeout_verify", None),
-    "find_timeout": ("REPO_OPS_FIND_TIMEOUT", "find_timeout", None),
-    "git_timeout": ("REPO_OPS_GIT_TIMEOUT", "git_timeout", None),
+    # Timeouts (defaults from constants — same values resolve_timeout_* use)
+    "timeout_check": ("REPO_OPS_TIMEOUT_CHECK", "timeout_check", TIMEOUT_CHECK),
+    "timeout_apply": ("REPO_OPS_TIMEOUT_APPLY", "timeout_apply", TIMEOUT_APPLY),
+    "timeout_verify": ("REPO_OPS_TIMEOUT_VERIFY", "timeout_verify", TIMEOUT_VERIFY),
+    "find_timeout": ("REPO_OPS_FIND_TIMEOUT", "find_timeout", FIND_TIMEOUT),
+    "git_timeout": ("REPO_OPS_GIT_TIMEOUT", "git_timeout", GIT_TIMEOUT),
     # Feature flags
     "bun_update_latest": ("REPO_OPS_BUN_UPDATE_LATEST", "bun_update_latest", None),
     "pnpm_update_latest": ("REPO_OPS_PNPM_UPDATE_LATEST", "pnpm_update_latest", None),
@@ -217,6 +231,9 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
         "hatch_migrate_uv_lock",
         None,
     ),
+    # Exclude patterns: CLI --exclude / config key ``exclude`` (list). No env
+    # channel — lists do not serialize cleanly; run.py also special-cases merge.
+    "exclude_patterns": (None, "exclude", None),
     # Audit fail-on gates: readable from [tool.repo-ops] so CI can pin the
     # severity threshold without repeating --fail-on / --fail-on-unknown on
     # every invocation. Consumed by repo_ops_audit's main() (CLI flag > env >
@@ -255,9 +272,9 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
         "block",
     ),
     ("timeout_check", "(none)", "REPO_OPS_TIMEOUT_CHECK", "timeout_check", "60"),
-    ("timeout_apply", "(none)", "REPO_OPS_TIMEOUT_APPLY", "timeout_apply", "300"),
-    ("timeout_verify", "(none)", "REPO_OPS_TIMEOUT_VERIFY", "timeout_verify", "120"),
-    ("find_timeout", "(none)", "REPO_OPS_FIND_TIMEOUT", "find_timeout", "30"),
+    ("timeout_apply", "(none)", "REPO_OPS_TIMEOUT_APPLY", "timeout_apply", "60"),
+    ("timeout_verify", "(none)", "REPO_OPS_TIMEOUT_VERIFY", "timeout_verify", "60"),
+    ("find_timeout", "(none)", "REPO_OPS_FIND_TIMEOUT", "find_timeout", "60"),
     ("git_timeout", "(none)", "REPO_OPS_GIT_TIMEOUT", "git_timeout", "10"),
     (
         "bun_update_latest",
@@ -345,7 +362,7 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "container_update_latest",
-        "(none)",
+        "--container-update-latest",
         "REPO_OPS_CONTAINER_UPDATE_LATEST",
         "container_update_latest",
         "0",
@@ -367,7 +384,7 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "container_refresh_sha",
-        "(none)",
+        "--container-refresh-sha",
         "REPO_OPS_CONTAINER_REFRESH_SHA",
         "container_refresh_sha",
         "0",
