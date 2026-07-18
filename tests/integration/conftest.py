@@ -1,4 +1,12 @@
-"""Shared fixtures for integration tests."""
+"""Shared fixtures for integration tests.
+
+Corepack probe (yarn)
+---------------------
+``_COREPACK_OK`` is resolved once at import via ``corepack yarn --version``
+(30 s timeout).  Yarn ghost-bump fixtures skip when the probe fails so collection
+does not hang on broken corepack installs.  The probe lives here rather than in
+each yarn test module so skip reasons stay consistent.
+"""
 
 from __future__ import annotations
 

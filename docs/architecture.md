@@ -9,7 +9,9 @@ Package layout and filesystem map for the `repo-ops` uv workspace under `package
 - `packages/repo-ops-lockfiles/` — lockfile parsers and snapshot diff; also hosts the `sbom` and `license` subcommands (`repo_ops_lockfiles`)
 - `packages/repo-ops-js/` — Node workspace helpers and overrides audit (`repo_ops_js`)
 - `packages/repo-ops-js-{npm,pnpm,bun,yarn}/` — PM check/apply plugins with `register()`
-- `packages/repo-ops-go/`, `repo-ops-rust/`, `repo-ops-py*/` — ecosystem plugins
+- `packages/repo-ops-go/`, `repo-ops-rust/` — Go and Rust check/apply plugins
+- `packages/repo-ops-py/` — Python workspace dispatch (`repo_ops_py`)
+- `packages/repo-ops-py-{uv,poetry,pip-tools,hatch,pdm,pipenv}/` — Python PM check/apply plugins with `register()`
 - `packages/repo-ops-container/` — Dockerfile/compose image pin check and apply (`repo_ops_container`)
 - `packages/repo-ops-upgrade/` — plan/apply (`run.py`), `discovery`, `orchestration`, `registry`, `actions`, `verify`, `report`, `post_apply`
 - `packages/repo-ops-upgrade-remediations-{core,js,go,py,rust,deno}/` — per-ecosystem remediations

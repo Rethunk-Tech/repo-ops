@@ -210,7 +210,8 @@ for Python packages. See `repo-ops license --help` epilog for SPDX compound-expr
 ecosystems (read-only; no scan roots, no `root_dir` arguments): `git`, `gh`,
 `uv`, `pip-compile`, `poetry`, `pipenv`, `pdm`, `pip-audit`, `npm`, `pnpm`,
 `yarn`, `bun`, `corepack`, `deno`, `go`, `gofmt`, `govulncheck`, `cargo`,
-`actionlint`. Each is resolved via `shutil.which`; found binaries also get a
+`cargo-audit` (via `cargo audit --version`), `actionlint`. Each is resolved via
+`shutil.which`; found binaries also get a
 best-effort version string (first line of `<tool> --version`, timeout-guarded).
 `gh` additionally gets a `gh auth status` check so agents can tell "not
 installed" apart from "installed but unauthenticated" before a

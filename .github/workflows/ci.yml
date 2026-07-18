@@ -51,6 +51,8 @@ jobs:
           packages/repo-ops-py-poetry/src \
           packages/repo-ops-py-pip-tools/src \
           packages/repo-ops-py-hatch/src \
+          packages/repo-ops-py-pdm/src \
+          packages/repo-ops-py-pipenv/src \
           packages/repo-ops-upgrade/src \
           packages/repo-ops-upgrade-remediations-core/src \
           packages/repo-ops-upgrade-remediations-js/src \
@@ -64,7 +66,7 @@ jobs:
           packages/repo-ops-dependabot/src \
           packages/repo-ops-doctor/src \
           packages/repo-ops/src
-    - run: uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=68 tests packages/repo-ops-audit/tests packages/repo-ops-lockfiles/tests
+    - run: uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=68 tests packages/repo-ops-audit/tests packages/repo-ops-lockfiles/tests packages/repo-ops-py-pdm/tests packages/repo-ops-py-pipenv/tests
     - run: uv build packages/repo-ops
     - run: ls -l dist/
 

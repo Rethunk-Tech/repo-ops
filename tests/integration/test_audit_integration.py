@@ -18,7 +18,9 @@ Prerequisites:
   - ``govulncheck`` on PATH
   - ``go`` on PATH (to create a valid module for govulncheck to scan)
 
-Timeout: 60 s (govulncheck DB fetch on first run can be slow).
+Timeouts:
+  - ``go mod download`` in this test: 60 s subprocess cap (skip on expiry).
+  - ``_audit_go`` / govulncheck: 60 s via ``_GOVULNCHECK_TIMEOUT`` in audit.py.
 """
 
 from __future__ import annotations

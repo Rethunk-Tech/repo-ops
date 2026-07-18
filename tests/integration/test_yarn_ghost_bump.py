@@ -6,24 +6,20 @@ Yarn Berry (v4) ``resolutions`` entries block ``yarn up -R '*'`` from moving a
 package beyond the pinned version.  The lock file and node_modules stay at the
 old version even though the range in package.json would allow a newer one.
 
-Unlike bun, ``apply_yarn`` does **not** call ``assert_targets_resolved``; it uses
-lock-file diffing (``diff_workspace_snapshots``).  Because the lock does not
-change when resolutions block the bump, ``apply_yarn`` reports no Change and the
-ghost silently goes undetected.
-
-This test exercises ``assert_targets_resolved`` directly — the same pattern as
+``test_yarn_guard_fires_when_resolutions_block_upgrade`` exercises
+``assert_targets_resolved`` directly — the same pattern as
 ``test_npm_ghost_bump.py`` — against a real yarn4+node_modules installation whose
 ``resolutions`` entry keeps ``is-odd`` at 0.1.2 while the dependency range
-(``>=0.1.0 <2.0.0``) would permit 1.0.0+.  The guard reads the installed version
-from disk and raises ``RuntimeError("ghost bump: ...")``.
+(``>=0.1.0 <2.0.0``) would permit 1.0.0+.
 
-The test also documents the current ``apply_yarn`` gap: with a resolutions pin the
-apply path reports zero changes (no ghost-bump error), meaning the silent ghost
-can reach a commit.  This is an open correctness gap to address in a future issue.
+``test_yarn_apply_raises_ghost_bump_with_resolutions_pin`` asserts ``apply_yarn``
+raises ``RuntimeError("ghost bump: …")`` when resolutions block an in-range
+upgrade (guard wired in ``repo_ops_js_yarn.yarn.apply_yarn``).
 
 Yarn / corepack setup
 ---------------------
-Requires corepack on PATH with a working ``corepack yarn --version`` probe.
+Yarn fixtures skip unless ``conftest`` module-level ``corepack yarn --version``
+probe succeeds (30 s cap at import).  CI enables corepack in the integration job.
 Uses ``nodeLinker: node-modules`` in ``.yarnrc.yml`` so ``node_modules`` is
 populated and ``resolved_version_from_node_modules`` can read the installed
 package.  Without that linker setting, Yarn 4 defaults to PnP (no node_modules)

@@ -22,7 +22,9 @@ The mypy path list mirrors `[tool.mypy] packages` in root `pyproject.toml` (auth
 |------|------|
 | `tests/` | Root unit and integration tests (see markers below) |
 | `packages/repo-ops-lockfiles/tests/` | Lockfile parser unit tests (in `[tool.pytest.ini_options] testpaths`) |
-| `packages/repo-ops-audit/tests/` | Audit subcommand tests (34+ cases; not yet in default `testpaths` — run `uv run pytest packages/repo-ops-audit/tests -q` or add the path to `pyproject.toml`) |
+| `packages/repo-ops-audit/tests/` | Audit subcommand tests (34+ cases; CI/release pass this path explicitly) |
+| `packages/repo-ops-py-pdm/tests/` | PDM plugin smoke tests (`register`, `check_pdm`, `apply_pdm`) |
+| `packages/repo-ops-py-pipenv/tests/` | Pipenv plugin smoke tests (`register`, `check_pipenv`, `apply_pipenv`) |
 
 Config: root `pyproject.toml` `[tool.pytest.ini_options]`. CI runs the same checks on Python 3.10–3.13 (3.14 is an allowed failure); tag `v*` triggers [release.yml](../.github/workflows/release.yml). When changing Markdown tiers, run the doc-audit skill on the repo root (e.g. `~/.cursor/skills/doc-audit` or `~/.claude/skills/doc-audit`).
 
