@@ -169,3 +169,363 @@ def test_go_cache_roundtrip_and_invalid(tmp_path: Path):
     bad = tmp_path / "bad.json"
     bad.write_text("{not json")
     assert load_go_cache(bad) == {}
+
+
+# ---------- count_node lockfile precedence + bun.lockb (F014, F085) ----------
+
+
+def test_count_node_lockfile_precedence(tmp_path: Path) -> None:
+    import json
+
+    from repo_ops_inventory.counting import count_node
+
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "dependencies": {"a": "^1.0.0"},
+                "devDependencies": {"b": "^2.0.0"},
+            }
+        )
+    )
+    # npm wins over pnpm/bun/yarn when package-lock.json is present.
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/a": {"version": "1.0.1"},
+                    "node_modules/b": {"version": "2.0.1"},
+                }
+            }
+        )
+    )
+    (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n")
+    (tmp_path / "bun.lock").write_text('{"packages":{}}\n')
+    (tmp_path / "yarn.lock").write_text("")
+    direct, versions, lock = count_node(tmp_path)
+    assert direct == 2
+    assert lock == "npm"
+    assert "a@1.0.1" in versions
+    assert "b@2.0.1" in versions
+
+
+def test_count_node_bun_lockb_dump_success(tmp_path: Path, monkeypatch) -> None:
+    """bun.lockb: successful bun dump → versions via yarn-compatible stdout."""
+    import json
+    from types import SimpleNamespace
+
+    from repo_ops_inventory import counting
+
+    (tmp_path / "package.json").write_text(
+        json.dumps({"dependencies": {"left-pad": "1.3.0"}})
+    )
+    (tmp_path / "bun.lockb").write_bytes(b"BUN\x00fake-binary")
+
+    yarn_dump = 'left-pad@1.3.0:\n  version "1.3.0"\n'
+
+    def fake_run(cmd, cwd, timeout=300, env=None):
+        assert cmd[0] == "bun"
+        return SimpleNamespace(returncode=0, stdout=yarn_dump, stderr="")
+
+    monkeypatch.setattr(counting, "run", fake_run)
+    direct, versions, lock = counting.count_node(tmp_path)
+    assert direct == 1
+    assert lock == "bun(bin)"
+    assert "left-pad@1.3.0" in versions
+
+
+def test_count_node_bun_lockb_unsupported_when_bun_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """bun.lockb without bun → explicit bun(bin:unsupported), not silent zeros kind."""
+    import json
+
+    from repo_ops_inventory import counting
+
+    (tmp_path / "package.json").write_text(
+        json.dumps({"dependencies": {"left-pad": "1.3.0"}})
+    )
+    (tmp_path / "bun.lockb").write_bytes(b"BUN\x00fake")
+
+    def boom(*_a, **_k):
+        raise FileNotFoundError("bun")
+
+    monkeypatch.setattr(counting, "run", boom)
+    direct, versions, lock = counting.count_node(tmp_path)
+    assert direct == 1
+    assert versions == set()
+    assert lock == "bun(bin:unsupported)"
+
+
+def test_count_node_bun_lockb_unsupported_on_invalid_dump(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    from repo_ops_inventory import counting
+
+    (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"a": "1"}}))
+    (tmp_path / "bun.lockb").write_bytes(b"BUN\x00")
+
+    monkeypatch.setattr(
+        counting,
+        "run",
+        lambda *a, **k: SimpleNamespace(
+            returncode=0, stdout="", stderr="error parsing lockfile: InvalidLockfile"
+        ),
+    )
+    _d, versions, lock = counting.count_node(tmp_path)
+    assert versions == set()
+    assert lock == "bun(bin:unsupported)"
+
+
+# ---------- eco filter recomputes metrics (F080) ----------
+
+
+def test_filter_recomputes_metrics_for_matching_eco_only(
+    tmp_path: Path, capsys
+) -> None:
+    """A node+precommit project filtered to precommit must drop node counts."""
+    import json
+
+    from repo_ops_inventory.scan import main as inventory_main
+
+    proj = tmp_path / "org" / "mixed"
+    proj.mkdir(parents=True)
+    (proj / "package.json").write_text(
+        json.dumps({"dependencies": {"a": "^1", "b": "^2", "c": "^3"}})
+    )
+    (proj / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/a": {"version": "1.0.0"},
+                    "node_modules/b": {"version": "2.0.0"},
+                    "node_modules/c": {"version": "3.0.0"},
+                }
+            }
+        )
+    )
+    (proj / ".pre-commit-config.yaml").write_text(
+        "repos:\n"
+        "  - repo: https://github.com/pre-commit/pre-commit-hooks\n"
+        "    rev: v4.5.0\n"
+        "    hooks: [{id: trailing-whitespace}]\n",
+        encoding="utf-8",
+    )
+
+    rc = inventory_main([str(tmp_path), "--json", "--filter", "precommit"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload["rows"]) == 1
+    row = payload["rows"][0]
+    assert row["kinds"] == ["precommit"]
+    assert row["direct"] == 1
+    assert row["versions"] == 1
+    assert row["on_disk"] == 0
+    # Node edges must not leak into the filtered precommit row.
+    assert row["edges"] == 0
+
+
+# ---------- JSON schema: manifests + summary (F081, F082) ----------
+
+
+def test_inventory_json_includes_manifests_and_summary(
+    tmp_path: Path, capsys
+) -> None:
+    import json
+
+    from repo_ops_inventory.scan import main as inventory_main
+
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\ndependencies = ["a"]\n')
+    rc = inventory_main([str(tmp_path), "--flat", "--json"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema_version"] == 1
+    assert "manifests" in payload["rows"][0]
+    assert payload["rows"][0]["manifests"] >= 1
+    assert "manifests" in payload["totals"]
+    assert "summary" in payload
+    assert payload["summary"]["projects"] == 1
+    assert payload["summary"]["direct"] == payload["totals"]["direct"]
+    assert payload["summary"]["manifests"] == payload["totals"]["manifests"]
+
+
+def test_inventory_json_out_requires_json(tmp_path: Path) -> None:
+    """F083: --json-out without --json is a parser error."""
+    import pytest
+    from repo_ops_inventory.scan import main as inventory_main
+
+    with pytest.raises(SystemExit):
+        inventory_main([str(tmp_path), "--json-out", str(tmp_path / "out.json")])
+
+
+def test_inventory_json_out_writes_path_only(tmp_path: Path, capsys) -> None:
+    """F087: --json --json-out writes atomically; stdout is the path only."""
+    import json
+
+    from repo_ops_inventory.scan import main as inventory_main
+
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    out_file = tmp_path / "inv.json"
+    rc = inventory_main(
+        [str(tmp_path), "--flat", "--json", "--json-out", str(out_file)]
+    )
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == str(out_file.resolve())
+    payload = json.loads(out_file.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1
+    assert "summary" in payload
+    assert len(payload["rows"]) == 1
+
+
+def test_inventory_compact_schema_version_first(tmp_path: Path, capsys) -> None:
+    """F086: --compact is single-line; schema_version is the first key."""
+    import json
+
+    from repo_ops_inventory.scan import main as inventory_main
+
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    rc = inventory_main([str(tmp_path), "--flat", "--json", "--compact"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out.count("\n") == 0
+    payload = json.loads(out)
+    assert next(iter(payload)) == "schema_version"
+    assert payload["schema_version"] == 1
+
+
+# ---------- count_go pool failure + sort/top/jobs/no-cache (F084, F173, F174) ----------
+
+
+def test_scan_go_pool_failure_yields_zero_deps(tmp_path: Path, monkeypatch) -> None:
+    """F084: ThreadPoolExecutor swallows count_go exceptions as zero deps."""
+    from repo_ops_inventory import counting
+
+    (tmp_path / "go.mod").write_text("module example.com/x\n\ngo 1.22\n")
+
+    def boom(*_a, **_k):
+        raise RuntimeError("go unavailable")
+
+    monkeypatch.setattr(counting, "count_go", boom)
+    rows = counting.scan(tmp_path, flat=True, jobs=2)
+    assert len(rows) == 1
+    assert rows[0]["direct"] == 0
+    assert rows[0]["versions"] == set()
+    assert "go" in rows[0]["kinds"]
+
+
+def test_inventory_sort_direct_descending(tmp_path: Path, capsys) -> None:
+    import json
+
+    from repo_ops_inventory.scan import main as inventory_main
+
+    org = tmp_path / "org"
+    low = org / "low"
+    high = org / "high"
+    low.mkdir(parents=True)
+    high.mkdir(parents=True)
+    (low / "pyproject.toml").write_text('[project]\ndependencies = ["a"]\n')
+    (high / "pyproject.toml").write_text('[project]\ndependencies = ["a", "b", "c"]\n')
+
+    rc = inventory_main([str(tmp_path), "--json", "--sort", "direct"])
+    assert rc == 0
+    rows = json.loads(capsys.readouterr().out)["rows"]
+    assert [r["name"] for r in rows] == ["org/high", "org/low"]
+    assert rows[0]["direct"] >= rows[1]["direct"]
+
+
+def test_inventory_top_truncates_human_output(tmp_path: Path, capsys) -> None:
+    from repo_ops_inventory.scan import main as inventory_main
+
+    org = tmp_path / "org"
+    for name in ("a", "b", "c"):
+        p = org / name
+        p.mkdir(parents=True)
+        (p / "pyproject.toml").write_text('[project]\nname = "x"\n')
+
+    rc = inventory_main([str(tmp_path), "--top", "2"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "... and 1 more" in out
+    assert "TOTAL" in out
+
+
+def test_inventory_no_cache_bypasses_go_cache(tmp_path: Path, monkeypatch) -> None:
+    from repo_ops_inventory import counting
+    from repo_ops_inventory.scan import main as inventory_main
+
+    calls = {"load": 0, "save": 0}
+    monkeypatch.setattr(
+        counting,
+        "load_go_cache",
+        lambda *_a, **_k: calls.__setitem__("load", calls["load"] + 1) or {},
+    )
+    monkeypatch.setattr(
+        counting,
+        "save_go_cache",
+        lambda *_a, **_k: calls.__setitem__("save", calls["save"] + 1),
+    )
+    # Also patch the names imported into scan module.
+    import repo_ops_inventory.scan as scan_mod
+
+    monkeypatch.setattr(scan_mod, "load_go_cache", counting.load_go_cache)
+    monkeypatch.setattr(scan_mod, "save_go_cache", counting.save_go_cache)
+
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    assert inventory_main([str(tmp_path), "--flat", "--no-cache", "--json"]) == 0
+    assert calls["load"] == 0
+    assert calls["save"] == 0
+
+
+def test_inventory_jobs_flag_accepted(tmp_path: Path) -> None:
+    """F174: --jobs is accepted and forwarded to scan pool sizing."""
+    from repo_ops_inventory.scan import build_inventory_parser, main as inventory_main
+
+    args = build_inventory_parser().parse_args(["--jobs", "1"])
+    assert args.jobs == 1
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    assert inventory_main([str(tmp_path), "--flat", "--jobs", "1", "--json"]) == 0
+
+
+# ---------- count_python pdm/pipenv (F175) + deno jsonc (F176) ----------
+
+
+def test_count_python_pdm_and_pipenv_locks(tmp_path: Path) -> None:
+    from repo_ops_inventory.counting import count_python
+
+    pdm = tmp_path / "pdm"
+    pdm.mkdir()
+    (pdm / "pyproject.toml").write_text('[project]\ndependencies = ["requests"]\n')
+    (pdm / "pdm.lock").write_text(
+        '[[package]]\nname = "requests"\nversion = "2.32.0"\n'
+    )
+    d, v, tag = count_python(pdm)
+    assert d >= 1
+    assert "pdm" in tag
+    assert "requests@2.32.0" in v
+
+    pipenv = tmp_path / "pipenv"
+    pipenv.mkdir()
+    (pipenv / "Pipfile.lock").write_text(
+        '{"default": {"flask": {"version": "==3.0.0"}}, "develop": {}}'
+    )
+    d2, v2, tag2 = count_python(pipenv)
+    assert "pipenv" in tag2
+    assert "flask@3.0.0" in v2
+
+
+def test_count_deno_jsonc_preserves_url_with_slashes(tmp_path: Path) -> None:
+    """F176: // inside import URL strings must not be treated as comments."""
+    from repo_ops_inventory.counting import count_deno
+
+    (tmp_path / "deno.jsonc").write_text(
+        '{\n'
+        '  // real comment\n'
+        '  "imports": {\n'
+        '    "x": "https://example.com/path//pkg"\n'
+        "  }\n"
+        "}\n"
+    )
+    direct, _versions = count_deno(tmp_path)
+    assert direct == 1

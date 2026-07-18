@@ -578,5 +578,74 @@ def test_main_json_out_writes_report_with_messages(
     assert rc == 0
     payload = json.loads(out_file.read_text())
     assert payload["total"] == 1
+    assert payload["summary"]["total"] == 1
+    assert payload["summary"]["repos_with_pushes"] == 1
     assert payload["repos"][0]["commits_detail"][0]["subject"] == "fix: something"
     assert capsys.readouterr().out.strip() == str(out_file.resolve())
+
+
+def test_pushed_compact_schema_version_first(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """F088: --compact is single-line; schema_version is the first key."""
+    import json
+
+    monkeypatch.setattr(audit, "collect_results", lambda *a, **kw: ({}, []))
+    rc = main([str(tmp_path), "--json", "--compact"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out.count("\n") == 0
+    payload = json.loads(out)
+    assert next(iter(payload)) == "schema_version"
+    assert payload["schema_version"] == 1
+    assert "summary" in payload
+
+
+def test_pushed_empty_author_rejected(tmp_path: Path) -> None:
+    """F090: empty --author is a parser error."""
+    with pytest.raises(SystemExit):
+        main([str(tmp_path), "--author", ""])
+
+
+def test_pushed_since_after_until_rejected(tmp_path: Path) -> None:
+    """F090: since >= until is a parser error."""
+    with pytest.raises(SystemExit):
+        main(
+            [
+                str(tmp_path),
+                "--since",
+                "2026-06-01T00:00Z",
+                "--until",
+                "2026-01-01T00:00Z",
+            ]
+        )
+
+
+def test_pushed_show_shas_without_messages(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """F090: --show-shas prints short SHAs without requiring --show-messages."""
+    sha = "abcdef0123456789" + "0" * 24
+    repo = RepoResult(label="repo1", path="/fake/repo1", commits={sha: None})
+    monkeypatch.setattr(audit, "collect_results", lambda *a, **kw: ({sha: None}, [repo]))
+    assert main([str(tmp_path), "--show-shas"]) == 0
+    out = capsys.readouterr().out
+    assert "abcdef01" in out
+    assert "Commits by repo:" in out
+
+
+def test_pushed_no_merges_and_author_passed_to_filters(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """F090: --author and --no-merges reach Filters."""
+    seen: list[Filters] = []
+
+    def fake_collect(roots, filters, **kwargs):
+        seen.append(filters)
+        return {}, []
+
+    monkeypatch.setattr(audit, "collect_results", fake_collect)
+    assert main([str(tmp_path), "--author", "Alice", "--no-merges", "--count-only"]) == 0
+    assert len(seen) == 1
+    assert seen[0].author == "Alice"
+    assert seen[0].no_merges is True

@@ -145,3 +145,37 @@ def test_plan_json_v1_schema_compact_and_null_omission(tmp_path: Path, capsys) -
     assert "error" not in ws
     assert "verify_error" not in ws
     assert rc in (0, 1)
+
+
+def test_inventory_json_compact_schema_contract(tmp_path: Path, capsys) -> None:
+    """F086/F089: inventory --json --compact matches plan schema_version contract."""
+    from repo_ops_inventory.scan import main as inventory_main
+
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    rc = inventory_main([str(tmp_path), "--flat", "--json", "--compact"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out.count("\n") == 0
+    payload = json.loads(out)
+    assert next(iter(payload)) == "schema_version"
+    assert payload["schema_version"] == 1
+    assert "summary" in payload
+    assert "manifests" in payload["totals"]
+
+
+def test_pushed_json_compact_schema_contract(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    """F088/F089: pushed --json --compact matches plan schema_version contract."""
+    from repo_ops_pushed import audit
+    from repo_ops_pushed.audit import main as pushed_main
+
+    monkeypatch.setattr(audit, "collect_results", lambda *a, **kw: ({}, []))
+    rc = pushed_main([str(tmp_path), "--json", "--compact"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert out.count("\n") == 0
+    payload = json.loads(out)
+    assert next(iter(payload)) == "schema_version"
+    assert payload["schema_version"] == 1
+    assert "summary" in payload

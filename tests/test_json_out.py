@@ -200,3 +200,40 @@ def test_write_json_report_omits_exit_code_when_none(tmp_path: Path) -> None:
     write_json_report(target, bundles, roots=["/tmp"], mode="plan")
     on_disk = json.loads(target.read_text(encoding="utf-8"))
     assert "exit_code" not in on_disk
+
+
+# ---------- inventory / pushed json-out contracts (F089) ----------
+
+
+def test_inventory_json_out_writes_file_and_prints_path_only(
+    tmp_path: Path, capsys
+) -> None:
+    from repo_ops_inventory.scan import main as inventory_main
+
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
+    out_file = tmp_path / "inventory.json"
+    rc = inventory_main(
+        [str(tmp_path), "--flat", "--json", f"--json-out={out_file}"]
+    )
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == str(out_file.resolve())
+    payload = json.loads(out_file.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1
+    assert "summary" in payload
+    assert "rows" in payload
+
+
+def test_pushed_json_out_writes_file_and_prints_path_only(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    from repo_ops_pushed import audit
+    from repo_ops_pushed.audit import main as pushed_main
+
+    monkeypatch.setattr(audit, "collect_results", lambda *a, **kw: ({}, []))
+    out_file = tmp_path / "pushed.json"
+    rc = pushed_main([str(tmp_path), "--json", f"--json-out={out_file}"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == str(out_file.resolve())
+    payload = json.loads(out_file.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == 1
+    assert "summary" in payload
