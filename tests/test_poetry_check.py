@@ -79,3 +79,72 @@ def test_check_poetry_parses_updating_lines(tmp_path: Path) -> None:
     assert changes[0].name == "requests"
     assert changes[0].from_ver == "2.28.0"
     assert changes[0].to == "2.31.0"
+
+
+def test_check_poetry_raises_on_nonzero_dry_run(tmp_path: Path) -> None:
+    """F158 — non-zero poetry update --dry-run raises RuntimeError."""
+
+    def fake_run(
+        cmd: list[str], cwd: Path, timeout: int | None = None, env: object = None
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="solver failed")
+
+    with (
+        patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry"),
+        patch("repo_ops_py_poetry.poetry.run", fake_run),
+        pytest.raises(RuntimeError, match="solver failed"),
+    ):
+        check_poetry(_ws(tmp_path))
+
+
+def test_check_poetry_parses_upgrading_stderr_lines(tmp_path: Path) -> None:
+    """F158 — Upgrading lines on stderr are parsed into Change entries."""
+    stderr = "  - Upgrading certifi (2022.12.7 -> 2023.7.22)\n"
+
+    def fake_run(
+        cmd: list[str], cwd: Path, timeout: int | None = None, env: object = None
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr=stderr)
+
+    with (
+        patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry"),
+        patch("repo_ops_py_poetry.poetry.run", fake_run),
+    ):
+        changes = check_poetry(_ws(tmp_path))
+
+    assert len(changes) == 1
+    assert changes[0].name == "certifi"
+    assert changes[0].from_ver == "2022.12.7"
+    assert changes[0].to == "2023.7.22"
+
+
+def test_apply_poetry_runs_poetry_update(tmp_path: Path) -> None:
+    """F158 — apply_poetry success path invokes poetry update."""
+    from repo_ops_py_poetry.poetry import apply_poetry
+
+    captured: list[list[str]] = []
+
+    def fake_run(
+        cmd: list[str], cwd: Path, timeout: int | None = None, env: object = None
+    ) -> subprocess.CompletedProcess[str]:
+        captured.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry"),
+        patch("repo_ops_py_poetry.poetry.run", fake_run),
+    ):
+        apply_poetry(_ws(tmp_path))
+
+    assert captured == [["poetry", "update"]]
+
+
+def test_apply_poetry_absent_raises_without_warn_prefix(tmp_path: Path) -> None:
+    """F157 — apply_poetry missing poetry raises plain error (no WARN prefix)."""
+    from repo_ops_py_poetry.poetry import apply_poetry
+
+    with (
+        patch("repo_ops_py_poetry.poetry.shutil.which", return_value=None),
+        pytest.raises(RuntimeError, match=r"^poetry not on PATH"),
+    ):
+        apply_poetry(_ws(tmp_path))
