@@ -357,6 +357,25 @@ def test_audit_go_error_on_nonzero_no_parse() -> None:
     assert result.counts.unknown >= 1
 
 
+def test_audit_go_uses_govulncheck_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, float] = {}
+
+    def _fake_run(
+        cmd: list[str], cwd: str, *, timeout: float | None = None
+    ) -> tuple[int, str, str]:
+        if timeout is not None:
+            captured["timeout"] = timeout
+        return 0, "", ""
+
+    with (
+        patch("shutil.which", return_value="/usr/bin/govulncheck"),
+        patch("repo_ops_audit.audit._run", side_effect=_fake_run),
+    ):
+        _audit_go("/some/repo")
+
+    assert captured["timeout"] == 60
+
+
 # ---------------------------------------------------------------------------
 # pip-audit probe
 # ---------------------------------------------------------------------------

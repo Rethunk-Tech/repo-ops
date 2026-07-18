@@ -287,21 +287,25 @@ def _detect_workspaces(repo: str) -> list[tuple[str, str, str]]:
 # ---------------------------------------------------------------------------
 
 _SUBPROCESS_TIMEOUT = 120
+_GOVULNCHECK_TIMEOUT = 60
 
 
-def _run(cmd: list[str], cwd: str) -> tuple[int, str, str]:
+def _run(
+    cmd: list[str], cwd: str, *, timeout: float | None = None
+) -> tuple[int, str, str]:
     """Run *cmd* in *cwd*; return (returncode, stdout, stderr)."""
+    cap = timeout if timeout is not None else _SUBPROCESS_TIMEOUT
     try:
         proc = subprocess.run(
             cmd,
             cwd=cwd,
             capture_output=True,
             text=True,
-            timeout=_SUBPROCESS_TIMEOUT,
+            timeout=cap,
         )
         return proc.returncode, proc.stdout, proc.stderr
     except subprocess.TimeoutExpired:
-        return 1, "", f"timeout after {_SUBPROCESS_TIMEOUT}s"
+        return 1, "", f"timeout after {cap}s"
     except FileNotFoundError as exc:
         return 1, "", str(exc)
 
@@ -317,7 +321,9 @@ def _audit_go(ws: str) -> WorkspaceResult:
             status="skipped",
             skip_reason="govulncheck not on PATH",
         )
-    rc, stdout, stderr = _run(["govulncheck", "-json", "./..."], ws)
+    rc, stdout, stderr = _run(
+        ["govulncheck", "-json", "./..."], ws, timeout=_GOVULNCHECK_TIMEOUT
+    )
     counts = VulnCount()
     # govulncheck --json emits one JSON object per line.
     # govulncheck does NOT emit per-finding severity; all findings are counted
@@ -1384,8 +1390,7 @@ def print_fix_plan(remediations: list[RemediationItem]) -> None:
         )
     print()
     print(
-        "Note: --fix-plan is read-only. "
-        "Apply integration is a planned follow-up (see repo-ops-audit --fix)."
+        "Note: --fix-plan is read-only. Apply fixes with: repo-ops audit --fix"
     )
 
 

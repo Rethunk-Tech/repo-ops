@@ -22,6 +22,7 @@ from repo_ops_audit.audit import (
     build_audit_parser,
     collect_all_remediations,
     main,
+    print_fix_plan,
 )
 
 # ---------------------------------------------------------------------------
@@ -516,6 +517,24 @@ def test_audit_rust_remediations_populated() -> None:
     assert result.remediations[0].safe_version == ">= 1.5.5"
 
 
+def test_print_fix_plan_points_at_audit_fix(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    print_fix_plan(
+        [
+            RemediationItem(
+                package="requests",
+                safe_version="2.31.0",
+                ecosystem="py-uv",
+                workspace="/ws",
+            )
+        ]
+    )
+    out = capsys.readouterr().out
+    assert "repo-ops audit --fix" in out
+    assert "planned follow-up" not in out
+
+
 # ---------------------------------------------------------------------------
 # CLI: --fix-plan opt-in gating
 # ---------------------------------------------------------------------------
@@ -576,11 +595,11 @@ def test_audit_fix_plan_json_exits_one_when_remediations(
         ]
     )
 
-    def _mock_run(cmd: list[str], cwd: str) -> tuple[int, str, str]:
-        if "pip-audit" in cmd:
-            return 0, pip_audit_out, ""
+    def _mock_run(cmd: list[str], cwd: str, **_kwargs: object) -> tuple[int, str, str]:
         if "--version" in cmd:
             return 0, "pip-audit 2.7.0", ""
+        if "pip-audit" in cmd:
+            return 0, pip_audit_out, ""
         return 0, "", ""
 
     with (
