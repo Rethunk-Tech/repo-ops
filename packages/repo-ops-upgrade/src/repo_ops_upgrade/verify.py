@@ -15,8 +15,8 @@ reads a ``.repo-ops.toml`` sidecar at the repo root.  The ``[verify]`` table
     relying on a ``ci`` script.
 
 ``verify.skip`` (bool)
-    Skip the verify gate entirely for this repo; reported as
-    ``"verify skipped (config)"``.
+    Skip the verify gate entirely for this repo. Returns ``None`` (same as
+    a successful gate) after logging ``verify skipped (config)``.
 
 ``verify.timeout`` (int, seconds)
     Per-repo override for the verify timeout.  Supersedes the global
@@ -248,9 +248,13 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
     """Run the appropriate verify gate for *ws*.
 
     Respects per-repo ``[verify]`` config keys:
-    - ``skip = true`` → returns ``"verify skipped (config)"`` immediately.
+    - ``skip = true`` → returns ``None`` immediately (gate treated as passed)
+      after logging ``verify skipped (config)``.
     - ``timeout`` → used as the verify timeout (env var still wins).
     - ``script`` → forwarded to the Node path via :func:`verify_node`.
+
+    Returns ``None`` on success (or intentional skip); a non-empty string is
+    the verify failure detail.
     """
     profile = _load_verify_profile(ws)
 
@@ -282,6 +286,14 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
             return proc.stderr.strip() or "cargo check failed"
         return None
     if mgr in ("uv", "hatch"):
+        # Hatch without uv.lock: apply is a no-op unless migrate-to-uv-lock;
+        # cannot run uv sync --locked. Fall through to hatch fast gates only.
+        if mgr == "hatch" and not (ws.path / "uv.lock").is_file():
+            logger.info(
+                "hatch verify: no uv.lock at %s; skipping uv sync --locked",
+                ws.path,
+            )
+            return _verify_hatch_fast(ws, timeout=timeout)
         proc = run(["uv", "sync", "--locked"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "uv sync --locked failed"
@@ -303,8 +315,55 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
         if proc.returncode != 0:
             return proc.stderr.strip() or "poetry check failed"
         return None
+    if mgr == "pdm":
+        if not shutil.which("pdm"):
+            return "pdm not on PATH"
+        proc = run(["pdm", "sync", "--clean"], ws.path, timeout=timeout)
+        if proc.returncode != 0:
+            return (proc.stderr or proc.stdout).strip() or "pdm sync --clean failed"
+        return None
+    if mgr == "pipenv":
+        if not shutil.which("pipenv"):
+            return "pipenv not on PATH"
+        proc = run(["pipenv", "verify"], ws.path, timeout=timeout)
+        if proc.returncode != 0:
+            return (proc.stderr or proc.stdout).strip() or "pipenv verify failed"
+        return None
     if mgr == "pip-tools":
         return _verify_pip_tools(ws, timeout=timeout)
+    if mgr == "deno":
+        if not shutil.which("deno"):
+            return "deno not on PATH"
+        # Frozen install from deno.lock when present; otherwise type-check.
+        if (ws.path / "deno.lock").is_file():
+            proc = run(
+                ["deno", "install", "--frozen"],
+                ws.path,
+                timeout=timeout,
+            )
+            if proc.returncode != 0:
+                return (
+                    proc.stderr or proc.stdout
+                ).strip() or "deno install --frozen failed"
+            return None
+        proc = run(["deno", "check", "."], ws.path, timeout=timeout)
+        if proc.returncode != 0:
+            return (proc.stderr or proc.stdout).strip() or "deno check failed"
+        return None
+    if mgr == "precommit":
+        if not shutil.which("pre-commit"):
+            return "pre-commit not on PATH"
+        proc = run(
+            ["pre-commit", "validate-config"],
+            ws.path,
+            timeout=timeout,
+        )
+        if proc.returncode != 0:
+            return (
+                proc.stderr or proc.stdout
+            ).strip() or "pre-commit validate-config failed"
+        return None
+    # container: image builds are out of scope for v1 (see container.apply docstring).
     return None
 
 
