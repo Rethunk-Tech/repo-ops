@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import subprocess
@@ -20,11 +21,14 @@ GO_WORK_SYNC_ENV = "REPO_OPS_GO_WORK_SYNC"
 GO_DIRECTIVE_ENV = "REPO_OPS_GO_DIRECTIVE"
 GO_TOOLCHAIN_ENV = "REPO_OPS_GO_TOOLCHAIN"
 _GO_GET_BATCH = 40
+_VALID_GO_UPGRADE_MODES = frozenset({"patch", "explicit", "mvs"})
+
+logger = logging.getLogger(__name__)
 
 # Regex for ``go X.Y`` or ``go X.Y.Z`` directive lines in go.mod / go.work.
 _GO_DIRECTIVE_RE = re.compile(r"^go\s+(\d+\.\d+(?:\.\d+)?)$", re.MULTILINE)
 
-# Registry: workspace path → go.work directory.
+# Map: workspace path → go.work directory (go workspace file, not an OCI registry).
 # Populated by discovery (register_go_work_dir); consulted by classify_go_error
 # so that remediation hints can name the go.work file location.
 _go_work_dirs: dict[Path, Path] = {}
@@ -128,9 +132,16 @@ def _valid_go_get_target(target: str) -> bool:
 
 
 def _go_upgrade_mode() -> str:
-    mode = os.environ.get(GO_UPGRADE_MODE_ENV, "patch").strip().lower()
-    if mode in ("patch", "explicit", "mvs"):
+    raw = os.environ.get(GO_UPGRADE_MODE_ENV, "patch")
+    mode = raw.strip().lower()
+    if mode in _VALID_GO_UPGRADE_MODES:
         return mode
+    if mode:
+        logger.warning(
+            "invalid %s=%r; using patch (valid: patch, explicit, mvs)",
+            GO_UPGRADE_MODE_ENV,
+            raw,
+        )
     return "patch"
 
 
