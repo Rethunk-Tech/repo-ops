@@ -54,6 +54,8 @@ class BinarySpec:
 # (npm/pnpm/yarn/bun via repo_ops_core.process.run, corepack via
 # repo_ops_js.workspaces.corepack_prepare, pip-audit via
 # ``uv run pip-audit --version`` in repo_ops_audit.audit).
+# cargo-audit is a cargo subcommand (``cargo audit --version``), not a
+# standalone binary — see ``_probe_cargo_audit``.
 _BINARIES: tuple[BinarySpec, ...] = (
     BinarySpec("git", "vcs"),
     BinarySpec("gh", "vcs"),
@@ -77,6 +79,8 @@ _BINARIES: tuple[BinarySpec, ...] = (
     BinarySpec("gofmt", "go", version_args=()),
     BinarySpec("govulncheck", "go"),
     BinarySpec("cargo", "rust"),
+    # cargo-audit: probed via ``cargo audit --version`` in probe_binary.
+    BinarySpec("cargo-audit", "rust", version_args=()),
     BinarySpec("actionlint", "actions"),
 )
 
@@ -128,7 +132,30 @@ def _probe_version(path: str, version_args: tuple[str, ...]) -> str | None:
     return _first_line(proc.stdout) or _first_line(proc.stderr)
 
 
+def _probe_cargo_audit() -> ProbeResult:
+    """Probe ``cargo audit`` subcommand availability (cargo-audit plugin)."""
+    cargo_path = shutil.which("cargo")
+    if cargo_path is None:
+        return ProbeResult("cargo-audit", "rust", False, None, None)
+    try:
+        proc = subprocess.run(
+            [cargo_path, "audit", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=_VERSION_TIMEOUT,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ProbeResult("cargo-audit", "rust", False, cargo_path, None)
+    if proc.returncode != 0:
+        return ProbeResult("cargo-audit", "rust", False, cargo_path, None)
+    version = _first_line(proc.stdout) or _first_line(proc.stderr)
+    return ProbeResult("cargo-audit", "rust", True, cargo_path, version)
+
+
 def probe_binary(spec: BinarySpec) -> ProbeResult:
+    if spec.name == "cargo-audit":
+        return _probe_cargo_audit()
     path = shutil.which(spec.name)
     if path is None:
         return ProbeResult(spec.name, spec.ecosystem, False, None, None)

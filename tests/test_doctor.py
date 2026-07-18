@@ -46,9 +46,14 @@ def test_probe_all_present_reports_found_with_path_and_version(
         if r.name == "gofmt":
             # gofmt has no safe version invocation (version_args=()); skipped.
             assert r.version is None
+            assert r.path == "/usr/bin/gofmt"
+        elif r.name == "cargo-audit":
+            assert r.found is True
+            assert r.version is not None
+            assert r.path == "/usr/bin/cargo"
         else:
             assert r.version is not None
-        assert r.path == f"/usr/bin/{r.name}"
+            assert r.path == f"/usr/bin/{r.name}"
 
 
 def test_main_all_present_exits_zero_and_prints_table(
@@ -127,7 +132,7 @@ def test_json_output_shape(
     assert payload["total_count"] == len(payload["binaries"])
     assert payload["found_count"] == payload["total_count"] - 1
     names = {b["name"] for b in payload["binaries"]}
-    assert {"git", "gh", "uv", "poetry", "npm", "go", "cargo"} <= names
+    assert {"git", "gh", "uv", "poetry", "npm", "go", "cargo", "cargo-audit"} <= names
     poetry_entry = next(b for b in payload["binaries"] if b["name"] == "poetry")
     assert poetry_entry == {
         "name": "poetry",
@@ -272,3 +277,45 @@ def test_build_doctor_parser_defaults() -> None:
     assert args.strict is False
     assert args.json_out is False
     assert args.compact is False
+
+
+def test_probe_cargo_audit_missing_when_cargo_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    result = doctor.probe_binary(BinarySpec("cargo-audit", "rust", version_args=()))
+    assert result.found is False
+    assert result.path is None
+
+
+def test_probe_cargo_audit_missing_when_subcommand_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/cargo" if name == "cargo" else f"/usr/bin/{name}")
+
+    def _fake_run(cmd: list[str], **_kwargs: object) -> MagicMock:
+        if cmd[1:] == ["audit", "--version"]:
+            return MagicMock(returncode=1, stdout="", stderr="no such subcommand")
+        return _fake_run_version(cmd)
+
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run)
+    result = doctor.probe_binary(BinarySpec("cargo-audit", "rust", version_args=()))
+    assert result.found is False
+    assert result.path == "/usr/bin/cargo"
+
+
+def test_missing_cargo_audit_with_strict_exits_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", _fake_which_all_present)
+
+    def _fake_run(cmd: list[str], **_kwargs: object) -> MagicMock:
+        if cmd[1:] == ["audit", "--version"]:
+            return MagicMock(returncode=1, stdout="", stderr="cargo-audit not installed")
+        if cmd[1:] == ["auth", "status"]:
+            return MagicMock(returncode=0, stdout="ok", stderr="")
+        return _fake_run_version(cmd)
+
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run)
+
+    assert main(["--strict"]) == 1
