@@ -6,8 +6,10 @@ description: >-
   pin updates in Rethunk-Tech checkouts. Trigger when the user asks to inventory
   or count dependencies, audit lockfiles, plan or apply dependency upgrades,
   update deps in a Rethunk checkout, bump GitHub Actions pins via plan/apply,
-  scan outdated packages across sibling repos, or run proactive maintenance on
-  local git roots under DEFAULT_ROOTS.
+  scan outdated packages across sibling repos, run fleet vulnerability sweeps
+  (audit), close or scaffold Dependabot PRs, emit CycloneDX/SPDX SBOMs, scan
+  dependency licenses, run toolchain preflight (doctor), or run proactive
+  maintenance on local git roots under DEFAULT_ROOTS.
 ---
 
 # repo-ops agent skill
@@ -23,5 +25,7 @@ Use the **`repo-ops`** CLI for dependency and Actions maintenance.
 ```bash
 repo-ops install-skill    # ~/.cursor/skills/repo-ops and ~/.claude/skills/repo-ops
 ```
+
+`install-skill` copies bundled AGENTS.md with relative doc links rewritten to GitHub canonical URLs so links resolve from the skill install directory.
 
 Details: [Installation — Agent skill](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/installation.md#agent-skill).
