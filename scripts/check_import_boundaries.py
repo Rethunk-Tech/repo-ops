@@ -39,6 +39,7 @@ PM_PREFIXES = (
     "repo_ops_py_hatch",
     "repo_ops_go",
     "repo_ops_rust",
+    "repo_ops_container",
 )
 
 ALLOWED_UPGRADE_SUBMODULES = frozenset({"registry", "constants"})
@@ -48,11 +49,83 @@ ALLOWED_UPGRADE_SUBMODULES = frozenset({"registry", "constants"})
 # `uses:` pin parser rather than duplicating it).
 ALLOWED_UPGRADE_SUBMODULES_BY_PKG: dict[str, frozenset[str]] = {
     "repo_ops_lockfiles": frozenset({"workflow_uses"}),
+    "repo_ops_audit": frozenset({"registry", "orchestration"}),
+}
+
+REMEDIATIONS_PREFIXES = (
+    "repo_ops_upgrade_remediations_core",
+    "repo_ops_upgrade_remediations_js",
+    "repo_ops_upgrade_remediations_go",
+    "repo_ops_upgrade_remediations_py",
+    "repo_ops_upgrade_remediations_rust",
+    "repo_ops_upgrade_remediations_deno",
+)
+
+REMEDIATIONS_BASE_ALLOWED = frozenset(
+    {
+        "repo_ops_core",
+        "repo_ops_models",
+    }
+)
+
+REMEDIATIONS_EXTRA_ALLOWED: dict[str, frozenset[str]] = {
+    "repo_ops_upgrade_remediations_core": frozenset(),
+    "repo_ops_upgrade_remediations_js": frozenset(
+        {
+            "repo_ops_js",
+            "repo_ops_lockfiles",
+            "repo_ops_upgrade_remediations_core",
+        }
+    ),
+    "repo_ops_upgrade_remediations_go": frozenset(
+        {"repo_ops_upgrade_remediations_core"}
+    ),
+    "repo_ops_upgrade_remediations_py": frozenset(
+        {"repo_ops_upgrade_remediations_core"}
+    ),
+    "repo_ops_upgrade_remediations_rust": frozenset(
+        {"repo_ops_upgrade_remediations_core"}
+    ),
+    "repo_ops_upgrade_remediations_deno": frozenset(
+        {"repo_ops_upgrade_remediations_core"}
+    ),
+}
+
+REMEDIATIONS_UPGRADE_SUBMODULES: dict[str, frozenset[str]] = {
+    "repo_ops_upgrade_remediations_js": frozenset({"constants"}),
+}
+
+APP_PKG_ALLOWED_IMPORTS: dict[str, frozenset[str]] = {
+    "repo_ops_audit": frozenset(
+        {
+            "repo_ops_core",
+            "repo_ops_models",
+            "repo_ops_js_npm",
+            "repo_ops_js_yarn",
+            "repo_ops_js_pnpm",
+            "repo_ops_js_bun",
+            "repo_ops_py_uv",
+            "repo_ops_rust",
+            "repo_ops_go",
+        }
+    ),
+    "repo_ops_dependabot": frozenset(
+        {
+            "repo_ops_core",
+            "repo_ops_lockfiles",
+        }
+    ),
+    "repo_ops_doctor": frozenset({"repo_ops_core"}),
 }
 
 
 def _top_level(name: str) -> str:
     return name.split(".", 1)[0]
+
+
+def _workspace_imports(imports: set[str]) -> set[str]:
+    """Top-level workspace modules only (repo_ops_*)."""
+    return {name for name in imports if name.startswith("repo_ops_")}
 
 
 def _imports_in_file(path: Path) -> tuple[set[str], set[str]]:
@@ -75,6 +148,60 @@ def _imports_in_file(path: Path) -> tuple[set[str], set[str]]:
     return tops, upgrade_subs
 
 
+def _check_remediations(
+    mod_root: str,
+    imports: set[str],
+    upgrade_subs: set[str],
+    py: Path,
+    errors: list[str],
+) -> None:
+    allowed = (
+        REMEDIATIONS_BASE_ALLOWED
+        | REMEDIATIONS_EXTRA_ALLOWED.get(mod_root, frozenset())
+        | {mod_root}
+    )
+    disallowed = _workspace_imports(imports) - allowed - {"repo_ops_upgrade"}
+    if disallowed:
+        for bad in sorted(disallowed):
+            errors.append(f"{py}: remediations package must not import {bad}")
+    if "repo_ops_upgrade" in imports:
+        allowed_subs = REMEDIATIONS_UPGRADE_SUBMODULES.get(mod_root)
+        if allowed_subs is None:
+            found = sorted(upgrade_subs) if upgrade_subs else "bare import"
+            errors.append(f"{py}: remediations package must not import repo_ops_upgrade ({found})")
+        else:
+            bad_subs = upgrade_subs - allowed_subs
+            if bad_subs or not upgrade_subs:
+                found = sorted(bad_subs) if bad_subs else "bare import"
+                errors.append(
+                    f"{py}: may only use repo_ops_upgrade."
+                    f"{', '.join(sorted(allowed_subs))} (found {found})"
+                )
+
+
+def _check_app_pkg(
+    mod_root: str,
+    imports: set[str],
+    upgrade_subs: set[str],
+    py: Path,
+    errors: list[str],
+) -> None:
+    allowed = APP_PKG_ALLOWED_IMPORTS[mod_root] | {mod_root}
+    disallowed = _workspace_imports(imports) - allowed - {"repo_ops_upgrade"}
+    if disallowed:
+        for bad in sorted(disallowed):
+            errors.append(f"{py}: {mod_root} must not import {bad}")
+    narrow = ALLOWED_UPGRADE_SUBMODULES_BY_PKG.get(mod_root)
+    if narrow is not None and "repo_ops_upgrade" in imports:
+        bad_subs = upgrade_subs - narrow
+        if bad_subs or not upgrade_subs:
+            found = sorted(bad_subs) if bad_subs else "bare import"
+            errors.append(
+                f"{py}: may only use repo_ops_upgrade."
+                f"{', '.join(sorted(narrow))} (found {found})"
+            )
+
+
 def main() -> int:
     errors: list[str] = []
     for pkg_dir in sorted(PACKAGES.iterdir()):
@@ -90,7 +217,11 @@ def main() -> int:
                 for bad in imports & FORBIDDEN[mod_root]:
                     errors.append(f"{py}: must not import {bad}")
             narrow = ALLOWED_UPGRADE_SUBMODULES_BY_PKG.get(mod_root)
-            if narrow is not None and "repo_ops_upgrade" in imports:
+            if (
+                narrow is not None
+                and mod_root not in APP_PKG_ALLOWED_IMPORTS
+                and "repo_ops_upgrade" in imports
+            ):
                 disallowed = upgrade_subs - narrow
                 if disallowed or not upgrade_subs:
                     found = sorted(disallowed) if disallowed else "bare import"
@@ -109,6 +240,10 @@ def main() -> int:
                         f"{', '.join(sorted(ALLOWED_UPGRADE_SUBMODULES))} "
                         f"(found {sorted(disallowed)})"
                     )
+            if mod_root in REMEDIATIONS_PREFIXES:
+                _check_remediations(mod_root, imports, upgrade_subs, py, errors)
+            if mod_root in APP_PKG_ALLOWED_IMPORTS:
+                _check_app_pkg(mod_root, imports, upgrade_subs, py, errors)
     if errors:
         print("Import boundary violations:", file=sys.stderr)
         for e in errors:
