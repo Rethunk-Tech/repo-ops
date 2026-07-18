@@ -12,7 +12,7 @@ Subcommands (entry point in `packages/repo-ops`):
 | `plan` | Outdated deps, Actions pin drift, remediations (no writes) |
 | `apply` | Apply updates, Actions bumps, remediations, verify gates |
 | `pushed` | Commits pushed to remotes in a time window (reflog) |
-| `audit` | Fleet vulnerability sweep per ecosystem (read-only) |
+| `audit` | Fleet vulnerability sweep per ecosystem (read-only unless `--fix`) |
 | `dependabot` | List/close Dependabot PRs superseded by local manifests |
 | `sbom` | Emit CycloneDX/SPDX SBOM from lockfile dependencies (read-only) |
 | `license` | Scan dependency licenses and flag policy violations (read-only) |
@@ -46,19 +46,19 @@ Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_cor
 
 | Ecosystem | Default behavior | Aggressive / latest opt-in |
 |-----------|------------------|----------------------------|
-| **npm** | `npm update` (semver ranges in manifests) | — |
-| **pnpm** | `pnpm update -r` (within ranges) | `REPO_OPS_PNPM_UPDATE_LATEST=1` → adds `--latest` |
+| **npm** | `npm update` (semver ranges in manifests) | Add `--npm-targeted-bump` (`REPO_OPS_NPM_TARGETED_BUMP=1`) to move deps left behind when a latest-mode bump was attempted |
+| **pnpm** | `pnpm update -r` (within ranges) | `REPO_OPS_PNPM_UPDATE_LATEST=1` → adds `--latest`; add `--pnpm-targeted-bump` (`REPO_OPS_PNPM_TARGETED_BUMP=1`) for behind-latest fallback |
 | **yarn** | `yarn up` (Berry, in-range bumps in isolated plan snapshots) | `REPO_OPS_YARN_UPDATE_LATEST=1` → `yarn up -R '*'`; reports direct deps yarn's resolver kept behind their newest published version as `behind_latest` (#110). Add `--yarn-targeted-bump` (`REPO_OPS_YARN_TARGETED_BUMP=1`) to also *move* those gaps: a reversible per-package `yarn up <pkg>@latest`, kept only if the workspace still installs and the version actually advances (#111) |
 | **bun** | `bun update` (within ranges) | `REPO_OPS_BUN_UPDATE_LATEST=1` → includes out-of-range "latest" packages. Add `--bun-targeted-bump` (`REPO_OPS_BUN_TARGETED_BUMP=1`) to also *move* deps `bun update --latest` left behind: a reversible per-package `bun add <pkg>@latest`, kept only if the workspace still installs and the version actually advances |
 | **go** | `REPO_OPS_GO_UPGRADE_MODE=patch` (default) | `explicit` or `mvs` (see below) |
-| **rust** | `cargo update --dry-run` / `cargo update` | — |
+| **rust** | `cargo update --dry-run` / `cargo update` (within semver constraints in `Cargo.lock`) | No cross-range / `--latest` mode — `--latest` does not change cargo behavior |
 | **python** | Manager-specific (`uv`, poetry, pip-tools, hatch) | See each plugin's check/apply |
 | **pdm** | `pdm update --dry-run` / `pdm update` (in-range); skipped with a WARN when `pdm` is not on PATH | — |
-| **pipenv** | `pipenv run pip list --outdated` / `pipenv update`; skipped with a WARN when `pipenv` is not on PATH | — |
+| **pipenv** | venv `pip list --outdated --format=json` (via `pipenv --venv`, read-only; never creates a venv) / `pipenv update`; skipped with a WARN when `pipenv` is not on PATH or the venv is not initialised | — |
 | **deno** | `deno outdated` / `deno outdated --update` (Deno ≥ 2.x); supports both box-drawing and plain-text output; skipped with a WARN when `deno` is not on PATH | — |
 | **pre-commit** | Checks `.pre-commit-config.yaml` hook revs against latest upstream tags (within-major only by default) | `REPO_OPS_PRECOMMIT_UPDATE_LATEST=1` → allow cross-major rev bumps |
 | **GitHub Actions** | `--actions-upgrade-mode=normalize` (default): normalize exact tag pins to the floating major (`@vN`); a newer major upstream is reported only. SHA pins: report only (preserve digest). | `--actions-upgrade-mode=latest` (or `--latest`) → also apply cross-major bumps; `--actions-unpin-sha` → resolve SHA pins to tags; `--actions-refresh-sha` → advance digest within current major (with `--latest`: cross-major re-pin + comment update); `--actions-tag-style=exact` → highest `@vN.M.P` when unpinning |
-| **container** | Checks `FROM` / `image:` references in Dockerfiles and Compose files; SHA-pinned images are report-only by default | `REPO_OPS_CONTAINER_REFRESH_SHA=1` → advance SHA digest for `image:tag@sha256:…` pins to the latest digest for the same tag (keeps pin hardened, advances to current content) |
+| **container** | Checks `FROM` / `image:` references in Dockerfiles and Compose files; SHA-pinned images are report-only by default | `REPO_OPS_CONTAINER_UPDATE_LATEST=1` (or `--latest`) → allow cross-major tag bumps; `REPO_OPS_CONTAINER_REFRESH_SHA=1` → advance SHA digest for `image:tag@sha256:…` pins to the latest digest for the same tag (keeps pin hardened, advances to current content) |
 
 ### Go modules
 
@@ -86,10 +86,22 @@ When `--submodules` is active, `plan` detects available semver tag advances for 
 
 Set `REPO_OPS_RESUME=1` on `apply` to resume an interrupted bulk run without re-applying repos that already succeeded. After each successful repo, `apply` writes the git HEAD SHA to a checkpoint file in the XDG cache directory. On re-run with `REPO_OPS_RESUME=1`, repos whose current HEAD matches the checkpointed SHA are skipped as `resume: already applied`. If the HEAD has changed since the checkpoint (e.g. a commit landed in the meantime), the checkpoint entry is ignored and the repo is processed normally.
 
+### Branch / PR workflow (apply)
+
+After a successful apply+verify pass with commits, opt into branch-and-PR mode instead of leaving changes on the current branch:
+
+- **`--pr`** — create a branch, push, and open a PR via `gh` for each repo that received a commit (requires authenticated `gh`). Default: off (in-place commit only, no push).
+- **`--pr-base BRANCH`** — base branch for opened PRs (default: repo default branch from `gh`).
+- **`--branch-prefix PREFIX`** — branch name prefix (default: `repo-ops/deps`; resulting name `{prefix}/{repo-slug}`).
+
+Idempotent when an open PR already exists for the same branch. Combine with `--commit=conventional` or `--commit=agent` so there are commits to push. See [Bulk maintenance](bulk-maintenance.md) for MCP commit guidance.
+
 ### `audit` — fleet vulnerability sweep
 
 `repo-ops audit [root_dir ...]` runs the native auditor for each ecosystem found
-across discovered workspaces (read-only, no lockfile writes).
+across discovered workspaces. Default behavior is read-only (no lockfile writes);
+`--fix` applies advisory remediations via the upgrade orchestration layer (mutates
+lockfiles; no auto-commit).
 
 | Ecosystem | Tool required | Notes |
 |-----------|--------------|-------|
@@ -98,16 +110,26 @@ across discovered workspaces (read-only, no lockfile writes).
 | `py-uv` | `uv` + `pip-audit` | `uv run pip-audit --format json`; skipped when pip-audit not importable |
 | `rust` | `cargo` + `cargo-audit` | `cargo audit --json`; skipped if `cargo audit --version` fails |
 
-Counts are normalised to `{critical, high, moderate, low}` per workspace.
-CVSS severity: govulncheck findings default to `high`; pip-audit maps CVE presence
-to `high`/`critical`; cargo audit maps CVSS vector C/I/A components.
+Counts are normalised to `{critical, high, moderate, low, unknown}` per workspace.
+CVSS severity: govulncheck findings default to `unknown` (use `--fail-on-unknown`);
+pip-audit maps CVE presence to `high`/`critical`; cargo audit maps CVSS vector
+C/I/A components.
 
-`--fail-on SEVERITY` (default `high`) controls the exit code:
-- `0` when no workspace has vulns at or above the threshold.
-- `1` when at least one workspace has qualifying vulns.
-- `never` always exits 0 (CI-informational mode).
+**Flags** (see `repo-ops audit --help` for the full list):
 
-`--json` emits a structured payload with per-workspace counts and a `summary`.
+- **`--fail-on SEVERITY`** (default `high`) — exit `1` when any workspace has vulns at or above the threshold (`critical`/`high`/`moderate`/`low`/`never`).
+- **`--fail-on-unknown`** — exit `1` when any workspace has govulncheck findings with unknown severity (default: off).
+- **`--fix-plan`** — read-only remediation checklist: for each finding with a known-safe fix version, emit `(package, safe_version, ecosystem, workspace)`. With `--json`, included under the `remediations` key. Exits `1` when actionable remediations exist.
+- **`--fix`** — apply remediations (implies `--fix-plan` collection). Delegates to upgrade orchestration per workspace; skips dirty worktrees unless **`--allow-dirty`**. No automatic commit.
+- **`--sarif-out PATH`** — write SARIF 2.1.0 output for GitHub code scanning (repo-relative artifact URIs).
+- **`--json`** — structured payload with per-workspace counts, optional `remediations[]`, and `summary`.
+
+**Exit codes:**
+
+- `0` — no vulns at or above `--fail-on`, and (when `--fix-plan` is active) no actionable remediations.
+- `1` — at least one workspace qualifies under `--fail-on` / `--fail-on-unknown`, or `--fix-plan` found actionable remediations.
+
+Config keys `audit_fail_on` / `audit_fail_on_unknown` (env: `REPO_OPS_AUDIT_FAIL_ON`, `REPO_OPS_AUDIT_FAIL_ON_UNKNOWN`) follow CLI > env > config > default precedence.
 
 ### `dependabot` — Dependabot PR sweep
 
@@ -117,18 +139,28 @@ whether the bump is already satisfied by local lockfiles or manifests.
 
 **Default (dry-run):** prints the "would-close" list with supersession status.
 **`--close`:** closes superseded PRs via `gh pr close <n> --comment "Superseded..."`.
+Mutually exclusive with **`--scaffold`** (scaffold mode does not scan PRs).
+
+**Scaffold mode** (generate `.github/dependabot.yml` from detected ecosystems):
+
+- **`--scaffold`** — dry-run: print the YAML that would be written per repo.
+- **`--write`** — with `--scaffold`, actually write `.github/dependabot.yml` (requires `--scaffold`).
+- **`--schedule INTERVAL`** — schedule for generated entries (`daily`/`weekly`/`monthly`; default `weekly`).
+
+`--json` and `--close` are invalid with `--scaffold`.
 
 Precision caveats:
-- Version checks are text-search based on lockfile `name@version` strings (npm,
-  yarn, pnpm, bun) and manifest declarations (go.mod `require` blocks,
-  Cargo.lock `[[package]]`). False negatives possible for workspace-hoisted
-  packages or non-standard lockfile entries.
+- **High-confidence:** lockfile parsers resolve npm/yarn/pnpm/bun versions; go.mod
+  `require` blocks and Cargo.lock `[[package]]` entries are parsed structurally.
+- **Low-confidence:** text-search fallback on lockfile `name@version` strings when
+  parsers cannot resolve a package. Low-confidence matches are **never** auto-closed.
+- **Grouped PRs:** closed only when **all** rows are high-confidence satisfied.
 - Title parsing covers `Bump X from A to B` / `Bumps X from A to B`; non-standard
   Dependabot titles are reported but never auto-closed.
 - `gh` must be authenticated and on PATH; repos where `gh` fails are reported
   with an error and skipped.
 
-`--json` emits per-repo PR lists with `superseded`, `current_ver`, and `closed` fields.
+`--json` emits per-repo PR lists with `superseded`, `current_ver`, `low_confidence`, and `closed` fields.
 
 ### `sbom` — CycloneDX/SPDX SBOM export
 
@@ -149,9 +181,28 @@ policy violations (read-only; no network calls).
 - `--deny LIST` — comma-separated SPDX identifiers that are forbidden; any
   license in this list is flagged.
 - `--no-fail-unknown` — exit `0` even when unknown licenses are found
-  (default: exit `2`).
+  (default: exit `2` when unknown licenses exist in ecosystems with a local extractor).
 - `--json` — emit JSON instead of human-readable output (`--compact` for
   single-line).
+
+**Exit codes:** `0` — no violations and no unknown licenses (or `--no-fail-unknown`);
+`1` — policy violations (denied or not in allow-list); `2` — unknown licenses in
+an ecosystem with a local extractor (container images are reported unknown but
+excluded from this bucket).
+
+**Scope (best-effort, offline):**
+
+| Ecosystem | Source |
+|-----------|--------|
+| npm / yarn / pnpm | `node_modules/**/package.json` (requires prior install) |
+| Python (uv.lock) | locked packages + adjacent venv `*.dist-info/METADATA` |
+| Go | `go.sum` pairs via LICENSE files in GOMODCACHE |
+| Rust | `Cargo.lock` via `cargo metadata --offline` |
+| Deno | `deno.lock` npm specifiers via DENO_DIR npm cache |
+| container | no local license source (always unknown; does not trigger exit `2`) |
+
+Poetry, PDM, and pipenv lockfiles without an installed venv may report unknown
+for Python packages. See `repo-ops license --help` epilog for SPDX compound-expression handling.
 
 ### `doctor` — toolchain/auth preflight
 
@@ -192,7 +243,7 @@ Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
 | timeout_check | (none) | `REPO_OPS_TIMEOUT_CHECK` | `timeout_check` | `60` |
 | timeout_apply | (none) | `REPO_OPS_TIMEOUT_APPLY` | `timeout_apply` | `300` |
 | timeout_verify | (none) | `REPO_OPS_TIMEOUT_VERIFY` | `timeout_verify` | `120` |
-| find_timeout | (none) | `REPO_OPS_FIND_TIMEOUT` | `find_timeout` | `30` |
+| find_timeout | (none) | `REPO_OPS_FIND_TIMEOUT` | `find_timeout` | `60` |
 | git_timeout | (none) | `REPO_OPS_GIT_TIMEOUT` | `git_timeout` | `10` |
 | bun_update_latest | `--latest` | `REPO_OPS_BUN_UPDATE_LATEST` | `bun_update_latest` | `0` |
 | pnpm_update_latest | `--latest` | `REPO_OPS_PNPM_UPDATE_LATEST` | `pnpm_update_latest` | `0` |
@@ -218,3 +269,6 @@ Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
 | precommit_update_latest | (none) | `REPO_OPS_PRECOMMIT_UPDATE_LATEST` | `precommit_update_latest` | `0` |
 | submodule_update_latest | (none) | `REPO_OPS_SUBMODULE_UPDATE_LATEST` | `submodule_update_latest` | `0` |
 | resume | (none) | `REPO_OPS_RESUME` | `resume` | `0` |
+| remediate_go_generate | (none) | `REPO_OPS_REMEDIATE_GO_GENERATE` | `remediate_go_generate` | `0` |
+| audit_fail_on | `--fail-on` | `REPO_OPS_AUDIT_FAIL_ON` | `audit_fail_on` | `high` |
+| audit_fail_on_unknown | `--fail-on-unknown` | `REPO_OPS_AUDIT_FAIL_ON_UNKNOWN` | `audit_fail_on_unknown` | `0` |
