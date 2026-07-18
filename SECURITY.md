@@ -2,13 +2,22 @@
 
 ## Reporting a Vulnerability
 
-Rethunk-Tech takes security seriously. To report a vulnerability in repo-ops or any Rethunk-Tech project:
+Rethunk-Tech takes security seriously. To report a vulnerability in repo-ops:
 
 - **Do not** open a public GitHub issue for security vulnerabilities.
-- Email security reports privately to the maintainers via the Rethunk-Tech organization contact channels (or use the security advisory feature on GitHub if available for the repository).
+- Submit a **[private security advisory](https://github.com/Rethunk-Tech/repo-ops/security/advisories/new)** on GitHub (preferred).
 - Include as much detail as possible: affected versions, reproduction steps, potential impact, and suggested remediation if known.
 
 We will acknowledge receipt within 48 hours and aim to triage and respond within 7 days for confirmed issues.
+
+## Reporting a Code of Conduct Violation
+
+Code of Conduct violations should be reported privately — **not** via public issues or security advisories.
+
+- Contact a [Rethunk-Tech organization owner](https://github.com/orgs/Rethunk-Tech/people) on GitHub through a private message, or
+- Use any **Contact maintainers** link shown on the [repository home page](https://github.com/Rethunk-Tech/repo-ops).
+
+All complaints will be reviewed and investigated promptly and fairly. See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for enforcement guidelines.
 
 ## Supported Versions
 
