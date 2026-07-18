@@ -77,8 +77,10 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
    | `--commit-dry-run` | Print intended messages and file lists; no `git commit`. |
    | `--commit-on-fail` | Also attempt commits when verify/apply failed (default: skip failed repos). |
 
+   **Branch / PR mode:** after commits land, pass **`--pr`** (optional **`--pr-base`**, **`--branch-prefix`**) to push a branch and open a PR via `gh` instead of leaving changes on the current branch. Requires authenticated `gh`. See [usage.md — Branch / PR workflow](usage.md#branch--pr-workflow-apply).
+
    **Commit-agent providers:** default `cursor` when `REPO_OPS_COMMIT_AGENT_PROVIDER` is unset. Additional providers can register via `repo_ops_upgrade.commit_agent_providers.register_commit_agent_provider`. **Guardrails:** skips repos that were dirty at start unless `--allow-dirty`; never stages `.env`, credential-like paths, or key material; fails closed when verify failed (unless `--commit-on-fail`). Install Cursor support: `uv pip install 'repo-ops-upgrade[commit-agent-cursor]'` (alias: `[agent]`).
 
-   **IDE agents:** prefer MCP **`plugin-rethunk-git-rethunk-git`** `batch_commit` with `push: "never"` when committing from Cursor/Claude; use `--commit=conventional` for headless bulk apply after `apply` logs are green.
+   **IDE agents:** prefer MCP **`plugin-rethunk-git-git`** `batch_commit` with `push: "never"` when committing from Cursor/Claude; use `--commit=conventional` for headless bulk apply after `apply` logs are green.
 
 **See also (tracking issues):** [#11](https://github.com/Rethunk-Tech/repo-ops/issues/11) remediation apply reporting (closed) · [#12](https://github.com/Rethunk-Tech/repo-ops/issues/12) bun outdated JSON (closed) · [#13](https://github.com/Rethunk-Tech/repo-ops/issues/13) submodule umbrella workflow · [#14](https://github.com/Rethunk-Tech/repo-ops/issues/14) end-of-run roll-up (closed) · [#15](https://github.com/Rethunk-Tech/repo-ops/issues/15) optional post-apply commits (closed) · [#16](https://github.com/Rethunk-Tech/repo-ops/issues/16) plan `--json-out` artifact (closed) · [#21](https://github.com/Rethunk-Tech/repo-ops/issues/21) SHA-pinned Actions unpin (closed).

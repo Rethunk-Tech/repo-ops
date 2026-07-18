@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Yarn targeted bump:** skip ghost-bump isolated-copy extraction when the workspace has no `resolutions` entries (perf; no behavior change when resolutions exist).
+
+### Fixed
+
+- **Docs:** audit `--fix-plan`/`--fix`/`--sarif-out`, dependabot scaffold flags, license scope/exit codes, `find_timeout` default (60), pipenv check subprocess, Rust `--latest` honesty, programmatic-imports export surface, and related usage/architecture/testing drift (wave-2 doc pass).
+
 ## [0.18.1] - 2026-07-14
 
 ### Fixed
