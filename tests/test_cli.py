@@ -26,6 +26,9 @@ _MAIN_HELP_TARGETS: list[tuple[str, str, list[str]]] = [
     ("repo_ops.install_skill", "main", []),
     ("repo_ops_audit.audit", "main", []),
     ("repo_ops_dependabot.dependabot", "main", []),
+    ("repo_ops_lockfiles.sbom", "main", []),
+    ("repo_ops_lockfiles.license_policy", "main", []),
+    ("repo_ops_doctor.doctor", "main", []),
 ]
 
 
@@ -110,6 +113,9 @@ def test_repo_ops_dispatcher_subcommands_help(capsys) -> None:
         "install-skill",
         "audit",
         "dependabot",
+        "sbom",
+        "license",
+        "doctor",
     ):
         assert cli.main([sub, "--help"]) == 0
         out = capsys.readouterr().out
@@ -160,6 +166,16 @@ def test_cli_version_flag_short_circuits(capsys) -> None:
     assert out.startswith("repo-ops ")
     # _resolve_version pulls importlib.metadata.version("repo-ops").
     assert cli._resolve_version() in out
+
+
+def test_cli_handler_dicts_have_matching_keys() -> None:
+    """Dispatcher routing dicts must stay in sync."""
+    from repo_ops import cli
+
+    handler_keys = set(cli._HANDLERS)
+    builder_keys = set(cli._HELP_BUILDERS)
+    help_keys = set(cli._SUBCOMMAND_HELP)
+    assert handler_keys == builder_keys == help_keys
 
 
 def test_manager_filter_choices_match_registry() -> None:

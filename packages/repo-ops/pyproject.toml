@@ -29,7 +29,6 @@ dependencies = [
   "repo-ops-py-pip-tools",
   "repo-ops-py-hatch",
   "repo-ops-upgrade",
-  "repo-ops-upgrade-remediations-js",
   "repo-ops-inventory",
   "repo-ops-pushed",
   "repo-ops-audit",
@@ -58,7 +57,6 @@ repo-ops-py-poetry = { workspace = true }
 repo-ops-py-pip-tools = { workspace = true }
 repo-ops-py-hatch = { workspace = true }
 repo-ops-upgrade = { workspace = true }
-repo-ops-upgrade-remediations-js = { workspace = true }
 repo-ops-inventory = { workspace = true }
 repo-ops-pushed = { workspace = true }
 repo-ops-audit = { workspace = true }

@@ -58,6 +58,8 @@ _HELP_BUILDERS: dict[str, Callable[[], argparse.ArgumentParser]] = {
     "doctor": build_doctor_parser,
 }
 
+_REGISTER_COMMANDS = frozenset({"inventory", "plan", "apply", "audit"})
+
 _SUBCOMMAND_HELP = {
     "inventory": "Dependency footprint report",
     "plan": "Upgrade plan: deps + Actions + remediations (read-only)",
@@ -109,7 +111,6 @@ def _wants_subcommand_help(remainder: list[str]) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    register_all()
     if (
         argv is not None
         and len(argv) >= 2
@@ -141,6 +142,9 @@ def main(argv: list[str] | None = None) -> int:
     if _wants_subcommand_help(remainder):
         _HELP_BUILDERS[args.command]().print_help()
         return 0
+
+    if args.command in _REGISTER_COMMANDS:
+        register_all()
 
     handler = _HANDLERS[args.command]
     # Forward the remainder as-is (possibly an empty list). Using `remainder or
