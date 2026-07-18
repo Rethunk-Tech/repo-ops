@@ -51,7 +51,7 @@ def test_check_deno_runs_outdated_against_fixture_lock(tmp_path: Path) -> None:
     )
 
     try:
-        changes = check_deno(ws)
+        changes, behind = check_deno(ws)
     except RuntimeError as exc:
         msg = str(exc).lower()
         if any(kw in msg for kw in ("network", "fetch", "connect", "timeout")):
@@ -59,3 +59,4 @@ def test_check_deno_runs_outdated_against_fixture_lock(tmp_path: Path) -> None:
         raise
 
     assert isinstance(changes, list)
+    assert isinstance(behind, list)
