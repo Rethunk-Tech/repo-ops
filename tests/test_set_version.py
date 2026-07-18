@@ -102,10 +102,10 @@ def test_apply_warns_and_counts_unparseable_version(
     assert "skipped" in captured.err
     # The skipped manifest must not be rewritten.
     assert "0.8.0rc1" in prerelease_toml.read_text(encoding="utf-8")
-    # The parseable manifest must have been updated.
-    assert set_version.read_version(root_toml) == "0.9.0"
-    # Summary line must appear on stdout.
-    assert "1 manifest(s)" in captured.out
+    # All-or-nothing: parseable manifest must not change when any peer is skipped.
+    assert set_version.read_version(root_toml) == "0.8.0"
+    # Summary line must not appear when the run aborts before writes.
+    assert "manifest(s)" not in captured.out
 
 
 def test_show_exits_1_on_unparseable_manifest(

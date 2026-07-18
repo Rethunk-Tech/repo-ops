@@ -17,6 +17,11 @@ version, no manifests found, or any manifest whose version cannot be parsed
 (non-standard format such as pre/post-release).  Unparseable manifests are
 never silently skipped — they are reported on stderr so mixed-version state
 cannot be hidden.
+
+``[project].version`` must be a standalone double-quoted ``X.Y.Z`` line (no
+inline comments, single quotes, or pre/post-release suffixes).  ``set`` and
+``bump`` validate every manifest before writing; if any manifest is
+unparseable, no files are modified (all-or-nothing).
 """
 
 from __future__ import annotations
@@ -110,7 +115,7 @@ def _apply(paths: list[Path], new: str, dry_run: bool) -> int:
     if not SEMVER_RE.match(new):
         print(f"error: {new!r} is not a valid X.Y.Z version", file=sys.stderr)
         return 1
-    changed = 0
+    planned: list[tuple[Path, str, str]] = []
     skipped = 0
     for path in paths:
         current = read_version(path)
@@ -123,23 +128,24 @@ def _apply(paths: list[Path], new: str, dry_run: bool) -> int:
             )
             skipped += 1
             continue
-        rel = path.relative_to(ROOT)
-        if current == new:
-            continue
-        if dry_run:
-            print(f"  would set {rel}: {current} -> {new}")
-        else:
-            write_version(path, new)
-            print(f"  {rel}: {current} -> {new}")
-        changed += 1
-    verb = "would update" if dry_run else "updated"
-    print(f"{verb} {changed} manifest(s) to {new}")
+        if current != new:
+            planned.append((path, current, new))
     if skipped:
         print(
-            f"warning: {skipped} manifest(s) skipped (unparseable version)",
+            f"warning: {skipped} manifest(s) skipped (unparseable version); "
+            "no files modified",
             file=sys.stderr,
         )
         return 1
+    for path, current, target in planned:
+        rel = path.relative_to(ROOT)
+        if dry_run:
+            print(f"  would set {rel}: {current} -> {target}")
+        else:
+            write_version(path, target)
+            print(f"  {rel}: {current} -> {target}")
+    verb = "would update" if dry_run else "updated"
+    print(f"{verb} {len(planned)} manifest(s) to {new}")
     return 0
 
 
