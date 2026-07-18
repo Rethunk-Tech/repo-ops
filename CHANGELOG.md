@@ -7,13 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [0.19.0] - 2026-07-18
 
-- **Yarn targeted bump:** skip ghost-bump isolated-copy extraction when the workspace has no `resolutions` entries (perf; no behavior change when resolutions exist).
+### Added
+
+- **`repo-ops-py-pdm` / `repo-ops-py-pipenv`:** first-class Python PM plugin packages with `register()`, workspace/CI/mypy/coverage wiring, and smoke tests (compat re-exports remain under `repo_ops_py`).
+- **npm/pnpm/yarn apply-level audit overrides:** advisory-safe version pins apply like bun (#140 parity), including when check reports no other changes; pnpm targeted-bump restores the lockfile on ghost-bump guard failure.
+- **Deno `behind_latest` + `--latest`:** Deno check reports behind-latest gaps; `REPO_OPS_DENO_UPDATE_LATEST` flips under the fleet `--latest` umbrella; ghost-bump guard after apply.
+- **`audit --fix-plan` documentation** and cheat-sheet coverage; doctor probes `cargo-audit` via `cargo audit --version`.
+- **Inventory `bun.lockb`:** best-effort `bun` dump to yarn-compatible text, or explicit `bun(bin:unsupported)` instead of silent zero versions.
+- **License/SBOM breadth:** poetry/pdm/pipenv lock scans; npm lockfile fallback without `node_modules`; pdm/pipenv/deno snapshots; bun.lockb / requirements.txt / jsr: in SBOM; PyPI metadata (readme/authors/classifiers/urls) on the publishable `repo-ops` wheel.
+- **Verify/commit coverage:** pdm/pipenv verify gates; hatch verify skips `uv sync --locked` when no `uv.lock`; pdm/pipenv commit scoping.
+- **CI:** blocking pytest excludes `integration`; advisory integration job installs govulncheck + Node/Corepack; audit package tests and pdm/pipenv smokes collected; remediations + container/audit/dependabot/doctor on mypy; stronger release.yml gates; `repo_ops_container` / pdm / pipenv import-boundary rules.
+- **install-skill:** rewrites relative `HUMANS.md` / `docs/*` / `packages/*` links to GitHub blob URLs on install.
 
 ### Fixed
 
-- **Docs:** audit `--fix-plan`/`--fix`/`--sarif-out`, dependabot scaffold flags, license scope/exit codes, `find_timeout` default (60), pipenv check subprocess, Rust `--latest` honesty, programmatic-imports export surface, and related usage/architecture/testing drift (wave-2 doc pass).
+- **Hatch plan/apply alignment:** without `uv.lock` and without `--migrate-to-uv-lock`, check no longer reports actionable drift (apply was already a no-op).
+- **`go_generate` remediations:** default-off on the production `dispatch` path unless `REPO_OPS_REMEDIATE_GO_GENERATE=1` (closes env-gate bypass).
+- **Timeouts:** `find_timeout` / SETTINGS defaults unified at **60s**; docs reconciled.
+- **Container Hub auth:** `credHelpers` resolves `registry-1.docker.io` aliases.
+- **Fail-fast pool:** drain the completed `wait()` batch before clearing futures (no KeyError / dropped results).
+- **Docs/CLI:** CONTRIBUTING MCP server id `plugin-rethunk-git-git`; usage/AGENTS/testing/architecture/programmatic-imports pass for audit flags, Rust `--latest` honesty, and workspace export surface.
+- **Tests:** pytest module basename collision for go env classify; pnpm ghost-bump integration; orphaned `packages/repo-ops-audit/tests` now in `testpaths`.
+
+### Changed
+
+- **Yarn targeted bump:** skip ghost-bump isolated-copy extraction when the workspace has no `resolutions` entries (perf; no behavior change when resolutions exist).
+- **Core plugin registration:** pdm/pipenv/deno/precommit registration lives with the meta package / plugins rather than core-only paths where applicable.
+- **Coverage/mypy:** remediations-{core,py,go,rust,deno} included in workspace gates.
 
 ## [0.18.1] - 2026-07-14
 
@@ -629,7 +651,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.17.3...v0.18.0
 [0.17.3]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.17.2...v0.17.3
