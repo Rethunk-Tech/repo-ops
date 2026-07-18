@@ -13,18 +13,16 @@ def register_precommit() -> None:
 
 def register_pdm() -> None:
     """Register the PDM checker and applier with the upgrade registry."""
-    from repo_ops_py.pdm import apply_pdm, check_pdm
-    from repo_ops_upgrade import registry
+    from repo_ops_py_pdm import register
 
-    registry.register("pdm", check_pdm, apply_pdm)
+    register()
 
 
 def register_pipenv() -> None:
     """Register the pipenv checker and applier with the upgrade registry."""
-    from repo_ops_py.pipenv import apply_pipenv, check_pipenv
-    from repo_ops_upgrade import registry
+    from repo_ops_py_pipenv import register
 
-    registry.register("pipenv", check_pipenv, apply_pipenv)
+    register()
 
 
 def register_deno() -> None:

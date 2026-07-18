@@ -51,6 +51,8 @@ dev = [
   "repo-ops-py-poetry",
   "repo-ops-py-pip-tools",
   "repo-ops-py-hatch",
+  "repo-ops-py-pdm",
+  "repo-ops-py-pipenv",
   "repo-ops-upgrade",
   "repo-ops-upgrade-remediations-core",
   "repo-ops-upgrade-remediations-js",
@@ -93,6 +95,8 @@ repo-ops-py-uv = { workspace = true }
 repo-ops-py-poetry = { workspace = true }
 repo-ops-py-pip-tools = { workspace = true }
 repo-ops-py-hatch = { workspace = true }
+repo-ops-py-pdm = { workspace = true }
+repo-ops-py-pipenv = { workspace = true }
 repo-ops-upgrade = { workspace = true }
 repo-ops-upgrade-remediations-core = { workspace = true }
 repo-ops-upgrade-remediations-js = { workspace = true }
@@ -159,6 +163,8 @@ packages = [
   "repo_ops_py_poetry",
   "repo_ops_py_pip_tools",
   "repo_ops_py_hatch",
+  "repo_ops_py_pdm",
+  "repo_ops_py_pipenv",
   "repo_ops_upgrade",
   "repo_ops_upgrade_remediations_core",
   "repo_ops_upgrade_remediations_js",
@@ -192,6 +198,8 @@ source = [
   "packages/repo-ops-py-poetry/src",
   "packages/repo-ops-py-pip-tools/src",
   "packages/repo-ops-py-hatch/src",
+  "packages/repo-ops-py-pdm/src",
+  "packages/repo-ops-py-pipenv/src",
   "packages/repo-ops-upgrade/src",
   "packages/repo-ops-upgrade-remediations-core/src",
   "packages/repo-ops-upgrade-remediations-js/src",
@@ -283,6 +291,14 @@ disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
 module = ["repo_ops_py_hatch.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_py_pdm.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_py_pipenv.*"]
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]

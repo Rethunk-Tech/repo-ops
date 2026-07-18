@@ -28,6 +28,8 @@ dependencies = [
   "repo-ops-py-poetry",
   "repo-ops-py-pip-tools",
   "repo-ops-py-hatch",
+  "repo-ops-py-pdm",
+  "repo-ops-py-pipenv",
   "repo-ops-upgrade",
   "repo-ops-inventory",
   "repo-ops-pushed",
@@ -56,6 +58,8 @@ repo-ops-py-uv = { workspace = true }
 repo-ops-py-poetry = { workspace = true }
 repo-ops-py-pip-tools = { workspace = true }
 repo-ops-py-hatch = { workspace = true }
+repo-ops-py-pdm = { workspace = true }
+repo-ops-py-pipenv = { workspace = true }
 repo-ops-upgrade = { workspace = true }
 repo-ops-inventory = { workspace = true }
 repo-ops-pushed = { workspace = true }

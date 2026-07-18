@@ -31,7 +31,8 @@ Package `__init__.py` files typically export only `main` (CLI entry) and `regist
 | poetry plugin | `repo_ops_py_poetry` | `register()` |
 | pip-tools plugin | `repo_ops_py_pip_tools` | `register()` |
 | hatch plugin | `repo_ops_py_hatch` | `register()` |
-| pipenv | `repo_ops_py.pipenv` | `check_pipenv`, `apply_pipenv` (no separate package) |
+| pdm plugin | `repo_ops_py_pdm` | `register()` |
+| pipenv plugin | `repo_ops_py_pipenv` | `register()`; `repo_ops_py.pipenv` re-exports `check_pipenv` / `apply_pipenv` |
 | Container | `repo_ops_container` | `register()`, Dockerfile/compose pin check/apply |
 | Remediations core | `repo_ops_upgrade_remediations_core` | Hook registry and dispatch |
 | Remediations JS | `repo_ops_upgrade_remediations_js` | Node post-upgrade hooks |

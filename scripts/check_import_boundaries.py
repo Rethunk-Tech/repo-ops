@@ -25,6 +25,8 @@ FORBIDDEN: dict[str, set[str]] = {
         "repo_ops_py_poetry",
         "repo_ops_py_pip_tools",
         "repo_ops_py_hatch",
+        "repo_ops_py_pdm",
+        "repo_ops_py_pipenv",
     },
 }
 
@@ -37,6 +39,8 @@ PM_PREFIXES = (
     "repo_ops_py_poetry",
     "repo_ops_py_pip_tools",
     "repo_ops_py_hatch",
+    "repo_ops_py_pdm",
+    "repo_ops_py_pipenv",
     "repo_ops_go",
     "repo_ops_rust",
     "repo_ops_container",

@@ -83,6 +83,11 @@ def test_repo_ops_container_in_pm_prefixes() -> None:
     assert "repo_ops_container" in check_import_boundaries.PM_PREFIXES
 
 
+def test_repo_ops_py_pdm_and_pipenv_in_pm_prefixes() -> None:
+    assert "repo_ops_py_pdm" in check_import_boundaries.PM_PREFIXES
+    assert "repo_ops_py_pipenv" in check_import_boundaries.PM_PREFIXES
+
+
 def test_container_pm_upgrade_submodule_allowlist(tmp_path: Path) -> None:
     good = tmp_path / "good.py"
     good.write_text("from repo_ops_upgrade import registry\n", encoding="utf-8")
