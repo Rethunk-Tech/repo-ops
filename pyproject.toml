@@ -107,16 +107,16 @@ repo-ops-dependabot = { workspace = true }
 repo-ops-doctor = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "packages/repo-ops-lockfiles/tests"]
+testpaths = ["tests", "packages/repo-ops-lockfiles/tests", "packages/repo-ops-audit/tests"]
 pythonpath = []
 markers = [
-  "integration: tests requiring real external tools (bun, yarn, go, git network)",
+  "integration: tests requiring real external tools (bun, yarn, npm registry, go, govulncheck audit, git network)",
 ]
 
 [tool.ruff]
 target-version = "py310"
 line-length = 88
-extend-exclude = [".git", "__pycache__", "build", "dist", ".venv", "venv"]
+extend-exclude = [".git", "__pycache__", ".ruff_cache", "build", "dist", ".venv", "venv"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "C4", "SIM", "RUF", "S"]
@@ -160,7 +160,12 @@ packages = [
   "repo_ops_py_pip_tools",
   "repo_ops_py_hatch",
   "repo_ops_upgrade",
+  "repo_ops_upgrade_remediations_core",
   "repo_ops_upgrade_remediations_js",
+  "repo_ops_upgrade_remediations_py",
+  "repo_ops_upgrade_remediations_go",
+  "repo_ops_upgrade_remediations_rust",
+  "repo_ops_upgrade_remediations_deno",
   "repo_ops_inventory",
   "repo_ops_pushed",
   "repo_ops_audit",
@@ -188,7 +193,12 @@ source = [
   "packages/repo-ops-py-pip-tools/src",
   "packages/repo-ops-py-hatch/src",
   "packages/repo-ops-upgrade/src",
+  "packages/repo-ops-upgrade-remediations-core/src",
   "packages/repo-ops-upgrade-remediations-js/src",
+  "packages/repo-ops-upgrade-remediations-py/src",
+  "packages/repo-ops-upgrade-remediations-go/src",
+  "packages/repo-ops-upgrade-remediations-rust/src",
+  "packages/repo-ops-upgrade-remediations-deno/src",
   "packages/repo-ops-inventory/src",
   "packages/repo-ops-pushed/src",
   "packages/repo-ops-audit/src",
@@ -280,7 +290,27 @@ module = ["repo_ops_upgrade.*"]
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
+module = ["repo_ops_upgrade_remediations_core.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
 module = ["repo_ops_upgrade_remediations_js.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_upgrade_remediations_py.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_upgrade_remediations_go.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_upgrade_remediations_rust.*"]
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["repo_ops_upgrade_remediations_deno.*"]
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
