@@ -122,8 +122,8 @@ class TestCheckWorkspaceReachability:
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
         with (
-            patch("repo_ops_py.pdm.shutil.which", return_value="/usr/bin/pdm"),
-            patch("repo_ops_py.pdm.run", side_effect=fake_run),
+            patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
+            patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
         ):
             result = check_workspace(_ws(tmp_path, "pdm", "py"))
 
@@ -152,8 +152,8 @@ class TestCheckWorkspaceReachability:
             return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
 
         with (
-            patch("repo_ops_py.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-            patch("repo_ops_py.pipenv.run", side_effect=fake_run),
+            patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
+            patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
         ):
             result = check_workspace(_ws(tmp_path, "pipenv", "py"))
 

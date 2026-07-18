@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops_models import Workspace
-from repo_ops_py.pipenv import apply_pipenv, check_pipenv
+from repo_ops_py_pipenv.pipenv import apply_pipenv, check_pipenv
 
 
 def _ws(tmp_path: Path) -> Workspace:
@@ -35,8 +35,8 @@ def test_check_pipenv_parses_outdated_output(tmp_path: Path) -> None:
         return subprocess.CompletedProcess(cmd, 0, stdout=_OUTDATED_OUTPUT, stderr="")
 
     with (
-        patch("repo_ops_py.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py.pipenv.run", side_effect=fake_run),
+        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
+        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
     ):
         changes = check_pipenv(_ws(tmp_path))
 
@@ -53,8 +53,8 @@ def test_check_pipenv_returns_empty_when_up_to_date(tmp_path: Path) -> None:
         return subprocess.CompletedProcess(cmd, 0, stdout=empty_output, stderr="")
 
     with (
-        patch("repo_ops_py.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py.pipenv.run", side_effect=fake_run),
+        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
+        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
     ):
         changes = check_pipenv(_ws(tmp_path))
 
@@ -63,7 +63,7 @@ def test_check_pipenv_returns_empty_when_up_to_date(tmp_path: Path) -> None:
 
 def test_check_pipenv_warns_when_pipenv_absent(tmp_path: Path, capsys) -> None:
     """check_pipenv must not raise when pipenv is absent — returns [] + WARN."""
-    with patch("repo_ops_py.pipenv.shutil.which", return_value=None):
+    with patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value=None):
         result = check_pipenv(_ws(tmp_path))
 
     assert result == []
@@ -80,8 +80,8 @@ def test_check_pipenv_warns_when_venv_not_initialised(tmp_path: Path, capsys) ->
         )
 
     with (
-        patch("repo_ops_py.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py.pipenv.run", side_effect=fake_run),
+        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
+        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
     ):
         result = check_pipenv(_ws(tmp_path))
 
@@ -104,8 +104,8 @@ def test_check_pipenv_raises_when_pip_fails(tmp_path: Path) -> None:
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="pip failed")
 
     with (
-        patch("repo_ops_py.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py.pipenv.run", side_effect=fake_run),
+        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
+        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
     ):
         try:
             check_pipenv(_ws(tmp_path))
@@ -124,8 +124,8 @@ def test_check_pipenv_invokes_venv_probe_then_pip(tmp_path: Path) -> None:
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
-        patch("repo_ops_py.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py.pipenv.run", side_effect=fake_run),
+        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
+        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
     ):
         check_pipenv(_ws(tmp_path))
 
@@ -147,8 +147,8 @@ def test_apply_pipenv_runs_pipenv_update(tmp_path: Path) -> None:
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
-        patch("repo_ops_py.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py.pipenv.run", side_effect=fake_run),
+        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
+        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
     ):
         apply_pipenv(_ws(tmp_path))
 
@@ -156,10 +156,99 @@ def test_apply_pipenv_runs_pipenv_update(tmp_path: Path) -> None:
 
 
 def test_apply_pipenv_raises_when_pipenv_absent(tmp_path: Path) -> None:
-    with patch("repo_ops_py.pipenv.shutil.which", return_value=None):
+    with patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value=None):
         try:
             apply_pipenv(_ws(tmp_path))
         except RuntimeError as exc:
             assert "pipenv not on PATH" in str(exc)
         else:
             raise AssertionError("expected RuntimeError")
+
+
+def test_check_pipenv_parses_json_outdated(tmp_path: Path) -> None:
+    """F160 — JSON pip list --outdated output parses into Change entries."""
+    json_out = (
+        '[{"name": "requests", "version": "2.28.0", "latest_version": "2.31.0"},'
+        ' {"name": "certifi", "version": "2022.12.7", "latest_version": "2023.7.22"}]'
+    )
+
+    def fake_run(cmd, cwd, timeout=None):
+        if cmd[:2] == ["pipenv", "--venv"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="/fake/.venv", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout=json_out, stderr="")
+
+    with (
+        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
+        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
+    ):
+        changes = check_pipenv(_ws(tmp_path))
+
+    assert len(changes) == 2
+    assert changes[0].name == "requests"
+    assert changes[0].from_ver == "2.28.0"
+    assert changes[0].to == "2.31.0"
+
+
+def test_check_pipenv_json_keyerror_falls_back_without_raise(
+    tmp_path: Path,
+) -> None:
+    """F160 — KeyError on JSON entries is caught (column fallback, no raise)."""
+    # Valid JSON list but missing version keys → KeyError → column fallback.
+    json_out = '[{"name": "requests"}]'
+
+    def fake_run(cmd, cwd, timeout=None):
+        if cmd[:2] == ["pipenv", "--venv"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="/fake/.venv", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout=json_out, stderr="")
+
+    with (
+        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
+        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
+    ):
+        changes = check_pipenv(_ws(tmp_path))
+
+    # Column fallback cannot parse JSON text; result is empty, not an exception.
+    assert changes == []
+
+
+def test_check_pipenv_invalid_json_falls_back_to_columns(tmp_path: Path) -> None:
+    """F160 — JSONDecodeError falls back to column-format parsing."""
+    column_out = (
+        "Package Version Latest\n"
+        "------- ------- ------\n"
+        "requests 2.28.0 2.31.0\n"
+    )
+
+    def fake_run(cmd, cwd, timeout=None):
+        if cmd[:2] == ["pipenv", "--venv"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="/fake/.venv", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout=column_out, stderr="")
+
+    with (
+        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
+        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
+    ):
+        changes = check_pipenv(_ws(tmp_path))
+
+    assert len(changes) == 1
+    assert changes[0].name == "requests"
+    assert changes[0].to == "2.31.0"
+
+
+def test_check_pipenv_venv_probe_uses_timeout_check(tmp_path: Path) -> None:
+    """F212 — pipenv --venv probe uses resolve_timeout_check."""
+    from repo_ops_core.constants import TIMEOUT_CHECK
+
+    captured: list[int | None] = []
+
+    def fake_run(cmd, cwd, timeout=None):
+        captured.append(timeout)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
+        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
+    ):
+        check_pipenv(_ws(tmp_path))
+
+    assert captured[0] == TIMEOUT_CHECK

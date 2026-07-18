@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops_models import Workspace
-from repo_ops_py.pdm import apply_pdm, check_pdm
+from repo_ops_py_pdm.pdm import apply_pdm, check_pdm
 
 
 def _ws(tmp_path: Path) -> Workspace:
@@ -32,8 +32,8 @@ def test_check_pdm_returns_changes_from_dry_run(tmp_path: Path) -> None:
         return subprocess.CompletedProcess(cmd, 0, stdout=output, stderr="")
 
     with (
-        patch("repo_ops_py.pdm.shutil.which", return_value="/usr/bin/pdm"),
-        patch("repo_ops_py.pdm.run", side_effect=fake_run),
+        patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
+        patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
     ):
         changes = check_pdm(_ws(tmp_path))
 
@@ -53,8 +53,8 @@ def test_check_pdm_returns_empty_when_up_to_date(tmp_path: Path) -> None:
         )
 
     with (
-        patch("repo_ops_py.pdm.shutil.which", return_value="/usr/bin/pdm"),
-        patch("repo_ops_py.pdm.run", side_effect=fake_run),
+        patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
+        patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
     ):
         changes = check_pdm(_ws(tmp_path))
 
@@ -63,7 +63,7 @@ def test_check_pdm_returns_empty_when_up_to_date(tmp_path: Path) -> None:
 
 def test_check_pdm_warns_when_pdm_not_on_path(tmp_path: Path, capsys) -> None:
     """check_pdm must not raise when pdm is absent — returns [] + WARN."""
-    with patch("repo_ops_py.pdm.shutil.which", return_value=None):
+    with patch("repo_ops_py_pdm.pdm.shutil.which", return_value=None):
         result = check_pdm(_ws(tmp_path))
 
     assert result == []
@@ -77,8 +77,8 @@ def test_check_pdm_raises_on_nonzero_returncode(tmp_path: Path) -> None:
         )
 
     with (
-        patch("repo_ops_py.pdm.shutil.which", return_value="/usr/bin/pdm"),
-        patch("repo_ops_py.pdm.run", side_effect=fake_run),
+        patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
+        patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
     ):
         try:
             check_pdm(_ws(tmp_path))
@@ -96,8 +96,8 @@ def test_apply_pdm_runs_pdm_update(tmp_path: Path) -> None:
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
-        patch("repo_ops_py.pdm.shutil.which", return_value="/usr/bin/pdm"),
-        patch("repo_ops_py.pdm.run", side_effect=fake_run),
+        patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
+        patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
     ):
         apply_pdm(_ws(tmp_path))
 
@@ -105,7 +105,7 @@ def test_apply_pdm_runs_pdm_update(tmp_path: Path) -> None:
 
 
 def test_apply_pdm_raises_when_pdm_absent(tmp_path: Path) -> None:
-    with patch("repo_ops_py.pdm.shutil.which", return_value=None):
+    with patch("repo_ops_py_pdm.pdm.shutil.which", return_value=None):
         try:
             apply_pdm(_ws(tmp_path))
         except RuntimeError as exc:

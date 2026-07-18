@@ -13,9 +13,13 @@ dependencies = [
   "repo-ops-core",
   "repo-ops-models",
   "repo-ops-upgrade",
+  "repo-ops-py-pdm",
+  "repo-ops-py-pipenv",
 ]
 
 [tool.uv.sources]
 repo-ops-core = { workspace = true }
 repo-ops-models = { workspace = true }
 repo-ops-upgrade = { workspace = true }
+repo-ops-py-pdm = { workspace = true }
+repo-ops-py-pipenv = { workspace = true }
