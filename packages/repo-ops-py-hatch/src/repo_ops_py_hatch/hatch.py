@@ -34,17 +34,39 @@ def _install_target(ws_path: Path) -> str:
     return "."
 
 
+def _migrate_to_uv_lock_enabled() -> bool:
+    """Return True when the operator has opted into creating a uv.lock for hatch projects."""
+    return os.environ.get("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 def check_hatch(ws: Workspace) -> list[Change]:
     if (ws.path / "uv.lock").exists():
         if not shutil.which("uv"):
             print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
             return []
         return check_uv_lock(ws)
+    # No uv.lock: align with apply_hatch — only probe for drift when migrate is opted in.
+    if not _migrate_to_uv_lock_enabled():
+        print(
+            f"WARN {ws.path}: hatch project has no uv.lock; "
+            "set --migrate-to-uv-lock / REPO_OPS_HATCH_MIGRATE_UV_LOCK to enable upgrades",
+            file=sys.stderr,
+        )
+        return []
     if shutil.which("uv"):
         changes: list[Change] = []
         with tempfile.TemporaryDirectory(prefix="repo-ops-hatch-") as tmp:
             venv_dir = Path(tmp) / "venv"
-            venv_proc = run(["uv", "venv", str(venv_dir)], ws.path, timeout=120)
+            venv_proc = run(
+                ["uv", "venv", str(venv_dir)],
+                ws.path,
+                timeout=resolve_timeout_check(),
+            )
             if venv_proc.returncode != 0:
                 raise RuntimeError(venv_proc.stderr.strip() or "uv venv failed")
             install_target = _install_target(ws.path)
@@ -61,7 +83,7 @@ def check_hatch(ws: Workspace) -> list[Change]:
             proc = run(
                 ["uv", "pip", "list", "--outdated"],
                 ws.path,
-                timeout=120,
+                timeout=resolve_timeout_check(),
                 env={"VIRTUAL_ENV": str(venv_dir)},
             )
             if proc.returncode != 0:
@@ -75,16 +97,6 @@ def check_hatch(ws: Workspace) -> list[Change]:
         return changes
     print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
     return []
-
-
-def _migrate_to_uv_lock_enabled() -> bool:
-    """Return True when the operator has opted into creating a uv.lock for hatch projects."""
-    return os.environ.get("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "").lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
 
 
 def apply_hatch(ws: Workspace) -> None:
