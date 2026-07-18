@@ -8,7 +8,7 @@ The **installable package** is `packages/repo-ops`. The repository root is a uv 
 
 ```bash
 uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git#subdirectory=packages/repo-ops"
-repo-ops inventory --help
+repo-ops doctor
 ```
 
 ## Requirements
@@ -29,3 +29,7 @@ repo-ops inventory --help
 | [Testing](docs/testing.md) | Verification and CI commands |
 | [Agents guide](AGENTS.md) | Agent quick reference, coordination, and workflows |
 | [Contributing](CONTRIBUTING.md) | Commit conventions, code style, git for agents |
+| [Security](SECURITY.md) | Vulnerability and conduct reporting |
+| [Code of conduct](CODE_OF_CONDUCT.md) | Community standards and enforcement |
+| [Changelog](CHANGELOG.md) | Release history |
+| [License](LICENSE) | MIT License |
