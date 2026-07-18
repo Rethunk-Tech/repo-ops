@@ -5,7 +5,7 @@ Reuses the existing lockfile parsers (parsers.py) to enumerate resolved
 name@version pairs, then emits a standards-valid SBOM document.
 
 Inline parsers supplement the shared set for lockfile types not yet exposed
-in parsers.py (uv.lock/poetry.lock, go.sum, Cargo.lock).
+in parsers.py (uv.lock/poetry.lock, go.sum, Cargo.lock, requirements.txt).
 
 Also includes container image pins (Dockerfile ``FROM`` / compose
 ``image:``, emitted as ``pkg:oci`` purls) and GitHub Actions ``uses:`` pins
@@ -13,19 +13,23 @@ under ``.github/workflows`` (emitted as ``pkg:github`` purls), reusing the
 repo-ops-container and repo-ops-upgrade parsers when they are importable;
 both are best-effort and degrade to "no components of that kind" rather
 than failing the scan when a parser is unavailable.
+
+Per-component license metadata is emitted as SPDX ``NOASSERTION`` /
+CycloneDX ``NOASSERTION`` expression (lockfile parsers do not carry
+license ids; use ``repo-ops license`` for policy scanning).
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
 import importlib.metadata
 import json
+import logging
 import os
 import re
 import sys
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -48,6 +52,11 @@ from repo_ops_lockfiles.parsers import (
     versions_pnpm_lock,
     versions_yarn_lock,
 )
+
+_log = logging.getLogger(__name__)
+
+# SPDX / CycloneDX policy when lockfiles do not carry license metadata.
+_LICENSE_NOASSERTION = "NOASSERTION"
 
 # ---------------------------------------------------------------------------
 # Inline parsers for lockfile types not exposed in parsers.py
@@ -115,6 +124,24 @@ def _versions_cargo_lock(p: Path) -> set[str]:
     return out
 
 
+_REQ_PIN_RE = re.compile(
+    r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*==\s*([^;\s]+)",
+)
+
+
+def _versions_requirements_txt(p: Path) -> set[str]:
+    """requirements.txt pinned ``name==ver`` lines → name@version."""
+    out: set[str] = set()
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("-"):
+            continue
+        m = _REQ_PIN_RE.match(line)
+        if m:
+            out.add(f"{m.group(1)}@{m.group(2)}")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # PURL helpers
 # ---------------------------------------------------------------------------
@@ -123,6 +150,11 @@ def _versions_cargo_lock(p: Path) -> set[str]:
 def _purl_npm(name: str, version: str) -> str:
     """pkg:npm purl; scoped @scope/pkg handled as-is (widely supported)."""
     return f"pkg:npm/{name}@{version}"
+
+
+def _purl_jsr(name: str, version: str) -> str:
+    """pkg:jsr purl for Deno JSR packages (``@scope/pkg`` names supported)."""
+    return f"pkg:jsr/{name}@{version}"
 
 
 def _purl_pypi(name: str, version: str) -> str:
@@ -167,6 +199,15 @@ def _split_nv(entry: str) -> tuple[str, str]:
     return entry[:at], entry[at + 1 :]
 
 
+def _safe_parse(path: Path, parser: Callable[[Path], Iterable[str]]) -> Iterable[str]:
+    """Run *parser* on *path*; log parse failures at debug and yield nothing."""
+    try:
+        return parser(path)
+    except Exception as exc:
+        _log.debug("SBOM parse failed for %s: %s", path, exc)
+        return ()
+
+
 def collect_components(root: Path) -> list[dict[str, str]]:
     """Walk *root* for lockfiles; return sorted list of unique component dicts.
 
@@ -184,6 +225,7 @@ def collect_components(root: Path) -> list[dict[str, str]]:
             "version": version,
             "purl": purl,
             "bom-ref": f"{ecosystem}:{name}@{version}",
+            "license": _LICENSE_NOASSERTION,
         }
 
     # Container + Actions parsers are optional (best-effort, lazily imported
@@ -219,71 +261,72 @@ def collect_components(root: Path) -> list[dict[str, str]]:
             continue
         fname_set = set(filenames)
 
-        # npm lockfiles (one parser per filename)
-        _npm_parsers = [
+        # npm lockfiles (one parser per filename; bun.lockb via same text parser)
+        _npm_parsers: list[tuple[str, Callable[[Path], set[str]]]] = [
             ("package-lock.json", versions_npm_lock),
             ("yarn.lock", versions_yarn_lock),
             ("pnpm-lock.yaml", versions_pnpm_lock),
             ("bun.lock", versions_bun_lock),
+            ("bun.lockb", versions_bun_lock),
         ]
         for lf_name, parser in _npm_parsers:
             if lf_name not in fname_set:
                 continue
-            with contextlib.suppress(Exception):
-                for entry in parser(dp / lf_name):
-                    if "@" in entry:
-                        nm, ver = _split_nv(entry)
-                        _add(nm, ver, _purl_npm(nm, ver), "npm")
+            for entry in _safe_parse(dp / lf_name, parser):
+                if "@" in entry:
+                    nm, ver = _split_nv(entry)
+                    _add(nm, ver, _purl_npm(nm, ver), "npm")
 
         # Python lockfiles
-        _py_parsers = [
+        _py_parsers: list[tuple[str, Callable[[Path], set[str]]]] = [
             ("Pipfile.lock", versions_pipenv_lock),
             ("pdm.lock", versions_pdm_lock),
+            ("requirements.txt", _versions_requirements_txt),
         ]
         for lf_name, py_parser in _py_parsers:
             if lf_name not in fname_set:
                 continue
-            with contextlib.suppress(Exception):
-                for entry in py_parser(dp / lf_name):
-                    if "@" in entry:
-                        nm, ver = _split_nv(entry)
-                        _add(nm, ver, _purl_pypi(nm, ver), "pypi")
+            for entry in _safe_parse(dp / lf_name, py_parser):
+                if "@" in entry:
+                    nm, ver = _split_nv(entry)
+                    _add(nm, ver, _purl_pypi(nm, ver), "pypi")
 
         # uv.lock / poetry.lock  (inline parser — TOML [[package]] blocks)
         for lf_name in ("uv.lock", "poetry.lock"):
             if lf_name not in fname_set:
                 continue
-            with contextlib.suppress(Exception):
-                for entry in _versions_poetry_uv_lock(dp / lf_name):
-                    if "@" in entry:
-                        nm, ver = _split_nv(entry)
-                        _add(nm, ver, _purl_pypi(nm, ver), "pypi")
+            for entry in _safe_parse(dp / lf_name, _versions_poetry_uv_lock):
+                if "@" in entry:
+                    nm, ver = _split_nv(entry)
+                    _add(nm, ver, _purl_pypi(nm, ver), "pypi")
 
         # Go
         if "go.sum" in fname_set:
-            with contextlib.suppress(Exception):
-                for entry in _versions_go_sum(dp / "go.sum"):
-                    if "@" in entry:
-                        nm, ver = _split_nv(entry)
-                        _add(nm, ver, _purl_golang(nm, ver), "golang")
+            for entry in _safe_parse(dp / "go.sum", _versions_go_sum):
+                if "@" in entry:
+                    nm, ver = _split_nv(entry)
+                    _add(nm, ver, _purl_golang(nm, ver), "golang")
 
         # Rust
         if "Cargo.lock" in fname_set:
-            with contextlib.suppress(Exception):
-                for entry in _versions_cargo_lock(dp / "Cargo.lock"):
-                    if "@" in entry:
-                        nm, ver = _split_nv(entry)
-                        _add(nm, ver, _purl_cargo(nm, ver), "cargo")
+            for entry in _safe_parse(dp / "Cargo.lock", _versions_cargo_lock):
+                if "@" in entry:
+                    nm, ver = _split_nv(entry)
+                    _add(nm, ver, _purl_cargo(nm, ver), "cargo")
 
-        # Deno — emit npm: specifiers only (jsr/http specifiers skipped)
+        # Deno — npm: and jsr: specifiers (http(s): skipped; no stable purl)
         if "deno.lock" in fname_set:
-            with contextlib.suppress(Exception):
-                for entry in versions_deno_lock(dp / "deno.lock"):
-                    if entry.startswith("npm:"):
-                        raw = entry[4:]
-                        if "@" in raw:
-                            nm, ver = _split_nv(raw)
-                            _add(nm, ver, _purl_npm(nm, ver), "npm")
+            for entry in _safe_parse(dp / "deno.lock", versions_deno_lock):
+                if entry.startswith("npm:"):
+                    raw = entry[4:]
+                    if "@" in raw:
+                        nm, ver = _split_nv(raw)
+                        _add(nm, ver, _purl_npm(nm, ver), "npm")
+                elif entry.startswith("jsr:"):
+                    raw = entry[4:]
+                    if "@" in raw:
+                        nm, ver = _split_nv(raw)
+                        _add(nm, ver, _purl_jsr(nm, ver), "jsr")
 
         # Container image pins (Dockerfile FROM / compose image:)
         if find_container_files is not None and _parse_image_refs is not None:
@@ -292,15 +335,19 @@ def collect_components(root: Path) -> list[dict[str, str]]:
                 if rp in seen_container_files:
                     continue
                 seen_container_files.add(rp)
-                with contextlib.suppress(Exception):
-                    for ref in _parse_image_refs(fpath):
-                        if ref.get("is_stage_ref"):
-                            continue
-                        image = ref.get("image")
-                        pin = ref.get("sha") or ref.get("tag")
-                        if not image or not pin:
-                            continue
-                        _add(image, pin, _purl_oci(image, pin), "oci")
+                try:
+                    refs = _parse_image_refs(fpath)
+                except Exception as exc:
+                    _log.debug("SBOM container parse failed for %s: %s", fpath, exc)
+                    continue
+                for ref in refs:
+                    if ref.get("is_stage_ref"):
+                        continue
+                    image = ref.get("image")
+                    pin = ref.get("sha") or ref.get("tag")
+                    if not image or not pin:
+                        continue
+                    _add(image, pin, _purl_oci(image, pin), "oci")
 
         # GitHub Actions `uses:` pins under .github/workflows
         if (
@@ -311,20 +358,25 @@ def collect_components(root: Path) -> list[dict[str, str]]:
             for wf_name in sorted(fname_set):
                 if not wf_name.endswith((".yml", ".yaml")):
                     continue
-                with contextlib.suppress(Exception):
-                    for pin in parse_workflow_uses(dp / wf_name):
-                        action = pin.action
-                        # Only marketplace/repo action refs (owner/repo) are
-                        # packages; local (./path) and reusable-workflow refs
-                        # with extra path segments are not.
-                        if action.startswith(".") or action.count("/") != 1:
-                            continue
-                        _add(
-                            action,
-                            pin.pin,
-                            _purl_github(action, pin.pin),
-                            "github-actions",
-                        )
+                wf_path = dp / wf_name
+                try:
+                    pins = parse_workflow_uses(wf_path)
+                except Exception as exc:
+                    _log.debug("SBOM workflow parse failed for %s: %s", wf_path, exc)
+                    continue
+                for pin in pins:
+                    action = pin.action
+                    # Only marketplace/repo action refs (owner/repo) are
+                    # packages; local (./path) and reusable-workflow refs
+                    # with extra path segments are not.
+                    if action.startswith(".") or action.count("/") != 1:
+                        continue
+                    _add(
+                        action,
+                        pin.pin,
+                        _purl_github(action, pin.pin),
+                        "github-actions",
+                    )
 
     return sorted(seen.values(), key=lambda c: (c["name"], c["version"]))
 
@@ -339,6 +391,11 @@ def _resolve_tool_version() -> str:
         return importlib.metadata.version("repo-ops")
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
+
+
+def _component_license(c: dict[str, str]) -> str:
+    lic = (c.get("license") or "").strip()
+    return lic or _LICENSE_NOASSERTION
 
 
 def emit_cyclonedx(
@@ -380,6 +437,8 @@ def emit_cyclonedx(
                 "version": c["version"],
                 "purl": c["purl"],
                 "bom-ref": c["bom-ref"],
+                # Lockfile parsers do not carry license ids; explicit policy.
+                "licenses": [{"expression": _component_license(c)}],
             }
             for c in components
         ],
@@ -410,6 +469,7 @@ def emit_spdx(
 
     for c in components:
         sid = _spdx_id(c["name"], c["version"])
+        lic = _component_license(c)
         packages.append(
             {
                 "SPDXID": sid,
@@ -417,6 +477,8 @@ def emit_spdx(
                 "versionInfo": c["version"],
                 "downloadLocation": "NOASSERTION",
                 "filesAnalyzed": False,
+                "licenseConcluded": lic,
+                "licenseDeclared": lic,
                 "externalRefs": [
                     {
                         "referenceCategory": "PACKAGE-MANAGER",
@@ -463,13 +525,17 @@ formats:
   spdx       SPDX 2.3 JSON                 https://spdx.github.io/spdx-spec/
 
 scope:
-  Walks lockfiles under root_dir (npm, Python, Go, Rust, Deno).
-  De-duplicates by purl across multiple lockfiles in the same tree.
-  Go and Rust packages are included only when go.sum / Cargo.lock is present.
-  Also includes container image pins (Dockerfile FROM / compose image:, as
-  pkg:oci purls) and GitHub Actions `uses:` pins under .github/workflows
-  (as pkg:github purls); both best-effort, included when their local
-  parsers are importable.
+  Walks lockfiles under root_dir (npm including bun.lock/bun.lockb, Python
+  including uv/poetry/pdm/Pipfile/requirements.txt, Go, Rust, Deno).
+  Deno emits both npm: (pkg:npm) and jsr: (pkg:jsr) specifiers; http(s):
+  remote imports are omitted. De-duplicates by purl across multiple
+  lockfiles in the same tree. Go and Rust packages are included only when
+  go.sum / Cargo.lock is present. Also includes container image pins
+  (Dockerfile FROM / compose image:, as pkg:oci purls) and GitHub Actions
+  `uses:` pins under .github/workflows (as pkg:github purls); both
+  best-effort, included when their local parsers are importable.
+  Component licenses are emitted as NOASSERTION (use `repo-ops license`
+  for license policy scanning).
 """
 
 

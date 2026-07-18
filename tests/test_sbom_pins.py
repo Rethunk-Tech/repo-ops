@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from repo_ops_lockfiles.sbom import (
     collect_components,
     emit_cyclonedx,
@@ -111,3 +112,41 @@ def test_container_and_actions_pins_present_in_spdx(tmp_path: Path) -> None:
     }
     assert "pkg:oci/nginx@1.25-alpine" in purls
     assert "pkg:github/actions/checkout@v4" in purls
+
+
+def test_collect_components_degrades_when_container_import_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Missing repo_ops_container → no oci components (documented graceful degrade)."""
+    import builtins
+
+    _write_dockerfile(tmp_path)
+    real_import = builtins.__import__
+
+    def _blocker(name: str, *args: object, **kwargs: object):
+        if name == "repo_ops_container" or name.startswith("repo_ops_container."):
+            raise ImportError("simulated missing container package")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _blocker)
+    components = collect_components(tmp_path)
+    assert not any(c["purl"].startswith("pkg:oci/") for c in components)
+
+
+def test_collect_components_degrades_when_workflow_import_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Missing repo_ops_upgrade.workflow_uses → no github components."""
+    import builtins
+
+    _write_workflow(tmp_path)
+    real_import = builtins.__import__
+
+    def _blocker(name: str, *args: object, **kwargs: object):
+        if name == "repo_ops_upgrade" or name.startswith("repo_ops_upgrade."):
+            raise ImportError("simulated missing upgrade package")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _blocker)
+    components = collect_components(tmp_path)
+    assert not any(c["purl"].startswith("pkg:github/") for c in components)

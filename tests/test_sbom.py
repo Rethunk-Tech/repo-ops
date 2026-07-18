@@ -414,3 +414,134 @@ def test_sbom_empty_dir(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
     out = capsys.readouterr().out
     doc = json.loads(out)
     assert doc["components"] == []
+
+
+# ---------------------------------------------------------------------------
+# Multi-ecosystem collect_components wiring (F075, F073, F074, F077)
+# ---------------------------------------------------------------------------
+
+
+def test_collect_components_uv_and_poetry(tmp_path: Path) -> None:
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "packaging"\nversion = "26.2"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "subdir").mkdir()
+    (tmp_path / "subdir" / "poetry.lock").write_text(
+        '[[package]]\nname = "requests"\nversion = "2.31.0"\n',
+        encoding="utf-8",
+    )
+    purls = {c["purl"] for c in collect_components(tmp_path)}
+    assert "pkg:pypi/packaging@26.2" in purls
+    assert "pkg:pypi/requests@2.31.0" in purls
+
+
+def test_collect_components_pdm_and_bun(tmp_path: Path) -> None:
+    (tmp_path / "pdm.lock").write_text(
+        '[[package]]\nname = "httpx"\nversion = "0.27.0"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "bun.lock").write_text(
+        json.dumps({"packages": {"lodash@4.17.21": ["lodash@4.17.21"]}}),
+        encoding="utf-8",
+    )
+    purls = {c["purl"] for c in collect_components(tmp_path)}
+    assert "pkg:pypi/httpx@0.27.0" in purls
+    assert "pkg:npm/lodash@4.17.21" in purls
+
+
+def test_collect_components_bun_lockb_uses_same_parser(tmp_path: Path) -> None:
+    """bun.lockb is wired through versions_bun_lock (text/JSON form in fixtures)."""
+    (tmp_path / "bun.lockb").write_text(
+        json.dumps({"packages": {"chalk@5.3.0": ["chalk@5.3.0"]}}),
+        encoding="utf-8",
+    )
+    purls = {c["purl"] for c in collect_components(tmp_path)}
+    assert "pkg:npm/chalk@5.3.0" in purls
+
+
+def test_collect_components_requirements_txt(tmp_path: Path) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "requests==2.31.0\n# comment\nflask==3.0.0\n",
+        encoding="utf-8",
+    )
+    purls = {c["purl"] for c in collect_components(tmp_path)}
+    assert "pkg:pypi/requests@2.31.0" in purls
+    assert "pkg:pypi/flask@3.0.0" in purls
+
+
+def test_collect_components_deno_npm_and_jsr(tmp_path: Path) -> None:
+    (tmp_path / "deno.lock").write_text(
+        json.dumps(
+            {
+                "version": "3",
+                "packages": {
+                    "specifiers": {
+                        "jsr:@std/assert@^0.221.0": "jsr:@std/assert@0.221.0",
+                        "npm:chalk@5": "npm:chalk@5.3.0",
+                    },
+                    "npm": {"chalk@5.3.0": {"integrity": "x"}},
+                    "jsr": {"@std/assert@0.221.0": {"integrity": "y"}},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    components = collect_components(tmp_path)
+    purls = {c["purl"] for c in components}
+    assert "pkg:npm/chalk@5.3.0" in purls
+    assert "pkg:jsr/@std/assert@0.221.0" in purls
+
+
+def test_emit_cyclonedx_includes_license_expression() -> None:
+    doc = emit_cyclonedx(
+        _COMPONENTS,
+        "app",
+        tool_version="0.1",
+        timestamp="t",
+        serial="s",
+    )
+    comps = doc["components"]
+    assert isinstance(comps, list)
+    assert comps[0]["licenses"] == [{"expression": "NOASSERTION"}]
+
+
+def test_emit_spdx_includes_license_concluded() -> None:
+    doc = emit_spdx(
+        _COMPONENTS,
+        "app",
+        tool_version="0.1",
+        timestamp="t",
+        serial="s",
+    )
+    pkgs = doc["packages"]
+    assert isinstance(pkgs, list)
+    assert pkgs[0]["licenseConcluded"] == "NOASSERTION"
+    assert pkgs[0]["licenseDeclared"] == "NOASSERTION"
+
+
+def test_collect_components_logs_parse_failure(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Corrupt lockfiles log at debug instead of vanishing silently (F071)."""
+    import logging
+
+    (tmp_path / "pdm.lock").write_text("not: valid: [[[toml", encoding="utf-8")
+    # Force a raising parser by writing a requirements.txt that is fine, and
+    # monkeypatch via a file that triggers _safe_parse exception path for go.sum
+    # with unreadable content — use chmod if needed. Simpler: patch _versions_go_sum.
+    from repo_ops_lockfiles import sbom as sbom_mod
+
+    (tmp_path / "go.sum").write_text("golang.org/x/net v0.17.0 h1:abc=\n", encoding="utf-8")
+
+    def _boom(_p: Path) -> set[str]:
+        raise RuntimeError("simulated parse failure")
+
+    with caplog.at_level(logging.DEBUG, logger="repo_ops_lockfiles.sbom"):
+        orig = sbom_mod._versions_go_sum
+        sbom_mod._versions_go_sum = _boom  # type: ignore[assignment]
+        try:
+            collect_components(tmp_path)
+        finally:
+            sbom_mod._versions_go_sum = orig
+    assert any("SBOM parse failed" in r.message for r in caplog.records)
