@@ -40,159 +40,45 @@ Runtime: typically <30 s (corepack activates from cache after first run).
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 
 import pytest
 from repo_ops_js.guards import assert_targets_resolved
-from repo_ops_models import Change, Workspace
+from repo_ops_js_yarn.yarn import apply_yarn
+
+from conftest import IS_ODD_PIN, ghost_workspace
 
 pytestmark = pytest.mark.integration
 
-_COREPACK = shutil.which("corepack")
 
-# ---------------------------------------------------------------------------
-# Skip condition: corepack absent or probe fails
-# ---------------------------------------------------------------------------
-
-_COREPACK_OK: bool = False
-if _COREPACK is not None:
-    try:
-        _probe = subprocess.run(
-            [_COREPACK, "yarn", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=30,
+def test_yarn_guard_fires_when_resolutions_block_upgrade(
+    yarn_ghost_root: Path,
+    is_odd_ghost_change,
+) -> None:
+    """assert_targets_resolved raises ghost-bump when resolutions pin keeps node_modules behind."""
+    installed = json.loads(
+        (yarn_ghost_root / "node_modules" / "is-odd" / "package.json").read_text(
+            encoding="utf-8"
         )
-        _COREPACK_OK = _probe.returncode == 0
-    except Exception:
-        _COREPACK_OK = False
+    )
+    assert installed["version"] == IS_ODD_PIN, (
+        f"pre-condition: resolutions should have held is-odd at {IS_ODD_PIN}, "
+        f"got {installed['version']}"
+    )
 
-_SKIP_REASON = (
-    "corepack not on PATH"
-    if _COREPACK is None
-    else "corepack yarn --version probe failed"
-)
+    ws = ghost_workspace(yarn_ghost_root, manager="yarn", label="yarn-ghost-test")
 
-
-@pytest.mark.skipif(not _COREPACK_OK, reason=_SKIP_REASON)
-def test_yarn_guard_fires_when_resolutions_block_upgrade() -> None:
-    """assert_targets_resolved raises ghost-bump when resolutions pin keeps node_modules behind.
-
-    Real yarn4+node-modules installs is-odd@0.1.2 (resolutions pin).
-    The guard is given a Change requesting 1.0.0.
-    Since 0.1.2 < 1.0.0, it raises RuntimeError("ghost bump: yarn ...").
-    """
-    with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
-
-        # Yarn 4 default is PnP; node-modules linker makes node_modules available
-        # so resolved_version_from_node_modules can read the installed version.
-        (root / ".yarnrc.yml").write_text(
-            "nodeLinker: node-modules\n", encoding="utf-8"
-        )
-
-        pkg = {
-            "name": "yarn-ghost-test",
-            "version": "1.0.0",
-            "packageManager": "yarn@4.15.0",
-            # Range allows 1.0.0 but resolutions pin keeps 0.1.2.
-            "dependencies": {"is-odd": ">=0.1.0 <2.0.0"},
-            "resolutions": {"is-odd": "0.1.2"},
-        }
-        (root / "package.json").write_text(json.dumps(pkg), encoding="utf-8")
-
-        assert _COREPACK is not None  # guaranteed by skipif
-        proc = subprocess.run(
-            [_COREPACK, "yarn", "install"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=90,
-        )
-        if proc.returncode != 0:
-            pytest.skip(f"yarn install failed (network?): {proc.stderr.strip()[:200]}")
-
-        # Pre-condition: resolutions held node_modules at 0.1.2
-        nm_pkg = root / "node_modules" / "is-odd" / "package.json"
-        if not nm_pkg.exists():
-            pytest.skip("node_modules/is-odd not created (PnP fallback?)")
-        installed = json.loads(nm_pkg.read_text(encoding="utf-8"))
-        assert installed["version"] == "0.1.2", (
-            f"pre-condition: resolutions should have held is-odd at 0.1.2, "
-            f"got {installed['version']}"
-        )
-
-        ws = Workspace(
-            path=root,
-            ecosystem="node",
-            manager="yarn",
-            git_repo=root,
-            label="yarn-ghost-test",
-        )
-        # Simulate the Change that yarn would have reported if it had bumped
-        # is-odd to 1.0.0 — the guard checks node_modules to verify the move
-        # actually happened.
-        requested = [Change("is-odd", "0.1.2", "1.0.0")]
-
-        with pytest.raises(RuntimeError, match="ghost bump"):
-            assert_targets_resolved(ws, requested, manager="yarn")
+    with pytest.raises(RuntimeError, match="ghost bump"):
+        assert_targets_resolved(ws, is_odd_ghost_change, manager="yarn")
 
 
-@pytest.mark.skipif(not _COREPACK_OK, reason=_SKIP_REASON)
-def test_yarn_apply_raises_ghost_bump_with_resolutions_pin() -> None:
-    """apply_yarn raises ghost-bump when resolutions block an in-range upgrade (#121).
+def test_yarn_apply_raises_ghost_bump_with_resolutions_pin(
+    yarn_ghost_apply_root: Path,
+) -> None:
+    """apply_yarn raises ghost-bump when resolutions block an in-range upgrade (#121)."""
+    ws = ghost_workspace(
+        yarn_ghost_apply_root, manager="yarn", label="yarn-ghost-apply-test"
+    )
 
-    The workspace declares ``is-odd: ">=0.1.0 <2.0.0"`` (allows 1.0.0+) but
-    ``resolutions`` pins it to 0.1.2.  ``check_yarn_snapshot`` (run in an
-    isolated copy without the resolutions constraint) plans an upgrade to a
-    newer version; the real apply leaves node_modules at 0.1.2.
-    ``assert_targets_resolved`` detects the mismatch and raises
-    ``RuntimeError("ghost bump: yarn …")``.
-    """
-    from repo_ops_js_yarn.yarn import apply_yarn
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
-
-        # node-modules linker so node_modules is populated and the guard can read it.
-        (root / ".yarnrc.yml").write_text(
-            "nodeLinker: node-modules\n", encoding="utf-8"
-        )
-
-        pkg = {
-            "name": "yarn-ghost-apply-test",
-            "version": "1.0.0",
-            "packageManager": "yarn@4.15.0",
-            "dependencies": {"is-odd": ">=0.1.0 <2.0.0"},
-            "resolutions": {"is-odd": "0.1.2"},
-        }
-        (root / "package.json").write_text(json.dumps(pkg), encoding="utf-8")
-
-        assert _COREPACK is not None  # guaranteed by skipif
-        proc = subprocess.run(
-            [_COREPACK, "yarn", "install"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=90,
-        )
-        if proc.returncode != 0:
-            pytest.skip(f"yarn install failed (network?): {proc.stderr.strip()[:200]}")
-
-        ws = Workspace(
-            path=root,
-            ecosystem="node",
-            manager="yarn",
-            git_repo=root,
-            label="yarn-ghost-apply-test",
-        )
-
-        # apply_yarn now calls check_yarn_snapshot in isolation to learn the
-        # intended upgrade targets, then guards node_modules after the real apply.
-        # The resolutions pin keeps is-odd at 0.1.2 while the check phase would
-        # have seen a newer version available → ghost-bump error raised.
-        with pytest.raises(RuntimeError, match="ghost bump"):
-            apply_yarn(ws)
+    with pytest.raises(RuntimeError, match="ghost bump"):
+        apply_yarn(ws)
