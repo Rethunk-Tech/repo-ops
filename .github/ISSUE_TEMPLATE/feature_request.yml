@@ -11,8 +11,8 @@ body:
     attributes:
       label: Problem / Use Case
       description: What problem are you trying to solve?
-      validations:
-        required: true
+    validations:
+      required: true
   - type: textarea
     id: proposal
     attributes:

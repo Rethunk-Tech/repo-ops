@@ -1,4 +1,3 @@
 # CODEOWNERS
 # Default owners for Rethunk-Tech repositories.
-# Using org maintainers placeholder (sibling pattern observed in Bastion/* uses personal owner; update to real team when defined).
-* @Rethunk-Tech/maintainers
+* @AlbinoGeek
