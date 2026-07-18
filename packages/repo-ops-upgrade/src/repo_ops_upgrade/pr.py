@@ -1,5 +1,15 @@
 """Branch-and-PR flow after post-apply commits (opt-in via --pr).
 
+CLI flags (apply only; see ``repo-ops apply --help``):
+
+* ``--pr`` — after commits, create a branch, push, and open/update a PR
+* ``--pr-base BRANCH`` — PR base branch (default: repo default branch)
+* ``--branch-prefix PREFIX`` — branch name prefix (default: ``repo-ops/deps``)
+
+Skipped when ``--commit-dry-run`` is set (no real commits to push). Full
+usage notes live under docs/bulk-maintenance.md; ``--help`` remains
+canonical for flag details.
+
 Pure functions only — side effects isolated to run_pr_flow() which is
 invoked from run.py after the commit phase. All subprocess calls are
 routed through _run_gh() / run_git() so tests can patch a single target.

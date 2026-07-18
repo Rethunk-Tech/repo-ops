@@ -44,12 +44,15 @@ def cargo_workspace_members(mdir: Path) -> set[str]:
 
 
 def path_is_cargo_workspace_child(mdir: Path, root: Path, members: set[str]) -> bool:
-    """True when *mdir* is a member of the Cargo workspace rooted at *root*.
+    """True when *mdir* is an explicit Cargo workspace member under *root*.
 
     Uses the same glob-prefix matching as ``path_is_uv_workspace_child`` and
-    ``path_is_yarn_workspace_child``.  Note: Cargo also supports implicit
-    auto-discovery (no ``members`` key), ``exclude``, and ``default-members``;
-    those cases are not handled here — that's a known limitation.
+    ``path_is_yarn_workspace_child``. Only ``members`` globs from the root
+    Cargo.toml suppress child workspaces. Cargo implicit member auto-discovery
+    (no ``members`` key), ``exclude``, and ``default-members`` are intentionally
+    not handled — those layouts may still surface duplicate rust workspace
+    entries. Prefer declaring ``members`` explicitly when discovery must
+    collapse children into the parent.
     """
     try:
         rel = mdir.relative_to(root).as_posix()

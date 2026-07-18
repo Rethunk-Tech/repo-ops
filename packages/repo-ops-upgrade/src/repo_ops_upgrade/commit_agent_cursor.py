@@ -86,7 +86,11 @@ def draft_message_with_agent(
     *,
     api_key: str | None = None,
 ) -> str:
-    """Backward-compatible entry point for the default cursor provider."""
+    """Backward-compatible entry point for the default cursor provider.
+
+    # compat: tests/test_commit_agent_cursor.py and older call sites still import
+    # this name; prefer commit_agent_providers.draft_message_with_commit_agent.
+    """
     return CursorCommitAgentProvider().draft_commit_message(
         bundle, files, api_key=api_key
     )

@@ -25,7 +25,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Canonical extra for the Cursor commit-agent SDK.
 commit-agent-cursor = ["cursor-sdk>=0.1.0"]
+# Backward-compatible alias of commit-agent-cursor (same deps); documented once here.
 agent = ["cursor-sdk>=0.1.0"]
 
 [tool.uv.sources]
