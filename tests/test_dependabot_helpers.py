@@ -4,6 +4,7 @@ and the lockfile text-search scan."""
 from __future__ import annotations
 
 import json
+import textwrap
 from pathlib import Path
 from unittest.mock import patch
 
@@ -47,3 +48,27 @@ def test_lockfile_versions_scans_package_lock_json(tmp_path: Path) -> None:
     versions = dependabot._lockfile_versions(str(tmp_path))
     assert "foo@1.2.3" in versions
     assert "bar@4.5.6" in versions
+
+
+def test_lockfile_resolved_maps_parser_output(tmp_path: Path) -> None:
+    """_lockfile_resolved returns {name: version} from lockfile parsers."""
+    npm_lock = {
+        "name": "demo",
+        "lockfileVersion": 1,
+        "dependencies": {
+            "lodash": {"version": "4.17.21"},
+        },
+    }
+    (tmp_path / "package-lock.json").write_text(json.dumps(npm_lock), encoding="utf-8")
+    (tmp_path / "yarn.lock").write_text(
+        textwrap.dedent("""\
+            foo@1.0.0:
+              version "2.0.0"
+        """),
+        encoding="utf-8",
+    )
+
+    resolved = dependabot._lockfile_resolved(str(tmp_path))
+
+    assert resolved["lodash"] == "4.17.21"
+    assert resolved["foo"] == "2.0.0"
