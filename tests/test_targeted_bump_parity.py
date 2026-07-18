@@ -50,6 +50,7 @@ _LATEST_UMBRELLA_VARS = (
     "REPO_OPS_BUN_UPDATE_LATEST",
     "REPO_OPS_PNPM_UPDATE_LATEST",
     "REPO_OPS_YARN_UPDATE_LATEST",
+    "REPO_OPS_DENO_UPDATE_LATEST",
     "REPO_OPS_GO_UPGRADE_MODE",
     "REPO_OPS_CONTAINER_UPDATE_LATEST",
     "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
@@ -83,6 +84,7 @@ def test_latest_flag_sets_container_precommit_submodule_env_vars(
         seen["container"] = os.environ.get("REPO_OPS_CONTAINER_UPDATE_LATEST")
         seen["precommit"] = os.environ.get("REPO_OPS_PRECOMMIT_UPDATE_LATEST")
         seen["submodule"] = os.environ.get("REPO_OPS_SUBMODULE_UPDATE_LATEST")
+        seen["deno"] = os.environ.get("REPO_OPS_DENO_UPDATE_LATEST")
         return wr
 
     with patch(
@@ -91,7 +93,12 @@ def test_latest_flag_sets_container_precommit_submodule_env_vars(
     ):
         main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet", "--latest"])
 
-    assert seen == {"container": "1", "precommit": "1", "submodule": "1"}
+    assert seen == {
+        "container": "1",
+        "precommit": "1",
+        "submodule": "1",
+        "deno": "1",
+    }
 
 
 def test_without_latest_flag_container_precommit_submodule_env_vars_unset(
@@ -107,6 +114,7 @@ def test_without_latest_flag_container_precommit_submodule_env_vars_unset(
         seen["container"] = os.environ.get("REPO_OPS_CONTAINER_UPDATE_LATEST")
         seen["precommit"] = os.environ.get("REPO_OPS_PRECOMMIT_UPDATE_LATEST")
         seen["submodule"] = os.environ.get("REPO_OPS_SUBMODULE_UPDATE_LATEST")
+        seen["deno"] = os.environ.get("REPO_OPS_DENO_UPDATE_LATEST")
         return wr
 
     with patch(
@@ -115,7 +123,12 @@ def test_without_latest_flag_container_precommit_submodule_env_vars_unset(
     ):
         main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
 
-    assert seen == {"container": None, "precommit": None, "submodule": None}
+    assert seen == {
+        "container": None,
+        "precommit": None,
+        "submodule": None,
+        "deno": None,
+    }
 
 
 # ---------------------------------------------------------------------------
