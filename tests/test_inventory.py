@@ -330,14 +330,14 @@ def test_filter_recomputes_metrics_for_matching_eco_only(
 # ---------- JSON schema: manifests + summary (F081, F082) ----------
 
 
-def test_inventory_json_includes_manifests_and_summary(
-    tmp_path: Path, capsys
-) -> None:
+def test_inventory_json_includes_manifests_and_summary(tmp_path: Path, capsys) -> None:
     import json
 
     from repo_ops_inventory.scan import main as inventory_main
 
-    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\ndependencies = ["a"]\n')
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\ndependencies = ["a"]\n'
+    )
     rc = inventory_main([str(tmp_path), "--flat", "--json"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
@@ -480,7 +480,8 @@ def test_inventory_no_cache_bypasses_go_cache(tmp_path: Path, monkeypatch) -> No
 
 def test_inventory_jobs_flag_accepted(tmp_path: Path) -> None:
     """F174: --jobs is accepted and forwarded to scan pool sizing."""
-    from repo_ops_inventory.scan import build_inventory_parser, main as inventory_main
+    from repo_ops_inventory.scan import build_inventory_parser
+    from repo_ops_inventory.scan import main as inventory_main
 
     args = build_inventory_parser().parse_args(["--jobs", "1"])
     assert args.jobs == 1
@@ -510,7 +511,7 @@ def test_count_python_pdm_and_pipenv_locks(tmp_path: Path) -> None:
     (pipenv / "Pipfile.lock").write_text(
         '{"default": {"flask": {"version": "==3.0.0"}}, "develop": {}}'
     )
-    d2, v2, tag2 = count_python(pipenv)
+    _d2, v2, tag2 = count_python(pipenv)
     assert "pipenv" in tag2
     assert "flask@3.0.0" in v2
 
@@ -520,8 +521,8 @@ def test_count_deno_jsonc_preserves_url_with_slashes(tmp_path: Path) -> None:
     from repo_ops_inventory.counting import count_deno
 
     (tmp_path / "deno.jsonc").write_text(
-        '{\n'
-        '  // real comment\n'
+        "{\n"
+        "  // real comment\n"
         '  "imports": {\n'
         '    "x": "https://example.com/path//pkg"\n'
         "  }\n"

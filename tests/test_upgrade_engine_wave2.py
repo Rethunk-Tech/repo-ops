@@ -13,12 +13,11 @@ import subprocess
 from pathlib import Path
 from subprocess import CompletedProcess
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
-from repo_ops_upgrade import orchestration
-from repo_ops_upgrade import registry
+from repo_ops_upgrade import orchestration, registry
 from repo_ops_upgrade.discovery import path_is_cargo_workspace_child
 from repo_ops_upgrade.verify import verify_workspace
 
@@ -76,23 +75,17 @@ class TestOrchestrationGoGenerateGate:
     def test_dispatch_skips_go_generate_when_gate_off(self, tmp_path: Path) -> None:
         result = _go_ws_with_generate(tmp_path)
         env_without = {
-            k: v
-            for k, v in os.environ.items()
-            if k != "REPO_OPS_REMEDIATE_GO_GENERATE"
+            k: v for k, v in os.environ.items() if k != "REPO_OPS_REMEDIATE_GO_GENERATE"
         }
         with (
             patch.dict(os.environ, env_without, clear=True),
-            patch(
-                "repo_ops_upgrade_remediations_go.remediations.run"
-            ) as mock_run,
+            patch("repo_ops_upgrade_remediations_go.remediations.run") as mock_run,
             patch(
                 "repo_ops_upgrade_remediations_go.remediations.shutil.which",
                 return_value="/usr/bin/go",
             ),
         ):
-            orchestration.remediations.run_remediations(
-                result, apply=True, skip=set()
-            )
+            orchestration.remediations.run_remediations(result, apply=True, skip=set())
 
         called = [c[0][0] for c in mock_run.call_args_list]
         assert ["go", "generate", "./..."] not in called
@@ -110,9 +103,7 @@ class TestOrchestrationGoGenerateGate:
                 return_value="/usr/bin/go",
             ),
         ):
-            orchestration.remediations.run_remediations(
-                result, apply=True, skip=set()
-            )
+            orchestration.remediations.run_remediations(result, apply=True, skip=set())
 
         called = [c[0][0] for c in mock_run.call_args_list]
         assert ["go", "generate", "./..."] in called
@@ -346,20 +337,20 @@ def test_missing_applier_maps_to_workspace_fail(tmp_path: Path) -> None:
             return_value={},
         ),
         patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
-    ):
         # Call through orchestration so RuntimeError is classified as fail.
-        with patch(
+        patch(
             "repo_ops_upgrade.orchestration.ecosystems.apply_workspace",
             side_effect=RuntimeError("no applier for npm"),
-        ):
-            out = orchestration.process_workspace(
-                wr,
-                do_apply=True,
-                do_verify=False,
-                verify_test=False,
-                skip_remediations=set(),
-                allow_dirty=False,
-            )
+        ),
+    ):
+        out = orchestration.process_workspace(
+            wr,
+            do_apply=True,
+            do_verify=False,
+            verify_test=False,
+            skip_remediations=set(),
+            allow_dirty=False,
+        )
 
     assert out.status == "fail"
     assert "no applier" in (out.error or "")
@@ -370,9 +361,9 @@ def test_registry_apply_workspace_raises_without_applier(tmp_path: Path) -> None
     with (
         patch.dict(registry.APPLIERS, {}, clear=True),
         patch("repo_ops_upgrade.registry.corepack_prepare"),
+        pytest.raises(RuntimeError, match="no applier for npm"),
     ):
-        with pytest.raises(RuntimeError, match="no applier for npm"):
-            registry.apply_workspace(ws)
+        registry.apply_workspace(ws)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

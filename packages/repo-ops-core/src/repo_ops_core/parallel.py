@@ -50,7 +50,7 @@ def run_bounded_pool(
             return_when=concurrent.futures.FIRST_COMPLETED,
         )
         for fut in done:
-            item = futures.pop(fut, None)
+            item = futures.pop(fut)
             try:
                 result = fut.result()
             except Exception:

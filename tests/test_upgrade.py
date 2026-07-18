@@ -181,7 +181,7 @@ def test_apply_rust_invokes_cargo_update(monkeypatch):
 
     with (
         patch("repo_ops_rust.rust.run", fake_run_fail),
-        pytest.raises(RuntimeError, match="no Cargo.toml"),
+        pytest.raises(RuntimeError, match=r"no Cargo\.toml"),
     ):
         apply_rust(ws)
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import configparser
+import contextlib
 import json
 import os
 import re
@@ -162,10 +163,9 @@ def load_go_cache(cache_path: Path) -> dict[str, Any]:
 
 
 def save_go_cache(cache_path: Path, cache: dict) -> None:
-    try:
+    # Best-effort: malformed-cache write silently skipped.
+    with contextlib.suppress(Exception):
         write_json_atomic(cache_path, cache, compact=False)
-    except Exception:  # noqa: S110 — best-effort: malformed-cache write silently skipped
-        pass
 
 
 def _count_go_subprocess(mdir: Path) -> tuple[int, set[str]]:

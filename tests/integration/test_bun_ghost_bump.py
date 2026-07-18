@@ -14,9 +14,8 @@ import json
 from pathlib import Path
 
 import pytest
-from repo_ops_js_bun.bun import apply_bun
-
 from conftest import IS_ODD_PIN, ghost_workspace
+from repo_ops_js_bun.bun import apply_bun
 
 pytestmark = pytest.mark.integration
 

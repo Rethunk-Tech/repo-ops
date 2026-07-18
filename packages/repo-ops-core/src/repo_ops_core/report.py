@@ -12,6 +12,7 @@ but the module is kept generic for future subcommands.
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -39,8 +40,8 @@ def write_step_summary(content: str, *, path: str | None = None) -> bool:
 
 
 def build_audit_summary(
-    results: list[object],
-    remediations: list[object],
+    results: Sequence[object],
+    remediations: Sequence[object],
     *,
     roots: list[str] | None = None,
 ) -> str:

@@ -20,9 +20,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from repo_ops_js.guards import assert_targets_resolved
-
 from conftest import IS_ODD_PIN, ghost_workspace, read_is_odd_version
+from repo_ops_js.guards import assert_targets_resolved
 
 pytestmark = pytest.mark.integration
 

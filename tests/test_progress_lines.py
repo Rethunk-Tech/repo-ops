@@ -63,7 +63,7 @@ def test_emit_progress_includes_minute_duration(tmp_path: Path) -> None:
         _emit_progress(result, elapsed_s=125.6)
 
     line = buf.getvalue().strip()
-    assert "[done] slow-repo (yarn) — 0 change(s) in 2m 6s" == line
+    assert line == "[done] slow-repo (yarn) — 0 change(s) in 2m 6s"
 
 
 def test_emit_progress_fail_workspace(tmp_path: Path) -> None:

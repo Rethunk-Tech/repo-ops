@@ -615,9 +615,10 @@ def _extract_min_version_from_constraint(constraint: str) -> str | None:
     geqs = re.findall(r">=?\s*([\d]+\.[\d]+(?:\.[\d]+)*)", constraint)
     if geqs:
         try:
-            return max(geqs, key=lambda v: tuple(int(x) for x in v.split(".")))
+            best: str = max(geqs, key=lambda v: tuple(int(x) for x in v.split(".")))
+            return best
         except (ValueError, TypeError):
-            return geqs[-1]
+            return str(geqs[-1])
     return None
 
 
@@ -1389,9 +1390,7 @@ def print_fix_plan(remediations: list[RemediationItem]) -> None:
             )
         )
     print()
-    print(
-        "Note: --fix-plan is read-only. Apply fixes with: repo-ops audit --fix"
-    )
+    print("Note: --fix-plan is read-only. Apply fixes with: repo-ops audit --fix")
 
 
 def apply_remediations(

@@ -424,9 +424,9 @@ def _run_upgrade_body(
     for bundle in bundles.values():
         updated: list[WorkspaceResult] = []
         for wr in bundle.workspaces:
-            key = (wr.workspace.path, wr.workspace.manager)
-            if key in path_to_result:
-                updated.append(path_to_result[key])
+            result_key = (wr.workspace.path, wr.workspace.manager)
+            if result_key in path_to_result:
+                updated.append(path_to_result[result_key])
             elif _FAIL_FAST.is_set():
                 wr.status = "skip"
                 wr.error = "fail-fast"

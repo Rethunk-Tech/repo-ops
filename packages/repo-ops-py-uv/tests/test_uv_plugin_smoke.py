@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from repo_ops_py_uv import register
-from repo_ops_py_uv.uv import check_uv, apply_uv
+from repo_ops_py_uv.uv import apply_uv, check_uv
 
 
 def test_register_exports_callable() -> None:

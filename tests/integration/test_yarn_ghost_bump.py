@@ -39,10 +39,9 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import IS_ODD_PIN, ghost_workspace
 from repo_ops_js.guards import assert_targets_resolved
 from repo_ops_js_yarn.yarn import apply_yarn
-
-from conftest import IS_ODD_PIN, ghost_workspace
 
 pytestmark = pytest.mark.integration
 

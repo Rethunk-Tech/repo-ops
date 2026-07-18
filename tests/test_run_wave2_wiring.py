@@ -11,8 +11,8 @@ from repo_ops_upgrade import discovery as disc_mod
 from repo_ops_upgrade import orchestration as orch_mod
 from repo_ops_upgrade import run as run_mod
 from repo_ops_upgrade import submodules as sub_mod
-from repo_ops_upgrade.pr import PROutcome
 from repo_ops_upgrade.post_apply_commit import CommitOutcome
+from repo_ops_upgrade.pr import PROutcome
 
 
 def _fake_args(**overrides) -> MagicMock:
@@ -130,9 +130,7 @@ def test_skip_remediations_passed_to_process_workspace(
     """--skip-remediations CSV is forwarded into process_workspace (F044)."""
     ws = _npm_ws(tmp_path)
     wr = WorkspaceResult(workspace=ws)
-    bundles = {
-        tmp_path: RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
-    }
+    bundles = {tmp_path: RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])}
     captured: list[set[str]] = []
 
     monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws])
@@ -188,9 +186,7 @@ def test_children_first_processes_child_depth_before_parent(
         sub_mod,
         "discover_submodules_under_roots",
         lambda *a, **kw: [
-            sub_mod.SubmoduleLink(
-                path="child", git_repo=child, parent=parent, url="x"
-            )
+            sub_mod.SubmoduleLink(path="child", git_repo=child, parent=parent, url="x")
         ],
     )
 
@@ -222,9 +218,7 @@ def test_pr_dry_run_skips_run_pr_flow(
     ws = _npm_ws(tmp_path)
     wr = WorkspaceResult(workspace=ws, status="ok")
     wr.changes = [Change("pkg", "1", "2")]
-    bundles = {
-        tmp_path: RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
-    }
+    bundles = {tmp_path: RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])}
     pr_calls: list = []
 
     monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws])
@@ -254,8 +248,8 @@ def test_pr_dry_run_skips_run_pr_flow(
     )
 
     with patch("repo_ops_upgrade.pr.run_pr_flow") as mock_pr:
-        mock_pr.side_effect = lambda *a, **kw: pr_calls.append(1) or PROutcome(
-            tmp_path, "demo", "opened"
+        mock_pr.side_effect = lambda *a, **kw: (
+            pr_calls.append(1) or PROutcome(tmp_path, "demo", "opened")
         )
         rc = run_mod._run_upgrade_body(
             apply=True,
@@ -281,9 +275,7 @@ def test_pr_failed_outcome_sets_exit_code(
     ws = _npm_ws(tmp_path)
     wr = WorkspaceResult(workspace=ws, status="ok")
     wr.changes = [Change("pkg", "1", "2")]
-    bundles = {
-        tmp_path: RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
-    }
+    bundles = {tmp_path: RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])}
 
     monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws])
     monkeypatch.setattr(orch_mod, "filter_workspaces", lambda found, *a, **kw: found)
@@ -311,21 +303,23 @@ def test_pr_failed_outcome_sets_exit_code(
         ),
     )
 
-    with patch(
-        "repo_ops_upgrade.pr.run_pr_flow",
-        return_value=PROutcome(tmp_path, "demo", "failed", detail="auth"),
+    with (
+        patch(
+            "repo_ops_upgrade.pr.run_pr_flow",
+            return_value=PROutcome(tmp_path, "demo", "failed", detail="auth"),
+        ),
+        patch("repo_ops_upgrade.pr.print_pr_outcome"),
     ):
-        with patch("repo_ops_upgrade.pr.print_pr_outcome"):
-            rc = run_mod._run_upgrade_body(
-                apply=True,
-                args=_fake_args(
-                    pr=True,
-                    commit="conventional",
-                    commit_dry_run=False,
-                    quiet=True,
-                    skip_actions=True,
-                ),
-                roots=[str(tmp_path)],
-            )
+        rc = run_mod._run_upgrade_body(
+            apply=True,
+            args=_fake_args(
+                pr=True,
+                commit="conventional",
+                commit_dry_run=False,
+                quiet=True,
+                skip_actions=True,
+            ),
+            roots=[str(tmp_path)],
+        )
 
     assert rc == 1
