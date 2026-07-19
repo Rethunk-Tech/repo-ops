@@ -33,8 +33,8 @@ and the PR is never auto-closed.
 Satisfaction precision
 ----------------------
 - **High-confidence**: resolved version read from a lockfile parser (npm-lock,
-  yarn-lock, pnpm-lock, bun-lock) or from go.mod / Cargo.lock.  Auto-close
-  eligible when ``version >= target``.
+  yarn-lock, pnpm-lock, bun-lock, uv-lock) or from go.mod / Cargo.lock.
+  Auto-close eligible when ``version >= target``.
 - **Low-confidence** (``low_confidence=True``): text-search fallback used when no
   lockfile parser returned a result.  These matches are **never** auto-closed
   regardless of ``--close``.
@@ -76,6 +76,7 @@ from repo_ops_lockfiles.parsers import (
     versions_bun_lock,
     versions_npm_lock,
     versions_pnpm_lock,
+    versions_uv_lock,
     versions_yarn_lock,
 )
 
@@ -370,6 +371,16 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
                     if pkg:
                         _update(pkg, ver)
 
+    for lockfile in root.rglob("uv.lock"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
+        with contextlib.suppress(Exception):
+            for entry in versions_uv_lock(lockfile):
+                if "@" in entry:
+                    pkg, ver = _split_name_ver(entry)
+                    if pkg:
+                        _update(pkg, ver)
+
     return resolved
 
 
@@ -422,6 +433,12 @@ def _lockfile_versions(repo: str) -> set[str]:
             continue
         with contextlib.suppress(Exception):
             versions |= versions_bun_lock(lockfile)
+
+    for lockfile in root.rglob("uv.lock"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
+        with contextlib.suppress(Exception):
+            versions |= versions_uv_lock(lockfile)
 
     return versions
 
@@ -490,6 +507,12 @@ def _resolve_package_version(
     # 1. Lockfile parser result (high confidence)
     if pkg_lower in lockfile_resolved:
         return lockfile_resolved[pkg_lower], True
+
+    # PEP 503 normalization for Python packages: uv.lock stores names
+    # lowercased with hyphens, while PR titles may use underscores/dots.
+    pep503_pkg = re.sub(r"[-_.]+", "-", pkg_lower)
+    if pep503_pkg != pkg_lower and pep503_pkg in lockfile_resolved:
+        return lockfile_resolved[pep503_pkg], True
 
     # Also try short-name match for Go module paths
     short_pkg = pkg.rsplit("/", 1)[-1].rsplit(".", 1)[-1].lower()
@@ -1075,7 +1098,8 @@ exit codes:
   1  unexpected error (gh unavailable, etc.)
 
 precision:
-  High-confidence: lockfile parser (npm/yarn/pnpm/bun) or go.mod/Cargo.lock.
+  High-confidence: lockfile parser (npm/yarn/pnpm/bun/uv.lock) or
+  go.mod/Cargo.lock.
   Low-confidence: text-search fallback.  Low-confidence matches are NEVER
   auto-closed regardless of --close.
 

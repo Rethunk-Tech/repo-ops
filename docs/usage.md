@@ -154,8 +154,9 @@ Mutually exclusive with **`--scaffold`** (scaffold mode does not scan PRs).
 `--json` and `--close` are invalid with `--scaffold`.
 
 Precision caveats:
-- **High-confidence:** lockfile parsers resolve npm/yarn/pnpm/bun versions; go.mod
-  `require` blocks and Cargo.lock `[[package]]` entries are parsed structurally.
+- **High-confidence:** lockfile parsers resolve npm/yarn/pnpm/bun and uv.lock
+  versions; go.mod `require` blocks and Cargo.lock `[[package]]` entries are
+  parsed structurally.
 - **Low-confidence:** text-search fallback on lockfile `name@version` strings when
   parsers cannot resolve a package. Low-confidence matches are **never** auto-closed.
 - **Grouped PRs:** closed only when **all** rows are high-confidence satisfied.

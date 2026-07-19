@@ -72,3 +72,59 @@ def test_lockfile_resolved_maps_parser_output(tmp_path: Path) -> None:
 
     assert resolved["lodash"] == "4.17.21"
     assert resolved["foo"] == "2.0.0"
+
+
+def test_lockfile_resolved_parses_uv_lock(tmp_path: Path) -> None:
+    """uv.lock [[package]] entries feed the high-confidence path (#150)."""
+    (tmp_path / "uv.lock").write_text(
+        textwrap.dedent("""\
+            version = 1
+            requires-python = ">=3.12"
+
+            [[package]]
+            name = "fastapi"
+            version = "0.139.2"
+
+            [[package]]
+            name = "typing-extensions"
+            version = "4.12.2"
+        """),
+        encoding="utf-8",
+    )
+
+    resolved = dependabot._lockfile_resolved(str(tmp_path))
+
+    assert resolved["fastapi"] == "0.139.2"
+    assert resolved["typing-extensions"] == "4.12.2"
+
+
+def test_resolve_package_version_uv_lock_high_confidence(tmp_path: Path) -> None:
+    """A Python package resolved from uv.lock is high-confidence (auto-close eligible)."""
+    (tmp_path / "uv.lock").write_text(
+        textwrap.dedent("""\
+            version = 1
+
+            [[package]]
+            name = "ruff"
+            version = "0.15.22"
+
+            [[package]]
+            name = "typing-extensions"
+            version = "4.12.2"
+        """),
+        encoding="utf-8",
+    )
+
+    resolved = dependabot._lockfile_resolved(str(tmp_path))
+
+    ver, high_conf = dependabot._resolve_package_version("ruff", resolved, set(), {})
+    assert ver == "0.15.22"
+    assert high_conf is True
+
+    # PEP 503 normalization: PR titles may use underscores where uv.lock
+    # stores hyphens.
+    ver, high_conf = dependabot._resolve_package_version(
+        "typing_extensions", resolved, set(), {}
+    )
+    assert ver == "4.12.2"
+    assert high_conf is True

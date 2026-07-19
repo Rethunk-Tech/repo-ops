@@ -165,6 +165,25 @@ def versions_pdm_lock(p: Path) -> set[str]:
     return out
 
 
+def versions_uv_lock(p: Path) -> set[str]:
+    """uv.lock (TOML) → set of name@version.
+
+    uv lock files are TOML with a list of ``[[package]]`` entries, each
+    containing ``name`` (PEP 503-normalized: lowercase, hyphens) and the
+    resolved ``version``.
+    """
+    d = read_toml_file(p) or {}
+    out: set[str] = set()
+    for pkg in d.get("package", []):
+        if not isinstance(pkg, dict):
+            continue
+        name = pkg.get("name")
+        ver = pkg.get("version")
+        if name and ver:
+            out.add(f"{name}@{ver}")
+    return out
+
+
 def versions_pipenv_lock(p: Path) -> set[str]:
     """Pipfile.lock (JSON) → set of name@version.
 

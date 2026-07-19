@@ -26,6 +26,7 @@ from repo_ops_lockfiles.parsers import (
     versions_pdm_lock,
     versions_pipenv_lock,
     versions_pnpm_lock,
+    versions_uv_lock,
     versions_yarn_lock,
 )
 from repo_ops_lockfiles.sbom import (
@@ -69,5 +70,6 @@ __all__ = [
     "versions_pdm_lock",
     "versions_pipenv_lock",
     "versions_pnpm_lock",
+    "versions_uv_lock",
     "versions_yarn_lock",
 ]

@@ -1,4 +1,4 @@
-"""Parser unit tests for PDM, pipenv, and Deno lockfiles."""
+"""Parser unit tests for PDM, pipenv, uv, and Deno lockfiles."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from repo_ops_lockfiles.parsers import (
     versions_deno_lock,
     versions_pdm_lock,
     versions_pipenv_lock,
+    versions_uv_lock,
 )
 
 # ---------------------------------------------------------------------------
@@ -57,6 +58,52 @@ def test_versions_pdm_lock_invalid_toml():
         p = Path(tmp) / "pdm.lock"
         p.write_text("not toml {{{{")
         result = versions_pdm_lock(p)
+    assert result == set()
+
+
+# ---------------------------------------------------------------------------
+# uv
+# ---------------------------------------------------------------------------
+
+_UV_LOCK_TOML = """\
+version = 1
+revision = 3
+requires-python = ">=3.12"
+
+[[package]]
+name = "fastapi"
+version = "0.139.2"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "ruff"
+version = "0.15.22"
+source = { registry = "https://pypi.org/simple" }
+"""
+
+
+def test_versions_uv_lock_basic():
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "uv.lock"
+        p.write_text(_UV_LOCK_TOML)
+        result = versions_uv_lock(p)
+    assert "fastapi@0.139.2" in result
+    assert "ruff@0.15.22" in result
+
+
+def test_versions_uv_lock_empty_file():
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "uv.lock"
+        p.write_text("")
+        result = versions_uv_lock(p)
+    assert result == set()
+
+
+def test_versions_uv_lock_invalid_toml():
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "uv.lock"
+        p.write_text("not toml {{{{")
+        result = versions_uv_lock(p)
     assert result == set()
 
 
