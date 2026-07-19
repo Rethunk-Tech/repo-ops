@@ -150,6 +150,23 @@ def test_apply_dockerfile_multi_stage_only_target_lines_change(tmp_path: Path) -
     assert "\n\n" in result
 
 
+def test_apply_dockerfile_same_image_two_stages_both_bumped(tmp_path: Path) -> None:
+    """Same outdated image:tag pinned at two FROM lines → both lines bump (#151)."""
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        "FROM nginx:1.25 AS build\nFROM nginx:1.25 AS serve\n", encoding="utf-8"
+    )
+
+    with patch(
+        "repo_ops_container.container._fetch_tags",
+        return_value=["1.25", "1.26"],
+    ):
+        apply_container(_make_ws(tmp_path))
+
+    result = dockerfile.read_text(encoding="utf-8")
+    assert result == "FROM nginx:1.26 AS build\nFROM nginx:1.26 AS serve\n"
+
+
 def test_apply_dockerfile_sha_pinned_untouched(tmp_path: Path) -> None:
     dockerfile = tmp_path / "Dockerfile"
     original = "FROM nginx@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456ab12\n"

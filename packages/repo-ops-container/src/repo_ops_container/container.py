@@ -888,7 +888,14 @@ def check_container(ws: Workspace) -> list[Change]:
     allow_cross_major = os.environ.get("REPO_OPS_CONTAINER_UPDATE_LATEST", "") == "1"
     refresh_sha = os.environ.get("REPO_OPS_CONTAINER_REFRESH_SHA", "") == "1"
     changes: list[Change] = []
-    seen: set[tuple[str, str | None]] = set()  # (image, tag) dedup
+    # (image, tag, sha) dedup — sha must be part of the key so multi-stage
+    # files that pin the same image:tag at different digests get each
+    # occurrence checked independently (one stage can be current while
+    # another has drifted).
+    seen: set[tuple[str, str | None, str | None]] = set()
+    # Registry digest lookups are still deduped per (image, tag): every
+    # occurrence resolves to the same upstream digest.
+    digest_cache: dict[tuple[str, str], str | None] = {}
 
     for cf in find_container_files(ws.path):
         refs = _parse_image_refs(cf)
@@ -899,7 +906,7 @@ def check_container(ws: Workspace) -> list[Change]:
             tag: str | None = ref["tag"]
             sha: str | None = ref["sha"]
 
-            key = (image, tag)
+            key = (image, tag, sha)
             if key in seen:
                 continue
             seen.add(key)
@@ -918,7 +925,12 @@ def check_container(ws: Workspace) -> list[Change]:
             if sha and tag:
                 # tag+sha pin: attempt digest refresh when opt-in
                 if refresh_sha:
-                    new_digest = _fetch_manifest_digest(image, tag)
+                    cache_key = (image, tag)
+                    if cache_key in digest_cache:
+                        new_digest = digest_cache[cache_key]
+                    else:
+                        new_digest = _fetch_manifest_digest(image, tag)
+                        digest_cache[cache_key] = new_digest
                     if new_digest is None:
                         changes.append(
                             Change(
@@ -1075,13 +1087,15 @@ def apply_container(ws: Workspace) -> None:
         lines = original.splitlines(keepends=True)
         changed = False
 
+        # Patch every line carrying the outdated ref, not just the first:
+        # multi-stage files legitimately pin the same base image at more
+        # than one FROM line, and each occurrence must be updated.
         for image, old_tag, new_tag in tag_bumps:
             for i, line in enumerate(lines):
                 updated = _replace_tag_in_line(line, image, old_tag, new_tag)
                 if updated != line:
                     lines[i] = updated
                     changed = True
-                    break  # one bump = one line
 
         for image, tag, old_sha, new_sha in sha_bumps:
             for i, line in enumerate(lines):
@@ -1089,7 +1103,6 @@ def apply_container(ws: Workspace) -> None:
                 if updated != line:
                     lines[i] = updated
                     changed = True
-                    break  # one digest bump = one line
 
         if changed:
             with cf.open("w", encoding="utf-8", newline="") as fh:

@@ -623,6 +623,86 @@ def test_digest_refresh_apply_off_by_default_untouched(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Digest refresh — multi-stage: same image pinned at different digests (#151)
+# ---------------------------------------------------------------------------
+
+
+def test_digest_refresh_check_multi_stage_stale_occurrence_detected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two FROM lines pin the same image:tag; only one digest is stale.
+
+    Each occurrence must be checked independently — the stage that already has
+    the current digest must not shadow the drifted one.  The registry is still
+    queried only once per (image, tag).
+    """
+    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
+    (tmp_path / "Dockerfile").write_text(
+        f"FROM nginx:1.25@{_NEW_DIGEST} AS build\n"
+        f"FROM nginx:1.25@{_OLD_DIGEST} AS runtime\n"
+    )
+
+    with patch(
+        "repo_ops_container.container._fetch_manifest_digest",
+        return_value=_NEW_DIGEST,
+    ) as mock_digest:
+        changes = check_container(_make_ws(tmp_path))
+
+    assert len(changes) == 1
+    assert changes[0].from_ver == _OLD_DIGEST
+    assert changes[0].to == _NEW_DIGEST
+    assert mock_digest.call_count == 1
+
+
+def test_digest_refresh_apply_multi_stage_stale_occurrence_fixed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """apply refreshes the stale stage while leaving the current one intact."""
+    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        f"FROM nginx:1.25@{_NEW_DIGEST} AS build\n"
+        f"COPY --from=build /venv /venv\n"
+        f"FROM nginx:1.25@{_OLD_DIGEST} AS runtime\n"
+    )
+
+    with patch(
+        "repo_ops_container.container._fetch_manifest_digest",
+        return_value=_NEW_DIGEST,
+    ):
+        apply_container(_make_ws(tmp_path))
+
+    result = dockerfile.read_text(encoding="utf-8")
+    assert _OLD_DIGEST not in result
+    assert result.count(_NEW_DIGEST) == 2
+    assert "AS build\n" in result
+    assert "AS runtime\n" in result
+    assert "COPY --from=build /venv /venv\n" in result
+
+
+def test_digest_refresh_apply_same_stale_digest_on_all_lines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every line carrying the stale digest is patched, not just the first."""
+    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        f"FROM nginx:1.25@{_OLD_DIGEST} AS build\n"
+        f"FROM nginx:1.25@{_OLD_DIGEST} AS runtime\n"
+    )
+
+    with patch(
+        "repo_ops_container.container._fetch_manifest_digest",
+        return_value=_NEW_DIGEST,
+    ):
+        apply_container(_make_ws(tmp_path))
+
+    result = dockerfile.read_text(encoding="utf-8")
+    assert _OLD_DIGEST not in result
+    assert result.count(_NEW_DIGEST) == 2
+
+
+# ---------------------------------------------------------------------------
 # Compose build.dockerfile resolution
 # ---------------------------------------------------------------------------
 
