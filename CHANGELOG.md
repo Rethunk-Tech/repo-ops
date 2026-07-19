@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-19
+
 ### Added
 
 - **`dependabot` uv.lock high-confidence parser (#150):** `uv.lock` `[[package]]` entries feed the supersession check like npm/yarn/pnpm/bun and go.mod/Cargo.lock, so already-resolved Python-ecosystem PRs are detected (and auto-closable) instead of falling through to the never-auto-closed text-search fallback; PR-title package names are PEP 503-normalized before lookup.
@@ -15,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`container-refresh-sha` multi-stage digest drift (#151):** every `FROM ...@sha256:...` occurrence is now checked and refreshed independently instead of deduping by image:tag — a stage that already carries the current digest no longer shadows a sibling stage with a stale one, and apply patches every line with an outdated ref (registry digest lookups remain deduped per image:tag).
 - **Bundled skill AGENTS.md** re-synced with the root `AGENTS.md` `--latest` coverage-rule trim.
+
+### Changed
+
+- **AGENTS.md:** recommends the full-coverage sweep flag combo (`--latest --actions-refresh-sha --container-refresh-sha --*-targeted-bump`) by default for bulk maintenance, since bare `--latest` under-reports drift.
+- **Deps/CI:** routine Python dependency and CI action pin refresh.
 
 ## [0.19.0] - 2026-07-18
 
@@ -660,7 +667,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.17.3...v0.18.0
