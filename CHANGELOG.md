@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`dependabot` uv.lock high-confidence parser (#150):** `uv.lock` `[[package]]` entries feed the supersession check like npm/yarn/pnpm/bun and go.mod/Cargo.lock, so already-resolved Python-ecosystem PRs are detected (and auto-closable) instead of falling through to the never-auto-closed text-search fallback; PR-title package names are PEP 503-normalized before lookup.
+
+### Fixed
+
+- **`container-refresh-sha` multi-stage digest drift (#151):** every `FROM ...@sha256:...` occurrence is now checked and refreshed independently instead of deduping by image:tag — a stage that already carries the current digest no longer shadows a sibling stage with a stale one, and apply patches every line with an outdated ref (registry digest lookups remain deduped per image:tag).
+- **Bundled skill AGENTS.md** re-synced with the root `AGENTS.md` `--latest` coverage-rule trim.
+
 ## [0.19.0] - 2026-07-18
 
 ### Added

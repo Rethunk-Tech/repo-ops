@@ -92,7 +92,7 @@ repo-ops apply --submodule-order=children-first --submodules /path/to/umbrella
 
 Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode` wins over the umbrella for that ecosystem. npm has no latest mode (semver ranges only). Targeted-bump fallbacks (move `behind_latest` gaps instead of only reporting them) exist for all four JS package managers: `--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, `--bun-targeted-bump`. Details: `repo-ops plan --help` and [docs/usage.md — Ecosystem upgrade modes](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply).
 
-**`--latest` does NOT imply `--actions-refresh-sha`, `--container-refresh-sha`, or any `--*-targeted-bump` flag.** Each is independently opt-in even though `--latest` sounds like it should cover them — this has caused real missed-update incidents (a whole session's worth of `repo-ops` runs silently skipped container digest refresh and JS targeted-bump gap-closing because `--latest` alone was assumed to be complete). For routine bulk maintenance, always reach for the **full-coverage sweep** combo in Essential invocations above, not bare `--latest`.
+**`--latest` does NOT imply `--actions-refresh-sha`, `--container-refresh-sha`, or any `--*-targeted-bump` flag.** Each is independently opt-in even though `--latest` sounds like it should cover them. For routine bulk maintenance, always reach for the **full-coverage sweep** combo in Essential invocations above, not bare `--latest`.
 
 ### Full-coverage sweep — what each flag actually catches
 
