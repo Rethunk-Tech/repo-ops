@@ -7,7 +7,7 @@ module-root = "src"
 
 [project]
 name = "repo-ops"
-version = "0.20.3"
+version = "0.20.4"
 description = "Repository operations and dependency maintenance tools for Rethunk-Tech."
 readme = "README.md"
 requires-python = ">=3.10"

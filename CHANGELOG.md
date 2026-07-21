@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.4] - 2026-07-21
+
+### Fixed
+
+- **`verify` fast-path silently skipped the type-check gate for `pyrefly`-only repos (#155):** `verify.py`'s dev-deps heuristic only recognized `mypy`; repos already standardized on `pyrefly` (bakeoff, repo-ops itself, Albinogeek/Personal/tools, sagaforge, paper-trail) got no type-check gate at all instead of a failure. Added a matching `pyrefly` branch (`uv run pyrefly check .`), checked after `mypy` so a repo carrying both keeps the `mypy` gate.
+
 ### Changed
 
 - **Dev tooling:** replaced `mypy` with `pyrefly` for type checking across the workspace (CI, release gate, docs); repository-only change, no user-facing effect.
+- **Test suite:** cleared the last leaked `pytest` warning (an intentionally-triggered one-time `UserWarning` for the tomllib-unavailable path is now asserted with `pytest.warns` instead of leaking) and fixed several `tests/test_audit*.py` fixtures that mistyped the `tmp_path` fixture as `pytest.TempPathFactory` (the type of the separate `tmp_path_factory` fixture) instead of `Path`; both were caught by an unscoped local `pyrefly check .` run, though neither affected the actual CI/release gate (`--project-excludes tests/** scripts/**`).
 
 ## [0.20.3] - 2026-07-21
 
