@@ -115,6 +115,12 @@ def _verify_hatch_fast(ws: Workspace, *, timeout: int | None = None) -> str | No
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "uv run mypy failed"
         return None
+    # pyrefly in dev deps
+    if "pyrefly" in dev:
+        proc = run(["uv", "run", "pyrefly", "check", "."], ws.path, timeout=timeout)
+        if proc.returncode != 0:
+            return (proc.stderr or proc.stdout).strip() or "uv run pyrefly check failed"
+        return None
     # ruff in dev deps (lint-only fallback)
     if "ruff" in dev:
         proc = run(["uv", "run", "ruff", "check", "."], ws.path, timeout=timeout)

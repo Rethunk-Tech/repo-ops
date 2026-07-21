@@ -538,6 +538,93 @@ class TestVerifyHatchFast:
         assert result is None
         assert any(c == ["uv", "run", "mypy", "."] for c in calls)
 
+    def test_pyrefly_in_dev_deps_invoked(self, tmp_path: Path) -> None:
+        """pyrefly in dev deps triggers 'uv run pyrefly check .' when no higher-priority heuristic matches."""
+        self._write_pyproject(
+            tmp_path,
+            '[tool.uv]\ndev-dependencies = ["pyrefly>=0.1"]\n',
+        )
+        calls: list[list[str]] = []
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None
+        ) -> CompletedProcess[str]:
+            calls.append(cmd)
+            return _ok()
+
+        ws = self._hatch_ws(tmp_path)
+        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
+            result = verify_workspace(ws, verify_test=False)
+
+        assert result is None
+        assert any(c == ["uv", "run", "pyrefly", "check", "."] for c in calls)
+
+    def test_hatch_env_deps_pyrefly_recognised(self, tmp_path: Path) -> None:
+        """pyrefly in hatch env dependencies is still recognised as a dev dep."""
+        self._write_pyproject(
+            tmp_path,
+            '[tool.hatch.envs.default]\ndependencies = ["pyrefly"]\n',
+        )
+        calls: list[list[str]] = []
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None
+        ) -> CompletedProcess[str]:
+            calls.append(cmd)
+            return _ok()
+
+        ws = self._hatch_ws(tmp_path)
+        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
+            result = verify_workspace(ws, verify_test=False)
+
+        assert result is None
+        assert any(c == ["uv", "run", "pyrefly", "check", "."] for c in calls)
+
+    def test_pyrefly_skipped_when_test_script_present(self, tmp_path: Path) -> None:
+        """'test' script takes priority over pyrefly heuristic."""
+        self._write_pyproject(
+            tmp_path,
+            '[project]\nname = "x"\n[project.scripts]\ntest = "pytest"\n'
+            '[tool.uv]\ndev-dependencies = ["pyrefly>=0.1"]\n',
+        )
+        calls: list[list[str]] = []
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None
+        ) -> CompletedProcess[str]:
+            calls.append(cmd)
+            return _ok()
+
+        ws = self._hatch_ws(tmp_path)
+        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
+            result = verify_workspace(ws, verify_test=False)
+
+        assert result is None
+        assert any(c == ["uv", "run", "test"] for c in calls)
+        assert not any(c == ["uv", "run", "pyrefly", "check", "."] for c in calls)
+
+    def test_mypy_takes_priority_over_pyrefly(self, tmp_path: Path) -> None:
+        """When both mypy and pyrefly are present in dev deps, the mypy branch wins (checked first)."""
+        self._write_pyproject(
+            tmp_path,
+            '[tool.uv]\ndev-dependencies = ["mypy>=1.0", "pyrefly>=0.1"]\n',
+        )
+        calls: list[list[str]] = []
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None
+        ) -> CompletedProcess[str]:
+            calls.append(cmd)
+            return _ok()
+
+        ws = self._hatch_ws(tmp_path)
+        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
+            result = verify_workspace(ws, verify_test=False)
+
+        assert result is None
+        assert any(c == ["uv", "run", "mypy", "."] for c in calls)
+        assert not any(c == ["uv", "run", "pyrefly", "check", "."] for c in calls)
+
 
 # ---------------------------------------------------------------------------
 # Task 5 — Env-overridable timeouts
