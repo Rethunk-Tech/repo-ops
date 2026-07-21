@@ -61,10 +61,8 @@ ENV/
 env.bak/
 venv.bak/
 
-# mypy, pyright, pyre, pytype
-.mypy_cache/
-.dmypy.json
-dmypy.json
+# pyrefly, pyright, pyre, pytype
+.pyrefly_cache/
 .pyre/
 .pytype/
 cython_debug/
