@@ -75,12 +75,14 @@ def test_load_repo_config_keeps_sidecar_when_tomllib_unavailable(
         "[tool.repo-ops]\njobs = 9\n", encoding="utf-8"
     )
     monkeypatch.setattr(config_mod, "_TOMLLIB_AVAILABLE", False)
+    monkeypatch.setattr(config_mod, "_warned", False)
     monkeypatch.setattr(
         config_mod,
         "load_dot_repo_ops_config",
         lambda _root: {"jobs": 3},
     )
-    assert load_repo_config(tmp_path) == {"jobs": 3}
+    with pytest.warns(UserWarning, match="config files will be ignored"):
+        assert load_repo_config(tmp_path) == {"jobs": 3}
 
 
 def test_container_cli_flags_set_env(monkeypatch: pytest.MonkeyPatch) -> None:
