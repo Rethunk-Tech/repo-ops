@@ -7,7 +7,7 @@ module-root = "src"
 
 [project]
 name = "repo-ops-py-poetry"
-version = "0.20.2"
+version = "0.20.3"
 requires-python = ">=3.10"
 dependencies = [
   "repo-ops-core",

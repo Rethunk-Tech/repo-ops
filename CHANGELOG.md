@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.3] - 2026-07-21
+
+### Fixed
+
+- **`apply --commit` remediation-written files dropped from root-workspace commits (#154):** a root-scanned workspace's applied remediation (e.g. `biome_schema` rewriting `biome.json`'s `$schema` URL after a `@biomejs/biome` bump) is now staged alongside the lockfile — previously it was silently dropped, since the basename-only root match only ever considered the package manager's own manifest/lockfile. `upgrade_scoped_paths()` now unions in each applied remediation hook's own declared `files`, so this also covers future remediations that write a root-level file outside the manager's manifest/lockfile.
+
 ## [0.20.2] - 2026-07-21
 
 Note: `v0.20.1` was tagged but its release build failed the `ruff format --check` gate before publishing any artifacts; superseded immediately by this version. Do not use `v0.20.1`.
