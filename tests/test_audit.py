@@ -6,6 +6,7 @@ All subprocess calls are mocked — no network traffic, no real tool invocations
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -675,7 +676,7 @@ def test_audit_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert "--fail-on-unknown" in out
 
 
-def test_audit_json_output_empty_roots(tmp_path: pytest.TempPathFactory) -> None:
+def test_audit_json_output_empty_roots(tmp_path: Path) -> None:
     """Empty roots → no workspaces → JSON with empty workspaces list, exit 0."""
     with patch("repo_ops_audit.audit.discover_repos", return_value={}):
         result = main(["--json", str(tmp_path)])

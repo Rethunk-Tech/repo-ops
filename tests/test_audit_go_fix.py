@@ -7,9 +7,9 @@ All subprocess calls are mocked; no real network or file mutations.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from repo_ops_audit.audit import (
     ApplyOutcome,
     RemediationItem,
@@ -150,7 +150,7 @@ def test_apply_go_targeted_skips_empty_safe_version() -> None:
 
 
 def test_apply_remediations_go_dispatches_to_apply_go_targeted(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
 ) -> None:
     """Go remediations are applied directly via _apply_go_targeted, never through
     the registry/orchestration.process_workspace path used by JS/py/rust."""
@@ -176,7 +176,7 @@ def test_apply_remediations_go_dispatches_to_apply_go_targeted(
 
 
 def test_apply_remediations_go_skips_when_go_absent(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
 ) -> None:
     """go not on PATH → outcome.status == 'skip', _apply_go_targeted never called."""
     ws = str(tmp_path)

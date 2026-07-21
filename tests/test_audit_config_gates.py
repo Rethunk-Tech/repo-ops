@@ -10,6 +10,7 @@ layer (already sufficient to prove the precedence chain end to end).
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -30,7 +31,7 @@ def _results(**counts: int) -> list[WorkspaceResult]:
 
 
 def test_fail_on_env_applies_when_flag_absent(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """REPO_OPS_AUDIT_FAIL_ON=critical + no --fail-on flag → env sets the gate.
 
@@ -47,7 +48,7 @@ def test_fail_on_env_applies_when_flag_absent(
 
 
 def test_fail_on_cli_flag_overrides_env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Explicit --fail-on high wins over REPO_OPS_AUDIT_FAIL_ON=never in the env."""
     monkeypatch.setenv("REPO_OPS_AUDIT_FAIL_ON", "never")
@@ -60,7 +61,7 @@ def test_fail_on_cli_flag_overrides_env(
 
 
 def test_fail_on_unknown_env_applies_when_flag_absent(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """REPO_OPS_AUDIT_FAIL_ON_UNKNOWN=1 + no flag → unknown findings trigger exit 1."""
     monkeypatch.setenv("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", "1")
@@ -73,7 +74,7 @@ def test_fail_on_unknown_env_applies_when_flag_absent(
 
 
 def test_fail_on_unknown_cli_flag_overrides_env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Explicit --fail-on-unknown wins even when the env var says '0' (off)."""
     monkeypatch.setenv("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", "0")

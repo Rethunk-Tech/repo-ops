@@ -6,6 +6,7 @@ All subprocess/apply calls are mocked; no real network or file mutations.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -117,7 +118,7 @@ def _mock_upgrade_result(
 
 
 def test_apply_remediations_delegates_to_process_workspace(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
 ) -> None:
     """apply_remediations calls orchestration.process_workspace for each workspace."""
     items = [_make_item(workspace=str(tmp_path))]
@@ -140,7 +141,7 @@ def test_apply_remediations_delegates_to_process_workspace(
 
 
 def test_apply_remediations_deduplicates_workspaces(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
 ) -> None:
     """Multiple RemediationItems for the same workspace → single apply call."""
     ws = str(tmp_path)
@@ -166,7 +167,7 @@ def test_apply_remediations_deduplicates_workspaces(
 
 
 def test_apply_remediations_skip_when_manager_unavailable(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
 ) -> None:
     """When the manager package is unavailable → outcome.status == 'skip'."""
     items = [_make_item(workspace=str(tmp_path))]
@@ -179,7 +180,7 @@ def test_apply_remediations_skip_when_manager_unavailable(
     assert "not available" in outcomes[0].error
 
 
-def test_apply_remediations_fail_on_exception(tmp_path: pytest.TempPathFactory) -> None:
+def test_apply_remediations_fail_on_exception(tmp_path: Path) -> None:
     """Exception from process_workspace → outcome.status == 'fail'."""
     items = [_make_item(workspace=str(tmp_path))]
 
@@ -198,7 +199,7 @@ def test_apply_remediations_fail_on_exception(tmp_path: pytest.TempPathFactory) 
 
 
 def test_apply_remediations_passes_allow_dirty(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
 ) -> None:
     """allow_dirty=True is forwarded to process_workspace."""
     items = [_make_item(workspace=str(tmp_path))]
@@ -219,7 +220,7 @@ def test_apply_remediations_passes_allow_dirty(
 
 
 def test_apply_remediations_detects_node_manager(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
 ) -> None:
     """For node ecosystem, the actual node manager is detected from the workspace."""
     # Simulate a pnpm workspace
@@ -273,7 +274,7 @@ def test_audit_parser_allow_dirty_default_off() -> None:
     assert args.allow_dirty is False
 
 
-def test_fix_not_called_without_flag(tmp_path: pytest.TempPathFactory) -> None:
+def test_fix_not_called_without_flag(tmp_path: Path) -> None:
     """Without --fix, apply_remediations is NOT called (detect-only default)."""
     with (
         patch("repo_ops_audit.audit.discover_repos", return_value={}),
@@ -285,7 +286,7 @@ def test_fix_not_called_without_flag(tmp_path: pytest.TempPathFactory) -> None:
 
 
 def test_fix_called_when_flag_passed_and_remediations_exist(
-    tmp_path: pytest.TempPathFactory, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """--fix calls apply_remediations when remediations are present."""
     pip_audit_out = json.dumps(
@@ -338,7 +339,7 @@ def test_fix_called_when_flag_passed_and_remediations_exist(
 
 
 def test_fix_json_output_includes_apply_outcomes(
-    tmp_path: pytest.TempPathFactory, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """--fix --json includes 'apply_outcomes' key in the JSON payload."""
     pip_audit_out = json.dumps(
@@ -390,7 +391,7 @@ def test_fix_json_output_includes_apply_outcomes(
     assert payload["apply_outcomes"][0]["status"] == "ok"
 
 
-def test_default_is_detect_only_without_fix(tmp_path: pytest.TempPathFactory) -> None:
+def test_default_is_detect_only_without_fix(tmp_path: Path) -> None:
     """Baseline: audit without --fix is read-only (no apply_remediations call)."""
     with (
         patch("repo_ops_audit.audit.discover_repos", return_value={}),

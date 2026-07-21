@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from repo_ops_audit.audit import (
     RemediationItem,
     VulnCount,
@@ -215,7 +215,7 @@ def test_audit_parser_sarif_out_default_none() -> None:
     assert args.sarif_out is None
 
 
-def test_audit_parser_sarif_out_flag(tmp_path: pytest.TempPathFactory) -> None:
+def test_audit_parser_sarif_out_flag(tmp_path: Path) -> None:
     from repo_ops_audit.audit import build_audit_parser
 
     parser = build_audit_parser()
@@ -225,7 +225,7 @@ def test_audit_parser_sarif_out_flag(tmp_path: pytest.TempPathFactory) -> None:
 
 
 def test_sarif_file_written_on_flag(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
 ) -> None:
     """--sarif-out PATH writes a valid SARIF 2.1.0 JSON file."""
     sarif_path = str(tmp_path / "results.sarif")
@@ -243,7 +243,7 @@ def test_sarif_file_written_on_flag(
 # ---------------------------------------------------------------------------
 
 
-def test_write_step_summary_no_env_var(tmp_path: pytest.TempPathFactory) -> None:
+def test_write_step_summary_no_env_var(tmp_path: Path) -> None:
     """Returns False when GITHUB_STEP_SUMMARY is not set."""
     env = {k: v for k, v in os.environ.items() if k != "GITHUB_STEP_SUMMARY"}
     with patch.dict(os.environ, env, clear=True):
@@ -252,7 +252,7 @@ def test_write_step_summary_no_env_var(tmp_path: pytest.TempPathFactory) -> None
 
 
 def test_write_step_summary_writes_to_path(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
 ) -> None:
     """Returns True and writes content when GITHUB_STEP_SUMMARY is set."""
     summary_file = tmp_path / "summary.md"
@@ -266,7 +266,7 @@ def test_write_step_summary_writes_to_path(
 
 
 def test_write_step_summary_explicit_path(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
 ) -> None:
     """Explicit path= parameter takes precedence over env var."""
     env_file = tmp_path / "env_summary.md"
@@ -277,7 +277,7 @@ def test_write_step_summary_explicit_path(
     assert not env_file.exists()  # env var file not written
 
 
-def test_write_step_summary_appends(tmp_path: pytest.TempPathFactory) -> None:
+def test_write_step_summary_appends(tmp_path: Path) -> None:
     """Multiple write_step_summary calls append to the same file."""
     summary_file = tmp_path / "summary.md"
     with patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary_file)}):
@@ -310,7 +310,7 @@ def test_build_audit_summary_no_remediations() -> None:
 
 
 def test_step_summary_emitted_by_main(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
 ) -> None:
     """main() auto-writes to GITHUB_STEP_SUMMARY when the env var is set."""
     summary_file = tmp_path / "summary.md"
