@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.20.1] - 2026-07-21
+## [0.20.2] - 2026-07-21
+
+Note: `v0.20.1` was tagged but its release build failed the `ruff format --check` gate before publishing any artifacts; superseded immediately by this version. Do not use `v0.20.1`.
 
 ### Fixed
 
