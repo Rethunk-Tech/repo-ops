@@ -9,17 +9,17 @@ uv sync --locked --group dev
 uv run python scripts/check_import_boundaries.py
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy packages/repo-ops-core/src packages/repo-ops-models/src packages/repo-ops-lockfiles/src packages/repo-ops-js/src packages/repo-ops-js-npm/src packages/repo-ops-js-pnpm/src packages/repo-ops-js-bun/src packages/repo-ops-js-yarn/src packages/repo-ops-go/src packages/repo-ops-rust/src packages/repo-ops-container/src packages/repo-ops-py/src packages/repo-ops-py-uv/src packages/repo-ops-py-poetry/src packages/repo-ops-py-pip-tools/src packages/repo-ops-py-hatch/src packages/repo-ops-py-pdm/src packages/repo-ops-py-pipenv/src packages/repo-ops-upgrade/src packages/repo-ops-upgrade-remediations-core/src packages/repo-ops-upgrade-remediations-js/src packages/repo-ops-upgrade-remediations-go/src packages/repo-ops-upgrade-remediations-py/src packages/repo-ops-upgrade-remediations-rust/src packages/repo-ops-upgrade-remediations-deno/src packages/repo-ops-inventory/src packages/repo-ops-pushed/src packages/repo-ops-audit/src packages/repo-ops-dependabot/src packages/repo-ops-doctor/src packages/repo-ops/src
+uv run pyrefly check . --project-excludes 'tests/**' 'scripts/**'
 uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=68 tests packages/repo-ops-audit/tests packages/repo-ops-lockfiles/tests packages/repo-ops-py-pdm/tests packages/repo-ops-py-pipenv/tests
 uv build packages/repo-ops
 ```
 
-The mypy path list mirrors `[tool.mypy] packages` in root `pyproject.toml` (authoritative when they diverge from CI YAML).
+The pyrefly check scope mirrors `[tool.pyrefly] project-includes` in root `pyproject.toml` (authoritative when they diverge from CI YAML). `pyrefly check .` runs in single-file mode, which ignores `project-includes`/`project-excludes` from the config file entirely — the `--project-excludes` flag on the command line is what actually keeps `tests/`/`scripts/` out of scope, matching what `[tool.mypy] packages` covered before this migration.
 
 ## Test layout
 
 | Path | Role |
-|------|------|
+| ------ | ------ |
 | `tests/` | Root unit and integration tests (see markers below) |
 | `packages/repo-ops-lockfiles/tests/` | Lockfile parser unit tests (in `[tool.pytest.ini_options] testpaths`) |
 | `packages/repo-ops-audit/tests/` | Audit subcommand tests (34+ cases; CI/release pass this path explicitly) |
@@ -43,7 +43,7 @@ The `integration` marker flags tests that require real external tools (bun, yarn
 | `ci` | `-m "not integration"` | Yes (PR gate) | Python matrix only |
 | `integration` | `-m integration` | No (`continue-on-error: true`) | Node 22 + Corepack (yarn), bun, Go stable, govulncheck |
 
-The advisory `integration` job installs govulncheck (`go install golang.org/x/vuln/cmd/govulncheck@latest`), enables Corepack for yarn, and runs only `pytest -m integration` — it does not run the blocking lint, mypy, or coverage gates.
+The advisory `integration` job installs govulncheck (`go install golang.org/x/vuln/cmd/govulncheck@latest`), enables Corepack for yarn, and runs only `pytest -m integration` — it does not run the blocking lint, pyrefly, or coverage gates.
 
 To skip integration tests during rapid iteration:
 
