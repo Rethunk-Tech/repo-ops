@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Dev tooling:** replaced `mypy` with `pyrefly` for type checking across the workspace (CI, release gate, docs); repository-only change, no user-facing effect.
+
 ## [0.20.3] - 2026-07-21
 
 ### Fixed
