@@ -226,6 +226,44 @@ def test_strict_exit_counts_dirty_skip(tmp_path: Path) -> None:
     assert rc_strict == 1
 
 
+def test_apply_snapshots_repo_dirty_state_once_per_bundle(tmp_path: Path) -> None:
+    """Two sibling workspaces in the same repo must share one dirty snapshot,
+    not each re-check the live git tree — otherwise an earlier sibling's own
+    applied-but-uncommitted changes make every later sibling look dirty and get
+    skipped outright, even though the repo was clean at run-start. Issue #152.
+    """
+    _npm_workspace(tmp_path)
+    (tmp_path / ".pre-commit-config.yaml").write_text(
+        "repos: []\n", encoding="utf-8"
+    )
+    register_all()
+
+    calls: list[dict] = []
+
+    def _record(wr: WorkspaceResult, **kwargs) -> WorkspaceResult:
+        calls.append(kwargs)
+        wr.status = "ok"
+        return wr
+
+    with (
+        patch(
+            "repo_ops_upgrade.run.orchestration.process_workspace",
+            side_effect=_record,
+        ),
+        patch(
+            "repo_ops_upgrade.run.is_git_dirty", return_value=False
+        ) as mock_dirty,
+    ):
+        rc = main_apply([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
+
+    assert rc == 0
+    assert len(calls) == 2  # npm root workspace + precommit workspace
+    # One live dirty check per repo bundle, not one per workspace.
+    assert mock_dirty.call_count == 1
+    # Both sibling workspaces receive the same snapshotted value.
+    assert all(c["repo_started_dirty"] is False for c in calls)
+
+
 def test_upgrade_parser_exposes_log_file_and_strict_exit() -> None:
     from repo_ops_core.cli import build_upgrade_parser
 

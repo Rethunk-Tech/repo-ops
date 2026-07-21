@@ -641,6 +641,69 @@ def test_upgrade_scoped_paths_root_exact_path(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Issue #153 — nested yarn-workspace package.json dropped from root-scoped commit
+# ---------------------------------------------------------------------------
+
+
+def test_upgrade_scoped_paths_includes_nested_yarn_workspace_member(
+    tmp_path: Path,
+) -> None:
+    """A root-scanned yarn workspaces monorepo whose install resolves a bump
+    into a nested member's package.json must stage that manifest alongside the
+    root yarn.lock — not silently drop it and leave lockfile/manifest out of
+    sync on main. Issue #153."""
+    _init_git_repo(tmp_path)
+    (tmp_path / "package.json").write_text(
+        '{"name":"root","workspaces":["apps/*"]}', encoding="utf-8"
+    )
+    (tmp_path / "apps" / "web").mkdir(parents=True)
+
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="yarn",
+        git_repo=tmp_path,
+        label="root",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("pkg", "1", "2")]
+    bundle = RepoBundle(git_repo=tmp_path, label="root", workspaces=[wr])
+
+    porcelain = ["yarn.lock", "apps/web/package.json"]
+    scoped = post_apply_commit.upgrade_scoped_paths(bundle, porcelain)
+    assert "yarn.lock" in scoped
+    assert "apps/web/package.json" in scoped
+
+
+def test_upgrade_scoped_paths_excludes_non_member_nested_package_json(
+    tmp_path: Path,
+) -> None:
+    """A dirty package.json outside the monorepo's declared workspace globs must
+    never be swept into the commit — only declared members are eligible."""
+    _init_git_repo(tmp_path)
+    (tmp_path / "package.json").write_text(
+        '{"name":"root","workspaces":["apps/*"]}', encoding="utf-8"
+    )
+    (tmp_path / "vendor" / "other").mkdir(parents=True)
+
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="yarn",
+        git_repo=tmp_path,
+        label="root",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("pkg", "1", "2")]
+    bundle = RepoBundle(git_repo=tmp_path, label="root", workspaces=[wr])
+
+    porcelain = ["yarn.lock", "vendor/other/package.json"]
+    scoped = post_apply_commit.upgrade_scoped_paths(bundle, porcelain)
+    assert "yarn.lock" in scoped
+    assert "vendor/other/package.json" not in scoped
+
+
+# ---------------------------------------------------------------------------
 # Issue #116 — classify_commit_subject multi-ecosystem
 # ---------------------------------------------------------------------------
 

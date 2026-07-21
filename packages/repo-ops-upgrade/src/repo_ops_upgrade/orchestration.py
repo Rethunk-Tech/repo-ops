@@ -126,6 +126,7 @@ def process_workspace(
     allow_dirty: bool,
     on_verify_fail: OnVerifyFail = "keep",
     quiet: bool = False,
+    repo_started_dirty: bool | None = None,
 ) -> WorkspaceResult:
     _t0 = time.monotonic()
     out = _process_workspace_body(
@@ -136,6 +137,7 @@ def process_workspace(
         skip_remediations=skip_remediations,
         allow_dirty=allow_dirty,
         on_verify_fail=on_verify_fail,
+        repo_started_dirty=repo_started_dirty,
     )
     elapsed = time.monotonic() - _t0
     out.elapsed_s = elapsed
@@ -164,6 +166,7 @@ def _process_workspace_body(
     skip_remediations: set[str],
     allow_dirty: bool,
     on_verify_fail: OnVerifyFail,
+    repo_started_dirty: bool | None = None,
 ) -> WorkspaceResult:
     ws = result.workspace
     if FAIL_FAST_EVENT.is_set():
@@ -178,7 +181,18 @@ def _process_workspace_body(
 
     before_snap: dict[Path, bytes] | None = None
     if do_apply:
-        result.started_dirty = is_git_dirty(ws.git_repo)
+        # Snapshotted once per bundle by the caller when repo_started_dirty is
+        # given, rather than re-checked live here — an earlier sibling workspace
+        # in the same repo/run may have already applied its own (not-yet-
+        # committed) changes, which would otherwise make every later sibling look
+        # dirty and skip outright even though the repo was clean at run-start.
+        # Falls back to a live check when the caller has no bundle context
+        # (e.g. direct process_workspace callers/tests). Issue #152.
+        result.started_dirty = (
+            is_git_dirty(ws.git_repo)
+            if repo_started_dirty is None
+            else repo_started_dirty
+        )
         if result.started_dirty and not allow_dirty:
             result.status = "skip"
             result.error = f"{DIRTY_SKIP_MARKER} (use --allow-dirty)"

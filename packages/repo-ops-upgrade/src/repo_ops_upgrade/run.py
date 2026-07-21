@@ -24,6 +24,7 @@ from repo_ops_core.config import (
     load_repo_config,
 )
 from repo_ops_core.constants import DEFAULT_ROOTS
+from repo_ops_core.git import is_git_dirty
 from repo_ops_core.parallel import run_bounded_pool
 from repo_ops_core.tee import tee_stdout_stderr
 from repo_ops_models import ActionBump, RepoBundle, Workspace, WorkspaceResult
@@ -245,7 +246,9 @@ def _run_upgrade_body(
 
     _FAIL_FAST.clear()
 
-    def _process_one(wr: WorkspaceResult) -> WorkspaceResult:
+    def _process_one(
+        wr: WorkspaceResult, *, repo_started_dirty: bool | None = None
+    ) -> WorkspaceResult:
         # Guard the worker body: a raising worker must surface as a FAILED
         # workspace, not get silently dropped from results and reported clean
         # with exit 0 (#62). Mutate and return the input result so its
@@ -260,6 +263,7 @@ def _run_upgrade_body(
                 allow_dirty=args.allow_dirty,
                 on_verify_fail=getattr(args, "on_verify_fail", "keep"),
                 quiet=args.quiet,
+                repo_started_dirty=repo_started_dirty,
             )
         except Exception as exc:
             wr.status = "fail"
@@ -268,8 +272,15 @@ def _run_upgrade_body(
 
     def _process_repo(bundle: RepoBundle) -> list[WorkspaceResult]:
         results: list[WorkspaceResult] = []
+        # Snapshot the repo's dirty state once, before any workspace in this
+        # bundle is processed, rather than re-checking live per workspace. All
+        # workspaces in a bundle share bundle.git_repo and share one commit at
+        # the end of the run, so an earlier sibling's own already-applied (not
+        # yet committed) changes must not make a later sibling look dirty and
+        # get skipped outright. Issue #152.
+        repo_started_dirty = is_git_dirty(bundle.git_repo) if apply else None
         for wr in bundle.workspaces:
-            updated = _process_one(wr)
+            updated = _process_one(wr, repo_started_dirty=repo_started_dirty)
             results.append(updated)
             if args.fail_fast and updated.status == "fail":
                 _FAIL_FAST.set()

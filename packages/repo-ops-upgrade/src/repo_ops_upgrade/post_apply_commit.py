@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 from repo_ops_core.git import run_git
+from repo_ops_js.workspaces import path_is_yarn_workspace_child, yarn_workspace_members
 from repo_ops_lockfiles.constants import (
     GO_LOCKFILES,
     NODE_LOCKFILES,
@@ -129,6 +130,14 @@ def upgrade_scoped_paths(
     - Submodule gitlink paths explicitly advanced by apply_submodule_tag_advances
       (passed via ``extra_gitlink_paths``) so pointer bumps are committed alongside
       dependency updates rather than left staged-but-uncommitted. Task #18.
+    - Nested package.json files belonging to a declared yarn/npm/pnpm/bun
+      workspace member, when the *scanned* workspace is the monorepo root
+      (``rel == "."``) — a root-scoped install/upgrade can resolve a
+      peer/group-constrained bump into a member's manifest as a side effect,
+      and that manifest carries a directory component the basename-only
+      root match excludes. Scoped to the root workspace's own declared
+      ``workspaces`` globs so unrelated dirty manifests are never swept in.
+      Issue #153.
     """
     # root_wanted: basenames valid at the repo root (no subdirectory prefix).
     root_wanted: set[str] = set()
@@ -136,6 +145,9 @@ def upgrade_scoped_paths(
     sub_prefixes: set[str] = set()
     # action_paths: exact relative paths of bumped workflow files.
     action_paths: set[str] = set()
+    # node_workspace_roots: (root path, member glob patterns) for root-scanned
+    # node workspaces monorepos, used to match nested member package.json files.
+    node_workspace_roots: list[tuple[Path, set[str]]] = []
 
     for wr in bundle.workspaces:
         if not (wr.changes or wr.remediations):
@@ -150,6 +162,12 @@ def upgrade_scoped_paths(
             # (partial commit). Issue #108.
             root_wanted.update(_lockfile_names_for_manager(wr.workspace.manager))
             root_wanted.update(_manifest_names_for_manager(wr.workspace.manager))
+            if wr.workspace.manager in ("yarn", "npm", "pnpm", "bun"):
+                members = yarn_workspace_members(wr.workspace.path)
+                if members:
+                    node_workspace_roots.append(
+                        (wr.workspace.path.resolve(), members)
+                    )
         else:
             # Subdirectory workspace: scope by prefix with a strict "/" boundary
             # so "packages/foo" cannot match "packages/foobar". Issue #116.
@@ -179,10 +197,23 @@ def upgrade_scoped_paths(
             scoped.append(path)
             continue
         # Subdirectory workspace: prefix must match with a "/" boundary.
+        matched = False
         for prefix in sub_prefixes:
             if norm == prefix or norm.startswith(f"{prefix}/"):
                 scoped.append(path)
+                matched = True
                 break
+        if matched:
+            continue
+        # Nested workspace-member package.json touched by a root-scanned node
+        # workspaces monorepo apply (e.g. yarn resolving a peer/group-constrained
+        # bump into a member package). Issue #153.
+        if base == "package.json" and node_workspace_roots:
+            member_dir = (bundle.git_repo / norm).resolve().parent
+            for root_path, members in node_workspace_roots:
+                if path_is_yarn_workspace_child(member_dir, root_path, members):
+                    scoped.append(path)
+                    break
     return scoped
 
 
