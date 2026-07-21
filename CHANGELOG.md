@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-07-21
+
+### Fixed
+
+- **`apply` sibling-workspace dirty-skip false positive (#152):** the dirty-worktree check is now snapshotted once per repo bundle before any of its workspaces are processed, instead of re-checked live before each workspace — an earlier workspace's own already-applied (not yet committed) changes in the same repo/run no longer make every later sibling workspace look dirty and get skipped outright.
+- **`apply --commit` nested yarn-workspace manifest dropped (#153):** when the scanned workspace is a monorepo root (`rel == "."`), a nested workspace member's `package.json` touched as a side effect of resolving a peer/group-constrained bump elsewhere in the tree is now staged and committed alongside the root lockfile, scoped to the root's own declared `workspaces` globs — previously it was silently dropped, leaving the lockfile and manifest out of sync on `main`.
+
+### Changed
+
+- **Deps:** routine Python dependency refresh (`uv.lock`).
+
 ## [0.20.0] - 2026-07-19
 
 ### Added
@@ -232,7 +243,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Ghost-bump guard for npm, pnpm, and bun's fallback path:** the post-apply resolution guard (added to bun's targeted path in #112) is now a shared `repo-ops-js` helper wired into `apply_npm`, `apply_pnpm`, and bun's bare-`bun update` fallback — an `overrides`/`resolutions`/exact-pin that blocks the resolver now fails the workspace with a `ghost bump:` error instead of reporting false-green. Pre-release escape closed too: an installed `4.0.0-rc.1` no longer satisfies a stable `4.0.0` target.
 - **Actions lint levels:** `--actions-lint-level {block,warn,off}` (or `REPO_OPS_ACTIONS_LINT_LEVEL`) — `warn` records the actionlint failure but proceeds with pin bumps, so an unrelated shellcheck nit in a `run:` block no longer silently blocks every pin in the workflow.
-- **Go environment-failure classification:** toolchain/workspace problems (go.work `go` directive older than a member requirement, missing replace targets, missing go.sum entries, toolchain constraints) are prefixed `[env] ` with a one-line remediation hint (e.g. ``run `go work use` in <dir>``) instead of raw `go` stderr. Opt-in `REPO_OPS_GO_WORK_SYNC=1` auto-runs `go work use` and retries once.
+- **Go environment-failure classification:** toolchain/workspace problems (go.work `go` directive older than a member requirement, missing replace targets, missing go.sum entries, toolchain constraints) are prefixed `[env]` with a one-line remediation hint (e.g. ``run `go work use` in <dir>``) instead of raw `go` stderr. Opt-in `REPO_OPS_GO_WORK_SYNC=1` auto-runs `go work use` and retries once.
 - **Stronger verify gates:** Go gains `go build ./...` after `go mod verify`; uv workspaces run `uv run ruff check .` when ruff is configured; Node verify script is overridable via `REPO_OPS_NODE_VERIFY_SCRIPT` (empty value skips); hatch heuristics recognize `check`/`typecheck` scripts and mypy.
 - **`--exclude PATTERN`** (repeatable, substring or glob against repo label/path) to suppress known-broken repos without code edits.
 - **Layered settings:** new `repo_ops_core.config` module with CLI flag > env var > config file > default precedence; per-repo `[tool.repo-ops]` in `pyproject.toml` and global `~/.config/repo-ops/config.toml`; consolidated settings reference table in `docs/usage.md`.
@@ -590,40 +601,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.5] - 2026-05-29
 
 ### Fixed
+
 - CLI tables: shared column padding so headers align with data (`repos-inventory`, `repos-pushed`).
 - Inventory `--flat .`: use resolved directory name when `Path('.').name` is empty (Python 3.12+).
 
 ## [0.2.4] - 2026-05-29
 
 ### Fixed
+
 - Discovery: find `.git` directories without pruning them away (fixes `repos-pushed` and shared repo discovery).
 - Inventory: count Python dependency edges from `uv.lock` and `pyproject.toml` lockfiles.
 
 ### Changed
+
 - Documentation tier dedup: README defers install details; AGENTS and CONTRIBUTING each hold a single source per tier.
 
 ### Added
+
 - HUMANS: document editable `uv tool` install and verification steps for contributors.
 - Tests covering repo discovery and `repos-pushed` regression for `.git` pruning.
 
 ## [0.2.3] - 2026-05-29
 
 ### Changed
+
 - Migrated packaging from hatchling to `uv_build`; project is uv-locked (`uv.lock`, `.python-version`).
 - Dev dependencies moved to `[dependency-groups] dev` (replacing `[project.optional-dependencies] dev`).
 - CI and contributor docs use `uv sync`, `uv run`, and `uv build` instead of pip/venv.
 
 ### Added
+
 - Canonical install documented via `uv tool install` (git URL today; PyPI when published).
 - HUMANS installation section for runtime (`uv tool`) vs development (`uv sync`).
 
 ## [0.2.2] - 2026-05-29
 
 ### Changed
+
 - JSON upgrade output moved to `upgrade/report.py` (`build_json_payload`, `print_json_report`).
 - Lockfile snapshot/diff helpers extracted to `upgrade/ecosystems/node_lockfiles.py`.
 
 ### Added
+
 - HUMANS package-layout table for programmatic imports (0.2.1+).
 - Subsystem tests (actions, remediations, orchestration, report, inventory `--help`).
 - CLI `--help` smoke tests invoke domain `main()` directly (no PATH dependency).
@@ -631,32 +650,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.1] - 2026-05-29
 
 ### Changed
+
 - Decomposed `upgrade/engine.py` into focused modules: `constants`, `workspaces`, `actions`, `remediations`, `verify`, `report`, `orchestration`, and `ecosystems/` (`node`, `yarn`, `go`, `rust`, `python`).
 - Test modules renamed for discoverability: `test_upgrade`, `test_inventory`, `test_pushed`.
 
 ### Removed
+
 - Monolithic `upgrade/engine.py` (logic moved to submodules above; import `repo_ops.upgrade.ecosystems` or specific submodules instead).
 
 ## [0.2.0] - 2026-05-29
 
 ### Added
+
 - Four intent-based console entry points: `repos-inventory`, `repos-upgrade-plan`, `repos-upgrade-apply`, `repos-pushed`.
 - Optional `repo-ops` dispatcher with subcommands `inventory`, `plan`, `apply`, `pushed`.
 - Domain package layout: `core/`, `inventory/`, `upgrade/`, `pushed/`.
 - PEP 561 `py.typed` marker.
 
 ### Changed
+
 - **Breaking:** Removed `repo-dep-count`, `repo-dep-refresh`, and `repo-pushed-commits` script names.
 - Split dependency refresh into explicit plan (read-only) and apply commands.
 - GitHub Actions pin audit is on by default for upgrade plan/apply; use `--skip-actions` to omit.
 - `repos-pushed` uses unified root arguments (`add_roots_argument`).
 
 ### Removed
+
 - `-y` / `--yes`, `--also-actions`, and `--only-actions` flags (migration messages point to new commands).
 
 ## [0.1.0] - 2026-05-29
 
 ### Added
+
 - Initial bootstrap of the `repo-ops` package as a lightweight Python src-layout project using hatchling for packaging.
 - Three console entry point CLIs registered in pyproject.toml: `repo-dep-count`, `repo-dep-refresh`, and `repo-pushed-commits`.
 - Supporting community and release documentation (README, HUMANS, AGENTS, CONTRIBUTING, SECURITY, LICENSE, and this CHANGELOG).
@@ -665,6 +690,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python >= 3.10 compatibility, Ruff linting/formatting, pytest configuration, and .editorconfig hygiene.
 
 ### Changed
+
 - N/A (initial release).
 
 [Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.20.0...HEAD
