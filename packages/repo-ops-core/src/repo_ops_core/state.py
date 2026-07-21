@@ -158,7 +158,7 @@ def record_dirty_skip(
         return None
     key = str(repo_path)
     dirty_skips: dict[str, Any] = state.setdefault("dirty_skips", {})
-    entry = dirty_skips.get(key)
+    entry: dict[str, Any] | None = dirty_skips.get(key)
     if entry is None:
         entry = {"first_seen": today.isoformat(), "runs": 0}
         dirty_skips[key] = entry
@@ -273,7 +273,7 @@ def record_behind_latest(
         return None
     key = str(repo_path)
     table: dict[str, Any] = state.setdefault("behind_latest", {})
-    entry = table.get(key)
+    entry: dict[str, Any] | None = table.get(key)
     if entry is None:
         if count <= 0:
             return None

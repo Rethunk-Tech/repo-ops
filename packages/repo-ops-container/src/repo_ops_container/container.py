@@ -625,9 +625,13 @@ def _fetch_bearer_token(
 
     Uses anonymous access unless *basic_auth* is provided (``Basic <b64>``).
     """
-    params = urllib.parse.urlencode(
-        {"service": service, "scope": scope},
-        quote_via=urllib.parse.quote,
+    # Built manually (not via urllib.parse.urlencode(..., quote_via=...)) so
+    # both space-as-%20 (not quote_plus's "+") and the exact `quote()` safe=""
+    # encoding stay explicit, without fighting typeshed's overloaded
+    # `_QuoteVia` protocol for a plain function reference.
+    params = "&".join(
+        f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}"
+        for k, v in {"service": service, "scope": scope}.items()
     )
     url = f"{realm}?{params}"
     headers: dict[str, str] = {"Accept": "application/json"}

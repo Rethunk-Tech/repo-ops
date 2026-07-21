@@ -263,6 +263,7 @@ def print_report(
     shown = per_repo[:top_n]
     labels = [r.label for r in shown]
     commit_counts = [str(len(r.commits)) for r in shown]
+    other = 0
     if len(per_repo) > top_n:
         other = sum(len(r.commits) for r in per_repo[top_n:])
         commit_counts.append(str(other))

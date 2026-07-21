@@ -206,7 +206,7 @@ def _run_upgrade_body(
     exclude_patterns: list[str] = getattr(args, "exclude_patterns", None) or []
     excluded_count = 0
     if exclude_patterns:
-        kept: dict[Path, object] = {}
+        kept: dict[Path, RepoBundle] = {}
         for key, bundle in bundles.items():
             label = bundle.label
             path_str = str(key)
@@ -220,7 +220,7 @@ def _run_upgrade_body(
                 excluded_count += 1
             else:
                 kept[key] = bundle
-        bundles = kept  # type: ignore[assignment]
+        bundles = kept
 
     include_submodules = getattr(args, "submodules", False)
     submodule_order = getattr(args, "submodule_order", "discovery")
