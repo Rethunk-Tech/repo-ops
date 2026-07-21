@@ -138,6 +138,14 @@ def upgrade_scoped_paths(
       root match excludes. Scoped to the root workspace's own declared
       ``workspaces`` globs so unrelated dirty manifests are never swept in.
       Issue #153.
+    - Files an applied remediation hook declares it touched (its own ``files``
+      callback, e.g. ``biome_schema`` rewriting ``biome.json``'s schema URL),
+      matched by exact repo-relative path. A remediation writes files outside
+      the manager's own manifest/lockfile, so neither the root-basename match
+      nor the subdirectory-prefix match sees them when the *scanned* workspace
+      is the monorepo root. Sourced from the hook's own declaration rather than
+      hand-enumerated per manager, so it also covers future remediations that
+      write a root-level file. Issue #154.
     """
     # root_wanted: basenames valid at the repo root (no subdirectory prefix).
     root_wanted: set[str] = set()
@@ -148,6 +156,9 @@ def upgrade_scoped_paths(
     # node_workspace_roots: (root path, member glob patterns) for root-scanned
     # node workspaces monorepos, used to match nested member package.json files.
     node_workspace_roots: list[tuple[Path, set[str]]] = []
+    # remediation_paths: exact repo-relative paths an applied remediation hook
+    # declared it wrote via its own `files` callback.
+    remediation_paths: set[str] = set()
 
     for wr in bundle.workspaces:
         if not (wr.changes or wr.remediations):
@@ -170,6 +181,19 @@ def upgrade_scoped_paths(
             # Subdirectory workspace: scope by prefix with a strict "/" boundary
             # so "packages/foo" cannot match "packages/foobar". Issue #116.
             sub_prefixes.add(str(rel).replace("\\", "/"))
+        for entry in wr.remediations:
+            if entry.get("status") != "applied":
+                continue
+            for f in entry.get("files") or []:
+                try:
+                    rem_rel = (
+                        (wr.workspace.path / f)
+                        .resolve()
+                        .relative_to(bundle.git_repo.resolve())
+                    )
+                except ValueError:
+                    continue
+                remediation_paths.add(str(rem_rel).replace("\\", "/"))
 
     for ab in bundle.actions:
         if ab.workflow and ab.status == "ok" and ab.pin != ab.latest:
@@ -192,6 +216,10 @@ def upgrade_scoped_paths(
             continue
         # Submodule gitlink paths advanced by apply_submodule_tag_advances.
         if extra_gitlink_paths and norm in extra_gitlink_paths:
+            scoped.append(path)
+            continue
+        # File an applied remediation hook declared it touched. Issue #154.
+        if norm in remediation_paths:
             scoped.append(path)
             continue
         # Subdirectory workspace: prefix must match with a "/" boundary.

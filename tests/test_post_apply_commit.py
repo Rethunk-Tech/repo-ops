@@ -704,6 +704,112 @@ def test_upgrade_scoped_paths_excludes_non_member_nested_package_json(
 
 
 # ---------------------------------------------------------------------------
+# Issue #154 — remediation-written files (e.g. biome_schema's biome.json)
+# dropped from root-workspace commits
+# ---------------------------------------------------------------------------
+
+
+def test_upgrade_scoped_paths_includes_applied_remediation_file(
+    tmp_path: Path,
+) -> None:
+    """A root-scanned workspace's applied biome_schema remediation rewrites
+    biome.json's $schema URL — a third file class outside the manager's own
+    manifest/lockfile — and it must be staged alongside the lockfile rather
+    than silently dropped and left dirty on main. Issue #154."""
+    _init_git_repo(tmp_path)
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="yarn",
+        git_repo=tmp_path,
+        label="root",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("pkg", "1", "2")]
+    wr.remediations = [
+        {
+            "id": "biome_schema",
+            "status": "applied",
+            "detail": "biome migrate --write (ok)",
+            "files": ["biome.json"],
+        }
+    ]
+    bundle = RepoBundle(git_repo=tmp_path, label="root", workspaces=[wr])
+
+    porcelain = ["yarn.lock", "biome.json"]
+    scoped = post_apply_commit.upgrade_scoped_paths(bundle, porcelain)
+    assert "yarn.lock" in scoped
+    assert "biome.json" in scoped
+
+
+def test_upgrade_scoped_paths_excludes_unapplied_remediation_file(
+    tmp_path: Path,
+) -> None:
+    """A remediation that only reported (plan mode) or failed to apply must not
+    stage the file it would have touched — nothing was actually written."""
+    _init_git_repo(tmp_path)
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="yarn",
+        git_repo=tmp_path,
+        label="root",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("pkg", "1", "2")]
+    wr.remediations = [
+        {
+            "id": "biome_schema",
+            "status": "pending",
+            "detail": "biome migrate --write",
+            "files": ["biome.json"],
+        }
+    ]
+    bundle = RepoBundle(git_repo=tmp_path, label="root", workspaces=[wr])
+
+    # biome.json is pre-existing dirt (unrelated to this run) — must not be swept in.
+    porcelain = ["yarn.lock", "biome.json"]
+    scoped = post_apply_commit.upgrade_scoped_paths(bundle, porcelain)
+    assert "yarn.lock" in scoped
+    assert "biome.json" not in scoped
+
+
+def test_upgrade_scoped_paths_includes_nested_remediation_file(
+    tmp_path: Path,
+) -> None:
+    """A subdirectory workspace's applied remediation file must also be staged
+    by the general remediation-files match (not just the prefix match), and
+    must respect the workspace's own directory even outside its prefix."""
+    _init_git_repo(tmp_path)
+    sub = tmp_path / "frontend"
+    sub.mkdir()
+
+    ws = Workspace(
+        path=sub,
+        ecosystem="node",
+        manager="yarn",
+        git_repo=tmp_path,
+        label="frontend",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("pkg", "1", "2")]
+    wr.remediations = [
+        {
+            "id": "biome_schema",
+            "status": "applied",
+            "detail": "biome migrate --write (ok)",
+            "files": ["biome.json"],
+        }
+    ]
+    bundle = RepoBundle(git_repo=tmp_path, label="root", workspaces=[wr])
+
+    porcelain = ["frontend/yarn.lock", "frontend/biome.json"]
+    scoped = post_apply_commit.upgrade_scoped_paths(bundle, porcelain)
+    assert "frontend/yarn.lock" in scoped
+    assert "frontend/biome.json" in scoped
+
+
+# ---------------------------------------------------------------------------
 # Issue #116 — classify_commit_subject multi-ecosystem
 # ---------------------------------------------------------------------------
 
