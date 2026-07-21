@@ -233,9 +233,7 @@ def test_apply_snapshots_repo_dirty_state_once_per_bundle(tmp_path: Path) -> Non
     skipped outright, even though the repo was clean at run-start. Issue #152.
     """
     _npm_workspace(tmp_path)
-    (tmp_path / ".pre-commit-config.yaml").write_text(
-        "repos: []\n", encoding="utf-8"
-    )
+    (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     register_all()
 
     calls: list[dict] = []
@@ -250,9 +248,7 @@ def test_apply_snapshots_repo_dirty_state_once_per_bundle(tmp_path: Path) -> Non
             "repo_ops_upgrade.run.orchestration.process_workspace",
             side_effect=_record,
         ),
-        patch(
-            "repo_ops_upgrade.run.is_git_dirty", return_value=False
-        ) as mock_dirty,
+        patch("repo_ops_upgrade.run.is_git_dirty", return_value=False) as mock_dirty,
     ):
         rc = main_apply([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
 

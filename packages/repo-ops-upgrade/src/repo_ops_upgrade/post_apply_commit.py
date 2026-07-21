@@ -165,9 +165,7 @@ def upgrade_scoped_paths(
             if wr.workspace.manager in ("yarn", "npm", "pnpm", "bun"):
                 members = yarn_workspace_members(wr.workspace.path)
                 if members:
-                    node_workspace_roots.append(
-                        (wr.workspace.path.resolve(), members)
-                    )
+                    node_workspace_roots.append((wr.workspace.path.resolve(), members))
         else:
             # Subdirectory workspace: scope by prefix with a strict "/" boundary
             # so "packages/foo" cannot match "packages/foobar". Issue #116.
