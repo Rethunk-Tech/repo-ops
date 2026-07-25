@@ -5,11 +5,19 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_js.guards import assert_targets_resolved
+from repo_ops_js.holds import (
+    direct_dependency_names,
+    enforce_holds,
+    hold_version_spec,
+    is_within_ceiling,
+    resolve_package_hold,
+)
 from repo_ops_lockfiles.snapshots import (
     resolved_version_from_node_modules,
     restore_workspace_snapshot,
@@ -60,6 +68,8 @@ def _bucket_pnpm_pkg(
     latest: str,
     changes: list[Change],
     behind_latest: list[Change],
+    *,
+    ws: Workspace | None = None,
 ) -> None:
     """Bucket a single pnpm package into changes or behind_latest.
 
@@ -68,11 +78,21 @@ def _bucket_pnpm_pkg(
 
     When ``REPO_OPS_PNPM_UPDATE_LATEST`` is set, ``latest`` is used as the
     target so packages that are only behind latest are treated as actionable
-    (matching what ``apply_pnpm`` does when it passes ``--latest``).
+    (matching what ``apply_pnpm`` does when it passes ``--latest``) — unless
+    an active hold rule's ceiling would be violated, in which case the
+    package is left in ``behind_latest`` instead of being promoted.
+
+    ``ws`` is optional and keyword-only so direct unit tests exercising the
+    bucketing logic in isolation (no ``Workspace``) keep prior behavior;
+    ``_pnpm_outdated`` always passes the real workspace.
     """
     if _pnpm_update_latest_enabled():  # noqa: SIM102
         # Treat latest as the upgrade target — mirrors apply_pnpm --latest.
         if latest not in ("?", "") and cur != latest:
+            held_rule = resolve_package_hold(ws, name) if ws is not None else None
+            if held_rule is not None and not is_within_ceiling(latest, held_rule):
+                behind_latest.append(Change(name, cur, latest))
+                return
             changes.append(Change(name, cur, latest))
             return
         # latest unknown ('?') — fall through to wanted check so a known
@@ -105,7 +125,7 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
                         wanted = str(meta.get("wanted", "?"))
                         latest = str(meta.get("latest", "?"))
                         _bucket_pnpm_pkg(
-                            name, cur, wanted, latest, changes, behind_latest
+                            name, cur, wanted, latest, changes, behind_latest, ws=ws
                         )
             elif isinstance(items, list):
                 for meta in items:
@@ -120,6 +140,7 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
                             latest,
                             changes,
                             behind_latest,
+                            ws=ws,
                         )
         except json.JSONDecodeError:
             snippet = proc.stdout[:200].strip()
@@ -141,13 +162,26 @@ def check_pnpm(ws: Workspace) -> tuple[list[Change], list[Change]]:
     When ``REPO_OPS_PNPM_TARGETED_BUMP`` is set, behind_latest candidates are
     promoted into ``changes`` for plan preview parity with yarn. Apply uses
     :func:`_pnpm_outdated` directly so this promotion does not affect guards.
+
+    A package held below the reported ``latest`` (an active hold rule whose
+    ceiling the reported version would exceed) is not promoted — it stays in
+    the returned still-behind list instead, matching what the targeted-bump
+    apply path will actually do.
     """
     changes, behind = _pnpm_outdated(ws)
     if _pnpm_targeted_bump_enabled() and behind:
+        promoted: list[Change] = []
+        still_behind: list[Change] = []
         for c in behind:
+            held_rule = resolve_package_hold(ws, c.name)
+            if held_rule is not None and not is_within_ceiling(c.to, held_rule):
+                still_behind.append(c)
+                continue
+            promoted.append(c)
+        for c in promoted:
             if not any(existing.name == c.name for existing in changes):
                 changes.append(c)
-        return changes, []
+        return changes, still_behind
     return changes, behind
 
 
@@ -181,14 +215,20 @@ def targeted_bump_behind(
     still_behind: list[Change] = []
     for change in behind:
         snap = snapshot_workspace_files(ws.path, "pnpm")
-        target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name)
-        if target_ver:
-            # Audit path: pin to advisory-safe version via pnpm add pkg@version.
-            # pnpm add installs an explicit version and updates both manifest and lockfile.
-            cmd = ["pnpm", "add", f"{change.name}@{target_ver}"]
+        held_rule = resolve_package_hold(ws, change.name)
+        if held_rule is not None:
+            # A hold ceiling wins: pin via `pnpm add` (installs and updates
+            # the manifest range in one step, same as the audit path below).
+            cmd = ["pnpm", "add", f"{change.name}@{hold_version_spec(held_rule)}"]
         else:
-            # Normal targeted-bump path: update to registry latest.
-            cmd = ["pnpm", "update", "--latest", change.name]
+            target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name)
+            if target_ver:
+                # Audit path: pin to advisory-safe version via pnpm add pkg@version.
+                # pnpm add installs an explicit version and updates both manifest and lockfile.
+                cmd = ["pnpm", "add", f"{change.name}@{target_ver}"]
+            else:
+                # Normal targeted-bump path: update to registry latest.
+                cmd = ["pnpm", "update", "--latest", change.name]
         update = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
         landed: str | None = None
         if update.returncode == 0:
@@ -247,6 +287,16 @@ def _apply_pnpm_audit_overrides(ws: Workspace) -> set[str]:
     return handled
 
 
+def _read_pkg_json(mdir: Path) -> dict[str, object]:
+    """Parse package.json; return empty dict on any error."""
+    p = mdir / "package.json"
+    try:
+        data: dict[str, object] = json.loads(p.read_text(encoding="utf-8"))
+        return data
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def apply_pnpm(ws: Workspace) -> list[Change]:
     """Apply pnpm upgrades; returns still-behind deps after optional targeted bumps.
 
@@ -280,5 +330,24 @@ def apply_pnpm(ws: Workspace) -> list[Change]:
             raise RuntimeError(proc2.stderr.strip() or "pnpm install failed")
         if changes:
             assert_targets_resolved(ws, changes, manager="pnpm")
-    _, behind = targeted_bump_behind(ws, behind)
+    applied, behind = targeted_bump_behind(ws, behind)
+    # End-of-apply hold safety net: this is the PRIMARY mechanism protecting a
+    # held package from `pnpm update -r --latest` above (a blanket, bulk
+    # command with no per-package exclusion) — not just defense-in-depth like
+    # it is for npm/yarn/bun, which are already per-package for the
+    # major-crossing case. Also catches a package already sitting above a
+    # *newly added* hold ceiling from before the hold existed.
+    candidate_names = direct_dependency_names(_read_pkg_json(ws.path)) | {
+        c.name for c in (*changes, *applied, *behind)
+    }
+    held = enforce_holds(
+        ws,
+        candidate_names,
+        manager="pnpm",
+        run_install=lambda name, spec: run(
+            ["pnpm", "add", f"{name}@{spec}"], ws.path, timeout=TIMEOUT_APPLY
+        ),
+    )
+    if held:
+        behind = [c for c in behind if c.name not in {h.name for h in held}] + held
     return behind
