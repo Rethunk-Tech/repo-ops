@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from repo_ops_core.filesystem import read_json_file
+from repo_ops_core.filesystem import read_json_file, write_json_atomic
 from repo_ops_core.version_utils import normalize_version
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 
@@ -77,6 +77,58 @@ def _pins_from_package_json(pkg: dict[str, object], manager: str) -> dict[str, s
         # happen to carry them); for pnpm they are the primary pin source.
         pins.update({str(k): str(v) for k, v in pnpm["overrides"].items()})
     return pins
+
+
+def release_unheld_pin(mdir: Path, pkg_name: str) -> bool:
+    """Delete a legacy ``resolutions``/``overrides``/``pnpm.overrides`` pin for
+    ``pkg_name`` from every manifest under ``mdir``, so a targeted bump can
+    actually move the package instead of ghost-bumping against it.
+
+    Callers only reach this for packages with no active hold rule (see
+    ``repo_ops_js.holds``) — an operator-tracked hold (with a reason and
+    optional expiry) is left completely untouched. A naked pin predates the
+    hold feature (added 2026-07-25) or was a one-off fix that was never
+    promoted to a tracked hold; treating it as a permanent, silent hard stop
+    just accumulates dependency debt instead of surfacing it. This is safe:
+    every ``targeted_bump_behind`` caller snapshots the workspace first and
+    reverts the whole snapshot (manifest edit included) when the retry
+    install doesn't actually land, so a bad release never persists.
+
+    Matches pin keys the same way :func:`_pins_from_package_json` reads them
+    (via :func:`_override_package_name`), so npm-style nested override paths
+    like ``"foo>pkg_name"`` are released too, not just a bare top-level key.
+
+    Returns ``True`` if any manifest was changed.
+    """
+    changed = False
+    for pkg_path in package_json_paths(mdir):
+        data = read_json_file(pkg_path)
+        if not isinstance(data, dict):
+            continue
+        pkg_changed = False
+        for key in ("resolutions", "overrides"):
+            block = data.get(key)
+            if not isinstance(block, dict):
+                continue
+            for pin_key in list(block):
+                if _override_package_name(pin_key) == pkg_name:
+                    del block[pin_key]
+                    pkg_changed = True
+            if not block:
+                del data[key]
+        pnpm = data.get("pnpm")
+        if isinstance(pnpm, dict) and isinstance(pnpm.get("overrides"), dict):
+            po = pnpm["overrides"]
+            for pin_key in list(po):
+                if _override_package_name(pin_key) == pkg_name:
+                    del po[pin_key]
+                    pkg_changed = True
+            if not po:
+                del pnpm["overrides"]
+        if pkg_changed:
+            write_json_atomic(pkg_path, data)
+            changed = True
+    return changed
 
 
 def overrides_audit(mdir: Path, manager: str) -> list[dict[str, str]]:

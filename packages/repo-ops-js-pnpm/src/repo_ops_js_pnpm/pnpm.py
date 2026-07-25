@@ -18,6 +18,7 @@ from repo_ops_js.holds import (
     is_within_ceiling,
     resolve_package_hold,
 )
+from repo_ops_js.overrides import release_unheld_pin
 from repo_ops_lockfiles.snapshots import (
     resolved_version_from_node_modules,
     restore_workspace_snapshot,
@@ -228,6 +229,11 @@ def targeted_bump_behind(
                 # the manifest range in one step, same as the audit path).
                 cmd = ["pnpm", "add", f"{change.name}@{hold_version_spec(held_rule)}"]
             else:
+                # No active hold covers this package — release a legacy
+                # overrides pin so the retry has a real chance; the
+                # snapshot restore below reverts this edit too on
+                # no-advance.
+                release_unheld_pin(ws.path, change.name)
                 # Normal targeted-bump path: update to registry latest.
                 cmd = ["pnpm", "update", "--latest", change.name]
         update = run(cmd, ws.path, timeout=TIMEOUT_APPLY)

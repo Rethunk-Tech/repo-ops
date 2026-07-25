@@ -17,6 +17,7 @@ from repo_ops_js.holds import (
     hold_version_spec,
     resolve_package_hold,
 )
+from repo_ops_js.overrides import release_unheld_pin
 from repo_ops_lockfiles.snapshots import (
     resolved_version_from_node_modules,
     restore_workspace_snapshot,
@@ -136,6 +137,11 @@ def targeted_bump_behind(
             target_ver = hold_version_spec(held_rule)
         else:
             target_ver = "latest"
+        if held_rule is None:
+            # No active hold covers this package — release a legacy
+            # overrides pin so the retry has a real chance; the snapshot
+            # restore below reverts this edit too on no-advance.
+            release_unheld_pin(ws.path, change.name)
         install = run(
             ["npm", "install", *save_flags, f"{change.name}@{target_ver}"],
             ws.path,
