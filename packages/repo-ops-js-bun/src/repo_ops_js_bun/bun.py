@@ -247,13 +247,18 @@ def targeted_bump_behind(
     still_behind: list[Change] = []
     for change in behind:
         snap = snapshot_workspace_files(ws.path, "bun")
-        # A hold ceiling wins when an active rule matches this package; else the
-        # advisory-safe version when set (audit --fix path); else @latest.
-        held_rule = resolve_package_hold(ws, change.name)
-        if held_rule is not None:
+        # The advisory-safe version wins when set (audit --fix path) — a
+        # security remediation must not be silently blocked by a routine
+        # hold policy; else a hold ceiling when an active rule matches this
+        # package; else @latest.
+        audit_override = _AUDIT_VERSION_OVERRIDES.get(change.name)
+        held_rule = None if audit_override else resolve_package_hold(ws, change.name)
+        if audit_override:
+            target_ver = audit_override
+        elif held_rule is not None:
             target_ver = hold_version_spec(held_rule)
         else:
-            target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name, "latest")
+            target_ver = "latest"
         install = run(
             ["bun", "add", f"{change.name}@{target_ver}"],
             ws.path,

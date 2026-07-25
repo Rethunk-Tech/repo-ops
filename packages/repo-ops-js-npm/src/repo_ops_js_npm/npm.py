@@ -124,14 +124,18 @@ def targeted_bump_behind(
     for change in behind:
         snap = snapshot_workspace_files(ws.path, "npm")
         save_flags = _save_flag_for(change.name, pkg_data)
-        # Use the advisory-safe version when set (audit --fix path); else a
-        # hold ceiling when one is active for this package/workspace; else
-        # @latest.
-        held_rule = resolve_package_hold(ws, change.name)
-        if held_rule is not None:
+        # Use the advisory-safe version when set (audit --fix path) — a
+        # security remediation must not be silently blocked by a routine
+        # hold policy; else a hold ceiling when one is active for this
+        # package/workspace; else @latest.
+        audit_override = _AUDIT_VERSION_OVERRIDES.get(change.name)
+        held_rule = None if audit_override else resolve_package_hold(ws, change.name)
+        if audit_override:
+            target_ver = audit_override
+        elif held_rule is not None:
             target_ver = hold_version_spec(held_rule)
         else:
-            target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name, "latest")
+            target_ver = "latest"
         install = run(
             ["npm", "install", *save_flags, f"{change.name}@{target_ver}"],
             ws.path,

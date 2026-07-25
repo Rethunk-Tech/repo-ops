@@ -215,17 +215,18 @@ def targeted_bump_behind(
     still_behind: list[Change] = []
     for change in behind:
         snap = snapshot_workspace_files(ws.path, "pnpm")
-        held_rule = resolve_package_hold(ws, change.name)
-        if held_rule is not None:
-            # A hold ceiling wins: pin via `pnpm add` (installs and updates
-            # the manifest range in one step, same as the audit path below).
-            cmd = ["pnpm", "add", f"{change.name}@{hold_version_spec(held_rule)}"]
+        audit_target = _AUDIT_VERSION_OVERRIDES.get(change.name)
+        if audit_target:
+            # Audit path wins: a security remediation must not be silently
+            # blocked by a routine hold policy. pnpm add installs an explicit
+            # version and updates both manifest and lockfile.
+            cmd = ["pnpm", "add", f"{change.name}@{audit_target}"]
         else:
-            target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name)
-            if target_ver:
-                # Audit path: pin to advisory-safe version via pnpm add pkg@version.
-                # pnpm add installs an explicit version and updates both manifest and lockfile.
-                cmd = ["pnpm", "add", f"{change.name}@{target_ver}"]
+            held_rule = resolve_package_hold(ws, change.name)
+            if held_rule is not None:
+                # A hold ceiling: pin via `pnpm add` (installs and updates
+                # the manifest range in one step, same as the audit path).
+                cmd = ["pnpm", "add", f"{change.name}@{hold_version_spec(held_rule)}"]
             else:
                 # Normal targeted-bump path: update to registry latest.
                 cmd = ["pnpm", "update", "--latest", change.name]
