@@ -5,11 +5,19 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_js.guards import assert_targets_resolved
+from repo_ops_js.holds import (
+    direct_dependency_names,
+    enforce_holds,
+    hold_version_spec,
+    is_within_ceiling,
+    resolve_package_hold,
+)
 from repo_ops_lockfiles.snapshots import (
     resolved_version_from_node_modules,
     restore_workspace_snapshot,
@@ -84,7 +92,9 @@ def _valid_bun_package_name(name: str) -> bool:
     return bool(_PKG_NAME_RE.match(n))
 
 
-def _changes_from_bun_json(stdout: str) -> tuple[list[Change], list[Change]]:
+def _changes_from_bun_json(
+    stdout: str, *, ws: Workspace | None = None
+) -> tuple[list[Change], list[Change]]:
     """Forward-compatible parser for a future `bun outdated --json`.
 
     Range-respecting by default (``update`` field); ``latest`` when opted in.
@@ -93,6 +103,12 @@ def _changes_from_bun_json(stdout: str) -> tuple[list[Change], list[Change]]:
     packages that have a newer ``latest`` version available but are not
     actionable because latest-mode is off (and the in-range update equals
     the current version).
+
+    A package with an active hold rule whose ceiling ``target`` would
+    violate is not promoted into ``changes`` — it lands in ``behind_latest``
+    instead. ``ws`` is optional and keyword-only so direct unit tests
+    exercising the parser in isolation (no ``Workspace``) keep prior
+    behavior; ``check_bun`` always passes the real workspace.
     """
     want_latest = _bun_update_latest_enabled()
     changes: list[Change] = []
@@ -113,14 +129,20 @@ def _changes_from_bun_json(stdout: str) -> tuple[list[Change], list[Change]]:
         else:
             target = str(meta.get("update") or meta.get("latest") or "?")
         if cur != target and target not in ("?", ""):
-            changes.append(Change(str(name), cur, target))
+            held_rule = resolve_package_hold(ws, str(name)) if ws is not None else None
+            if held_rule is not None and not is_within_ceiling(target, held_rule):
+                behind_latest.append(Change(str(name), cur, target))
+            else:
+                changes.append(Change(str(name), cur, target))
         elif not want_latest and latest not in ("?", "") and cur != latest:
             # In-range is already current, but a newer latest exists.
             behind_latest.append(Change(str(name), cur, latest))
     return changes, behind_latest
 
 
-def _changes_from_bun_text(stdout: str) -> tuple[list[Change], list[Change]]:
+def _changes_from_bun_text(
+    stdout: str, *, ws: Workspace | None = None
+) -> tuple[list[Change], list[Change]]:
     """Parse ``bun outdated``'s table (Unicode box drawing or ASCII pipes).
 
     Columns: ``Package │ Current │ Update │ Latest``. ``Update`` is the newest
@@ -135,7 +157,10 @@ def _changes_from_bun_text(stdout: str) -> tuple[list[Change], list[Change]]:
     Returns ``(changes, behind_latest)`` where ``behind_latest`` contains
     packages that have a newer ``latest`` version available but are not
     actionable because latest-mode is off (and the in-range update equals
-    the current version).
+    the current version) — or because an active hold rule's ceiling would be
+    violated by ``target``. ``ws`` is optional and keyword-only so direct
+    unit tests exercising the parser in isolation keep prior behavior;
+    ``check_bun`` always passes the real workspace.
     """
     want_latest = _bun_update_latest_enabled()
     changes: list[Change] = []
@@ -164,6 +189,10 @@ def _changes_from_bun_text(stdout: str) -> tuple[list[Change], list[Change]]:
             if not want_latest and latest_ver and current and current != latest_ver:
                 behind_latest.append(Change(name, current, latest_ver))
             continue
+        held_rule = resolve_package_hold(ws, name) if ws is not None else None
+        if held_rule is not None and not is_within_ceiling(target, held_rule):
+            behind_latest.append(Change(name, current, target))
+            continue
         changes.append(Change(name, current, target))
     return changes, behind_latest
 
@@ -184,14 +213,14 @@ def check_bun(ws: Workspace) -> tuple[list[Change], list[Change]]:
         except json.JSONDecodeError:
             data = None
         if isinstance(data, dict):
-            return _changes_from_bun_json(proc_json.stdout)
+            return _changes_from_bun_json(proc_json.stdout, ws=ws)
 
     proc = run(["bun", "outdated"], ws.path, timeout=resolve_timeout_check())
     if proc.returncode not in (0, 1):
         raise RuntimeError(
             proc.stderr.strip() or proc.stdout.strip() or "bun outdated failed"
         )
-    return _changes_from_bun_text(proc.stdout)
+    return _changes_from_bun_text(proc.stdout, ws=ws)
 
 
 def targeted_bump_behind(
@@ -218,7 +247,13 @@ def targeted_bump_behind(
     still_behind: list[Change] = []
     for change in behind:
         snap = snapshot_workspace_files(ws.path, "bun")
-        target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name, "latest")
+        # A hold ceiling wins when an active rule matches this package; else the
+        # advisory-safe version when set (audit --fix path); else @latest.
+        held_rule = resolve_package_hold(ws, change.name)
+        if held_rule is not None:
+            target_ver = hold_version_spec(held_rule)
+        else:
+            target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name, "latest")
         install = run(
             ["bun", "add", f"{change.name}@{target_ver}"],
             ws.path,
@@ -251,6 +286,45 @@ def targeted_bump_behind(
     return applied, still_behind
 
 
+def _read_pkg_json(mdir: Path) -> dict[str, object]:
+    """Parse package.json; return empty dict on any error."""
+    p = mdir / "package.json"
+    try:
+        data: dict[str, object] = json.loads(p.read_text(encoding="utf-8"))
+        return data
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _finalize_bun_apply(
+    ws: Workspace, changes: list[Change], behind: list[Change]
+) -> list[Change]:
+    """Shared tail for every ``apply_bun`` exit path (bare/targeted/audit-only).
+
+    Runs the still-behind targeted bump, then the end-of-apply hold safety
+    net (``enforce_holds``): cheap insurance even though bun's own targeting
+    is already per-package (see the per-package target loop above), and the
+    only mechanism that catches a package already sitting above a *newly
+    added* hold ceiling from before the hold existed (``direct_dependency_names``
+    covers those since they won't appear in ``changes``/``behind`` either).
+    """
+    applied, behind = targeted_bump_behind(ws, behind)
+    candidate_names = direct_dependency_names(_read_pkg_json(ws.path)) | {
+        c.name for c in (*changes, *applied, *behind)
+    }
+    held = enforce_holds(
+        ws,
+        candidate_names,
+        manager="bun",
+        run_install=lambda name, spec: run(
+            ["bun", "add", f"{name}@{spec}"], ws.path, timeout=resolve_timeout_apply()
+        ),
+    )
+    if held:
+        behind = [c for c in behind if c.name not in {h.name for h in held}] + held
+    return behind
+
+
 def apply_bun(ws: Workspace) -> list[Change]:
     """Apply upgrades reported by ``check_bun`` without rewriting ranges to ``latest``.
 
@@ -275,7 +349,13 @@ def apply_bun(ws: Workspace) -> list[Change]:
         name = (ch.name or "").strip()
         if not name or not _valid_bun_package_name(name):
             continue
-        version = _AUDIT_VERSION_OVERRIDES.get(name) or (ch.to or "").strip()
+        # Precedence: advisory-safe override (audit --fix) first, then an
+        # active hold ceiling, then the raw check_bun-derived target.
+        held_rule = resolve_package_hold(ws, name)
+        hold_spec = hold_version_spec(held_rule) if held_rule is not None else None
+        version = (
+            _AUDIT_VERSION_OVERRIDES.get(name) or hold_spec or (ch.to or "").strip()
+        )
         if not version or version in ("?", "latest", "|"):
             continue
         targets.append(f"{name}@{version}")
@@ -298,8 +378,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
         requested.append(Change(name, "", safe_version))
         seen_names.add(name)
     if not changes and not targets:
-        _, behind = targeted_bump_behind(ws, behind)
-        return behind
+        return _finalize_bun_apply(ws, changes, behind)
     if not targets:
         # Bare ``bun update`` — no per-package target args; the guard is still
         # applied to any changes whose target version IS known (task #3: skip
@@ -317,13 +396,11 @@ def apply_bun(ws: Workspace) -> list[Change]:
         ]
         if guardable:
             assert_targets_resolved(ws, guardable, manager="bun")
-        _, behind = targeted_bump_behind(ws, behind)
-        return behind
+        return _finalize_bun_apply(ws, changes, behind)
     proc = run(
         ["bun", "update", "--", *targets], ws.path, timeout=resolve_timeout_apply()
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
     assert_targets_resolved(ws, requested, manager="bun")
-    _, behind = targeted_bump_behind(ws, behind)
-    return behind
+    return _finalize_bun_apply(ws, changes, behind)
