@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-25
+
+### Added
+
+- **Package version-ceiling ("hold") rules:** a `[[hold]]` config rule (global `~/.config/repo-ops/config.toml`, or per-repo `pyproject.toml`'s `[tool.repo-ops]` table / `.repo-ops.toml`) caps a specific package at a maximum version, optionally until an expiry date, with optional workspace-scoped overrides (a per-workspace rule narrows or overrides a repo/global one for one monorepo member). Lets an operator hold back a specific major upgrade the ecosystem isn't ready for (e.g. TypeScript 7) without disabling `--latest` / `--*-targeted-bump` for every other package in the repo. Enforced across npm, yarn, pnpm, bun, Go modules (same-major minor/patch ceiling only — Go's own resolver never crosses a major), and the Python managers uv, hatch, pdm, pipenv, poetry, and pip-tools (the last enforced via an ephemeral pip constraints file passed to compile, never writing into `requirements.in`). Audit `--fix` advisory-safe version overrides always win over an active hold — a security remediation is never silently capped by a routine hold policy. Config-file only, no CLI flag or env var (same reasoning as `exclude_patterns`). See [docs/usage.md — Package holds](docs/usage.md#package-holds--capping-a-packages-version-temporarily).
+
+### Fixed
+
+- **`workflow_roundtrip_text` reformatted block-sequence indentation on a no-op load+dump:** the ruamel.yaml round-trip loader used for workflow-YAML drift checks wasn't configured with GitHub Actions' conventional sequence indent style (dash offset two spaces past the parent key), so a no-op load+dump reindented every `- item` line in a file using that style — caught by this repo's own `ci.yml` after an unrelated Action-pin bump. The actual `--actions-*` pin-rewrite path was never affected (it already used byte-preserving targeted line edits, not a full re-dump).
+
+### Changed
+
+- **Deps:** routine Python dependency refresh (`uv.lock`) and `astral-sh/setup-uv` Action bump (8.3.2 → 9.0.0), plus the ruff findings (`S310`, `RUF036`) the latter surfaced.
+
 ## [0.20.4] - 2026-07-21
 
 ### Fixed

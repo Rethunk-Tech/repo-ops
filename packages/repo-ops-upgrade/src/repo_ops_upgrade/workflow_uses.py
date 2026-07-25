@@ -151,6 +151,14 @@ def _yaml_loader() -> YAML:
     yaml = YAML(typ="rt")
     yaml.preserve_quotes = True
     yaml.width = 4096
+    # GitHub Actions workflows conventionally indent block-sequence dashes
+    # two spaces past their parent mapping key (e.g. `steps:` at 4 spaces,
+    # `- uses:` at 6). ruamel's round-trip mode preserves most formatting on
+    # a no-op load+dump, but sequence indent is a dump-time setting, not
+    # inferred from the loaded document — without this, workflow_roundtrip_text
+    # silently reformats every block sequence to ruamel's own default
+    # (offset=0) instead of leaving it untouched.
+    yaml.indent(mapping=2, sequence=4, offset=2)
     return yaml
 
 
