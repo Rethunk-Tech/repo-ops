@@ -281,3 +281,84 @@ def test_apply_yarn_raises_when_clamp_cannot_satisfy_ceiling(
         pytest.raises(RuntimeError, match="hold"),
     ):
         apply_yarn(ws)
+
+
+# ---------------------------------------------------------------------------
+# (d) targeted bump releases a legacy (unheld) resolutions pin
+# ---------------------------------------------------------------------------
+
+
+def _lock_with_is_odd(version: str) -> str:
+    return (
+        "__metadata:\n"
+        "  version: 8\n"
+        "\n"
+        '"is-odd@npm:>=0.1.0 <2.0.0":\n'
+        f"  version: {version}\n"
+        f'  resolution: "is-odd@npm:{version}"\n'
+    )
+
+
+def _seed_is_odd_pin(d: Path, *, lock_version: str = "0.1.2") -> None:
+    pkg = json.dumps(
+        {
+            "dependencies": {"is-odd": ">=0.1.0 <2.0.0"},
+            "resolutions": {"is-odd": "0.1.2"},
+        }
+    )
+    (d / "package.json").write_text(pkg, encoding="utf-8")
+    (d / "yarn.lock").write_text(_lock_with_is_odd(lock_version), encoding="utf-8")
+
+
+def test_targeted_bump_releases_unheld_resolutions_pin(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """No hold covers is-odd — the legacy resolutions pin is released so the
+    retry can actually move the version, instead of ghost-bumping forever."""
+    _seed_is_odd_pin(tmp_path)
+    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
+    ws = _ws(tmp_path)
+
+    def _fake_run(cmd, cwd, timeout=None):
+        if cmd[:2] == ["yarn", "up"]:
+            (tmp_path / "yarn.lock").write_text(
+                _lock_with_is_odd("1.0.0"), encoding="utf-8"
+            )
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with (
+        patch(_GLOBAL_HOLDS_CACHE, return_value=()),
+        patch(_REPO_HOLDS_CACHE, return_value=()),
+        patch("repo_ops_js_yarn.yarn.run", side_effect=_fake_run),
+    ):
+        applied, behind = targeted_bump_behind(
+            tmp_path, [Change("is-odd", "0.1.2", "1.0.0")], ws=ws
+        )
+
+    assert not behind
+    assert applied == [Change("is-odd", "0.1.2", "1.0.0")]
+    pkg_after = json.loads((tmp_path / "package.json").read_text(encoding="utf-8"))
+    assert "is-odd" not in pkg_after.get("resolutions", {})
+
+
+def test_targeted_bump_keeps_held_resolutions_pin(tmp_path: Path, monkeypatch) -> None:
+    """An active hold on the package leaves its resolutions pin untouched —
+    the pin-release path only fires for packages with no tracked hold."""
+    _seed_is_odd_pin(tmp_path)
+    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
+    ws = _ws(tmp_path)
+
+    def _fake_run(cmd, cwd, timeout=None):
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with (
+        patch(
+            _GLOBAL_HOLDS_CACHE,
+            return_value=(_held_rule(package="is-odd", max_version="0.1.2"),),
+        ),
+        patch("repo_ops_js_yarn.yarn.run", side_effect=_fake_run),
+    ):
+        targeted_bump_behind(tmp_path, [Change("is-odd", "0.1.2", "1.0.0")], ws=ws)
+
+    pkg_after = json.loads((tmp_path / "package.json").read_text(encoding="utf-8"))
+    assert pkg_after["resolutions"]["is-odd"] == "0.1.2"

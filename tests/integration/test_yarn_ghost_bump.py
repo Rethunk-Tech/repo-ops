@@ -77,3 +77,36 @@ def test_yarn_apply_raises_ghost_bump_with_resolutions_pin(
 
     with pytest.raises(RuntimeError, match="ghost bump"):
         apply_yarn(ws)
+
+
+def test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising(
+    yarn_ghost_apply_root: Path, monkeypatch
+) -> None:
+    """With ``--yarn-targeted-bump``, an unheld resolutions pin no longer hard-fails
+    the whole workspace (#121 regression) — it gets released and retried instead,
+    same as any other targeted-bump gap.
+
+    No ``.repo-ops.toml``/global hold covers ``is-odd`` here, so this pin is
+    exactly the "legacy debt" case the release path targets.
+    """
+    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
+
+    ws = ghost_workspace(
+        yarn_ghost_apply_root,
+        manager="yarn",
+        label="yarn-ghost-apply-targeted-test",
+    )
+
+    behind = apply_yarn(ws)
+
+    assert not any(c.name == "is-odd" for c in behind)
+    pkg_after = json.loads(
+        (yarn_ghost_apply_root / "package.json").read_text(encoding="utf-8")
+    )
+    assert "is-odd" not in pkg_after.get("resolutions", {})
+    installed = json.loads(
+        (yarn_ghost_apply_root / "node_modules" / "is-odd" / "package.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert installed["version"] != IS_ODD_PIN
