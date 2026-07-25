@@ -7,7 +7,7 @@ Subcommands, JSON output, plan vs apply, security/discovery, ecosystem upgrade m
 Subcommands (entry point in `packages/repo-ops`):
 
 | Subcommand | Purpose |
-|------------|---------|
+| ------------ | --------- |
 | `inventory` | Read-only dependency footprint |
 | `plan` | Outdated deps, Actions pin drift, remediations (no writes) |
 | `apply` | Apply updates, Actions bumps, remediations, verify gates |
@@ -45,7 +45,7 @@ Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_cor
 ### Ecosystem upgrade modes (plan and apply)
 
 | Ecosystem | Default behavior | Aggressive / latest opt-in |
-|-----------|------------------|----------------------------|
+| ----------- | ------------------ | ---------------------------- |
 | **npm** | `npm update` (semver ranges in manifests) | Add `--npm-targeted-bump` (`REPO_OPS_NPM_TARGETED_BUMP=1`) to move deps left behind when a latest-mode bump was attempted |
 | **pnpm** | `pnpm update -r` (within ranges) | `REPO_OPS_PNPM_UPDATE_LATEST=1` → adds `--latest`; add `--pnpm-targeted-bump` (`REPO_OPS_PNPM_TARGETED_BUMP=1`) for behind-latest fallback |
 | **yarn** | `yarn up` (Berry, in-range bumps in isolated plan snapshots) | `REPO_OPS_YARN_UPDATE_LATEST=1` → `yarn up -R '*'`; reports direct deps yarn's resolver kept behind their newest published version as `behind_latest` (#110). Add `--yarn-targeted-bump` (`REPO_OPS_YARN_TARGETED_BUMP=1`) to also *move* those gaps: a reversible per-package `yarn up <pkg>@latest`, kept only if the workspace still installs and the version actually advances (#111) |
@@ -69,7 +69,7 @@ Hatch workspaces without a `uv.lock` are not upgraded unless `--migrate-to-uv-lo
 `REPO_OPS_GO_UPGRADE_MODE` (default `patch`) aligns plan and apply:
 
 | Mode | Plan | Apply |
-|------|------|-------|
+| ------ | ------ | ------- |
 | `patch` (default) | `go list -m -u -json`, same minor-line patches only | `go get -u=patch all`, `go mod tidy` |
 | `explicit` | all `list -u` updates | batched `go get path@version`, tidy |
 | `mvs` | legacy `go list -u -m all` text | `go get -u -t all`, tidy |
@@ -108,7 +108,7 @@ across discovered workspaces. Default behavior is read-only (no lockfile writes)
 lockfiles; no auto-commit).
 
 | Ecosystem | Tool required | Notes |
-|-----------|--------------|-------|
+| ----------- | -------------- | ------- |
 | `go` | `govulncheck` | `govulncheck -json ./...`; workspace skipped if not on PATH |
 | `node` | `npm` / `yarn` / `pnpm` / `bun` | detected from lockfile; `bun audit` text-parsed (no `--json`) |
 | `py-uv` | `uv` + `pip-audit` | `uv run pip-audit --format json`; skipped when pip-audit not importable |
@@ -154,6 +154,7 @@ Mutually exclusive with **`--scaffold`** (scaffold mode does not scan PRs).
 `--json` and `--close` are invalid with `--scaffold`.
 
 Precision caveats:
+
 - **High-confidence:** lockfile parsers resolve npm/yarn/pnpm/bun and uv.lock
   versions; go.mod `require` blocks and Cargo.lock `[[package]]` entries are
   parsed structurally.
@@ -198,7 +199,7 @@ excluded from this bucket).
 **Scope (best-effort, offline):**
 
 | Ecosystem | Source |
-|-----------|--------|
+| ----------- | -------- |
 | npm / yarn / pnpm | `node_modules/**/package.json` (requires prior install) |
 | Python (uv.lock) | locked packages + adjacent venv `*.dist-info/METADATA` |
 | Go | `go.sum` pairs via LICENSE files in GOMODCACHE |
@@ -235,13 +236,14 @@ Run `repo-ops <subcommand> --help` for all flags.
 One layered lookup per setting: **CLI flag** → **env var** → **config file** → **default**.
 
 Config files (TOML):
+
 - **Global:** `~/.config/repo-ops/config.toml` (or `$XDG_CONFIG_HOME/repo-ops/config.toml`)
 - **Per-repo:** `[tool.repo-ops]` table in `pyproject.toml` at the repo root
 
 Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
 
 | Setting | Flag | Env var | Config key | Default |
-|---------|------|---------|------------|---------|
+| --------- | ------ | --------- | ------------ | --------- |
 | jobs | `--jobs` | (none) | `jobs` | `min(16, cpu_count)` |
 | yarn_max_concurrency | `--yarn-jobs` | `REPO_OPS_YARN_MAX_CONCURRENCY` | `yarn_max_concurrency` | `2` |
 | go_upgrade_mode | `--go-upgrade-mode` | `REPO_OPS_GO_UPGRADE_MODE` | `go_upgrade_mode` | `patch` |
@@ -278,3 +280,76 @@ Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
 | remediate_go_generate | (none) | `REPO_OPS_REMEDIATE_GO_GENERATE` | `remediate_go_generate` | `0` |
 | audit_fail_on | `--fail-on` | `REPO_OPS_AUDIT_FAIL_ON` | `audit_fail_on` | `high` |
 | audit_fail_on_unknown | `--fail-on-unknown` | `REPO_OPS_AUDIT_FAIL_ON_UNKNOWN` | `audit_fail_on_unknown` | `0` |
+
+## Package holds — capping a package's version temporarily
+
+`exclude_patterns` above excludes whole repos; a **hold** does the same job
+at package granularity — cap one package (e.g. `typescript`) at a maximum
+version, optionally until an expiry date, without disabling `--latest` /
+`--*-targeted-bump` for every other package in the repo.
+
+Holds are config-file only (no CLI flag or env var — arrays don't serialize
+to env, same reasoning as `exclude_patterns`), read from the same layered
+files as every other setting: **global**
+(`~/.config/repo-ops/config.toml`) and **per-repo**
+(`[tool.repo-ops]` table in `pyproject.toml`, or a flat `.repo-ops.toml`
+sidecar for non-Python repos), via a `[[hold]]` array-of-tables:
+
+```toml
+[[hold]]
+package = "typescript"       # exact name or fnmatch glob, e.g. "@types/*"
+max_version = "6"            # ceiling: "6" blocks major 7+, "5.9" blocks >5.9, "5.9.2" is exact
+until = "2026-09-01"         # optional ISO date; omit = indefinite hold
+ecosystem = "js"             # optional filter: js|npm|yarn|pnpm|bun|go|py|pdm|pipenv|pip-tools|poetry|hatch
+workspace = "packages/legacy-app"  # optional fnmatch glob, relative to repo root; omit = whole repo
+reason = "TS7 breaking changes; wait for ecosystem to catch up"   # free text, documentation only
+```
+
+**Precedence:** workspace-scoped beats repo-wide beats global; a per-repo
+rule can also fully override a global rule for the same package/workspace
+(repo config wins at equal specificity, same as every other layered
+setting). A rule with `until` in the past is treated as absent — no
+auto-cleanup, no file rewriting (config files stay read-only per the
+Settings reference above); a one-time note is printed to stderr the first
+time an expired hold is skipped.
+
+Example — hold TypeScript fleet-wide at 6.x, but let one already-migrated
+workspace bump freely:
+
+```toml
+[[hold]]
+package = "typescript"
+max_version = "6"
+until = "2026-09-01"
+
+[[hold]]
+package = "typescript"
+max_version = "99"          # effectively unbounded — the workspace override
+workspace = "packages/modern-app"
+```
+
+**Enforcement scope (this release):** JS (npm, yarn, pnpm, bun), Go, and the
+Python managers (uv, hatch, pdm, pipenv, poetry, pip-tools). Not yet wired:
+containers, GitHub Actions, submodules, pre-commit — same rule schema, just
+not consulted by those checkers yet.
+
+**How it's enforced, per ecosystem:**
+
+- **npm / yarn / pnpm / bun** — a held package's targeted/`--latest` bump
+  targets the ceiling instead of `latest`, and a held package already
+  resolved above its ceiling (e.g. a hold added after the fact) is clamped
+  back down at the end of `apply` via a targeted install. Shows up in the
+  existing `behind_latest` report bucket, not a new field.
+- **go** — Go's own resolver never crosses a major version boundary on its
+  own (major ≥2 lives in the import path, e.g. `.../v2`), so a Go hold caps
+  a same-major minor/patch version. Enforced the same way: filtered out of
+  reported changes, and clamped back down post-apply via `go get
+  <path>@<=ceiling>`.
+- **uv / hatch / pdm / pipenv / poetry** — none of these has a per-package
+  targeted install (`apply` regenerates the whole lockfile), so the
+  post-apply clamp-down (read the lockfile, `<manager> add pkg<=ceiling` to
+  correct) is the *only* enforcement mechanism here, not a safety net.
+- **pip-tools** — compiles `requirements.txt` from a source manifest rather
+  than an installed tree, so a hold is enforced by passing an ephemeral pip
+  constraints file (`name<=ceiling` for held direct deps) to the compile
+  step — `requirements.in` itself is never modified.
