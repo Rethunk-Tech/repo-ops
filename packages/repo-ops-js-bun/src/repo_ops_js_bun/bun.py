@@ -10,7 +10,7 @@ from pathlib import Path
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
-from repo_ops_js.guards import assert_targets_resolved
+from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 from repo_ops_js.holds import (
     direct_dependency_names,
     enforce_holds,
@@ -18,6 +18,7 @@ from repo_ops_js.holds import (
     is_within_ceiling,
     resolve_package_hold,
 )
+from repo_ops_js.overrides import release_unheld_pin
 from repo_ops_lockfiles.snapshots import (
     resolved_version_from_node_modules,
     restore_workspace_snapshot,
@@ -259,6 +260,11 @@ def targeted_bump_behind(
             target_ver = hold_version_spec(held_rule)
         else:
             target_ver = "latest"
+        if held_rule is None:
+            # No active hold covers this package — release a legacy
+            # resolutions/overrides pin so the retry has a real chance; the
+            # snapshot restore below reverts this edit too on no-advance.
+            release_unheld_pin(ws.path, change.name)
         install = run(
             ["bun", "add", f"{change.name}@{target_ver}"],
             ws.path,
@@ -289,6 +295,27 @@ def targeted_bump_behind(
             restore_workspace_snapshot(ws.path, snap, "bun")
             still_behind.append(change)
     return applied, still_behind
+
+
+def _fold_blocked_into_behind(
+    ws: Workspace, guardable: list[Change], behind: list[Change]
+) -> list[Change]:
+    """Merge still-unresolved ``guardable`` targets into ``behind`` by name.
+
+    Used when ``--bun-targeted-bump`` is enabled so a ghost-bumped package
+    gets a per-package retry (``targeted_bump_behind``, via
+    ``_finalize_bun_apply``) instead of failing the whole workspace.
+    """
+    blocked = unresolved_targets(ws, guardable)
+    if not blocked:
+        return behind
+    behind_names = {c.name for c in behind}
+    merged = list(behind)
+    for ch, _resolved in blocked:
+        if ch.name not in behind_names:
+            merged.append(ch)
+            behind_names.add(ch.name)
+    return merged
 
 
 def _read_pkg_json(mdir: Path) -> dict[str, object]:
@@ -400,12 +427,22 @@ def apply_bun(ws: Workspace) -> list[Change]:
             and _valid_bun_package_name((ch.name or "").strip())
         ]
         if guardable:
-            assert_targets_resolved(ws, guardable, manager="bun")
+            if _bun_targeted_bump_enabled():
+                # Defer to the targeted-bump retry below (which can release
+                # an unheld legacy pin) instead of hard-failing here; a
+                # still-blocked package after that best-effort retry lands
+                # in behind_latest like any other targeted-bump miss.
+                behind = _fold_blocked_into_behind(ws, guardable, behind)
+            else:
+                assert_targets_resolved(ws, guardable, manager="bun")
         return _finalize_bun_apply(ws, changes, behind)
     proc = run(
         ["bun", "update", "--", *targets], ws.path, timeout=resolve_timeout_apply()
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
-    assert_targets_resolved(ws, requested, manager="bun")
+    if _bun_targeted_bump_enabled():
+        behind = _fold_blocked_into_behind(ws, requested, behind)
+    else:
+        assert_targets_resolved(ws, requested, manager="bun")
     return _finalize_bun_apply(ws, changes, behind)

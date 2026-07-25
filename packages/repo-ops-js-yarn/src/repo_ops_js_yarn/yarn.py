@@ -17,14 +17,18 @@ from pathlib import Path
 from repo_ops_core.constants import resolve_timeout_apply
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
-from repo_ops_js.guards import assert_targets_resolved
+from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 from repo_ops_js.holds import (
     enforce_holds,
     hold_version_spec,
     is_within_ceiling,
     resolve_package_hold,
 )
-from repo_ops_js.overrides import overrides_audit, package_json_paths
+from repo_ops_js.overrides import (
+    overrides_audit,
+    package_json_paths,
+    release_unheld_pin,
+)
 from repo_ops_js.workspaces import corepack_prepare
 from repo_ops_lockfiles.parsers import versions_yarn_lock
 from repo_ops_lockfiles.snapshots import (
@@ -466,6 +470,14 @@ def targeted_bump_behind(
             target_ver = hold_version_spec(held_rule)
         else:
             target_ver = "latest"
+        if held_rule is None:
+            # No active hold covers this package — a resolutions/overrides
+            # pin here is legacy debt (predates the hold feature, or was a
+            # one-off never promoted to a tracked hold), not an intentional
+            # ceiling. Release it so the retry below has a real chance;
+            # the snapshot restore on no-advance/failure below reverts this
+            # edit too if the retry doesn't actually pan out.
+            release_unheld_pin(mdir, change.name)
         up = run(
             ["yarn", "up", f"{change.name}@{target_ver}"],
             mdir,
@@ -664,6 +676,7 @@ def apply_yarn(ws: Workspace) -> list[Change]:
         raise _command_failure("yarn install failed", proc2)
 
     # --- ghost-bump guard: verify installs against plan ----------------------
+    targeted_bump = _yarn_targeted_bump_enabled()
     if guardable:
         if _is_pnp_workspace(ws.path):
             print(
@@ -671,12 +684,25 @@ def apply_yarn(ws: Workspace) -> list[Change]:
                 "no node_modules to read installed versions from)",
                 file=sys.stderr,
             )
-        else:
+        elif not targeted_bump:
             assert_targets_resolved(ws, guardable, manager="yarn")
+        # else: targeted-bump is enabled — a blocked target here (often an
+        # unheld resolutions/overrides pin) gets folded into the retry list
+        # below instead of hard-failing the whole workspace on the first
+        # pass; targeted_bump_behind can release the pin and actually move
+        # it. Anything still unresolved after that best-effort retry lands
+        # in behind_latest, same as any other targeted-bump miss.
 
     behind = behind_after_up(ws.path)
     if audit_handled:
         behind = [c for c in behind if c.name not in audit_handled]
+    if guardable and targeted_bump and not _is_pnp_workspace(ws.path):
+        blocked = unresolved_targets(ws, guardable)
+        behind_names = {c.name for c in behind}
+        for ch, _resolved in blocked:
+            if ch.name not in behind_names:
+                behind.append(ch)
+                behind_names.add(ch.name)
     applied, behind = targeted_bump_behind(ws.path, behind, ws=ws)
     # End-of-apply hold safety net (#holds): clamp anything resolved above an
     # active ceiling, including a package already sitting above a *newly

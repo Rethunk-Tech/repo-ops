@@ -82,6 +82,40 @@ def _semver_lt_pre(installed: str, target: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def unresolved_targets(
+    ws: Workspace,
+    requested: list[Change],
+) -> list[tuple[Change, str]]:
+    """Return the subset of ``requested`` still behind their target, unraised.
+
+    Pure check (no raise) shared by :func:`assert_targets_resolved` and by
+    callers that have a fallback for a blocked target — e.g. an apply path
+    with ``--*-targeted-bump`` enabled defers to the per-package retry loop
+    (which can also release a legacy, non-held ``resolutions``/``overrides``
+    pin — see ``repo_ops_js.overrides.release_unheld_pin``) instead of
+    hard-failing the whole workspace on the first pass. Each returned tuple
+    is ``(change, resolved_version)`` so callers can build a message or a
+    ``Change`` for a retry list without re-reading ``node_modules``.
+    """
+    blocked: list[tuple[Change, str]] = []
+    for ch in requested:
+        target_raw = (ch.to or "").strip()
+        if not target_raw or target_raw in ("?", "latest"):
+            continue
+        resolved = resolved_version_from_node_modules(ws.path, ch.name)
+        if resolved is None and ws.git_repo and ws.git_repo != ws.path:
+            resolved = resolved_version_from_node_modules(ws.git_repo, ch.name)
+        if resolved is None:
+            continue
+        # ``<`` not ``!=``: a legitimate higher in-range resolution is a
+        # success, not a ghost bump.  Only a version left behind the
+        # requested target is a ghost.  Pre-release of the same version
+        # numbers counts as behind (semver §11.3).
+        if _semver_lt_pre(resolved, target_raw):
+            blocked.append((ch, resolved))
+    return blocked
+
+
 def assert_targets_resolved(
     ws: Workspace,
     requested: list[Change],
@@ -109,26 +143,13 @@ def assert_targets_resolved(
     Pre-release note: an installed ``X.Y.Z-rc.1`` does NOT satisfy a stable
     target ``X.Y.Z`` — it is still behind the stable release (semver §11.3).
     """
-    blocked: list[str] = []
-    for ch in requested:
-        target_raw = (ch.to or "").strip()
-        if not target_raw or target_raw in ("?", "latest"):
-            continue
-        resolved = resolved_version_from_node_modules(ws.path, ch.name)
-        if resolved is None and ws.git_repo and ws.git_repo != ws.path:
-            resolved = resolved_version_from_node_modules(ws.git_repo, ch.name)
-        if resolved is None:
-            continue
-        # ``<`` not ``!=``: a legitimate higher in-range resolution is a
-        # success, not a ghost bump.  Only a version left behind the
-        # requested target is a ghost.  Pre-release of the same version
-        # numbers counts as behind (semver §11.3).
-        if _semver_lt_pre(resolved, target_raw):
-            blocked.append(
-                f"{ch.name} still at {resolved}, expected >= {target_raw} (check overrides/resolutions/pins)"
-            )
+    blocked = unresolved_targets(ws, requested)
     if blocked:
+        detail = "; ".join(
+            f"{ch.name} still at {resolved}, expected >= {(ch.to or '').strip()} (check overrides/resolutions/pins)"
+            for ch, resolved in blocked
+        )
         raise RuntimeError(
             f"ghost bump: {manager} upgrade blocked (override/resolution/pin/constraint), "
-            "lockfile churned but dependency did not move: " + "; ".join(blocked)
+            "lockfile churned but dependency did not move: " + detail
         )
