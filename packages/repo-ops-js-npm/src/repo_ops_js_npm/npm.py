@@ -9,8 +9,14 @@ from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import semver_tuple
+from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_js.guards import assert_targets_resolved
+from repo_ops_js.holds import (
+    direct_dependency_names,
+    enforce_holds,
+    hold_version_spec,
+    resolve_package_hold,
+)
 from repo_ops_lockfiles.snapshots import (
     resolved_version_from_node_modules,
     restore_workspace_snapshot,
@@ -118,8 +124,14 @@ def targeted_bump_behind(
     for change in behind:
         snap = snapshot_workspace_files(ws.path, "npm")
         save_flags = _save_flag_for(change.name, pkg_data)
-        # Use the advisory-safe version when set (audit --fix path), else @latest.
-        target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name, "latest")
+        # Use the advisory-safe version when set (audit --fix path); else a
+        # hold ceiling when one is active for this package/workspace; else
+        # @latest.
+        held_rule = resolve_package_hold(ws, change.name)
+        if held_rule is not None:
+            target_ver = hold_version_spec(held_rule)
+        else:
+            target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name, "latest")
         install = run(
             ["npm", "install", *save_flags, f"{change.name}@{target_ver}"],
             ws.path,
@@ -202,13 +214,28 @@ def check_npm(ws: Workspace) -> tuple[list[Change], list[Change]]:
     promoted into ``changes`` for plan preview parity with yarn (which runs
     targeted bumps on an isolated copy during plan). Apply uses
     :func:`_npm_outdated` directly so this promotion does not affect guards.
+
+    A package held below the reported ``latest`` (an active hold rule whose
+    ceiling the reported version would exceed) is not promoted — it stays in
+    the returned still-behind list instead, matching what the targeted-bump
+    apply path will actually do.
     """
     changes, behind = _npm_outdated(ws)
     if _npm_targeted_bump_enabled() and behind:
+        promoted: list[Change] = []
+        still_behind: list[Change] = []
         for c in behind:
+            held_rule = resolve_package_hold(ws, c.name)
+            if held_rule is not None and not version_satisfies_ceiling(
+                c.to, held_rule.max_version
+            ):
+                still_behind.append(c)
+                continue
+            promoted.append(c)
+        for c in promoted:
             if not any(existing.name == c.name for existing in changes):
                 changes.append(c)
-        return changes, []
+        return changes, still_behind
     return changes, behind
 
 
@@ -278,5 +305,18 @@ def apply_npm(ws: Workspace) -> list[Change]:
             raise RuntimeError(proc2.stderr.strip() or "npm install failed")
         if changes:
             assert_targets_resolved(ws, changes, manager="npm")
-    _, behind = targeted_bump_behind(ws, behind)
+    applied, behind = targeted_bump_behind(ws, behind)
+    candidate_names = direct_dependency_names(_read_pkg_json(ws.path)) | {
+        c.name for c in (*changes, *applied, *behind)
+    }
+    held = enforce_holds(
+        ws,
+        candidate_names,
+        manager="npm",
+        run_install=lambda name, spec: run(
+            ["npm", "install", f"{name}@{spec}"], ws.path, timeout=TIMEOUT_APPLY
+        ),
+    )
+    if held:
+        behind = [c for c in behind if c.name not in {h.name for h in held}] + held
     return behind
