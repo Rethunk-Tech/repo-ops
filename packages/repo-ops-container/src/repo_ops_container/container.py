@@ -667,7 +667,7 @@ def _fetch_token_for_registry(
     # Generic: probe /v2/ to trigger the 401 challenge.
     probe_url = f"https://{host}/v2/"
     try:
-        req = urllib.request.Request(probe_url, headers={"Accept": "application/json"})  # noqa: S310
+        req = urllib.request.Request(probe_url, headers={"Accept": "application/json"})
         urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT)  # noqa: S310
         # 200 OK → no auth needed (unauthenticated push, rare)
         return None
@@ -718,7 +718,7 @@ def _fetch_tags(image: str) -> list[str] | None:
 
     url = f"https://{host}/v2/{repo}/tags/list"
     try:
-        req = urllib.request.Request(url, headers=headers)  # noqa: S310
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT) as resp:  # noqa: S310
             data = json.loads(resp.read())
             tags = data.get("tags")
@@ -759,9 +759,7 @@ def _fetch_manifest_digest(image: str, tag: str) -> str | None:
     # Try HEAD first (cheaper), fall back to GET if HEAD not supported
     for method in ("HEAD", "GET"):
         try:
-            req = urllib.request.Request(  # noqa: S310
-                url, headers=headers, method=method
-            )
+            req = urllib.request.Request(url, headers=headers, method=method)
             with urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT) as resp:  # noqa: S310
                 digest = resp.headers.get("Docker-Content-Digest", "")
                 if digest:
