@@ -18,6 +18,12 @@ from repo_ops_core.constants import resolve_timeout_apply
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_js.guards import assert_targets_resolved
+from repo_ops_js.holds import (
+    enforce_holds,
+    hold_version_spec,
+    is_within_ceiling,
+    resolve_package_hold,
+)
 from repo_ops_js.overrides import overrides_audit, package_json_paths
 from repo_ops_js.workspaces import corepack_prepare
 from repo_ops_lockfiles.parsers import versions_yarn_lock
@@ -414,7 +420,7 @@ def behind_after_up(mdir: Path) -> list[Change]:
 
 
 def targeted_bump_behind(
-    mdir: Path, behind: list[Change]
+    mdir: Path, behind: list[Change], *, ws: Workspace | None = None
 ) -> tuple[list[Change], list[Change]]:
     """Per-package ``yarn up <pkg>@latest`` fallback for still-behind deps (issue #111).
 
@@ -428,6 +434,12 @@ def targeted_bump_behind(
     Opt-in (``REPO_OPS_YARN_TARGETED_BUMP`` / ``--yarn-targeted-bump``) and reversible
     per-package: a bump that fights peer constraints is dropped, never committed. Returns
     ``(applied, still_behind)`` — ``applied`` carries the real resolved version landed.
+
+    ``ws`` carries the real workspace context (for hold-rule lookups against the
+    *real* repo/workspace path, not the ``mdir`` isolated copy this function may be
+    operating on from ``check_yarn_snapshot``). It is optional and keyword-only so
+    direct callers that predate holds (including existing tests) keep the prior
+    audit-override/latest fallback behavior when omitted.
     """
     if not behind or not _yarn_targeted_bump_enabled():
         return [], behind
@@ -438,8 +450,13 @@ def targeted_bump_behind(
     still_behind: list[Change] = []
     for change in behind:
         snap = snapshot_workspace_files(mdir, "yarn")
-        # Use the advisory-safe version when set (audit --fix path), else @latest.
-        target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name, "latest")
+        # A hold ceiling wins when an active rule matches this package; else the
+        # advisory-safe version when set (audit --fix path); else @latest.
+        held_rule = resolve_package_hold(ws, change.name) if ws is not None else None
+        if held_rule is not None:
+            target_ver = hold_version_spec(held_rule)
+        else:
+            target_ver = _AUDIT_VERSION_OVERRIDES.get(change.name, "latest")
         up = run(
             ["yarn", "up", f"{change.name}@{target_ver}"],
             mdir,
@@ -503,8 +520,16 @@ def check_yarn_snapshot(
         behind = behind_after_up(mdir)
         # Optionally move (not just report) the gap; applied bumps become planned
         # changes so plan previews what apply will land (issue #111).
-        applied, behind = targeted_bump_behind(mdir, behind)
+        applied, behind = targeted_bump_behind(mdir, behind, ws=ws)
         for c in applied:
+            # Defense in depth: targeted_bump_behind already targets the hold
+            # ceiling instead of latest when a rule is active, so this should
+            # never trip in practice — but a held-and-over-ceiling landed
+            # version must never be promoted into the plan preview.
+            held_rule = resolve_package_hold(ws, c.name)
+            if held_rule is not None and not is_within_ceiling(c.to, held_rule):
+                behind.append(c)
+                continue
             if not any(existing.name == c.name for existing in changes):
                 changes.append(c)
     # Pre-compute the ghost-bump guard probe and cache it so apply_yarn can
@@ -643,8 +668,36 @@ def apply_yarn(ws: Workspace) -> list[Change]:
     behind = behind_after_up(ws.path)
     if audit_handled:
         behind = [c for c in behind if c.name not in audit_handled]
-    _, behind = targeted_bump_behind(ws.path, behind)
+    applied, behind = targeted_bump_behind(ws.path, behind, ws=ws)
+    # End-of-apply hold safety net (#holds): clamp anything resolved above an
+    # active ceiling, including a package already sitting above a *newly
+    # added* hold from before the hold existed — direct_dependency_names
+    # catches those since they won't appear in changes/behind either.
+    candidate_names = _direct_dep_names(ws.path) | {c.name for c in (*applied, *behind)}
+    held = enforce_holds(
+        ws,
+        candidate_names,
+        manager="yarn",
+        run_install=lambda name, spec: _yarn_hold_install(ws.path, name, spec),
+    )
+    if held:
+        behind = [c for c in behind if c.name not in {h.name for h in held}] + held
     return behind
+
+
+def _yarn_hold_install(
+    mdir: Path, name: str, spec: str
+) -> subprocess.CompletedProcess[str]:
+    """Corrective ``yarn up <pkg>@<spec>`` + ``yarn install`` for ``enforce_holds``.
+
+    Mirrors ``_apply_yarn_audit_overrides``'s two-step install shape; only the
+    ``yarn up`` result is returned when it fails (no point installing after a
+    failed resolution change).
+    """
+    up = run(["yarn", "up", f"{name}@{spec}"], mdir, timeout=resolve_timeout_apply())
+    if up.returncode != 0:
+        return up
+    return run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
 
 
 def _apply_yarn_audit_overrides(ws: Workspace) -> set[str]:
