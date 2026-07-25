@@ -8,7 +8,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from repo_ops_js_npm.npm import apply_npm, check_npm, targeted_bump_behind
+from repo_ops_js_npm.npm import (
+    apply_npm,
+    check_npm,
+    clear_npm_audit_version_overrides,
+    set_npm_audit_version_overrides,
+    targeted_bump_behind,
+)
 from repo_ops_models import Change, Workspace
 
 _RESOLVER_PATH = "repo_ops_lockfiles.snapshots.resolved_version_from_node_modules"
@@ -71,6 +77,40 @@ def test_targeted_bump_uses_hold_ceiling_instead_of_latest(
     joined = [" ".join(c) for c in captured_cmds]
     assert any('typescript@"<=6"' in c or "typescript@<=6" in c for c in joined)
     assert not any("typescript@latest" in c for c in joined)
+
+
+def test_targeted_bump_audit_override_wins_over_hold_ceiling(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A security remediation (audit --fix) must not be blocked by a hold.
+
+    Regression guard: an earlier version of this precedence had the hold
+    checked first, so a CVE-safe version pin could be silently capped by an
+    unrelated hold policy instead of landing on the advisory-safe version.
+    """
+    _seed(tmp_path)
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
+    ws = _ws(tmp_path)
+    captured_cmds: list[list[str]] = []
+
+    def _fake_run(cmd, cwd, timeout=600, env=None):
+        captured_cmds.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    set_npm_audit_version_overrides({"typescript": "6.2.5"})
+    try:
+        with (
+            patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
+            patch("repo_ops_js_npm.npm.run", side_effect=_fake_run),
+            patch(_RESOLVER_PATH, return_value="6.2.5"),
+        ):
+            targeted_bump_behind(ws, [Change("typescript", "6.0.0", "6.2.5")])
+    finally:
+        clear_npm_audit_version_overrides()
+
+    joined = [" ".join(c) for c in captured_cmds]
+    assert any("typescript@6.2.5" in c for c in joined)
+    assert not any("<=6" in c for c in joined)
 
 
 def test_check_npm_does_not_promote_held_package_past_ceiling(

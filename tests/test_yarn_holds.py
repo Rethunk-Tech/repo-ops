@@ -7,7 +7,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from repo_ops_js_yarn.yarn import apply_yarn, check_yarn_snapshot, targeted_bump_behind
+from repo_ops_js_yarn.yarn import (
+    apply_yarn,
+    check_yarn_snapshot,
+    clear_yarn_audit_version_overrides,
+    set_yarn_audit_version_overrides,
+    targeted_bump_behind,
+)
 from repo_ops_models import Change, Workspace
 
 _GLOBAL_HOLDS_CACHE = "repo_ops_js.holds._global_holds_cached"
@@ -94,6 +100,36 @@ def test_targeted_bump_uses_hold_ceiling_instead_of_latest(
     joined = [" ".join(c) for c in captured_cmds]
     assert any('typescript@"<=6"' in c or "typescript@<=6" in c for c in joined)
     assert not any("typescript@latest" in c for c in joined)
+
+
+def test_targeted_bump_audit_override_wins_over_hold_ceiling(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A security remediation (audit --fix) must not be blocked by a hold."""
+    _seed(tmp_path)
+    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
+    ws = _ws(tmp_path)
+    captured_cmds: list[list[str]] = []
+
+    def _fake_run(cmd, cwd, timeout=None):
+        captured_cmds.append(list(cmd))
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    set_yarn_audit_version_overrides({"typescript": "6.2.5"})
+    try:
+        with (
+            patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
+            patch("repo_ops_js_yarn.yarn.run", side_effect=_fake_run),
+        ):
+            targeted_bump_behind(
+                tmp_path, [Change("typescript", "6.0.0", "6.2.5")], ws=ws
+            )
+    finally:
+        clear_yarn_audit_version_overrides()
+
+    joined = [" ".join(c) for c in captured_cmds]
+    assert any("typescript@6.2.5" in c for c in joined)
+    assert not any("<=6" in c for c in joined)
 
 
 def test_targeted_bump_without_ws_keeps_latest_fallback(

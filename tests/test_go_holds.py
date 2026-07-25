@@ -12,6 +12,7 @@ from repo_ops_go.go import (
     _enforce_version_ceilings,
     _explicit_go_get_targets,
     _filter_held_go_changes,
+    _workspace_rel,
     apply_go,
 )
 from repo_ops_models import Workspace
@@ -170,6 +171,93 @@ def test_enforce_version_ceilings_raises_when_still_above_ceiling(tmp_path) -> N
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
         patch("repo_ops_go.go.run", side_effect=fake_run),
         pytest.raises(RuntimeError, match="hold"),
+    ):
+        _enforce_version_ceilings(ws)
+
+
+def test_workspace_rel_falls_back_when_path_outside_git_repo(tmp_path) -> None:
+    other_root = tmp_path / "unrelated"
+    other_root.mkdir()
+    ws = Workspace(
+        path=other_root,
+        ecosystem="go",
+        manager="go",
+        git_repo=tmp_path / "actual-repo",
+        label="mod",
+    )
+    assert _workspace_rel(ws) == "."
+
+
+def test_enforce_version_ceilings_skips_unheld_and_already_compliant(
+    tmp_path,
+) -> None:
+    """Mixed candidates: no matching rule, and held-but-already-compliant —
+    neither triggers a corrective `go get`."""
+    ws = _ws(tmp_path)
+    unheld = "example.com/unheld"
+    compliant = "example.com/compliant"
+    get_calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout=0):
+        if cmd[:3] == ["go", "mod", "edit"]:
+            return _proc(
+                json.dumps(
+                    {
+                        "Module": {"Path": "example.com/main"},
+                        "Require": [
+                            {"Path": unheld, "Version": "v0.0.0"},
+                            {"Path": compliant, "Version": "v0.0.0"},
+                        ],
+                    }
+                )
+            )
+        if cmd[:3] == ["go", "list", "-m"]:
+            module = cmd[4]
+            version = "v9.0.0" if module == unheld else "v1.2.0"
+            return _proc(json.dumps({"Path": module, "Version": version}))
+        if cmd[:2] == ["go", "get"]:
+            get_calls.append(cmd)
+            return _proc()
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    # Rule only matches `compliant`, and its resolved version (v1.2.0)
+    # already satisfies the ceiling (max_version=6) — no correction needed.
+    with (
+        patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(package=compliant),)),
+        patch("repo_ops_go.go.run", side_effect=fake_run),
+    ):
+        _enforce_version_ceilings(ws)
+
+    assert get_calls == []
+
+
+def test_enforce_version_ceilings_raises_when_corrective_get_command_fails(
+    tmp_path,
+) -> None:
+    """Distinct failure mode from 'still above ceiling after get': the
+    corrective `go get` command itself errors out (e.g. network failure)."""
+    ws = _ws(tmp_path)
+
+    def fake_run(cmd, cwd, timeout=0):
+        if cmd[:3] == ["go", "mod", "edit"]:
+            return _proc(
+                json.dumps(
+                    {
+                        "Module": {"Path": "example.com/main"},
+                        "Require": [{"Path": _MODULE, "Version": "v0.0.0"}],
+                    }
+                )
+            )
+        if cmd[:3] == ["go", "list", "-m"]:
+            return _proc(json.dumps({"Path": _MODULE, "Version": "v1.8.0"}))
+        if cmd[:2] == ["go", "get"]:
+            return _proc(returncode=1, stderr="network error")
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    with (
+        patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
+        patch("repo_ops_go.go.run", side_effect=fake_run),
+        pytest.raises(RuntimeError, match=r"hold.*network error"),
     ):
         _enforce_version_ceilings(ws)
 

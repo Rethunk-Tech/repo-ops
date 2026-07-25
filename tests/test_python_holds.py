@@ -118,6 +118,35 @@ def test_apply_uv_lock_raises_when_clamp_fails(tmp_path: Path) -> None:
         uv_lock.apply_uv_lock(_uv_ws(tmp_path))
 
 
+def test_apply_uv_lock_raises_when_corrective_install_command_fails(
+    tmp_path: Path,
+) -> None:
+    """Distinct failure mode from 'landed but still over ceiling': the
+    corrective `uv add` command itself errors out (e.g. resolver conflict)."""
+    from repo_ops_py import uv_lock
+
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "typescript-stub"\nversion = "7.2.0"\n', encoding="utf-8"
+    )
+
+    def fake_run(cmd, cwd, timeout=None, env=None):
+        if cmd[:2] == ["uv", "add"]:
+            return _proc(returncode=1, stderr="resolver conflict")
+        return _proc()
+
+    with (
+        patch.object(
+            uv_lock,
+            "_global_holds_cached",
+            return_value=(_held_rule("typescript-stub"),),
+        ),
+        patch.object(uv_lock, "_repo_holds_cached", return_value=()),
+        patch.object(uv_lock, "run", side_effect=fake_run),
+        pytest.raises(RuntimeError, match=r"hold.*resolver conflict"),
+    ):
+        uv_lock.apply_uv_lock(_uv_ws(tmp_path))
+
+
 # ---------------------------------------------------------------------------
 # pdm
 # ---------------------------------------------------------------------------
