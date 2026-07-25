@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Targeted bump releases legacy (unheld) `resolutions`/`overrides`/`pnpm.overrides` pins:** every `--*-targeted-bump` retry loop (yarn/npm/pnpm/bun) now releases a manifest-level pin for the package being bumped when no active `[[hold]]` rule covers it, before running the install command — a naked pin predates the hold feature (0.21.0) or was a one-off fix never promoted to a tracked hold, and treating it as a permanent silent hard stop just accumulates dependency debt. An active hold is left completely untouched (still respected via its ceiling). Safe by construction: the existing snapshot/revert-on-no-advance path in every `targeted_bump_behind` reverts the pin edit too if the retry doesn't actually land. See `repo_ops_js.overrides.release_unheld_pin`.
+
+### Fixed
+
+- **`--yarn-targeted-bump` / `--bun-targeted-bump` never got a chance to run against a resolutions/overrides-blocked package (#121 follow-up):** yarn's and bun's ghost-bump guard fired immediately after the first bulk update pass and raised, failing the whole workspace before the per-package targeted-bump retry loop ever executed — so enabling targeted-bump did not actually help the exact case it exists for. The initial guard now defers a blocked target to the targeted-bump retry (which can also release an unheld pin, see above) instead of hard-failing; a target still unresolved after that best-effort retry is reported via the normal `behind_latest` path, same as any other targeted-bump miss. `guards.assert_targets_resolved` is unchanged for callers with no fallback (targeted-bump disabled) — a ghost bump there still raises loudly, as it should.
+
 ## [0.21.0] - 2026-07-25
 
 ### Added
