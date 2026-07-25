@@ -5,11 +5,123 @@ from __future__ import annotations
 import json
 import shutil
 import sys
+from functools import cache
 from pathlib import Path
 
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
+from repo_ops_core.filesystem import read_json_file
+from repo_ops_core.holds import (
+    HoldRule,
+    load_global_holds,
+    load_repo_holds,
+    resolve_hold,
+)
 from repo_ops_core.process import run
+from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
+
+# ---------------------------------------------------------------------------
+# Package version-ceiling ("hold") rules
+# ---------------------------------------------------------------------------
+#
+# pipenv has no per-package targeted install — ``pipenv update`` regenerates
+# the whole lockfile — so this clamp-down is the only enforcement mechanism.
+
+_HOLD_CEILING_PAD = "999999"
+
+
+@cache
+def _global_holds_cached() -> tuple[HoldRule, ...]:
+    return tuple(load_global_holds())
+
+
+@cache
+def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
+    return tuple(load_repo_holds(Path(repo_root)))
+
+
+def _workspace_rel(ws: Workspace) -> str:
+    try:
+        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
+    except ValueError:
+        return "."
+    return rel or "."
+
+
+def _resolve_pkg_hold(ws: Workspace, package: str) -> HoldRule | None:
+    repo_root = str(ws.git_repo.resolve())
+    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
+    if not rules:
+        return None
+    return resolve_hold(
+        rules,
+        package=package,
+        ecosystem=ws.ecosystem,
+        manager=ws.manager,
+        workspace_rel=_workspace_rel(ws),
+    )
+
+
+def _hold_ceiling_spec(max_version: str) -> str:
+    """PEP 440 upper-bound constraint for a hold ceiling (e.g. ``<=6.999999.999999``)."""
+    parts = [p for p in max_version.strip().split(".") if p]
+    padded = (parts + [_HOLD_CEILING_PAD] * 3)[:3]
+    return "<=" + ".".join(padded)
+
+
+def _pipfile_lock_versions(ws: Workspace) -> dict[str, str]:
+    """name → resolved version, parsed from Pipfile.lock's default/develop sections."""
+    data = read_json_file(ws.path / "Pipfile.lock") or {}
+    out: dict[str, str] = {}
+    for section in ("default", "develop"):
+        for name, meta in (data.get(section) or {}).items():
+            if not isinstance(meta, dict):
+                continue
+            ver = str(meta.get("version") or "").lstrip("=")
+            if name and ver:
+                out[str(name)] = ver
+    return out
+
+
+def _filter_held_changes(ws: Workspace, changes: list[Change]) -> list[Change]:
+    kept: list[Change] = []
+    for c in changes:
+        rule = _resolve_pkg_hold(ws, c.name)
+        if rule is not None and not version_satisfies_ceiling(c.to, rule.max_version):
+            continue
+        kept.append(c)
+    return kept
+
+
+def _enforce_version_ceilings(ws: Workspace) -> None:
+    """Post-apply clamp-down: correct any locked package resolved above its ceiling.
+
+    Mirrors ``repo_ops_py.uv_lock``'s enforcement — see its docstring for why
+    this is the only mechanism (no per-package targeted install) and why it
+    also catches a hold added after the package was already locked past it.
+    """
+    versions = _pipfile_lock_versions(ws)
+    if not versions:
+        return
+    for name, resolved in versions.items():
+        rule = _resolve_pkg_hold(ws, name)
+        if rule is None or version_satisfies_ceiling(resolved, rule.max_version):
+            continue
+        spec = f"{name}{_hold_ceiling_spec(rule.max_version)}"
+        proc = run(
+            ["pipenv", "install", spec], ws.path, timeout=resolve_timeout_apply()
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"hold: failed to clamp {name} back to <={rule.max_version} "
+                f"(pipenv): {proc.stderr.strip()}"
+            )
+        landed = _pipfile_lock_versions(ws).get(name)
+        if landed is None or not version_satisfies_ceiling(landed, rule.max_version):
+            raise RuntimeError(
+                f"hold: {name} still at {landed or resolved} after clamp "
+                f"attempt, expected <= {rule.max_version} (pipenv)"
+            )
 
 
 def check_pipenv(ws: Workspace) -> list[Change]:
@@ -61,7 +173,7 @@ def check_pipenv(ws: Workspace) -> list[Change]:
             parts = line.split()
             if len(parts) >= 3:
                 changes.append(Change(parts[0], parts[1], parts[2]))
-    return changes
+    return _filter_held_changes(ws, changes)
 
 
 def apply_pipenv(ws: Workspace) -> None:
@@ -71,3 +183,4 @@ def apply_pipenv(ws: Workspace) -> None:
     proc = run(["pipenv", "update"], ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pipenv update failed")
+    _enforce_version_ceilings(ws)
