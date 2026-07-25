@@ -1,0 +1,173 @@
+"""Package version-ceiling ("hold") rules — user-global, repo, and workspace scoped.
+
+A hold rule caps a package at a maximum version, optionally until an
+expiry date, so a specific major upgrade (e.g. TypeScript 7) can be held
+back fleet-wide without disabling ``--latest``/targeted-bump for every
+other package.
+
+Config source: the ``hold`` array-of-tables key already returned by
+``repo_ops_core.config.load_global_config`` (global,
+``~/.config/repo-ops/config.toml``) and ``load_repo_config`` (per-repo,
+``pyproject.toml [tool.repo-ops]`` / ``.repo-ops.toml``) — same read-only,
+never-written config files documented in ``config.py``. No CLI flag or env
+var channel: arrays don't serialize cleanly to env (same reasoning as
+``exclude_patterns``, see ``config.py``).
+
+    [[hold]]
+    package = "typescript"      # exact name or fnmatch glob, e.g. "@types/*"
+    max_version = "6"           # ceiling: "6" blocks major 7+, "5.9" blocks >5.9
+    until = "2026-09-01"        # optional ISO date; omit = indefinite hold
+    ecosystem = "js"            # optional filter (matches Workspace.ecosystem/.manager)
+    workspace = "packages/legacy-app"  # optional fnmatch glob, relative to repo root
+    reason = "TS7 breaking changes; wait for ecosystem to catch up"  # documentation only
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import sys
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+from typing import Any
+
+from repo_ops_core.config import load_global_config, load_repo_config
+
+
+@dataclass(frozen=True)
+class HoldRule:
+    package: str
+    max_version: str
+    until: str | None = None
+    ecosystem: str | None = None
+    workspace: str | None = None
+    reason: str | None = None
+    source: str = "global"  # "global" | "repo" — precedence + debugging only
+
+
+def _parse_hold_table(raw: Any, *, source: str) -> list[HoldRule]:
+    """Parse a ``hold`` config value into rules, dropping malformed entries.
+
+    Tolerant by design (matches ``_load_toml``'s "skip rather than raise"
+    style elsewhere in this package): an entry missing ``package`` or
+    ``max_version``, or that isn't a table at all, is silently skipped
+    rather than failing the whole run over one bad TOML entry.
+    """
+    if not isinstance(raw, list):
+        return []
+    rules: list[HoldRule] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        package = str(entry.get("package") or "").strip()
+        max_version = str(entry.get("max_version") or "").strip()
+        if not package or not max_version:
+            continue
+        until = entry.get("until")
+        ecosystem = entry.get("ecosystem")
+        workspace = entry.get("workspace")
+        reason = entry.get("reason")
+        rules.append(
+            HoldRule(
+                package=package,
+                max_version=max_version,
+                until=str(until).strip() if until else None,
+                ecosystem=str(ecosystem).strip() if ecosystem else None,
+                workspace=str(workspace).strip() if workspace else None,
+                reason=str(reason).strip() if reason else None,
+                source=source,
+            )
+        )
+    return rules
+
+
+def load_global_holds() -> list[HoldRule]:
+    """Load ``[[hold]]`` rules from the global config file."""
+    return _parse_hold_table(load_global_config().get("hold"), source="global")
+
+
+def load_repo_holds(repo_root: Path) -> list[HoldRule]:
+    """Load ``[[hold]]`` rules from the per-repo config (pyproject/.repo-ops.toml)."""
+    return _parse_hold_table(load_repo_config(repo_root).get("hold"), source="repo")
+
+
+_warned_expired: set[tuple[str, str, str | None]] = set()
+
+
+def _is_expired(rule: HoldRule, today: date) -> bool:
+    if not rule.until:
+        return False
+    try:
+        until_date = date.fromisoformat(rule.until)
+    except ValueError:
+        # Unparseable expiry: treat as non-expiring rather than silently
+        # dropping the hold over a typo.
+        return False
+    expired = today > until_date
+    if expired:
+        key = (rule.package, rule.until, rule.workspace)
+        if key not in _warned_expired:
+            _warned_expired.add(key)
+            print(
+                f"repo-ops: hold on {rule.package!r} expired {rule.until} "
+                "— treating as lifted (config file not modified)",
+                file=sys.stderr,
+            )
+    return expired
+
+
+def _matches_package(rule: HoldRule, package: str) -> bool:
+    if rule.package == package:
+        return True
+    return fnmatch.fnmatch(package, rule.package)
+
+
+def _matches_ecosystem(rule: HoldRule, ecosystem: str, manager: str) -> bool:
+    if not rule.ecosystem:
+        return True
+    target = rule.ecosystem.strip().lower()
+    return target in (ecosystem.strip().lower(), manager.strip().lower())
+
+
+def _matches_workspace(rule: HoldRule, workspace_rel: str) -> bool:
+    if not rule.workspace:
+        return True
+    return fnmatch.fnmatch(workspace_rel, rule.workspace)
+
+
+def resolve_hold(
+    rules: list[HoldRule],
+    *,
+    package: str,
+    ecosystem: str,
+    manager: str,
+    workspace_rel: str,
+    today: date | None = None,
+) -> HoldRule | None:
+    """Return the most specific active hold rule for *package*, or ``None``.
+
+    Matching: exact/glob package name, optional ecosystem filter (matches
+    either the broad ecosystem, e.g. ``"js"``, or the specific manager,
+    e.g. ``"npm"``), optional workspace glob (relative to the repo root),
+    and not expired. Among matches, the most specific wins: a
+    workspace-scoped rule beats a repo-wide rule, and a repo-sourced rule
+    beats a global-sourced rule at equal specificity — so per-repo config
+    can narrow *or* override a global hold for one workspace.
+    """
+    today = today or date.today()
+    candidates = [
+        rule
+        for rule in rules
+        if _matches_package(rule, package)
+        and _matches_ecosystem(rule, ecosystem, manager)
+        and _matches_workspace(rule, workspace_rel)
+        and not _is_expired(rule, today)
+    ]
+    if not candidates:
+        return None
+
+    def specificity(rule: HoldRule) -> tuple[int, int]:
+        return (1 if rule.workspace else 0, 1 if rule.source == "repo" else 0)
+
+    candidates.sort(key=specificity, reverse=True)
+    return candidates[0]

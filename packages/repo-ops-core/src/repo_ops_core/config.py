@@ -14,6 +14,10 @@ TOML parsing uses the stdlib ``tomllib`` on Python 3.11+, or the third-party
 ``tomli`` package on 3.10. When neither is available, config files are skipped
 with a one-time warning (sidecar keys already loaded before a pyproject probe
 are still returned — see ``load_repo_config``).
+
+Package version-ceiling ("hold") rules use the same global/repo files via a
+``[[hold]]`` array-of-tables key, resolved by ``repo_ops_core.holds`` — see
+that module's docstring for the rule schema and precedence.
 """
 
 from __future__ import annotations
