@@ -8,11 +8,18 @@ import os
 import re
 import subprocess
 from collections.abc import Iterator
+from functools import cache
 from pathlib import Path
 
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
+from repo_ops_core.holds import (
+    HoldRule,
+    load_global_holds,
+    load_repo_holds,
+    resolve_hold,
+)
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import semver_tuple
+from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import GO_UPGRADE_RE
 
@@ -196,6 +203,142 @@ def _gomod_require_paths(ws: Workspace) -> set[str] | None:
         for r in requires
         if isinstance(r, dict) and isinstance(r.get("Path"), str)
     }
+
+
+# ---------------------------------------------------------------------------
+# Package version-ceiling ("hold") rules
+# ---------------------------------------------------------------------------
+#
+# Go's own resolver never crosses a major-version boundary on its own (major
+# >=2 is encoded in the import path, e.g. ``.../v2``, and none of the three
+# upgrade modes ever propose a differently-majored path) — so a hold here
+# caps a same-major minor/patch version, not a major bump. Still useful (e.g.
+# "stay on 1.5.x for now"), just lower-stakes than the JS ecosystems.
+
+_HOLD_CEILING_PAD = "999999"
+
+
+@cache
+def _global_holds_cached() -> tuple[HoldRule, ...]:
+    return tuple(load_global_holds())
+
+
+@cache
+def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
+    return tuple(load_repo_holds(Path(repo_root)))
+
+
+def _workspace_rel(ws: Workspace) -> str:
+    try:
+        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
+    except ValueError:
+        return "."
+    return rel or "."
+
+
+def _resolve_module_hold(ws: Workspace, module_path: str) -> HoldRule | None:
+    """Return the active hold rule for *module_path* in this workspace, if any."""
+    repo_root = str(ws.git_repo.resolve())
+    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
+    if not rules:
+        return None
+    return resolve_hold(
+        rules,
+        package=module_path,
+        ecosystem=ws.ecosystem,
+        manager=ws.manager,
+        workspace_rel=_workspace_rel(ws),
+    )
+
+
+def _go_ceiling_query(max_version: str) -> str:
+    """Build a ``go get`` version-query for a hold ceiling (e.g. ``<=v6.999999.999999``).
+
+    Components the ceiling omits are padded with a very large sentinel so
+    they're effectively unconstrained, matching ``version_satisfies_ceiling``'s
+    "ceiling is a prefix" semantics (ceiling ``"6"`` allows any 6.x.y, not just
+    exactly ``v6.0.0``).
+    """
+    parts = [p for p in max_version.strip().split(".") if p]
+    padded = (parts + [_HOLD_CEILING_PAD] * 3)[:3]
+    return "<=v" + ".".join(padded)
+
+
+def _resolved_go_module_version(ws: Workspace, module_path: str) -> str | None:
+    """Read the currently resolved version of *module_path* via ``go list -m -json``."""
+    proc = run(
+        ["go", "list", "-m", "-json", module_path],
+        ws.path,
+        timeout=resolve_timeout_check(),
+    )
+    if proc.returncode != 0:
+        return None
+    try:
+        doc = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(doc, dict):
+        return None
+    version = doc.get("Version")
+    return str(version) if version else None
+
+
+def _filter_held_go_changes(ws: Workspace, changes: list[Change]) -> list[Change]:
+    """Drop any Change whose module has an active hold rule its target violates."""
+    kept: list[Change] = []
+    for c in changes:
+        rule = _resolve_module_hold(ws, c.name)
+        if rule is not None and not version_satisfies_ceiling(c.to, rule.max_version):
+            continue
+        kept.append(c)
+    return kept
+
+
+def _enforce_version_ceilings(ws: Workspace) -> None:
+    """Post-apply clamp-down: correct any direct dependency resolved above its hold ceiling.
+
+    Mirrors the JS ecosystems' ``enforce_holds`` safety net: reads each held
+    direct dependency's resolved version via ``go list -m -json``, and if it
+    violates the ceiling, runs a targeted ``go get <path>@<=ceiling>`` to
+    correct it, followed by ``go mod tidy``. Raises if the correction still
+    can't satisfy the ceiling — a hold that silently didn't hold is worse
+    than a loud failure. Also catches a hold added *after* the module was
+    already installed above the ceiling (``go list -u`` would report it as
+    already resolved, so it never appears in ``check_go``'s reported
+    changes).
+    """
+    candidates = _gomod_require_paths(ws)
+    if not candidates:
+        return
+    corrected_any = False
+    for module_path in sorted(candidates):
+        rule = _resolve_module_hold(ws, module_path)
+        if rule is None:
+            continue
+        resolved = _resolved_go_module_version(ws, module_path)
+        if resolved is None or version_satisfies_ceiling(resolved, rule.max_version):
+            continue
+        proc = run(
+            ["go", "get", f"{module_path}@{_go_ceiling_query(rule.max_version)}"],
+            ws.path,
+            timeout=resolve_timeout_apply(),
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"hold: failed to clamp {module_path} back to <={rule.max_version} "
+                f"(go): {proc.stderr.strip()}"
+            )
+        landed = _resolved_go_module_version(ws, module_path)
+        if landed is None or not version_satisfies_ceiling(landed, rule.max_version):
+            raise RuntimeError(
+                f"hold: {module_path} still at {landed or resolved} after clamp "
+                f"attempt, expected <= {rule.max_version} (go)"
+            )
+        corrected_any = True
+    if corrected_any:
+        proc = run(["go", "mod", "tidy"], ws.path, timeout=resolve_timeout_apply())
+        if proc.returncode != 0:
+            _raise_classified(proc.stderr, "go mod tidy failed", ws.path)
 
 
 def _go_work_sync_enabled() -> bool:
@@ -488,6 +631,11 @@ def _explicit_go_get_targets(ws: Workspace) -> list[str]:
                 have_recorded = True
             if recorded is not None and path not in recorded:
                 continue
+            held_rule = _resolve_module_hold(ws, path)
+            if held_rule is not None and not version_satisfies_ceiling(
+                version, held_rule.max_version
+            ):
+                continue
             spec = f"{path}@{version}"
             if _valid_go_get_target(spec):
                 targets.append(spec)
@@ -500,6 +648,7 @@ def check_go(ws: Workspace) -> list[Change]:
         dep_changes = _check_go_mvs(ws)
     else:
         dep_changes = _changes_from_go_list_json(ws, patch_only=(mode == "patch"))
+    dep_changes = _filter_held_go_changes(ws, dep_changes)
 
     # Prepend go.work directive sync changes (textual parse, no subprocess).
     go_work_dir = _go_work_dirs.get(ws.path.resolve())
@@ -607,6 +756,7 @@ def apply_go(ws: Workspace) -> None:
     mode = _go_upgrade_mode()
     if mode == "mvs":
         _apply_go_mvs(ws)
+        _enforce_version_ceilings(ws)
         return
     if mode == "explicit":
         targets = _explicit_go_get_targets(ws)
@@ -626,6 +776,7 @@ def apply_go(ws: Workspace) -> None:
     proc = run(["go", "mod", "tidy"], ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go mod tidy failed", ws.path)
+    _enforce_version_ceilings(ws)
 
 
 def _apply_go_mvs(ws: Workspace) -> None:
