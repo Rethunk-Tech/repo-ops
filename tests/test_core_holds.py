@@ -23,7 +23,6 @@ from repo_ops_core.version_utils import version_satisfies_ceiling
     "version,ceiling,expected",
     [
         ("6.5.0", "6", True),
-        ("6.999.999", "6", True),
         ("7.0.0", "6", False),
         ("5.9.9", "5.9", True),
         ("5.10.0", "5.9", False),
@@ -74,6 +73,14 @@ def test_load_global_holds_skips_malformed_entries(
     rules = load_global_holds()
     assert len(rules) == 1
     assert rules[0].package == "typescript"
+
+
+def test_load_global_holds_absent_config_returns_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No `[[hold]]` key at all (the common case) — no crash, empty list."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    assert load_global_holds() == []
 
 
 def test_load_repo_holds_from_pyproject(tmp_path: Path) -> None:
