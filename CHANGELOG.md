@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-07-25
+
 ### Added
 
 - **Targeted bump releases legacy (unheld) `resolutions`/`overrides`/`pnpm.overrides` pins:** every `--*-targeted-bump` retry loop (yarn/npm/pnpm/bun) now releases a manifest-level pin for the package being bumped when no active `[[hold]]` rule covers it, before running the install command — a naked pin predates the hold feature (0.21.0) or was a one-off fix never promoted to a tracked hold, and treating it as a permanent silent hard stop just accumulates dependency debt. An active hold is left completely untouched (still respected via its ceiling). Safe by construction: the existing snapshot/revert-on-no-advance path in every `targeted_bump_behind` reverts the pin edit too if the retry doesn't actually land. See `repo_ops_js.overrides.release_unheld_pin`.
