@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -9,6 +10,11 @@ from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 
 KNOWN_PACKAGE_MANAGERS = frozenset({"npm", "pnpm", "yarn", "bun"})
+
+# Managers Corepack ships shims for. Anything else (notably bun) is a hard
+# "Unsupported package manager specification" Usage Error, so Corepack is
+# skipped entirely and the real binary on PATH is used instead.
+COREPACK_MANAGERS = frozenset({"npm", "pnpm", "yarn"})
 
 
 def pm_exec_prefix(manager: str) -> list[str]:
@@ -81,22 +87,36 @@ def detect_node_manager(mdir: Path) -> tuple[str | None, str | None]:
     return None, "no packageManager field and no lockfile"
 
 
+def _proc_error(proc: subprocess.CompletedProcess[str]) -> str:
+    """Failure text for a warn line; Corepack prints Usage Errors on stdout."""
+    return proc.stderr.strip() or proc.stdout.strip()
+
+
 def corepack_prepare(manager: str, mdir: Path) -> None:
+    """Activate the workspace's pinned package manager via Corepack.
+
+    A no-op for managers Corepack does not support (see COREPACK_MANAGERS).
+    """
+    if manager not in COREPACK_MANAGERS:
+        return
     proc_enable = run(["corepack", "enable"], mdir, timeout=60)
     if proc_enable.returncode != 0:
         print(
-            f"WARN corepack enable failed: {proc_enable.stderr.strip()}",
+            f"WARN corepack enable failed: {_proc_error(proc_enable)}",
             file=sys.stderr,
         )
     pkg = read_json_file(mdir / "package.json") or {}
     pm = (pkg.get("packageManager") or "").strip()
-    if pm:
-        proc_prepare = run(["corepack", "prepare", pm, "--activate"], mdir, timeout=120)
-        if proc_prepare.returncode != 0:
-            print(
-                f"WARN corepack prepare {pm} --activate failed: {proc_prepare.stderr.strip()}",
-                file=sys.stderr,
-            )
+    if not pm:
+        return
+    if pm.split("@", 1)[0].strip().lower() not in COREPACK_MANAGERS:
+        return
+    proc_prepare = run(["corepack", "prepare", pm, "--activate"], mdir, timeout=120)
+    if proc_prepare.returncode != 0:
+        print(
+            f"WARN corepack prepare {pm} --activate failed: {_proc_error(proc_prepare)}",
+            file=sys.stderr,
+        )
 
 
 def yarn_workspace_members(mdir: Path) -> set[str]:
