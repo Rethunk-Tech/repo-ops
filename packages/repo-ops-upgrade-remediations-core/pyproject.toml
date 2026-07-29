@@ -7,7 +7,7 @@ module-root = "src"
 
 [project]
 name = "repo-ops-upgrade-remediations-core"
-version = "0.22.0"
+version = "0.22.1"
 requires-python = ">=3.10"
 dependencies = [
   "repo-ops-core",

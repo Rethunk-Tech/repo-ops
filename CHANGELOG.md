@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-07-28
+
 ### Fixed
 
 - **Every bun `apply` logged a bogus `WARN corepack prepare bun@x.y.z --activate failed:` line:** `corepack_prepare` ran for all Node managers, but Corepack ships shims only for npm, pnpm, and yarn — a bun `packageManager` pin is an outright `Unsupported package manager specification` Usage Error. Corepack is now skipped entirely for managers it does not support (bun today), including the `corepack enable` call; npm/pnpm/yarn still prepare exactly as before. Purely log noise: the upgrade itself always used the real `bun` on PATH. A genuine prepare/enable failure now also falls back to stdout when stderr is empty, so the warn carries Corepack's actual message instead of trailing off blank (Corepack prints Usage Errors on stdout).
