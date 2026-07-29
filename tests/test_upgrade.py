@@ -112,6 +112,12 @@ def test_remediations_pm_exec_prefix_yarn():
     assert pm_exec_prefix("yarn") == ["yarn"]
 
 
+def test_remediations_pm_exec_prefix_bun():
+    from repo_ops_js.workspaces import pm_exec_prefix
+
+    assert pm_exec_prefix("bun") == ["bunx"]
+
+
 def test_resolved_version_from_node_modules_scoped(tmp_path):
     from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 

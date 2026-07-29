@@ -20,7 +20,7 @@ COREPACK_MANAGERS = frozenset({"npm", "pnpm", "yarn"})
 def pm_exec_prefix(manager: str) -> list[str]:
     return {
         "yarn": ["yarn"],
-        "bun": ["bun", "run"],
+        "bun": ["bunx"],
         "pnpm": ["pnpm", "exec"],
         "npm": ["npx", "--yes"],
     }.get(manager, ["npx", "--yes"])
