@@ -56,7 +56,7 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
 
    1. `repo-ops plan --submodules --json-out bastion-plan.json /usr/local/src/com.github/Rethunk-Tech/Bastion` — review `submodules[]` and drift per repo.
    2. `repo-ops apply --submodule-order=children-first --submodules /usr/local/src/com.github/Rethunk-Tech/Bastion --log-file bastion-apply.log` — children apply first; read **Submodule pointers** in the footer for parents needing a pointer commit.
-   3. Commit and push each **child** repo (MCP `git-push-order` or `batch_commit` with `push: "after"` on children first).
+   3. Commit and push each **child** repo (commit per child, then `/git-push-order`, children first).
    4. In the **parent**, stage updated submodule paths and commit (`git add path/to/submodule && git commit -m "chore: bump submodule pointers"`).
    5. Push the parent last.
 
@@ -71,7 +71,7 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
 
    | Flag | Meaning |
    |------|---------|
-   | `--commit=none` | Default: no git commits (manual or MCP `batch_commit` in the IDE). |
+   | `--commit=none` | Default: no git commits (commit afterwards). |
    | `--commit=conventional` | One `chore(deps): …` (or CI-themed) commit per repo via guarded local `git`. |
    | `--commit=agent` | Draft the subject via a pluggable **commit-agent** provider (default: [Cursor SDK](https://cursor.com/docs/sdk/python)), then commit locally. Requires `CURSOR_API_KEY` and the optional cursor extra. |
    | `--commit-dry-run` | Print intended messages and file lists; no `git commit`. |
@@ -81,6 +81,6 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
 
    **Commit-agent providers:** default `cursor` when `REPO_OPS_COMMIT_AGENT_PROVIDER` is unset. Additional providers can register via `repo_ops_upgrade.commit_agent_providers.register_commit_agent_provider`. **Guardrails:** skips repos that were dirty at start unless `--allow-dirty`; never stages `.env`, credential-like paths, or key material; fails closed when verify failed (unless `--commit-on-fail`). Install Cursor support: `uv pip install 'repo-ops-upgrade[commit-agent-cursor]'` (alias: `[agent]`).
 
-   **IDE agents:** prefer MCP **`plugin-rethunk-git-git`** `batch_commit` with `push: "never"` when committing from Cursor/Claude; use `--commit=conventional` for headless bulk apply after `apply` logs are green.
+   **IDE agents:** commit without pushing from Cursor/Claude; use `--commit=conventional` for headless bulk apply after `apply` logs are green.
 
 **See also (tracking issues):** [#11](https://github.com/Rethunk-Tech/repo-ops/issues/11) remediation apply reporting (closed) · [#12](https://github.com/Rethunk-Tech/repo-ops/issues/12) bun outdated JSON (closed) · [#13](https://github.com/Rethunk-Tech/repo-ops/issues/13) submodule umbrella workflow · [#14](https://github.com/Rethunk-Tech/repo-ops/issues/14) end-of-run roll-up (closed) · [#15](https://github.com/Rethunk-Tech/repo-ops/issues/15) optional post-apply commits (closed) · [#16](https://github.com/Rethunk-Tech/repo-ops/issues/16) plan `--json-out` artifact (closed) · [#21](https://github.com/Rethunk-Tech/repo-ops/issues/21) SHA-pinned Actions unpin (closed).

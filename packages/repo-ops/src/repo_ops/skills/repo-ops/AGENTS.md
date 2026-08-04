@@ -78,7 +78,7 @@ repo-ops apply --submodule-order=children-first --submodules /path/to/umbrella
 1. **`plan` before `apply`** — same flags and roots. Plan is read-only; exit `1` when actionable drift exists.
 2. **Dirty worktrees** — skipped by default; use `--allow-dirty` only when intentional.
 3. **Verify failures** — default `--on-verify-fail=keep` leaves changes; `--on-verify-fail=revert` rolls back lockfiles and tracked paths.
-4. **Commits** — use MCP `batch_commit` (`push: "never"`) in IDE sessions; headless: `apply --commit=conventional` or `--commit=agent` (preview with `--commit-dry-run`).
+4. **Commits** — commit tooling is fleet canon (`~/.claude/CLAUDE.md` § Git & GitHub); headless: `apply --commit=conventional` or `--commit=agent` (preview with `--commit-dry-run`).
 5. **Bulk multi-repo playbook** — [docs/bulk-maintenance.md](docs/bulk-maintenance.md).
 
 ### `--latest` umbrella
@@ -230,7 +230,6 @@ Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md
 - Do **not** run `apply` without `plan` on the same flags/roots when drift is unknown **and** the user did not explicitly ask to apply.
 - Do **not** use `--allow-dirty` to mask uncommitted work you did not intend to include.
 - Do **not** duplicate CLI flag tables into README, AGENTS, or the bundled SKILL — `--help` is canonical.
-- Do **not** use shell `git commit` in agent sessions — MCP `batch_commit` per [CONTRIBUTING.md — Git for agents](CONTRIBUTING.md#git-for-agents).
 - Do **not** push unless the user explicitly requests it.
 - Do **not** assume verify failure means bad dependency bumps — check toolchain, env, and flaky tests first.
 

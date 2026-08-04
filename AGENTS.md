@@ -78,7 +78,7 @@ repo-ops apply --submodule-order=children-first --submodules /path/to/umbrella
 1. **`plan` before `apply`** — same flags and roots. Plan is read-only; exit `1` when actionable drift exists.
 2. **Dirty worktrees** — skipped by default; use `--allow-dirty` only when intentional.
 3. **Verify failures** — default `--on-verify-fail=keep` leaves changes; `--on-verify-fail=revert` rolls back lockfiles and tracked paths.
-4. **Commits** — use MCP `batch_commit` (`push: "never"`) in IDE sessions; headless: `apply --commit=conventional` or `--commit=agent` (preview with `--commit-dry-run`).
+4. **Commits** — commit tooling is fleet canon (`~/.claude/CLAUDE.md` § Git & GitHub); headless: `apply --commit=conventional` or `--commit=agent` (preview with `--commit-dry-run`).
 5. **Bulk multi-repo playbook** — [docs/bulk-maintenance.md](docs/bulk-maintenance.md).
 
 ### `--latest` umbrella
@@ -230,7 +230,6 @@ Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md
 - Do **not** run `apply` without `plan` on the same flags/roots when drift is unknown **and** the user did not explicitly ask to apply.
 - Do **not** use `--allow-dirty` to mask uncommitted work you did not intend to include.
 - Do **not** duplicate CLI flag tables into README, AGENTS, or the bundled SKILL — `--help` is canonical.
-- Do **not** use shell `git commit` in agent sessions — MCP `batch_commit` per [CONTRIBUTING.md — Git for agents](CONTRIBUTING.md#git-for-agents).
 - Do **not** push unless the user explicitly requests it.
 - Do **not** assume verify failure means bad dependency bumps — check toolchain, env, and flaky tests first.
 
@@ -267,3 +266,17 @@ When changing behavior, keep these aligned with code and docs:
 ## Hygiene and tooling
 
 - `.gitignore` covers Python caches, venvs, build artifacts, coverage, and IDE noise.
+
+## Cutting a release
+
+Releases cut on `v*` tag push — `release.yml`'s `build` job creates the GitHub Release and uploads `dist/*`.
+
+1. `uv run python scripts/set_version.py bump patch` — bumps all 28 workspace manifests in lockstep (no args = verify no drift).
+2. Update `CHANGELOG.md`: `## [Unreleased]` → `## [Unreleased]` + `## [X.Y.Z] - <date>`. **Audit the section against `git log vPREV..HEAD`** — the prior batch's consolidation often misses late-landing commits.
+3. Commit `chore(release): vX.Y.Z` naming exactly `pyproject.toml packages/*/pyproject.toml CHANGELOG.md uv.lock`. `uv sync --locked --group dev` must pass (CI gate).
+4. Full gate firsthand: `uv run pytest -p no:cacheprovider -q` + `uv run ruff check .`.
+5. Annotated tag `git tag -a vX.Y.Z`; push commit, then tag (FF-only).
+6. **Post-run cleanup:** the auto-created Release has a generic body and a stray `default.gitignore` asset. `gh release edit vX.Y.Z --notes-file <section>` then `gh release delete-asset vX.Y.Z default.gitignore -y`. Extract the section with `awk '/^## \[X\.Y\.Z\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md`.
+7. Reinstall: `uv tool install --force ./packages/repo-ops` (uv tool, not pipx). Verify `repo-ops --version` and smoke any new subcommands.
+
+**PyPI publish is intentionally deferred** (issue #124, open). OIDC trusted-publisher exchange fails with "valid token, but no corresponding publisher" for claims `sub: repo:Rethunk-Tech/repo-ops:environment:pypi`, `workflow_ref: .../release.yml`, `environment: pypi`. Fix is an operator action on PyPI's publishing settings — **do not re-diagnose as a CI defect.**
