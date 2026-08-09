@@ -138,6 +138,7 @@ def test_apply_remediations_delegates_to_process_workspace(
     assert len(outcomes) == 1
     assert outcomes[0].status == "ok"
     assert outcomes[0].changes_count == 1
+    assert mock_pw.call_args.kwargs["do_verify"] is True
 
 
 def test_apply_remediations_deduplicates_workspaces(
@@ -219,6 +220,26 @@ def test_apply_remediations_passes_allow_dirty(
     assert call_kwargs.get("allow_dirty") is True
 
 
+def test_apply_remediations_can_disable_verification(
+    tmp_path: Path,
+) -> None:
+    """do_verify=False is forwarded as the explicit escape hatch."""
+    items = [_make_item(workspace=str(tmp_path))]
+    mock_final = _mock_upgrade_result("ok")
+
+    with (
+        patch("repo_ops_audit.audit._try_register_manager", return_value=True),
+        patch("repo_ops_core.git.git_repo_for", return_value=tmp_path),
+        patch(
+            "repo_ops_upgrade.orchestration.process_workspace",
+            return_value=mock_final,
+        ) as mock_pw,
+    ):
+        apply_remediations(items, do_verify=False)
+
+    assert mock_pw.call_args.kwargs["do_verify"] is False
+
+
 def test_apply_remediations_detects_node_manager(
     tmp_path: Path,
 ) -> None:
@@ -266,6 +287,12 @@ def test_audit_parser_fix_flag() -> None:
     parser = build_audit_parser()
     args = parser.parse_args(["--fix"])
     assert args.fix is True
+
+
+def test_audit_parser_no_verify_flag() -> None:
+    parser = build_audit_parser()
+    assert parser.parse_args([]).no_verify is False
+    assert parser.parse_args(["--no-verify"]).no_verify is True
 
 
 def test_audit_parser_allow_dirty_default_off() -> None:
@@ -334,8 +361,27 @@ def test_fix_called_when_flag_passed_and_remediations_exist(
         main(["--fix", "--fail-on", "never", str(tmp_path)])
 
     mock_apply.assert_called_once()
+    assert mock_apply.call_args.kwargs["do_verify"] is True
     out = capsys.readouterr().out
     assert "Fix apply" in out
+
+
+def test_no_verify_flag_reaches_apply(
+    tmp_path: Path,
+) -> None:
+    """--no-verify disables post-apply verification for --fix."""
+    items = [_make_item(workspace=str(tmp_path))]
+    with (
+        patch("repo_ops_audit.audit.run_audit", return_value=[]),
+        patch(
+            "repo_ops_audit.audit.collect_all_remediations",
+            return_value=items,
+        ),
+        patch("repo_ops_audit.audit.apply_remediations") as mock_apply,
+    ):
+        main(["--fix", "--no-verify", "--fail-on", "never", str(tmp_path)])
+
+    assert mock_apply.call_args.kwargs["do_verify"] is False
 
 
 def test_fix_json_output_includes_apply_outcomes(

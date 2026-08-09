@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops_audit.audit import (
+    FindingItem,
     RemediationItem,
     VulnCount,
     WorkspaceResult,
@@ -133,6 +134,46 @@ def test_sarif_result_fields() -> None:
     assert "text" in r["message"]
     assert "locations" in r
     assert len(r["locations"]) >= 1
+
+
+def test_sarif_includes_unfixed_finding_at_fail_threshold() -> None:
+    """Unfixed findings are emitted and marked without a remediation fix."""
+    result = _make_result("/ws", "node", worst="critical")
+    result.findings = [
+        FindingItem(
+            id="GHSA-unfixed",
+            severity="critical",
+            package="unfixed-pkg",
+            ecosystem="node",
+            workspace="/ws",
+        )
+    ]
+
+    doc = build_sarif_report([result], [], fail_on="high")
+
+    sarif_result = doc["runs"][0]["results"][0]
+    assert sarif_result["ruleId"] == "audit/node/GHSA-unfixed"
+    assert sarif_result["properties"]["unfixed"] is True
+    assert "fixes" not in sarif_result
+
+
+def test_sarif_unknown_requires_fail_on_unknown() -> None:
+    """Unknown-severity findings are gated independently of fail-on."""
+    result = _make_result("/ws", "go", worst=None)
+    result.findings = [
+        FindingItem(
+            id="GO-unfixed",
+            severity=None,
+            package="golang.org/x/net",
+            ecosystem="go",
+            workspace="/ws",
+        )
+    ]
+
+    assert build_sarif_report([result], [])["runs"][0]["results"] == []
+    doc = build_sarif_report([result], [], fail_on_unknown=True)
+    assert len(doc["runs"][0]["results"]) == 1
+    assert doc["runs"][0]["results"][0]["properties"]["unfixed"] is True
 
 
 def test_sarif_severity_mapping() -> None:

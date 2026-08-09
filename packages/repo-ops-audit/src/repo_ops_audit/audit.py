@@ -1805,10 +1805,12 @@ _SEV_TO_SARIF_LEVEL: dict[str | None, str] = {
 
 
 def _finding_passes_sarif_threshold(
-    finding: FindingItem, fail_on: str, fail_on_unknown: bool
+    finding: FindingItem, fail_on: str | None, fail_on_unknown: bool
 ) -> bool:
     if finding.severity is None:
         return fail_on_unknown
+    if fail_on is None:
+        return True
     if fail_on == "never":
         return False
     return _SEV_RANK.get(finding.severity, 4) <= _SEV_RANK.get(fail_on, 4)
@@ -1818,7 +1820,7 @@ def build_sarif_report(
     results: list[WorkspaceResult],
     remediations: list[RemediationItem],
     *,
-    fail_on: str = "high",
+    fail_on: str | None = None,
     fail_on_unknown: bool = False,
 ) -> dict[str, Any]:
     """Build a SARIF 2.1.0 document for the audit findings.
