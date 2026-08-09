@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core.cli import (
+    add_exclude_argument,
     add_follow_symlinks_argument,
     add_json_argument,
     add_roots_argument,
@@ -72,6 +73,7 @@ from repo_ops_core.config import (
     load_repo_config,
 )
 from repo_ops_core.discovery import discover_repos
+from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
 from repo_ops_core.git import repo_label
 from repo_ops_core.table import column_width, format_cell, join_row
 from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
@@ -1420,11 +1422,24 @@ def run_audit(
     roots: list[str],
     *,
     follow_symlinks: bool = False,
+    exclude_patterns: list[str] | None = None,
+    excluded_count_out: list[int] | None = None,
 ) -> list[WorkspaceResult]:
     """Discover repos under *roots* and audit every workspace found."""
     common_to_repo = discover_repos(roots, follow_symlinks=follow_symlinks)
+    repo_roots = list(roots)
+    kept_paths, excluded_count = filter_repo_paths(
+        [Path(repo) for repo in common_to_repo.values()],
+        exclude_patterns or [],
+        label_fn=lambda path: repo_label(str(path), repo_roots),
+    )
+    if excluded_count_out is not None:
+        excluded_count_out.append(excluded_count)
+    kept_set = set(kept_paths)
     results: list[WorkspaceResult] = []
     for repo in sorted(common_to_repo.values()):
+        if Path(repo) not in kept_set:
+            continue
         workspaces = _detect_workspaces(repo)
         if not workspaces:
             continue
@@ -1483,7 +1498,11 @@ def _exit_code_for(
 
 
 def print_audit_report(
-    results: list[WorkspaceResult], roots: list[str], *, fail_on_unknown: bool = False
+    results: list[WorkspaceResult],
+    roots: list[str],
+    *,
+    fail_on_unknown: bool = False,
+    excluded_count: int = 0,
 ) -> None:
     vulns = [r for r in results if r.status == "vulns"]
     skipped = [r for r in results if r.status == "skipped"]
@@ -1495,6 +1514,8 @@ def print_audit_report(
         f"Workspaces: {len(results)} total, {len(ok)} clean, "
         f"{len(vulns)} with vulns, {len(skipped)} skipped, {len(errors)} errors"
     )
+    if excluded_count:
+        print(f"Excluded repos: {excluded_count}")
     print()
 
     if not results:
@@ -2050,6 +2071,7 @@ tools used (must be on PATH or workspace is skipped):
 """,
     )
     add_roots_argument(parser)
+    add_exclude_argument(parser)
     add_follow_symlinks_argument(parser)
     parser.add_argument(
         "--fail-on",
@@ -2137,9 +2159,9 @@ def main(argv: list[str] | None = None) -> int:
     # precedence CLI flag > env > default. The parser's own defaults
     # ("high" / False) are left untouched so callers using build_audit_parser()
     # directly still see them; the env layer is applied here in main() only.
-    apply_config_to_env(
-        global_cfg=load_global_config(), repo_cfg=load_repo_config(Path.cwd())
-    )
+    global_cfg = load_global_config()
+    repo_cfg = load_repo_config(Path.cwd())
+    apply_config_to_env(global_cfg=global_cfg, repo_cfg=repo_cfg)
     fail_on = args.fail_on
     if not _flag_explicit(argv_list, "--fail-on"):
         env_fail_on = os.environ.get("REPO_OPS_AUDIT_FAIL_ON", "").strip()
@@ -2148,6 +2170,15 @@ def main(argv: list[str] | None = None) -> int:
 
     roots = resolve_scan_roots(list(args.roots), parser)
     follow_symlinks = bool(getattr(args, "follow_symlinks", False))
+    config_exclude: object = None
+    if repo_cfg and "exclude" in repo_cfg:
+        config_exclude = repo_cfg["exclude"]
+    elif global_cfg and "exclude" in global_cfg:
+        config_exclude = global_cfg["exclude"]
+    exclude_patterns = merge_exclude_patterns(
+        getattr(args, "exclude_patterns", None),
+        config_exclude,
+    )
     fail_on_unknown = bool(getattr(args, "fail_on_unknown", False))
     if not _flag_explicit(argv_list, "--fail-on-unknown"):
         fail_on_unknown = os.environ.get("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", "") == "1"
@@ -2161,7 +2192,14 @@ def main(argv: list[str] | None = None) -> int:
     if do_fix:
         fix_plan = True
 
-    results = run_audit(roots, follow_symlinks=follow_symlinks)
+    excluded_count_out: list[int] = []
+    results = run_audit(
+        roots,
+        follow_symlinks=follow_symlinks,
+        exclude_patterns=exclude_patterns,
+        excluded_count_out=excluded_count_out,
+    )
+    excluded_count = excluded_count_out[0] if excluded_count_out else 0
 
     sev_exit = _exit_code_for(results, fail_on, fail_on_unknown)
 
@@ -2218,6 +2256,7 @@ def main(argv: list[str] | None = None) -> int:
                 "errors": sum(1 for r in results if r.status == "error"),
                 "worst": _worst_severity(results),
                 "total_unknown": sum(r.counts.unknown for r in results),
+                "excluded": excluded_count,
             },
         }
         if fix_plan:
@@ -2237,7 +2276,12 @@ def main(argv: list[str] | None = None) -> int:
         return sev_exit or plan_exit
 
     # --- Human output -------------------------------------------------------
-    print_audit_report(results, roots, fail_on_unknown=fail_on_unknown)
+    print_audit_report(
+        results,
+        roots,
+        fail_on_unknown=fail_on_unknown,
+        excluded_count=excluded_count,
+    )
     plan_exit = 0
     if fix_plan:
         print()

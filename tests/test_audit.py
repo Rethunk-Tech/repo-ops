@@ -703,3 +703,41 @@ def test_audit_parser_fail_on_unknown_flag() -> None:
     parser = build_audit_parser()
     args = parser.parse_args(["--fail-on-unknown"])
     assert args.fail_on_unknown is True
+
+
+def test_audit_exclude_filters_repositories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    keep = tmp_path / "keep"
+    drop = tmp_path / "drop"
+    keep.mkdir()
+    drop.mkdir()
+    seen: list[str] = []
+
+    monkeypatch.setattr(
+        "repo_ops_audit.audit.discover_repos",
+        lambda *args, **kwargs: {
+            "keep-common": str(keep),
+            "drop-common": str(drop),
+        },
+    )
+    monkeypatch.setattr(
+        "repo_ops_audit.audit._detect_workspaces",
+        lambda repo: [(repo, "go", "go")],
+    )
+
+    def fake_audit(ws: str, ecosystem: str, manager: str) -> WorkspaceResult:
+        seen.append(ws)
+        return WorkspaceResult(
+            label=ws,
+            path=ws,
+            ecosystem=ecosystem,
+            manager=manager,
+            status="ok",
+        )
+
+    monkeypatch.setattr("repo_ops_audit.audit.audit_workspace", fake_audit)
+
+    assert main([str(tmp_path), "--exclude", "drop"]) == 0
+    assert seen == [str(keep)]
+    assert "Excluded repos: 1" in capsys.readouterr().out

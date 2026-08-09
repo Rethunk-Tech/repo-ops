@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from repo_ops_core.cli import (
+    add_exclude_argument,
     add_follow_symlinks_argument,
     add_json_argument,
     add_json_out_argument,
@@ -32,7 +33,9 @@ from repo_ops_core.cli import (
     resolve_scan_roots,
     wire_verbose,
 )
+from repo_ops_core.config import load_global_config, load_repo_config
 from repo_ops_core.discovery import discover_repos
+from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
 from repo_ops_core.filesystem import write_json_atomic
 from repo_ops_core.git import repo_label, run_git
 from repo_ops_core.table import column_width, format_cell, join_row
@@ -49,6 +52,7 @@ class Filters:
     until_unix: int
     author: str | None = None
     no_merges: bool = False
+    excluded_count: int = 0
 
 
 @dataclass
@@ -187,13 +191,23 @@ def collect_results(
     *,
     follow_symlinks: bool = False,
     jobs: int | None = None,
+    exclude_patterns: list[str] | None = None,
 ) -> tuple[dict[str, None], list[RepoResult]]:
     common_to_repo = discover_repos(roots, follow_symlinks=follow_symlinks)
     per_repo: list[RepoResult] = []
     all_commits: dict[str, None] = {}
 
     max_workers = jobs if jobs is not None else min(16, (os.cpu_count() or 4))
-    repos_sorted = sorted(common_to_repo.values())
+    repo_roots = list(roots)
+    kept_paths, filters.excluded_count = filter_repo_paths(
+        [Path(repo) for repo in common_to_repo.values()],
+        exclude_patterns or [],
+        label_fn=lambda path: repo_label(str(path), repo_roots),
+    )
+    kept_set = set(kept_paths)
+    repos_sorted = sorted(
+        repo for repo in common_to_repo.values() if Path(repo) in kept_set
+    )
 
     def _scan_repo(repo: str) -> RepoResult | None:
         commits = pushed_commits_for_repo(repo, filters)
@@ -249,9 +263,12 @@ def print_report(
     top_n: int,
     show_shas: bool = False,
     show_messages: bool = False,
+    excluded_count: int = 0,
 ) -> None:
     print(f"Pushed commits in the last {window_desc} (local reflog: update by push)")
     print(f"Scanned {len(roots)} root(s); {len(per_repo)} repo(s) with pushes")
+    if excluded_count:
+        print(f"Excluded repos: {excluded_count}")
     print()
     print(f"Total unique commits pushed: {len(all_commits)}")
     print()
@@ -333,6 +350,7 @@ def build_pushed_parser() -> argparse.ArgumentParser:
 
 def _add_pushed_arguments(parser: argparse.ArgumentParser) -> None:
     add_roots_argument(parser)
+    add_exclude_argument(parser)
     add_follow_symlinks_argument(parser)
 
     def positive_hours(value: str) -> float:
@@ -411,6 +429,18 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "json_report_path", None) and not args.json_out:
         parser.error("--json-out requires --json")
 
+    global_cfg = load_global_config()
+    repo_cfg = load_repo_config(Path.cwd())
+    config_exclude: object = None
+    if repo_cfg and "exclude" in repo_cfg:
+        config_exclude = repo_cfg["exclude"]
+    elif global_cfg and "exclude" in global_cfg:
+        config_exclude = global_cfg["exclude"]
+    exclude_patterns = merge_exclude_patterns(
+        getattr(args, "exclude_patterns", None),
+        config_exclude,
+    )
+
     # --show-messages implies --show-shas; set once here to avoid repeated checks
     if args.show_messages:
         args.show_shas = True
@@ -481,6 +511,7 @@ def main(argv: list[str] | None = None) -> int:
         filters,
         follow_symlinks=follow_symlinks,
         jobs=args.jobs,
+        exclude_patterns=exclude_patterns,
     )
 
     if args.json_out:
@@ -520,6 +551,7 @@ def main(argv: list[str] | None = None) -> int:
             "summary": {
                 "total": total,
                 "repos_with_pushes": repos_with_pushes,
+                "excluded": filters.excluded_count,
             },
             # Consumers slice from "repos" themselves; "top" key removed.
             "repos": [_repo_entry(r) for r in per_repo],
@@ -546,6 +578,7 @@ def main(argv: list[str] | None = None) -> int:
         args.top,
         show_shas=args.show_shas,
         show_messages=args.show_messages,
+        excluded_count=filters.excluded_count,
     )
     return 0
 

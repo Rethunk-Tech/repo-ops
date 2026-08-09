@@ -653,3 +653,39 @@ def test_pushed_no_merges_and_author_passed_to_filters(
     assert len(seen) == 1
     assert seen[0].author == "Alice"
     assert seen[0].no_merges is True
+
+
+def test_collect_results_excludes_repositories(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    keep = tmp_path / "keep"
+    drop = tmp_path / "drop"
+    keep.mkdir()
+    drop.mkdir()
+    seen: list[str] = []
+
+    monkeypatch.setattr(
+        audit,
+        "discover_repos",
+        lambda *args, **kwargs: {
+            "keep-common": str(keep),
+            "drop-common": str(drop),
+        },
+    )
+
+    def fake_pushed(repo: str, filters: Filters) -> dict[str, None]:
+        seen.append(repo)
+        return {"a" * 40: None}
+
+    monkeypatch.setattr(audit, "pushed_commits_for_repo", fake_pushed)
+
+    filters = Filters(0, 2**31)
+    all_commits, per_repo = collect_results(
+        [str(tmp_path)],
+        filters,
+        exclude_patterns=["drop"],
+    )
+    assert len(all_commits) == 1
+    assert len(per_repo) == 1
+    assert seen == [str(keep)]
+    assert filters.excluded_count == 1
