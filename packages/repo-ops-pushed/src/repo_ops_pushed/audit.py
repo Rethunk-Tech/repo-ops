@@ -20,6 +20,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 from repo_ops_core.cli import (
     add_exclude_argument,
@@ -61,6 +62,200 @@ class RepoResult:
     path: str
     # dict preserves insertion order (chrono from rev-list --reverse) and deduplicates
     commits: dict[str, None] = field(default_factory=dict)
+
+
+class GhCollectionError(RuntimeError):
+    """Raised when the GitHub source cannot produce a trustworthy result."""
+
+
+def _github_repo_slug(remote_url: str) -> str | None:
+    """Return ``owner/repo`` for a github.com remote URL."""
+    value = remote_url.strip()
+    if value.startswith("git@"):
+        value = "ssh://" + value.replace(":", "/", 1)
+    parsed = urlparse(value)
+    if parsed.hostname != "github.com":
+        return None
+    path = parsed.path.strip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+    if path.count("/") != 1 or any(not part for part in path.split("/")):
+        return None
+    return path
+
+
+def _github_repos_for_repo(repo: str) -> list[str]:
+    try:
+        remotes = run_git(repo, "remote")
+    except subprocess.TimeoutExpired as exc:
+        raise GhCollectionError(f"reading remotes for {repo} timed out") from exc
+    if remotes.returncode != 0:
+        detail = remotes.stderr.strip() if hasattr(remotes, "stderr") else ""
+        raise GhCollectionError(
+            f"reading remotes for {repo} failed" + (f": {detail}" if detail else "")
+        )
+
+    slugs: set[str] = set()
+    for remote in remotes.stdout.splitlines():
+        remote = remote.strip()
+        if not remote:
+            continue
+        try:
+            urls = run_git(repo, "remote", "get-url", "--all", remote)
+        except subprocess.TimeoutExpired as exc:
+            raise GhCollectionError(
+                f"reading remote {remote} for {repo} timed out"
+            ) from exc
+        if urls.returncode != 0:
+            detail = urls.stderr.strip() if hasattr(urls, "stderr") else ""
+            raise GhCollectionError(
+                f"reading remote {remote} for {repo} failed"
+                + (f": {detail}" if detail else "")
+            )
+        for url in urls.stdout.splitlines():
+            slug = _github_repo_slug(url)
+            if slug is not None:
+                slugs.add(slug)
+    return sorted(slugs)
+
+
+def _decode_json_values(raw: str, endpoint: str) -> list[object]:
+    decoder = json.JSONDecoder()
+    values: list[object] = []
+    offset = 0
+    while offset < len(raw):
+        while offset < len(raw) and raw[offset].isspace():
+            offset += 1
+        if offset >= len(raw):
+            break
+        try:
+            value, end = decoder.raw_decode(raw, offset)
+        except json.JSONDecodeError as exc:
+            raise GhCollectionError(f"gh api {endpoint} returned invalid JSON") from exc
+        values.append(value)
+        offset = end
+    return values
+
+
+def _gh_api(endpoint: str, *, paginate: bool = False) -> object:
+    command = ["gh", "api"]
+    if paginate:
+        command.append("--paginate")
+    command.append(endpoint)
+    try:
+        proc = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except FileNotFoundError as exc:
+        raise GhCollectionError("gh CLI is not installed") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise GhCollectionError(f"gh api {endpoint} timed out") from exc
+    if proc.returncode != 0:
+        detail = proc.stderr.strip() or proc.stdout.strip()
+        raise GhCollectionError(
+            f"gh api {endpoint} failed"
+            + (f": {detail}" if detail else f" (exit {proc.returncode})")
+        )
+
+    values = _decode_json_values(proc.stdout, endpoint)
+    if not values:
+        raise GhCollectionError(f"gh api {endpoint} returned no JSON")
+    if len(values) == 1:
+        return values[0]
+    return values
+
+
+def _github_events(endpoint: str) -> list[dict]:
+    response = _gh_api(endpoint, paginate=True)
+    pages = response if isinstance(response, list) else [response]
+    events: list[dict] = []
+    for page in pages:
+        if isinstance(page, list):
+            page_events = page
+        else:
+            page_events = [page]
+        for event in page_events:
+            if not isinstance(event, dict):
+                raise GhCollectionError(f"gh api {endpoint} returned invalid events")
+            events.append(event)
+    return events
+
+
+def _event_unix(value: object) -> int | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return int(parsed.timestamp())
+
+
+def _github_commit_matches(
+    repo_slug: str,
+    sha: str,
+    commit: dict,
+    filters: Filters,
+) -> bool:
+    if filters.author:
+        author = commit.get("author")
+        if not isinstance(author, dict):
+            return False
+        identity = f"{author.get('name', '')} <{author.get('email', '')}>"
+        try:
+            if re.search(filters.author, identity) is None:
+                return False
+        except re.error:
+            return False
+    if not filters.no_merges:
+        return True
+
+    detail = _gh_api(f"repos/{repo_slug}/commits/{sha}")
+    if not isinstance(detail, dict):
+        raise GhCollectionError(
+            f"gh api repos/{repo_slug}/commits/{sha} returned invalid commit"
+        )
+    parents = detail.get("parents")
+    return not isinstance(parents, list) or len(parents) < 2
+
+
+def pushed_commits_for_repo_gh(repo: str, filters: Filters) -> dict[str, None]:
+    commits: dict[str, None] = {}
+    for repo_slug in _github_repos_for_repo(repo):
+        endpoint = f"repos/{repo_slug}/events?per_page=100"
+        for event in _github_events(endpoint):
+            if event.get("type") != "PushEvent":
+                continue
+            timestamp = _event_unix(event.get("created_at"))
+            if timestamp is None or not (
+                filters.since_unix <= timestamp < filters.until_unix
+            ):
+                continue
+            payload = event.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            event_commits = payload.get("commits")
+            if not isinstance(event_commits, list):
+                continue
+            for event_commit in event_commits:
+                if not isinstance(event_commit, dict):
+                    continue
+                sha = event_commit.get("sha")
+                if (
+                    not isinstance(sha, str)
+                    or re.fullmatch(r"[0-9a-fA-F]{40}", sha) is None
+                ):
+                    continue
+                if event_commit.get("distinct", True) is False:
+                    continue
+                if _github_commit_matches(repo_slug, sha, event_commit, filters):
+                    commits[sha] = None
+    return commits
 
 
 def _reflog_pre_sha(
@@ -192,6 +387,7 @@ def collect_results(
     follow_symlinks: bool = False,
     jobs: int | None = None,
     exclude_patterns: list[str] | None = None,
+    source: str = "local",
 ) -> tuple[dict[str, None], list[RepoResult]]:
     common_to_repo = discover_repos(roots, follow_symlinks=follow_symlinks)
     per_repo: list[RepoResult] = []
@@ -209,8 +405,12 @@ def collect_results(
         repo for repo in common_to_repo.values() if Path(repo) in kept_set
     )
 
+    scanner = pushed_commits_for_repo
+    if source == "gh":
+        scanner = pushed_commits_for_repo_gh
+
     def _scan_repo(repo: str) -> RepoResult | None:
-        commits = pushed_commits_for_repo(repo, filters)
+        commits = scanner(repo, filters)
         if not commits:
             return None
         return RepoResult(
@@ -265,8 +465,14 @@ def print_report(
     show_messages: bool = False,
     excluded_count: int = 0,
     show_excluded: bool = False,
+    source: str = "local",
 ) -> None:
-    print(f"Pushed commits in the last {window_desc} (local reflog: update by push)")
+    if source == "gh":
+        print(f"Pushed commits in the last {window_desc} (GitHub PushEvent API)")
+    else:
+        print(
+            f"Pushed commits in the last {window_desc} (local reflog: update by push)"
+        )
     print(f"Scanned {len(roots)} root(s); {len(per_repo)} repo(s) with pushes")
     if show_excluded:
         print(f"Excluded repos: {excluded_count}")
@@ -365,6 +571,12 @@ def _add_pushed_arguments(parser: argparse.ArgumentParser) -> None:
         type=positive_hours,
         default=None,
         help="Rolling window length in hours (default: 24; must be > 0)",
+    )
+    parser.add_argument(
+        "--source",
+        choices=("local", "gh"),
+        default="local",
+        help="Push source: local reflogs (default) or authenticated GitHub events",
     )
     parser.add_argument(
         "--since",
@@ -507,13 +719,18 @@ def main(argv: list[str] | None = None) -> int:
 
     roots = resolve_scan_roots(list(args.roots), parser)
     follow_symlinks = bool(getattr(args, "follow_symlinks", False))
-    all_commits, per_repo = collect_results(
-        roots,
-        filters,
-        follow_symlinks=follow_symlinks,
-        jobs=args.jobs,
-        exclude_patterns=exclude_patterns,
-    )
+    collect_kwargs = {
+        "follow_symlinks": follow_symlinks,
+        "jobs": args.jobs,
+        "exclude_patterns": exclude_patterns,
+    }
+    if args.source == "gh":
+        collect_kwargs["source"] = "gh"
+    try:
+        all_commits, per_repo = collect_results(roots, filters, **collect_kwargs)
+    except GhCollectionError as exc:
+        print(f"ERROR: GitHub source unavailable: {exc}", file=sys.stderr)
+        return 2
 
     if args.json_out:
         # Resolve subjects before serialising when --show-messages is set
@@ -557,6 +774,8 @@ def main(argv: list[str] | None = None) -> int:
             # Consumers slice from "repos" themselves; "top" key removed.
             "repos": [_repo_entry(r) for r in per_repo],
         }
+        if args.source == "gh":
+            payload["source"] = "gh"
         json_report_path = getattr(args, "json_report_path", None)
         if json_report_path:
             written = write_json_atomic(
@@ -581,6 +800,7 @@ def main(argv: list[str] | None = None) -> int:
         show_messages=args.show_messages,
         excluded_count=filters.excluded_count,
         show_excluded=bool(exclude_patterns),
+        source=args.source,
     )
     return 0
 
