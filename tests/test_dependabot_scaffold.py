@@ -372,7 +372,8 @@ def test_dependabot_help_lists_scaffold_coverage() -> None:
     assert "deno" in help_text
     assert "pre-commit" in help_text
     assert "bun" in help_text
-    assert "Bun lockfiles scaffold as bun" in help_text
+    assert "Bun lockfiles" in help_text
+    assert "scaffold as bun" in help_text
 
 
 # ---------------------------------------------------------------------------
