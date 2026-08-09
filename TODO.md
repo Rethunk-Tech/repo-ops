@@ -28,65 +28,7 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 ---
 
-## Round 2 — Ecosystem parity
-
-### 2.1 Deno `--deno-targeted-bump` (JS targeted-bump parity)
-
-Deno reports `behind_latest` and honors `--latest` / `REPO_OPS_DENO_UPDATE_LATEST`, but unlike yarn/npm/pnpm/bun there is no reversible per-package targeted-bump fallback to *move* remaining gaps.
-
-**Refs:** `packages/repo-ops-js/src/repo_ops_js/deno.py` (`check_deno` / `apply_deno`); JS siblings `targeted_bump_behind` in `repo-ops-js-{yarn,npm,pnpm,bun}`; CLI flags in `packages/repo-ops-core/src/repo_ops_core/cli.py`; `AGENTS.md` full-coverage sweep table.
-
-**Traps:** Deno’s updater is `deno outdated --update` (± `--latest`); a targeted path must snapshot/restore `deno.lock` + import maps like the JS managers. Ghost-bump guard is best-effort when `node_modules` is absent — targeted bump must not assume npm layout. Do not fold this into `--latest` implicitly (same trap as other `--*-targeted-bump` flags). When this lands, fold it into `--full` (Wave 17 shipped the JS/digest umbrella without Deno).
-
-**Acceptance:** `--deno-targeted-bump` (and config/env twin) moves still-behind direct deps after the bulk update, reverts on no-advance/install failure, appears in the full-coverage sweep docs beside the other four flags, and is enabled by `--full`.
-
-### 2.4 Rust upgrade-mode honesty vs aggressive bumps
-
-`--latest` does not change Cargo behaviour (`cargo update` stays within existing constraints). Operators cannot opt into conservative vs aggressive Rust bumps the way Go (`patch`/`explicit`/`mvs`) or container cross-major gates work. Documented as intentional — still a fleet gap when Rust majors need a deliberate path (e.g. `cargo upgrade` / manifest edits).
-
-**Refs:** `packages/repo-ops-rust/src/repo_ops_rust/rust.py`; `docs/usage.md` ecosystem upgrade-modes table; audit remediations already use `cargo update -p … --precise`.
-
-**Traps:** Inventing a fake `--latest` that only re-runs `cargo update` would lie. Manifest-editing upgrades are a different product surface from lockfile refresh — keep the boundary explicit. Holds (1.2) should land before or with any aggressive Rust mode.
-
-**Acceptance:** Either a real opt-in Rust upgrade mode (documented, gated, tested on manifest+lock) **or** a single canonical doc/AGENTS note that Rust majors are out-of-scope for repo-ops and must be done by hand — no half-mode.
-
----
-
-## Round 6 — Audit / security parity
-
-### 6.1 Manager-aware Python `audit` (stop forcing `py-uv`)
-
-`_detect_workspaces` labels any `pyproject.toml` / `uv.lock` tree as `py-uv` and runs `uv run pip-audit`. Poetry / PDM / pipenv / hatch / pip-tools layouts are misrouted or silently omitted (`requirements.in`+`requirements.txt` trees need a pyproject/uv.lock gate today).
-
-**Refs:** `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`_detect_workspaces`, `_audit_py_uv`); `docs/usage.md` § audit ecosystem table; plan/apply discovery in `packages/repo-ops-upgrade/src/repo_ops_upgrade/discovery.py`.
-
-**Traps:** `uv run pip-audit` on a non-uv project can fail closed as “skipped” while the workspace looks audited in the roll-up. Prefer manager-native export + audit (or documented pip-audit-on-exported-reqs) over pretending everything is uv. Reuse upgrade discovery kinds — do not grow a second incompatible walker forever.
-
-**Acceptance:** Audit detects the real Python manager; poetry/PDM/pipenv/hatch/pip-tools repos are included with explicit ecosystem labels; wrong-manager skips are visible in JSON (`skip_reason`), not false-clean `ok` rows.
-
----
-
 ## Round 7 — Verify depth and pin-move parity
-
-### 7.1 `uv` verify parity with hatch fast gates
-
-After `uv sync --locked`, uv workspaces only optionally run `ruff`. Hatch runs `_verify_hatch_fast` (scripts, ruff, mypy/pyrefly, pytest). Migrating hatch→uv silently drops typecheck/test gates.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/verify.py` (`verify_workspace` uv vs hatch branches, `_verify_hatch_fast`); `docs/usage.md` verify notes.
-
-**Traps:** Share gate helpers rather than copy-paste hatch logic. Respect `[verify] skip` / timeout. Pair with 5.2 so pyrefly scope matches the target’s config when that gate runs.
-
-**Acceptance:** uv workspaces with mypy/pyrefly/pytest (or equivalent scripts) run the same fast gates hatch does after a locked sync; documented in usage.
-
-### 7.2 Poetry / PDM / pipenv verify beyond lock integrity
-
-Poetry verify is `poetry check`; PDM is `pdm sync --clean`; pipenv is `pipenv verify`. Lock integrity can pass while lint/typecheck/tests never run — weaker than node/go/uv-hatch paths.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/verify.py` (poetry/pdm/pipenv branches); manager packages under `packages/repo-ops-py-{poetry,pdm,pipenv}`.
-
-**Traps:** Do not invent manager-specific mini-CI — prefer configured project scripts / known tools already on the hatch/uv path. Missing binaries should fail closed with a clear reason, not skip silently. Keep timeouts consistent with other verify gates.
-
-**Acceptance:** Each manager runs a documented gate stack (lock sync/check + lint/typecheck/test when configured); failures block apply like other ecosystems; usage lists the stack per manager.
 
 ### 7.3 Opt-in SHA refresh for pre-commit and submodule pins
 
@@ -94,23 +36,11 @@ Actions/container already have `--actions-refresh-sha` / `--container-refresh-sh
 
 **Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/precommit.py` (SHA rev → report-only); `packages/repo-ops-upgrade/src/repo_ops_upgrade/submodules.py` (SHA-only HEAD → report-only); contrast `actions.py` / `repo-ops-container`; `AGENTS.md` full-coverage sweep table.
 
-**Traps:** Refresh must stay digest-within-intent (same hook repo / same submodule URL), not a silent major leap. Compose into the eventual `--full` umbrella (3.1) once named. Holds (1.2) should define ceiling behaviour before aggressive refresh. Container SHA-without-tag remains a separate harder case — do not pretend a tag-less digest has a refresh target.
+**Traps:** Refresh must stay digest-within-intent (same hook repo / same submodule URL), not a silent major leap. Compose into the `--full` umbrella once named. Holds (1.2) should define ceiling behaviour before aggressive refresh. Container SHA-without-tag remains a separate harder case — do not pretend a tag-less digest has a refresh target.
 
 **Acceptance:** Opt-in flags (e.g. `--precommit-refresh-sha`, `--submodule-refresh-sha`) advance those pins when resolvable; docs/AGENTS list them beside the existing refresh flags; without the flags, behaviour stays report-only.
 
 ---
-
-## Round 8 — Fleet DX / cross-subcommand gaps
-
-### 8.4 Actions org-policy block/warn mode
-
-`--actions-org-policy` records `status="policy"` rows but “never blocks pin bumps”. Unlike `--actions-lint-level block|warn|off`, policy violations cannot stop apply from rewriting disallowed actions.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/actions.py` (~policy check / “report-only; never blocks”); `packages/repo-ops-core/src/repo_ops_core/cli.py` (`--actions-org-policy`, `--actions-lint-level`).
-
-**Traps:** Mirror the lint-level pattern rather than a one-off boolean. Default must stay report-only for back-compat. Policy fetch failures stay non-fatal (already best-effort).
-
-**Acceptance:** A documented level (`block`/`warn`/`report`) can skip or warn on violating pin rewrites; JSON distinguishes policy-report vs policy-blocked; default remains today’s report-only behaviour.
 
 ## Round 9 — Wave 17 follow-ons
 
@@ -136,10 +66,18 @@ Actions/container already have `--actions-refresh-sha` / `--container-refresh-sh
 
 **Acceptance:** Opt-in local-only enrichment (flag or env); ambiguous LICENSE text stays unknown rather than a wrong SPDX id.
 
-### 21.2 Dependabot: stop parsing `poetry.lock` via `versions_uv_lock`
+---
 
-`_lockfile_resolved` routes `poetry.lock` through `versions_uv_lock`, which is the wrong format — Poetry high-confidence supersession is unreliable (pre-Wave-21).
+## Round 22 — Wave 22 follow-ons
 
-**Refs:** `packages/repo-ops-dependabot/src/repo_ops_dependabot/dependabot.py` (~poetry.lock branch); lockfiles poetry parser if any.
+### 22.1 Deno targeted-bump: resolve landed version into Change.to
 
-**Acceptance:** Poetry locks use a poetry-aware resolver (or explicit low-confidence) so `--close` never high-confidence-closes on a false uv parse.
+`targeted_bump_behind` currently keeps the planned `Change` on success (snapshot delta only). Prefer recording the post-update resolved version when parseable from lock/import map, matching bun/npm applied-Change semantics.
+
+**Refs:** `packages/repo-ops-js/src/repo_ops_js/deno.py` (`targeted_bump_behind`).
+
+### 22.2 Audit Python: hatch vs uv disambiguation when both signals present
+
+A tree with both `uv.lock` and hatchling metadata may need an explicit precedence rule documented in usage (which label wins).
+
+**Refs:** `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`_detect_workspaces`).
