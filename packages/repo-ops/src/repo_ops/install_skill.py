@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 import shutil
@@ -63,6 +64,31 @@ def rewrite_install_links(text: str) -> str:
     return _INSTALL_LINK_RE.sub(_replace, text)
 
 
+def _skill_digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(path for path in root.rglob("*") if path.is_file()):
+        relative = path.relative_to(root).as_posix().encode("utf-8")
+        content = path.read_bytes()
+        if path.suffix == ".md":
+            content = rewrite_install_links(content.decode("utf-8")).encode("utf-8")
+        digest.update(relative)
+        digest.update(b"\0")
+        digest.update(content)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def check_installed_skill(src: Path, dest: Path) -> bool:
+    """Return whether an installed skill matches the bundled skill."""
+    if not dest.exists():
+        return True
+    return (
+        dest.is_dir()
+        and not dest.is_symlink()
+        and _skill_digest(src) == _skill_digest(dest)
+    )
+
+
 def _rewrite_markdown_links(dest: Path) -> None:
     for md in dest.rglob("*.md"):
         original = md.read_text(encoding="utf-8")
@@ -110,6 +136,11 @@ def _add_install_skill_arguments(parser: argparse.ArgumentParser) -> None:
         choices=_TARGETS,
         default="both",
         help="where to install (default: both)",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="check installed skill copies for drift without writing",
     )
     parser.add_argument(
         "--force",
@@ -182,8 +213,37 @@ def run_install(
     dry_run: bool,
     home: Path | None,
     dest: Path | None,
+    check: bool = False,
 ) -> int:
     src = bundled_skill_dir()
+    if check:
+        if dest is not None:
+            try:
+                validate_dest(dest, src)
+            except ValueError as exc:
+                print(str(exc), file=sys.stderr)
+                return 1
+            destinations = [("dest", dest.expanduser().resolve())]
+        else:
+            destinations = destinations_for(target, resolve_home(home))
+
+        codes: list[int] = []
+        for label, path in destinations:
+            if not path.exists():
+                print(f"not installed {label}: {path}")
+                codes.append(0)
+            elif check_installed_skill(src, path):
+                print(f"ok {label}: {path}")
+                codes.append(0)
+            else:
+                print(
+                    f"warning: installed skill drift at {path}; "
+                    "run with --force to overwrite",
+                    file=sys.stderr,
+                )
+                codes.append(1)
+        return 1 if any(codes) else 0
+
     if dest is not None:
         try:
             validate_dest(dest, src)
@@ -212,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run,
         home=args.home,
         dest=args.dest,
+        check=args.check,
     )
 
 
