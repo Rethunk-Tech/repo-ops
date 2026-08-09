@@ -775,6 +775,79 @@ def test_pushed_source_gh_collects_push_event_commits(
     ]
 
 
+def test_pushed_source_gh_compare_fallback_for_empty_event_commits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sha = "a" * 40
+    before = "b" * 40
+    head = "c" * 40
+    commands: list[list[str]] = []
+    event = {
+        "type": "PushEvent",
+        "created_at": "2026-01-01T00:00:05Z",
+        "payload": {
+            "before": before,
+            "head": head,
+            "size": 1,
+            "distinct_size": 1,
+            "commits": [],
+        },
+    }
+    comparison = {
+        "commits": [
+            {
+                "sha": sha,
+                "commit": {"author": {"name": "Alice", "email": "alice@example.com"}},
+            }
+        ]
+    }
+
+    monkeypatch.setattr(audit, "_github_repos_for_repo", lambda repo: ["acme/project"])
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        if "events?per_page=100" in command[-1]:
+            response = [event]
+        else:
+            assert command[-1] == f"repos/acme/project/compare/{before}...{head}"
+            response = comparison
+        return SimpleNamespace(returncode=0, stdout=json.dumps(response), stderr="")
+
+    monkeypatch.setattr(audit.subprocess, "run", fake_run)
+    filters = Filters(
+        since_unix=int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()),
+        until_unix=int(datetime(2026, 1, 2, tzinfo=timezone.utc).timestamp()),
+    )
+
+    assert audit.pushed_commits_for_repo_gh("/fake/repo", filters) == {sha: None}
+    assert commands == [
+        ["gh", "api", "--paginate", "repos/acme/project/events?per_page=100"],
+        ["gh", "api", f"repos/acme/project/compare/{before}...{head}"],
+    ]
+
+
+def test_pushed_source_gh_warns_for_non_github_remote(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(audit, "_github_repos_for_repo", lambda repo: [])
+    filters = Filters(since_unix=0, until_unix=2**31)
+
+    assert audit.pushed_commits_for_repo_gh("/fake/repo", filters) == {}
+    assert filters.gh_missing_remote_count == 1
+    assert "no GitHub remote" in capsys.readouterr().err
+
+    print_report(
+        {},
+        [],
+        "24 hours",
+        ["/root"],
+        top_n=10,
+        source="gh",
+        gh_missing_remote_count=filters.gh_missing_remote_count,
+    )
+    assert "had no GitHub remote" in capsys.readouterr().out
+
+
 def test_main_source_gh_auth_failure_is_nonzero(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
