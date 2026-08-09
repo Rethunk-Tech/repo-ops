@@ -82,31 +82,7 @@ Deno reports `behind_latest` and honors `--latest` / `REPO_OPS_DENO_UPDATE_LATES
 
 ---
 
-## Round 3 — Operator DX / release hygiene
-
-### 3.2 Automate GitHub Release post-cut cleanup
-
-Every `v*` release still needs manual `gh release edit` (CHANGELOG section as notes) and `gh release delete-asset … default.gitignore`. Easy to forget; leaves a generic Release body and a junk asset.
-
-**Refs:** `AGENTS.md` § Cutting a release step 6; `.github/workflows/release.yml` `build` job.
-
-**Traps:** Prefer fixing the workflow artifact list (stop uploading `default.gitignore`) over forever deleting it. Notes extraction must match Keep a Changelog `## [X.Y.Z]` sections. Do not auto-publish to PyPI here (see 1.1).
-
-**Acceptance:** A tagged release has correct CHANGELOG-derived notes and no `default.gitignore` asset without a human cleanup pass.
-
----
-
 ## Round 4 — Hygiene carry-forward
-
-### 4.1 Supersede Dependabot PR #158 by hand
-
-Open Dependabot PR [#158](https://github.com/Rethunk-Tech/repo-ops/pull/158) bumps the `dev-dependencies` group (`ruff`, `pyrefly`). Fleet rule: never merge Dependabot — apply the equivalent bump on `main` and close as superseded.
-
-**Refs:** fleet `dependency-policy` skill; `uv.lock` / root `pyproject.toml`; `repo-ops apply --flat` on this checkout (or equivalent manual bump).
-
-**Traps:** Local `main` may already be ahead of `origin/main`; reconcile lock drift before closing. Do not approve/merge the Dependabot PR.
-
-**Acceptance:** `main` carries the intended ruff/pyrefly versions; #158 closed superseded; no Dependabot merge commit on the default branch.
 
 ### 4.2 Refresh issue #124 status text
 
@@ -190,16 +166,6 @@ Actions/container already have `--actions-refresh-sha` / `--container-refresh-sh
 
 ## Round 8 — Fleet DX / cross-subcommand gaps
 
-### 8.2 `--exclude` / config `exclude` on audit, dependabot, pushed
-
-`exclude` / `--exclude` filter plan/apply only. Global `~/.config/repo-ops/config.toml` `exclude = ["archive/*"]` silently does nothing for audit / dependabot / pushed — archived repos still get scanned.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (exclude filtering); `packages/repo-ops-core/src/repo_ops_core/config.py` (`exclude`); `packages/repo-ops-audit`, `packages/repo-ops-dependabot`, `packages/repo-ops-pushed` (no exclude merge).
-
-**Traps:** Keep config-file-only semantics for the `exclude` key (no inventing an env array). Shared helper beats three one-off filters. JSON summary should count excluded repos for parity with plan/apply.
-
-**Acceptance:** `--exclude` and config `exclude` are honored on audit, dependabot, and pushed; excluded repos appear in summary counts; docs state the shared behaviour.
-
 ### 8.3 `pushed` remote/API fallback (local reflog blind spot)
 
 `repo-ops pushed` only counts this-machine `refs/remotes/*` reflog “update by push” entries. Fresh clones, CI runners, and pushes from another workstation report zero even when GitHub has activity.
@@ -230,18 +196,6 @@ Scaffold emits coarse `pip` for any Python indicator, `npm` for any Node lock (i
 
 **Acceptance:** Scaffold detects deno and pre-commit where indicators exist; Python/manager notes in docs list scaffold coverage vs supersession coverage separately; dry-run output matches what `--write` would emit.
 
-### 8.6 Document remediation catalog + `--only-outdated`
-
-Post-apply remediation ids (`biome_schema`, `playwright_browsers`, `codegen`, `package_manager_pin`, `gofmt`, `go_generate`, `ruff_fix`, `cargo_fix`, `deno_fix`, …) are only partially listed in `--skip-remediations` help. `--only-outdated` is shipped for plan/apply human output but absent from usage/AGENTS/skill — agents rediscover fleet noise the hard way.
-
-**Refs:** `packages/repo-ops-upgrade-remediations-{js,go,py,rust,deno}`; `packages/repo-ops-core/src/repo_ops_core/cli.py` (`--skip-remediations`, `--only-outdated`); `docs/usage.md`; `AGENTS.md`; bundled skill under `packages/repo-ops/src/repo_ops/skills/repo-ops/`.
-
-**Traps:** Docs describe current ids only — no changelog archaeology. Note default-off hooks (`REPO_OPS_REMEDIATE_GO_GENERATE`). `--only-outdated` filters human output; confirm JSON behaviour before documenting (do not claim JSON is filtered if it is not).
-
-**Acceptance:** Usage has a remediation table (id, ecosystem, trigger, default on/off); `--skip-remediations` help lists all ids; `--only-outdated` appears in usage + AGENTS with accurate human-vs-JSON behaviour.
-
----
-
 ## Round 9 — Wave 17 follow-ons
 
 ### 9.1 Fleet apply: per-checkout config besides commit-agent model/provider
@@ -256,36 +210,28 @@ Post-apply remediation ids (`biome_schema`, `playwright_browsers`, `codegen`, `p
 
 ---
 
-## Round 10 — Wave 18 audit carry-forwards
+## Round 11 — Wave 19 audit carry-forwards
 
-### 10.1 Dependabot `--help` epilog lists Python locks
+### 11.1 Doctor `probe_skill_drift` dangling-symlink blind spot
 
-Module docstring and usage.md name `poetry.lock` / `pdm.lock` / `Pipfile.lock` for high-confidence supersession; `build_dependabot_parser` epilog precision block still lists npm/yarn/pnpm/bun/`uv.lock` only.
+`install-skill --check` now routes symlinks (including dangling) through digest/drift checks. Doctor still gates on `path.exists()` before probing, so a dangling skill symlink is skipped rather than reported in `skill_drift`.
 
-**Refs:** `packages/repo-ops-dependabot/src/repo_ops_dependabot/dependabot.py` (`build_dependabot_parser` epilog).
+**Refs:** `packages/repo-ops-doctor/src/repo_ops_doctor/doctor.py` (`probe_skill_drift`); contrast `packages/repo-ops/src/repo_ops/install_skill.py` (`check_installed_skill` / `--check` path).
 
-**Acceptance:** `--help` epilog matches the high-confidence lock set documented in usage.
+**Acceptance:** Doctor reports dangling or broken skill symlinks as drift (human warn + JSON `skill_drift`) with the same semantics as `install-skill --check`.
 
-### 10.2 Document audit JSON `findings[]`
+### 11.2 `pushed` CLI integration test for exclude human output
 
-`audit --json` now includes per-workspace `findings[]` from `FindingItem`; usage.md audit section still documents remediations/summary only.
+Exclude filtering is covered at `collect_results` unit level; there is no `main([... --exclude ...])` capsys assertion for the `Excluded repos:` line.
 
-**Refs:** `docs/usage.md` § audit; `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`FindingItem.as_dict`).
+**Refs:** `tests/test_pushed.py` (`test_collect_results_excludes_repositories`); `packages/repo-ops-pushed/src/repo_ops_pushed/audit.py` human exclude footer.
 
-**Acceptance:** Usage names the `findings` key and how it relates to SARIF / `--fail-on`.
+**Acceptance:** A focused CLI test asserts exclude patterns skip repos and print the excluded count on stderr/stdout as implemented.
 
-### 10.3 `install-skill --check` treats symlink dest as drift
+### 11.3 Fixture test for release CHANGELOG notes extraction
 
-`check_installed_skill` requires `dest.is_dir()` and rejects `dest.is_symlink()`, so a valid symlinked skill dir always reports drift even when target content matches.
+Release notes awk now matches dated Keep a Changelog headings, but only validates on the next `v*` tag push. A fixture CHANGELOG + shell/Python extraction check would catch heading-format regressions pre-tag.
 
-**Refs:** `packages/repo-ops/src/repo_ops/install_skill.py` (`check_installed_skill`).
+**Refs:** `.github/workflows/release.yml` Prepare release notes step; `CHANGELOG.md` `## [X.Y.Z] - <date>` form.
 
-**Acceptance:** Symlinked install dirs whose resolved content matches the bundled copy exit `0`, or docs explicitly disallow symlink installs for `--check`.
-
-### 10.4 AGENTS doctor + JSON test for `skill_drift`
-
-Doctor JSON includes `skill_drift`; AGENTS.md doctor prose/flags omit it. `test_doctor.py` covers the human warning but not the JSON field when drift exists.
-
-**Refs:** `AGENTS.md` doctor section; `packages/repo-ops-doctor`; `tests/test_doctor.py`.
-
-**Acceptance:** AGENTS mentions `skill_drift`; a JSON test asserts the field when drift is present.
+**Acceptance:** A non-integration test (or workflow-local self-check) proves extraction yields a non-empty body for a dated section and fails closed on a missing version.
