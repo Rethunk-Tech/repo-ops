@@ -31,8 +31,12 @@ clone, a push from another workstation, or a CI push can show zero even when
 GitHub records activity.
 
 Pass `--source=gh` to query authenticated GitHub `PushEvent` activity for each
-GitHub remote instead. GitHub API or auth failures exit non-zero rather than
-reporting zero pushes.
+GitHub remote instead. When a PushEvent omits its `commits` array (common for
+large pushes), collection falls back to the authenticated compare API between
+`before` and `head`. Repos with no `github.com` remote emit a stderr warning
+and are called out in the human summary rather than looking like a true empty
+window. GitHub API or auth failures exit non-zero rather than reporting zero
+pushes.
 
 ### Plan vs apply
 
