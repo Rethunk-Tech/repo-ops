@@ -70,7 +70,7 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
    ```
 
    | Flag | Meaning |
-   |------|---------|
+   | ------ | --------- |
    | `--commit=none` | Default: no git commits (commit afterwards). |
    | `--commit=conventional` | One `chore(deps): …` (or CI-themed) commit per repo via guarded local `git`. |
    | `--commit=agent` | Draft the subject via a pluggable **commit-agent** provider (default: [Cursor SDK](https://cursor.com/docs/sdk/python)), then commit locally. Requires `CURSOR_API_KEY` and the optional cursor extra. |
@@ -79,7 +79,7 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
 
    **Branch / PR mode:** after commits land, pass **`--pr`** (optional **`--pr-base`**, **`--branch-prefix`**) to push a branch and open a PR via `gh` instead of leaving changes on the current branch. Requires authenticated `gh`. See [usage.md — Branch / PR workflow](usage.md#branch--pr-workflow-apply).
 
-   **Commit-agent providers:** default `cursor` when `REPO_OPS_COMMIT_AGENT_PROVIDER` is unset. Additional providers can register via `repo_ops_upgrade.commit_agent_providers.register_commit_agent_provider`. **Guardrails:** skips repos that were dirty at start unless `--allow-dirty`; never stages `.env`, credential-like paths, or key material; fails closed when verify failed (unless `--commit-on-fail`). Install Cursor support: `uv pip install 'repo-ops-upgrade[commit-agent-cursor]'` (alias: `[agent]`).
+  **Commit-agent providers:** default `cursor` when `REPO_OPS_COMMIT_AGENT_PROVIDER` is unset. Set `REPO_OPS_COMMIT_AGENT_MODEL` (or `commit_agent_model` in config) to choose the Cursor SDK model; it defaults to `composer-2.5` when unset. Additional providers can register via `repo_ops_upgrade.commit_agent_providers.register_commit_agent_provider`. **Guardrails:** skips repos that were dirty at start unless `--allow-dirty`; never stages `.env`, credential-like paths, or key material; fails closed when verify failed (unless `--commit-on-fail`). Install Cursor support: `uv pip install 'repo-ops-upgrade[commit-agent-cursor]'` (alias: `[agent]`).
 
    **IDE agents:** commit without pushing from Cursor/Claude; use `--commit=conventional` for headless bulk apply after `apply` logs are green.
 

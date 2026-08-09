@@ -77,6 +77,7 @@ def _install_fake_cursor_sdk(
 def test_draft_commit_message_success_via_wrapper(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.delenv("REPO_OPS_COMMIT_AGENT_MODEL", raising=False)
     result = types.SimpleNamespace(status="ok", result="`feat(x): bump deps`\n")
     captured: dict = {}
     _install_fake_cursor_sdk(monkeypatch, result, captured)
@@ -89,6 +90,37 @@ def test_draft_commit_message_success_via_wrapper(
     assert "and 5 more" in captured["prompt"]
     assert captured["options"].api_key == "test-key"
     assert captured["options"].model == "composer-2.5"
+
+
+def test_draft_commit_message_uses_configured_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("REPO_OPS_COMMIT_AGENT_MODEL", "gpt-5.6-luna-xhigh")
+    result = types.SimpleNamespace(status="ok", result="fix: update deps")
+    captured: dict = {}
+    _install_fake_cursor_sdk(monkeypatch, result, captured)
+
+    CursorCommitAgentProvider().draft_commit_message(
+        _bundle(tmp_path), ["a.txt"], api_key="test-key"
+    )
+
+    assert captured["options"].model == "gpt-5.6-luna-xhigh"
+
+
+def test_draft_commit_message_rejects_empty_configured_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("REPO_OPS_COMMIT_AGENT_MODEL", "  ")
+    result = types.SimpleNamespace(status="ok", result="fix: update deps")
+    captured: dict = {}
+    _install_fake_cursor_sdk(monkeypatch, result, captured)
+
+    with pytest.raises(
+        RuntimeError, match="REPO_OPS_COMMIT_AGENT_MODEL must be a non-empty"
+    ):
+        CursorCommitAgentProvider().draft_commit_message(
+            _bundle(tmp_path), ["a.txt"], api_key="test-key"
+        )
 
 
 def test_draft_commit_message_non_string_result_is_stringified(
