@@ -37,15 +37,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           notes_file="${RUNNER_TEMP}/release-notes.md"
-          awk -v version="$version" '
-            $0 ~ "^## \\[" version "\\]" { found=1; next }
-            found && /^## \[/ { exit }
-            found { print }
-          ' CHANGELOG.md > "$notes_file"
-          if [[ ! -s "$notes_file" ]] || [[ -z "$(tr -d '[:space:]' < "$notes_file")" ]]; then
-            echo "::error::No non-empty CHANGELOG.md section found for ${GITHUB_REF_NAME}"
-            exit 1
-          fi
+          scripts/extract_changelog_section.sh "$version" CHANGELOG.md "$notes_file"
           echo "RELEASE_NOTES_FILE=$notes_file" >> "$GITHUB_ENV"
       - name: Upload release assets
         uses: softprops/action-gh-release@v3
