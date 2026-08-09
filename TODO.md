@@ -12,7 +12,7 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 **Refs:** `.github/workflows/release.yml` (`publish-pypi` job, `environment: pypi`); `AGENTS.md` § Cutting a release; `docs/installation.md` (“After PyPI publish”).
 
-**Traps:** Failure mode is `invalid-publisher` / “valid token, but no corresponding publisher” for `sub: repo:Rethunk-Tech/repo-ops:environment:pypi`. That is a **PyPI pending-publisher / claim mismatch**, not a CI defect — do not re-diagnose the workflow. Issue body still says “latest: v0.18.0”; bump the note when touching the issue.
+**Traps:** Failure mode is `invalid-publisher` / “valid token, but no corresponding publisher” for `sub: repo:Rethunk-Tech/repo-ops:environment:pypi`. That is a **PyPI pending-publisher / claim mismatch**, not a CI defect — do not re-diagnose the workflow. Issue title/body cite the current release line (`v0.22.1` as of Wave 20); bump that note when the release line moves.
 
 **Acceptance:** A `v*` tag run publishes to PyPI; `pip install repo-ops` / `uv tool install repo-ops` from PyPI matches the GitHub Release version; [#124](https://github.com/Rethunk-Tech/repo-ops/issues/124) closed with a verified publish log.
 
@@ -35,16 +35,6 @@ Child Rust workspaces are suppressed only via explicit root `[workspace].members
 **Traps:** Empty/`members` omitted ≠ “no children”; path dependencies under the workspace root are members even without a glob. `default-members` affects *which* packages cargo operates on by default, not membership — collapsing discovery must not confuse the two. Prefer matching `cargo metadata --no-deps` over re-implementing glob rules if feasible.
 
 **Acceptance:** Virtual and non-virtual workspaces with `exclude`, globs, and implicit path-dep members surface a single rust workspace at the root; no duplicate member rows in `plan --json` for those layouts.
-
-### 1.4 Close stale issue #155 (pyrefly verify gate)
-
-Verify already recognizes `pyrefly` in target-repo dev deps (`uv run pyrefly check .`). Issue [#155](https://github.com/Rethunk-Tech/repo-ops/issues/155) is still **OPEN** with no comments despite the 0.20.4 fix.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/verify.py` (mypy then pyrefly branches); `CHANGELOG.md` 0.20.4.
-
-**Traps:** Closing is hygiene only — do not re-implement. Confirm the shipped branch matches the issue’s suggested detection surface (uv / hatch / poetry dev deps) before closing.
-
-**Acceptance:** [#155](https://github.com/Rethunk-Tech/repo-ops/issues/155) closed with a pointer to the releasing commit/version; no code change required if coverage already matches.
 
 ---
 
@@ -84,21 +74,11 @@ Deno reports `behind_latest` and honors `--latest` / `REPO_OPS_DENO_UPDATE_LATES
 
 ## Round 4 — Hygiene carry-forward
 
-### 4.2 Refresh issue #124 status text
-
-Issue title/body still frame “latest: v0.18.0” while the tree has moved through 0.22.x. Operator hold remains valid; the status note is stale.
-
-**Refs:** [#124](https://github.com/Rethunk-Tech/repo-ops/issues/124); GitHub Releases / tags.
-
-**Traps:** Do not treat a status edit as enabling PyPI. Keep the “intentional hold / not a CI bug” framing.
-
-**Acceptance:** Issue title/body cite the current release line and restate the OIDC publisher gap without implying active chase.
-
 ### 4.3 Dependabot supersession for legacy `bun.lockb`
 
-Inventory best-effort-parses binary `bun.lockb` via `bun` dump; dependabot high-confidence resolution only walks text `bun.lock`. Repos still on `lockb` keep low-confidence Dependabot closes.
+Inventory best-effort-parses binary `bun.lockb` via `bun` dump; dependabot high-confidence resolution only walks text `bun.lock`. Scaffold now emits `package-ecosystem: bun` for `bun.lock` / `bun.lockb`, but `--close` supersession still cannot high-confidence-resolve lockb contents. Repos still on `lockb` keep low-confidence Dependabot closes.
 
-**Refs:** `packages/repo-ops-inventory/src/repo_ops_inventory/counting.py` (`_versions_bun_lockb`); `packages/repo-ops-dependabot/src/repo_ops_dependabot/dependabot.py` (`bun.lock` only).
+**Refs:** `packages/repo-ops-inventory/src/repo_ops_inventory/counting.py` (`_versions_bun_lockb`); `packages/repo-ops-dependabot/src/repo_ops_dependabot/dependabot.py` (scaffold `_BUN_INDICATORS`; supersession still text `bun.lock`).
 
 **Traps:** Invoking `bun` on lockb needs the binary on PATH and a timeout; cache or skip cleanly when bun is missing. Prefer encouraging text `bun.lock` migration over forever supporting lockb if fleet has moved on.
 
@@ -166,16 +146,6 @@ Actions/container already have `--actions-refresh-sha` / `--container-refresh-sh
 
 ## Round 8 — Fleet DX / cross-subcommand gaps
 
-### 8.3 `pushed` remote/API fallback (local reflog blind spot)
-
-`repo-ops pushed` only counts this-machine `refs/remotes/*` reflog “update by push” entries. Fresh clones, CI runners, and pushes from another workstation report zero even when GitHub has activity.
-
-**Refs:** `packages/repo-ops-pushed/src/repo_ops_pushed/audit.py` (module docstring, `PUSH_RE`); `docs/usage.md` pushed blurb.
-
-**Traps:** Document the limitation even if code stays local-only. Any `--source=gh` path needs authenticated `gh`, rate-limit discipline, and must not invent pushes the API cannot attribute. Reflog expiry under gc is the same class of false zero.
-
-**Acceptance:** Usage calls out the machine-local limitation prominently; optional remote source (or an explicit “unsupported on fresh clones” exit/warning) so operators do not trust empty tables as “no pushes”.
-
 ### 8.4 Actions org-policy block/warn mode
 
 `--actions-org-policy` records `status="policy"` rows but “never blocks pin bumps”. Unlike `--actions-lint-level block|warn|off`, policy violations cannot stop apply from rewriting disallowed actions.
@@ -185,16 +155,6 @@ Actions/container already have `--actions-refresh-sha` / `--container-refresh-sh
 **Traps:** Mirror the lint-level pattern rather than a one-off boolean. Default must stay report-only for back-compat. Policy fetch failures stay non-fatal (already best-effort).
 
 **Acceptance:** A documented level (`block`/`warn`/`report`) can skip or warn on violating pin rewrites; JSON distinguishes policy-report vs policy-blocked; default remains today’s report-only behaviour.
-
-### 8.5 Dependabot `--scaffold` ecosystem gaps
-
-Scaffold emits coarse `pip` for any Python indicator, `npm` for any Node lock (including bun), and omits `deno` / `pre-commit` entirely — generated configs under-serve modern fleet layouts.
-
-**Refs:** `packages/repo-ops-dependabot/src/repo_ops_dependabot/dependabot.py` (`detect_ecosystems`, `_NODE_INDICATORS`, `_PY_INDICATORS`); Dependabot docs for valid `package-ecosystem` values; distinct from supersession precision (4.3; poetry/pdm/pipenv high-confidence shipped Wave 18).
-
-**Traps:** Only emit ecosystems Dependabot actually supports — do not invent fake ecosystem strings. Bun may still map to `npm` upstream; document that. Keep prune-by-regeneration behaviour (`--write` replaces the file).
-
-**Acceptance:** Scaffold detects deno and pre-commit where indicators exist; Python/manager notes in docs list scaffold coverage vs supersession coverage separately; dry-run output matches what `--write` would emit.
 
 ## Round 9 — Wave 17 follow-ons
 
@@ -210,28 +170,14 @@ Scaffold emits coarse `pip` for any Python indicator, `npm` for any Node lock (i
 
 ---
 
-## Round 11 — Wave 19 audit carry-forwards
+## Round 20 — Wave 20 follow-ons
 
-### 11.1 Doctor `probe_skill_drift` dangling-symlink blind spot
+### 20.1 `pushed --source=gh` remote attribution
 
-`install-skill --check` now routes symlinks (including dangling) through digest/drift checks. Doctor still gates on `path.exists()` before probing, so a dangling skill symlink is skipped rather than reported in `skill_drift`.
+Usage now documents that `pushed` is machine-local reflog only. Operators on fresh clones / CI still need an authenticated optional remote source (or a hard fail/warn when no local reflog evidence exists) rather than a quiet empty table.
 
-**Refs:** `packages/repo-ops-doctor/src/repo_ops_doctor/doctor.py` (`probe_skill_drift`); contrast `packages/repo-ops/src/repo_ops/install_skill.py` (`check_installed_skill` / `--check` path).
+**Refs:** `packages/repo-ops-pushed/src/repo_ops_pushed/audit.py`; `docs/usage.md` § `pushed` — machine-local reflog.
 
-**Acceptance:** Doctor reports dangling or broken skill symlinks as drift (human warn + JSON `skill_drift`) with the same semantics as `install-skill --check`.
+**Traps:** Needs authenticated `gh`, rate-limit discipline, and must not invent pushes the API cannot attribute. Reflog expiry under gc is the same class of false zero. Default must stay local-only for back-compat.
 
-### 11.2 `pushed` CLI integration test for exclude human output
-
-Exclude filtering is covered at `collect_results` unit level; there is no `main([... --exclude ...])` capsys assertion for the `Excluded repos:` line.
-
-**Refs:** `tests/test_pushed.py` (`test_collect_results_excludes_repositories`); `packages/repo-ops-pushed/src/repo_ops_pushed/audit.py` human exclude footer.
-
-**Acceptance:** A focused CLI test asserts exclude patterns skip repos and print the excluded count on stderr/stdout as implemented.
-
-### 11.3 Fixture test for release CHANGELOG notes extraction
-
-Release notes awk now matches dated Keep a Changelog headings, but only validates on the next `v*` tag push. A fixture CHANGELOG + shell/Python extraction check would catch heading-format regressions pre-tag.
-
-**Refs:** `.github/workflows/release.yml` Prepare release notes step; `CHANGELOG.md` `## [X.Y.Z] - <date>` form.
-
-**Acceptance:** A non-integration test (or workflow-local self-check) proves extraction yields a non-empty body for a dated section and fails closed on a missing version.
+**Acceptance:** Opt-in remote source (e.g. `--source=gh`) or an explicit unsupported/empty-window warning path so operators cannot mistake “0” for “no pushes on GitHub”.
