@@ -8,6 +8,7 @@ import pytest
 from repo_ops import install_skill
 from repo_ops.install_skill import (
     bundled_skill_dir,
+    check_installed_skill,
     main,
     rewrite_install_links,
     validate_dest,
@@ -80,6 +81,24 @@ def test_install_skill_check_matches_rewritten_install(tmp_path: Path) -> None:
     dest = tmp_path / "repo-ops"
     assert main(["--dest", str(dest)]) == 0
     assert main(["--dest", str(dest), "--check"]) == 0
+
+
+def test_install_skill_check_matches_symlinked_install(tmp_path: Path) -> None:
+    installed = tmp_path / "installed" / "repo-ops"
+    link = tmp_path / "linked" / "repo-ops"
+    assert main(["--dest", str(installed)]) == 0
+    link.parent.mkdir()
+    link.symlink_to(installed, target_is_directory=True)
+
+    assert check_installed_skill(bundled_skill_dir(), link)
+    assert main(["--dest", str(link), "--check"]) == 0
+
+
+def test_install_skill_check_reports_broken_symlink(tmp_path: Path) -> None:
+    dest = tmp_path / "repo-ops"
+    dest.symlink_to(tmp_path / "missing", target_is_directory=True)
+
+    assert not check_installed_skill(bundled_skill_dir(), dest)
 
 
 def test_install_skill_check_reports_drift_without_writing(

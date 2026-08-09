@@ -80,13 +80,12 @@ def _skill_digest(root: Path) -> str:
 
 def check_installed_skill(src: Path, dest: Path) -> bool:
     """Return whether an installed skill matches the bundled skill."""
+    if dest.is_symlink():
+        resolved = dest.resolve()
+        return resolved.is_dir() and _skill_digest(src) == _skill_digest(resolved)
     if not dest.exists():
         return True
-    return (
-        dest.is_dir()
-        and not dest.is_symlink()
-        and _skill_digest(src) == _skill_digest(dest)
-    )
+    return dest.is_dir() and _skill_digest(src) == _skill_digest(dest)
 
 
 def _rewrite_markdown_links(dest: Path) -> None:
