@@ -38,7 +38,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           notes_file="${RUNNER_TEMP}/release-notes.md"
           awk -v version="$version" '
-            $0 == "## [" version "]" { found=1; next }
+            $0 ~ "^## \\[" version "\\]" { found=1; next }
             found && /^## \[/ { exit }
             found { print }
           ' CHANGELOG.md > "$notes_file"
