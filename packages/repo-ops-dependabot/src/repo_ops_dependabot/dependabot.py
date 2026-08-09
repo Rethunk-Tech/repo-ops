@@ -1149,8 +1149,8 @@ exit codes:
   1  unexpected error (gh unavailable, etc.)
 
 precision:
-  High-confidence: lockfile parser (npm/yarn/pnpm/bun/uv.lock) or
-  go.mod/Cargo.lock.
+  High-confidence: lockfile parser (npm/yarn/pnpm/bun/uv.lock/poetry.lock/
+  pdm.lock/Pipfile.lock) or go.mod/Cargo.lock.
   Low-confidence: text-search fallback.  Low-confidence matches are NEVER
   auto-closed regardless of --close.
 
