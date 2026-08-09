@@ -19,6 +19,7 @@ from repo_ops_audit.audit import (
     _audit_node,
     _audit_py_uv,
     _audit_rust,
+    _deno_import_map_paths,
     _detect_workspaces,
     _extract_remediations_cargo_json,
     _extract_remediations_npm_json,
@@ -736,6 +737,15 @@ def test_audit_deno_runs_native_audit_and_normalizes_text() -> None:
     assert result.counts.high == 1
 
 
+def test_deno_import_map_escape_is_ignored(tmp_path) -> None:
+    outside = tmp_path.parent / "outside-import-map.json"
+    outside.write_text("outside", encoding="utf-8")
+    (tmp_path / "deno.json").write_text(
+        '{"importMap":"../outside-import-map.json"}', encoding="utf-8"
+    )
+    assert outside not in _deno_import_map_paths(tmp_path)
+
+
 def test_plan_deno_fix_restores_lock_import_map_and_manifest(tmp_path) -> None:
     lock = tmp_path / "deno.lock"
     import_map = tmp_path / "imports.json"
@@ -765,14 +775,17 @@ def test_apply_deno_audit_restores_files_when_verification_finds_vulns(
 ) -> None:
     lock = tmp_path / "deno.lock"
     import_map = tmp_path / "import_map.json"
+    config = tmp_path / "deno.json"
     lock.write_text("original-lock", encoding="utf-8")
     import_map.write_text("original-imports", encoding="utf-8")
+    config.write_text('{"importMap":"./import_map.json"}', encoding="utf-8")
     output = "Found 1 vulnerability\nSeverity: 0 low, 0 moderate, 1 high, 0 critical\n"
 
     def fake_run(cmd, cwd, **_kwargs):
         if cmd == ["deno", "audit", "--fix"]:
             lock.write_text("changed-lock", encoding="utf-8")
             import_map.write_text("changed-imports", encoding="utf-8")
+            config.write_text('{"importMap":"./other.json"}', encoding="utf-8")
             return 0, "", ""
         assert cmd == ["deno", "audit", "--json"]
         return 1, output, ""
@@ -785,6 +798,7 @@ def test_apply_deno_audit_restores_files_when_verification_finds_vulns(
     assert outcome.status == "fail"
     assert lock.read_text(encoding="utf-8") == "original-lock"
     assert import_map.read_text(encoding="utf-8") == "original-imports"
+    assert config.read_text(encoding="utf-8") == '{"importMap":"./import_map.json"}'
 
 
 def test_apply_remediations_dispatches_deno_native_fix(tmp_path) -> None:
