@@ -157,6 +157,30 @@ class RemediationItem:
 
 
 @dataclass
+class FindingItem:
+    """A single auditor finding, including findings without a safe fix."""
+
+    id: str
+    severity: str | None
+    package: str
+    ecosystem: str
+    workspace: str
+    fixed: bool = False
+    safe_version: str | None = None
+
+    def as_dict(self) -> dict[str, str | bool | None]:
+        return {
+            "id": self.id,
+            "severity": self.severity,
+            "package": self.package,
+            "ecosystem": self.ecosystem,
+            "workspace": self.workspace,
+            "fixed": self.fixed,
+            "safe_version": self.safe_version,
+        }
+
+
+@dataclass
 class ApplyOutcome:
     """Result of a single workspace apply in ``--fix`` mode."""
 
@@ -185,6 +209,7 @@ class WorkspaceResult:
     counts: VulnCount = field(default_factory=VulnCount)
     error: str = ""
     remediations: list[RemediationItem] = field(default_factory=list)
+    findings: list[FindingItem] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +371,7 @@ def _audit_go(ws: str) -> WorkspaceResult:
     if not parse_ok and rc != 0:
         # Fallback: non-zero exit with unparseable output → 1 unknown finding
         counts.unknown += 1
+        findings.append({"osv": "govulncheck/error", "trace": []})
 
     if counts.total_with_unknown == 0 and rc != 0:
         return WorkspaceResult(
@@ -359,6 +385,7 @@ def _audit_go(ws: str) -> WorkspaceResult:
     has_findings = counts.total_with_unknown > 0
     status = "vulns" if has_findings else "ok"
     remediations = _extract_remediations_govulncheck_json(findings, ws)
+    finding_items = _extract_findings_govulncheck_json(findings, ws)
     return WorkspaceResult(
         label=label,
         path=ws,
@@ -367,6 +394,7 @@ def _audit_go(ws: str) -> WorkspaceResult:
         status=status,
         counts=counts,
         remediations=remediations,
+        findings=finding_items,
     )
 
 
@@ -442,11 +470,13 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
         # stay empty in that path (only the JSON path is actionable for --fix).
         _json_ok = False
         bun_remediations: list[RemediationItem] = []
+        bun_findings: list[FindingItem] = []
         if stdout.strip():
             try:
                 _bun_data = json.loads(stdout)
                 counts = _parse_npm_audit_json(_bun_data)
                 bun_remediations = _extract_remediations_npm_json(_bun_data, ws)
+                bun_findings = _extract_findings_npm_json(_bun_data, ws)
                 _json_ok = True
             except (json.JSONDecodeError, ValueError, KeyError, TypeError):
                 pass
@@ -470,14 +500,17 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
             status=status,
             counts=counts,
             remediations=bun_remediations,
+            findings=bun_findings,
         )
 
     # npm / pnpm / yarn all emit JSON
     remediations: list[RemediationItem] = []
+    findings: list[FindingItem] = []
     try:
         data = json.loads(stdout)
         counts = _parse_npm_audit_json(data)
         remediations = _extract_remediations_npm_json(data, ws)
+        findings = _extract_findings_npm_json(data, ws)
     except (json.JSONDecodeError, ValueError, KeyError):
         if rc != 0:
             return WorkspaceResult(
@@ -501,6 +534,7 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
         status=status,
         counts=counts,
         remediations=remediations,
+        findings=findings,
     )
 
 
@@ -909,6 +943,205 @@ def _extract_remediations_govulncheck_json(
     ]
 
 
+def _normalize_finding_severity(value: Any, *, default: str = "moderate") -> str:
+    """Normalize an auditor severity into the canonical audit buckets."""
+    severity = str(value or default).lower()
+    if severity == "critical":
+        return "critical"
+    if severity == "high":
+        return "high"
+    if severity in ("moderate", "medium"):
+        return "moderate"
+    return "low"
+
+
+def _extract_findings_npm_json(data: dict[str, Any], ws: str) -> list[FindingItem]:
+    """Extract per-advisory findings from npm-compatible audit JSON."""
+    findings: list[FindingItem] = []
+    top_vulns = data.get("vulnerabilities", {})
+    if isinstance(top_vulns, dict):
+        for pkg_name, advisory in top_vulns.items():
+            if not isinstance(advisory, dict):
+                continue
+            package = str(advisory.get("name") or pkg_name).strip()
+            fix = advisory.get("fixAvailable")
+            safe_version = (
+                str(fix.get("version") or "").strip() if isinstance(fix, dict) else ""
+            )
+            via = advisory.get("via", [])
+            advisory_entries = [entry for entry in via if isinstance(entry, dict)]
+            if not advisory_entries:
+                advisory_entries = [advisory]
+            for index, entry in enumerate(advisory_entries):
+                finding_id = str(
+                    entry.get("source")
+                    or entry.get("url")
+                    or entry.get("id")
+                    or f"{package}:{index}"
+                )
+                findings.append(
+                    FindingItem(
+                        id=finding_id,
+                        severity=_normalize_finding_severity(
+                            entry.get("severity", advisory.get("severity"))
+                        ),
+                        package=package,
+                        ecosystem="node",
+                        workspace=ws,
+                        fixed=bool(safe_version),
+                        safe_version=safe_version or None,
+                    )
+                )
+        if findings:
+            return findings
+
+    advisories = data.get("advisories", {})
+    if isinstance(advisories, dict):
+        for advisory_id, advisory in advisories.items():
+            if not isinstance(advisory, dict):
+                continue
+            package = str(advisory.get("module_name") or "").strip()
+            if not package:
+                continue
+            patched = str(advisory.get("patched_versions") or "").strip()
+            fixed = bool(patched and patched != "<none>")
+            findings.append(
+                FindingItem(
+                    id=str(advisory.get("id") or advisory_id),
+                    severity=_normalize_finding_severity(advisory.get("severity")),
+                    package=package,
+                    ecosystem="node",
+                    workspace=ws,
+                    fixed=fixed,
+                    safe_version=patched if fixed else None,
+                )
+            )
+    return findings
+
+
+def _extract_findings_pip_audit(data: list[Any], ws: str) -> list[FindingItem]:
+    """Extract one finding for each pip-audit vulnerability entry."""
+    safe_versions = {
+        item.package: item.safe_version
+        for item in _extract_remediations_pip_audit(data, ws)
+    }
+    findings: list[FindingItem] = []
+    for package_data in data:
+        if not isinstance(package_data, dict):
+            continue
+        package = str(package_data.get("name") or "").strip()
+        if not package:
+            continue
+        for index, vulnerability in enumerate(package_data.get("vulns", [])):
+            if not isinstance(vulnerability, dict):
+                continue
+            aliases = vulnerability.get("aliases", [])
+            alias = next(
+                (str(value) for value in aliases if str(value).startswith("CVE-")),
+                None,
+            )
+            finding_id = str(vulnerability.get("id") or alias or f"{package}:{index}")
+            fixes = [
+                str(value).strip()
+                for value in vulnerability.get("fix_versions", [])
+                if str(value).strip()
+            ]
+            is_cve = alias is not None
+            severity = (
+                "critical"
+                if is_cve and not fixes
+                else ("high" if is_cve else "moderate")
+            )
+            safe_version = safe_versions.get(package)
+            findings.append(
+                FindingItem(
+                    id=finding_id,
+                    severity=severity,
+                    package=package,
+                    ecosystem="py-uv",
+                    workspace=ws,
+                    fixed=bool(fixes),
+                    safe_version=safe_version,
+                )
+            )
+    return findings
+
+
+def _extract_findings_cargo_json(data: dict[str, Any], ws: str) -> list[FindingItem]:
+    """Extract one finding for each cargo-audit vulnerability entry."""
+    findings: list[FindingItem] = []
+    vuln_section = data.get("vulnerabilities", {})
+    if not isinstance(vuln_section, dict):
+        return findings
+    for index, vulnerability in enumerate(vuln_section.get("list", [])):
+        if not isinstance(vulnerability, dict):
+            continue
+        advisory = vulnerability.get("advisory", {})
+        package_data = vulnerability.get("package", {})
+        if not isinstance(advisory, dict):
+            advisory = {}
+        if not isinstance(package_data, dict):
+            package_data = {}
+        package = str(advisory.get("package") or package_data.get("name") or "").strip()
+        if not package:
+            continue
+        score = _cvss_to_score(str(advisory.get("cvss") or ""))
+        if score >= 9.0:
+            severity = "critical"
+        elif score >= 7.0:
+            severity = "high"
+        elif score >= 4.0:
+            severity = "moderate"
+        else:
+            severity = "low"
+        patched = advisory.get("patched") or {}
+        requirements = (
+            patched.get("requirements", []) if isinstance(patched, dict) else []
+        )
+        safe_version = ", ".join(str(value) for value in requirements if value)
+        findings.append(
+            FindingItem(
+                id=str(advisory.get("id") or f"{package}:{index}"),
+                severity=severity,
+                package=package,
+                ecosystem="rust",
+                workspace=ws,
+                fixed=bool(safe_version),
+                safe_version=safe_version or None,
+            )
+        )
+    return findings
+
+
+def _extract_findings_govulncheck_json(
+    findings: list[dict[str, Any]], ws: str
+) -> list[FindingItem]:
+    """Extract unknown-severity findings from govulncheck JSON objects."""
+    items: list[FindingItem] = []
+    for index, finding in enumerate(findings):
+        if not isinstance(finding, dict):
+            continue
+        trace = finding.get("trace") or []
+        first_trace = trace[0] if trace and isinstance(trace[0], dict) else {}
+        package = str(first_trace.get("module") or "").strip()
+        finding_id = str(
+            finding.get("osv") or finding.get("id") or f"govulncheck:{index}"
+        )
+        safe_version = str(finding.get("fixed_version") or "").strip()
+        items.append(
+            FindingItem(
+                id=finding_id,
+                severity=None,
+                package=package or "go",
+                ecosystem="go",
+                workspace=ws,
+                fixed=bool(safe_version),
+                safe_version=safe_version or None,
+            )
+        )
+    return items
+
+
 def _probe_pip_audit(ws: str) -> bool:
     """Return True when pip-audit is available via ``uv run pip-audit --version``."""
     rc, stdout, _stderr = _run(["uv", "run", "pip-audit", "--version"], ws)
@@ -948,6 +1181,7 @@ def _audit_py_uv(ws: str) -> WorkspaceResult:
     #   CVE alias present, fix_versions known → high
     #   no CVE alias                        → moderate
     remediations: list[RemediationItem] = []
+    findings: list[FindingItem] = []
     try:
         data = json.loads(stdout)
         # pip-audit JSON: list of {"name": ..., "version": ..., "vulns": [...]}
@@ -963,6 +1197,7 @@ def _audit_py_uv(ws: str) -> WorkspaceResult:
                 else:
                     counts.moderate += 1
         remediations = _extract_remediations_pip_audit(data, ws)
+        findings = _extract_findings_pip_audit(data, ws)
     except (json.JSONDecodeError, ValueError, KeyError, TypeError):
         if rc != 0:
             return WorkspaceResult(
@@ -983,6 +1218,7 @@ def _audit_py_uv(ws: str) -> WorkspaceResult:
         status=status,
         counts=counts,
         remediations=remediations,
+        findings=findings,
     )
 
 
@@ -1017,6 +1253,7 @@ def _audit_rust(ws: str) -> WorkspaceResult:
     #   score < 4.0 → low
     #   no CVSS vector → moderate (default score 5.0)
     remediations: list[RemediationItem] = []
+    findings: list[FindingItem] = []
     try:
         data = json.loads(stdout)
         # cargo audit --json: {"vulnerabilities": {"list": [...], "count": N, ...}}
@@ -1035,6 +1272,7 @@ def _audit_rust(ws: str) -> WorkspaceResult:
             else:
                 counts.low += 1
         remediations = _extract_remediations_cargo_json(data, ws)
+        findings = _extract_findings_cargo_json(data, ws)
     except (json.JSONDecodeError, ValueError, KeyError, TypeError):
         if rc != 0:
             return WorkspaceResult(
@@ -1055,6 +1293,7 @@ def _audit_rust(ws: str) -> WorkspaceResult:
         status=status,
         counts=counts,
         remediations=remediations,
+        findings=findings,
     )
 
 
@@ -1565,16 +1804,29 @@ _SEV_TO_SARIF_LEVEL: dict[str | None, str] = {
 }
 
 
+def _finding_passes_sarif_threshold(
+    finding: FindingItem, fail_on: str, fail_on_unknown: bool
+) -> bool:
+    if finding.severity is None:
+        return fail_on_unknown
+    if fail_on == "never":
+        return False
+    return _SEV_RANK.get(finding.severity, 4) <= _SEV_RANK.get(fail_on, 4)
+
+
 def build_sarif_report(
     results: list[WorkspaceResult],
     remediations: list[RemediationItem],
+    *,
+    fail_on: str = "high",
+    fail_on_unknown: bool = False,
 ) -> dict[str, Any]:
     """Build a SARIF 2.1.0 document for the audit findings.
 
-    One rule is emitted per unique (advisory-id, ecosystem) pair, where the
-    advisory-id is derived from the package name.  One result is emitted per
-    :class:`RemediationItem`.  Severity is drawn from the worst severity seen
-    in the workspace that produced the finding.
+    One rule is emitted per unique (advisory-id, ecosystem) pair. Findings are
+    limited to the configured failure threshold; unknown findings are included
+    only when ``fail_on_unknown`` is enabled. Remediation metadata is retained
+    for fixed findings, while unfixed findings are marked in result properties.
 
     The SARIF document validates against the official 2.1.0 schema and is
     suitable for upload to GitHub code-scanning via
@@ -1591,62 +1843,119 @@ def build_sarif_report(
     # GitHub's code-scanning ingestion.
     ws_severity: dict[str, str | None] = {r.path: r.counts.worst for r in results}
     ws_label: dict[str, str] = {r.path: r.label for r in results}
+    remediation_by_key = {
+        (item.workspace, item.ecosystem, item.package): item for item in remediations
+    }
 
     rules: list[dict[str, Any]] = []
     sarif_results: list[dict[str, Any]] = []
     seen_rules: set[str] = set()
 
+    findings_to_emit: list[FindingItem] = []
+    represented_packages: set[tuple[str, str, str]] = set()
+    for result in results:
+        for finding in result.findings:
+            key = (finding.workspace, finding.ecosystem, finding.package)
+            remediation = remediation_by_key.get(key)
+            safe_version = finding.safe_version or (
+                remediation.safe_version if remediation else None
+            )
+            normalized = FindingItem(
+                id=finding.id,
+                severity=finding.severity,
+                package=finding.package,
+                ecosystem=finding.ecosystem,
+                workspace=finding.workspace,
+                fixed=finding.fixed or remediation is not None,
+                safe_version=safe_version,
+            )
+            represented_packages.add(key)
+            if _finding_passes_sarif_threshold(normalized, fail_on, fail_on_unknown):
+                findings_to_emit.append(normalized)
+
+    # Preserve compatibility for callers that only provide remediation rows.
+    # Auditors now populate findings, but synthetic fixed findings keep the
+    # public builder useful for older integrations and direct callers.
     for item in remediations:
-        rule_id = f"audit/{item.ecosystem}/{item.package}"
+        key = (item.workspace, item.ecosystem, item.package)
+        if key in represented_packages:
+            continue
+        synthetic = FindingItem(
+            id=item.package,
+            severity=ws_severity.get(item.workspace),
+            package=item.package,
+            ecosystem=item.ecosystem,
+            workspace=item.workspace,
+            fixed=True,
+            safe_version=item.safe_version,
+        )
+        if _finding_passes_sarif_threshold(synthetic, fail_on, fail_on_unknown):
+            findings_to_emit.append(synthetic)
+
+    for finding in findings_to_emit:
+        rule_id = f"audit/{finding.ecosystem}/{finding.id}"
         if rule_id not in seen_rules:
             seen_rules.add(rule_id)
+            rule_properties: dict[str, Any] = {"ecosystem": finding.ecosystem}
+            if finding.safe_version:
+                rule_properties["fix_version"] = finding.safe_version
             rules.append(
                 {
                     "id": rule_id,
-                    "name": item.package,
+                    "name": finding.package,
                     "shortDescription": {
                         "text": (
-                            f"Vulnerable {item.ecosystem} dependency: {item.package}"
+                            f"Vulnerable {finding.ecosystem} dependency: "
+                            f"{finding.package}"
                         )
                     },
                     "helpUri": "",
-                    "properties": {
-                        "ecosystem": item.ecosystem,
-                        "fix_version": item.safe_version,
-                    },
+                    "properties": rule_properties,
                 }
             )
 
-        severity = ws_severity.get(item.workspace)
-        level = _SEV_TO_SARIF_LEVEL.get(severity, "warning")
+        level = _SEV_TO_SARIF_LEVEL.get(finding.severity, "warning")
         # Repo-relative URI: prefer the pre-computed scan-root-relative label;
         # fall back to a path stripped of any leading slash so an unmatched
         # workspace never emits an absolute host path.
-        rel_uri = ws_label.get(item.workspace) or item.workspace.lstrip("/")
+        rel_uri = ws_label.get(finding.workspace) or finding.workspace.lstrip("/")
         rel_uri = rel_uri.replace("\\", "/")
-        sarif_results.append(
-            {
-                "ruleId": rule_id,
-                "level": level,
-                "message": {
-                    "text": (
-                        f"{item.package} has a known vulnerability in "
-                        f"{item.ecosystem} workspace '{item.workspace}'; "
-                        f"safe version: {item.safe_version}"
+        result: dict[str, Any] = {
+            "ruleId": rule_id,
+            "level": level,
+            "message": {
+                "text": (
+                    f"{finding.package} has a vulnerability in "
+                    f"{finding.ecosystem} workspace '{finding.workspace}'; "
+                    + (
+                        f"safe version: {finding.safe_version}"
+                        if finding.safe_version
+                        else "no known safe version"
                     )
-                },
-                "locations": [
-                    {
-                        "physicalLocation": {
-                            "artifactLocation": {
-                                "uri": rel_uri,
-                                "uriBaseId": "%SRCROOT%",
-                            }
+                )
+            },
+            "locations": [
+                {
+                    "physicalLocation": {
+                        "artifactLocation": {
+                            "uri": rel_uri,
+                            "uriBaseId": "%SRCROOT%",
                         }
                     }
-                ],
-            }
-        )
+                }
+            ],
+        }
+        if finding.fixed and finding.safe_version:
+            result["fixes"] = [
+                {
+                    "description": {
+                        "text": (f"Upgrade {finding.package} to {finding.safe_version}")
+                    }
+                }
+            ]
+        else:
+            result["properties"] = {"unfixed": True}
+        sarif_results.append(result)
 
     return {
         "$schema": _SARIF_SCHEMA,
@@ -1822,7 +2131,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # --- SARIF output -------------------------------------------------------
     if sarif_out:
-        sarif_doc = build_sarif_report(results, remediations)
+        sarif_doc = build_sarif_report(
+            results,
+            remediations,
+            fail_on=fail_on,
+            fail_on_unknown=fail_on_unknown,
+        )
         Path(sarif_out).write_text(json.dumps(sarif_doc, indent=2), encoding="utf-8")
 
     # --- GitHub step-summary (auto when GITHUB_STEP_SUMMARY env var is set) --
@@ -1851,6 +2165,7 @@ def main(argv: list[str] | None = None) -> int:
                     "error": r.error or None,
                     "counts": r.counts.as_dict(),
                     "worst": r.counts.worst,
+                    "findings": [finding.as_dict() for finding in r.findings],
                 }
                 for r in results
             ],
