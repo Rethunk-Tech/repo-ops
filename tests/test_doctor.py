@@ -41,6 +41,7 @@ def test_probe_all_present_reports_found_with_path_and_version(
     results = probe_all()
 
     assert results  # non-empty static table
+    assert {"pyrefly", "hatch", "pre-commit"} <= {r.name for r in results}
     assert all(r.found for r in results)
     for r in results:
         if r.name == "gofmt":
@@ -132,7 +133,19 @@ def test_json_output_shape(
     assert payload["total_count"] == len(payload["binaries"])
     assert payload["found_count"] == payload["total_count"] - 1
     names = {b["name"] for b in payload["binaries"]}
-    assert {"git", "gh", "uv", "poetry", "npm", "go", "cargo", "cargo-audit"} <= names
+    assert {
+        "git",
+        "gh",
+        "uv",
+        "pyrefly",
+        "hatch",
+        "poetry",
+        "pre-commit",
+        "npm",
+        "go",
+        "cargo",
+        "cargo-audit",
+    } <= names
     poetry_entry = next(b for b in payload["binaries"] if b["name"] == "poetry")
     assert poetry_entry == {
         "name": "poetry",
