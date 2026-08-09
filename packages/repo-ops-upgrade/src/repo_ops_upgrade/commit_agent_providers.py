@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from repo_ops_models import RepoBundle
+
+from repo_ops_core.config import load_global_config, load_repo_config, resolve_setting
 
 COMMIT_AGENT_PROVIDER_ENV = "REPO_OPS_COMMIT_AGENT_PROVIDER"
 DEFAULT_COMMIT_AGENT_PROVIDER = "cursor"
@@ -44,10 +46,23 @@ def known_commit_agent_providers() -> list[str]:
     return sorted(_FACTORIES)
 
 
-def commit_agent_provider_name() -> str:
-    """Resolved provider id from ``REPO_OPS_COMMIT_AGENT_PROVIDER`` or default."""
-    raw = (os.environ.get(COMMIT_AGENT_PROVIDER_ENV) or "").strip().lower()
-    return raw or DEFAULT_COMMIT_AGENT_PROVIDER
+def commit_agent_provider_name(repo_path: Path | None = None) -> str:
+    """Resolve the provider id from the settings layer."""
+    raw_provider = resolve_setting(
+        "commit_agent_provider",
+        global_cfg=load_global_config(),
+        repo_cfg=load_repo_config(repo_path) if repo_path is not None else None,
+    )
+    if not isinstance(raw_provider, str):
+        raise RuntimeError(
+            f"{COMMIT_AGENT_PROVIDER_ENV} must be a non-empty provider identifier string"
+        )
+    provider = raw_provider.strip().lower()
+    if not provider:
+        raise RuntimeError(
+            f"{COMMIT_AGENT_PROVIDER_ENV} must be a non-empty provider identifier"
+        )
+    return provider
 
 
 def _ensure_builtin_providers() -> None:
@@ -63,10 +78,14 @@ def _ensure_builtin_providers() -> None:
     _builtins_registered = True
 
 
-def resolve_commit_agent_provider(name: str | None = None) -> CommitAgentProvider:
+def resolve_commit_agent_provider(
+    name: str | None = None,
+    *,
+    repo_path: Path | None = None,
+) -> CommitAgentProvider:
     """Instantiate the configured commit-agent provider."""
     _ensure_builtin_providers()
-    key = (name or commit_agent_provider_name()).strip().lower()
+    key = (name or commit_agent_provider_name(repo_path)).strip().lower()
     factory = _FACTORIES.get(key)
     if factory is None:
         known = ", ".join(known_commit_agent_providers()) or "(none)"
@@ -90,5 +109,8 @@ def draft_message_with_commit_agent(
     provider_name: str | None = None,
 ) -> str:
     """Draft a commit message via the selected commit-agent provider."""
-    provider = resolve_commit_agent_provider(provider_name)
+    provider = resolve_commit_agent_provider(
+        provider_name,
+        repo_path=bundle.git_repo,
+    )
     return provider.draft_commit_message(bundle, files)
