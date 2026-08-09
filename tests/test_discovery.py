@@ -292,6 +292,65 @@ def test_discover_cargo_workspace_members_not_enumerated_standalone(tmp_path: Pa
     assert rust_found[0].path == repo.resolve()
 
 
+def test_discover_cargo_collapses_excluded_and_implicit_path_members(
+    tmp_path: Path,
+):
+    """Cargo metadata must collapse path-dependency members and exclusions."""
+    repo = tmp_path / "com.github" / "Acme" / "cargo-layout"
+    _git_init(repo)
+    (repo / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["crates/app"]\n'
+        'exclude = ["crates/excluded"]\nresolver = "2"\n'
+    )
+
+    app = repo / "crates" / "app"
+    (app / "src").mkdir(parents=True)
+    (app / "Cargo.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\n\n'
+        '[dependencies]\nshared = { path = "../shared" }\n'
+    )
+    (app / "src" / "lib.rs").write_text("")
+
+    shared = repo / "crates" / "shared"
+    (shared / "src").mkdir(parents=True)
+    (shared / "Cargo.toml").write_text(
+        '[package]\nname = "shared"\nversion = "0.1.0"\n'
+    )
+    (shared / "src" / "lib.rs").write_text("")
+
+    excluded = repo / "crates" / "excluded"
+    (excluded / "src").mkdir(parents=True)
+    (excluded / "Cargo.toml").write_text(
+        '[package]\nname = "excluded"\nversion = "0.1.0"\n'
+    )
+    (excluded / "src" / "lib.rs").write_text("")
+
+    found = discover_all([str(tmp_path)], flat=False)
+    rust_found = [ws for ws in found if ws.ecosystem == "rust"]
+
+    assert [ws.path for ws in rust_found] == [repo.resolve()]
+
+
+def test_discover_cargo_missing_binary_falls_back_to_member_globs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Manifest member globs remain usable when Cargo is unavailable."""
+    repo = tmp_path / "com.github" / "Acme" / "cargo-fallback"
+    _git_init(repo)
+    (repo / "Cargo.toml").write_text('[workspace]\nmembers = ["crates/*"]\n')
+    member = repo / "crates" / "util"
+    (member / "src").mkdir(parents=True)
+    (member / "Cargo.toml").write_text('[package]\nname = "util"\nversion = "0.1.0"\n')
+    (member / "src" / "lib.rs").write_text("")
+    monkeypatch.setattr("repo_ops_upgrade.discovery.shutil.which", lambda _: None)
+
+    found = discover_all([str(tmp_path)], flat=False)
+    rust_found = [ws for ws in found if ws.ecosystem == "rust"]
+
+    assert [ws.path for ws in rust_found] == [repo.resolve()]
+
+
 @pytest.mark.parametrize(
     "env_val, param_val, expected",
     [
