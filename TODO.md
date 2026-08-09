@@ -60,16 +60,6 @@ Deno reports `behind_latest` and honors `--latest` / `REPO_OPS_DENO_UPDATE_LATES
 
 **Acceptance:** `--deno-targeted-bump` (and config/env twin) moves still-behind direct deps after the bulk update, reverts on no-advance/install failure, appears in the full-coverage sweep docs beside the other four flags, and is enabled by `--full`.
 
-### 2.2 Dependabot high-confidence supersession for poetry / PDM / pipenv locks
-
-Scaffold treats `poetry.lock` / `pdm.lock` / `Pipfile.lock` as ecosystem indicators, but high-confidence supersession only parses npm/yarn/pnpm/bun/`uv.lock` (plus go.mod / Cargo.lock). Poetry/PDM/pipenv PRs fall through to low-confidence text search and are never auto-closed.
-
-**Refs:** `packages/repo-ops-dependabot/src/repo_ops_dependabot/dependabot.py` (`_resolved_lockfile_versions` / `_lockfile_versions`); parsers in `packages/repo-ops-lockfiles` (`versions_pdm_lock`, `versions_pipenv_lock`; poetry via shared TOML `[[package]]` shape used in SBOM); license scanners already read these locks.
-
-**Traps:** PEP 503 normalize Python names before lookup (uv path already does). Grouped Dependabot PRs must stay “all rows high-confidence” before `--close`. Reuse lockfile parsers — do not scrape lock text.
-
-**Acceptance:** A Dependabot PR whose versions are already in `poetry.lock` / `pdm.lock` / `Pipfile.lock` is high-confidence superseded and closable with `--close`; JSON report marks `low_confidence=false`.
-
 ### 2.3 SBOM / license: enrich SPDX IDs instead of permanent `NOASSERTION`
 
 `repo-ops sbom` always emits license `NOASSERTION` because lock parsers carry no license ids; `repo-ops license` is offline/best-effort and still leaves poetry/PDM/pipenv unknown without a venv, and containers always unknown.
@@ -162,26 +152,6 @@ Deno has plan/apply/verify and remediations, but `audit_workspace` stops at go /
 
 **Acceptance:** `repo-ops audit` discovers Deno workspaces, normalizes severities into the shared count schema, and supports `--fix-plan` / `--fix` with reversible lock edits; usage table lists Deno beside the other ecosystems.
 
-### 6.3 `audit --fix` should run verify gates
-
-`apply_remediations` calls `orchestration.process_workspace(..., do_verify=False)`. CVE remediations can land broken trees with no post-fix gate; operators must remember a separate `apply` pass.
-
-**Refs:** `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`apply_remediations`); `packages/repo-ops-upgrade/src/repo_ops_upgrade/orchestration.py`; `docs/usage.md` § audit `--fix`.
-
-**Traps:** Default-on verify changes bulk-audit timing — keep `--no-verify` escape and honor `[verify] skip`. Dirty-skip / `--allow-dirty` semantics must stay aligned with apply. Do not auto-commit (audit still has no commit path).
-
-**Acceptance:** `audit --fix` runs the same per-manager verify as `apply` by default; failures appear in JSON with verify detail; `--no-verify` restores today’s behaviour.
-
-### 6.4 SARIF must include unfixed findings
-
-`build_sarif_report` emits one SARIF result per `RemediationItem` only. Critical/high findings without a known safe version (pip-audit “no fix”, govulncheck unknowns) vanish from code-scanning uploads while `--fail-on` still fails the CLI.
-
-**Refs:** `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`build_sarif_report`); `docs/usage.md` `--sarif-out`.
-
-**Traps:** Keep repo-relative `artifactLocation.uri` + `%SRCROOT%` mapping. Distinguish fixable vs unfixed via SARIF `fixes` / properties rather than dropping rows. Severity → SARIF `level` must match the normalised worst severity already computed per workspace.
-
-**Acceptance:** SARIF includes all findings at/above `--fail-on` (and unknown when `--fail-on-unknown`); fixable rows still carry remediation metadata; schema still validates for `upload-sarif`.
-
 ---
 
 ## Round 7 — Verify depth and pin-move parity
@@ -216,29 +186,9 @@ Actions/container already have `--actions-refresh-sha` / `--container-refresh-sh
 
 **Acceptance:** Opt-in flags (e.g. `--precommit-refresh-sha`, `--submodule-refresh-sha`) advance those pins when resolvable; docs/AGENTS list them beside the existing refresh flags; without the flags, behaviour stays report-only.
 
-### 7.5 `--commit-umbrella` help vs behaviour
-
-CLI help says umbrella commits are a no-op when `--submodule-order` is unset. Code enables via `REPO_OPS_COMMIT_UMBRELLA=1` whenever `submodule_links` were discovered (children-first *or* `--submodules` scan) — operators can skip the wrong flag combo.
-
-**Refs:** `packages/repo-ops-core/src/repo_ops_core/cli.py` (`--commit-umbrella` help); `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (`need_submodule_scan`, umbrella commit block); `post_apply_commit.commit_umbrella_submodule_pointers`; distinct from stale “deferred to cli.py” comment (3.4).
-
-**Traps:** Fix help **or** tighten gating — pick one. Correct child→parent ordering still needs `--submodule-order=children-first` for apply itself; do not conflate order with commit-umbrella. Related: `--pr` / `--resume` currently iterate `child_outcomes` only (file as follow-on if not folded here).
-
-**Acceptance:** Help matches actual gating; `docs/bulk-maintenance.md` states the required flag combo for child→parent apply + umbrella pointer commits.
-
 ---
 
 ## Round 8 — Fleet DX / cross-subcommand gaps
-
-### 8.1 Apply `--resume` docs vs commit-gated checkpoints
-
-CLI help correctly says `--resume` requires `--commit`. `docs/usage.md` § Apply resume describes checkpointing “after each successful repo” with no commit requirement — operators enable `REPO_OPS_RESUME=1` alone and get zero checkpoints.
-
-**Refs:** `docs/usage.md` § Apply resume; `packages/repo-ops-core/src/repo_ops_core/cli.py` (`--resume` help); `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (checkpoint only when `CommitOutcome.status == "committed"`).
-
-**Traps:** Either checkpoint post-verify success (separate from post-commit SHA) **or** make docs/help identical about the commit gate. Stale checkpoints after manual reset are a related hygiene gap (clear surface) — do not leave “edit `~/.cache/repo-ops/` by hand” as the only recovery.
-
-**Acceptance:** Docs and `--help` agree on when checkpoints are written; a documented way exists to clear a stale checkpoint; resume skip rows state which gate matched.
 
 ### 8.2 `--exclude` / config `exclude` on audit, dependabot, pushed
 
@@ -274,7 +224,7 @@ CLI help correctly says `--resume` requires `--commit`. `docs/usage.md` § Apply
 
 Scaffold emits coarse `pip` for any Python indicator, `npm` for any Node lock (including bun), and omits `deno` / `pre-commit` entirely — generated configs under-serve modern fleet layouts.
 
-**Refs:** `packages/repo-ops-dependabot/src/repo_ops_dependabot/dependabot.py` (`detect_ecosystems`, `_NODE_INDICATORS`, `_PY_INDICATORS`); Dependabot docs for valid `package-ecosystem` values; distinct from supersession precision (2.2 / 4.3).
+**Refs:** `packages/repo-ops-dependabot/src/repo_ops_dependabot/dependabot.py` (`detect_ecosystems`, `_NODE_INDICATORS`, `_PY_INDICATORS`); Dependabot docs for valid `package-ecosystem` values; distinct from supersession precision (4.3; poetry/pdm/pipenv high-confidence shipped Wave 18).
 
 **Traps:** Only emit ecosystems Dependabot actually supports — do not invent fake ecosystem strings. Bun may still map to `npm` upstream; document that. Keep prune-by-regeneration behaviour (`--write` replaces the file).
 
@@ -290,36 +240,52 @@ Post-apply remediation ids (`biome_schema`, `playwright_browsers`, `codegen`, `p
 
 **Acceptance:** Usage has a remediation table (id, ecosystem, trigger, default on/off); `--skip-remediations` help lists all ids; `--only-outdated` appears in usage + AGENTS with accurate human-vs-JSON behaviour.
 
-### 8.7 `install-skill` stale-copy detection
-
-`install-skill` skip-on-exists unless `--force`. After `uv tool` upgrades, Cursor/Claude skill copies keep stale `$FULL_SWEEP_FLAGS` / subcommand lists until someone remembers `--force`.
-
-**Refs:** `packages/repo-ops/src/repo_ops/install_skill.py`; bundled skill `packages/repo-ops/src/repo_ops/skills/repo-ops/`; optional doctor hook in `packages/repo-ops-doctor`.
-
-**Traps:** Compare content hash or bundled package version, not mtime alone (editors bump mtime). `--check` / doctor must stay read-only. Do not auto-overwrite without `--force`.
-
-**Acceptance:** `install-skill --check` (and/or doctor) warns when the installed skill drifts from the bundled copy; `--force` refresh remains the write path; docs mention the upgrade gotcha.
-
 ---
 
 ## Round 9 — Wave 17 follow-ons
 
-### 9.1 Fleet apply: per-checkout config besides commit-agent model
+### 9.1 Fleet apply: per-checkout config besides commit-agent model/provider
 
-`run_upgrade` still loads `load_repo_config(Path.cwd())` once and injects via `apply_config_to_env`. Wave 17 made `commit_agent_model` resolve per `bundle.git_repo` at draft time; other config keys (provider, exclude, jobs, …) still ignore each target checkout’s `config.toml` on multi-root apply.
+`run_upgrade` still loads `load_repo_config(Path.cwd())` once and injects via `apply_config_to_env`. Wave 17/18 made `commit_agent_model` and `commit_agent_provider` resolve per `bundle.git_repo` at draft time; other config keys (exclude, jobs, …) still ignore each target checkout’s `config.toml` on multi-root apply.
 
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (`run_upgrade` config load); `repo_ops_core.config.apply_config_to_env` / `resolve_setting`; `commit_agent_cursor._resolve_agent_model` (per-repo precedent).
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (`run_upgrade` config load); `repo_ops_core.config.apply_config_to_env` / `resolve_setting`; `commit_agent_cursor._resolve_agent_model` / `commit_agent_providers.commit_agent_provider_name` (per-repo precedent).
 
-**Traps:** Do not double-apply env injection mid-flight in a way that leaks one repo’s settings into the next. Prefer resolve-at-use (like commit-agent model) over mutating process-wide env per checkout.
+**Traps:** Do not double-apply env injection mid-flight in a way that leaks one repo’s settings into the next. Prefer resolve-at-use (like commit-agent model/provider) over mutating process-wide env per checkout.
 
 **Acceptance:** Documented settings that are repo-scoped honor each checkout’s config on fleet `plan`/`apply`; global + env + CLI precedence unchanged.
 
-### 9.2 `commit_agent_provider` settings-layer parity
+---
 
-`commit_agent_provider_name()` still reads only `REPO_OPS_COMMIT_AGENT_PROVIDER` from the environment (relying on `apply_config_to_env`), unlike `commit_agent_model` which now calls `resolve_setting` with per-repo config.
+## Round 10 — Wave 18 audit carry-forwards
 
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/commit_agent_providers.py`; Wave 17 `commit_agent_cursor._resolve_agent_model`.
+### 10.1 Dependabot `--help` epilog lists Python locks
 
-**Traps:** Keep the same fail-closed unknown-provider behaviour. Avoid loading config on every provider lookup if hot — cache or resolve once per bundle.
+Module docstring and usage.md name `poetry.lock` / `pdm.lock` / `Pipfile.lock` for high-confidence supersession; `build_dependabot_parser` epilog precision block still lists npm/yarn/pnpm/bun/`uv.lock` only.
 
-**Acceptance:** Provider selection honors env, global config, and per-checkout config with the same precedence story as `commit_agent_model`.
+**Refs:** `packages/repo-ops-dependabot/src/repo_ops_dependabot/dependabot.py` (`build_dependabot_parser` epilog).
+
+**Acceptance:** `--help` epilog matches the high-confidence lock set documented in usage.
+
+### 10.2 Document audit JSON `findings[]`
+
+`audit --json` now includes per-workspace `findings[]` from `FindingItem`; usage.md audit section still documents remediations/summary only.
+
+**Refs:** `docs/usage.md` § audit; `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`FindingItem.as_dict`).
+
+**Acceptance:** Usage names the `findings` key and how it relates to SARIF / `--fail-on`.
+
+### 10.3 `install-skill --check` treats symlink dest as drift
+
+`check_installed_skill` requires `dest.is_dir()` and rejects `dest.is_symlink()`, so a valid symlinked skill dir always reports drift even when target content matches.
+
+**Refs:** `packages/repo-ops/src/repo_ops/install_skill.py` (`check_installed_skill`).
+
+**Acceptance:** Symlinked install dirs whose resolved content matches the bundled copy exit `0`, or docs explicitly disallow symlink installs for `--check`.
+
+### 10.4 AGENTS doctor + JSON test for `skill_drift`
+
+Doctor JSON includes `skill_drift`; AGENTS.md doctor prose/flags omit it. `test_doctor.py` covers the human warning but not the JSON field when drift exists.
+
+**Refs:** `AGENTS.md` doctor section; `packages/repo-ops-doctor`; `tests/test_doctor.py`.
+
+**Acceptance:** AGENTS mentions `skill_drift`; a JSON test asserts the field when drift is present.
