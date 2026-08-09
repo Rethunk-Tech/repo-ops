@@ -9,7 +9,9 @@ from unittest.mock import patch
 import pytest
 from repo_ops_audit.audit import (
     WorkspaceResult,
+    _audit_py_exported,
     _detect_workspaces,
+    _exit_code_for,
     audit_workspace,
     main,
 )
@@ -54,6 +56,31 @@ def test_detects_python_managers_from_lockfiles_and_manifests(tmp_path: Path) ->
         "pip-tools": ("py-pip-tools", "pip-tools"),
         "hatch": ("py-hatch", "hatch"),
     }
+
+
+def test_unknown_python_manifest_is_not_detected(tmp_path: Path) -> None:
+    workspace = tmp_path / "plain"
+    workspace.mkdir()
+    (workspace / "pyproject.toml").write_text(
+        "[project]\nname = 'plain-fixture'\n", encoding="utf-8"
+    )
+
+    assert _detect_workspaces(str(tmp_path)) == []
+
+
+def test_python_export_failure_is_error_and_fails_exit() -> None:
+    with (
+        patch("repo_ops_audit.audit.shutil.which", return_value="/usr/bin/poetry"),
+        patch(
+            "repo_ops_audit.audit._run_python_export",
+            return_value=(1, "", "export failed"),
+        ),
+    ):
+        result = _audit_py_exported("/some/repo", "py-poetry", "poetry")
+
+    assert result.status == "error"
+    assert result.error == "poetry export failed: export failed"
+    assert _exit_code_for([result], "never") == 1
 
 
 @pytest.mark.parametrize(

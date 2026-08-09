@@ -347,7 +347,9 @@ def _detect_workspaces(repo: str) -> list[tuple[str, str, str]]:
                     "pipenv": "py-pipenv",
                     "hatch": "py-hatch",
                     "pip-tools": "py-pip-tools",
-                }.get(manager, "py")
+                }.get(manager)
+                if ecosystem is None:
+                    continue
                 results.append((str(mdir), ecosystem, manager))
         if (
             any(
@@ -362,7 +364,9 @@ def _detect_workspaces(repo: str) -> list[tuple[str, str, str]]:
                 "poetry": "py-poetry",
                 "pdm": "py-pdm",
                 "pipenv": "py-pipenv",
-            }.get(manager, "py")
+            }.get(manager)
+            if ecosystem is None:
+                continue
             results.append((str(mdir), ecosystem, manager))
     return results
 
@@ -1762,11 +1766,13 @@ def _audit_py_exported(ws: str, ecosystem: str, manager: str) -> WorkspaceResult
         )
     try:
         if rc_export != 0:
-            return _python_skip(
-                ws,
-                ecosystem,
-                manager,
-                (
+            return WorkspaceResult(
+                label=ws,
+                path=ws,
+                ecosystem=ecosystem,
+                manager=manager,
+                status="error",
+                error=(
                     f"{manager} export failed: "
                     f"{(export_stderr or export_stdout or 'unknown error').strip()[:160]}"
                 ),
@@ -2059,6 +2065,8 @@ def _exit_code_for(
     When *fail_on_unknown* is True, any workspace with ``counts.unknown > 0``
     also triggers a non-zero exit, regardless of *fail_on*.
     """
+    if any(r.status == "error" for r in results):
+        return 1
     if fail_on == "never" and not fail_on_unknown:
         return 0
     threshold = _SEV_RANK.get(fail_on, 4)
