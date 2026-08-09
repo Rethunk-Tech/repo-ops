@@ -17,8 +17,8 @@ Thank you for contributing. Orientation: [README.md](README.md). Install, usage,
 
 Commit tooling and git routing are fleet canon — see `~/.claude/CLAUDE.md` § Git & GitHub.
 
-Commit tooling and routing are fleet canon — see `~/.claude/CLAUDE.md` § Git & GitHub.
 Repo-local only: run [verification](docs/testing.md) before committing.
+
 - **Push:** `push: "never"` unless the user requests a push.
 
 ## Commit conventions

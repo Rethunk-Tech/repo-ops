@@ -649,7 +649,7 @@ def _run_upgrade_body(
             # Umbrella pointer-bump commits: after all child commits complete,
             # commit dirty gitlinks in umbrella repos for children that received
             # commits this run.  Opt-in via REPO_OPS_COMMIT_UMBRELLA=1 env var.
-            # CLI flag --commit-umbrella wires the env var (deferred to cli.py).
+            # CLI flag --commit-umbrella wires the env var.
             if submodule_links:
                 _, umbrella_exit = post_apply_commit.commit_umbrella_submodule_pointers(
                     submodule_links,
