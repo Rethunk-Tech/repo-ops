@@ -1725,7 +1725,7 @@ def _run_python_export(
             "--output",
             str(requirements_path),
         ],
-        "pipenv": ["pipenv", "lock", "--requirements"],
+        "pipenv": ["pipenv", "requirements"],
         "hatch": ["hatch", "run", "pip", "freeze"],
     }
     command = output_commands.get(manager)
