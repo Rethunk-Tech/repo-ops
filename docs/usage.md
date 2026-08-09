@@ -11,7 +11,7 @@ Subcommands (entry point in `packages/repo-ops`):
 | `inventory` | Read-only dependency footprint |
 | `plan` | Outdated deps, Actions pin drift, remediations (no writes) |
 | `apply` | Apply updates, Actions bumps, remediations, verify gates |
-| `pushed` | Commits pushed to remotes in a time window (reflog) |
+| `pushed` | Commits recorded by this machine's remote-tracking reflogs in a time window |
 | `audit` | Fleet vulnerability sweep per ecosystem (read-only unless `--fix`) |
 | `dependabot` | List/close Dependabot PRs superseded by local manifests |
 | `sbom` | Emit CycloneDX/SPDX SBOM from lockfile dependencies (read-only) |
@@ -22,6 +22,14 @@ Subcommands (entry point in `packages/repo-ops`):
 Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. Discovery flags (`--flat`, `--follow-symlinks`, actions-only repos): [Security and discovery](#security-and-discovery).
 
 `--json` is available on every subcommand except `sbom` (which emits its report via `--format`/`--output` instead). `--json-out PATH` (writes the report atomically to `PATH`; stdout prints only that path) is available on `inventory`, `plan`, `apply`, `pushed`, and `doctor` — for `plan`/`apply`, stdout is otherwise one JSON object. JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno`. `--log-level {debug,info,warning,error}` sets the stdlib root logger level; `--verbose` / `-v` enables subprocess echo and implies `debug` when `--log-level` is absent. `--submodules` adds `submodules[]` to plan/apply JSON; `apply --submodule-order=children-first` processes child git repos before parent umbrellas when `.gitmodules` is present.
+
+### `pushed` — machine-local reflog
+
+`repo-ops pushed` counts only this machine's `refs/remotes/*` reflog entries
+whose message is `update by push`. It does not query GitHub: a fresh clone, a
+push made from another workstation, or a CI push can show zero here even when
+GitHub records activity. Treat the result as local reflog evidence, not a
+GitHub-wide pushed-commit audit.
 
 ### Plan vs apply
 
