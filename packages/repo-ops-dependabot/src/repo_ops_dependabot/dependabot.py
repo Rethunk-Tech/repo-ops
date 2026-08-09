@@ -1020,8 +1020,9 @@ def print_dependabot_report(
 
 # Indicator files that signal a given package-ecosystem is in use
 _NODE_INDICATORS: frozenset[str] = frozenset(
-    {"package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock"}
+    {"package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"}
 )
+_BUN_INDICATORS: frozenset[str] = frozenset({"bun.lock", "bun.lockb"})
 _DENO_INDICATORS: frozenset[str] = frozenset({"deno.json", "deno.jsonc", "deno.lock"})
 _PRE_COMMIT_INDICATORS: frozenset[str] = frozenset({".pre-commit-config.yaml"})
 _PY_INDICATORS: frozenset[str] = frozenset(
@@ -1082,6 +1083,8 @@ def detect_ecosystems(repo_path: Path) -> list[dict[str, str]]:
 
         if fname_set & _NODE_INDICATORS:
             _add("npm", rel)
+        if fname_set & _BUN_INDICATORS:
+            _add("bun", rel)
         if fname_set & _DENO_INDICATORS:
             _add("deno", rel)
         if fname_set & _PRE_COMMIT_INDICATORS:
@@ -1203,9 +1206,8 @@ precision:
 
 scaffold:
   Detects npm, deno, pre-commit, pip, gomod, cargo, docker, and
-  github-actions from repository indicators.  Bun lockfiles map to npm
-  because Dependabot has no bun ecosystem.  This coverage applies to
-  --scaffold; supersession scanning is a separate operation.
+  github-actions, and bun from repository indicators.  This coverage
+  applies to --scaffold; supersession scanning is a separate operation.
 """,
     )
     add_roots_argument(parser)
