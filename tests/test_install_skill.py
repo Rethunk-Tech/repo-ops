@@ -70,6 +70,32 @@ def test_install_skill_force_overwrites(tmp_path: Path) -> None:
     assert text.startswith("---\nname: repo-ops\n")
 
 
+def test_install_skill_check_missing_is_clean(tmp_path: Path) -> None:
+    dest = tmp_path / "repo-ops"
+    assert main(["--dest", str(dest), "--check"]) == 0
+    assert not dest.exists()
+
+
+def test_install_skill_check_matches_rewritten_install(tmp_path: Path) -> None:
+    dest = tmp_path / "repo-ops"
+    assert main(["--dest", str(dest)]) == 0
+    assert main(["--dest", str(dest), "--check"]) == 0
+
+
+def test_install_skill_check_reports_drift_without_writing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dest = tmp_path / "repo-ops"
+    assert main(["--dest", str(dest)]) == 0
+    skill_md = dest / "SKILL.md"
+    drifted = skill_md.read_text(encoding="utf-8") + "\nchanged\n"
+    skill_md.write_text(drifted, encoding="utf-8")
+
+    assert main(["--dest", str(dest), "--check"]) == 1
+    assert skill_md.read_text(encoding="utf-8") == drifted
+    assert "drift" in capsys.readouterr().err
+
+
 def test_install_skill_home_layout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

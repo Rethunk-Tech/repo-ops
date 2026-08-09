@@ -51,6 +51,11 @@ uv tool install -e packages/repo-ops
 repo-ops install-skill --force
 ```
 
+Refreshing the CLI or its bundled skill does not update copies already installed
+under `~/.cursor/skills/` or `~/.claude/skills/`. Run
+`repo-ops install-skill --check` to detect drift without writing; use
+`repo-ops install-skill --force` to update those copies.
+
 ## Agent skill
 
 After the `repo-ops` tool is on `PATH`:
@@ -60,11 +65,11 @@ repo-ops install-skill
 ```
 
 | Target | Path |
-|--------|------|
+| -------- | ------ |
 | Cursor (`--target both` default) | `~/.cursor/skills/repo-ops/` |
 | Claude Code | `~/.claude/skills/repo-ops/` |
 
-Options: `--target cursor|claude|both`, `--force`, `--dry-run`, `--home DIR` (or `REPO_OPS_HOME`). For testing only, `--dest DIR` must resolve to a directory named `repo-ops` (refuses to overwrite unrelated paths). Do not install under `~/.cursor/skills-cursor/` (Cursor built-ins).
+Options: `--target cursor|claude|both`, `--check`, `--force`, `--dry-run`, `--home DIR` (or `REPO_OPS_HOME`). `--check` is read-only and exits 1 when an installed copy differs from the bundled skill. For testing only, `--dest DIR` must resolve to a directory named `repo-ops` (refuses to overwrite unrelated paths). Do not install under `~/.cursor/skills-cursor/` (Cursor built-ins).
 
 ## Verify install
 

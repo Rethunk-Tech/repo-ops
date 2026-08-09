@@ -210,6 +210,7 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 | Flag | Purpose |
 | ------ | --------- |
 | `--target {cursor,claude,both}` | Where to install (default: `both`) |
+| `--check` | Check installed skill copies for drift without writing; exits 1 on drift |
 | `--force` | Overwrite existing skill directories |
 | `--home DIR` | Override home directory (also `REPO_OPS_HOME` env) |
 | `--dest DIR` | Install directly to this path (testing; ignores `--target` layout) |
