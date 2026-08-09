@@ -176,8 +176,9 @@ def test_resolve_package_version_uv_lock_high_confidence(tmp_path: Path) -> None
 
 
 def test_lockfile_resolved_parses_poetry_lock(tmp_path: Path) -> None:
-    """poetry.lock [[package]] entries use the uv parser's high-confidence path."""
-    (tmp_path / "poetry.lock").write_text(
+    """poetry.lock uses the poetry parser for both high-confidence scans."""
+    poetry_lock = tmp_path / "poetry.lock"
+    poetry_lock.write_text(
         textwrap.dedent("""\
             [[package]]
             name = "poetry-core"
@@ -186,9 +187,22 @@ def test_lockfile_resolved_parses_poetry_lock(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    resolved = dependabot._lockfile_resolved(str(tmp_path))
+    with (
+        patch.object(
+            dependabot,
+            "versions_poetry_lock",
+            wraps=dependabot.versions_poetry_lock,
+        ) as poetry_parser,
+        patch.object(dependabot, "versions_uv_lock") as uv_parser,
+    ):
+        resolved = dependabot._lockfile_resolved(str(tmp_path))
+        versions = dependabot._lockfile_versions(str(tmp_path))
 
     assert resolved["poetry-core"] == "2.1.3"
+    assert versions == {"poetry-core@2.1.3"}
+    assert poetry_parser.call_count == 2
+    poetry_parser.assert_any_call(poetry_lock)
+    uv_parser.assert_not_called()
     ver, high_conf = dependabot._resolve_package_version(
         "poetry_core", resolved, set(), {}
     )
