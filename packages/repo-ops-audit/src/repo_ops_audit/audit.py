@@ -8,6 +8,7 @@ subcommands, then runs the native auditor for each ecosystem:
   node    → npm audit --json / yarn npm audit --json / pnpm audit --json / bun audit
   py-uv   → uv run pip-audit --format json (if pip-audit is available), else skipped
   rust    → cargo audit --json
+  deno    → deno audit
 
 If the required tool is not on PATH the workspace is recorded as "skipped".
 Subprocess calls are always mocked in tests; no network traffic in unit tests.
@@ -40,6 +41,9 @@ Each ecosystem maps its own severity vocabulary to the canonical four buckets:
 
   bun audit
     Text output extracted by regex ("N critical/high/moderate/low").
+
+  deno audit
+    JSON output when supported, otherwise the native severity summary is parsed.
 
 Console entry point: ``repo-ops audit`` (see ``--help`` for flags).
 """
@@ -226,6 +230,7 @@ def _eco_to_manager(ecosystem: str) -> str:
         "node": "npm",  # default; detect actual manager from lockfile at call site
         "rust": "cargo",
         "go": "go",
+        "deno": "deno",
     }.get(ecosystem, ecosystem)
 
 
@@ -294,6 +299,8 @@ def _detect_workspaces(repo: str) -> list[tuple[str, str, str]]:
     results: list[tuple[str, str, str]] = []
     for mdir, names in iter_scanned_dirs(root):
         kinds = manifest_kinds(names)
+        if any(name in names for name in ("deno.json", "deno.jsonc", "deno.lock")):
+            results.append((str(mdir), "deno", "deno"))
         for kind in kinds:
             if kind == "node":
                 mgr = _detect_node_manager(mdir) or "npm"
@@ -542,6 +549,275 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
     )
 
 
+_DENO_JSON_UNSUPPORTED = (
+    "unknown option",
+    "unexpected argument",
+    "unrecognized option",
+    "found argument '--json'",
+    "invalid option",
+)
+_DENO_SEVERITIES = ("critical", "high", "moderate", "medium", "low")
+_DENO_SEVERITY_RE = re.compile(
+    r"\b(?P<count>\d+)\s+(?P<severity>critical|high|moderate|medium|low)\b",
+    re.IGNORECASE,
+)
+_DENO_FIXED_RE = re.compile(
+    r"^\s*(?P<package>\S+)\s+(?P<current>\S+)\s*->\s*(?P<fixed>\S+)\s*$"
+)
+
+
+def _deno_json_unsupported(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in _DENO_JSON_UNSUPPORTED)
+
+
+def _run_deno_audit(ws: str) -> tuple[int, str, str]:
+    """Run the JSON form when available, falling back to native text output."""
+    result = _run(["deno", "audit", "--json"], ws)
+    if result[0] != 0 and _deno_json_unsupported(result[1] + result[2]):
+        return _run(["deno", "audit"], ws)
+    return result
+
+
+def _deno_record_value(record: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = record.get(key)
+        if value not in (None, ""):
+            return value
+    advisory = record.get("advisory")
+    if isinstance(advisory, dict):
+        for key in keys:
+            value = advisory.get(key)
+            if value not in (None, ""):
+                return value
+    return None
+
+
+def _deno_package_name(record: dict[str, Any], fallback: str = "") -> str:
+    value = _deno_record_value(
+        record, "package", "name", "module", "dependency", "package_name", "module_name"
+    )
+    if isinstance(value, dict):
+        value = value.get("name") or value.get("package")
+    return str(value or fallback).strip()
+
+
+def _deno_safe_version(record: dict[str, Any]) -> str:
+    value = _deno_record_value(
+        record,
+        "fixed_version",
+        "patched_version",
+        "fix_version",
+        "safe_version",
+        "fixed",
+        "patched",
+    )
+    if isinstance(value, dict):
+        value = value.get("version") or value.get("fixed_version")
+    if not value:
+        value = record.get("fixAvailable")
+        if isinstance(value, dict):
+            value = value.get("version")
+    return str(value or "").strip()
+
+
+def _deno_json_records(data: Any) -> list[dict[str, Any]]:
+    """Flatten common Deno/npm-shaped JSON advisory responses."""
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if not isinstance(data, dict):
+        return []
+
+    records: list[dict[str, Any]] = []
+    for key in ("vulnerabilities", "advisories", "findings", "packages"):
+        value = data.get(key)
+        if isinstance(value, list):
+            records.extend(item for item in value if isinstance(item, dict))
+        elif isinstance(value, dict):
+            for name, item in value.items():
+                if isinstance(item, dict):
+                    record = dict(item)
+                    record.setdefault("package", name)
+                    records.append(record)
+    if records:
+        return records
+    if any(
+        key in data
+        for key in (
+            "severity",
+            "level",
+            "package",
+            "name",
+            "module",
+            "dependency",
+            "advisory",
+        )
+    ):
+        return [data]
+    return []
+
+
+def _parse_deno_audit_json(
+    data: Any, ws: str
+) -> tuple[VulnCount, list[RemediationItem], list[FindingItem]]:
+    counts = VulnCount()
+    remediations: dict[str, str] = {}
+    findings: list[FindingItem] = []
+    for index, record in enumerate(_deno_json_records(data)):
+        package = _deno_package_name(record, "deno")
+        severity = _normalize_finding_severity(
+            _deno_record_value(record, "severity", "level", "risk")
+        )
+        setattr(counts, severity, getattr(counts, severity) + 1)
+        safe_version = _deno_safe_version(record)
+        if safe_version:
+            remediations.setdefault(package, safe_version)
+        finding_id = str(
+            _deno_record_value(record, "id", "source", "url", "cve", "advisory_id")
+            or f"deno:{package}:{index}"
+        )
+        findings.append(
+            FindingItem(
+                id=finding_id,
+                severity=severity,
+                package=package,
+                ecosystem="deno",
+                workspace=ws,
+                fixed=bool(safe_version),
+                safe_version=safe_version or None,
+            )
+        )
+    return (
+        counts,
+        [
+            RemediationItem(
+                package=package,
+                safe_version=safe_version,
+                ecosystem="deno",
+                workspace=ws,
+            )
+            for package, safe_version in sorted(remediations.items())
+        ],
+        findings,
+    )
+
+
+def _parse_deno_audit_text(
+    text: str, ws: str
+) -> tuple[VulnCount, list[RemediationItem], list[FindingItem]]:
+    """Parse Deno's human audit summary and optional fixed-version rows."""
+    counts = VulnCount()
+    summary_found = False
+    for line in text.splitlines():
+        if "severity:" not in line.lower():
+            continue
+        matches = list(_DENO_SEVERITY_RE.finditer(line))
+        if not matches:
+            continue
+        summary_found = True
+        for match in matches:
+            severity = match.group("severity").lower()
+            severity = "moderate" if severity == "medium" else severity
+            setattr(counts, severity, int(match.group("count")))
+
+    remediations: dict[str, str] = {}
+    findings: list[FindingItem] = []
+    in_fixed_section = False
+    for line in text.splitlines():
+        lowered = line.strip().lower()
+        if lowered.startswith("fixed "):
+            in_fixed_section = True
+            continue
+        if in_fixed_section:
+            match = _DENO_FIXED_RE.match(line)
+            if match:
+                package = match.group("package")
+                safe_version = match.group("fixed")
+                remediations.setdefault(package, safe_version)
+                findings.append(
+                    FindingItem(
+                        id=f"deno:{package}",
+                        severity="moderate",
+                        package=package,
+                        ecosystem="deno",
+                        workspace=ws,
+                        fixed=True,
+                        safe_version=safe_version,
+                    )
+                )
+                continue
+            if line.strip() and not line.startswith((" ", "\t")):
+                in_fixed_section = False
+
+    if not summary_found:
+        for line in text.splitlines():
+            match = _DENO_SEVERITY_RE.search(line)
+            if not match:
+                continue
+            severity = match.group("severity").lower()
+            severity = "moderate" if severity == "medium" else severity
+            setattr(
+                counts, severity, getattr(counts, severity) + int(match.group("count"))
+            )
+
+    return (
+        counts,
+        [
+            RemediationItem(
+                package=package,
+                safe_version=safe_version,
+                ecosystem="deno",
+                workspace=ws,
+            )
+            for package, safe_version in sorted(remediations.items())
+        ],
+        findings,
+    )
+
+
+def _audit_deno(ws: str) -> WorkspaceResult:
+    label = ws
+    if shutil.which("deno") is None:
+        return WorkspaceResult(
+            label=label,
+            path=ws,
+            ecosystem="deno",
+            manager="deno",
+            status="skipped",
+            skip_reason="deno not on PATH",
+        )
+    rc, stdout, stderr = _run_deno_audit(ws)
+    counts = VulnCount()
+    remediations: list[RemediationItem] = []
+    findings: list[FindingItem] = []
+    try:
+        data = json.loads(stdout)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        counts, remediations, findings = _parse_deno_audit_text(stdout + stderr, ws)
+    else:
+        counts, remediations, findings = _parse_deno_audit_json(data, ws)
+
+    if counts.total == 0 and rc != 0:
+        return WorkspaceResult(
+            label=label,
+            path=ws,
+            ecosystem="deno",
+            manager="deno",
+            status="error",
+            error=(stderr or stdout or "deno audit exited non-zero").strip()[:200],
+        )
+    return WorkspaceResult(
+        label=label,
+        path=ws,
+        ecosystem="deno",
+        manager="deno",
+        status="vulns" if counts.total > 0 else "ok",
+        counts=counts,
+        remediations=remediations,
+        findings=findings,
+    )
+
+
 def _parse_npm_audit_json(data: dict[str, Any]) -> VulnCount:
     """Parse npm/pnpm/yarn audit JSON into VulnCount.
 
@@ -780,6 +1056,108 @@ def _apply_go_targeted(ws_path: str, items: list[RemediationItem]) -> ApplyOutco
                 error=f"go mod tidy: {(stderr or _stdout or 'failed')[:200]}",
             )
     return ApplyOutcome(workspace=ws_path, status="ok", changes_count=len(updated))
+
+
+def _deno_import_map_paths(ws: Path) -> list[Path]:
+    paths = {
+        ws / name
+        for name in (
+            "import_map.json",
+            "import-map.json",
+            "import_map.jsonc",
+            "import-map.jsonc",
+        )
+    }
+    for config_name in ("deno.json", "deno.jsonc"):
+        config = ws / config_name
+        if not config.is_file():
+            continue
+        try:
+            config_text = config.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for match in re.finditer(r'"importMap"\s*:\s*"([^"]+)"', config_text):
+            paths.add((ws / match.group(1)).resolve())
+    return sorted(path for path in paths if path.is_file())
+
+
+def _snapshot_deno_files(ws: Path) -> dict[Path, bytes | None]:
+    paths = [ws / "deno.lock", *_deno_import_map_paths(ws)]
+    return {path: path.read_bytes() if path.is_file() else None for path in paths}
+
+
+def _restore_deno_files(snapshot: dict[Path, bytes | None]) -> None:
+    for path, original in snapshot.items():
+        if original is None:
+            if path.exists():
+                path.unlink()
+        elif not path.is_file() or path.read_bytes() != original:
+            path.write_bytes(original)
+
+
+def _deno_snapshot_change_count(snapshot: dict[Path, bytes | None]) -> int:
+    changed = 0
+    for path, original in snapshot.items():
+        current = path.read_bytes() if path.is_file() else None
+        if current != original:
+            changed += 1
+    return changed
+
+
+def _apply_deno_audit(ws_path: str, *, do_verify: bool = True) -> ApplyOutcome:
+    """Apply Deno's native fixes and restore lock metadata on failure."""
+    ws = Path(ws_path)
+    snapshot = _snapshot_deno_files(ws)
+    try:
+        rc, stdout, stderr = _run(["deno", "audit", "--fix"], ws_path)
+        if do_verify:
+            verification = _audit_deno(ws_path)
+            if verification.status != "ok":
+                _restore_deno_files(snapshot)
+                detail = verification.error or verification.status
+                return ApplyOutcome(
+                    ws_path, "fail", f"deno audit verification: {detail}"
+                )
+        elif rc != 0:
+            _restore_deno_files(snapshot)
+            return ApplyOutcome(
+                ws_path,
+                "fail",
+                (stderr or stdout or "deno audit --fix failed").strip()[:200],
+            )
+        return ApplyOutcome(
+            workspace=ws_path,
+            status="ok",
+            changes_count=_deno_snapshot_change_count(snapshot),
+        )
+    except Exception as exc:
+        _restore_deno_files(snapshot)
+        return ApplyOutcome(ws_path, "fail", str(exc))
+
+
+def _plan_deno_fix(ws_path: str) -> list[RemediationItem]:
+    """Discover Deno's native fixes while restoring every edited input file."""
+    ws = Path(ws_path)
+    snapshot = _snapshot_deno_files(ws)
+    for name in ("deno.json", "deno.jsonc", "package.json"):
+        path = ws / name
+        if path.is_file():
+            snapshot[path] = path.read_bytes()
+    try:
+        rc, stdout, stderr = _run(["deno", "audit", "--fix"], ws_path)
+        try:
+            data = json.loads(stdout)
+        except (json.JSONDecodeError, ValueError, TypeError):
+            _counts, remediations, _findings = _parse_deno_audit_text(
+                stdout + stderr, ws_path
+            )
+        else:
+            _counts, remediations, _findings = _parse_deno_audit_json(data, ws_path)
+        if rc != 0 and not remediations:
+            return []
+        return remediations
+    finally:
+        _restore_deno_files(snapshot)
 
 
 def _extract_remediations_pip_audit(data: list[Any], ws: str) -> list[RemediationItem]:
@@ -1408,6 +1786,8 @@ def audit_workspace(ws: str, ecosystem: str, manager: str) -> WorkspaceResult:
         return _audit_py_uv(ws)
     if ecosystem == "rust":
         return _audit_rust(ws)
+    if ecosystem == "deno":
+        return _audit_deno(ws)
     return WorkspaceResult(
         label=ws,
         path=ws,
@@ -1741,6 +2121,13 @@ def apply_remediations(
                 )
             continue
 
+        if ecosystem == "deno":
+            if shutil.which("deno") is None:
+                outcomes.append(ApplyOutcome(ws_path, "skip", "deno not on PATH"))
+            else:
+                outcomes.append(_apply_deno_audit(ws_path, do_verify=do_verify))
+            continue
+
         if not _try_register_manager(manager):
             outcomes.append(
                 ApplyOutcome(
@@ -2068,6 +2455,7 @@ tools used (must be on PATH or workspace is skipped):
   node    npm / yarn / pnpm / bun (per lockfile)
   py-uv   uv run pip-audit --format json
   rust    cargo audit
+  deno    deno audit
 """,
     )
     add_roots_argument(parser)
@@ -2206,6 +2594,15 @@ def main(argv: list[str] | None = None) -> int:
     # Collect remediations when either fix-plan or fix is active.
     remediations: list[RemediationItem] = []
     if fix_plan or sarif_out:
+        if fix_plan:
+            for result in results:
+                if (
+                    result.ecosystem == "deno"
+                    and result.status == "vulns"
+                    and not result.remediations
+                    and shutil.which("deno") is not None
+                ):
+                    result.remediations = _plan_deno_fix(result.path)
         remediations = collect_all_remediations(results)
 
     # --- SARIF output -------------------------------------------------------
