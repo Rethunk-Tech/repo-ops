@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,33 +29,105 @@ from repo_ops_upgrade.precommit import is_precommit_workspace
 # ---------- Cargo workspace helpers ----------
 
 
-def cargo_workspace_members(mdir: Path) -> set[str]:
-    """Return the ``[workspace].members`` globs declared in *mdir*'s Cargo.toml.
+def _cargo_metadata_workspace_members(mdir: Path) -> set[str] | None:
+    """Resolve Cargo workspace member directories from Cargo metadata."""
+    if shutil.which("cargo") is None:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                "cargo",
+                "metadata",
+                "--format-version",
+                "1",
+                "--no-deps",
+                "--manifest-path",
+                str(mdir / "Cargo.toml"),
+            ],
+            cwd=mdir,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        metadata = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, TypeError, ValueError):
+        return None
+    if not isinstance(metadata, dict):
+        return None
+    workspace_root = metadata.get("workspace_root")
+    workspace_members = metadata.get("workspace_members")
+    packages = metadata.get("packages")
+    if (
+        not isinstance(workspace_root, str)
+        or not isinstance(workspace_members, list)
+        or not isinstance(packages, list)
+    ):
+        return None
+    if Path(workspace_root).resolve() != mdir.resolve():
+        return None
 
-    Empty when *mdir* is not a Cargo workspace root.  Members are governed by
-    the root ``Cargo.lock`` and must not be enumerated as standalone
-    workspaces.  Mirrors ``uv_workspace_members``.
-    """
+    manifests: dict[str, Path] = {}
+    for package in packages:
+        if not isinstance(package, dict):
+            continue
+        package_id = package.get("id")
+        manifest_path = package.get("manifest_path")
+        if isinstance(package_id, str) and isinstance(manifest_path, str):
+            manifests[package_id] = Path(manifest_path).resolve().parent
+
+    members: set[str] = set()
+    for package_id in workspace_members:
+        if not isinstance(package_id, str):
+            return None
+        member_dir = manifests.get(package_id)
+        if member_dir is None or member_dir == mdir.resolve():
+            continue
+        try:
+            members.add(member_dir.relative_to(mdir.resolve()).as_posix())
+        except ValueError:
+            return None
+    return members
+
+
+def _cargo_workspace_globs(mdir: Path, key: str) -> set[str]:
     d = read_toml_file(mdir / "Cargo.toml") or {}
     ws = d.get("workspace") or {}
     if not isinstance(ws, dict):
         return set()
-    members = ws.get("members")
-    if not isinstance(members, list):
+    values = ws.get(key)
+    if not isinstance(values, list):
         return set()
-    return {m.rstrip("/") for m in members if isinstance(m, str)}
+    return {value.rstrip("/") for value in values if isinstance(value, str)}
+
+
+def cargo_workspace_members(mdir: Path) -> set[str]:
+    """Return Cargo workspace member directories relative to *mdir*.
+
+    Cargo metadata resolves implicit path-dependency members and applies
+    workspace exclusions.  The manifest globs remain the fallback when Cargo
+    is unavailable or cannot parse the workspace.
+    """
+    manifest = read_toml_file(mdir / "Cargo.toml") or {}
+    workspace = manifest.get("workspace")
+    if not isinstance(workspace, dict):
+        return set()
+    metadata_members = _cargo_metadata_workspace_members(mdir)
+    if metadata_members is not None:
+        return metadata_members
+    return _cargo_workspace_globs(mdir, "members")
+
+
+def cargo_workspace_excludes(mdir: Path) -> set[str]:
+    """Return Cargo workspace exclusion globs relative to *mdir*."""
+    return _cargo_workspace_globs(mdir, "exclude")
 
 
 def path_is_cargo_workspace_child(mdir: Path, root: Path, members: set[str]) -> bool:
-    """True when *mdir* is an explicit Cargo workspace member under *root*.
+    """True when *mdir* is a Cargo workspace child under *root*.
 
-    Uses the same glob-prefix matching as ``path_is_uv_workspace_child`` and
-    ``path_is_yarn_workspace_child``. Only ``members`` globs from the root
-    Cargo.toml suppress child workspaces. Cargo implicit member auto-discovery
-    (no ``members`` key), ``exclude``, and ``default-members`` are intentionally
-    not handled — those layouts may still surface duplicate rust workspace
-    entries. Prefer declaring ``members`` explicitly when discovery must
-    collapse children into the parent.
+    Uses separator-aware prefix matching.  The *members* set may contain
+    resolved member directories from Cargo metadata or manifest globs as a
+    fallback.
     """
     try:
         rel = mdir.relative_to(root).as_posix()
@@ -245,11 +320,12 @@ def discover_workspaces_in_root(
                 "Cargo.toml without Cargo.lock and not a [workspace]/[package]",
             )
             return
-        # Register this dir as a cargo workspace root if it declares [workspace]
-        # with members globs so descendants can be suppressed.
+        # Register this dir as a cargo workspace root so descendants,
+        # including excluded paths, can be suppressed.
         ws_members = cargo_workspace_members(mdir)
-        if ws_members:
-            cargo_roots[mdir] = ws_members
+        ws_excludes = cargo_workspace_excludes(mdir)
+        if ws_members or ws_excludes:
+            cargo_roots[mdir] = ws_members | ws_excludes
         git = git_repo_for(mdir)
         if not git:
             record_skip(mdir, "rust", "not inside a git repo")
