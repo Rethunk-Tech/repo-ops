@@ -54,6 +54,7 @@ class Filters:
     author: str | None = None
     no_merges: bool = False
     excluded_count: int = 0
+    gh_missing_remote_count: int = 0
 
 
 @dataclass
@@ -277,6 +278,7 @@ def pushed_commits_for_repo_gh(repo: str, filters: Filters) -> dict[str, None]:
     commits: dict[str, None] = {}
     repo_slugs = _github_repos_for_repo(repo)
     if not repo_slugs:
+        filters.gh_missing_remote_count += 1
         print(
             f"WARN: skipped {repo} for --source=gh: no GitHub remote",
             file=sys.stderr,
@@ -524,12 +526,19 @@ def print_report(
     excluded_count: int = 0,
     show_excluded: bool = False,
     source: str = "local",
+    gh_missing_remote_count: int = 0,
 ) -> None:
     if source == "gh":
         print(f"Pushed commits in the last {window_desc} (GitHub PushEvent API)")
     else:
         print(
             f"Pushed commits in the last {window_desc} (local reflog: update by push)"
+        )
+    if source == "gh" and gh_missing_remote_count:
+        print(
+            "WARNING: "
+            f"{gh_missing_remote_count} repo(s) had no GitHub remote; "
+            "see stderr warnings"
         )
     print(f"Scanned {len(roots)} root(s); {len(per_repo)} repo(s) with pushes")
     if show_excluded:
@@ -859,6 +868,7 @@ def main(argv: list[str] | None = None) -> int:
         excluded_count=filters.excluded_count,
         show_excluded=bool(exclude_patterns),
         source=args.source,
+        gh_missing_remote_count=filters.gh_missing_remote_count,
     )
     return 0
 
