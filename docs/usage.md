@@ -228,6 +228,10 @@ best-effort version string (first line of `<tool> --version`, timeout-guarded).
 `gh` additionally gets a `gh auth status` check so agents can tell "not
 installed" apart from "installed but unauthenticated" before a
 `dependabot`/`pr`-mode run fails partway through.
+Doctor also warns when installed Cursor/Claude skill copies drift from the
+bundled skill; JSON output includes these rows in the `skill_drift` array. Use
+`repo-ops install-skill --check` for a read-only check, then
+`repo-ops install-skill --force` to overwrite drifted copies.
 
 - `--strict` — exit `1` when any probed binary is missing (default: exit `0`
   regardless of missing binaries).
