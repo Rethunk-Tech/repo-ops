@@ -81,3 +81,9 @@ Actions/container already have `--actions-refresh-sha` / `--container-refresh-sh
 A tree with both `uv.lock` and hatchling metadata may need an explicit precedence rule documented in usage (which label wins).
 
 **Refs:** `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`_detect_workspaces`).
+
+### 22.3 Harden `run.py` getattr for targeted-bump flags
+
+`run.py` uses `if full_sweep or getattr(args, X, False)` without `bool()`. Incomplete MagicMock test doubles auto-create truthy attributes. Production argparse is safe; prefer `bool(getattr(...))` or explicit defaults for test hygiene.
+
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (targeted-bump env wiring).
