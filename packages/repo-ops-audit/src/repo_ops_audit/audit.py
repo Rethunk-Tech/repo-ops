@@ -6,7 +6,7 @@ subcommands, then runs the native auditor for each ecosystem:
 
   go      → govulncheck ./...
   node    → npm audit --json / yarn npm audit --json / pnpm audit --json / bun audit
-  py-uv   → uv run pip-audit --format json (if pip-audit is available), else skipped
+  py-*    → manager export + pip-audit --format json, else skipped
   rust    → cargo audit --json
   deno    → deno audit
 
@@ -57,6 +57,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -78,6 +79,7 @@ from repo_ops_core.config import (
 )
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
+from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.git import repo_label
 from repo_ops_core.table import column_width, format_cell, join_row
 from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
@@ -288,6 +290,33 @@ def _detect_node_manager(ws: Path) -> str | None:
     return "npm"
 
 
+def _detect_python_manager(ws: Path, names: set[str]) -> str:
+    """Return the Python manager signaled by *ws*, or ``"unknown"``."""
+    if "uv.lock" in names:
+        return "uv"
+    if "poetry.lock" in names:
+        return "poetry"
+    if "pdm.lock" in names:
+        return "pdm"
+    if "Pipfile.lock" in names:
+        return "pipenv"
+    if {"requirements.in", "requirements.txt"} <= names:
+        return "pip-tools"
+    if "pyproject.toml" in names:
+        data = read_toml_file(ws / "pyproject.toml") or {}
+        build_system = data.get("build-system") or {}
+        build_backend = str(build_system.get("build-backend") or "")
+        build_requires = build_system.get("requires") or []
+        tool = data.get("tool") or {}
+        if (
+            "hatch" in build_backend
+            or any("hatchling" in str(requirement) for requirement in build_requires)
+            or "hatch" in tool
+        ):
+            return "hatch"
+    return "unknown"
+
+
 def _detect_workspaces(repo: str) -> list[tuple[str, str, str]]:
     """Return list of (workspace_path, ecosystem, manager) for a repo.
 
@@ -310,9 +339,31 @@ def _detect_workspaces(repo: str) -> list[tuple[str, str, str]]:
             elif kind == "rust":
                 results.append((str(mdir), "rust", "cargo"))
             elif kind == "py":
-                # Only audit uv workspaces (pip-audit via uv)
-                if (mdir / "uv.lock").exists() or (mdir / "pyproject.toml").exists():
-                    results.append((str(mdir), "py-uv", "uv"))
+                manager = _detect_python_manager(mdir, names)
+                ecosystem = {
+                    "uv": "py-uv",
+                    "poetry": "py-poetry",
+                    "pdm": "py-pdm",
+                    "pipenv": "py-pipenv",
+                    "hatch": "py-hatch",
+                    "pip-tools": "py-pip-tools",
+                }.get(manager, "py")
+                results.append((str(mdir), ecosystem, manager))
+        if (
+            any(
+                name in names
+                for name in ("uv.lock", "poetry.lock", "pdm.lock", "Pipfile.lock")
+            )
+            and "py" not in kinds
+        ):
+            manager = _detect_python_manager(mdir, names)
+            ecosystem = {
+                "uv": "py-uv",
+                "poetry": "py-poetry",
+                "pdm": "py-pdm",
+                "pipenv": "py-pipenv",
+            }.get(manager, "py")
+            results.append((str(mdir), ecosystem, manager))
     return results
 
 
@@ -1168,7 +1219,9 @@ def _plan_deno_fix(ws_path: str) -> list[RemediationItem]:
         _restore_deno_files(snapshot)
 
 
-def _extract_remediations_pip_audit(data: list[Any], ws: str) -> list[RemediationItem]:
+def _extract_remediations_pip_audit(
+    data: list[Any], ws: str, ecosystem: str = "py-uv"
+) -> list[RemediationItem]:
     """Extract (package → highest known-safe fix_version) from pip-audit JSON.
 
     pip-audit JSON structure::
@@ -1212,7 +1265,9 @@ def _extract_remediations_pip_audit(data: list[Any], ws: str) -> list[Remediatio
                         if fv > prev:
                             best[name] = fv
     return [
-        RemediationItem(package=pkg, safe_version=ver, ecosystem="py-uv", workspace=ws)
+        RemediationItem(
+            package=pkg, safe_version=ver, ecosystem=ecosystem, workspace=ws
+        )
         for pkg, ver in sorted(best.items())
     ]
 
@@ -1427,11 +1482,13 @@ def _extract_findings_npm_json(data: dict[str, Any], ws: str) -> list[FindingIte
     return findings
 
 
-def _extract_findings_pip_audit(data: list[Any], ws: str) -> list[FindingItem]:
+def _extract_findings_pip_audit(
+    data: list[Any], ws: str, ecosystem: str = "py-uv"
+) -> list[FindingItem]:
     """Extract one finding for each pip-audit vulnerability entry."""
     safe_versions = {
         item.package: item.safe_version
-        for item in _extract_remediations_pip_audit(data, ws)
+        for item in _extract_remediations_pip_audit(data, ws, ecosystem)
     }
     findings: list[FindingItem] = []
     for package_data in data:
@@ -1466,7 +1523,7 @@ def _extract_findings_pip_audit(data: list[Any], ws: str) -> list[FindingItem]:
                     id=finding_id,
                     severity=severity,
                     package=package,
-                    ecosystem="py-uv",
+                    ecosystem=ecosystem,
                     workspace=ws,
                     fixed=bool(fixes),
                     safe_version=safe_version,
@@ -1559,30 +1616,15 @@ def _probe_pip_audit(ws: str) -> bool:
     return "pip-audit" in (stdout + _stderr).lower()
 
 
-def _audit_py_uv(ws: str) -> WorkspaceResult:
-    label = ws
-    if shutil.which("uv") is None:
-        return WorkspaceResult(
-            label=label,
-            path=ws,
-            ecosystem="py-uv",
-            manager="uv",
-            status="skipped",
-            skip_reason="uv not on PATH",
-        )
-    # Probe: is pip-audit available in this uv environment?
-    if not _probe_pip_audit(ws):
-        return WorkspaceResult(
-            label=label,
-            path=ws,
-            ecosystem="py-uv",
-            manager="uv",
-            status="skipped",
-            skip_reason="pip-audit not available (uv run pip-audit --version failed)",
-        )
-    rc, stdout, stderr = _run(
-        ["uv", "run", "pip-audit", "--format", "json", "--skip-editable"], ws
-    )
+def _pip_audit_result(
+    ws: str,
+    ecosystem: str,
+    manager: str,
+    rc: int,
+    stdout: str,
+    stderr: str,
+) -> WorkspaceResult:
+    """Parse pip-audit output for any Python manager."""
     counts = VulnCount()
     # pip-audit severity mapping:
     #   CVE alias present, no fix_versions  → critical
@@ -1592,9 +1634,15 @@ def _audit_py_uv(ws: str) -> WorkspaceResult:
     findings: list[FindingItem] = []
     try:
         data = json.loads(stdout)
+        if not isinstance(data, list):
+            raise TypeError("pip-audit JSON must be a list")
         # pip-audit JSON: list of {"name": ..., "version": ..., "vulns": [...]}
         for pkg in data:
+            if not isinstance(pkg, dict):
+                continue
             for vuln in pkg.get("vulns", []):
+                if not isinstance(vuln, dict):
+                    continue
                 fix_versions = vuln.get("fix_versions", [])
                 aliases = vuln.get("aliases", [])
                 is_cve = any(str(a).startswith("CVE-") for a in aliases)
@@ -1604,30 +1652,159 @@ def _audit_py_uv(ws: str) -> WorkspaceResult:
                     counts.high += 1
                 else:
                     counts.moderate += 1
-        remediations = _extract_remediations_pip_audit(data, ws)
-        findings = _extract_findings_pip_audit(data, ws)
+        remediations = _extract_remediations_pip_audit(data, ws, ecosystem)
+        findings = _extract_findings_pip_audit(data, ws, ecosystem)
     except (json.JSONDecodeError, ValueError, KeyError, TypeError):
-        if rc != 0:
-            return WorkspaceResult(
-                label=label,
-                path=ws,
-                ecosystem="py-uv",
-                manager="uv",
-                status="error",
-                error=(stderr or stdout or "pip-audit parse error").strip()[:200],
-            )
+        return WorkspaceResult(
+            label=ws,
+            path=ws,
+            ecosystem=ecosystem,
+            manager=manager,
+            status="error",
+            error=(stderr or stdout or "pip-audit parse error").strip()[:200],
+        )
 
     status = "vulns" if counts.total > 0 else "ok"
     return WorkspaceResult(
-        label=label,
+        label=ws,
         path=ws,
-        ecosystem="py-uv",
-        manager="uv",
+        ecosystem=ecosystem,
+        manager=manager,
         status=status,
         counts=counts,
         remediations=remediations,
         findings=findings,
     )
+
+
+def _python_skip(ws: str, ecosystem: str, manager: str, reason: str) -> WorkspaceResult:
+    return WorkspaceResult(
+        label=ws,
+        path=ws,
+        ecosystem=ecosystem,
+        manager=manager,
+        status="skipped",
+        skip_reason=reason,
+    )
+
+
+def _audit_py_uv(ws: str) -> WorkspaceResult:
+    if shutil.which("uv") is None:
+        return _python_skip(ws, "py-uv", "uv", "uv not on PATH")
+    if not _probe_pip_audit(ws):
+        return _python_skip(
+            ws,
+            "py-uv",
+            "uv",
+            "pip-audit not available (uv run pip-audit --version failed)",
+        )
+    rc, stdout, stderr = _run(
+        ["uv", "run", "pip-audit", "--format", "json", "--skip-editable"], ws
+    )
+    return _pip_audit_result(ws, "py-uv", "uv", rc, stdout, stderr)
+
+
+def _run_python_export(
+    ws: str, manager: str, requirements_path: Path
+) -> tuple[int, str, str]:
+    """Export a manager's resolved environment to *requirements_path*."""
+    output_commands: dict[str, list[str]] = {
+        "poetry": [
+            "poetry",
+            "export",
+            "--format",
+            "requirements.txt",
+            "--without-hashes",
+            "--output",
+            str(requirements_path),
+        ],
+        "pdm": [
+            "pdm",
+            "export",
+            "--without-hashes",
+            "--output",
+            str(requirements_path),
+        ],
+        "pipenv": ["pipenv", "lock", "--requirements"],
+        "hatch": ["hatch", "run", "pip", "freeze"],
+    }
+    command = output_commands.get(manager)
+    if command is None:
+        return 1, "", f"unsupported Python export manager {manager!r}"
+    rc, stdout, stderr = _run(command, ws)
+    if rc == 0 and manager in {"pipenv", "hatch"}:
+        requirements_path.write_text(stdout, encoding="utf-8")
+    return rc, stdout, stderr
+
+
+def _audit_py_exported(ws: str, ecosystem: str, manager: str) -> WorkspaceResult:
+    if manager != "pip-tools" and shutil.which(manager) is None:
+        return _python_skip(ws, ecosystem, manager, f"{manager} not on PATH")
+    if shutil.which("pip-audit") is None:
+        return _python_skip(ws, ecosystem, manager, "pip-audit not on PATH")
+
+    if manager == "pip-tools":
+        requirements_path = Path(ws) / "requirements.txt"
+        if not requirements_path.is_file():
+            return _python_skip(
+                ws,
+                ecosystem,
+                manager,
+                "requirements.txt not found for pip-tools export",
+            )
+        rc_export, export_stdout, export_stderr = 0, "", ""
+        temp_dir: tempfile.TemporaryDirectory[str] | None = None
+    else:
+        temp_dir = tempfile.TemporaryDirectory(prefix="repo-ops-audit-")
+        requirements_path = Path(temp_dir.name) / "requirements.txt"
+        rc_export, export_stdout, export_stderr = _run_python_export(
+            ws, manager, requirements_path
+        )
+    try:
+        if rc_export != 0:
+            return _python_skip(
+                ws,
+                ecosystem,
+                manager,
+                (
+                    f"{manager} export failed: "
+                    f"{(export_stderr or export_stdout or 'unknown error').strip()[:160]}"
+                ),
+            )
+        rc, stdout, stderr = _run(
+            [
+                "pip-audit",
+                "--format",
+                "json",
+                "--requirement",
+                str(requirements_path),
+            ],
+            ws,
+        )
+        return _pip_audit_result(ws, ecosystem, manager, rc, stdout, stderr)
+    finally:
+        if temp_dir is not None:
+            temp_dir.cleanup()
+
+
+def _audit_py_poetry(ws: str) -> WorkspaceResult:
+    return _audit_py_exported(ws, "py-poetry", "poetry")
+
+
+def _audit_py_pdm(ws: str) -> WorkspaceResult:
+    return _audit_py_exported(ws, "py-pdm", "pdm")
+
+
+def _audit_py_pipenv(ws: str) -> WorkspaceResult:
+    return _audit_py_exported(ws, "py-pipenv", "pipenv")
+
+
+def _audit_py_hatch(ws: str) -> WorkspaceResult:
+    return _audit_py_exported(ws, "py-hatch", "hatch")
+
+
+def _audit_py_pip_tools(ws: str) -> WorkspaceResult:
+    return _audit_py_exported(ws, "py-pip-tools", "pip-tools")
 
 
 def _audit_rust(ws: str) -> WorkspaceResult:
@@ -1792,6 +1969,16 @@ def audit_workspace(ws: str, ecosystem: str, manager: str) -> WorkspaceResult:
         return _audit_node(ws, manager)
     if ecosystem == "py-uv":
         return _audit_py_uv(ws)
+    if ecosystem == "py-poetry":
+        return _audit_py_poetry(ws)
+    if ecosystem == "py-pdm":
+        return _audit_py_pdm(ws)
+    if ecosystem == "py-pipenv":
+        return _audit_py_pipenv(ws)
+    if ecosystem == "py-hatch":
+        return _audit_py_hatch(ws)
+    if ecosystem == "py-pip-tools":
+        return _audit_py_pip_tools(ws)
     if ecosystem == "rust":
         return _audit_rust(ws)
     if ecosystem == "deno":
