@@ -10,6 +10,15 @@ from repo_ops_models import RepoBundle
 from repo_ops_upgrade.commit_agent_providers import COMMIT_AGENT_INSTALL_HINT
 
 
+def _resolve_agent_model() -> str:
+    model = os.environ.get("REPO_OPS_COMMIT_AGENT_MODEL", "composer-2.5").strip()
+    if not model:
+        raise RuntimeError(
+            "REPO_OPS_COMMIT_AGENT_MODEL must be a non-empty model identifier"
+        )
+    return model
+
+
 def _normalize_agent_subject(text: str) -> str:
     line = ""
     for raw in text.splitlines():
@@ -66,7 +75,7 @@ class CursorCommitAgentProvider:
             prompt,
             AgentOptions(
                 api_key=key,
-                model="composer-2.5",
+                model=_resolve_agent_model(),
                 local=LocalAgentOptions(cwd=str(bundle.git_repo.resolve())),
             ),
         )

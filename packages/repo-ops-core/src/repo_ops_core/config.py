@@ -202,6 +202,11 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
         "commit_agent_provider",
         None,
     ),
+    "commit_agent_model": (
+        "REPO_OPS_COMMIT_AGENT_MODEL",
+        "commit_agent_model",
+        "composer-2.5",
+    ),
     "commit_umbrella": ("REPO_OPS_COMMIT_UMBRELLA", "commit_umbrella", None),
     "actions_org_policy": ("REPO_OPS_ACTIONS_ORG_POLICY", "actions_org_policy", None),
     "container_update_latest": (
@@ -348,6 +353,13 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
         "REPO_OPS_COMMIT_AGENT_PROVIDER",
         "commit_agent_provider",
         "cursor",
+    ),
+    (
+        "commit_agent_model",
+        "(none)",
+        "REPO_OPS_COMMIT_AGENT_MODEL",
+        "commit_agent_model",
+        "composer-2.5",
     ),
     ("exclude_patterns", "--exclude", "(none)", "exclude", "[]"),
     (
