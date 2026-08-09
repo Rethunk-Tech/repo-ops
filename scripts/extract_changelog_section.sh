@@ -11,8 +11,13 @@ changelog_path=$2
 output_path=$3
 
 awk -v version="$version" '
-  $0 ~ "^## \\[" version "\\]" { found=1; next }
-  found && /^## \[/ { exit }
+  /^## \[/ {
+    heading = $0
+    sub(/^## \[/, "", heading)
+    sub(/\].*$/, "", heading)
+    if (heading == version) { found=1; next }
+    if (found) { exit }
+  }
   found { print }
 ' "$changelog_path" >"$output_path"
 
