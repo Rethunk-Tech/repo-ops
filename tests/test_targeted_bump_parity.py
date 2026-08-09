@@ -234,6 +234,18 @@ def test_bun_hint_reports_tried_when_requested(monkeypatch) -> None:
     assert "bump manually" in hint
 
 
+def test_deno_hint_default_when_not_requested(monkeypatch) -> None:
+    monkeypatch.delenv("REPO_OPS_DENO_TARGETED_BUMP", raising=False)
+    assert _behind_latest_hint("deno") == "run with --latest to include"
+
+
+def test_deno_hint_reports_tried_when_requested(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    hint = _behind_latest_hint("deno")
+    assert "--deno-targeted-bump was attempted but could not move them" in hint
+    assert "bump manually" in hint
+
+
 # ---------------------------------------------------------------------------
 # Regression: ghost-bump exception must not skip snapshot restore.
 #

@@ -26,6 +26,7 @@ DEFAULT_MAX_FAILURE_LINES = 20
 # remediation is a manual pin bump (issue #102).
 _LATEST_HINT_BY_MANAGER: dict[str, str] = {
     "bun": "run with --latest to include",
+    "deno": "run with --latest to include",
     "pnpm": "run with --latest to include",
     # yarn behind-latest is surfaced only after --latest already ran (the resolver
     # kept these back for peer/group constraints), so re-running --latest won't move
@@ -59,11 +60,16 @@ _BUN_HINT_TARGETED_TRIED = (
     "--bun-targeted-bump was attempted but could not move them "
     "(install failed or still constrained) — bump manually"
 )
+_DENO_HINT_TARGETED_TRIED = (
+    "--deno-targeted-bump was attempted but could not move them "
+    "(install failed or version did not advance) — bump manually"
+)
 _TARGETED_TRIED_HINT: dict[str, str] = {
     "yarn": _YARN_HINT_TARGETED_TRIED,
     "npm": _NPM_HINT_TARGETED_TRIED,
     "pnpm": _PNPM_HINT_TARGETED_TRIED,
     "bun": _BUN_HINT_TARGETED_TRIED,
+    "deno": _DENO_HINT_TARGETED_TRIED,
 }
 
 # Env vars that signal a per-package targeted bump was requested this run. Read
@@ -74,6 +80,7 @@ _TARGETED_BUMP_ENV: dict[str, str] = {
     "npm": "REPO_OPS_NPM_TARGETED_BUMP",
     "pnpm": "REPO_OPS_PNPM_TARGETED_BUMP",
     "bun": "REPO_OPS_BUN_TARGETED_BUMP",
+    "deno": "REPO_OPS_DENO_TARGETED_BUMP",
 }
 _TARGETED_BUMP_TRUE = ("1", "true", "yes", "on")
 

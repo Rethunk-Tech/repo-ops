@@ -294,6 +294,13 @@ def test_per_line_behind_latest_note_is_manager_aware(tmp_path: Path) -> None:
         git_repo=tmp_path,
         label="demo",
     )
+    deno_ws = Workspace(
+        path=tmp_path / "d",
+        ecosystem="deno",
+        manager="deno",
+        git_repo=tmp_path,
+        label="demo",
+    )
     bundle = _bundle(
         tmp_path,
         workspaces=[
@@ -304,6 +311,10 @@ def test_per_line_behind_latest_note_is_manager_aware(tmp_path: Path) -> None:
             WorkspaceResult(
                 workspace=npm_ws,
                 behind_latest=[Change("lodash", "4.17.21", "5.0.0")],
+            ),
+            WorkspaceResult(
+                workspace=deno_ws,
+                behind_latest=[Change("npm:chalk", "5.2.0", "5.3.0")],
             ),
         ],
     )
@@ -324,6 +335,8 @@ def test_per_line_behind_latest_note_is_manager_aware(tmp_path: Path) -> None:
     assert "peer/group-constrained" in out
     # npm correctly reports it has no latest mode.
     assert "no latest mode; bump the pin manually" in out
+    # Deno supports latest mode and its targeted fallback.
+    assert "run with --latest to include" in out
 
 
 def test_yarn_behind_latest_note_when_targeted_bump_already_requested(
