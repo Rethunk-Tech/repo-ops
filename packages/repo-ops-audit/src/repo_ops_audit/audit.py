@@ -556,7 +556,6 @@ _DENO_JSON_UNSUPPORTED = (
     "found argument '--json'",
     "invalid option",
 )
-_DENO_SEVERITIES = ("critical", "high", "moderate", "medium", "low")
 _DENO_SEVERITY_RE = re.compile(
     r"\b(?P<count>\d+)\s+(?P<severity>critical|high|moderate|medium|low)\b",
     re.IGNORECASE,
