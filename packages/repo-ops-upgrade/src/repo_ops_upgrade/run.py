@@ -129,10 +129,13 @@ def _run_upgrade_body(
     roots: list[str],
     follow_symlinks: bool = False,
 ) -> int:
-    # --latest / --go-upgrade-mode set the per-ecosystem env vars the checker
-    # modules already read, BEFORE any worker pool starts (#102). Additive: the
-    # env-var reads stay; these flags just populate them for this process.
-    if getattr(args, "latest", False):
+    # --latest / --full / --go-upgrade-mode set the per-ecosystem env vars the
+    # checker modules already read, BEFORE any worker pool starts (#102).
+    # Additive: the env-var reads stay; these flags just populate them for this
+    # process.
+    full_sweep = bool(getattr(args, "full", False))
+    latest = bool(getattr(args, "latest", False)) or full_sweep
+    if latest:
         os.environ["REPO_OPS_BUN_UPDATE_LATEST"] = "1"
         os.environ["REPO_OPS_PNPM_UPDATE_LATEST"] = "1"
         os.environ["REPO_OPS_YARN_UPDATE_LATEST"] = "1"
@@ -147,13 +150,13 @@ def _run_upgrade_body(
     # Opt-in per-package targeted fallback (#111); only meaningful with --latest,
     # which is what produces the behind_latest work-list it consumes. All four
     # managers' flags must populate their env var or the CLI flag is a no-op (#131).
-    if getattr(args, "yarn_targeted_bump", False):
+    if full_sweep or getattr(args, "yarn_targeted_bump", False):
         os.environ["REPO_OPS_YARN_TARGETED_BUMP"] = "1"
-    if getattr(args, "npm_targeted_bump", False):
+    if full_sweep or getattr(args, "npm_targeted_bump", False):
         os.environ["REPO_OPS_NPM_TARGETED_BUMP"] = "1"
-    if getattr(args, "pnpm_targeted_bump", False):
+    if full_sweep or getattr(args, "pnpm_targeted_bump", False):
         os.environ["REPO_OPS_PNPM_TARGETED_BUMP"] = "1"
-    if getattr(args, "bun_targeted_bump", False):
+    if full_sweep or getattr(args, "bun_targeted_bump", False):
         os.environ["REPO_OPS_BUN_TARGETED_BUMP"] = "1"
     # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects (#132).
     if getattr(args, "migrate_to_uv_lock", False):
@@ -463,9 +466,7 @@ def _run_upgrade_body(
         # --latest is the umbrella that also opts Actions into latest mode.
         _raw_actions_mode = getattr(args, "actions_upgrade_mode", None)
         if _raw_actions_mode is None:
-            _raw_actions_mode = (
-                "latest" if getattr(args, "latest", False) else "normalize"
-            )
+            _raw_actions_mode = "latest" if latest else "normalize"
         actions_mode: actions.ActionsUpgradeMode = (
             "latest" if _raw_actions_mode == "latest" else "normalize"
         )
