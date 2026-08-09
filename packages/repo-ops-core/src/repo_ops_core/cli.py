@@ -592,7 +592,11 @@ def add_upgrade_common_arguments(
             "--skip-remediations",
             default="",
             metavar="IDS",
-            help="Comma-separated remediation ids to skip (biome_schema, ...).",
+            help=(
+                "Comma-separated remediation ids to skip "
+                "(biome_schema, playwright_browsers, codegen, package_manager_pin, "
+                "gofmt, go_generate, ruff_fix, cargo_fix, deno_fix)."
+            ),
         )
         saf.add_argument(
             "--verify-test",
