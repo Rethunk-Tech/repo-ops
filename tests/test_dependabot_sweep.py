@@ -504,6 +504,53 @@ def test_dependabot_parser_close_flag() -> None:
     assert args_no_close.close is False
 
 
+def test_dependabot_parser_exclude_patterns() -> None:
+    parser = build_dependabot_parser()
+    args = parser.parse_args(["--exclude", "vendor", "--exclude", "archive"])
+    assert args.exclude_patterns == ["vendor", "archive"]
+
+
+def test_dependabot_exclude_cli_wins_over_config(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cli_excluded = str(tmp_path / "cli-excluded")
+    config_excluded = str(tmp_path / "config-excluded")
+    kept = str(tmp_path / "kept")
+    discovered = {
+        "cli": cli_excluded,
+        "config": config_excluded,
+        "kept": kept,
+    }
+    with (
+        patch(
+            "repo_ops_dependabot.dependabot.discover_repos",
+            return_value=discovered,
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot.load_global_config",
+            return_value={},
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot.load_repo_config",
+            return_value={"exclude": ["config-excluded"]},
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._github_remote",
+            return_value="https://github.com/owner/repo",
+        ) as mock_remote,
+        patch(
+            "repo_ops_dependabot.dependabot._gh_list_dependabot_prs",
+            return_value=([], ""),
+        ),
+        patch("repo_ops_dependabot.dependabot.run_git"),
+    ):
+        assert main(["--exclude", "cli-excluded", str(tmp_path)]) == 0
+
+    scanned_paths = {call.args[0] for call in mock_remote.call_args_list}
+    assert scanned_paths == {config_excluded, kept}
+    assert "excluded: 1 repo(s)" in capsys.readouterr().out
+
+
 def test_dependabot_close_calls_gh_pr_close(tmp_path: Path) -> None:
     """With --close and a superseded high-confidence PR, gh pr close is invoked."""
     fake_repo = str(tmp_path)

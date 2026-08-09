@@ -63,6 +63,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from repo_ops_core.cli import (
+    add_exclude_argument,
     add_follow_symlinks_argument,
     add_json_argument,
     add_roots_argument,
@@ -70,8 +71,10 @@ from repo_ops_core.cli import (
     resolve_scan_roots,
     wire_verbose,
 )
+from repo_ops_core.config import load_global_config, load_repo_config
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.discovery import discover_repos
+from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
 from repo_ops_core.git import repo_label, run_git
 from repo_ops_lockfiles.parsers import (
     versions_bun_lock,
@@ -735,18 +738,41 @@ def _parse_group_body(body: str) -> list[GroupRow] | None:
 # ---------------------------------------------------------------------------
 
 
+def _discover_repo_paths(
+    roots: list[str],
+    *,
+    follow_symlinks: bool = False,
+    exclude_patterns: list[str] | None = None,
+) -> tuple[list[str], int]:
+    common_to_repo = discover_repos(roots, follow_symlinks=follow_symlinks)
+    repo_paths = [Path(repo) for repo in common_to_repo.values()]
+    if not exclude_patterns:
+        return sorted(str(repo) for repo in repo_paths), 0
+
+    kept, excluded_count = filter_repo_paths(
+        repo_paths,
+        exclude_patterns,
+        label_fn=lambda path: repo_label(str(path), roots),
+    )
+    return sorted(str(repo) for repo in kept), excluded_count
+
+
 def scan_repos(
     roots: list[str],
     *,
     follow_symlinks: bool = False,
     do_close: bool = False,
     default_branch_comment: bool = True,
+    repo_paths: list[str] | None = None,
 ) -> list[RepoResult]:
     """Discover repos, list Dependabot PRs, check supersession."""
-    common_to_repo = discover_repos(roots, follow_symlinks=follow_symlinks)
+    if repo_paths is None:
+        repo_paths = list(
+            discover_repos(roots, follow_symlinks=follow_symlinks).values()
+        )
     results: list[RepoResult] = []
 
-    for repo in sorted(common_to_repo.values()):
+    for repo in sorted(repo_paths):
         remote_url = _github_remote(repo)
         if not remote_url:
             continue  # not a github.com repo
@@ -888,7 +914,13 @@ def scan_repos(
 # ---------------------------------------------------------------------------
 
 
-def print_dependabot_report(results: list[RepoResult], *, do_close: bool) -> None:
+def print_dependabot_report(
+    results: list[RepoResult],
+    *,
+    do_close: bool,
+    excluded_count: int = 0,
+    exclude_patterns: list[str] | None = None,
+) -> None:
     action_verb = "Closed" if do_close else "Would close"
     total_prs = sum(len(r.prs) for r in results)
     superseded = sum(
@@ -912,6 +944,8 @@ def print_dependabot_report(results: list[RepoResult], *, do_close: bool) -> Non
         f"Dependabot PR sweep across {len(results)} github.com repo(s); "
         f"{total_prs} open PR(s)"
     )
+    if exclude_patterns:
+        print(f"  excluded: {excluded_count} repo(s)")
     print(
         f"  superseded: {superseded}, not yet: {not_superseded}, "
         f"unparseable/unknown: {unknown}"
@@ -1093,6 +1127,7 @@ def scaffold_repos(
     follow_symlinks: bool = False,
     do_write: bool = False,
     schedule: str = "weekly",
+    repo_paths: list[str] | None = None,
 ) -> int:
     """Scaffold / update ``.github/dependabot.yml`` for every repo under *roots*.
 
@@ -1101,12 +1136,15 @@ def scaffold_repos(
 
     Returns 0 on success.
     """
-    common_to_repo = discover_repos(roots, follow_symlinks=follow_symlinks)
-    if not common_to_repo:
+    if repo_paths is None:
+        repo_paths = list(
+            discover_repos(roots, follow_symlinks=follow_symlinks).values()
+        )
+    if not repo_paths:
         print("No git repositories found under the specified roots.")
         return 0
 
-    for repo_path_str in sorted(common_to_repo.values()):
+    for repo_path_str in sorted(repo_paths):
         repo = Path(repo_path_str)
         label = repo_label(repo_path_str, roots)
         entries = detect_ecosystems(repo)
@@ -1160,6 +1198,7 @@ precision:
     )
     add_roots_argument(parser)
     add_follow_symlinks_argument(parser)
+    add_exclude_argument(parser)
     parser.add_argument(
         "--close",
         action="store_true",
@@ -1219,22 +1258,48 @@ def main(argv: list[str] | None = None) -> int:
     if scaffold and close_flag:
         parser.error("--close is not supported with --scaffold (PR-scan mode only)")
 
+    exclude_patterns: list[str] = []
+    excluded_count = 0
     try:
+        global_config = load_global_config()
+        repo_config = load_repo_config(Path.cwd())
+        config_exclude = (
+            repo_config["exclude"]
+            if "exclude" in repo_config
+            else global_config.get("exclude")
+        )
+        exclude_patterns = merge_exclude_patterns(
+            getattr(args, "exclude_patterns", None), config_exclude
+        )
         roots = resolve_scan_roots(list(args.roots), parser)
         follow_symlinks = bool(getattr(args, "follow_symlinks", False))
+        repo_paths, excluded_count = _discover_repo_paths(
+            roots,
+            follow_symlinks=follow_symlinks,
+            exclude_patterns=exclude_patterns,
+        )
 
         # Scaffold mode: detect ecosystems and generate dependabot.yml
         if scaffold:
-            return scaffold_repos(
+            result = scaffold_repos(
                 roots,
                 follow_symlinks=follow_symlinks,
                 do_write=write_flag,
                 schedule=str(getattr(args, "schedule", "weekly")),
+                repo_paths=repo_paths,
             )
+            if exclude_patterns:
+                print(f"Excluded {excluded_count} repo(s) by --exclude.")
+            return result
 
         do_close = close_flag
 
-        results = scan_repos(roots, follow_symlinks=follow_symlinks, do_close=do_close)
+        results = scan_repos(
+            roots,
+            follow_symlinks=follow_symlinks,
+            do_close=do_close,
+            repo_paths=repo_paths,
+        )
     except Exception as exc:
         print(f"repo-ops dependabot: unexpected error: {exc}", file=sys.stderr)
         return 1
@@ -1243,6 +1308,7 @@ def main(argv: list[str] | None = None) -> int:
         payload: dict[str, object] = {
             "schema_version": 1,
             "roots": roots,
+            "exclude_patterns": exclude_patterns,
             "dry_run": not do_close,
             "repos": [
                 {
@@ -1299,6 +1365,7 @@ def main(argv: list[str] | None = None) -> int:
             ],
             "summary": {
                 "repos": len(results),
+                "excluded_repos": excluded_count,
                 "total_prs": sum(len(r.prs) for r in results),
                 "superseded": sum(
                     1
@@ -1326,7 +1393,12 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, indent=None if args.compact else 2))
         return 0
 
-    print_dependabot_report(results, do_close=do_close)
+    print_dependabot_report(
+        results,
+        do_close=do_close,
+        excluded_count=excluded_count,
+        exclude_patterns=exclude_patterns,
+    )
     return 0
 
 
