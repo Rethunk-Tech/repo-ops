@@ -135,7 +135,9 @@ LATEST_FLAG_HELP = (
     "CLI --latest; yarn uses yarn up -R '*' (peer-constrained deps may "
     "stay behind_latest); go uses explicit latest tags; npm has no latest "
     "mode (semver ranges only). An explicit --actions-upgrade-mode or "
-    "--go-upgrade-mode overrides the umbrella for that ecosystem."
+    "--go-upgrade-mode overrides the umbrella for that ecosystem. This is "
+    "not a full-coverage sweep; use --full to include Actions and container "
+    "digest refreshes plus targeted JavaScript bumps."
 )
 
 
@@ -388,6 +390,16 @@ def add_upgrade_common_arguments(
         help=LATEST_FLAG_HELP,
     )
     pol.add_argument(
+        "--full",
+        action="store_true",
+        help=(
+            "Full-coverage sweep umbrella: enable --latest, "
+            "--actions-refresh-sha, --container-refresh-sha, and all four "
+            "JavaScript targeted-bump flags (Yarn, npm, pnpm, and bun). "
+            "Opt in explicitly; per-ecosystem policy flags still override it."
+        ),
+    )
+    pol.add_argument(
         "--yarn-targeted-bump",
         action="store_true",
         dest="yarn_targeted_bump",
@@ -580,7 +592,7 @@ def add_upgrade_common_arguments(
         saf.add_argument(
             "--verify-test",
             action="store_true",
-            help="Run go test ./... during verify.",
+            help="Run go test ./... and cargo test during verify.",
         )
         saf.add_argument(
             "--on-verify-fail",
@@ -701,7 +713,8 @@ def add_upgrade_common_arguments(
             help=(
                 "After apply: commit each repo where apply and verify succeeded. "
                 "conventional=local git; agent=commit-agent provider drafts the "
-                "subject (default cursor; needs CURSOR_API_KEY and optional "
+                "subject (model from REPO_OPS_COMMIT_AGENT_MODEL, default "
+                "composer-2.5; needs CURSOR_API_KEY and optional "
                 "repo-ops-upgrade[commit-agent-cursor])."
             ),
         )
