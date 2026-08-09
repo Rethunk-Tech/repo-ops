@@ -190,6 +190,11 @@ Mutually exclusive with **`--scaffold`** (scaffold mode does not scan PRs).
 - **`--write`** — with `--scaffold`, actually write `.github/dependabot.yml` (requires `--scaffold`).
 - **`--schedule INTERVAL`** — schedule for generated entries (`daily`/`weekly`/`monthly`; default `weekly`).
 
+Scaffold detection covers npm, Bun lockfiles (`package-ecosystem: bun`), Deno,
+pre-commit, pip, Go modules, Cargo, Docker, and GitHub Actions. This is separate
+from supersession parsing, which determines whether existing Dependabot PRs are
+already satisfied by local manifests or lockfiles.
+
 `--json` and `--close` are invalid with `--scaffold`.
 
 Precision caveats:
