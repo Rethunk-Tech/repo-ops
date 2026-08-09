@@ -9,16 +9,25 @@ import sys
 
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.process import run
+from repo_ops_lockfiles.snapshots import (
+    restore_workspace_snapshot,
+    snapshot_workspace_files,
+)
 from repo_ops_models import Change, Workspace
 
 from repo_ops_js.guards import assert_targets_resolved
 
 _DENO_UPDATE_LATEST_ENV = "REPO_OPS_DENO_UPDATE_LATEST"
+_DENO_TARGETED_BUMP_ENV = "REPO_OPS_DENO_TARGETED_BUMP"
 _TRUE_VALUES = ("1", "true", "yes", "on")
 
 
 def _deno_update_latest_enabled() -> bool:
     return os.environ.get(_DENO_UPDATE_LATEST_ENV, "").strip().lower() in _TRUE_VALUES
+
+
+def _deno_targeted_bump_enabled() -> bool:
+    return os.environ.get(_DENO_TARGETED_BUMP_ENV, "").strip().lower() in _TRUE_VALUES
 
 
 def check_deno(ws: Workspace) -> tuple[list[Change], list[Change]]:
@@ -116,6 +125,32 @@ def _parse_deno_outdated(stdout: str) -> tuple[list[Change], list[Change]]:
     return changes, behind_latest
 
 
+def targeted_bump_behind(
+    ws: Workspace, behind: list[Change]
+) -> tuple[list[Change], list[Change]]:
+    """Run a reversible per-package ``deno update`` for behind-latest deps."""
+    if not behind or not _deno_targeted_bump_enabled():
+        return [], behind
+    applied: list[Change] = []
+    still_behind: list[Change] = []
+    for change in behind:
+        snapshot = snapshot_workspace_files(ws.path, "deno")
+        cmd = ["deno", "update"]
+        if _deno_update_latest_enabled():
+            cmd.append("--latest")
+        cmd.append(change.name)
+        proc = run(cmd, ws.path, timeout=resolve_timeout_apply())
+        advanced = False
+        if proc.returncode == 0:
+            advanced = snapshot_workspace_files(ws.path, "deno") != snapshot
+        if advanced:
+            applied.append(change)
+        else:
+            restore_workspace_snapshot(ws.path, snapshot, "deno")
+            still_behind.append(change)
+    return applied, still_behind
+
+
 def apply_deno(ws: Workspace) -> list[Change]:
     """Run ``deno outdated --update`` to upgrade dependencies.
 
@@ -150,4 +185,5 @@ def apply_deno(ws: Workspace) -> list[Change]:
         # Deno may not populate node_modules; assert_targets_resolved skips when
         # the resolver returns None, so this is best-effort for npm: specifiers.
         assert_targets_resolved(ws, guardable, manager="deno")
+    _, behind = targeted_bump_behind(ws, behind)
     return behind
