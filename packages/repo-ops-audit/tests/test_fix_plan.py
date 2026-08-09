@@ -10,15 +10,23 @@ from unittest.mock import patch
 
 import pytest
 from repo_ops_audit.audit import (
+    ApplyOutcome,
     RemediationItem,
     VulnCount,
     WorkspaceResult,
+    _apply_deno_audit,
+    _audit_deno,
     _audit_node,
     _audit_py_uv,
     _audit_rust,
+    _detect_workspaces,
     _extract_remediations_cargo_json,
     _extract_remediations_npm_json,
     _extract_remediations_pip_audit,
+    _plan_deno_fix,
+    _parse_deno_audit_json,
+    _parse_deno_audit_text,
+    apply_remediations,
     build_audit_parser,
     collect_all_remediations,
     main,
@@ -649,3 +657,143 @@ def test_audit_help_shows_fix_plan(capsys: pytest.CaptureFixture[str]) -> None:
     assert exc_info.value.code == 0
     out = capsys.readouterr().out
     assert "--fix-plan" in out
+
+
+# ---------------------------------------------------------------------------
+# Deno discovery and audit
+# ---------------------------------------------------------------------------
+
+
+def test_detect_deno_workspace(tmp_path) -> None:
+    with (
+        patch(
+            "repo_ops_audit.audit.iter_scanned_dirs",
+            return_value=[(tmp_path, {"deno.json"})],
+        ),
+        patch("repo_ops_audit.audit.manifest_kinds", return_value=[]),
+    ):
+        workspaces = _detect_workspaces(str(tmp_path))
+    assert workspaces == [(str(tmp_path), "deno", "deno")]
+
+
+def test_audit_deno_skips_when_tool_missing() -> None:
+    with patch("shutil.which", return_value=None):
+        result = _audit_deno("/some/repo")
+    assert result.status == "skipped"
+    assert result.skip_reason == "deno not on PATH"
+
+
+def test_parse_deno_audit_text_summary_and_fixed_version() -> None:
+    text = """\
+Found 2 vulnerabilities
+Severity: 0 low, 0 moderate, 1 high, 1 critical
+
+Fixed 1 vulnerability:
+  lodash 4.17.20 -> 4.17.21
+"""
+    counts, remediations, findings = _parse_deno_audit_text(text, "/ws")
+    assert counts.as_dict() == {
+        "critical": 1,
+        "high": 1,
+        "moderate": 0,
+        "low": 0,
+        "unknown": 0,
+    }
+    assert remediations[0].package == "lodash"
+    assert remediations[0].safe_version == "4.17.21"
+    assert findings[0].ecosystem == "deno"
+
+
+def test_audit_deno_parses_json_advisories() -> None:
+    data = {
+        "vulnerabilities": [
+            {
+                "id": "GHSA-1",
+                "package": "oak",
+                "severity": "critical",
+                "fixed_version": "17.1.0",
+            }
+        ]
+    }
+    counts, remediations, findings = _parse_deno_audit_json(data, "/ws")
+    assert counts.critical == 1
+    assert remediations[0].safe_version == "17.1.0"
+    assert findings[0].id == "GHSA-1"
+
+
+def test_audit_deno_runs_native_audit_and_normalizes_text() -> None:
+    output = "Found 1 vulnerability\nSeverity: 0 low, 0 moderate, 1 high, 0 critical\n"
+    with (
+        patch("shutil.which", return_value="/usr/bin/deno"),
+        patch(
+            "repo_ops_audit.audit._run_deno_audit",
+            return_value=(1, output, ""),
+        ) as run_audit,
+    ):
+        result = _audit_deno("/some/repo")
+    run_audit.assert_called_once_with("/some/repo")
+    assert result.status == "vulns"
+    assert result.counts.high == 1
+
+
+def test_plan_deno_fix_restores_lock_import_map_and_manifest(tmp_path) -> None:
+    lock = tmp_path / "deno.lock"
+    import_map = tmp_path / "imports.json"
+    config = tmp_path / "deno.json"
+    lock.write_text("original-lock", encoding="utf-8")
+    import_map.write_text("original-imports", encoding="utf-8")
+    config.write_text('{"importMap":"./imports.json"}', encoding="utf-8")
+    output = "Fixed 1 vulnerability:\n  oak 17.0.0 -> 17.1.0\n"
+
+    def fake_run(cmd, cwd, **_kwargs):
+        assert cmd == ["deno", "audit", "--fix"]
+        lock.write_text("changed-lock", encoding="utf-8")
+        import_map.write_text("changed-imports", encoding="utf-8")
+        config.write_text('{"importMap":"./other.json"}', encoding="utf-8")
+        return 0, output, ""
+
+    with patch("repo_ops_audit.audit._run", side_effect=fake_run):
+        remediations = _plan_deno_fix(str(tmp_path))
+    assert remediations[0].safe_version == "17.1.0"
+    assert lock.read_text(encoding="utf-8") == "original-lock"
+    assert import_map.read_text(encoding="utf-8") == "original-imports"
+    assert config.read_text(encoding="utf-8") == '{"importMap":"./imports.json"}'
+
+
+def test_apply_deno_audit_restores_files_when_verification_finds_vulns(
+    tmp_path,
+) -> None:
+    lock = tmp_path / "deno.lock"
+    import_map = tmp_path / "import_map.json"
+    lock.write_text("original-lock", encoding="utf-8")
+    import_map.write_text("original-imports", encoding="utf-8")
+    output = "Found 1 vulnerability\nSeverity: 0 low, 0 moderate, 1 high, 0 critical\n"
+
+    def fake_run(cmd, cwd, **_kwargs):
+        if cmd == ["deno", "audit", "--fix"]:
+            lock.write_text("changed-lock", encoding="utf-8")
+            import_map.write_text("changed-imports", encoding="utf-8")
+            return 0, "", ""
+        assert cmd == ["deno", "audit", "--json"]
+        return 1, output, ""
+
+    with (
+        patch("shutil.which", return_value="/usr/bin/deno"),
+        patch("repo_ops_audit.audit._run", side_effect=fake_run),
+    ):
+        outcome = _apply_deno_audit(str(tmp_path))
+    assert outcome.status == "fail"
+    assert lock.read_text(encoding="utf-8") == "original-lock"
+    assert import_map.read_text(encoding="utf-8") == "original-imports"
+
+
+def test_apply_remediations_dispatches_deno_native_fix(tmp_path) -> None:
+    item = RemediationItem("oak", "17.1.0", "deno", str(tmp_path))
+    expected = ApplyOutcome(str(tmp_path), "ok", changes_count=1)
+    with (
+        patch("shutil.which", return_value="/usr/bin/deno"),
+        patch("repo_ops_audit.audit._apply_deno_audit", return_value=expected) as apply,
+    ):
+        outcomes = apply_remediations([item], do_verify=False)
+    assert outcomes == [expected]
+    apply.assert_called_once_with(str(tmp_path), do_verify=False)
