@@ -19,6 +19,7 @@ from repo_ops_upgrade.actions import (
     _action_policy_violation_local_only,
     _derive_owner,
     _fetch_org_policy_cached,
+    _read_policy_level_env,
     scan_actions,
 )
 
@@ -56,6 +57,16 @@ jobs:
       - uses: ./local-action
       - uses: myorg/internal-action@v1
       - uses: actions/checkout@v4
+"""
+
+_BUMP_WF = """\
+name: CI
+on: push
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: softprops/action-gh-release@v1.0.0
 """
 
 
@@ -673,6 +684,114 @@ def test_scan_policy_rows_report_only_and_pin_bumps_still_run(
     assert len(policy_rows) == 2
     # status is "policy", not "fail" — no exit-code impact
     assert all(b.status == "policy" for b in policy_rows)
+
+
+def test_policy_level_env_defaults_to_report_and_rejects_unknown(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("REPO_OPS_ACTIONS_POLICY_LEVEL", raising=False)
+    assert _read_policy_level_env() == "report"
+
+    monkeypatch.setenv("REPO_OPS_ACTIONS_POLICY_LEVEL", "unknown")
+    assert _read_policy_level_env() == "report"
+    assert "defaulting to 'report'" in capsys.readouterr().err
+
+
+def test_scan_policy_blocked_skips_pin_rewrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """block: violating action keeps its pin and emits policy-blocked."""
+    monkeypatch.setenv("REPO_OPS_ACTIONS_ORG_POLICY", "1")
+    wf = _wf(tmp_path, _BUMP_WF)
+    policy_store: dict = {
+        "myorg": {
+            "enabled": True,
+            "allowed_actions": "local_only",
+            "github_owned_allowed": False,
+            "verified_allowed": False,
+            "patterns_allowed": [],
+        }
+    }
+    before = wf.read_text(encoding="utf-8")
+
+    def fake_git_run(cmd: list, **kw: object) -> MagicMock:
+        return MagicMock(
+            returncode=0, stdout="https://github.com/myorg/myrepo.git\n", stderr=""
+        )
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
+        patch("repo_ops_upgrade.actions.subprocess.run", side_effect=fake_git_run),
+        patch(
+            "repo_ops_upgrade.actions.action_tag_info",
+            return_value={
+                "bare_majors": {1},
+                "max_major": 1,
+                "all_tags": {"v1"},
+                "sha_to_tags": {},
+            },
+        ),
+    ):
+        bumps, _ = scan_actions(
+            tmp_path,
+            apply=True,
+            lint_level="off",
+            policy_level="block",
+            org_policy_cache=policy_store,
+        )
+
+    assert wf.read_text(encoding="utf-8") == before
+    blocked_rows = [b for b in bumps if b.status == "policy-blocked"]
+    assert len(blocked_rows) == 1
+    assert blocked_rows[0].action == "softprops/action-gh-release"
+
+
+def test_scan_policy_warn_applies_pin_rewrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """warn: violating action is rewritten and emits a warn row."""
+    monkeypatch.setenv("REPO_OPS_ACTIONS_ORG_POLICY", "1")
+    wf = _wf(tmp_path, _BUMP_WF)
+    policy_store: dict = {
+        "myorg": {
+            "enabled": True,
+            "allowed_actions": "local_only",
+            "github_owned_allowed": False,
+            "verified_allowed": False,
+            "patterns_allowed": [],
+        }
+    }
+
+    def fake_git_run(cmd: list, **kw: object) -> MagicMock:
+        return MagicMock(
+            returncode=0, stdout="https://github.com/myorg/myrepo.git\n", stderr=""
+        )
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
+        patch("repo_ops_upgrade.actions.subprocess.run", side_effect=fake_git_run),
+        patch(
+            "repo_ops_upgrade.actions.action_tag_info",
+            return_value={
+                "bare_majors": {1},
+                "max_major": 1,
+                "all_tags": {"v1"},
+                "sha_to_tags": {},
+            },
+        ),
+    ):
+        bumps, _ = scan_actions(
+            tmp_path,
+            apply=True,
+            lint_level="off",
+            policy_level="warn",
+            org_policy_cache=policy_store,
+        )
+
+    assert "@v1\n" in wf.read_text(encoding="utf-8")
+    warn_rows = [b for b in bumps if b.status == "warn"]
+    assert len(warn_rows) == 1
+    assert warn_rows[0].action == "softprops/action-gh-release"
 
 
 # ---------------------------------------------------------------------------
