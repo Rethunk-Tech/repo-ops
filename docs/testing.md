@@ -14,7 +14,7 @@ uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail
 uv build packages/repo-ops
 ```
 
-The pyrefly check scope mirrors `[tool.pyrefly] project-includes` in root `pyproject.toml` (authoritative when they diverge from CI YAML). `pyrefly check .` runs in single-file mode, which ignores `project-includes`/`project-excludes` from the config file entirely — the `--project-excludes` flag on the command line is what actually keeps `tests/`/`scripts/` out of scope, matching what `[tool.mypy] packages` covered before this migration.
+The pyrefly check scope mirrors `[tool.pyrefly] project-includes` in root `pyproject.toml` (authoritative when they diverge from CI YAML). `pyrefly check .` runs in single-file mode, which ignores `project-includes`/`project-excludes` from the config file entirely — the `--project-excludes` flag on the command line is what actually keeps `tests/`/`scripts/` out of scope, matching what `[tool.mypy] packages` covered before this migration. Hatch fast verification applies the same rule per target workspace, forwarding configured `project-includes` and `project-excludes` values to pyrefly rather than hard-coding repository paths.
 
 ## Test layout
 
@@ -39,7 +39,7 @@ Coverage source (`[tool.coverage.run] source` in root `pyproject.toml`) includes
 The `integration` marker flags tests that require real external tools (bun, yarn, npm registry, go, govulncheck audit, git network calls). CI splits these into two jobs in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml):
 
 | Job | Marker | Blocking? | Toolchain setup |
-|-----|--------|-----------|-----------------|
+| ----- | -------- | ----------- | ----------------- |
 | `ci` | `-m "not integration"` | Yes (PR gate) | Python matrix only |
 | `integration` | `-m integration` | No (`continue-on-error: true`) | Node 22 + Corepack (yarn), bun, Go stable, govulncheck |
 

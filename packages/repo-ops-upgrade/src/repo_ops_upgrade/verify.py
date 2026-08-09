@@ -78,6 +78,26 @@ def _pyproject_dev_deps(d: dict) -> set[str]:
     return dev
 
 
+def _pyrefly_scope_args(d: dict) -> list[str] | str:
+    """Return pyrefly CLI scope args from the target workspace config."""
+    pyrefly = (d.get("tool") or {}).get("pyrefly") or {}
+    if not isinstance(pyrefly, dict):
+        return "invalid [tool.pyrefly] configuration"
+
+    args: list[str] = []
+    for key in ("project-includes", "project-excludes"):
+        values = pyrefly.get(key)
+        if values is None:
+            continue
+        if not isinstance(values, list) or not all(
+            isinstance(value, str) and value for value in values
+        ):
+            return f"invalid [tool.pyrefly] {key}: expected a list of strings"
+        if values:
+            args.extend([f"--{key}", *values])
+    return args
+
+
 def _verify_hatch_fast(ws: Workspace, *, timeout: int | None = None) -> str | None:
     d = read_toml_file(ws.path / "pyproject.toml")
     if not d:
@@ -117,7 +137,14 @@ def _verify_hatch_fast(ws: Workspace, *, timeout: int | None = None) -> str | No
         return None
     # pyrefly in dev deps
     if "pyrefly" in dev:
-        proc = run(["uv", "run", "pyrefly", "check", "."], ws.path, timeout=timeout)
+        scope_args = _pyrefly_scope_args(d)
+        if isinstance(scope_args, str):
+            return scope_args
+        proc = run(
+            ["uv", "run", "pyrefly", "check", ".", *scope_args],
+            ws.path,
+            timeout=timeout,
+        )
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "uv run pyrefly check failed"
         return None
