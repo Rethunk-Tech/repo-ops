@@ -205,6 +205,24 @@ def versions_pdm_lock(p: Path) -> set[str]:
     return out
 
 
+def versions_poetry_lock(p: Path) -> set[str]:
+    """poetry.lock (TOML) → set of name@version.
+
+    Poetry lock files are TOML with a list of ``[[package]]`` entries, each
+    containing ``name`` and ``version`` keys.
+    """
+    d = read_toml_file(p) or {}
+    out: set[str] = set()
+    for pkg in d.get("package", []):
+        if not isinstance(pkg, dict):
+            continue
+        name = pkg.get("name")
+        ver = pkg.get("version")
+        if name and ver:
+            out.add(f"{name}@{ver}")
+    return out
+
+
 def versions_uv_lock(p: Path) -> set[str]:
     """uv.lock (TOML) → set of name@version.
 

@@ -83,6 +83,7 @@ from repo_ops_lockfiles.parsers import (
     versions_pdm_lock,
     versions_pipenv_lock,
     versions_pnpm_lock,
+    versions_poetry_lock,
     versions_uv_lock,
     versions_yarn_lock,
 )
@@ -404,7 +405,7 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
         if any(part in SKIP_DIRS for part in lockfile.parts):
             continue
         with contextlib.suppress(Exception):
-            for entry in versions_uv_lock(lockfile):
+            for entry in versions_poetry_lock(lockfile):
                 if "@" in entry:
                     pkg, ver = _split_name_ver(entry)
                     if pkg:
@@ -493,7 +494,7 @@ def _lockfile_versions(repo: str) -> set[str]:
         if any(part in SKIP_DIRS for part in lockfile.parts):
             continue
         with contextlib.suppress(Exception):
-            versions |= versions_uv_lock(lockfile)
+            versions |= versions_poetry_lock(lockfile)
 
     for lockfile in root.rglob("pdm.lock"):
         if any(part in SKIP_DIRS for part in lockfile.parts):
