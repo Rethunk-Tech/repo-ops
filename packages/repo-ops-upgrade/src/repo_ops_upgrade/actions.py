@@ -106,6 +106,15 @@ ActionsLintLevel = Literal["block", "warn", "off"]
 
 _DEFAULT_LINT_LEVEL: ActionsLintLevel = "block"
 
+# How org allowed-actions policy violations gate pin bumps.
+# ``block`` skips rewrites and emits ``policy-blocked`` rows.
+# ``warn`` allows rewrites and emits ``warn`` rows.
+# ``report`` preserves the report-only ``policy`` rows.
+# Env var: REPO_OPS_ACTIONS_POLICY_LEVEL (values: block | warn | report).
+ActionsPolicyLevel = Literal["block", "warn", "report"]
+
+_DEFAULT_POLICY_LEVEL: ActionsPolicyLevel = "report"
+
 # ---------------------------------------------------------------------------
 # Actionlint result cache (issue #123)
 # ---------------------------------------------------------------------------
@@ -409,6 +418,25 @@ def _read_lint_level_env() -> ActionsLintLevel:
         file=sys.stderr,
     )
     return _DEFAULT_LINT_LEVEL
+
+
+def _read_policy_level_env() -> ActionsPolicyLevel:
+    """Read ``REPO_OPS_ACTIONS_POLICY_LEVEL`` from the environment.
+
+    Returns ``"report"`` when the variable is absent or holds an unrecognised
+    value (with a warning printed to stderr in the latter case).
+    """
+    raw = os.environ.get("REPO_OPS_ACTIONS_POLICY_LEVEL", "").strip().lower()
+    if not raw:
+        return _DEFAULT_POLICY_LEVEL
+    if raw in ("block", "warn", "report"):
+        return raw  # type: ignore[return-value]
+    print(
+        f"WARN: REPO_OPS_ACTIONS_POLICY_LEVEL={raw!r} unrecognised; "
+        "defaulting to 'report'",
+        file=sys.stderr,
+    )
+    return _DEFAULT_POLICY_LEVEL
 
 
 def discover_workflow_files(repo: Path) -> list[Path]:
@@ -790,6 +818,7 @@ def scan_actions(
     upgrade_mode: ActionsUpgradeMode = "normalize",
     tag_cache: dict[str, dict | None] | None = None,
     lint_level: ActionsLintLevel | None = None,
+    policy_level: ActionsPolicyLevel | None = None,
     org_policy_cache: dict[str, dict | None] | None = None,
 ) -> tuple[list[ActionBump], int]:
     """Scan GitHub Actions workflow files and produce bump recommendations.
@@ -842,6 +871,17 @@ def scan_actions(
         * ``"off"`` — skips running actionlint entirely.
 
         A CLI flag (``--actions-lint-level``) can wire into this parameter later.
+    policy_level:
+        Controls how org allowed-actions policy violations gate pin bumps.
+        ``None`` (default) reads from ``REPO_OPS_ACTIONS_POLICY_LEVEL``, falling
+        back to ``"report"``.
+
+        * ``"block"`` — skips pin rewrites for violating actions and emits
+          ``policy-blocked`` rows.
+        * ``"warn"`` — allows pin rewrites and emits ``warn`` rows.
+        * ``"report"`` — emits ``policy`` rows without affecting rewrites.
+
+        A CLI flag (``--actions-policy-level``) can wire into this parameter later.
     org_policy_cache:
         Optional shared policy cache dict (maps owner → policy dict or None).
         When ``None``, the module-level ``_ORG_POLICY_CACHE`` is used.  Callers
@@ -852,6 +892,9 @@ def scan_actions(
     """
     effective_lint_level: ActionsLintLevel = (
         lint_level if lint_level is not None else _read_lint_level_env()
+    )
+    effective_policy_level: ActionsPolicyLevel = (
+        policy_level if policy_level is not None else _read_policy_level_env()
     )
     if effective_lint_level != "off" and not shutil.which("actionlint"):
         print(
@@ -874,6 +917,13 @@ def scan_actions(
         _org_owner = _derive_owner(repo)
         if _org_owner is not None:
             _org_policy = _fetch_org_policy_cached(_org_owner, _policy_store)
+
+    def _policy_violation_for(action: str) -> str | None:
+        if _org_policy is None or _org_owner is None or action.startswith("./"):
+            return None
+        if _org_policy.get("allowed_actions", "all") == "local_only":
+            return _action_policy_violation_local_only(action, _org_policy, _org_owner)
+        return _action_policy_violation(action, _org_policy)
 
     # Load the actionlint result cache once per run (skipped in "off" mode).
     _lint_cache: dict[str, dict] | None = None
@@ -936,6 +986,10 @@ def scan_actions(
         replacements: list[PinReplacement] = []
         for uses in pins:
             action, pin = uses.action, uses.pin
+            policy_violation = _policy_violation_for(action)
+            policy_blocked = (
+                effective_policy_level == "block" and policy_violation is not None
+            )
             # SHA-pinned: attempt to resolve to a version tag (unless keep_sha).
             if _SHA_RE.fullmatch(pin):
                 if keep_sha:
@@ -1006,7 +1060,7 @@ def scan_actions(
                                         detail=detail_desc,
                                     )
                                 )
-                                if apply:
+                                if apply and not policy_blocked:
                                     comment_rewrite: tuple[str, str] | None = None
                                     if cross_major and uses.comment:
                                         # Rewrite the trailing # vN hint to the new major.
@@ -1070,7 +1124,7 @@ def scan_actions(
                         detail=detail,
                     )
                 )
-                if apply:
+                if apply and not policy_blocked:
                     replacements.append(
                         PinReplacement(
                             action=action,
@@ -1117,7 +1171,7 @@ def scan_actions(
                         detail=f"cross-major {pin} -> {latest_target} (latest mode)",
                     )
                 )
-                if apply:
+                if apply and not policy_blocked:
                     replacements.append(
                         PinReplacement(
                             action=action,
@@ -1156,7 +1210,7 @@ def scan_actions(
                             detail=detail,
                         )
                     )
-                    if apply:
+                    if apply and not policy_blocked:
                         replacements.append(
                             PinReplacement(
                                 action=action,
@@ -1188,7 +1242,7 @@ def scan_actions(
                                 detail=detail,
                             )
                         )
-                        if apply:
+                        if apply and not policy_blocked:
                             replacements.append(
                                 PinReplacement(
                                     action=action,
@@ -1223,27 +1277,24 @@ def scan_actions(
                     )
                 )
 
-        # Org allowed-actions policy check (report-only; never blocks pin bumps).
+        # Org allowed-actions policy check.
         if _org_policy is not None and _org_owner is not None:
             for uses in pins:
                 action = uses.action
-                if action.startswith("./"):
-                    continue  # path-local: always allowed
-                allowed_actions_mode = _org_policy.get("allowed_actions", "all")
-                if allowed_actions_mode == "local_only":
-                    violation = _action_policy_violation_local_only(
-                        action, _org_policy, _org_owner
-                    )
-                else:
-                    violation = _action_policy_violation(action, _org_policy)
+                violation = _policy_violation_for(action)
                 if violation:
+                    status = {
+                        "block": "policy-blocked",
+                        "warn": "warn",
+                        "report": "policy",
+                    }[effective_policy_level]
                     bumps.append(
                         ActionBump(
                             workflow=rel,
                             action=action,
                             pin=uses.pin,
                             latest=uses.pin,
-                            status="policy",
+                            status=status,
                             detail=violation,
                         )
                     )
