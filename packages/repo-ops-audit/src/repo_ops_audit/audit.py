@@ -481,7 +481,9 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
             except (json.JSONDecodeError, ValueError, KeyError, TypeError):
                 pass
         if not _json_ok:
-            counts = _parse_bun_audit_text(stdout + stderr)
+            bun_text = stdout + stderr
+            counts = _parse_bun_audit_text(bun_text)
+            bun_findings = _extract_findings_bun_audit_text(bun_text, ws)
         status = "vulns" if counts.total > 0 else ("error" if rc != 0 else "ok")
         if status == "error":
             return WorkspaceResult(
@@ -622,6 +624,24 @@ def _parse_bun_audit_text(text: str) -> VulnCount:
         else:
             counts.low += n
     return counts
+
+
+def _extract_findings_bun_audit_text(text: str, ws: str) -> list[FindingItem]:
+    """Create unfixed findings for Bun's aggregate text-only audit output."""
+    findings: list[FindingItem] = []
+    for match_index, match in enumerate(_BUN_AUDIT_RE.finditer(text)):
+        severity = match.group(2).lower()
+        for occurrence in range(int(match.group(1))):
+            findings.append(
+                FindingItem(
+                    id=f"bun-text/{severity}/{match_index}/{occurrence}",
+                    severity=severity,
+                    package="bun audit",
+                    ecosystem="node",
+                    workspace=ws,
+                )
+            )
+    return findings
 
 
 # ---------------------------------------------------------------------------
