@@ -739,7 +739,9 @@ def add_upgrade_common_arguments(
             help=(
                 "After child commits complete, also commit submodule pointer bumps "
                 "in umbrella repos for each child that received a commit this run. "
-                "Requires --commit-umbrella or REPO_OPS_COMMIT_UMBRELLA=1. "
+                "Enable with --commit-umbrella or REPO_OPS_COMMIT_UMBRELLA=1. "
+                "Umbrella pointer commits also require --commit=conventional or "
+                "--commit=agent; --commit=none does not commit. "
                 "Submodule discovery requires --submodules or "
                 "--submodule-order=children-first. Child-to-parent apply ordering "
                 "also requires --submodule-order=children-first; that is separate "
