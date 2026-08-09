@@ -158,6 +158,8 @@ def _run_upgrade_body(
         os.environ["REPO_OPS_PNPM_TARGETED_BUMP"] = "1"
     if full_sweep or getattr(args, "bun_targeted_bump", False):
         os.environ["REPO_OPS_BUN_TARGETED_BUMP"] = "1"
+    if full_sweep:
+        os.environ["REPO_OPS_CONTAINER_REFRESH_SHA"] = "1"
     # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects (#132).
     if getattr(args, "migrate_to_uv_lock", False):
         os.environ["REPO_OPS_HATCH_MIGRATE_UV_LOCK"] = "1"
@@ -459,7 +461,9 @@ def _run_upgrade_body(
         # Only unpin when the user explicitly opts in via --actions-unpin-sha.
         keep_sha = not bool(getattr(args, "actions_unpin_sha", False))
         # Digest refresh (#109): only meaningful while staying SHA-pinned.
-        refresh_sha = keep_sha and bool(getattr(args, "actions_refresh_sha", False))
+        refresh_sha = keep_sha and (
+            full_sweep or bool(getattr(args, "actions_refresh_sha", False))
+        )
         _raw_tag_style = getattr(args, "actions_tag_style", "major")
         tag_style: actions.TagStyle = "exact" if _raw_tag_style == "exact" else "major"
         # Cross-major apply (#106): explicit --actions-upgrade-mode wins; otherwise
