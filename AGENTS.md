@@ -160,6 +160,7 @@ A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinn
 | `--hours HOURS` | Rolling window in hours (default: 24) |
 | `--since ISO8601` | Window start (timezone required, e.g. `2026-05-26T00:00Z`) |
 | `--until ISO8601` | Window end (timezone required; defaults to now) |
+| `--source {local,gh}` | Attribution source: local remote-tracking reflog (default) or authenticated GitHub PushEvents |
 | `--show-shas` | Print commit SHAs (8 chars) grouped by repo after the table |
 | `--show-messages` | Implies `--show-shas`; also print each commit subject (max 100 chars) |
 | `--count-only` | Print only the total commit count |
@@ -201,6 +202,7 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 | ------ | --------- |
 | `--format FORMAT` | SBOM format: `cyclonedx` (default) or `spdx` |
 | `--output PATH` | Write SBOM to `PATH` instead of stdout |
+| `--enrich-licenses` | Opt-in SPDX fill from on-disk/registry metadata (also `REPO_OPS_ENRICH_LICENSES`) |
 
 #### `license` flags
 
@@ -208,6 +210,7 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 | ------ | --------- |
 | `--allow LICENSES` | Comma-separated SPDX IDs permitted; others flagged |
 | `--deny LICENSES` | Comma-separated SPDX IDs forbidden |
+| `--enrich-licenses` | Opt-in SPDX enrichment (same as `sbom`; also `REPO_OPS_ENRICH_LICENSES`) |
 | `--no-fail-unknown` | Exit 0 even when unknown licenses are found (default: exit 2) |
 
 #### `install-skill` flags
