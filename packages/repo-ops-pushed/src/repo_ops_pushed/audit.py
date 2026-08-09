@@ -823,7 +823,7 @@ def main(argv: list[str] | None = None) -> int:
 
         total = len(all_commits)
         repos_with_pushes = len(per_repo)
-        payload = {
+        payload: dict[str, object] = {
             "schema_version": 1,
             "window": {
                 "since": since_dt.isoformat(),
