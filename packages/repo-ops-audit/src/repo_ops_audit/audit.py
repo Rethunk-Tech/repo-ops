@@ -1076,12 +1076,21 @@ def _deno_import_map_paths(ws: Path) -> list[Path]:
         except OSError:
             continue
         for match in re.finditer(r'"importMap"\s*:\s*"([^"]+)"', config_text):
-            paths.add((ws / match.group(1)).resolve())
+            candidate = (ws / match.group(1)).resolve()
+            try:
+                candidate.relative_to(ws.resolve())
+            except ValueError:
+                continue
+            paths.add(candidate)
     return sorted(path for path in paths if path.is_file())
 
 
 def _snapshot_deno_files(ws: Path) -> dict[Path, bytes | None]:
-    paths = [ws / "deno.lock", *_deno_import_map_paths(ws)]
+    paths = [
+        ws / "deno.lock",
+        *_deno_import_map_paths(ws),
+        *(ws / name for name in ("deno.json", "deno.jsonc", "package.json")),
+    ]
     return {path: path.read_bytes() if path.is_file() else None for path in paths}
 
 
