@@ -104,6 +104,23 @@ class GhAuthStatus:
     detail: str | None
 
 
+def probe_skill_drift() -> list[str]:
+    """Return installed skill paths whose contents differ from the bundle."""
+    from repo_ops.install_skill import (
+        bundled_skill_dir,
+        check_installed_skill,
+        destinations_for,
+        resolve_home,
+    )
+
+    bundled = bundled_skill_dir()
+    drifted: list[str] = []
+    for _, path in destinations_for("both", resolve_home(None)):
+        if path.exists() and not check_installed_skill(bundled, path):
+            drifted.append(str(path))
+    return drifted
+
+
 def _first_line(text: str) -> str | None:
     text = text.strip()
     if not text:
@@ -193,7 +210,11 @@ def probe_gh_auth(gh_path: str | None) -> GhAuthStatus:
     return GhAuthStatus(checked=True, authenticated=proc.returncode == 0, detail=detail)
 
 
-def _build_payload(results: list[ProbeResult], gh_auth: GhAuthStatus) -> dict:
+def _build_payload(
+    results: list[ProbeResult],
+    gh_auth: GhAuthStatus,
+    skill_drift: list[str] | None = None,
+) -> dict:
     missing = [r.name for r in results if not r.found]
     return {
         "schema_version": 1,
@@ -215,10 +236,15 @@ def _build_payload(results: list[ProbeResult], gh_auth: GhAuthStatus) -> dict:
         "missing": missing,
         "found_count": len(results) - len(missing),
         "total_count": len(results),
+        "skill_drift": skill_drift or [],
     }
 
 
-def print_report(results: list[ProbeResult], gh_auth: GhAuthStatus) -> None:
+def print_report(
+    results: list[ProbeResult],
+    gh_auth: GhAuthStatus,
+    skill_drift: list[str] | None = None,
+) -> None:
     found = [r for r in results if r.found]
     missing = [r for r in results if not r.found]
 
@@ -281,6 +307,12 @@ def print_report(results: list[ProbeResult], gh_auth: GhAuthStatus) -> None:
     if missing:
         print()
         print(f"Missing: {', '.join(r.name for r in missing)}")
+    if skill_drift:
+        print()
+        print("Warning: installed skill drift detected:")
+        for path in skill_drift:
+            print(f"  {path}")
+        print("Run: repo-ops install-skill --force")
 
 
 def build_doctor_parser() -> argparse.ArgumentParser:
@@ -313,9 +345,10 @@ def main(argv: list[str] | None = None) -> int:
     results = probe_all()
     gh_result = next((r for r in results if r.name == "gh"), None)
     gh_auth = probe_gh_auth(gh_result.path if gh_result else None)
+    skill_drift = probe_skill_drift()
 
     if args.json_out:
-        payload = _build_payload(results, gh_auth)
+        payload = _build_payload(results, gh_auth, skill_drift)
         json_report_path = getattr(args, "json_report_path", None)
         if json_report_path:
             written = write_json_atomic(
@@ -325,7 +358,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(json.dumps(payload, indent=None if args.compact else 2))
     else:
-        print_report(results, gh_auth)
+        print_report(results, gh_auth, skill_drift)
 
     if args.strict and any(not r.found for r in results):
         return 1
