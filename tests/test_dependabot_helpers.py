@@ -128,3 +128,64 @@ def test_resolve_package_version_uv_lock_high_confidence(tmp_path: Path) -> None
     )
     assert ver == "4.12.2"
     assert high_conf is True
+
+
+def test_lockfile_resolved_parses_poetry_lock(tmp_path: Path) -> None:
+    """poetry.lock [[package]] entries use the uv parser's high-confidence path."""
+    (tmp_path / "poetry.lock").write_text(
+        textwrap.dedent("""\
+            [[package]]
+            name = "poetry-core"
+            version = "2.1.3"
+        """),
+        encoding="utf-8",
+    )
+
+    resolved = dependabot._lockfile_resolved(str(tmp_path))
+
+    assert resolved["poetry-core"] == "2.1.3"
+    ver, high_conf = dependabot._resolve_package_version(
+        "poetry_core", resolved, set(), {}
+    )
+    assert ver == "2.1.3"
+    assert high_conf is True
+
+
+def test_lockfile_resolved_parses_pdm_lock(tmp_path: Path) -> None:
+    """pdm.lock [[package]] entries feed the high-confidence path."""
+    (tmp_path / "pdm.lock").write_text(
+        textwrap.dedent("""\
+            [[package]]
+            name = "pdm-backend"
+            version = "2.4.3"
+        """),
+        encoding="utf-8",
+    )
+
+    resolved = dependabot._lockfile_resolved(str(tmp_path))
+
+    assert resolved["pdm-backend"] == "2.4.3"
+    ver, high_conf = dependabot._resolve_package_version(
+        "pdm_backend", resolved, set(), {}
+    )
+    assert ver == "2.4.3"
+    assert high_conf is True
+
+
+def test_lockfile_resolved_parses_pipfile_lock(tmp_path: Path) -> None:
+    """Pipfile.lock default and develop entries feed the high-confidence path."""
+    lock = {
+        "default": {"requests": {"version": "==2.32.4"}},
+        "develop": {"pytest": {"version": "==8.4.1"}},
+    }
+    (tmp_path / "Pipfile.lock").write_text(json.dumps(lock), encoding="utf-8")
+
+    resolved = dependabot._lockfile_resolved(str(tmp_path))
+
+    assert resolved["requests"] == "2.32.4"
+    assert resolved["pytest"] == "8.4.1"
+    ver, high_conf = dependabot._resolve_package_version(
+        "requests", resolved, set(), {}
+    )
+    assert ver == "2.32.4"
+    assert high_conf is True
