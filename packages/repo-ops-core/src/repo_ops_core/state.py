@@ -384,11 +384,12 @@ def cache_get_staleness(repo_path: str | Path, today: date) -> dict[str, Any] | 
 # Apply-checkpoint (REPO_OPS_RESUME)
 # ---------------------------------------------------------------------------
 #
-# Stores {<abs repo path>: <post-apply HEAD SHA>} in a separate file so that
+# Stores {<abs repo path>: <post-commit HEAD SHA>} in a separate file so that
 # a large-fleet apply run can be resumed after a crash.  Each repo whose
-# apply completed without failure is checkpointed immediately (atomic write).
-# On re-run with REPO_OPS_RESUME=1, repos whose current HEAD matches the
-# checkpointed post-apply SHA are skipped — they are already done.
+# apply and verify completed and whose requested commit succeeded is
+# checkpointed after commit (atomic write).  On re-run with REPO_OPS_RESUME=1,
+# repos whose current HEAD matches the checkpointed post-commit SHA are skipped
+# — they are already done.
 #
 # The checkpoint lives alongside state.json:
 #   ~/.cache/repo-ops/apply-checkpoint.json
@@ -408,7 +409,7 @@ def _checkpoint_path() -> Path:
 def load_checkpoint() -> dict[str, str]:
     """Load the apply checkpoint from disk.
 
-    Returns a ``{repo_path: post_apply_sha}`` dict, or an empty dict when
+    Returns a ``{repo_path: post_commit_sha}`` dict, or an empty dict when
     ``REPO_OPS_NO_STATE=1`` or the file is missing / corrupt.
     """
     if _no_state():
