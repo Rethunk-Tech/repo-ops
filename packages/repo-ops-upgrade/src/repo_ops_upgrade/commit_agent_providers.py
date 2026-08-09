@@ -53,6 +53,8 @@ def commit_agent_provider_name(repo_path: Path | None = None) -> str:
         global_cfg=load_global_config(),
         repo_cfg=load_repo_config(repo_path) if repo_path is not None else None,
     )
+    if raw_provider is None:
+        return DEFAULT_COMMIT_AGENT_PROVIDER
     if not isinstance(raw_provider, str):
         raise RuntimeError(
             f"{COMMIT_AGENT_PROVIDER_ENV} must be a non-empty provider identifier string"
