@@ -211,3 +211,175 @@ Inventory best-effort-parses binary `bun.lockb` via `bun` dump; dependabot high-
 **Traps:** Pure doc hygiene; keep a single pointer to fleet CLAUDE.md and the repo-local verification note.
 
 **Acceptance:** Section states the fleet pointer once; no duplicated paragraph.
+
+---
+
+## Round 6 — Audit / security parity
+
+### 6.1 Manager-aware Python `audit` (stop forcing `py-uv`)
+
+`_detect_workspaces` labels any `pyproject.toml` / `uv.lock` tree as `py-uv` and runs `uv run pip-audit`. Poetry / PDM / pipenv / hatch / pip-tools layouts are misrouted or silently omitted (`requirements.in`+`requirements.txt` trees need a pyproject/uv.lock gate today).
+
+**Refs:** `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`_detect_workspaces`, `_audit_py_uv`); `docs/usage.md` § audit ecosystem table; plan/apply discovery in `packages/repo-ops-upgrade/src/repo_ops_upgrade/discovery.py`.
+
+**Traps:** `uv run pip-audit` on a non-uv project can fail closed as “skipped” while the workspace looks audited in the roll-up. Prefer manager-native export + audit (or documented pip-audit-on-exported-reqs) over pretending everything is uv. Reuse upgrade discovery kinds — do not grow a second incompatible walker forever (same class as Cargo child suppression in 1.3).
+
+**Acceptance:** Audit detects the real Python manager; poetry/PDM/pipenv/hatch/pip-tools repos are included with explicit ecosystem labels; wrong-manager skips are visible in JSON (`skip_reason`), not false-clean `ok` rows.
+
+### 6.2 Deno vulnerability audit path
+
+Deno has plan/apply/verify and remediations, but `audit_workspace` stops at go / node / py-uv / rust — fleet `audit` never sees Deno CVEs.
+
+**Refs:** `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`audit_workspace`); `packages/repo-ops-js/src/repo_ops_js/deno.py`; `packages/repo-ops-upgrade-remediations-deno`; `docs/usage.md` audit table.
+
+**Traps:** Prefer `deno audit` (or the current Deno-documented equivalent) over inventing a third-party scanner. `--fix` must snapshot/restore `deno.lock` + import maps like apply. Missing `deno` on PATH should skip with reason, matching govulncheck/cargo-audit patterns.
+
+**Acceptance:** `repo-ops audit` discovers Deno workspaces, normalizes severities into the shared count schema, and supports `--fix-plan` / `--fix` with reversible lock edits; usage table lists Deno beside the other ecosystems.
+
+### 6.3 `audit --fix` should run verify gates
+
+`apply_remediations` calls `orchestration.process_workspace(..., do_verify=False)`. CVE remediations can land broken trees with no post-fix gate; operators must remember a separate `apply` pass.
+
+**Refs:** `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`apply_remediations`); `packages/repo-ops-upgrade/src/repo_ops_upgrade/orchestration.py`; `docs/usage.md` § audit `--fix`.
+
+**Traps:** Default-on verify changes bulk-audit timing — keep `--no-verify` escape and honor `[verify] skip`. Dirty-skip / `--allow-dirty` semantics must stay aligned with apply. Do not auto-commit (audit still has no commit path).
+
+**Acceptance:** `audit --fix` runs the same per-manager verify as `apply` by default; failures appear in JSON with verify detail; `--no-verify` restores today’s behaviour.
+
+### 6.4 SARIF must include unfixed findings
+
+`build_sarif_report` emits one SARIF result per `RemediationItem` only. Critical/high findings without a known safe version (pip-audit “no fix”, govulncheck unknowns) vanish from code-scanning uploads while `--fail-on` still fails the CLI.
+
+**Refs:** `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`build_sarif_report`); `docs/usage.md` `--sarif-out`.
+
+**Traps:** Keep repo-relative `artifactLocation.uri` + `%SRCROOT%` mapping. Distinguish fixable vs unfixed via SARIF `fixes` / properties rather than dropping rows. Severity → SARIF `level` must match the normalised worst severity already computed per workspace.
+
+**Acceptance:** SARIF includes all findings at/above `--fail-on` (and unknown when `--fail-on-unknown`); fixable rows still carry remediation metadata; schema still validates for `upload-sarif`.
+
+---
+
+## Round 7 — Verify depth and pin-move parity
+
+### 7.1 `uv` verify parity with hatch fast gates
+
+After `uv sync --locked`, uv workspaces only optionally run `ruff`. Hatch runs `_verify_hatch_fast` (scripts, ruff, mypy/pyrefly, pytest). Migrating hatch→uv silently drops typecheck/test gates.
+
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/verify.py` (`verify_workspace` uv vs hatch branches, `_verify_hatch_fast`); `docs/usage.md` verify notes.
+
+**Traps:** Share gate helpers rather than copy-paste hatch logic. Respect `[verify] skip` / timeout. Pair with 5.2 so pyrefly scope matches the target’s config when that gate runs.
+
+**Acceptance:** uv workspaces with mypy/pyrefly/pytest (or equivalent scripts) run the same fast gates hatch does after a locked sync; documented in usage.
+
+### 7.2 Poetry / PDM / pipenv verify beyond lock integrity
+
+Poetry verify is `poetry check`; PDM is `pdm sync --clean`; pipenv is `pipenv verify`. Lock integrity can pass while lint/typecheck/tests never run — weaker than node/go/uv-hatch paths.
+
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/verify.py` (poetry/pdm/pipenv branches); manager packages under `packages/repo-ops-py-{poetry,pdm,pipenv}`.
+
+**Traps:** Do not invent manager-specific mini-CI — prefer configured project scripts / known tools already on the hatch/uv path. Missing binaries should fail closed with a clear reason, not skip silently. Keep timeouts consistent with other verify gates.
+
+**Acceptance:** Each manager runs a documented gate stack (lock sync/check + lint/typecheck/test when configured); failures block apply like other ecosystems; usage lists the stack per manager.
+
+### 7.3 Opt-in SHA refresh for pre-commit and submodule pins
+
+Actions/container already have `--actions-refresh-sha` / `--container-refresh-sha`. Pre-commit SHA `rev:` and submodule SHA-only HEADs stay permanent report-only with no move path — same “why didn’t apply move this?” wall operators hit before those flags existed.
+
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/precommit.py` (SHA rev → report-only); `packages/repo-ops-upgrade/src/repo_ops_upgrade/submodules.py` (SHA-only HEAD → report-only); contrast `actions.py` / `repo-ops-container`; `AGENTS.md` full-coverage sweep table.
+
+**Traps:** Refresh must stay digest-within-intent (same hook repo / same submodule URL), not a silent major leap. Compose into the eventual `--full` umbrella (3.1) once named. Holds (1.2) should define ceiling behaviour before aggressive refresh. Container SHA-without-tag remains a separate harder case — do not pretend a tag-less digest has a refresh target.
+
+**Acceptance:** Opt-in flags (e.g. `--precommit-refresh-sha`, `--submodule-refresh-sha`) advance those pins when resolvable; docs/AGENTS list them beside the existing refresh flags; without the flags, behaviour stays report-only.
+
+### 7.4 `--verify-test` should cover Rust (`cargo test`)
+
+`--verify-test` help and implementation only run `go test`. Rust verify stops at `cargo check`, so API-breaking bumps can pass while operators assume the flag is cross-ecosystem.
+
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/verify.py` (rust vs go branches); `packages/repo-ops-core/src/repo_ops_core/cli.py` (`--verify-test`); related to but distinct from 2.4 (upgrade-mode honesty).
+
+**Traps:** `cargo test` is slower — keep opt-in. Help text must name both ecosystems. Do not imply `--verify-test` enables Rust major upgrades (2.4).
+
+**Acceptance:** With `--verify-test`, rust workspaces run `cargo test` after `cargo check`; help/usage name go and rust; default (flag off) unchanged.
+
+### 7.5 `--commit-umbrella` help vs behaviour
+
+CLI help says umbrella commits are a no-op when `--submodule-order` is unset. Code enables via `REPO_OPS_COMMIT_UMBRELLA=1` whenever `submodule_links` were discovered (children-first *or* `--submodules` scan) — operators can skip the wrong flag combo.
+
+**Refs:** `packages/repo-ops-core/src/repo_ops_core/cli.py` (`--commit-umbrella` help); `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (`need_submodule_scan`, umbrella commit block); `post_apply_commit.commit_umbrella_submodule_pointers`; distinct from stale “deferred to cli.py” comment (3.4).
+
+**Traps:** Fix help **or** tighten gating — pick one. Correct child→parent ordering still needs `--submodule-order=children-first` for apply itself; do not conflate order with commit-umbrella. Related: `--pr` / `--resume` currently iterate `child_outcomes` only (file as follow-on if not folded here).
+
+**Acceptance:** Help matches actual gating; `docs/bulk-maintenance.md` states the required flag combo for child→parent apply + umbrella pointer commits.
+
+---
+
+## Round 8 — Fleet DX / cross-subcommand gaps
+
+### 8.1 Apply `--resume` docs vs commit-gated checkpoints
+
+CLI help correctly says `--resume` requires `--commit`. `docs/usage.md` § Apply resume describes checkpointing “after each successful repo” with no commit requirement — operators enable `REPO_OPS_RESUME=1` alone and get zero checkpoints.
+
+**Refs:** `docs/usage.md` § Apply resume; `packages/repo-ops-core/src/repo_ops_core/cli.py` (`--resume` help); `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (checkpoint only when `CommitOutcome.status == "committed"`).
+
+**Traps:** Either checkpoint post-verify success (separate from post-commit SHA) **or** make docs/help identical about the commit gate. Stale checkpoints after manual reset are a related hygiene gap (clear surface) — do not leave “edit `~/.cache/repo-ops/` by hand” as the only recovery.
+
+**Acceptance:** Docs and `--help` agree on when checkpoints are written; a documented way exists to clear a stale checkpoint; resume skip rows state which gate matched.
+
+### 8.2 `--exclude` / config `exclude` on audit, dependabot, pushed
+
+`exclude` / `--exclude` filter plan/apply only. Global `~/.config/repo-ops/config.toml` `exclude = ["archive/*"]` silently does nothing for audit / dependabot / pushed — archived repos still get scanned.
+
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (exclude filtering); `packages/repo-ops-core/src/repo_ops_core/config.py` (`exclude`); `packages/repo-ops-audit`, `packages/repo-ops-dependabot`, `packages/repo-ops-pushed` (no exclude merge).
+
+**Traps:** Keep config-file-only semantics for the `exclude` key (no inventing an env array). Shared helper beats three one-off filters. JSON summary should count excluded repos for parity with plan/apply.
+
+**Acceptance:** `--exclude` and config `exclude` are honored on audit, dependabot, and pushed; excluded repos appear in summary counts; docs state the shared behaviour.
+
+### 8.3 `pushed` remote/API fallback (local reflog blind spot)
+
+`repo-ops pushed` only counts this-machine `refs/remotes/*` reflog “update by push” entries. Fresh clones, CI runners, and pushes from another workstation report zero even when GitHub has activity.
+
+**Refs:** `packages/repo-ops-pushed/src/repo_ops_pushed/audit.py` (module docstring, `PUSH_RE`); `docs/usage.md` pushed blurb.
+
+**Traps:** Document the limitation even if code stays local-only. Any `--source=gh` path needs authenticated `gh`, rate-limit discipline, and must not invent pushes the API cannot attribute. Reflog expiry under gc is the same class of false zero.
+
+**Acceptance:** Usage calls out the machine-local limitation prominently; optional remote source (or an explicit “unsupported on fresh clones” exit/warning) so operators do not trust empty tables as “no pushes”.
+
+### 8.4 Actions org-policy block/warn mode
+
+`--actions-org-policy` records `status="policy"` rows but “never blocks pin bumps”. Unlike `--actions-lint-level block|warn|off`, policy violations cannot stop apply from rewriting disallowed actions.
+
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/actions.py` (~policy check / “report-only; never blocks”); `packages/repo-ops-core/src/repo_ops_core/cli.py` (`--actions-org-policy`, `--actions-lint-level`).
+
+**Traps:** Mirror the lint-level pattern rather than a one-off boolean. Default must stay report-only for back-compat. Policy fetch failures stay non-fatal (already best-effort).
+
+**Acceptance:** A documented level (`block`/`warn`/`report`) can skip or warn on violating pin rewrites; JSON distinguishes policy-report vs policy-blocked; default remains today’s report-only behaviour.
+
+### 8.5 Dependabot `--scaffold` ecosystem gaps
+
+Scaffold emits coarse `pip` for any Python indicator, `npm` for any Node lock (including bun), and omits `deno` / `pre-commit` entirely — generated configs under-serve modern fleet layouts.
+
+**Refs:** `packages/repo-ops-dependabot/src/repo_ops_dependabot/dependabot.py` (`detect_ecosystems`, `_NODE_INDICATORS`, `_PY_INDICATORS`); Dependabot docs for valid `package-ecosystem` values; distinct from supersession precision (2.2 / 4.3).
+
+**Traps:** Only emit ecosystems Dependabot actually supports — do not invent fake ecosystem strings. Bun may still map to `npm` upstream; document that. Keep prune-by-regeneration behaviour (`--write` replaces the file).
+
+**Acceptance:** Scaffold detects deno and pre-commit where indicators exist; Python/manager notes in docs list scaffold coverage vs supersession coverage separately; dry-run output matches what `--write` would emit.
+
+### 8.6 Document remediation catalog + `--only-outdated`
+
+Post-apply remediation ids (`biome_schema`, `playwright_browsers`, `codegen`, `package_manager_pin`, `gofmt`, `go_generate`, `ruff_fix`, `cargo_fix`, `deno_fix`, …) are only partially listed in `--skip-remediations` help. `--only-outdated` is shipped for plan/apply human output but absent from usage/AGENTS/skill — agents rediscover fleet noise the hard way.
+
+**Refs:** `packages/repo-ops-upgrade-remediations-{js,go,py,rust,deno}`; `packages/repo-ops-core/src/repo_ops_core/cli.py` (`--skip-remediations`, `--only-outdated`); `docs/usage.md`; `AGENTS.md`; bundled skill under `packages/repo-ops/src/repo_ops/skills/repo-ops/`.
+
+**Traps:** Docs describe current ids only — no changelog archaeology. Note default-off hooks (`REPO_OPS_REMEDIATE_GO_GENERATE`). `--only-outdated` filters human output; confirm JSON behaviour before documenting (do not claim JSON is filtered if it is not).
+
+**Acceptance:** Usage has a remediation table (id, ecosystem, trigger, default on/off); `--skip-remediations` help lists all ids; `--only-outdated` appears in usage + AGENTS with accurate human-vs-JSON behaviour.
+
+### 8.7 `install-skill` stale-copy detection
+
+`install-skill` skip-on-exists unless `--force`. After `uv tool` upgrades, Cursor/Claude skill copies keep stale `$FULL_SWEEP_FLAGS` / subcommand lists until someone remembers `--force`.
+
+**Refs:** `packages/repo-ops/src/repo_ops/install_skill.py`; bundled skill `packages/repo-ops/src/repo_ops/skills/repo-ops/`; optional doctor hook in `packages/repo-ops-doctor`.
+
+**Traps:** Compare content hash or bundled package version, not mtime alone (editors bump mtime). `--check` / doctor must stay read-only. Do not auto-overwrite without `--force`.
+
+**Acceptance:** `install-skill --check` (and/or doctor) warns when the installed skill drifts from the bundled copy; `--force` refresh remains the write path; docs mention the upgrade gotcha.
