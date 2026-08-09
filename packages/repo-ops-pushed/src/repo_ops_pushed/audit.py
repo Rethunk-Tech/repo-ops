@@ -264,10 +264,11 @@ def print_report(
     show_shas: bool = False,
     show_messages: bool = False,
     excluded_count: int = 0,
+    show_excluded: bool = False,
 ) -> None:
     print(f"Pushed commits in the last {window_desc} (local reflog: update by push)")
     print(f"Scanned {len(roots)} root(s); {len(per_repo)} repo(s) with pushes")
-    if excluded_count:
+    if show_excluded:
         print(f"Excluded repos: {excluded_count}")
     print()
     print(f"Total unique commits pushed: {len(all_commits)}")
@@ -579,6 +580,7 @@ def main(argv: list[str] | None = None) -> int:
         show_shas=args.show_shas,
         show_messages=args.show_messages,
         excluded_count=filters.excluded_count,
+        show_excluded=bool(exclude_patterns),
     )
     return 0
 

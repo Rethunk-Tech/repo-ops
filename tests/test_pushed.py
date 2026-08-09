@@ -720,3 +720,13 @@ def test_main_exclude_prints_excluded_count(
     out = capsys.readouterr().out
     assert "Excluded repos: 1" in out
     assert seen == [str(keep)]
+
+
+def test_main_exclude_prints_zero_when_nothing_matches(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(audit, "collect_results", lambda *args, **kwargs: ({}, []))
+
+    assert main([str(tmp_path), "--exclude", "missing"]) == 0
+
+    assert "Excluded repos: 0" in capsys.readouterr().out
