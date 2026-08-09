@@ -2648,7 +2648,7 @@ severity buckets:
 tools used (must be on PATH or workspace is skipped):
   go      govulncheck
   node    npm / yarn / pnpm / bun (per lockfile)
-  py-uv   uv run pip-audit --format json
+  py-*    manager-native export + pip-audit --format json
   rust    cargo audit
   deno    deno audit
 """,
