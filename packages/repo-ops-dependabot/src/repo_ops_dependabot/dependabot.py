@@ -1022,6 +1022,8 @@ def print_dependabot_report(
 _NODE_INDICATORS: frozenset[str] = frozenset(
     {"package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock"}
 )
+_DENO_INDICATORS: frozenset[str] = frozenset({"deno.json", "deno.jsonc", "deno.lock"})
+_PRE_COMMIT_INDICATORS: frozenset[str] = frozenset({".pre-commit-config.yaml"})
 _PY_INDICATORS: frozenset[str] = frozenset(
     {
         "requirements.txt",
@@ -1080,6 +1082,10 @@ def detect_ecosystems(repo_path: Path) -> list[dict[str, str]]:
 
         if fname_set & _NODE_INDICATORS:
             _add("npm", rel)
+        if fname_set & _DENO_INDICATORS:
+            _add("deno", rel)
+        if fname_set & _PRE_COMMIT_INDICATORS:
+            _add("pre-commit", rel)
         if fname_set & _PY_INDICATORS:
             _add("pip", rel)
         if fname_set & _GO_INDICATORS:
