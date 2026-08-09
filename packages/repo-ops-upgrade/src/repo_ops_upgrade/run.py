@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import contextlib
-import fnmatch
 import os
 import sys
 import threading
@@ -24,6 +23,7 @@ from repo_ops_core.config import (
     load_repo_config,
 )
 from repo_ops_core.constants import DEFAULT_ROOTS
+from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
 from repo_ops_core.git import is_git_dirty
 from repo_ops_core.parallel import run_bounded_pool
 from repo_ops_core.tee import tee_stdout_stderr
@@ -209,23 +209,12 @@ def _run_upgrade_body(
         )
 
     exclude_patterns: list[str] = getattr(args, "exclude_patterns", None) or []
-    excluded_count = 0
-    if exclude_patterns:
-        kept: dict[Path, RepoBundle] = {}
-        for key, bundle in bundles.items():
-            label = bundle.label
-            path_str = str(key)
-            if any(
-                pat in label
-                or pat in path_str
-                or fnmatch.fnmatch(label, pat)
-                or fnmatch.fnmatch(path_str, pat)
-                for pat in exclude_patterns
-            ):
-                excluded_count += 1
-            else:
-                kept[key] = bundle
-        bundles = kept
+    kept_paths, excluded_count = filter_repo_paths(
+        list(bundles),
+        exclude_patterns,
+        label_fn=lambda path: bundles[path].label,
+    )
+    bundles = {path: bundles[path] for path in kept_paths}
 
     include_submodules = getattr(args, "submodules", False)
     submodule_order = getattr(args, "submodule_order", "discovery")
@@ -753,20 +742,16 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
         args.jobs = min(16, os.cpu_count() or 4)
 
     # ``exclude_patterns`` has no env-var channel (lists don't serialize well
-    # to env vars).  When the CLI flag was not given, apply config-file
-    # ``exclude`` directly to args so _run_upgrade_body honours it.
-    # CLI --exclude takes precedence: only merge when args.exclude_patterns is
-    # falsy (None or empty list from argparse default).
-    if not getattr(args, "exclude_patterns", None):
-        _excl_cfg: object = None
-        if _r_cfg and "exclude" in _r_cfg:
-            _excl_cfg = _r_cfg["exclude"]
-        elif _g_cfg and "exclude" in _g_cfg:
-            _excl_cfg = _g_cfg["exclude"]
-        if isinstance(_excl_cfg, list):
-            args.exclude_patterns = [str(p) for p in _excl_cfg]
-        elif isinstance(_excl_cfg, str) and _excl_cfg:
-            args.exclude_patterns = [_excl_cfg]
+    # to env vars). Merge CLI and config directly before scanning.
+    _excl_cfg: object = None
+    if _r_cfg and "exclude" in _r_cfg:
+        _excl_cfg = _r_cfg["exclude"]
+    elif _g_cfg and "exclude" in _g_cfg:
+        _excl_cfg = _g_cfg["exclude"]
+    args.exclude_patterns = merge_exclude_patterns(
+        getattr(args, "exclude_patterns", None),
+        _excl_cfg,
+    )
 
     wire_verbose(args)
 

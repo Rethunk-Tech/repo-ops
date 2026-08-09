@@ -299,6 +299,21 @@ def add_manager_filter_argument(parser: argparse._ActionsContainer) -> None:
     )
 
 
+def add_exclude_argument(parser: argparse._ActionsContainer) -> None:
+    """Add repeatable repository exclusion patterns."""
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        dest="exclude_patterns",
+        default=None,
+        metavar="PATTERN",
+        help=(
+            "Exclude repos whose label or absolute path contains PATTERN "
+            "(substring or glob). Repeatable."
+        ),
+    )
+
+
 _LOG_LEVEL_CHOICES = tuple(sorted(LOG_LEVEL_NAMES))
 
 
@@ -369,17 +384,7 @@ def add_upgrade_common_arguments(
     add_flat_argument(sel)
     add_eco_filter_argument(sel)
     add_manager_filter_argument(sel)
-    sel.add_argument(
-        "--exclude",
-        action="append",
-        dest="exclude_patterns",
-        default=None,
-        metavar="PATTERN",
-        help=(
-            "Exclude repos whose label or absolute path contains PATTERN "
-            "(substring or glob). Repeatable."
-        ),
-    )
+    add_exclude_argument(sel)
     add_follow_symlinks_argument(sel)
 
     # ---- Upgrade policy ---------------------------------------------------
