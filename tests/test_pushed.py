@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from repo_ops_core.cli import parse_iso8601
@@ -730,3 +732,59 @@ def test_main_exclude_prints_zero_when_nothing_matches(
     assert main([str(tmp_path), "--exclude", "missing"]) == 0
 
     assert "Excluded repos: 0" in capsys.readouterr().out
+
+
+def test_pushed_source_gh_collects_push_event_commits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sha = "a" * 40
+    commands: list[list[str]] = []
+    event = {
+        "type": "PushEvent",
+        "created_at": "2026-01-01T00:00:05Z",
+        "payload": {
+            "commits": [
+                {
+                    "sha": sha,
+                    "distinct": True,
+                    "author": {"name": "Alice", "email": "alice@example.com"},
+                }
+            ]
+        },
+    }
+
+    monkeypatch.setattr(audit, "_github_repos_for_repo", lambda repo: ["acme/project"])
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps([event]),
+            stderr="",
+        )
+
+    monkeypatch.setattr(audit.subprocess, "run", fake_run)
+    filters = Filters(
+        since_unix=int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()),
+        until_unix=int(datetime(2026, 1, 2, tzinfo=timezone.utc).timestamp()),
+    )
+
+    assert audit.pushed_commits_for_repo_gh("/fake/repo", filters) == {sha: None}
+    assert commands == [
+        ["gh", "api", "--paginate", "repos/acme/project/events?per_page=100"]
+    ]
+
+
+def test_main_source_gh_auth_failure_is_nonzero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fake_collect(*args, **kwargs):
+        assert kwargs["source"] == "gh"
+        raise audit.GhCollectionError("gh api failed: authentication required")
+
+    monkeypatch.setattr(audit, "collect_results", fake_collect)
+
+    assert main([str(tmp_path), "--source", "gh"]) == 2
+    captured = capsys.readouterr()
+    assert "ERROR: GitHub source unavailable:" in captured.err
+    assert "authentication required" in captured.err
