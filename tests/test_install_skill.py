@@ -101,6 +101,16 @@ def test_install_skill_check_reports_broken_symlink(tmp_path: Path) -> None:
     assert not check_installed_skill(bundled_skill_dir(), dest)
 
 
+def test_install_skill_check_reports_broken_symlink_via_main(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dest = tmp_path / "repo-ops"
+    dest.symlink_to(tmp_path / "missing" / "repo-ops", target_is_directory=True)
+
+    assert main(["--dest", str(dest), "--check"]) == 1
+    assert "drift" in capsys.readouterr().err
+
+
 def test_install_skill_check_reports_drift_without_writing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

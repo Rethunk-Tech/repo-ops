@@ -222,16 +222,21 @@ def run_install(
             except ValueError as exc:
                 print(str(exc), file=sys.stderr)
                 return 1
-            destinations = [("dest", dest.expanduser().resolve())]
+            destinations = [("dest", dest.expanduser())]
         else:
             destinations = destinations_for(target, resolve_home(home))
 
         codes: list[int] = []
         for label, path in destinations:
-            if not path.exists():
+            if path.is_symlink():
+                installed = check_installed_skill(src, path)
+            elif not path.exists():
                 print(f"not installed {label}: {path}")
                 codes.append(0)
-            elif check_installed_skill(src, path):
+                continue
+            else:
+                installed = check_installed_skill(src, path)
+            if installed:
                 print(f"ok {label}: {path}")
                 codes.append(0)
             else:
