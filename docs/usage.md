@@ -62,6 +62,9 @@ Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_cor
 - **Node `packageManager`:** Only `npm`, `pnpm`, `yarn`, and `bun` with `name@version` form are accepted; path-like or unknown names are skipped with diagnostics.
 - **`--exclude PATTERN`:** Repeatable on `plan`, `apply`, `audit`, `dependabot`, and `pushed`. A repository is skipped when a pattern substring- or fnmatch-matches its label or absolute path.
 
+When JSON is enabled, audit and pushed report excluded repositories in
+`summary.excluded`; dependabot reports them in `summary.excluded_repos`.
+
 ### Ecosystem upgrade modes (plan and apply)
 
 | Ecosystem | Default behavior | Aggressive / latest opt-in |
@@ -148,7 +151,7 @@ C/I/A components.
 - **`--fix-plan`** — read-only remediation checklist: for each finding with a known-safe fix version, emit `(package, safe_version, ecosystem, workspace)`. With `--json`, included under the `remediations` key. Exits `1` when actionable remediations exist.
 - **`--fix`** — apply remediations (implies `--fix-plan` collection). Delegates to upgrade orchestration per workspace; skips dirty worktrees unless **`--allow-dirty`**. Verifies each applied workspace by default; pass `--no-verify` to skip post-apply verification. No automatic commit.
 - **`--sarif-out PATH`** — write SARIF 2.1.0 output for GitHub code scanning (repo-relative artifact URIs). Findings at or above `--fail-on` are emitted; `--fail-on-unknown` includes unknown-severity findings. Unfixed findings are marked with `properties.unfixed=true` and omit remediation `fixes`.
-- **`--json`** — structured payload with per-workspace counts, optional `remediations[]`, and `summary`.
+- **`--json`** — structured payload with per-workspace counts, optional `remediations[]`, and `summary`. When repositories are excluded, audit JSON reports the count as `summary.excluded`.
 
 Each JSON workspace row may include `findings[]`, serialized from
 `FindingItem.as_dict`, with finding identifier, package/version data, severity,

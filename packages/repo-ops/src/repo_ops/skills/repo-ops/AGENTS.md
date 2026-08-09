@@ -141,7 +141,7 @@ A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinn
 | `--commit=none\|conventional\|agent` | apply | Post-apply commits |
 | `--only-outdated` | plan, apply | Filter human-readable output to outdated entries; JSON remains unfiltered |
 | `--skip-remediations IDS` | plan, apply | Skip selected remediation IDs; see [usage.md](docs/usage.md) for the current catalog |
-| `--exclude PATTERN` | plan, apply | Exclude repos matching pattern (repeatable) |
+| `--exclude PATTERN` | plan, apply, audit, dependabot, pushed | Exclude repos matching pattern (repeatable) |
 | `--go-upgrade-mode MODE` | plan, apply | Go upgrade policy: `patch` (default), `explicit`, or `mvs` |
 | `--actions-upgrade-mode MODE` | plan, apply | Actions cross-major policy: `normalize` (default) or `latest` |
 | `--actions-tag-style STYLE` | plan, apply | Tag style when unpinning SHA pins: `major` (default) or `exact` |
@@ -163,6 +163,7 @@ A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinn
 | `--show-shas` | Print commit SHAs (8 chars) grouped by repo after the table |
 | `--show-messages` | Implies `--show-shas`; also print each commit subject (max 100 chars) |
 | `--count-only` | Print only the total commit count |
+| `--exclude PATTERN` | Exclude repos matching pattern (repeatable) |
 
 #### `inventory` flags
 
@@ -182,6 +183,7 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 | `--fix-plan` | Read-only remediation list; with `--json` populates `remediations` key; exit 1 when actionable |
 | `--fix` | Apply remediations via `repo-ops-upgrade` orchestration; skips dirty worktrees unless `--allow-dirty` |
 | `--sarif-out PATH` | Write SARIF 2.1.0 output for GitHub code-scanning |
+| `--exclude PATTERN` | Exclude repos matching pattern (repeatable) |
 
 #### `dependabot` flags
 
@@ -191,6 +193,7 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 | `--scaffold` | Generate `.github/dependabot.yml` entries for detected ecosystems (default: dry-run) |
 | `--write` | With `--scaffold`: write the file (requires `--scaffold`) |
 | `--schedule INTERVAL` | Schedule for scaffolded entries: `daily`, `weekly` (default), or `monthly` |
+| `--exclude PATTERN` | Exclude repos matching pattern (repeatable) |
 
 #### `sbom` flags
 
