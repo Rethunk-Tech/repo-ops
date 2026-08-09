@@ -56,9 +56,9 @@ Deno reports `behind_latest` and honors `--latest` / `REPO_OPS_DENO_UPDATE_LATES
 
 **Refs:** `packages/repo-ops-js/src/repo_ops_js/deno.py` (`check_deno` / `apply_deno`); JS siblings `targeted_bump_behind` in `repo-ops-js-{yarn,npm,pnpm,bun}`; CLI flags in `packages/repo-ops-core/src/repo_ops_core/cli.py`; `AGENTS.md` full-coverage sweep table.
 
-**Traps:** Deno’s updater is `deno outdated --update` (± `--latest`); a targeted path must snapshot/restore `deno.lock` + import maps like the JS managers. Ghost-bump guard is best-effort when `node_modules` is absent — targeted bump must not assume npm layout. Do not fold this into `--latest` implicitly (same trap as other `--*-targeted-bump` flags).
+**Traps:** Deno’s updater is `deno outdated --update` (± `--latest`); a targeted path must snapshot/restore `deno.lock` + import maps like the JS managers. Ghost-bump guard is best-effort when `node_modules` is absent — targeted bump must not assume npm layout. Do not fold this into `--latest` implicitly (same trap as other `--*-targeted-bump` flags). When this lands, fold it into `--full` (Wave 17 shipped the JS/digest umbrella without Deno).
 
-**Acceptance:** `--deno-targeted-bump` (and config/env twin) moves still-behind direct deps after the bulk update, reverts on no-advance/install failure, and appears in the full-coverage sweep docs beside the other four flags.
+**Acceptance:** `--deno-targeted-bump` (and config/env twin) moves still-behind direct deps after the bulk update, reverts on no-advance/install failure, appears in the full-coverage sweep docs beside the other four flags, and is enabled by `--full`.
 
 ### 2.2 Dependabot high-confidence supersession for poetry / PDM / pipenv locks
 
@@ -94,16 +94,6 @@ Scaffold treats `poetry.lock` / `pdm.lock` / `Pipfile.lock` as ecosystem indicat
 
 ## Round 3 — Operator DX / release hygiene
 
-### 3.1 Single full-coverage sweep flag
-
-Routine bulk maintenance needs `--latest` **plus** `--actions-refresh-sha --container-refresh-sha --{yarn,npm,pnpm,bun}-targeted-bump`. Agents and humans routinely pass bare `--latest` and under-report drift. AGENTS already documents the combo; the CLI still requires remembering every flag.
-
-**Refs:** `AGENTS.md` § Full-coverage sweep; `packages/repo-ops-core/src/repo_ops_core/cli.py` upgrade-policy group; `docs/usage.md`.
-
-**Traps:** A new umbrella (e.g. `--full` / `--catch-all`) must not silently change default `plan`/`apply` behaviour — opt-in only. Composing with per-ecosystem overrides (`--go-upgrade-mode`, `--actions-upgrade-mode`) must keep “explicit flag wins” semantics. If Deno targeted-bump (2.1) lands, include it in the umbrella.
-
-**Acceptance:** One documented flag enables the full catch-all set; `plan --help` / AGENTS point at it; bare `--latest` help text warns it is not full coverage.
-
 ### 3.2 Automate GitHub Release post-cut cleanup
 
 Every `v*` release still needs manual `gh release edit` (CHANGELOG section as notes) and `gh release delete-asset … default.gitignore`. Easy to forget; leaves a generic Release body and a junk asset.
@@ -113,36 +103,6 @@ Every `v*` release still needs manual `gh release edit` (CHANGELOG section as no
 **Traps:** Prefer fixing the workflow artifact list (stop uploading `default.gitignore`) over forever deleting it. Notes extraction must match Keep a Changelog `## [X.Y.Z]` sections. Do not auto-publish to PyPI here (see 1.1).
 
 **Acceptance:** A tagged release has correct CHANGELOG-derived notes and no `default.gitignore` asset without a human cleanup pass.
-
-### 3.3 Doctor probes for verify-critical tools (`pyrefly`, `hatch`, `pre-commit`)
-
-`repo-ops doctor` probes the historical binary set but not `pyrefly` (now a first-class verify gate), `hatch`, or the `pre-commit` CLI used when refreshing hook revs.
-
-**Refs:** `packages/repo-ops-doctor/src/repo_ops_doctor/doctor.py` (`_BINARIES`); `verify.py` pyrefly branch; `packages/repo-ops-upgrade/src/repo_ops_upgrade/precommit.py`; `docs/usage.md` doctor list.
-
-**Traps:** Keep doctor read-only and root-free. `cargo-audit` is a subcommand probe pattern to mirror if needed. Version probes must not hang (empty `version_args` / `DEVNULL` stdin pattern).
-
-**Acceptance:** `repo-ops doctor --json` reports found/missing for `pyrefly`, `hatch`, and `pre-commit`; HUMANS/usage lists match the probe table.
-
-### 3.4 Stale `--commit-umbrella` “deferred to cli.py” comment
-
-`--commit-umbrella` is already wired in `repo_ops_core.cli` and honored in `run.py` (`getattr(args, "commit_umbrella")`), but a comment still says the CLI flag is deferred.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (~line 652); `packages/repo-ops-core/src/repo_ops_core/cli.py` (`--commit-umbrella`); shipped in #125 / `7f92ec6`.
-
-**Traps:** Docs-only / comment cleanup — do not change behaviour. Confirm `REPO_OPS_COMMIT_UMBRELLA` and the flag stay equivalent.
-
-**Acceptance:** Comment and any leftover “deferred” wording match the shipped CLI; no behaviour change.
-
-### 3.5 Hatch verify docs mention mypy but not pyrefly
-
-Usage still describes hatch verify fast gates as including mypy when configured, without naming pyrefly, while verify code checks both.
-
-**Refs:** `docs/usage.md` hatch / `--migrate-to-uv-lock` paragraph; `packages/repo-ops-upgrade/src/repo_ops_upgrade/verify.py`.
-
-**Traps:** Doc drift only. Keep the “no `uv.lock` → skip `uv sync --locked`” behaviour clear.
-
-**Acceptance:** Docs list mypy **and** pyrefly as recognized type-check gates for hatch (and generally) in the same breath as the code.
 
 ---
 
@@ -177,40 +137,6 @@ Inventory best-effort-parses binary `bun.lockb` via `bun` dump; dependabot high-
 **Traps:** Invoking `bun` on lockb needs the binary on PATH and a timeout; cache or skip cleanly when bun is missing. Prefer encouraging text `bun.lock` migration over forever supporting lockb if fleet has moved on.
 
 **Acceptance:** Either high-confidence supersession works for `bun.lockb` when `bun` is available, or docs explicitly say lockb is unsupported for `--close` and inventory remains the only consumer.
-
----
-
-## Round 5 — Second-pass gaps
-
-### 5.1 Configurable commit-agent model
-
-`--commit=agent` hardcodes Cursor SDK `model="composer-2.5"` in the cursor provider. Fleet model routing and operator preference change; a fixed slug drifts.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/commit_agent_cursor.py`; `commit_agent_providers.py`; optional extra `repo-ops-upgrade[commit-agent-cursor]`.
-
-**Traps:** Default can stay `composer-2.5` for stability; override via env/config (e.g. `REPO_OPS_COMMIT_AGENT_MODEL`) — arrays/objects stay out of env, a single string is fine. Invalid model must fail closed with a clear error, not silently fall back to an unexpected model.
-
-**Acceptance:** Documented env/config selects the SDK model; unset keeps today’s default; help/`--commit=agent` docs mention the knob.
-
-### 5.2 Verify pyrefly invocation ignores project excludes
-
-`verify` runs bare `uv run pyrefly check .`. Pyrefly’s path mode ignores `[tool.pyrefly] project-includes/excludes` unless `--project-excludes` is passed on the CLI — the same trap this repo’s own CI documents. Target repos that exclude `tests/**` / `scripts/**` (or similar) can fail verify on paths they never type-check in CI, or silently disagree with local gates.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/verify.py` (pyrefly branch); `docs/testing.md` (single-file mode note); this repo’s `.github/workflows/ci.yml` / `release.yml` (`--project-excludes 'tests/**' 'scripts/**'`); `[tool.pyrefly]` in root `pyproject.toml`.
-
-**Traps:** Do not hardcode this repo’s excludes for every target — read the target’s pyrefly config or a `[tool.repo-ops.verify]` override. `mypy` path already uses `uv run mypy .` and has its own config-file behaviour; keep the two gates honest rather than forcing identical flags. Prefer failing closed when the target’s intended scope cannot be determined.
-
-**Acceptance:** Fast-path pyrefly verify on a repo with configured excludes matches that repo’s CI/type-check scope; documented in usage/testing; no false verify fails on excluded trees for standard pyrefly layouts.
-
-### 5.3 CONTRIBUTING duplicate “Git for agents” blurb
-
-`CONTRIBUTING.md` repeats the same “Commit tooling and git routing are fleet canon…” sentence twice in § Git for agents.
-
-**Refs:** `CONTRIBUTING.md` lines ~18–21.
-
-**Traps:** Pure doc hygiene; keep a single pointer to fleet CLAUDE.md and the repo-local verification note.
-
-**Acceptance:** Section states the fleet pointer once; no duplicated paragraph.
 
 ---
 
@@ -289,16 +215,6 @@ Actions/container already have `--actions-refresh-sha` / `--container-refresh-sh
 **Traps:** Refresh must stay digest-within-intent (same hook repo / same submodule URL), not a silent major leap. Compose into the eventual `--full` umbrella (3.1) once named. Holds (1.2) should define ceiling behaviour before aggressive refresh. Container SHA-without-tag remains a separate harder case — do not pretend a tag-less digest has a refresh target.
 
 **Acceptance:** Opt-in flags (e.g. `--precommit-refresh-sha`, `--submodule-refresh-sha`) advance those pins when resolvable; docs/AGENTS list them beside the existing refresh flags; without the flags, behaviour stays report-only.
-
-### 7.4 `--verify-test` should cover Rust (`cargo test`)
-
-`--verify-test` help and implementation only run `go test`. Rust verify stops at `cargo check`, so API-breaking bumps can pass while operators assume the flag is cross-ecosystem.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/verify.py` (rust vs go branches); `packages/repo-ops-core/src/repo_ops_core/cli.py` (`--verify-test`); related to but distinct from 2.4 (upgrade-mode honesty).
-
-**Traps:** `cargo test` is slower — keep opt-in. Help text must name both ecosystems. Do not imply `--verify-test` enables Rust major upgrades (2.4).
-
-**Acceptance:** With `--verify-test`, rust workspaces run `cargo test` after `cargo check`; help/usage name go and rust; default (flag off) unchanged.
 
 ### 7.5 `--commit-umbrella` help vs behaviour
 
@@ -383,3 +299,27 @@ Post-apply remediation ids (`biome_schema`, `playwright_browsers`, `codegen`, `p
 **Traps:** Compare content hash or bundled package version, not mtime alone (editors bump mtime). `--check` / doctor must stay read-only. Do not auto-overwrite without `--force`.
 
 **Acceptance:** `install-skill --check` (and/or doctor) warns when the installed skill drifts from the bundled copy; `--force` refresh remains the write path; docs mention the upgrade gotcha.
+
+---
+
+## Round 9 — Wave 17 follow-ons
+
+### 9.1 Fleet apply: per-checkout config besides commit-agent model
+
+`run_upgrade` still loads `load_repo_config(Path.cwd())` once and injects via `apply_config_to_env`. Wave 17 made `commit_agent_model` resolve per `bundle.git_repo` at draft time; other config keys (provider, exclude, jobs, …) still ignore each target checkout’s `config.toml` on multi-root apply.
+
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (`run_upgrade` config load); `repo_ops_core.config.apply_config_to_env` / `resolve_setting`; `commit_agent_cursor._resolve_agent_model` (per-repo precedent).
+
+**Traps:** Do not double-apply env injection mid-flight in a way that leaks one repo’s settings into the next. Prefer resolve-at-use (like commit-agent model) over mutating process-wide env per checkout.
+
+**Acceptance:** Documented settings that are repo-scoped honor each checkout’s config on fleet `plan`/`apply`; global + env + CLI precedence unchanged.
+
+### 9.2 `commit_agent_provider` settings-layer parity
+
+`commit_agent_provider_name()` still reads only `REPO_OPS_COMMIT_AGENT_PROVIDER` from the environment (relying on `apply_config_to_env`), unlike `commit_agent_model` which now calls `resolve_setting` with per-repo config.
+
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/commit_agent_providers.py`; Wave 17 `commit_agent_cursor._resolve_agent_model`.
+
+**Traps:** Keep the same fail-closed unknown-provider behaviour. Avoid loading config on every provider lookup if hot — cache or resolve once per bundle.
+
+**Acceptance:** Provider selection honors env, global config, and per-checkout config with the same precedence story as `commit_agent_model`.
