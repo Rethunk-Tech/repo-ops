@@ -92,6 +92,34 @@ def test_main_warns_when_installed_skill_drifts(
     assert payload["skill_drift"] == ["/tmp/.cursor/skills/repo-ops"]
 
 
+def test_main_reports_dangling_skill_symlink_as_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(doctor.shutil, "which", _fake_which_all_present)
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run_version)
+    destination = tmp_path / ".cursor" / "skills" / "repo-ops"
+    destination.parent.mkdir(parents=True)
+    destination.symlink_to(tmp_path / "missing-skill")
+    monkeypatch.setattr("repo_ops.install_skill.resolve_home", lambda _home: tmp_path)
+    monkeypatch.setattr(
+        "repo_ops.install_skill.destinations_for",
+        lambda _target, _home: [("cursor", destination)],
+    )
+
+    assert not destination.exists()
+    assert destination.is_symlink()
+    assert main([]) == 0
+    out = capsys.readouterr().out
+    assert "Warning: installed skill drift detected:" in out
+    assert str(destination) in out
+
+    assert main(["--json", "--compact"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["skill_drift"] == [str(destination)]
+
+
 # ---------------------------------------------------------------------------
 # Missing tool + --strict
 # ---------------------------------------------------------------------------
