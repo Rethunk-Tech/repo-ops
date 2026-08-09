@@ -185,7 +185,7 @@ def test_exclude_drops_matching_bundles(
     )
     assert rc == 0
     err = capsys.readouterr().err
-    assert "excluded 1 repo(s) via --exclude" in err
+    assert "excluded 1 repo(s) by exclude patterns" in err
     assert processed == ["org/keep-repo"]
 
 

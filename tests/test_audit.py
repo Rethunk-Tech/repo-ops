@@ -741,3 +741,7 @@ def test_audit_exclude_filters_repositories(
     assert main([str(tmp_path), "--exclude", "drop"]) == 0
     assert seen == [str(keep)]
     assert "Excluded repos: 1" in capsys.readouterr().out
+
+    assert main([str(tmp_path), "--exclude", "drop", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["excluded"] == 1

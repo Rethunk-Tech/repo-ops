@@ -113,6 +113,7 @@ def build_run_summary(
     bundles: dict[Path, RepoBundle],
     *,
     diagnostics: DiscoveryDiagnostics | None = None,
+    excluded_count: int = 0,
 ) -> dict[str, Any]:
     """Aggregate end-of-run counters for human footer and JSON ``summary``."""
     workspaces_ok = 0
@@ -171,6 +172,7 @@ def build_run_summary(
         "packages_behind_latest_by_manager": behind_latest_by_manager,
         "actions_behind_latest": actions_behind_latest,
         "failure_count": count_failures(bundles),
+        "excluded": excluded_count,
     }
     # Top-3 staleness scores (behind-count x days-behind, from the state
     # store).  Only attached when at least one repo scores above zero, so an
@@ -262,6 +264,7 @@ def build_json_payload(
     submodules: list[dict[str, str]] | None = None,
     submodule_pointer_hints: list[dict[str, str]] | None = None,
     exit_code: int | None = None,
+    excluded_count: int = 0,
 ) -> dict[str, Any]:
     sorted_bundles = sorted(bundles.values(), key=lambda x: x.label)
     repos_json = [
@@ -275,7 +278,11 @@ def build_json_payload(
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "roots": roots,
         "mode": mode,
-        "summary": build_run_summary(bundles, diagnostics=diagnostics),
+        "summary": build_run_summary(
+            bundles,
+            diagnostics=diagnostics,
+            excluded_count=excluded_count,
+        ),
         "warnings": list(diagnostics.warnings) if diagnostics else [],
         "skipped": list(diagnostics.skipped) if diagnostics else [],
         "repos": repos_json,
@@ -299,6 +306,7 @@ def print_json_report(
     submodule_pointer_hints: list[dict[str, str]] | None = None,
     compact: bool = False,
     exit_code: int | None = None,
+    excluded_count: int = 0,
 ) -> None:
     payload = build_json_payload(
         bundles,
@@ -308,6 +316,7 @@ def print_json_report(
         submodules=submodules,
         submodule_pointer_hints=submodule_pointer_hints,
         exit_code=exit_code,
+        excluded_count=excluded_count,
     )
     print(json.dumps(payload, indent=None if compact else 2))
 
@@ -323,6 +332,7 @@ def write_json_report(
     submodule_pointer_hints: list[dict[str, str]] | None = None,
     compact: bool = False,
     exit_code: int | None = None,
+    excluded_count: int = 0,
 ) -> Path:
     """Write one JSON document to path via temp file + rename. Returns resolved path."""
     path = Path(path).expanduser().resolve()
@@ -335,6 +345,7 @@ def write_json_report(
         submodules=submodules,
         submodule_pointer_hints=submodule_pointer_hints,
         exit_code=exit_code,
+        excluded_count=excluded_count,
     )
     text = json.dumps(payload, indent=None if compact else 2) + "\n"
     fd, tmp_name = tempfile.mkstemp(
@@ -577,6 +588,8 @@ def print_run_footer(
         ("actions policy violations", summary.get("actions_policy_violations", 0)),
         ("discovery skipped", summary["discovery_skipped"]),
     ]
+    if summary.get("excluded", 0):
+        rows.append(("excluded", summary["excluded"]))
     width = max(len(label) for label, _ in rows)
     for label, count in rows:
         print(f"  {label:<{width}}  {count}")

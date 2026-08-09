@@ -573,6 +573,7 @@ def _run_upgrade_body(
                 submodule_pointer_hints=json_pointer_hints,
                 compact=compact,
                 exit_code=exit_code,
+                excluded_count=excluded_count,
             )
             print(written)
         else:
@@ -585,6 +586,7 @@ def _run_upgrade_body(
                 submodule_pointer_hints=json_pointer_hints,
                 compact=compact,
                 exit_code=exit_code,
+                excluded_count=excluded_count,
             )
     elif not args.quiet:
         top_n = getattr(args, "top", 10)
@@ -699,9 +701,16 @@ def _run_upgrade_body(
         if include_submodules and pointer_hints and not apply:
             footer_hints = pointer_hints
         if excluded_count:
-            print(f"excluded {excluded_count} repo(s) via --exclude", file=sys.stderr)
+            print(
+                f"excluded {excluded_count} repo(s) by exclude patterns",
+                file=sys.stderr,
+            )
         report.print_run_footer(
-            summary=report.build_run_summary(bundles, diagnostics=diagnostics),
+            summary=report.build_run_summary(
+                bundles,
+                diagnostics=diagnostics,
+                excluded_count=excluded_count,
+            ),
             failures=report.collect_run_failures(bundles),
             exit_code=exit_code,
             max_failures=args.max_failures,
