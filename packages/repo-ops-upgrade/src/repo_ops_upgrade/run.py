@@ -148,7 +148,7 @@ def _run_upgrade_body(
         os.environ["REPO_OPS_SUBMODULE_UPDATE_LATEST"] = "1"
         os.environ.setdefault("REPO_OPS_GO_UPGRADE_MODE", "explicit")
     # Opt-in per-package targeted fallback (#111); only meaningful with --latest,
-    # which is what produces the behind_latest work-list it consumes. All four
+    # which is what produces the behind_latest work-list it consumes. All five
     # managers' flags must populate their env var or the CLI flag is a no-op (#131).
     if full_sweep or getattr(args, "yarn_targeted_bump", False):
         os.environ["REPO_OPS_YARN_TARGETED_BUMP"] = "1"
@@ -158,6 +158,8 @@ def _run_upgrade_body(
         os.environ["REPO_OPS_PNPM_TARGETED_BUMP"] = "1"
     if full_sweep or getattr(args, "bun_targeted_bump", False):
         os.environ["REPO_OPS_BUN_TARGETED_BUMP"] = "1"
+    if full_sweep or getattr(args, "deno_targeted_bump", False):
+        os.environ["REPO_OPS_DENO_TARGETED_BUMP"] = "1"
     if full_sweep:
         os.environ["REPO_OPS_CONTAINER_REFRESH_SHA"] = "1"
     # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects (#132).
@@ -173,6 +175,9 @@ def _run_upgrade_body(
     # --actions-org-policy: enable org policy enforcement in scan_actions (#125).
     if getattr(args, "actions_org_policy", False):
         os.environ["REPO_OPS_ACTIONS_ORG_POLICY"] = "1"
+    policy_level = getattr(args, "actions_policy_level", None)
+    if policy_level:
+        os.environ["REPO_OPS_ACTIONS_POLICY_LEVEL"] = str(policy_level)
     go_mode = getattr(args, "go_upgrade_mode", None)
     if go_mode:
         os.environ["REPO_OPS_GO_UPGRADE_MODE"] = go_mode
@@ -486,6 +491,7 @@ def _run_upgrade_body(
                     upgrade_mode=actions_mode,
                     tag_cache=local_cache,
                     lint_level=getattr(args, "actions_lint_level", None),
+                    policy_level=getattr(args, "actions_policy_level", None),
                 )
             except Exception as exc:
                 # Isolate: a non-WorkflowParseError (e.g. OSError writing a

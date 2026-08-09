@@ -399,8 +399,8 @@ def add_upgrade_common_arguments(
         action="store_true",
         help=(
             "Full-coverage sweep umbrella: enable --latest, "
-            "--actions-refresh-sha, --container-refresh-sha, and all four "
-            "JavaScript targeted-bump flags (Yarn, npm, pnpm, and bun). "
+            "--actions-refresh-sha, --container-refresh-sha, and all five "
+            "JS/Deno targeted-bump flags (Yarn, npm, pnpm, bun, and Deno). "
             "Opt in explicitly; per-ecosystem policy flags still override it."
         ),
     )
@@ -448,6 +448,17 @@ def add_upgrade_common_arguments(
             "behind latest, attempt a targeted bun add <pkg>@latest and keep it "
             "only if the workspace still installs and the version advances. "
             "Sets REPO_OPS_BUN_TARGETED_BUMP."
+        ),
+    )
+    pol.add_argument(
+        "--deno-targeted-bump",
+        action="store_true",
+        dest="deno_targeted_bump",
+        help=(
+            "Deno only, requires --latest: for each direct dep that "
+            "deno outdated --update left behind latest, attempt a targeted "
+            "deno update <pkg> and keep it only if the lock/import map advances. "
+            "Sets REPO_OPS_DENO_TARGETED_BUMP."
         ),
     )
     pol.add_argument(
@@ -798,9 +809,23 @@ def add_upgrade_common_arguments(
         dest="actions_org_policy",
         help=(
             "Fetch the GitHub org's allowed-actions policy and annotate Actions "
-            "rows that violate it (status=policy). "
+            "rows that violate it (status=policy by default). "
             "Sets REPO_OPS_ACTIONS_ORG_POLICY=1. Requires a GitHub token with "
-            "org read-permissions."
+            "org read-permissions. Combine with --actions-policy-level to warn "
+            "or block pin rewrites."
+        ),
+    )
+    exe.add_argument(
+        "--actions-policy-level",
+        choices=("block", "warn", "report"),
+        default=None,
+        dest="actions_policy_level",
+        metavar="LEVEL",
+        help=(
+            "How org allowed-actions policy violations gate pin bumps when "
+            "--actions-org-policy is set: report (default, annotate only), "
+            "warn, or block (skip rewrites; status=policy-blocked). "
+            "Sets REPO_OPS_ACTIONS_POLICY_LEVEL."
         ),
     )
 

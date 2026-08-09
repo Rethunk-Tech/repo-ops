@@ -190,6 +190,7 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
     "npm_targeted_bump": ("REPO_OPS_NPM_TARGETED_BUMP", "npm_targeted_bump", None),
     "pnpm_targeted_bump": ("REPO_OPS_PNPM_TARGETED_BUMP", "pnpm_targeted_bump", None),
     "bun_targeted_bump": ("REPO_OPS_BUN_TARGETED_BUMP", "bun_targeted_bump", None),
+    "deno_targeted_bump": ("REPO_OPS_DENO_TARGETED_BUMP", "deno_targeted_bump", None),
     "go_work_sync": ("REPO_OPS_GO_WORK_SYNC", "go_work_sync", None),
     "no_progress": ("REPO_OPS_NO_PROGRESS", "no_progress", None),
     "no_state": ("REPO_OPS_NO_STATE", "no_state", None),
@@ -209,6 +210,11 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
     ),
     "commit_umbrella": ("REPO_OPS_COMMIT_UMBRELLA", "commit_umbrella", None),
     "actions_org_policy": ("REPO_OPS_ACTIONS_ORG_POLICY", "actions_org_policy", None),
+    "actions_policy_level": (
+        "REPO_OPS_ACTIONS_POLICY_LEVEL",
+        "actions_policy_level",
+        None,
+    ),
     "container_update_latest": (
         "REPO_OPS_CONTAINER_UPDATE_LATEST",
         "container_update_latest",
@@ -334,6 +340,13 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
         "bun_targeted_bump",
         "0",
     ),
+    (
+        "deno_targeted_bump",
+        "--deno-targeted-bump",
+        "REPO_OPS_DENO_TARGETED_BUMP",
+        "deno_targeted_bump",
+        "0",
+    ),
     ("go_work_sync", "(none)", "REPO_OPS_GO_WORK_SYNC", "go_work_sync", "0"),
     ("no_progress", "(none)", "REPO_OPS_NO_PROGRESS", "no_progress", "0"),
     ("no_state", "(none)", "REPO_OPS_NO_STATE", "no_state", "0"),
@@ -375,6 +388,13 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
         "REPO_OPS_ACTIONS_ORG_POLICY",
         "actions_org_policy",
         "0",
+    ),
+    (
+        "actions_policy_level",
+        "--actions-policy-level",
+        "REPO_OPS_ACTIONS_POLICY_LEVEL",
+        "actions_policy_level",
+        "report",
     ),
     (
         "container_update_latest",
