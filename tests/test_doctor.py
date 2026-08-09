@@ -87,6 +87,10 @@ def test_main_warns_when_installed_skill_drifts(
     assert "/tmp/.cursor/skills/repo-ops" in out
     assert "repo-ops install-skill --force" in out
 
+    assert main(["--json", "--compact"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["skill_drift"] == ["/tmp/.cursor/skills/repo-ops"]
+
 
 # ---------------------------------------------------------------------------
 # Missing tool + --strict
