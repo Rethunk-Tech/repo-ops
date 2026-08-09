@@ -1397,6 +1397,7 @@ def apply_remediations(
     remediations: list[RemediationItem],
     *,
     allow_dirty: bool = False,
+    do_verify: bool = True,
 ) -> list[ApplyOutcome]:
     """Apply each remediation's workspace via the upgrade apply machinery.
 
@@ -1409,8 +1410,8 @@ def apply_remediations(
     registered.  Workspaces whose manager package is unavailable are recorded
     as ``"skip"`` outcomes rather than raising.
 
-    Default behavior (detect-only, ``--fix-plan``) is unchanged — this
-    function is only called when the user passes ``--fix``.
+    Verification runs by default after each apply.  Callers can disable it
+    explicitly for an escape hatch matching the historical behavior.
     """
     from repo_ops_core.git import git_repo_for
     from repo_ops_models import Workspace as _Workspace
@@ -1521,7 +1522,7 @@ def apply_remediations(
             final = orchestration.process_workspace(
                 up_result,
                 do_apply=True,
-                do_verify=False,
+                do_verify=do_verify,
                 verify_test=False,
                 skip_remediations=set(),
                 allow_dirty=allow_dirty,
@@ -1761,6 +1762,13 @@ tools used (must be on PATH or workspace is skipped):
             "uncommitted changes (default: skip dirty worktrees)."
         ),
     )
+    parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        default=False,
+        dest="no_verify",
+        help="With --fix: skip post-apply verification (default: verify).",
+    )
     add_sarif_argument(parser)
     add_json_argument(parser, dest="json_out")
     add_verbose_argument(parser)
@@ -1796,6 +1804,7 @@ def main(argv: list[str] | None = None) -> int:
     fix_plan = bool(getattr(args, "fix_plan", False))
     do_fix = bool(getattr(args, "fix", False))
     allow_dirty = bool(getattr(args, "allow_dirty", False))
+    do_verify = not bool(getattr(args, "no_verify", False))
     sarif_out: str | None = getattr(args, "sarif_out", None)
 
     # --fix implies --fix-plan (collect remediations regardless)
@@ -1863,7 +1872,9 @@ def main(argv: list[str] | None = None) -> int:
 
         # --fix: apply and include outcomes in JSON
         if do_fix and remediations:
-            apply_outcomes = apply_remediations(remediations, allow_dirty=allow_dirty)
+            apply_outcomes = apply_remediations(
+                remediations, allow_dirty=allow_dirty, do_verify=do_verify
+            )
             payload["apply_outcomes"] = [o.as_dict() for o in apply_outcomes]
 
         print(json.dumps(payload, indent=None if args.compact else 2))
@@ -1878,7 +1889,9 @@ def main(argv: list[str] | None = None) -> int:
         plan_exit = 1 if remediations else 0
 
     if do_fix and remediations:
-        apply_outcomes = apply_remediations(remediations, allow_dirty=allow_dirty)
+        apply_outcomes = apply_remediations(
+            remediations, allow_dirty=allow_dirty, do_verify=do_verify
+        )
         print()
         print(f"Fix apply — {len(apply_outcomes)} workspace(s) processed:")
         for outcome in apply_outcomes:
