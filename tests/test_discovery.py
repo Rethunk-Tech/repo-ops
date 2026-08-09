@@ -7,7 +7,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 from repo_ops_core.discovery import FIND_TIMEOUT_ENV, discover_repos
 from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
-from repo_ops_upgrade.discovery import DiscoveryDiagnostics, discover_all
+from repo_ops_upgrade.discovery import (
+    DiscoveryDiagnostics,
+    cargo_workspace_members,
+    discover_all,
+)
 
 
 def test_discover_repos_skips_non_dirs_and_returns_dict(capsys):
@@ -349,6 +353,67 @@ def test_discover_cargo_missing_binary_falls_back_to_member_globs(
     rust_found = [ws for ws in found if ws.ecosystem == "rust"]
 
     assert [ws.path for ws in rust_found] == [repo.resolve()]
+
+
+def test_discover_cargo_missing_binary_expands_path_dependencies(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Fallback discovery recursively collapses path dependencies."""
+    repo = tmp_path / "com.github" / "Acme" / "cargo-path-fallback"
+    _git_init(repo)
+    (repo / "Cargo.toml").write_text('[workspace]\nmembers = ["crates/app"]\n')
+
+    app = repo / "crates" / "app"
+    (app / "src").mkdir(parents=True)
+    (app / "Cargo.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\n\n'
+        '[dependencies]\nshared = { path = "../shared" }\n'
+    )
+    (app / "src" / "lib.rs").write_text("")
+
+    shared = repo / "crates" / "shared"
+    (shared / "src").mkdir(parents=True)
+    (shared / "Cargo.toml").write_text(
+        '[package]\nname = "shared"\nversion = "0.1.0"\n\n'
+        '[dependencies]\nnested = { path = "../nested" }\n'
+    )
+    (shared / "src" / "lib.rs").write_text("")
+
+    nested = repo / "crates" / "nested"
+    (nested / "src").mkdir(parents=True)
+    (nested / "Cargo.toml").write_text(
+        '[package]\nname = "nested"\nversion = "0.1.0"\n'
+    )
+    (nested / "src" / "lib.rs").write_text("")
+    monkeypatch.setattr("repo_ops_upgrade.discovery.shutil.which", lambda _: None)
+
+    found = discover_all([str(tmp_path)], flat=False)
+    rust_found = [ws for ws in found if ws.ecosystem == "rust"]
+
+    assert [ws.path for ws in rust_found] == [repo.resolve()]
+
+
+def test_cargo_metadata_timeout_falls_back_to_manifest_members(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A timed-out metadata call uses the manifest fallback."""
+    repo = tmp_path / "cargo-timeout"
+    repo.mkdir()
+    (repo / "Cargo.toml").write_text('[workspace]\nmembers = ["crates/*"]\n')
+    monkeypatch.setattr(
+        "repo_ops_upgrade.discovery.shutil.which",
+        lambda _: "/usr/bin/cargo",
+    )
+
+    def timeout(*args, **kwargs):
+        assert kwargs["timeout"] == 60
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=60)
+
+    monkeypatch.setattr("repo_ops_upgrade.discovery.subprocess.run", timeout)
+
+    assert cargo_workspace_members(repo) == {"crates/*"}
 
 
 @pytest.mark.parametrize(
