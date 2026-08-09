@@ -689,3 +689,34 @@ def test_collect_results_excludes_repositories(
     assert len(per_repo) == 1
     assert seen == [str(keep)]
     assert filters.excluded_count == 1
+
+
+def test_main_exclude_prints_excluded_count(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    keep = tmp_path / "keep"
+    drop = tmp_path / "drop"
+    keep.mkdir()
+    drop.mkdir()
+    seen: list[str] = []
+
+    monkeypatch.setattr(
+        audit,
+        "discover_repos",
+        lambda *args, **kwargs: {
+            "keep-common": str(keep),
+            "drop-common": str(drop),
+        },
+    )
+
+    def fake_pushed(repo: str, filters: Filters) -> dict[str, None]:
+        seen.append(repo)
+        return {"a" * 40: None}
+
+    monkeypatch.setattr(audit, "pushed_commits_for_repo", fake_pushed)
+
+    assert main([str(tmp_path), "--exclude", "drop"]) == 0
+
+    out = capsys.readouterr().out
+    assert "Excluded repos: 1" in out
+    assert seen == [str(keep)]
