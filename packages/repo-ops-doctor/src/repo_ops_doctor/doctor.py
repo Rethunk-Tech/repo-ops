@@ -116,7 +116,9 @@ def probe_skill_drift() -> list[str]:
     bundled = bundled_skill_dir()
     drifted: list[str] = []
     for _, path in destinations_for("both", resolve_home(None)):
-        if path.exists() and not check_installed_skill(bundled, path):
+        if (path.is_symlink() or path.exists()) and not check_installed_skill(
+            bundled, path
+        ):
             drifted.append(str(path))
     return drifted
 
