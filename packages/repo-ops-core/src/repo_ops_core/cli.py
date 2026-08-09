@@ -713,7 +713,8 @@ def add_upgrade_common_arguments(
             help=(
                 "After apply: commit each repo where apply and verify succeeded. "
                 "conventional=local git; agent=commit-agent provider drafts the "
-                "subject (model from REPO_OPS_COMMIT_AGENT_MODEL, default "
+                "subject (model from REPO_OPS_COMMIT_AGENT_MODEL / commit_agent_model, "
+                "default "
                 "composer-2.5; needs CURSOR_API_KEY and optional "
                 "repo-ops-upgrade[commit-agent-cursor])."
             ),

@@ -224,7 +224,7 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 | `--compact` | With `--json`: compact single-line output |
 | `--json-out PATH` | With `--json`: write report atomically to `PATH` |
 
-`doctor` is read-only and takes no `root_dir` arguments (no scan roots in v1). It probes the binaries repo-ops shells out to (git, gh, uv, pip-compile, poetry, pipenv, pdm, pip-audit, npm, pnpm, yarn, bun, corepack, deno, go, gofmt, govulncheck, cargo, cargo-audit via `cargo audit --version`, actionlint) for found/missing, resolved path, and version, plus a `gh auth status` check.
+`doctor` is read-only and takes no `root_dir` arguments (no scan roots in v1). It probes the binaries repo-ops shells out to (git, gh, uv, hatch, pyrefly, pip-compile, poetry, pipenv, pdm, pip-audit, pre-commit, npm, pnpm, yarn, bun, corepack, deno, go, gofmt, govulncheck, cargo, cargo-audit via `cargo audit --version`, actionlint) for found/missing, resolved path, and version, plus a `gh auth status` check.
 
 Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md#security-and-discovery).
 
