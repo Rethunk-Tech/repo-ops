@@ -1289,7 +1289,7 @@ def main(argv: list[str] | None = None) -> int:
                 repo_paths=repo_paths,
             )
             if exclude_patterns:
-                print(f"Excluded {excluded_count} repo(s) by --exclude.")
+                print(f"Excluded {excluded_count} repo(s) by exclude patterns.")
             return result
 
         do_close = close_flag

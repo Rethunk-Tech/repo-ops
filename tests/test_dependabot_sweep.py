@@ -465,6 +465,7 @@ def test_dependabot_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert exc_info.value.code == 0
     out = capsys.readouterr().out
     assert "--close" in out
+    assert "uv.lock" in out
     assert "poetry.lock" in out
     assert "pdm.lock" in out
     assert "Pipfile.lock" in out
