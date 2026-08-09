@@ -26,16 +26,6 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 **Acceptance:** A hold on an Actions pin, container tag/digest, pre-commit `rev`, or submodule ref caps plan/apply the same way JS/Go/Python do; docs list each ecosystem; expired holds still skip without rewriting config.
 
-### 1.3 Cargo workspace discovery: `exclude` / implicit members / `default-members`
-
-Child Rust workspaces are suppressed only via explicit root `[workspace].members` globs. Cargo also auto-includes path deps, supports `exclude`, and uses `default-members` for default package selection — none of those are handled, so some layouts still double-count members as standalone rust workspaces.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/discovery.py` (`cargo_workspace_members`, `path_is_cargo_workspace_child`); Cargo Book [workspaces — members / exclude / default-members](https://doc.rust-lang.org/cargo/reference/workspaces.html); CHANGELOG known limitation under #52.
-
-**Traps:** Empty/`members` omitted ≠ “no children”; path dependencies under the workspace root are members even without a glob. `default-members` affects *which* packages cargo operates on by default, not membership — collapsing discovery must not confuse the two. Prefer matching `cargo metadata --no-deps` over re-implementing glob rules if feasible.
-
-**Acceptance:** Virtual and non-virtual workspaces with `exclude`, globs, and implicit path-dep members surface a single rust workspace at the root; no duplicate member rows in `plan --json` for those layouts.
-
 ---
 
 ## Round 2 — Ecosystem parity
@@ -50,16 +40,6 @@ Deno reports `behind_latest` and honors `--latest` / `REPO_OPS_DENO_UPDATE_LATES
 
 **Acceptance:** `--deno-targeted-bump` (and config/env twin) moves still-behind direct deps after the bulk update, reverts on no-advance/install failure, appears in the full-coverage sweep docs beside the other four flags, and is enabled by `--full`.
 
-### 2.3 SBOM / license: enrich SPDX IDs instead of permanent `NOASSERTION`
-
-`repo-ops sbom` always emits license `NOASSERTION` because lock parsers carry no license ids; `repo-ops license` is offline/best-effort and still leaves poetry/PDM/pipenv unknown without a venv, and containers always unknown.
-
-**Refs:** `packages/repo-ops-lockfiles/src/repo_ops_lockfiles/sbom.py`; `license_policy.py`; `docs/usage.md` § license scope table.
-
-**Traps:** Network enrichment (crates.io / npm / PyPI) must be opt-in and cacheable — default SBOM path should stay offline. Do not invent licenses; prefer registry metadata or on-disk `LICENSE` / `METADATA`. Container images have no local license source today — keep them out of exit-`2` unknown unless a deliberate source is added.
-
-**Acceptance:** Optional enrichment fills real SPDX ids for common npm/PyPI/crates packages in SBOM output; `license` unknown rate drops for poetry/PDM/pipenv when enrichment or a declared cache is enabled; offline default behaviour unchanged.
-
 ### 2.4 Rust upgrade-mode honesty vs aggressive bumps
 
 `--latest` does not change Cargo behaviour (`cargo update` stays within existing constraints). Operators cannot opt into conservative vs aggressive Rust bumps the way Go (`patch`/`explicit`/`mvs`) or container cross-major gates work. Documented as intentional — still a fleet gap when Rust majors need a deliberate path (e.g. `cargo upgrade` / manifest edits).
@@ -72,20 +52,6 @@ Deno reports `behind_latest` and honors `--latest` / `REPO_OPS_DENO_UPDATE_LATES
 
 ---
 
-## Round 4 — Hygiene carry-forward
-
-### 4.3 Dependabot supersession for legacy `bun.lockb`
-
-Inventory best-effort-parses binary `bun.lockb` via `bun` dump; dependabot high-confidence resolution only walks text `bun.lock`. Scaffold now emits `package-ecosystem: bun` for `bun.lock` / `bun.lockb`, but `--close` supersession still cannot high-confidence-resolve lockb contents. Repos still on `lockb` keep low-confidence Dependabot closes.
-
-**Refs:** `packages/repo-ops-inventory/src/repo_ops_inventory/counting.py` (`_versions_bun_lockb`); `packages/repo-ops-dependabot/src/repo_ops_dependabot/dependabot.py` (scaffold `_BUN_INDICATORS`; supersession still text `bun.lock`).
-
-**Traps:** Invoking `bun` on lockb needs the binary on PATH and a timeout; cache or skip cleanly when bun is missing. Prefer encouraging text `bun.lock` migration over forever supporting lockb if fleet has moved on.
-
-**Acceptance:** Either high-confidence supersession works for `bun.lockb` when `bun` is available, or docs explicitly say lockb is unsupported for `--close` and inventory remains the only consumer.
-
----
-
 ## Round 6 — Audit / security parity
 
 ### 6.1 Manager-aware Python `audit` (stop forcing `py-uv`)
@@ -94,19 +60,9 @@ Inventory best-effort-parses binary `bun.lockb` via `bun` dump; dependabot high-
 
 **Refs:** `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`_detect_workspaces`, `_audit_py_uv`); `docs/usage.md` § audit ecosystem table; plan/apply discovery in `packages/repo-ops-upgrade/src/repo_ops_upgrade/discovery.py`.
 
-**Traps:** `uv run pip-audit` on a non-uv project can fail closed as “skipped” while the workspace looks audited in the roll-up. Prefer manager-native export + audit (or documented pip-audit-on-exported-reqs) over pretending everything is uv. Reuse upgrade discovery kinds — do not grow a second incompatible walker forever (same class as Cargo child suppression in 1.3).
+**Traps:** `uv run pip-audit` on a non-uv project can fail closed as “skipped” while the workspace looks audited in the roll-up. Prefer manager-native export + audit (or documented pip-audit-on-exported-reqs) over pretending everything is uv. Reuse upgrade discovery kinds — do not grow a second incompatible walker forever.
 
 **Acceptance:** Audit detects the real Python manager; poetry/PDM/pipenv/hatch/pip-tools repos are included with explicit ecosystem labels; wrong-manager skips are visible in JSON (`skip_reason`), not false-clean `ok` rows.
-
-### 6.2 Deno vulnerability audit path
-
-Deno has plan/apply/verify and remediations, but `audit_workspace` stops at go / node / py-uv / rust — fleet `audit` never sees Deno CVEs.
-
-**Refs:** `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`audit_workspace`); `packages/repo-ops-js/src/repo_ops_js/deno.py`; `packages/repo-ops-upgrade-remediations-deno`; `docs/usage.md` audit table.
-
-**Traps:** Prefer `deno audit` (or the current Deno-documented equivalent) over inventing a third-party scanner. `--fix` must snapshot/restore `deno.lock` + import maps like apply. Missing `deno` on PATH should skip with reason, matching govulncheck/cargo-audit patterns.
-
-**Acceptance:** `repo-ops audit` discovers Deno workspaces, normalizes severities into the shared count schema, and supports `--fix-plan` / `--fix` with reversible lock edits; usage table lists Deno beside the other ecosystems.
 
 ---
 
@@ -170,14 +126,20 @@ Actions/container already have `--actions-refresh-sha` / `--container-refresh-sh
 
 ---
 
-## Round 20 — Wave 20 follow-ons
+## Round 21 — Wave 21 follow-ons
 
-### 20.1 `pushed --source=gh` remote attribution
+### 21.1 License enrichment: local-only mode + safer text classification
 
-Usage now documents that `pushed` is machine-local reflog only. Operators on fresh clones / CI still need an authenticated optional remote source (or a hard fail/warn when no local reflog evidence exists) rather than a quiet empty table.
+`--enrich-licenses` always sets `allow_network=True`. Air-gapped operators need local METADATA/LICENSE enrichment without registry calls. BSD-family LICENSE text classification can mis-label BSD-3 (and relatives) as `BSD-2-Clause` via a shared needle — prefer `NOASSERTION` on ambiguity.
 
-**Refs:** `packages/repo-ops-pushed/src/repo_ops_pushed/audit.py`; `docs/usage.md` § `pushed` — machine-local reflog.
+**Refs:** `packages/repo-ops-lockfiles/src/repo_ops_lockfiles/license_enrich.py`; `sbom.py` / `license_policy.py` enrich wiring.
 
-**Traps:** Needs authenticated `gh`, rate-limit discipline, and must not invent pushes the API cannot attribute. Reflog expiry under gc is the same class of false zero. Default must stay local-only for back-compat.
+**Acceptance:** Opt-in local-only enrichment (flag or env); ambiguous LICENSE text stays unknown rather than a wrong SPDX id.
 
-**Acceptance:** Opt-in remote source (e.g. `--source=gh`) or an explicit unsupported/empty-window warning path so operators cannot mistake “0” for “no pushes on GitHub”.
+### 21.2 Dependabot: stop parsing `poetry.lock` via `versions_uv_lock`
+
+`_lockfile_resolved` routes `poetry.lock` through `versions_uv_lock`, which is the wrong format — Poetry high-confidence supersession is unreliable (pre-Wave-21).
+
+**Refs:** `packages/repo-ops-dependabot/src/repo_ops_dependabot/dependabot.py` (~poetry.lock branch); lockfiles poetry parser if any.
+
+**Acceptance:** Poetry locks use a poetry-aware resolver (or explicit low-confidence) so `--close` never high-confidence-closes on a false uv parse.
