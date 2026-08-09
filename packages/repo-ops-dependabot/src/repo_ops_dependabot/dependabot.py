@@ -33,7 +33,8 @@ and the PR is never auto-closed.
 Satisfaction precision
 ----------------------
 - **High-confidence**: resolved version read from a lockfile parser (npm-lock,
-  yarn-lock, pnpm-lock, bun-lock, uv-lock) or from go.mod / Cargo.lock.
+  yarn-lock, pnpm-lock, bun-lock, uv-lock, poetry.lock, pdm.lock, Pipfile.lock)
+  or from go.mod / Cargo.lock.
   Auto-close eligible when ``version >= target``.
 - **Low-confidence** (``low_confidence=True``): text-search fallback used when no
   lockfile parser returned a result.  These matches are **never** auto-closed
@@ -75,6 +76,8 @@ from repo_ops_core.git import repo_label, run_git
 from repo_ops_lockfiles.parsers import (
     versions_bun_lock,
     versions_npm_lock,
+    versions_pdm_lock,
+    versions_pipenv_lock,
     versions_pnpm_lock,
     versions_uv_lock,
     versions_yarn_lock,
@@ -381,6 +384,36 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
                     if pkg:
                         _update(pkg, ver)
 
+    for lockfile in root.rglob("poetry.lock"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
+        with contextlib.suppress(Exception):
+            for entry in versions_uv_lock(lockfile):
+                if "@" in entry:
+                    pkg, ver = _split_name_ver(entry)
+                    if pkg:
+                        _update(pkg, ver)
+
+    for lockfile in root.rglob("pdm.lock"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
+        with contextlib.suppress(Exception):
+            for entry in versions_pdm_lock(lockfile):
+                if "@" in entry:
+                    pkg, ver = _split_name_ver(entry)
+                    if pkg:
+                        _update(pkg, ver)
+
+    for lockfile in root.rglob("Pipfile.lock"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
+        with contextlib.suppress(Exception):
+            for entry in versions_pipenv_lock(lockfile):
+                if "@" in entry:
+                    pkg, ver = _split_name_ver(entry)
+                    if pkg:
+                        _update(pkg, ver)
+
     return resolved
 
 
@@ -439,6 +472,24 @@ def _lockfile_versions(repo: str) -> set[str]:
             continue
         with contextlib.suppress(Exception):
             versions |= versions_uv_lock(lockfile)
+
+    for lockfile in root.rglob("poetry.lock"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
+        with contextlib.suppress(Exception):
+            versions |= versions_uv_lock(lockfile)
+
+    for lockfile in root.rglob("pdm.lock"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
+        with contextlib.suppress(Exception):
+            versions |= versions_pdm_lock(lockfile)
+
+    for lockfile in root.rglob("Pipfile.lock"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
+        with contextlib.suppress(Exception):
+            versions |= versions_pipenv_lock(lockfile)
 
     return versions
 
