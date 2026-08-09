@@ -25,6 +25,11 @@ from repo_ops_lockfiles.license_policy import (
     scan_go_licenses,
     scan_rust_licenses,
 )
+from repo_ops_lockfiles.license_enrich import (
+    _cache_path,
+    enrich_license,
+    normalize_spdx,
+)
 
 # ---------------------------------------------------------------------------
 # Go: _go_escape / _classify_license_text / resolve_go_license / scan_go_licenses
@@ -208,6 +213,75 @@ def test_scan_deno_licenses_npm_specifiers_only(tmp_path: Path) -> None:
     assert results[0].license_id == "MIT"
     assert results[0].ecosystem == "deno"
     assert results[0].source == "deno.lock+DENO_DIR"
+
+
+def test_enrich_license_uses_cached_npm_registry_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache = tmp_path / "license-cache"
+    url = "https://registry.npmjs.org/lodash/4.17.21"
+    cache_file = _cache_path(cache, url)
+    cache_file.parent.mkdir(parents=True)
+    cache_file.write_text(
+        json.dumps({"name": "lodash", "version": "4.17.21", "license": "MIT"}),
+        encoding="utf-8",
+    )
+
+    def network_must_not_run(*args: object, **kwargs: object) -> None:
+        raise AssertionError("enrichment should use the cached response")
+
+    monkeypatch.setattr("urllib.request.urlopen", network_must_not_run)
+    assert (
+        enrich_license(
+            "lodash",
+            "4.17.21",
+            "npm",
+            cache_dir=cache,
+            allow_network=False,
+        )
+        == "MIT"
+    )
+
+
+def test_enrich_license_reads_python_and_cargo_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site_packages = tmp_path / ".venv" / "lib" / "python3.12" / "site-packages"
+    dist_info = site_packages / "requests-2.31.0.dist-info"
+    dist_info.mkdir(parents=True)
+    (dist_info / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: requests\nVersion: 2.31.0\nLicense: Apache-2.0\n",
+        encoding="utf-8",
+    )
+    assert (
+        enrich_license("requests", "2.31.0", "pypi", tmp_path, allow_network=False)
+        == "Apache-2.0"
+    )
+
+    cargo_home = tmp_path / "cargo"
+    crate = cargo_home / "registry" / "src" / "index" / "serde-1.0.0"
+    crate.mkdir(parents=True)
+    (crate / "Cargo.toml").write_text(
+        '[package]\nname = "serde"\nversion = "1.0.0"\nlicense = "MIT OR Apache-2.0"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CARGO_HOME", str(cargo_home))
+    assert (
+        enrich_license(
+            "serde",
+            "1.0.0",
+            "cargo",
+            cache_dir=tmp_path,
+            allow_network=False,
+        )
+        == "MIT OR Apache-2.0"
+    )
+
+
+def test_normalize_spdx_rejects_ambiguous_values() -> None:
+    assert normalize_spdx("MIT License") == "MIT"
+    assert normalize_spdx("MIT OR Apache-2.0") == "MIT OR Apache-2.0"
+    assert normalize_spdx("BSD") is None
 
 
 # ---------------------------------------------------------------------------

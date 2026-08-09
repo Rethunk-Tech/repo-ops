@@ -22,6 +22,7 @@ from repo_ops_lockfiles.license_policy import (
     scan_python_dep_licenses,
     scan_python_licenses,
 )
+from repo_ops_lockfiles.license_enrich import _cache_path
 
 # ---------------------------------------------------------------------------
 # Unit: _matches_any
@@ -530,6 +531,50 @@ def test_license_json_violation_reported(
     assert any(v["name"] == "gpl-lib" for v in payload["violations"])
 
 
+def test_license_enrichment_uses_cached_registry_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/lodash": {
+                        "name": "lodash",
+                        "version": "4.17.21",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    cache = tmp_path / "repo-ops" / "licenses"
+    cache_file = _cache_path(cache, "https://registry.npmjs.org/lodash/4.17.21")
+    cache_file.parent.mkdir(parents=True)
+    cache_file.write_text(
+        json.dumps({"name": "lodash", "version": "4.17.21", "license": "MIT"}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    rc = main(
+        [
+            "--enrich-licenses",
+            "--allow",
+            "MIT",
+            "--json",
+            "--compact",
+            str(tmp_path),
+        ]
+    )
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["unknown"] == 0
+    assert payload["summary"]["allowed"] == 1
+
+
 # ---------------------------------------------------------------------------
 # CLI: parser flags
 # ---------------------------------------------------------------------------
@@ -537,9 +582,12 @@ def test_license_json_violation_reported(
 
 def test_license_parser_flags() -> None:
     parser = build_license_parser()
-    args = parser.parse_args(["--allow", "MIT,Apache-2.0", "--deny", "GPL"])
+    args = parser.parse_args(
+        ["--allow", "MIT,Apache-2.0", "--deny", "GPL", "--enrich-licenses"]
+    )
     assert args.allow == "MIT,Apache-2.0"
     assert args.deny == "GPL"
+    assert args.enrich_licenses is True
 
 
 def test_license_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:

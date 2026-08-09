@@ -156,6 +156,22 @@ def test_collect_components_npm(tmp_path: Path) -> None:
     assert "pkg:npm/express@4.18.2" in purls
 
 
+def test_collect_components_license_enrichment_is_opt_in(tmp_path: Path) -> None:
+    (tmp_path / "package-lock.json").write_text(_NPM_LOCK_CONTENT, encoding="utf-8")
+    package_dir = tmp_path / "node_modules" / "lodash"
+    package_dir.mkdir(parents=True)
+    (package_dir / "package.json").write_text(
+        json.dumps({"name": "lodash", "version": "4.17.21", "license": "MIT"}),
+        encoding="utf-8",
+    )
+
+    default = collect_components(tmp_path)
+    assert next(c for c in default if c["name"] == "lodash")["license"] == "NOASSERTION"
+
+    enriched = collect_components(tmp_path, enrich_licenses=True)
+    assert next(c for c in enriched if c["name"] == "lodash")["license"] == "MIT"
+
+
 def test_collect_components_python(tmp_path: Path) -> None:
     (tmp_path / "Pipfile.lock").write_text(_PIPFILE_LOCK_CONTENT, encoding="utf-8")
     components = collect_components(tmp_path)
