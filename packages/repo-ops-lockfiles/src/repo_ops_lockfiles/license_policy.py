@@ -47,6 +47,7 @@ from repo_ops_core.cli import (
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.filesystem import read_json_file, read_toml_file
 
+from repo_ops_lockfiles.license_enrich import enrich_license
 from repo_ops_lockfiles.parsers import (
     versions_bun_lock,
     versions_deno_lock,
@@ -62,6 +63,10 @@ from repo_ops_lockfiles.parsers import (
 # ---------------------------------------------------------------------------
 
 UNKNOWN_LICENSE = "UNKNOWN"
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass
@@ -931,6 +936,8 @@ scope (best-effort):
     a local cargo and an already-fetched dependency cache).
   Deno: deno.lock npm: specifiers resolved via DENO_DIR's npm registry cache
     (offline); jsr:/http(s): specifiers have no local license source.
+  --enrich-licenses optionally resolves UNKNOWN npm/PyPI/crates entries from
+  local metadata and registry metadata cached under XDG_CACHE_HOME.
 
 allow/deny list format:
   SPDX identifiers, comma-separated, case-insensitive.
@@ -976,6 +983,15 @@ def build_license_parser() -> argparse.ArgumentParser:
         help="Exit 0 even when unknown licenses are found (default: exit 2).",
     )
     parser.add_argument(
+        "--enrich-licenses",
+        action="store_true",
+        default=_env_flag("REPO_OPS_ENRICH_LICENSES"),
+        help=(
+            "Enrich unknown npm/PyPI/crates licenses from local metadata and "
+            "cached registry metadata (opt-in)."
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         dest="json_out",
@@ -1009,12 +1025,28 @@ def main(argv: list[str] | None = None) -> int:
     all_packages: list[PackageLicense] = []
     for root_str in roots:
         root = Path(root_str)
-        all_packages.extend(scan_npm_licenses(root))
-        all_packages.extend(scan_python_licenses(root))
-        all_packages.extend(scan_python_dep_licenses(root))
-        all_packages.extend(scan_go_licenses(root))
-        all_packages.extend(scan_rust_licenses(root))
-        all_packages.extend(scan_deno_licenses(root))
+        root_packages: list[PackageLicense] = []
+        root_packages.extend(scan_npm_licenses(root))
+        root_packages.extend(scan_python_licenses(root))
+        root_packages.extend(scan_python_dep_licenses(root))
+        root_packages.extend(scan_go_licenses(root))
+        root_packages.extend(scan_rust_licenses(root))
+        root_packages.extend(scan_deno_licenses(root))
+        if args.enrich_licenses:
+            for package in root_packages:
+                if package.license_id != UNKNOWN_LICENSE:
+                    continue
+                license_id = enrich_license(
+                    package.name,
+                    package.version,
+                    package.ecosystem,
+                    root,
+                    allow_network=True,
+                )
+                if license_id:
+                    package.license_id = license_id
+                    package.source = f"{package.source}+enriched"
+        all_packages.extend(root_packages)
 
     result = apply_policy(
         all_packages, allow=allow_list or None, deny=deny_list or None

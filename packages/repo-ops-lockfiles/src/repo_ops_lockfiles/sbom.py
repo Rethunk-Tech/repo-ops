@@ -43,6 +43,7 @@ from repo_ops_core.cli import (
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.filesystem import read_toml_file, should_exclude, write_json_atomic
 
+from repo_ops_lockfiles.license_enrich import enrich_component
 from repo_ops_lockfiles.parsers import (
     versions_bun_lock,
     versions_deno_lock,
@@ -57,6 +58,11 @@ _log = logging.getLogger(__name__)
 
 # SPDX / CycloneDX policy when lockfiles do not carry license metadata.
 _LICENSE_NOASSERTION = "NOASSERTION"
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
 
 # ---------------------------------------------------------------------------
 # Inline parsers for lockfile types not exposed in parsers.py
@@ -208,7 +214,12 @@ def _safe_parse(path: Path, parser: Callable[[Path], Iterable[str]]) -> Iterable
         return ()
 
 
-def collect_components(root: Path) -> list[dict[str, str]]:
+def collect_components(
+    root: Path,
+    *,
+    enrich_licenses: bool = False,
+    license_cache_dir: Path | None = None,
+) -> list[dict[str, str]]:
     """Walk *root* for lockfiles; return sorted list of unique component dicts.
 
     Each component has keys: type, name, version, purl, bom-ref.
@@ -225,6 +236,7 @@ def collect_components(root: Path) -> list[dict[str, str]]:
             "version": version,
             "purl": purl,
             "bom-ref": f"{ecosystem}:{name}@{version}",
+            "ecosystem": ecosystem,
             "license": _LICENSE_NOASSERTION,
         }
 
@@ -378,7 +390,15 @@ def collect_components(root: Path) -> list[dict[str, str]]:
                         "github-actions",
                     )
 
-    return sorted(seen.values(), key=lambda c: (c["name"], c["version"]))
+    components = sorted(seen.values(), key=lambda c: (c["name"], c["version"]))
+    if enrich_licenses:
+        for component in components:
+            license_id = enrich_component(
+                component, root, cache_dir=license_cache_dir, allow_network=True
+            )
+            if license_id:
+                component["license"] = license_id
+    return components
 
 
 # ---------------------------------------------------------------------------
@@ -534,8 +554,9 @@ scope:
   (Dockerfile FROM / compose image:, as pkg:oci purls) and GitHub Actions
   `uses:` pins under .github/workflows (as pkg:github purls); both
   best-effort, included when their local parsers are importable.
-  Component licenses are emitted as NOASSERTION (use `repo-ops license`
-  for license policy scanning).
+  Component licenses are emitted as NOASSERTION by default. Use
+  --enrich-licenses to read local package metadata and optionally query
+  registry metadata cached under XDG_CACHE_HOME.
 """
 
 
@@ -576,6 +597,15 @@ def build_sbom_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit single-line JSON instead of pretty-printed.",
     )
+    parser.add_argument(
+        "--enrich-licenses",
+        action="store_true",
+        default=_env_flag("REPO_OPS_ENRICH_LICENSES"),
+        help=(
+            "Enrich npm/PyPI/crates licenses from local metadata and cached "
+            "registry metadata (opt-in)."
+        ),
+    )
     add_verbose_argument(parser)
     return parser
 
@@ -592,7 +622,9 @@ def main(argv: list[str] | None = None) -> int:
     purl_seen: set[str] = set()
     all_components: list[dict[str, str]] = []
     for root_str in roots:
-        for comp in collect_components(Path(root_str)):
+        for comp in collect_components(
+            Path(root_str), enrich_licenses=args.enrich_licenses
+        ):
             if comp["purl"] not in purl_seen:
                 purl_seen.add(comp["purl"])
                 all_components.append(comp)
