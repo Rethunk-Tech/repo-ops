@@ -6,9 +6,10 @@ from __future__ import annotations
 import json
 import textwrap
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from repo_ops_dependabot import dependabot
+from repo_ops_lockfiles.parsers import versions_bun_lockb
 
 
 def test_owner_repo_ssh_https_and_trailing_slash() -> None:
@@ -72,6 +73,50 @@ def test_lockfile_resolved_maps_parser_output(tmp_path: Path) -> None:
 
     assert resolved["lodash"] == "4.17.21"
     assert resolved["foo"] == "2.0.0"
+
+
+def test_versions_bun_lockb_dumps_yarn_compatible_lockfile(tmp_path: Path) -> None:
+    lockb = tmp_path / "bun.lockb"
+    lockb.write_bytes(b"\x00")
+    proc = MagicMock(
+        returncode=0,
+        stdout='foo@1.0.0:\n  version "2.1.0"\n',
+        stderr="",
+    )
+
+    with patch("repo_ops_lockfiles.parsers.run", return_value=proc) as mock_run:
+        versions = versions_bun_lockb(tmp_path)
+
+    assert versions == {"foo@2.1.0"}
+    mock_run.assert_called_once_with(["bun", str(lockb)], cwd=tmp_path, timeout=60)
+
+
+def test_lockfile_resolved_parses_bun_lockb_without_text_lock(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "bun.lockb").write_bytes(b"\x00")
+    proc = MagicMock(
+        returncode=0,
+        stdout='foo@1.0.0:\n  version "2.1.0"\n',
+        stderr="",
+    )
+
+    with patch("repo_ops_lockfiles.parsers.run", return_value=proc):
+        resolved = dependabot._lockfile_resolved(str(tmp_path))
+
+    assert resolved["foo"] == "2.1.0"
+
+
+def test_lockfile_resolved_skips_bun_lockb_without_bun(tmp_path: Path) -> None:
+    (tmp_path / "bun.lockb").write_bytes(b"\x00")
+
+    with patch(
+        "repo_ops_lockfiles.parsers.run",
+        side_effect=FileNotFoundError("bun"),
+    ):
+        resolved = dependabot._lockfile_resolved(str(tmp_path))
+
+    assert resolved == {}
 
 
 def test_lockfile_resolved_parses_uv_lock(tmp_path: Path) -> None:

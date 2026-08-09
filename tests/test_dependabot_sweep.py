@@ -469,6 +469,8 @@ def test_dependabot_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert "poetry.lock" in out
     assert "pdm.lock" in out
     assert "Pipfile.lock" in out
+    assert "bun.lockb" in out
+    assert "requires bun" in out
 
 
 def test_dependabot_json_empty_repos(tmp_path: Path) -> None:

@@ -1211,6 +1211,8 @@ exit codes:
 precision:
   High-confidence: lockfile parser (npm/yarn/pnpm/bun/uv.lock/poetry.lock/
   pdm.lock/Pipfile.lock) or go.mod/Cargo.lock.
+  Binary bun.lockb: high-confidence resolution requires bun; missing bun
+  leaves the binary lockfile unresolved.
   Low-confidence: text-search fallback.  Low-confidence matches are NEVER
   auto-closed regardless of --close.
 
