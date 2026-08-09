@@ -354,6 +354,48 @@ def test_default_provider_is_cursor() -> None:
     assert provider.name == "cursor"
 
 
+def test_commit_agent_provider_uses_global_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv(providers.COMMIT_AGENT_PROVIDER_ENV, raising=False)
+    xdg_config = tmp_path / "xdg"
+    config_dir = xdg_config / "repo-ops"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text(
+        "commit_agent_provider = 'stub-global'\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_config))
+
+    class _StubProvider:
+        name = "stub-global"
+
+        def draft_commit_message(self, bundle: RepoBundle, files: list[str]) -> str:
+            return "chore(deps): stub"
+
+    providers.register_commit_agent_provider("stub-global", _StubProvider)
+    try:
+        assert providers.commit_agent_provider_name() == "stub-global"
+        assert providers.resolve_commit_agent_provider().name == "stub-global"
+    finally:
+        providers._FACTORIES.pop("stub-global", None)
+
+
+def test_commit_agent_provider_env_overrides_global_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    xdg_config = tmp_path / "xdg"
+    config_dir = xdg_config / "repo-ops"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text(
+        "commit_agent_provider = 'not-a-provider'\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_config))
+    monkeypatch.setenv(providers.COMMIT_AGENT_PROVIDER_ENV, "cursor")
+
+    assert providers.commit_agent_provider_name() == "cursor"
+    assert providers.resolve_commit_agent_provider().name == "cursor"
+
+
 def test_register_commit_agent_provider_round_trip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

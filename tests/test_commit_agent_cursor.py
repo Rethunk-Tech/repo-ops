@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 from repo_ops_models import RepoBundle
+from repo_ops_upgrade import commit_agent_providers
 from repo_ops_upgrade.commit_agent_cursor import (
     CursorCommitAgentProvider,
     _normalize_agent_subject,
@@ -133,6 +134,34 @@ def test_draft_commit_message_uses_target_repo_config(
     )
 
     assert captured["options"].model == "repo-model"
+
+
+def test_draft_commit_message_uses_target_repo_provider(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _isolate_config_home(monkeypatch, tmp_path)
+    monkeypatch.delenv(commit_agent_providers.COMMIT_AGENT_PROVIDER_ENV, raising=False)
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.repo-ops]\ncommit_agent_provider = 'repo-provider'\n", encoding="utf-8"
+    )
+
+    class _StubProvider:
+        name = "repo-provider"
+
+        def draft_commit_message(self, bundle: RepoBundle, files: list[str]) -> str:
+            return "chore(deps): repo provider"
+
+    commit_agent_providers.register_commit_agent_provider(
+        "repo-provider", _StubProvider
+    )
+    try:
+        message = commit_agent_providers.draft_message_with_commit_agent(
+            _bundle(tmp_path), ["a.txt"]
+        )
+    finally:
+        commit_agent_providers._FACTORIES.pop("repo-provider", None)
+
+    assert message == "chore(deps): repo provider"
 
 
 def test_draft_commit_message_rejects_empty_configured_model(
