@@ -205,6 +205,10 @@ def _github_commit_matches(
     if filters.author:
         author = commit.get("author")
         if not isinstance(author, dict):
+            commit_details = commit.get("commit")
+            if isinstance(commit_details, dict):
+                author = commit_details.get("author")
+        if not isinstance(author, dict):
             return False
         identity = f"{author.get('name', '')} <{author.get('email', '')}>"
         try:
@@ -224,9 +228,61 @@ def _github_commit_matches(
     return not isinstance(parents, list) or len(parents) < 2
 
 
+def _github_compare_commits(repo_slug: str, payload: dict) -> list[dict]:
+    before = payload.get("before")
+    head = payload.get("head")
+    if (
+        not isinstance(before, str)
+        or not isinstance(head, str)
+        or re.fullmatch(r"[0-9a-fA-F]{40}", before) is None
+        or re.fullmatch(r"[0-9a-fA-F]{40}", head) is None
+        or before == "0" * 40
+        or before == head
+    ):
+        return []
+
+    size = payload.get("distinct_size", payload.get("size"))
+    if isinstance(size, int) and size <= 0:
+        return []
+
+    endpoint = f"repos/{repo_slug}/compare/{before}...{head}"
+    response = _gh_api(endpoint)
+    if not isinstance(response, dict):
+        raise GhCollectionError(f"gh api {endpoint} returned invalid comparison")
+    records = response.get("commits")
+    if not isinstance(records, list):
+        raise GhCollectionError(f"gh api {endpoint} returned no commits list")
+    return [record for record in records if isinstance(record, dict)]
+
+
+def _add_github_commits(
+    commits: dict[str, None],
+    repo_slug: str,
+    records: list[dict],
+    filters: Filters,
+    *,
+    distinct_only: bool,
+) -> None:
+    for record in records:
+        sha = record.get("sha")
+        if not isinstance(sha, str) or re.fullmatch(r"[0-9a-fA-F]{40}", sha) is None:
+            continue
+        if distinct_only and record.get("distinct", True) is False:
+            continue
+        if _github_commit_matches(repo_slug, sha, record, filters):
+            commits[sha] = None
+
+
 def pushed_commits_for_repo_gh(repo: str, filters: Filters) -> dict[str, None]:
     commits: dict[str, None] = {}
-    for repo_slug in _github_repos_for_repo(repo):
+    repo_slugs = _github_repos_for_repo(repo)
+    if not repo_slugs:
+        print(
+            f"WARN: skipped {repo} for --source=gh: no GitHub remote",
+            file=sys.stderr,
+        )
+        return commits
+    for repo_slug in repo_slugs:
         endpoint = f"repos/{repo_slug}/events?per_page=100"
         for event in _github_events(endpoint):
             if event.get("type") != "PushEvent":
@@ -240,21 +296,23 @@ def pushed_commits_for_repo_gh(repo: str, filters: Filters) -> dict[str, None]:
             if not isinstance(payload, dict):
                 continue
             event_commits = payload.get("commits")
-            if not isinstance(event_commits, list):
+            if isinstance(event_commits, list) and event_commits:
+                _add_github_commits(
+                    commits,
+                    repo_slug,
+                    [record for record in event_commits if isinstance(record, dict)],
+                    filters,
+                    distinct_only=True,
+                )
                 continue
-            for event_commit in event_commits:
-                if not isinstance(event_commit, dict):
-                    continue
-                sha = event_commit.get("sha")
-                if (
-                    not isinstance(sha, str)
-                    or re.fullmatch(r"[0-9a-fA-F]{40}", sha) is None
-                ):
-                    continue
-                if event_commit.get("distinct", True) is False:
-                    continue
-                if _github_commit_matches(repo_slug, sha, event_commit, filters):
-                    commits[sha] = None
+            compare_commits = _github_compare_commits(repo_slug, payload)
+            _add_github_commits(
+                commits,
+                repo_slug,
+                compare_commits,
+                filters,
+                distinct_only=False,
+            )
     return commits
 
 
