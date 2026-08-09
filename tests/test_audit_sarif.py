@@ -15,6 +15,7 @@ from repo_ops_audit.audit import (
     RemediationItem,
     VulnCount,
     WorkspaceResult,
+    _audit_node,
     build_sarif_report,
     main,
 )
@@ -174,6 +175,28 @@ def test_sarif_unknown_requires_fail_on_unknown() -> None:
     doc = build_sarif_report([result], [], fail_on_unknown=True)
     assert len(doc["runs"][0]["results"]) == 1
     assert doc["runs"][0]["results"][0]["properties"]["unfixed"] is True
+
+
+def test_bun_text_audit_findings_reach_sarif() -> None:
+    """Bun's text fallback emits unfixed findings for SARIF."""
+    with (
+        patch("shutil.which", return_value="/usr/bin/bun"),
+        patch(
+            "repo_ops_audit.audit._run",
+            side_effect=[
+                (0, "bun audit --help", ""),
+                (1, "1 high severity vulnerability", ""),
+            ],
+        ),
+    ):
+        result = _audit_node("/ws", "bun")
+
+    assert result.counts.high == 1
+    assert len(result.findings) == 1
+    doc = build_sarif_report([result], [], fail_on="high")
+    sarif_result = doc["runs"][0]["results"][0]
+    assert sarif_result["level"] == "error"
+    assert sarif_result["properties"]["unfixed"] is True
 
 
 def test_sarif_severity_mapping() -> None:
