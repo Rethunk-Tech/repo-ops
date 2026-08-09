@@ -474,7 +474,7 @@ def print_human_report(
             action_rows: list = []
             policy_rows: list = []
             for ab in repo.actions:
-                if ab.status == "policy":
+                if ab.status in ("policy", "policy-blocked", "warn"):
                     policy_rows.append(ab)
                     continue
                 if ab.pin == ab.latest and ab.status == "ok":
@@ -500,7 +500,7 @@ def print_human_report(
                 for ab in policy_rows:
                     explanation = ab.detail or "org policy violation"
                     print(
-                        f"    {ab.workflow}: {ab.action}@{ab.pin} [policy] {explanation}"
+                        f"    {ab.workflow}: {ab.action}@{ab.pin} [{ab.status}] {explanation}"
                     )
             print(
                 "  Actions: "

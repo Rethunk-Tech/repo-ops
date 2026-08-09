@@ -1050,16 +1050,17 @@ def scan_actions(
                                         f"refresh SHA digest to {tag} within v{major} "
                                         f"({new_sha[:12]})"
                                     )
-                                bumps.append(
-                                    ActionBump(
-                                        workflow=rel,
-                                        action=action,
-                                        pin=pin,
-                                        latest=new_sha,
-                                        status="ok",
-                                        detail=detail_desc,
+                                if not policy_blocked:
+                                    bumps.append(
+                                        ActionBump(
+                                            workflow=rel,
+                                            action=action,
+                                            pin=pin,
+                                            latest=new_sha,
+                                            status="ok",
+                                            detail=detail_desc,
+                                        )
                                     )
-                                )
                                 if apply and not policy_blocked:
                                     comment_rewrite: tuple[str, str] | None = None
                                     if cross_major and uses.comment:
@@ -1114,16 +1115,17 @@ def scan_actions(
                     continue
 
                 target_tag, detail = resolution
-                bumps.append(
-                    ActionBump(
-                        workflow=rel,
-                        action=action,
-                        pin=pin,
-                        latest=target_tag,
-                        status="ok",
-                        detail=detail,
+                if not policy_blocked:
+                    bumps.append(
+                        ActionBump(
+                            workflow=rel,
+                            action=action,
+                            pin=pin,
+                            latest=target_tag,
+                            status="ok",
+                            detail=detail,
+                        )
                     )
-                )
                 if apply and not policy_blocked:
                     replacements.append(
                         PinReplacement(
@@ -1161,16 +1163,17 @@ def scan_actions(
             )
 
             if latest_target and latest_target != pin:
-                bumps.append(
-                    ActionBump(
-                        workflow=rel,
-                        action=action,
-                        pin=pin,
-                        latest=latest_target,
-                        status="ok",
-                        detail=f"cross-major {pin} -> {latest_target} (latest mode)",
+                if not policy_blocked:
+                    bumps.append(
+                        ActionBump(
+                            workflow=rel,
+                            action=action,
+                            pin=pin,
+                            latest=latest_target,
+                            status="ok",
+                            detail=f"cross-major {pin} -> {latest_target} (latest mode)",
+                        )
                     )
-                )
                 if apply and not policy_blocked:
                     replacements.append(
                         PinReplacement(
@@ -1200,16 +1203,17 @@ def scan_actions(
                     detail = f"normalize to floating major v{M}"
                     if newer_major:
                         detail += f"; newer major v{max_major} available"
-                    bumps.append(
-                        ActionBump(
-                            workflow=rel,
-                            action=action,
-                            pin=pin,
-                            latest=desired,
-                            status="ok",
-                            detail=detail,
+                    if not policy_blocked:
+                        bumps.append(
+                            ActionBump(
+                                workflow=rel,
+                                action=action,
+                                pin=pin,
+                                latest=desired,
+                                status="ok",
+                                detail=detail,
+                            )
                         )
-                    )
                     if apply and not policy_blocked:
                         replacements.append(
                             PinReplacement(
@@ -1232,16 +1236,17 @@ def scan_actions(
                         )
                         if newer_major:
                             detail += f"; newer major v{max_major} available"
-                        bumps.append(
-                            ActionBump(
-                                workflow=rel,
-                                action=action,
-                                pin=pin,
-                                latest=in_major,
-                                status="ok",
-                                detail=detail,
+                        if not policy_blocked:
+                            bumps.append(
+                                ActionBump(
+                                    workflow=rel,
+                                    action=action,
+                                    pin=pin,
+                                    latest=in_major,
+                                    status="ok",
+                                    detail=detail,
+                                )
                             )
-                        )
                         if apply and not policy_blocked:
                             replacements.append(
                                 PinReplacement(

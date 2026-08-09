@@ -744,6 +744,7 @@ def test_scan_policy_blocked_skips_pin_rewrite(
     blocked_rows = [b for b in bumps if b.status == "policy-blocked"]
     assert len(blocked_rows) == 1
     assert blocked_rows[0].action == "softprops/action-gh-release"
+    assert all(b.status != "ok" for b in bumps)
 
 
 def test_scan_policy_warn_applies_pin_rewrite(
@@ -848,3 +849,25 @@ def test_actions_summary_policy_does_not_count_as_failure() -> None:
     summary = bundle.actions_summary()
     assert summary["failures"] == 0
     assert summary["policy_violations"] == 1
+
+
+@pytest.mark.parametrize("status", ["policy", "policy-blocked", "warn"])
+def test_actions_summary_policy_statuses_are_not_bumps(status: str) -> None:
+    """Policy-status rows count as violations, never actionable bumps."""
+    from repo_ops_models import ActionBump, RepoBundle
+
+    bundle = RepoBundle(git_repo=Path("/fake"), label="fake")
+    bundle.actions = [
+        ActionBump(
+            workflow="ci.yml",
+            action="myaction/foo",
+            pin="v1",
+            latest="v2",
+            status=status,
+            detail="org policy violation",
+        ),
+    ]
+
+    summary = bundle.actions_summary()
+    assert summary["policy_violations"] == 1
+    assert summary["bumps"] == 0

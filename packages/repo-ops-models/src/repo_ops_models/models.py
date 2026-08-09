@@ -127,7 +127,7 @@ class RepoBundle:
             if ab.status == "fail":
                 failures += 1
                 continue
-            if ab.status == "policy":
+            if ab.status in ("policy", "policy-blocked", "warn"):
                 policy_violations += 1
                 continue
             detail_lower = (ab.detail or "").lower()

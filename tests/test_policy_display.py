@@ -131,6 +131,41 @@ def test_print_human_report_renders_policy_rows(tmp_path: Path) -> None:
     assert "action not in org allowlist" in out
 
 
+@pytest.mark.parametrize("status", ["policy", "policy-blocked", "warn"])
+def test_print_human_report_renders_policy_status_marker(
+    tmp_path: Path, status: str
+) -> None:
+    """All policy statuses render as policy rows, not action bumps."""
+    bundles = {
+        tmp_path: _bundle(
+            tmp_path,
+            actions=[
+                ActionBump(
+                    "ci.yml",
+                    "bad-corp/evil-action",
+                    "v1",
+                    "v2",
+                    status=status,
+                    detail="action not in org allowlist",
+                ),
+            ],
+            workflows_scanned=1,
+        ),
+    }
+    buf = io.StringIO()
+    with patch("sys.stdout", buf):
+        print_human_report(
+            bundles,
+            dry_run=True,
+            only_outdated=False,
+            top_n=10,
+            include_actions=True,
+        )
+    out = buf.getvalue()
+    assert f"[{status}]" in out
+    assert "→" not in out
+
+
 def test_print_human_report_policy_violation_count_line(tmp_path: Path) -> None:
     """When policy rows exist, a per-bundle count line appears."""
     bundles = {
