@@ -317,6 +317,10 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
         proc = run(["cargo", "check"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "cargo check failed"
+        if verify_test:
+            proc2 = run(["cargo", "test"], ws.path, timeout=timeout)
+            if proc2.returncode != 0:
+                return proc2.stderr.strip() or "cargo test failed"
         return None
     if mgr in ("uv", "hatch"):
         # Hatch without uv.lock: apply is a no-op unless migrate-to-uv-lock;
