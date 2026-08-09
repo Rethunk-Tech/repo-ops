@@ -139,6 +139,8 @@ A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinn
 | `--no-verify` | apply | Skip verify gates |
 | `--on-verify-fail=revert\|keep` | apply | Roll back or keep on verify failure |
 | `--commit=none\|conventional\|agent` | apply | Post-apply commits |
+| `--only-outdated` | plan, apply | Filter human-readable output to outdated entries; JSON remains unfiltered |
+| `--skip-remediations IDS` | plan, apply | Skip selected remediation IDs; see [usage.md](docs/usage.md) for the current catalog |
 | `--exclude PATTERN` | plan, apply | Exclude repos matching pattern (repeatable) |
 | `--go-upgrade-mode MODE` | plan, apply | Go upgrade policy: `patch` (default), `explicit`, or `mvs` |
 | `--actions-upgrade-mode MODE` | plan, apply | Actions cross-major policy: `normalize` (default) or `latest` |
@@ -226,6 +228,8 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 | `--json-out PATH` | With `--json`: write report atomically to `PATH` |
 
 `doctor` is read-only and takes no `root_dir` arguments (no scan roots in v1). It probes the binaries repo-ops shells out to (git, gh, uv, hatch, pyrefly, pip-compile, poetry, pipenv, pdm, pip-audit, pre-commit, npm, pnpm, yarn, bun, corepack, deno, go, gofmt, govulncheck, cargo, cargo-audit via `cargo audit --version`, actionlint) for found/missing, resolved path, and version, plus a `gh auth status` check.
+It also reports installed Cursor/Claude skill-copy drift; JSON reports expose
+those entries in the `skill_drift` field.
 
 Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md#security-and-discovery).
 
@@ -282,7 +286,10 @@ Releases cut on `v*` tag push — `release.yml`'s `build` job creates the GitHub
 3. Commit `chore(release): vX.Y.Z` naming exactly `pyproject.toml packages/*/pyproject.toml CHANGELOG.md uv.lock`. `uv sync --locked --group dev` must pass (CI gate).
 4. Full gate firsthand: `uv run pytest -p no:cacheprovider -q` + `uv run ruff check .`.
 5. Annotated tag `git tag -a vX.Y.Z`; push commit, then tag (FF-only).
-6. **Post-run cleanup:** the auto-created Release has a generic body and a stray `default.gitignore` asset. `gh release edit vX.Y.Z --notes-file <section>` then `gh release delete-asset vX.Y.Z default.gitignore -y`. Extract the section with `awk '/^## \[X\.Y\.Z\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md`.
+6. `release.yml` extracts the Keep-a-Changelog `## [X.Y.Z]` section for
+   `vX.Y.Z` and publishes it as the release notes; the build uploads `dist/*`
+   only. When those are the only automated notes and assets, no manual
+   `gh release edit` or `gh release delete-asset` cleanup is needed.
 7. Reinstall: `uv tool install --force ./packages/repo-ops` (uv tool, not pipx). Verify `repo-ops --version` and smoke any new subcommands.
 
 **PyPI publish is intentionally deferred** (issue #124, open). OIDC trusted-publisher exchange fails with "valid token, but no corresponding publisher" for claims `sub: repo:Rethunk-Tech/repo-ops:environment:pypi`, `workflow_ref: .../release.yml`, `environment: pypi`. Fix is an operator action on PyPI's publishing settings — **do not re-diagnose as a CI defect.**
