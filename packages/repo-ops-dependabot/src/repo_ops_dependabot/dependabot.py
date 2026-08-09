@@ -1206,8 +1206,9 @@ precision:
 
 scaffold:
   Detects npm, deno, pre-commit, pip, gomod, cargo, docker, and
-  github-actions, and bun from repository indicators.  This coverage
-  applies to --scaffold; supersession scanning is a separate operation.
+  github-actions, and bun from repository indicators.  Bun lockfiles
+  scaffold as bun.  This coverage applies to --scaffold; supersession
+  scanning is a separate operation.
 """,
     )
     add_roots_argument(parser)

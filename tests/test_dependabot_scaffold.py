@@ -43,6 +43,23 @@ def test_detect_ecosystems_npm(tmp_path: Path) -> None:
     assert "npm" in ecos
 
 
+@pytest.mark.parametrize("indicator", ["bun.lock", "bun.lockb"])
+def test_detect_ecosystems_bun(tmp_path: Path, indicator: str) -> None:
+    (tmp_path / indicator).write_text("", encoding="utf-8")
+    entries = detect_ecosystems(tmp_path)
+    ecos = [e["package-ecosystem"] for e in entries]
+    assert "bun" in ecos
+
+
+def test_detect_ecosystems_bun_and_npm_manifests(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "bun.lock").write_text("", encoding="utf-8")
+    entries = detect_ecosystems(tmp_path)
+    ecos = [e["package-ecosystem"] for e in entries]
+    assert "npm" in ecos
+    assert "bun" in ecos
+
+
 @pytest.mark.parametrize("indicator", ["deno.json", "deno.jsonc", "deno.lock"])
 def test_detect_ecosystems_deno(tmp_path: Path, indicator: str) -> None:
     (tmp_path / indicator).write_text("{}", encoding="utf-8")
@@ -246,6 +263,36 @@ def test_dependabot_scaffold_deno_pre_commit_dry_run_matches_write(
     assert (tmp_path / ".github" / "dependabot.yml").read_text() == expected
 
 
+def test_dependabot_scaffold_bun_dry_run_matches_write(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Bun dry-run output matches the written YAML."""
+    (tmp_path / "bun.lock").write_text("", encoding="utf-8")
+    expected = generate_dependabot_yml(detect_ecosystems(tmp_path))
+
+    from unittest.mock import patch
+
+    with patch(
+        "repo_ops_dependabot.dependabot.discover_repos",
+        return_value={"c": str(tmp_path)},
+    ):
+        rc = main(["--scaffold", str(tmp_path)])
+    assert rc == 0
+    dry_run = capsys.readouterr().out
+    expected_output = "\n".join(f"    {line}" for line in expected.splitlines())
+    assert expected_output in dry_run
+    assert 'package-ecosystem: "bun"' in dry_run
+    assert not (tmp_path / ".github" / "dependabot.yml").exists()
+
+    with patch(
+        "repo_ops_dependabot.dependabot.discover_repos",
+        return_value={"c": str(tmp_path)},
+    ):
+        rc = main(["--scaffold", "--write", str(tmp_path)])
+    assert rc == 0
+    assert (tmp_path / ".github" / "dependabot.yml").read_text() == expected
+
+
 def test_dependabot_scaffold_write(tmp_path: Path) -> None:
     """--scaffold --write creates .github/dependabot.yml."""
     (tmp_path / "go.mod").write_text("module x\n", encoding="utf-8")
@@ -325,7 +372,7 @@ def test_dependabot_help_lists_scaffold_coverage() -> None:
     assert "deno" in help_text
     assert "pre-commit" in help_text
     assert "bun" in help_text
-    assert "no bun ecosystem" in help_text
+    assert "Bun lockfiles scaffold as bun" in help_text
 
 
 # ---------------------------------------------------------------------------
