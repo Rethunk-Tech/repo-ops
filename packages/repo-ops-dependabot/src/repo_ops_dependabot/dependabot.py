@@ -1200,6 +1200,12 @@ precision:
 
   Grouped PRs: closed only when ALL rows are high-confidence satisfied.
   Unparseable titles/bodies: always report-only, never closed.
+
+scaffold:
+  Detects npm, deno, pre-commit, pip, gomod, cargo, docker, and
+  github-actions from repository indicators.  Bun lockfiles map to npm
+  because Dependabot has no bun ecosystem.  This coverage applies to
+  --scaffold; supersession scanning is a separate operation.
 """,
     )
     add_roots_argument(parser)
