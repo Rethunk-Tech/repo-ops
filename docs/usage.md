@@ -33,6 +33,23 @@ Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_cor
 - **SHA pins (default: preserve):** By default, `uses: owner/repo@<sha>` pins are **report only** on apply (supply-chain hardening). Opt in to tag resolution with `--actions-unpin-sha`. When unpinning: (1) trailing `# vN[.N.N]` comment → use that major; (2) tags API SHA→tag lookup → highest semver tag for that commit. If neither resolves, the SHA is reported but left untouched. `--actions-tag-style=major` (default) → `@vN`; `exact` → highest `@vN.M.P` within the resolved major (falls back to `@vN`).
 - **SHA digest refresh (keep pinned):** `--actions-refresh-sha` keeps a `uses: owner/repo@<sha>  # vN` action pinned **by digest** but advances the SHA to the commit of the newest `vN.M.P` release **within its current major**, preserving the `# vN` comment. Use this to supersede Dependabot's digest-pin bumps (e.g. `actions/checkout` `6.0.2 → 6.0.3`) without un-hardening the pin to a floating tag. Combined with `--latest` (or `--actions-upgrade-mode=latest`), also **crosses major boundaries**: re-pins to the newest major's commit SHA and updates the `# vN` comment to the new major (e.g. `# v6` → `# v7`) — superseding Dependabot's cross-major SHA-pin PRs such as `actions/checkout` v6→v7 or `sigstore/cosign-installer` v3→v4. Falls back to within-major refresh when the newest major has no exact `vN.M.P` tag. The major is resolved from the `# vN` comment, else the tags API. No effect with `--actions-unpin-sha` (that resolves the SHA to a tag instead); a no-op when the major can't be resolved or the pin is already the newest digest.
 - **Full coverage (`--full`):** This opt-in umbrella enables `--latest`, `--actions-refresh-sha`, `--container-refresh-sha`, and all four JavaScript targeted-bump flags (`--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, and `--bun-targeted-bump`). It does not change defaults when absent. `--latest` alone is incomplete: it does not refresh SHA-pinned Actions or container digests and does not close JavaScript `behind_latest` gaps.
+- **Human-only filtering (`--only-outdated`):** Human-readable output can be limited to entries with outdated dependencies. JSON output remains complete and unfiltered; `--only-outdated` does not remove rows from JSON reports.
+- **Remediations:** `--skip-remediations` accepts the current remediation IDs below. Remediations are enabled by default unless marked off.
+
+| ID | Ecosystem | Trigger | Default |
+| ---- | --------- | ------- | ------- |
+| `biome_schema` | Node | Biome schema remediation | on |
+| `playwright_browsers` | Node | Playwright browser remediation | on |
+| `codegen` | Node | Configured code-generation command | on |
+| `package_manager_pin` | Node | `packageManager` pin remediation | on |
+| `gofmt` | Go | `gofmt` remediation | on |
+| `go_generate` | Go | `go generate` remediation | off |
+| `ruff_fix` | Python | Ruff autofix remediation | on |
+| `cargo_fix` | Rust | `cargo fix` remediation | on |
+| `deno_fix` | Deno | Deno lint-fix remediation | on |
+
+`go_generate` remains off unless `REPO_OPS_REMEDIATE_GO_GENERATE=1` is set.
+
 - Parallelism: `--jobs` must be a positive integer (default `8`).
 - **Staleness scoring:** every run persists per-repo behind-latest history (`$XDG_CACHE_HOME/repo-ops/state.json`) and reports `staleness_score` (behind-latest count × days since the repo first fell behind) and `new_behind_since_last_run` in JSON, plus a top-3 staleness footer line when any score is nonzero. Disable all state persistence with `REPO_OPS_NO_STATE=1`.
 
@@ -43,6 +60,7 @@ Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_cor
 - **Actions-only repos:** Git repos with workflow files but no dependency workspaces still appear in plan/apply (Actions pin audit only).
 - **`--flat`:** On `inventory` and upgrade `plan`/`apply`, skips the org/proj two-level walk when scanning a single root (not used by `pushed`).
 - **Node `packageManager`:** Only `npm`, `pnpm`, `yarn`, and `bun` with `name@version` form are accepted; path-like or unknown names are skipped with diagnostics.
+- **`--exclude PATTERN`:** Repeatable on `plan`, `apply`, `audit`, `dependabot`, and `pushed`. A repository is skipped when a pattern substring- or fnmatch-matches its label or absolute path.
 
 ### Ecosystem upgrade modes (plan and apply)
 
@@ -132,6 +150,12 @@ C/I/A components.
 - **`--sarif-out PATH`** — write SARIF 2.1.0 output for GitHub code scanning (repo-relative artifact URIs). Findings at or above `--fail-on` are emitted; `--fail-on-unknown` includes unknown-severity findings. Unfixed findings are marked with `properties.unfixed=true` and omit remediation `fixes`.
 - **`--json`** — structured payload with per-workspace counts, optional `remediations[]`, and `summary`.
 
+Each JSON workspace row may include `findings[]`, serialized from
+`FindingItem.as_dict`, with finding identifier, package/version data, severity,
+description, and available remediation details. SARIF uses these same findings
+as its results; `--fail-on` controls the exit status and the findings selected
+for SARIF, not whether JSON includes `findings[]`.
+
 **Exit codes:**
 
 - `0` — no vulns at or above `--fail-on`, and (when `--fix-plan` is active) no actionable remediations.
@@ -173,6 +197,9 @@ Precision caveats:
   with an error and skipped.
 
 `--json` emits per-repo PR lists with `superseded`, `current_ver`, `low_confidence`, and `closed` fields.
+
+The shared `--exclude PATTERN` filter also applies to this sweep and to
+`pushed`; repeat it to skip repositories whose label or absolute path matches.
 
 ### `sbom` — CycloneDX/SPDX SBOM export
 
