@@ -128,7 +128,7 @@ C/I/A components.
 - **`--fail-on SEVERITY`** (default `high`) — exit `1` when any workspace has vulns at or above the threshold (`critical`/`high`/`moderate`/`low`/`never`).
 - **`--fail-on-unknown`** — exit `1` when any workspace has govulncheck findings with unknown severity (default: off).
 - **`--fix-plan`** — read-only remediation checklist: for each finding with a known-safe fix version, emit `(package, safe_version, ecosystem, workspace)`. With `--json`, included under the `remediations` key. Exits `1` when actionable remediations exist.
-- **`--fix`** — apply remediations (implies `--fix-plan` collection). Delegates to upgrade orchestration per workspace; skips dirty worktrees unless **`--allow-dirty`**. No automatic commit.
+- **`--fix`** — apply remediations (implies `--fix-plan` collection). Delegates to upgrade orchestration per workspace; skips dirty worktrees unless **`--allow-dirty`**. Verifies each applied workspace by default; pass `--no-verify` to skip post-apply verification. No automatic commit.
 - **`--sarif-out PATH`** — write SARIF 2.1.0 output for GitHub code scanning (repo-relative artifact URIs).
 - **`--json`** — structured payload with per-workspace counts, optional `remediations[]`, and `summary`.
 
@@ -159,9 +159,11 @@ Mutually exclusive with **`--scaffold`** (scaffold mode does not scan PRs).
 
 Precision caveats:
 
-- **High-confidence:** lockfile parsers resolve npm/yarn/pnpm/bun and uv.lock
-  versions; go.mod `require` blocks and Cargo.lock `[[package]]` entries are
-  parsed structurally.
+- **High-confidence:** lockfile parsers resolve npm/yarn/pnpm/bun, `uv.lock`,
+  `poetry.lock`, `pdm.lock`, and `Pipfile.lock` versions; go.mod `require`
+  blocks and Cargo.lock `[[package]]` entries are parsed structurally. These
+  Python lockfile matches can qualify Dependabot PRs for `--close`; grouped
+  PRs still require every row to be high-confidence and satisfied.
 - **Low-confidence:** text-search fallback on lockfile `name@version` strings when
   parsers cannot resolve a package. Low-confidence matches are **never** auto-closed.
 - **Grouped PRs:** closed only when **all** rows are high-confidence satisfied.
@@ -234,6 +236,10 @@ installed" apart from "installed but unauthenticated" before a
 - `--json-out PATH` — write the report atomically to `PATH` (requires `--json`).
 
 Run `repo-ops <subcommand> --help` for all flags.
+
+### `install-skill` — bundled agent skill
+
+`repo-ops install-skill --check` verifies installed Cursor/Claude skill copies without writing: exit `0` when absent or matching, `1` on drift; use `--force` to overwrite.
 
 ## Settings reference
 
