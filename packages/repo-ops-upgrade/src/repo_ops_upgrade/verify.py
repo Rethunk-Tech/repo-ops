@@ -268,15 +268,6 @@ def verify_node(ws: Workspace) -> str | None:
     return None
 
 
-def _has_ruff_config(ws: Workspace, d: dict) -> bool:
-    """Return True if ruff is configured in pyproject.toml or present in dev deps."""
-    tool = d.get("tool") or {}
-    if "ruff" in tool:
-        return True
-    dev = _pyproject_dev_deps(d)
-    return "ruff" in dev
-
-
 def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
     """Run the appropriate verify gate for *ws*.
 
@@ -331,41 +322,33 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
                 ws.path,
             )
             return _verify_hatch_fast(ws, timeout=timeout)
+        if not shutil.which("uv"):
+            return "uv not on PATH"
         proc = run(["uv", "sync", "--locked"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "uv sync --locked failed"
-        if mgr == "hatch":
-            return _verify_hatch_fast(ws, timeout=timeout)
-        # uv: run ruff check if configured — slot for future per-ecosystem checks.
-        d = read_toml_file(ws.path / "pyproject.toml") or {}
-        if _has_ruff_config(ws, d):
-            proc_ruff = run(
-                ["uv", "run", "ruff", "check", "."], ws.path, timeout=timeout
-            )
-            if proc_ruff.returncode != 0:
-                return (
-                    proc_ruff.stderr or proc_ruff.stdout
-                ).strip() or "ruff check failed"
-        return None
+        return _verify_hatch_fast(ws, timeout=timeout)
     if mgr == "poetry":
+        if not shutil.which("poetry"):
+            return "poetry not on PATH"
         proc = run(["poetry", "check"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "poetry check failed"
-        return None
+        return _verify_hatch_fast(ws, timeout=timeout)
     if mgr == "pdm":
         if not shutil.which("pdm"):
             return "pdm not on PATH"
         proc = run(["pdm", "sync", "--clean"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "pdm sync --clean failed"
-        return None
+        return _verify_hatch_fast(ws, timeout=timeout)
     if mgr == "pipenv":
         if not shutil.which("pipenv"):
             return "pipenv not on PATH"
         proc = run(["pipenv", "verify"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "pipenv verify failed"
-        return None
+        return _verify_hatch_fast(ws, timeout=timeout)
     if mgr == "pip-tools":
         return _verify_pip_tools(ws, timeout=timeout)
     if mgr == "deno":
