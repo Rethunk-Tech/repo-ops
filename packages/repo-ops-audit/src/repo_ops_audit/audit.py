@@ -1942,7 +1942,7 @@ def build_sarif_report(
         # workspace never emits an absolute host path.
         rel_uri = ws_label.get(finding.workspace) or finding.workspace.lstrip("/")
         rel_uri = rel_uri.replace("\\", "/")
-        result: dict[str, Any] = {
+        sarif_result: dict[str, Any] = {
             "ruleId": rule_id,
             "level": level,
             "message": {
@@ -1968,7 +1968,7 @@ def build_sarif_report(
             ],
         }
         if finding.fixed and finding.safe_version:
-            result["fixes"] = [
+            sarif_result["fixes"] = [
                 {
                     "description": {
                         "text": (f"Upgrade {finding.package} to {finding.safe_version}")
@@ -1995,8 +1995,8 @@ def build_sarif_report(
                 }
             ]
         else:
-            result["properties"] = {"unfixed": True}
-        sarif_results.append(result)
+            sarif_result["properties"] = {"unfixed": True}
+        sarif_results.append(sarif_result)
 
     return {
         "$schema": _SARIF_SCHEMA,
