@@ -27,6 +27,10 @@ def _bundle(tmp_path: Path) -> RepoBundle:
     return RepoBundle(git_repo=tmp_path, label="demo-repo")
 
 
+def _isolate_config_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+
 def test_missing_api_key_raises(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -77,6 +81,7 @@ def _install_fake_cursor_sdk(
 def test_draft_commit_message_success_via_wrapper(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    _isolate_config_home(monkeypatch, tmp_path)
     monkeypatch.delenv("REPO_OPS_COMMIT_AGENT_MODEL", raising=False)
     result = types.SimpleNamespace(status="ok", result="`feat(x): bump deps`\n")
     captured: dict = {}
@@ -95,7 +100,11 @@ def test_draft_commit_message_success_via_wrapper(
 def test_draft_commit_message_uses_configured_model(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    _isolate_config_home(monkeypatch, tmp_path)
     monkeypatch.setenv("REPO_OPS_COMMIT_AGENT_MODEL", "gpt-5.6-luna-xhigh")
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.repo-ops]\ncommit_agent_model = 'repo-model'\n", encoding="utf-8"
+    )
     result = types.SimpleNamespace(status="ok", result="fix: update deps")
     captured: dict = {}
     _install_fake_cursor_sdk(monkeypatch, result, captured)
@@ -107,9 +116,29 @@ def test_draft_commit_message_uses_configured_model(
     assert captured["options"].model == "gpt-5.6-luna-xhigh"
 
 
+def test_draft_commit_message_uses_target_repo_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _isolate_config_home(monkeypatch, tmp_path)
+    monkeypatch.delenv("REPO_OPS_COMMIT_AGENT_MODEL", raising=False)
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.repo-ops]\ncommit_agent_model = 'repo-model'\n", encoding="utf-8"
+    )
+    result = types.SimpleNamespace(status="ok", result="fix: update deps")
+    captured: dict = {}
+    _install_fake_cursor_sdk(monkeypatch, result, captured)
+
+    CursorCommitAgentProvider().draft_commit_message(
+        _bundle(tmp_path), ["a.txt"], api_key="test-key"
+    )
+
+    assert captured["options"].model == "repo-model"
+
+
 def test_draft_commit_message_rejects_empty_configured_model(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    _isolate_config_home(monkeypatch, tmp_path)
     monkeypatch.setenv("REPO_OPS_COMMIT_AGENT_MODEL", "  ")
     result = types.SimpleNamespace(status="ok", result="fix: update deps")
     captured: dict = {}
@@ -127,6 +156,7 @@ def test_draft_commit_message_non_string_result_is_stringified(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """result.result may be a non-str object (e.g. SDK returns a rich type)."""
+    _isolate_config_home(monkeypatch, tmp_path)
     result = types.SimpleNamespace(status="ok", result=None, text=42)
     captured: dict = {}
     _install_fake_cursor_sdk(monkeypatch, result, captured)
@@ -139,6 +169,7 @@ def test_draft_commit_message_non_string_result_is_stringified(
 def test_draft_commit_message_error_status_raises(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    _isolate_config_home(monkeypatch, tmp_path)
     result = types.SimpleNamespace(status="error", id="run-123")
     captured: dict = {}
     _install_fake_cursor_sdk(monkeypatch, result, captured)

@@ -4,14 +4,25 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 
 from repo_ops_models import RepoBundle
 
+from repo_ops_core.config import load_global_config, load_repo_config, resolve_setting
 from repo_ops_upgrade.commit_agent_providers import COMMIT_AGENT_INSTALL_HINT
 
 
-def _resolve_agent_model() -> str:
-    model = os.environ.get("REPO_OPS_COMMIT_AGENT_MODEL", "composer-2.5").strip()
+def _resolve_agent_model(repo_path: Path | None = None) -> str:
+    raw_model = resolve_setting(
+        "commit_agent_model",
+        global_cfg=load_global_config(),
+        repo_cfg=load_repo_config(repo_path) if repo_path is not None else None,
+    )
+    if not isinstance(raw_model, str):
+        raise RuntimeError(
+            "REPO_OPS_COMMIT_AGENT_MODEL must be a non-empty model identifier string"
+        )
+    model = raw_model.strip()
     if not model:
         raise RuntimeError(
             "REPO_OPS_COMMIT_AGENT_MODEL must be a non-empty model identifier"
@@ -75,7 +86,7 @@ class CursorCommitAgentProvider:
             prompt,
             AgentOptions(
                 api_key=key,
-                model=_resolve_agent_model(),
+                model=_resolve_agent_model(bundle.git_repo),
                 local=LocalAgentOptions(cwd=str(bundle.git_repo.resolve())),
             ),
         )
