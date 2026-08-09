@@ -11,7 +11,7 @@ Subcommands (entry point in `packages/repo-ops`):
 | `inventory` | Read-only dependency footprint |
 | `plan` | Outdated deps, Actions pin drift, remediations (no writes) |
 | `apply` | Apply updates, Actions bumps, remediations, verify gates |
-| `pushed` | Commits recorded by this machine's remote-tracking reflogs in a time window |
+| `pushed` | Commits in a time window from local remote-tracking reflogs (default) or GitHub PushEvents (`--source=gh`) |
 | `audit` | Fleet vulnerability sweep per ecosystem (read-only unless `--fix`) |
 | `dependabot` | List/close Dependabot PRs superseded by local manifests |
 | `sbom` | Emit CycloneDX/SPDX SBOM from lockfile dependencies (read-only) |
@@ -23,13 +23,16 @@ Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_cor
 
 `--json` is available on every subcommand except `sbom` (which emits its report via `--format`/`--output` instead). `--json-out PATH` (writes the report atomically to `PATH`; stdout prints only that path) is available on `inventory`, `plan`, `apply`, `pushed`, and `doctor` — for `plan`/`apply`, stdout is otherwise one JSON object. JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno`. `--log-level {debug,info,warning,error}` sets the stdlib root logger level; `--verbose` / `-v` enables subprocess echo and implies `debug` when `--log-level` is absent. `--submodules` adds `submodules[]` to plan/apply JSON; `apply --submodule-order=children-first` processes child git repos before parent umbrellas when `.gitmodules` is present.
 
-### `pushed` — machine-local reflog
+### `pushed` — local reflog or GitHub PushEvent
 
-`repo-ops pushed` counts only this machine's `refs/remotes/*` reflog entries
-whose message is `update by push`. It does not query GitHub: a fresh clone, a
-push made from another workstation, or a CI push can show zero here even when
-GitHub records activity. Treat the result as local reflog evidence, not a
-GitHub-wide pushed-commit audit.
+`repo-ops pushed` defaults to this machine's `refs/remotes/*` reflog entries
+whose message is `update by push`. On that default (`--source=local`), a fresh
+clone, a push from another workstation, or a CI push can show zero even when
+GitHub records activity.
+
+Pass `--source=gh` to query authenticated GitHub `PushEvent` activity for each
+GitHub remote instead. GitHub API or auth failures exit non-zero rather than
+reporting zero pushes.
 
 ### Plan vs apply
 
@@ -146,6 +149,7 @@ lockfiles; no auto-commit).
 | `node` | `npm` / `yarn` / `pnpm` / `bun` | detected from lockfile; `bun audit` text-parsed (no `--json`) |
 | `py-uv` | `uv` + `pip-audit` | `uv run pip-audit --format json`; skipped when pip-audit not importable |
 | `rust` | `cargo` + `cargo-audit` | `cargo audit --json`; skipped if `cargo audit --version` fails |
+| `deno` | `deno` | `deno audit --json` when supported, otherwise `deno audit`; skipped when not on PATH |
 
 Counts are normalised to `{critical, high, moderate, low, unknown}` per workspace.
 CVSS severity: govulncheck findings default to `unknown` (use `--fail-on-unknown`);
@@ -199,11 +203,13 @@ already satisfied by local manifests or lockfiles.
 
 Precision caveats:
 
-- **High-confidence:** lockfile parsers resolve npm/yarn/pnpm/bun, `uv.lock`,
+- **High-confidence:** lockfile parsers resolve npm/yarn/pnpm/bun (text
+  `bun.lock`, and binary `bun.lockb` when `bun` can dump it), `uv.lock`,
   `poetry.lock`, `pdm.lock`, and `Pipfile.lock` versions; go.mod `require`
   blocks and Cargo.lock `[[package]]` entries are parsed structurally. These
   Python lockfile matches can qualify Dependabot PRs for `--close`; grouped
-  PRs still require every row to be high-confidence and satisfied.
+  PRs still require every row to be high-confidence and satisfied. Missing
+  `bun` leaves `bun.lockb` low-confidence / unresolved.
 - **Low-confidence:** text-search fallback on lockfile `name@version` strings when
   parsers cannot resolve a package. Low-confidence matches are **never** auto-closed.
 - **Grouped PRs:** closed only when **all** rows are high-confidence satisfied.
@@ -220,16 +226,20 @@ The shared `--exclude PATTERN` filter also applies to this sweep and to
 ### `sbom` — CycloneDX/SPDX SBOM export
 
 `repo-ops sbom [root_dir ...]` builds a Software Bill of Materials from
-discovered lockfile dependencies (read-only; no network calls).
+discovered lockfile dependencies (read-only). Offline by default; component
+licenses are `NOASSERTION` unless enrichment is enabled.
 
 - `--format cyclonedx|spdx` — output format (default: `cyclonedx`).
 - `--output PATH` — write the SBOM to `PATH` instead of stdout.
 - `--compact` — emit single-line JSON instead of pretty-printed.
+- `--enrich-licenses` — opt-in SPDX fill from on-disk package metadata and
+  cached registry lookups (`REPO_OPS_ENRICH_LICENSES=1`). Never invents
+  license ids; container images stay unenriched.
 
 ### `license` — dependency license policy scan
 
 `repo-ops license [root_dir ...]` classifies dependency licenses and flags
-policy violations (read-only; no network calls).
+policy violations (read-only). Offline by default.
 
 - `--allow LIST` — comma-separated SPDX identifiers that are permitted; any
   license not in this list is flagged.
@@ -237,6 +247,9 @@ policy violations (read-only; no network calls).
   license in this list is flagged.
 - `--no-fail-unknown` — exit `0` even when unknown licenses are found
   (default: exit `2` when unknown licenses exist in ecosystems with a local extractor).
+- `--enrich-licenses` — same opt-in enrichment as `sbom` (env twin
+  `REPO_OPS_ENRICH_LICENSES`); can reduce UNKNOWN for npm/PyPI/crates when
+  metadata or cache hits exist.
 - `--json` — emit JSON instead of human-readable output (`--compact` for
   single-line).
 
