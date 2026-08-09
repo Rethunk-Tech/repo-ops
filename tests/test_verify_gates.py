@@ -159,6 +159,28 @@ class TestGoVerifyGates:
         assert not called_test
 
 
+class TestRustVerifyGates:
+    def test_rust_test_runs_after_check_when_verify_test(self, tmp_path: Path) -> None:
+        """cargo test must run after cargo check when verify_test=True."""
+        calls: list[list[str]] = []
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None
+        ) -> CompletedProcess[str]:
+            calls.append(cmd)
+            return _ok()
+
+        ws = _ws(tmp_path, "rust")
+        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
+            result = verify_workspace(ws, verify_test=True)
+
+        assert result is None
+        cmd_strs = [" ".join(c) for c in calls]
+        assert "cargo check" in cmd_strs
+        assert "cargo test" in cmd_strs
+        assert cmd_strs.index("cargo check") < cmd_strs.index("cargo test")
+
+
 # ---------------------------------------------------------------------------
 # Task 2 — uv: ruff check after uv sync --locked
 # ---------------------------------------------------------------------------
@@ -542,7 +564,8 @@ class TestVerifyHatchFast:
         """pyrefly in dev deps triggers 'uv run pyrefly check .' when no higher-priority heuristic matches."""
         self._write_pyproject(
             tmp_path,
-            '[tool.uv]\ndev-dependencies = ["pyrefly>=0.1"]\n',
+            '[tool.uv]\ndev-dependencies = ["pyrefly>=0.1"]\n'
+            '[tool.pyrefly]\nproject-excludes = ["tests/**", "scripts/**"]\n',
         )
         calls: list[list[str]] = []
 
@@ -557,7 +580,20 @@ class TestVerifyHatchFast:
             result = verify_workspace(ws, verify_test=False)
 
         assert result is None
-        assert any(c == ["uv", "run", "pyrefly", "check", "."] for c in calls)
+        assert any(
+            c
+            == [
+                "uv",
+                "run",
+                "pyrefly",
+                "check",
+                ".",
+                "--project-excludes",
+                "tests/**",
+                "scripts/**",
+            ]
+            for c in calls
+        )
 
     def test_hatch_env_deps_pyrefly_recognised(self, tmp_path: Path) -> None:
         """pyrefly in hatch env dependencies is still recognised as a dev dep."""
