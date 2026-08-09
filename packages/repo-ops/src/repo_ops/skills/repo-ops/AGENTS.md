@@ -9,17 +9,19 @@ Conventions and quick reference for AI coding agents (Cursor, Claude Code, etc.)
 **When a user requests `repo-ops apply --latest` (or `plan`, `inventory`, etc.), run it directly** — default roots apply when paths are omitted. Do not run `which repo-ops`, read `packages/` source, or open HUMANS.md to discover flags; this file and `repo-ops <subcommand> --help` are enough.
 
 | User request | Run immediately |
-|--------------|-----------------|
+| -------------- | ----------------- |
 | `/repo-ops apply --latest` | `repo-ops apply $FULL_SWEEP_FLAGS --log-file apply.log` |
 | `repo-ops plan --latest` (preview drift) | `repo-ops plan $FULL_SWEEP_FLAGS --log-file plan.log` |
+| `/repo-ops apply --full` | `repo-ops apply --full --log-file apply.log` |
+| `repo-ops plan --full` (preview drift) | `repo-ops plan --full --log-file plan.log` |
 | Update deps in one checkout | `repo-ops plan --flat /path` then `repo-ops apply --flat /path` |
 
-`$FULL_SWEEP_FLAGS` = `--latest --actions-refresh-sha --container-refresh-sha --yarn-targeted-bump --npm-targeted-bump --pnpm-targeted-bump --bun-targeted-bump` — see **Full-coverage sweep** below. `--latest` alone silently skips container digest refresh and JS targeted-bump gap-closing; a plain `--latest` run will under-report drift every single time unless the caller also knows to add these.
+`$FULL_SWEEP_FLAGS` = `--latest --actions-refresh-sha --container-refresh-sha --yarn-targeted-bump --npm-targeted-bump --pnpm-targeted-bump --bun-targeted-bump`; equivalently, use `repo-ops plan --full` or `repo-ops apply --full`. See **Full-coverage sweep** below. `--latest` alone silently skips container digest refresh and JS targeted-bump gap-closing; a plain `--latest` run will under-report drift every single time unless the caller also knows to add these.
 
 ### Subcommands
 
 | Goal | Command |
-|------|---------|
+| ------ | --------- |
 | Dependency footprint (read-only) | `repo-ops inventory` |
 | Plan drift (no writes) | `repo-ops plan` |
 | Apply updates + verify | `repo-ops apply` |
@@ -63,7 +65,9 @@ repo-ops plan --latest
 repo-ops apply --latest --log-file apply.log
 
 # Full-coverage sweep — the actual recommended default for routine bulk maintenance
-# (--latest alone misses container digest refresh and JS targeted-bump gap-closing)
+repo-ops apply --full --log-file apply.log
+
+# Expanded equivalent when individual policy flags are needed
 repo-ops apply --latest --actions-refresh-sha --container-refresh-sha \
   --yarn-targeted-bump --npm-targeted-bump --pnpm-targeted-bump --bun-targeted-bump \
   --log-file apply.log
@@ -92,12 +96,12 @@ repo-ops apply --submodule-order=children-first --submodules /path/to/umbrella
 
 Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode` wins over the umbrella for that ecosystem. npm has no latest mode (semver ranges only). Targeted-bump fallbacks (move `behind_latest` gaps instead of only reporting them) exist for all four JS package managers: `--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, `--bun-targeted-bump`. Details: `repo-ops plan --help` and [docs/usage.md — Ecosystem upgrade modes](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply).
 
-**`--latest` does NOT imply `--actions-refresh-sha`, `--container-refresh-sha`, or any `--*-targeted-bump` flag.** Each is independently opt-in even though `--latest` sounds like it should cover them. For routine bulk maintenance, always reach for the **full-coverage sweep** combo in Essential invocations above, not bare `--latest`.
+**`--latest` does NOT imply `--actions-refresh-sha`, `--container-refresh-sha`, or any `--*-targeted-bump` flag.** Each is independently opt-in even though `--latest` sounds like it should cover them. For routine bulk maintenance, always use `--full` (or the expanded **full-coverage sweep** combo in Essential invocations above), not bare `--latest`.
 
 ### Full-coverage sweep — what each flag actually catches
 
 | Flag | Catches | Why it's easy to forget |
-|------|---------|--------------------------|
+| ------ | --------- | -------------------------- |
 | `--actions-refresh-sha` | Digest bumps for SHA-pinned GitHub Actions | Not implied by `--latest`; silently report-only without it |
 | `--container-refresh-sha` | Digest bumps for SHA-pinned container base images (`FROM image@sha256:...`) | No mention in the default flag set at all; easy to never discover without reading `apply --help` end to end |
 | `--yarn-targeted-bump` / `--npm-targeted-bump` / `--pnpm-targeted-bump` / `--bun-targeted-bump` | Moves `behind_latest` peer/group-constrained packages instead of only reporting them | `--latest` still leaves these packages in the `behind_latest` report bucket, which reads as "handled" if the summary counts aren't checked closely |
@@ -111,7 +115,7 @@ A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinn
 #### Shared output & discovery
 
 | Flag | Applies to | Purpose |
-|------|------------|---------|
+| ------ | ------------ | --------- |
 | `--json` | all subcommands except `sbom` | JSON report (`sbom` uses `--format`/`--output` instead) |
 | `--json-out PATH` | inventory, plan, apply, pushed, doctor | Writes report atomically to `PATH`; stdout prints only that path |
 | `--compact` | all subcommands | With `--json`: emit compact single-line output instead of pretty-printed |
@@ -120,11 +124,12 @@ A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinn
 #### `plan` / `apply` flags
 
 | Flag | Applies to | Purpose |
-|------|------------|---------|
+| ------ | ------------ | --------- |
 | `--flat` | inventory, plan, apply | Single-repo root (no org/proj walk) |
 | `--filter ECO` | inventory, plan, apply | Limit to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno` |
 | `--manager MANAGER` | plan, apply | Limit to one package manager |
 | `--latest` | plan, apply | Aggressive cross-range upgrades (see above) |
+| `--full` | plan, apply | Full-coverage sweep: `--latest` plus digest refresh and targeted JavaScript bumps |
 | `--allow-dirty` | plan, apply | Process dirty git worktrees |
 | `--skip-actions` | plan, apply | Dependency-only (no Actions pin audit) |
 | `--log-file PATH` | plan, apply | Combined stdout/stderr transcript |
@@ -143,13 +148,13 @@ A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinn
 | `--actions-org-policy` | plan, apply | Fetch org allowed-actions policy and flag violations |
 | `--actions-lint-level block\|warn\|off` | plan, apply | Actionlint gate policy |
 | `--container-update-latest` | plan, apply | Allow cross-major container image tag bumps (implied by `--latest`) |
-| `--container-refresh-sha` | plan, apply | Refresh digests for SHA-pinned container image references — **not** implied by `--latest`, always pass explicitly |
-| `--yarn-targeted-bump` / `--npm-targeted-bump` / `--pnpm-targeted-bump` / `--bun-targeted-bump` | plan, apply | Move `behind_latest` peer/group-constrained packages instead of only reporting them — **not** implied by `--latest`, always pass explicitly |
+| `--container-refresh-sha` | plan, apply | Refresh digests for SHA-pinned container image references — **not** implied by `--latest`; use `--full` or pass explicitly |
+| `--yarn-targeted-bump` / `--npm-targeted-bump` / `--pnpm-targeted-bump` / `--bun-targeted-bump` | plan, apply | Move `behind_latest` peer/group-constrained packages instead of only reporting them — **not** implied by `--latest`; use `--full` or pass explicitly |
 
 #### `pushed` flags
 
 | Flag | Purpose |
-|------|---------|
+| ------ | --------- |
 | `--hours HOURS` | Rolling window in hours (default: 24) |
 | `--since ISO8601` | Window start (timezone required, e.g. `2026-05-26T00:00Z`) |
 | `--until ISO8601` | Window end (timezone required; defaults to now) |
@@ -160,7 +165,7 @@ A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinn
 #### `inventory` flags
 
 | Flag | Purpose |
-|------|---------|
+| ------ | --------- |
 | `--sort {name,direct,versions,on-disk,edges}` | Sort column (default: `name` asc; others descending) |
 | `--no-cache` | Bypass XDG Go module result cache |
 
@@ -169,7 +174,7 @@ A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinn
 Default scan is read-only; `--fix` applies remediations (no auto-commit).
 
 | Flag | Purpose |
-|------|---------|
+| ------ | --------- |
 | `--fail-on SEVERITY` | Exit 1 when any workspace has a vulnerability at or above `SEVERITY` (`critical`, `high`, `moderate`, `low`, `never`); default `high` |
 | `--fail-on-unknown` | Exit 1 when any workspace has findings with unknown severity (govulncheck); default off |
 | `--fix-plan` | Read-only remediation list; with `--json` populates `remediations` key; exit 1 when actionable |
@@ -179,7 +184,7 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 #### `dependabot` flags
 
 | Flag | Purpose |
-|------|---------|
+| ------ | --------- |
 | `--close` | Close superseded Dependabot PRs via `gh pr close` (default: dry-run) |
 | `--scaffold` | Generate `.github/dependabot.yml` entries for detected ecosystems (default: dry-run) |
 | `--write` | With `--scaffold`: write the file (requires `--scaffold`) |
@@ -188,14 +193,14 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 #### `sbom` flags
 
 | Flag | Purpose |
-|------|---------|
+| ------ | --------- |
 | `--format FORMAT` | SBOM format: `cyclonedx` (default) or `spdx` |
 | `--output PATH` | Write SBOM to `PATH` instead of stdout |
 
 #### `license` flags
 
 | Flag | Purpose |
-|------|---------|
+| ------ | --------- |
 | `--allow LICENSES` | Comma-separated SPDX IDs permitted; others flagged |
 | `--deny LICENSES` | Comma-separated SPDX IDs forbidden |
 | `--no-fail-unknown` | Exit 0 even when unknown licenses are found (default: exit 2) |
@@ -203,7 +208,7 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 #### `install-skill` flags
 
 | Flag | Purpose |
-|------|---------|
+| ------ | --------- |
 | `--target {cursor,claude,both}` | Where to install (default: `both`) |
 | `--force` | Overwrite existing skill directories |
 | `--home DIR` | Override home directory (also `REPO_OPS_HOME` env) |
@@ -213,7 +218,7 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 #### `doctor` flags
 
 | Flag | Purpose |
-|------|---------|
+| ------ | --------- |
 | `--strict` | Exit 1 when any probed binary is missing (default: exit 0 regardless) |
 | `--json` | JSON report (see shared output flags above) |
 | `--compact` | With `--json`: compact single-line output |

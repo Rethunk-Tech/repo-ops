@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -25,6 +26,7 @@ def _fake_args(**overrides) -> MagicMock:
         "submodules": False,
         "submodule_order": "discovery",
         "latest": False,
+        "full": False,
         "yarn_targeted_bump": False,
         "npm_targeted_bump": False,
         "pnpm_targeted_bump": False,
@@ -65,6 +67,69 @@ def _fake_args(**overrides) -> MagicMock:
     }
     defaults.update(overrides)
     return MagicMock(**defaults)
+
+
+def test_full_sweep_sets_policy_env_and_refreshes_actions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--full composes latest, digest refresh, and targeted bump policy."""
+    env_names = [
+        "REPO_OPS_BUN_UPDATE_LATEST",
+        "REPO_OPS_PNPM_UPDATE_LATEST",
+        "REPO_OPS_YARN_UPDATE_LATEST",
+        "REPO_OPS_DENO_UPDATE_LATEST",
+        "REPO_OPS_CONTAINER_UPDATE_LATEST",
+        "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
+        "REPO_OPS_SUBMODULE_UPDATE_LATEST",
+        "REPO_OPS_GO_UPGRADE_MODE",
+        "REPO_OPS_CONTAINER_REFRESH_SHA",
+        "REPO_OPS_YARN_TARGETED_BUMP",
+        "REPO_OPS_NPM_TARGETED_BUMP",
+        "REPO_OPS_PNPM_TARGETED_BUMP",
+        "REPO_OPS_BUN_TARGETED_BUMP",
+    ]
+    for name in env_names:
+        monkeypatch.delenv(name, raising=False)
+
+    ws = _npm_ws(tmp_path)
+    wr = WorkspaceResult(workspace=ws)
+    bundles = {tmp_path: RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])}
+    action_kwargs: list[dict] = []
+
+    monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws])
+    monkeypatch.setattr(orch_mod, "filter_workspaces", lambda found, *a, **kw: found)
+    monkeypatch.setattr(disc_mod, "group_by_repo", lambda *a, **kw: bundles)
+    monkeypatch.setattr(disc_mod, "merge_action_only_bundles", lambda b, *a, **kw: b)
+    monkeypatch.setattr(
+        orch_mod,
+        "process_workspace",
+        lambda result, **kw: result,
+    )
+    monkeypatch.setattr(
+        run_mod.actions,
+        "scan_actions",
+        lambda *a, **kw: action_kwargs.append(kw) or ([], 0),
+    )
+
+    rc = run_mod._run_upgrade_body(
+        apply=False,
+        args=_fake_args(
+            full=True,
+            skip_actions=False,
+            go_upgrade_mode="patch",
+            actions_upgrade_mode="normalize",
+        ),
+        roots=[str(tmp_path)],
+    )
+
+    assert rc == 0
+    for name in env_names:
+        assert os.environ[name] == (
+            "patch" if name == "REPO_OPS_GO_UPGRADE_MODE" else "1"
+        )
+    assert action_kwargs
+    assert action_kwargs[0]["refresh_sha"] is True
+    assert action_kwargs[0]["upgrade_mode"] == "normalize"
 
 
 def _npm_ws(path: Path, label: str = "demo") -> Workspace:

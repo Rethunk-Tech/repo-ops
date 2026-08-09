@@ -130,7 +130,11 @@ def test_dispatcher_apply_help_lists_latest_flag(capsys) -> None:
     assert cli.main(["apply", "--help"]) == 0
     out = capsys.readouterr().out
     assert "--latest" in out
+    assert "--full" in out
     assert "REPO_OPS_PNPM_UPDATE_LATEST" in out
+    assert "cargo test" in out
+    assert "REPO_OPS_COMMIT_AGENT_MODEL" in out
+    assert "composer-2.5" in out
     assert "root_dir" in out
 
 
@@ -192,13 +196,21 @@ def test_manager_filter_choices_match_registry() -> None:
 
 
 def test_upgrade_parser_accepts_104_and_102_flags() -> None:
-    """#104/#102: plan parser accepts --manager, --latest, --go-upgrade-mode."""
+    """#104/#102: plan parser accepts policy and scope flags."""
     parser = build_upgrade_parser(apply=False)
     args = parser.parse_args(
-        ["--manager", "npm", "--latest", "--go-upgrade-mode", "explicit"]
+        [
+            "--manager",
+            "npm",
+            "--latest",
+            "--full",
+            "--go-upgrade-mode",
+            "explicit",
+        ]
     )
     assert args.manager_filter == "npm"
     assert args.latest is True
+    assert args.full is True
     assert args.go_upgrade_mode == "explicit"
 
 
