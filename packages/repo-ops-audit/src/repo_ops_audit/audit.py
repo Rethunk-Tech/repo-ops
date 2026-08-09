@@ -1952,7 +1952,26 @@ def build_sarif_report(
                 {
                     "description": {
                         "text": (f"Upgrade {finding.package} to {finding.safe_version}")
-                    }
+                    },
+                    "artifactChanges": [
+                        {
+                            "artifactLocation": {
+                                "uri": rel_uri,
+                                "uriBaseId": "%SRCROOT%",
+                            },
+                            "replacements": [
+                                {
+                                    "deletedRegion": {
+                                        "startLine": 1,
+                                        "startColumn": 1,
+                                        "endLine": 1,
+                                        "endColumn": 1,
+                                    },
+                                    "insertedContent": {"text": ""},
+                                }
+                            ],
+                        }
+                    ],
                 }
             ]
         else:
