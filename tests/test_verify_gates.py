@@ -190,10 +190,11 @@ class TestUvRuffGate:
     def _write_pyproject(self, path: Path, content: str) -> None:
         (path / "pyproject.toml").write_text(content, encoding="utf-8")
 
-    def test_ruff_runs_when_tool_ruff_configured(self, tmp_path: Path) -> None:
-        """ruff check must run when [tool.ruff] is present in pyproject.toml."""
+    def test_hatch_fast_replaces_tool_ruff_only_gate(self, tmp_path: Path) -> None:
+        """uv uses the shared fast stack instead of a uv-only ruff branch."""
         self._write_pyproject(
             tmp_path,
+            '[project]\nname = "demo"\n[project.scripts]\ncheck = "ruff check ."\n'
             "[tool.ruff]\nline-length = 100\n",
         )
         calls: list[list[str]] = []
@@ -209,7 +210,8 @@ class TestUvRuffGate:
             result = verify_workspace(ws, verify_test=False)
 
         assert result is None
-        assert any(cmd[:4] == ["uv", "run", "ruff", "check"] for cmd in calls)
+        assert ["uv", "run", "check"] in calls
+        assert not any(cmd[:4] == ["uv", "run", "ruff", "check"] for cmd in calls)
 
     def test_ruff_runs_when_ruff_in_dev_deps(self, tmp_path: Path) -> None:
         """ruff check must run when ruff appears in uv dev-dependencies."""
@@ -252,7 +254,10 @@ class TestUvRuffGate:
 
     def test_ruff_failure_returns_error(self, tmp_path: Path) -> None:
         """ruff check failure must surface as an error string."""
-        self._write_pyproject(tmp_path, "[tool.ruff]\n")
+        self._write_pyproject(
+            tmp_path,
+            '[tool.uv]\ndev-dependencies = ["ruff>=0.4"]\n',
+        )
 
         def fake_run(
             cmd: list[str], cwd: Path, timeout: int | None = None
@@ -288,6 +293,149 @@ class TestUvRuffGate:
             verify_workspace(ws, verify_test=False)
 
         assert not called_ruff
+
+
+class TestPythonManagerFastGates:
+    @pytest.mark.parametrize(
+        ("manager", "lock_cmd"),
+        [
+            ("uv", ["uv", "sync", "--locked"]),
+            ("poetry", ["poetry", "check"]),
+            ("pdm", ["pdm", "sync", "--clean"]),
+            ("pipenv", ["pipenv", "verify"]),
+        ],
+    )
+    def test_lock_gate_then_hatch_fast(
+        self,
+        tmp_path: Path,
+        manager: str,
+        lock_cmd: list[str],
+    ) -> None:
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
+            encoding="utf-8",
+        )
+        calls: list[list[str]] = []
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None
+        ) -> CompletedProcess[str]:
+            calls.append(cmd)
+            return _ok()
+
+        ws = _ws(tmp_path, manager, "python")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
+            patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
+        ):
+            result = verify_workspace(ws, verify_test=False)
+
+        assert result is None
+        assert calls == [lock_cmd, ["uv", "run", "check"]]
+
+    @pytest.mark.parametrize(
+        ("manager", "lock_cmd"),
+        [
+            ("uv", ["uv", "sync", "--locked"]),
+            ("poetry", ["poetry", "check"]),
+            ("pdm", ["pdm", "sync", "--clean"]),
+            ("pipenv", ["pipenv", "verify"]),
+        ],
+    )
+    def test_lock_gate_failure_blocks_hatch_fast(
+        self,
+        tmp_path: Path,
+        manager: str,
+        lock_cmd: list[str],
+    ) -> None:
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
+            encoding="utf-8",
+        )
+        calls: list[list[str]] = []
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None
+        ) -> CompletedProcess[str]:
+            calls.append(cmd)
+            return _fail(stderr="lock gate failed") if cmd == lock_cmd else _ok()
+
+        ws = _ws(tmp_path, manager, "python")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
+            patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
+        ):
+            result = verify_workspace(ws, verify_test=False)
+
+        assert result is not None
+        assert "failed" in result
+        assert calls == [lock_cmd]
+
+    @pytest.mark.parametrize(
+        ("manager", "binary"),
+        [
+            ("uv", "uv"),
+            ("poetry", "poetry"),
+            ("pdm", "pdm"),
+            ("pipenv", "pipenv"),
+        ],
+    )
+    def test_missing_manager_binary_fails_closed(
+        self,
+        tmp_path: Path,
+        manager: str,
+        binary: str,
+    ) -> None:
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
+            encoding="utf-8",
+        )
+        ws = _ws(tmp_path, manager, "python")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value=None),
+            patch("repo_ops_upgrade.verify.run") as run_mock,
+        ):
+            result = verify_workspace(ws, verify_test=False)
+
+        assert result == f"{binary} not on PATH"
+        run_mock.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("manager", "lock_cmd"),
+        [
+            ("uv", ["uv", "sync", "--locked"]),
+            ("poetry", ["poetry", "check"]),
+            ("pdm", ["pdm", "sync", "--clean"]),
+            ("pipenv", ["pipenv", "verify"]),
+        ],
+    )
+    def test_hatch_fast_failure_blocks(
+        self,
+        tmp_path: Path,
+        manager: str,
+        lock_cmd: list[str],
+    ) -> None:
+        (tmp_path / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
+            encoding="utf-8",
+        )
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None
+        ) -> CompletedProcess[str]:
+            if cmd == ["uv", "run", "check"]:
+                return _fail(stderr="fast gate failed")
+            return _ok()
+
+        ws = _ws(tmp_path, manager, "python")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
+            patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
+        ):
+            result = verify_workspace(ws, verify_test=False)
+
+        assert result is not None
+        assert "fast gate failed" in result
 
 
 # ---------------------------------------------------------------------------
@@ -751,7 +899,10 @@ class TestTimeoutEnvOverride:
     ) -> None:
         """verify_workspace (uv) ruff step must use the resolved verify timeout."""
         monkeypatch.setenv(_TIMEOUT_VERIFY_ENV, "55")
-        (tmp_path / "pyproject.toml").write_text("[tool.ruff]\n", encoding="utf-8")
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.uv]\ndev-dependencies = ["ruff>=0.4"]\n',
+            encoding="utf-8",
+        )
         captured: list[dict] = []
 
         def fake_run(
