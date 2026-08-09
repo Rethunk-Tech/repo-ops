@@ -27,10 +27,12 @@ Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_cor
 
 - **Plan** never mutates; exit code `1` when actionable drift exists (CI-friendly). Node **check** runs `corepack prepare` (via `check_yarn_snapshot`) so the correct Yarn version is activated in the temporary workspace — plan has a corepack side-effect and may access the network.
 - **Apply** performs updates; `--no-verify`, `--skip-remediations`, or `--skip-actions` narrow scope. On verify failure, `--on-verify-fail=keep` (default) leaves the worktree as-is; `--on-verify-fail=revert` restores pre-apply lockfile snapshots and git-tracked paths under the workspace. Human and JSON workspace rows include `verify_fail_disposition` (`FAILED_WITH_CHANGES` vs `FAILED_CLEAN`) when verify fails.
+- **Verification tests:** `--verify-test` runs the additional Go and Rust test gates during apply verification. Go tests run with the Go verify gates, and Rust runs `cargo test` after `cargo check`; the default remains off.
 - Actions pins included by default; `--skip-actions` for dependency-only runs.
 - **Cross-major Actions bumps:** By default a newer major upstream (e.g. `actions/checkout@v4` → `v6`) is **report only**. `--actions-upgrade-mode=latest` (or the `--latest` umbrella) applies it: tag-style `major` rewrites to the floating `@v{max}` (only when a bare `v{max}` tag exists upstream — same safety check as normalize), tag-style `exact` rewrites to the highest `@v{max}.M.P`. When the newest major cannot be safely targeted, it falls back to normalize/report-only. An explicit `--actions-upgrade-mode` overrides the `--latest` umbrella. For SHA-pinned actions, combine `--actions-refresh-sha` with `--latest` to re-pin to the newest major's commit SHA (with comment update) — see SHA digest refresh below.
 - **SHA pins (default: preserve):** By default, `uses: owner/repo@<sha>` pins are **report only** on apply (supply-chain hardening). Opt in to tag resolution with `--actions-unpin-sha`. When unpinning: (1) trailing `# vN[.N.N]` comment → use that major; (2) tags API SHA→tag lookup → highest semver tag for that commit. If neither resolves, the SHA is reported but left untouched. `--actions-tag-style=major` (default) → `@vN`; `exact` → highest `@vN.M.P` within the resolved major (falls back to `@vN`).
 - **SHA digest refresh (keep pinned):** `--actions-refresh-sha` keeps a `uses: owner/repo@<sha>  # vN` action pinned **by digest** but advances the SHA to the commit of the newest `vN.M.P` release **within its current major**, preserving the `# vN` comment. Use this to supersede Dependabot's digest-pin bumps (e.g. `actions/checkout` `6.0.2 → 6.0.3`) without un-hardening the pin to a floating tag. Combined with `--latest` (or `--actions-upgrade-mode=latest`), also **crosses major boundaries**: re-pins to the newest major's commit SHA and updates the `# vN` comment to the new major (e.g. `# v6` → `# v7`) — superseding Dependabot's cross-major SHA-pin PRs such as `actions/checkout` v6→v7 or `sigstore/cosign-installer` v3→v4. Falls back to within-major refresh when the newest major has no exact `vN.M.P` tag. The major is resolved from the `# vN` comment, else the tags API. No effect with `--actions-unpin-sha` (that resolves the SHA to a tag instead); a no-op when the major can't be resolved or the pin is already the newest digest.
+- **Full coverage (`--full`):** This opt-in umbrella enables `--latest`, `--actions-refresh-sha`, `--container-refresh-sha`, and all four JavaScript targeted-bump flags (`--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, and `--bun-targeted-bump`). It does not change defaults when absent. `--latest` alone is incomplete: it does not refresh SHA-pinned Actions or container digests and does not close JavaScript `behind_latest` gaps.
 - Parallelism: `--jobs` must be a positive integer (default `8`).
 - **Staleness scoring:** every run persists per-repo behind-latest history (`$XDG_CACHE_HOME/repo-ops/state.json`) and reports `staleness_score` (behind-latest count × days since the repo first fell behind) and `new_behind_since_last_run` in JSON, plus a top-3 staleness footer line when any score is nonzero. Disable all state persistence with `REPO_OPS_NO_STATE=1`.
 
@@ -62,7 +64,7 @@ Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_cor
 
 #### Hatch and `--migrate-to-uv-lock`
 
-Hatch workspaces without a `uv.lock` are not upgraded unless `--migrate-to-uv-lock` (or `REPO_OPS_HATCH_MIGRATE_UV_LOCK=1`) opts in to creating one. On apply **verify**, when hatch has no `uv.lock`, verify intentionally skips `uv sync --locked` (nothing to lock against until migration) and runs only hatch fast gates (`check`/`typecheck` scripts, ruff, mypy when configured).
+Hatch workspaces without a `uv.lock` are not upgraded unless `--migrate-to-uv-lock` (or `REPO_OPS_HATCH_MIGRATE_UV_LOCK=1`) opts in to creating one. On apply **verify**, when hatch has no `uv.lock`, verify intentionally skips `uv sync --locked` (nothing to lock against until migration) and runs only hatch fast gates (`check`/`typecheck` scripts, ruff, mypy, and pyrefly when configured). When `[tool.pyrefly]` configures `project-excludes` or `project-includes`, verify passes those paths as pyrefly CLI flags so the project-defined scope is honored without hardcoded exclusions.
 
 ### Go modules
 
@@ -216,9 +218,9 @@ for Python packages. See `repo-ops license --help` epilog for SPDX compound-expr
 
 `repo-ops doctor` probes the binaries repo-ops shells out to across all
 ecosystems (read-only; no scan roots, no `root_dir` arguments): `git`, `gh`,
-`uv`, `pip-compile`, `poetry`, `pipenv`, `pdm`, `pip-audit`, `npm`, `pnpm`,
-`yarn`, `bun`, `corepack`, `deno`, `go`, `gofmt`, `govulncheck`, `cargo`,
-`cargo-audit` (via `cargo audit --version`), `actionlint`. Each is resolved via
+`uv`, `pip-compile`, `poetry`, `pipenv`, `pdm`, `pip-audit`, `pyrefly`, `hatch`,
+`pre-commit`, `npm`, `pnpm`, `yarn`, `bun`, `corepack`, `deno`, `go`, `gofmt`,
+`govulncheck`, `cargo`, `cargo-audit` (via `cargo audit --version`), `actionlint`. Each is resolved via
 `shutil.which`; found binaries also get a
 best-effort version string (first line of `<tool> --version`, timeout-guarded).
 `gh` additionally gets a `gh auth status` check so agents can tell "not
@@ -243,6 +245,10 @@ Config files (TOML):
 - **Per-repo:** `[tool.repo-ops]` table in `pyproject.toml` at the repo root
 
 Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
+
+For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
+`commit_agent_model` config key selects the agent model; the default is
+`composer-2.5`.
 
 | Setting | Flag | Env var | Config key | Default |
 | --------- | ------ | --------- | ------------ | --------- |
@@ -270,6 +276,7 @@ Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
 | go_toolchain | (none) | `REPO_OPS_GO_TOOLCHAIN` | `go_toolchain` | (none) |
 | node_verify_script | (none) | `REPO_OPS_NODE_VERIFY_SCRIPT` | `node_verify_script` | (none) |
 | commit_agent_provider | (none) | `REPO_OPS_COMMIT_AGENT_PROVIDER` | `commit_agent_provider` | `cursor` |
+| commit_agent_model | (none) | `REPO_OPS_COMMIT_AGENT_MODEL` | `commit_agent_model` | `composer-2.5` |
 | exclude_patterns | `--exclude` | (none) | `exclude` | `[]` |
 | commit_umbrella | `--commit-umbrella` | `REPO_OPS_COMMIT_UMBRELLA` | `commit_umbrella` | `0` |
 | actions_org_policy | `--actions-org-policy` | `REPO_OPS_ACTIONS_ORG_POLICY` | `actions_org_policy` | `0` |

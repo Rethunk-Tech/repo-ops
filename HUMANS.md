@@ -11,16 +11,31 @@ uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git#subdirectory=p
 repo-ops doctor
 ```
 
+## Common maintenance
+
+For routine full-coverage maintenance, run `repo-ops plan --full` and review it
+before `repo-ops apply --full`. Bare `--latest` is incomplete: it does not
+refresh pinned Actions or container digests or close JavaScript targeted-bump
+gaps.
+
+`--verify-test` enables Go and Rust tests during apply verification. Hatch
+verification includes mypy and pyrefly when configured; pyrefly project
+excludes are passed through as CLI flags. `doctor` checks for `pyrefly`, `hatch`,
+and `pre-commit` alongside the other toolchain binaries.
+
+When using `--commit=agent`, set `REPO_OPS_COMMIT_AGENT_MODEL` or the
+`commit_agent_model` config key to select the model (default: `composer-2.5`).
+
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/) and Python >= 3.10
 - Git on `PATH`
-- Optional: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, …) and `gh` / `actionlint` for Actions pin audits — run `repo-ops doctor` to see which are found and whether `gh` is authenticated
+- Optional: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, `hatch`, `pyrefly`, `pre-commit`, …) and `gh` / `actionlint` for Actions pin audits — run `repo-ops doctor` to see which are found and whether `gh` is authenticated
 
 ## Documentation
 
 | Document | Purpose |
-|----------|---------|
+| ---------- | --------- |
 | [Installation](docs/installation.md) | Runtime install, development setup, agent skill, verify install, environment |
 | [Usage](docs/usage.md) | Subcommands, JSON output, plan vs apply, security/discovery, ecosystem upgrade modes |
 | [Architecture](docs/architecture.md) | Package layout and filesystem map for the uv workspace |
