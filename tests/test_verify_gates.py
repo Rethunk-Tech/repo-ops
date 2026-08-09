@@ -297,12 +297,16 @@ class TestUvRuffGate:
 
 class TestPythonManagerFastGates:
     @pytest.mark.parametrize(
-        ("manager", "lock_cmd"),
+        ("manager", "lock_cmd", "fast_cmd"),
         [
-            ("uv", ["uv", "sync", "--locked"]),
-            ("poetry", ["poetry", "check"]),
-            ("pdm", ["pdm", "sync", "--clean"]),
-            ("pipenv", ["pipenv", "verify"]),
+            ("uv", ["uv", "sync", "--locked"], ["uv", "run", "check"]),
+            (
+                "poetry",
+                ["poetry", "check"],
+                ["poetry", "run", "check"],
+            ),
+            ("pdm", ["pdm", "sync", "--clean"], ["pdm", "run", "check"]),
+            ("pipenv", ["pipenv", "verify"], ["pipenv", "run", "check"]),
         ],
     )
     def test_lock_gate_then_hatch_fast(
@@ -310,6 +314,7 @@ class TestPythonManagerFastGates:
         tmp_path: Path,
         manager: str,
         lock_cmd: list[str],
+        fast_cmd: list[str],
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
@@ -331,15 +336,19 @@ class TestPythonManagerFastGates:
             result = verify_workspace(ws, verify_test=False)
 
         assert result is None
-        assert calls == [lock_cmd, ["uv", "run", "check"]]
+        assert calls == [lock_cmd, fast_cmd]
 
     @pytest.mark.parametrize(
-        ("manager", "lock_cmd"),
+        ("manager", "lock_cmd", "fast_cmd"),
         [
-            ("uv", ["uv", "sync", "--locked"]),
-            ("poetry", ["poetry", "check"]),
-            ("pdm", ["pdm", "sync", "--clean"]),
-            ("pipenv", ["pipenv", "verify"]),
+            ("uv", ["uv", "sync", "--locked"], ["uv", "run", "check"]),
+            (
+                "poetry",
+                ["poetry", "check"],
+                ["poetry", "run", "check"],
+            ),
+            ("pdm", ["pdm", "sync", "--clean"], ["pdm", "run", "check"]),
+            ("pipenv", ["pipenv", "verify"], ["pipenv", "run", "check"]),
         ],
     )
     def test_lock_gate_failure_blocks_hatch_fast(
@@ -347,6 +356,7 @@ class TestPythonManagerFastGates:
         tmp_path: Path,
         manager: str,
         lock_cmd: list[str],
+        fast_cmd: list[str],
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
@@ -401,12 +411,16 @@ class TestPythonManagerFastGates:
         run_mock.assert_not_called()
 
     @pytest.mark.parametrize(
-        ("manager", "lock_cmd"),
+        ("manager", "lock_cmd", "fast_cmd"),
         [
-            ("uv", ["uv", "sync", "--locked"]),
-            ("poetry", ["poetry", "check"]),
-            ("pdm", ["pdm", "sync", "--clean"]),
-            ("pipenv", ["pipenv", "verify"]),
+            ("uv", ["uv", "sync", "--locked"], ["uv", "run", "check"]),
+            (
+                "poetry",
+                ["poetry", "check"],
+                ["poetry", "run", "check"],
+            ),
+            ("pdm", ["pdm", "sync", "--clean"], ["pdm", "run", "check"]),
+            ("pipenv", ["pipenv", "verify"], ["pipenv", "run", "check"]),
         ],
     )
     def test_hatch_fast_failure_blocks(
@@ -414,6 +428,7 @@ class TestPythonManagerFastGates:
         tmp_path: Path,
         manager: str,
         lock_cmd: list[str],
+        fast_cmd: list[str],
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
@@ -423,7 +438,7 @@ class TestPythonManagerFastGates:
         def fake_run(
             cmd: list[str], cwd: Path, timeout: int | None = None
         ) -> CompletedProcess[str]:
-            if cmd == ["uv", "run", "check"]:
+            if cmd == fast_cmd:
                 return _fail(stderr="fast gate failed")
             return _ok()
 

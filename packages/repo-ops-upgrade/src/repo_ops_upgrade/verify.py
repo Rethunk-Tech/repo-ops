@@ -98,42 +98,54 @@ def _pyrefly_scope_args(d: dict) -> list[str] | str:
     return args
 
 
-def _verify_hatch_fast(ws: Workspace, *, timeout: int | None = None) -> str | None:
+def _verify_hatch_fast(
+    ws: Workspace,
+    *,
+    timeout: int | None = None,
+    runner: list[str] | None = None,
+) -> str | None:
     d = read_toml_file(ws.path / "pyproject.toml")
     if not d:
         return None
+    runner = ["uv", "run"] if runner is None else runner
+    if runner[0] == "uv" and not shutil.which("uv"):
+        return "uv not on PATH"
     scripts = (d.get("project") or {}).get("scripts") or {}
     dev = _pyproject_dev_deps(d)
     if timeout is None:
         timeout = resolve_timeout_verify()
     # "test" script wins outright
     if "test" in scripts:
-        proc = run(["uv", "run", "test"], ws.path, timeout=timeout)
+        proc = run([*runner, "test"], ws.path, timeout=timeout)
         if proc.returncode != 0:
-            return (proc.stderr or proc.stdout).strip() or "uv run test failed"
+            return (
+                proc.stderr or proc.stdout
+            ).strip() or f"{' '.join([*runner, 'test'])} failed"
         return None
     # pytest runner (explicit dep or tests/ dir)
     if "pytest" in dev or (ws.path / "tests").is_dir():
-        proc = run(
-            ["uv", "run", "pytest", "-q", "--co", "-q"], ws.path, timeout=timeout
-        )
+        proc = run([*runner, "pytest", "-q", "--co", "-q"], ws.path, timeout=timeout)
         if proc.returncode != 0:
-            return (proc.stderr or proc.stdout).strip() or "uv run pytest failed"
+            return (
+                proc.stderr or proc.stdout
+            ).strip() or f"{' '.join([*runner, 'pytest'])} failed"
         return None
     # "check" or "typecheck" scripts (e.g. mypy / pyright wrappers)
     for script_key in ("check", "typecheck"):
         if script_key in scripts:
-            proc = run(["uv", "run", script_key], ws.path, timeout=timeout)
+            proc = run([*runner, script_key], ws.path, timeout=timeout)
             if proc.returncode != 0:
                 return (
                     proc.stderr or proc.stdout
-                ).strip() or f"uv run {script_key} failed"
+                ).strip() or f"{' '.join([*runner, script_key])} failed"
             return None
     # mypy in dev deps
     if "mypy" in dev:
-        proc = run(["uv", "run", "mypy", "."], ws.path, timeout=timeout)
+        proc = run([*runner, "mypy", "."], ws.path, timeout=timeout)
         if proc.returncode != 0:
-            return (proc.stderr or proc.stdout).strip() or "uv run mypy failed"
+            return (
+                proc.stderr or proc.stdout
+            ).strip() or f"{' '.join([*runner, 'mypy'])} failed"
         return None
     # pyrefly in dev deps
     if "pyrefly" in dev:
@@ -141,18 +153,22 @@ def _verify_hatch_fast(ws: Workspace, *, timeout: int | None = None) -> str | No
         if isinstance(scope_args, str):
             return scope_args
         proc = run(
-            ["uv", "run", "pyrefly", "check", ".", *scope_args],
+            [*runner, "pyrefly", "check", ".", *scope_args],
             ws.path,
             timeout=timeout,
         )
         if proc.returncode != 0:
-            return (proc.stderr or proc.stdout).strip() or "uv run pyrefly check failed"
+            return (
+                proc.stderr or proc.stdout
+            ).strip() or f"{' '.join([*runner, 'pyrefly', 'check'])} failed"
         return None
     # ruff in dev deps (lint-only fallback)
     if "ruff" in dev:
-        proc = run(["uv", "run", "ruff", "check", "."], ws.path, timeout=timeout)
+        proc = run([*runner, "ruff", "check", "."], ws.path, timeout=timeout)
         if proc.returncode != 0:
-            return (proc.stderr or proc.stdout).strip() or "uv run ruff check failed"
+            return (
+                proc.stderr or proc.stdout
+            ).strip() or f"{' '.join([*runner, 'ruff', 'check'])} failed"
     return None
 
 
@@ -334,21 +350,21 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
         proc = run(["poetry", "check"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "poetry check failed"
-        return _verify_hatch_fast(ws, timeout=timeout)
+        return _verify_hatch_fast(ws, timeout=timeout, runner=["poetry", "run"])
     if mgr == "pdm":
         if not shutil.which("pdm"):
             return "pdm not on PATH"
         proc = run(["pdm", "sync", "--clean"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "pdm sync --clean failed"
-        return _verify_hatch_fast(ws, timeout=timeout)
+        return _verify_hatch_fast(ws, timeout=timeout, runner=["pdm", "run"])
     if mgr == "pipenv":
         if not shutil.which("pipenv"):
             return "pipenv not on PATH"
         proc = run(["pipenv", "verify"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "pipenv verify failed"
-        return _verify_hatch_fast(ws, timeout=timeout)
+        return _verify_hatch_fast(ws, timeout=timeout, runner=["pipenv", "run"])
     if mgr == "pip-tools":
         return _verify_pip_tools(ws, timeout=timeout)
     if mgr == "deno":
