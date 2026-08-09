@@ -48,8 +48,11 @@ def _cargo_metadata_workspace_members(mdir: Path) -> set[str] | None:
             check=True,
             capture_output=True,
             text=True,
+            timeout=60,
         )
         metadata = json.loads(result.stdout)
+    except subprocess.TimeoutExpired:
+        return None
     except (OSError, subprocess.SubprocessError, TypeError, ValueError):
         return None
     if not isinstance(metadata, dict):
@@ -100,6 +103,57 @@ def _cargo_workspace_globs(mdir: Path, key: str) -> set[str]:
     return {value.rstrip("/") for value in values if isinstance(value, str)}
 
 
+def _cargo_path_dependency_values(value: object) -> list[str]:
+    paths: list[str] = []
+    if isinstance(value, dict):
+        path = value.get("path")
+        if isinstance(path, str):
+            paths.append(path)
+        for child in value.values():
+            paths.extend(_cargo_path_dependency_values(child))
+    elif isinstance(value, list):
+        for child in value:
+            paths.extend(_cargo_path_dependency_values(child))
+    return paths
+
+
+def _cargo_fallback_members(mdir: Path, member_globs: set[str]) -> set[str]:
+    members = set(member_globs)
+    root = mdir.resolve()
+    pending = [mdir]
+    for pattern in member_globs:
+        try:
+            candidates = mdir.glob(pattern)
+        except (OSError, ValueError):
+            continue
+        pending.extend(
+            candidate
+            for candidate in candidates
+            if candidate.is_dir() and (candidate / "Cargo.toml").is_file()
+        )
+
+    visited: set[Path] = set()
+    while pending:
+        manifest_dir = pending.pop().resolve()
+        if manifest_dir in visited:
+            continue
+        visited.add(manifest_dir)
+        manifest = read_toml_file(manifest_dir / "Cargo.toml") or {}
+        for dependency in _cargo_path_dependency_values(manifest):
+            dependency_dir = (manifest_dir / dependency).resolve()
+            if not (dependency_dir / "Cargo.toml").is_file():
+                continue
+            try:
+                relative = dependency_dir.relative_to(root).as_posix()
+            except ValueError:
+                continue
+            if relative == ".":
+                continue
+            members.add(relative)
+            pending.append(dependency_dir)
+    return members
+
+
 def cargo_workspace_members(mdir: Path) -> set[str]:
     """Return Cargo workspace member directories relative to *mdir*.
 
@@ -114,7 +168,7 @@ def cargo_workspace_members(mdir: Path) -> set[str]:
     metadata_members = _cargo_metadata_workspace_members(mdir)
     if metadata_members is not None:
         return metadata_members
-    return _cargo_workspace_globs(mdir, "members")
+    return _cargo_fallback_members(mdir, _cargo_workspace_globs(mdir, "members"))
 
 
 def cargo_workspace_excludes(mdir: Path) -> set[str]:
