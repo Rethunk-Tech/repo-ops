@@ -78,6 +78,7 @@ from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
 from repo_ops_core.git import repo_label, run_git
 from repo_ops_lockfiles.parsers import (
     versions_bun_lock,
+    versions_bun_lockb,
     versions_npm_lock,
     versions_pdm_lock,
     versions_pipenv_lock,
@@ -372,6 +373,18 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
             continue
         with contextlib.suppress(Exception):
             for entry in versions_bun_lock(lockfile):
+                if "@" in entry:
+                    pkg, ver = _split_name_ver(entry)
+                    if pkg:
+                        _update(pkg, ver)
+
+    for lockfile in root.rglob("bun.lockb"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
+        if lockfile.with_name("bun.lock").exists():
+            continue
+        with contextlib.suppress(Exception):
+            for entry in versions_bun_lockb(lockfile):
                 if "@" in entry:
                     pkg, ver = _split_name_ver(entry)
                     if pkg:
