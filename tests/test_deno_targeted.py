@@ -78,6 +78,50 @@ def test_targeted_bump_keeps_changed_snapshot(tmp_path: Path, monkeypatch) -> No
     restore.assert_not_called()
 
 
+def test_targeted_bump_restores_snapshot_when_guard_raises(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    change = Change("npm:lodash", "4.17.20", "4.17.21")
+    snapshot = {"deno.lock": b"original"}
+    ws = _ws(tmp_path)
+
+    with (
+        patch(
+            "repo_ops_js.deno.snapshot_workspace_files",
+            side_effect=[snapshot, {"deno.lock": b"changed"}],
+        ),
+        patch(
+            "repo_ops_js.deno.versions_deno_lock",
+            return_value={"npm:lodash@4.17.22"},
+        ),
+        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
+        patch(
+            "repo_ops_js.deno.assert_targets_resolved",
+            side_effect=RuntimeError("ghost bump"),
+        ) as guard,
+        patch(
+            "repo_ops_js.deno.run",
+            return_value=subprocess.CompletedProcess(
+                ["deno", "update", "npm:lodash"],
+                0,
+                stdout="",
+                stderr="",
+            ),
+        ),
+    ):
+        applied, still_behind = targeted_bump_behind(ws, [change])
+
+    assert applied == []
+    assert still_behind == [change]
+    guard.assert_called_once_with(
+        ws,
+        [Change("npm:lodash", "4.17.20", "4.17.22")],
+        manager="deno",
+    )
+    restore.assert_called_once_with(tmp_path, snapshot, "deno")
+
+
 def test_targeted_bump_restores_after_failure(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
     change = Change("jsr:@std/assert", "0.221.0", "0.226.0")
