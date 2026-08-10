@@ -10,8 +10,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from repo_ops_core.config import apply_config_to_env, resolve_setting
+from repo_ops_upgrade import commit_agent_cursor, commit_agent_providers
 import repo_ops_upgrade.run as run_mod
-from repo_ops_core.config import apply_config_to_env
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 
 # ---------------------------------------------------------------------------
@@ -82,6 +83,38 @@ def test_apply_config_to_env_none_value_is_noop(
     monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
     apply_config_to_env(repo_cfg={"go_upgrade_mode": None})
     assert "REPO_OPS_GO_UPGRADE_MODE" not in os.environ
+
+
+def test_resolve_setting_uses_ambient_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Injected process environment does not replace the launch snapshot."""
+    monkeypatch.setenv("REPO_OPS_ACTIONS_LINT_LEVEL", "injected")
+    assert (
+        resolve_setting(
+            "actions_lint_level",
+            global_cfg={"actions_lint_level": "global"},
+            repo_cfg={"actions_lint_level": "repo"},
+            env={"REPO_OPS_ACTIONS_LINT_LEVEL": "caller"},
+        )
+        == "caller"
+    )
+
+
+def test_commit_agent_model_uses_repo_config_over_injected_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Commit-agent model resolution ignores config injected after launch."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\ncommit_agent_model = "repo-model"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("REPO_OPS_COMMIT_AGENT_MODEL", "injected-model")
+    commit_agent_providers.set_ambient_env({})
+    try:
+        assert commit_agent_cursor._resolve_agent_model(tmp_path) == "repo-model"
+    finally:
+        commit_agent_providers.set_ambient_env(None)
 
 
 # ---------------------------------------------------------------------------
