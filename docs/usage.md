@@ -326,9 +326,16 @@ One layered lookup per setting: **CLI flag** → **env var** → **config file**
 Config files (TOML):
 
 - **Global:** `~/.config/repo-ops/config.toml` (or `$XDG_CONFIG_HOME/repo-ops/config.toml`)
-- **Per-repo:** `[tool.repo-ops]` table in `pyproject.toml` at the repo root
+- **Per-repo:** `[tool.repo-ops]` table in `pyproject.toml` at the repo root, or
+  flat keys in `.repo-ops.toml` for repositories without a suitable pyproject
 
 Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
+
+For multi-root `plan` and `apply` runs, repo-scoped settings are resolved from
+each checkout when its bundle is processed; the launch checkout's config is not
+inherited by the rest of the fleet. CLI flags and caller-provided environment
+variables retain precedence over per-checkout config. Repository exclusions and
+Actions lint/policy settings are resolved per checkout.
 
 For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 `commit_agent_model` config key selects the agent model; the default is
