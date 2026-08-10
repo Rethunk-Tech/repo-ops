@@ -10,6 +10,7 @@ from pathlib import Path
 
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.process import run
+from repo_ops_core.version_utils import semver_tuple
 from repo_ops_lockfiles.parsers import versions_deno_lock
 from repo_ops_lockfiles.snapshots import (
     restore_workspace_snapshot,
@@ -22,6 +23,10 @@ from repo_ops_js.guards import assert_targets_resolved
 _DENO_UPDATE_LATEST_ENV = "REPO_OPS_DENO_UPDATE_LATEST"
 _DENO_TARGETED_BUMP_ENV = "REPO_OPS_DENO_TARGETED_BUMP"
 _TRUE_VALUES = ("1", "true", "yes", "on")
+_SEMVER_RE = re.compile(
+    r"^[vV]?\d+(?:\.\d+)*(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
 
 
 def _deno_update_latest_enabled() -> bool:
@@ -30,6 +35,12 @@ def _deno_update_latest_enabled() -> bool:
 
 def _deno_targeted_bump_enabled() -> bool:
     return os.environ.get(_DENO_TARGETED_BUMP_ENV, "").strip().lower() in _TRUE_VALUES
+
+
+def _parseable_semver_tuple(version: str) -> tuple[int, ...] | None:
+    if not _SEMVER_RE.fullmatch(version):
+        return None
+    return semver_tuple(version)
 
 
 def check_deno(ws: Workspace) -> tuple[list[Change], list[Change]]:
@@ -130,12 +141,22 @@ def _parse_deno_outdated(stdout: str) -> tuple[list[Change], list[Change]]:
 def _landed_deno_version(ws: Workspace, name: str) -> str | None:
     """Return the resolved lockfile version for a package name."""
     prefix = f"{name}@"
-    for resolved in sorted(versions_deno_lock(Path(ws.path) / "deno.lock")):
-        if resolved.startswith(prefix):
-            version = resolved[len(prefix) :].strip()
-            if version:
-                return version
-    return None
+    versions = [
+        resolved[len(prefix) :].strip()
+        for resolved in versions_deno_lock(Path(ws.path) / "deno.lock")
+        if resolved.startswith(prefix)
+    ]
+    versions = [version for version in versions if version]
+    if not versions:
+        return None
+    parseable = [
+        (parsed, version)
+        for version in versions
+        if (parsed := _parseable_semver_tuple(version)) is not None
+    ]
+    if parseable:
+        return max(parseable, key=lambda item: item[0])[1]
+    return max(versions)
 
 
 def targeted_bump_behind(
@@ -158,9 +179,21 @@ def targeted_bump_behind(
             advanced = snapshot_workspace_files(ws.path, "deno") != snapshot
         if advanced:
             landed = _landed_deno_version(ws, change.name)
-            applied.append(
-                Change(change.name, change.from_ver, landed) if landed else change
+            landed_tuple = _parseable_semver_tuple(landed) if landed else None
+            if landed_tuple is None:
+                applied.append(change)
+                continue
+            from_tuple = _parseable_semver_tuple(change.from_ver)
+            moved_up = (
+                landed != change.from_ver
+                if from_tuple is None
+                else landed_tuple > from_tuple
             )
+            if moved_up:
+                applied.append(Change(change.name, change.from_ver, landed))
+                continue
+            restore_workspace_snapshot(ws.path, snapshot, "deno")
+            still_behind.append(change)
         else:
             restore_workspace_snapshot(ws.path, snapshot, "deno")
             still_behind.append(change)

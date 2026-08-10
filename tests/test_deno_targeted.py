@@ -6,7 +6,11 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-from repo_ops_js.deno import apply_deno, targeted_bump_behind
+from repo_ops_js.deno import (
+    _landed_deno_version,
+    apply_deno,
+    targeted_bump_behind,
+)
 from repo_ops_models import Change, Workspace
 
 
@@ -30,6 +34,21 @@ def test_targeted_bump_is_env_gated(tmp_path: Path, monkeypatch) -> None:
     run_mock.assert_not_called()
 
 
+def test_landed_deno_version_picks_highest_lock_version(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "repo_ops_js.deno.versions_deno_lock",
+        lambda _: {
+            "npm:lodash@4.17.20",
+            "npm:lodash@4.9.0",
+            "npm:lodash@4.17.21",
+        },
+    )
+
+    assert _landed_deno_version(_ws(tmp_path), "npm:lodash") == "4.17.21"
+
+
 def test_targeted_bump_keeps_changed_snapshot(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
     change = Change("npm:lodash", "4.17.20", "4.17.21")
@@ -46,14 +65,14 @@ def test_targeted_bump_keeps_changed_snapshot(tmp_path: Path, monkeypatch) -> No
         ),
         patch(
             "repo_ops_js.deno.versions_deno_lock",
-            return_value={"npm:lodash@4.17.21"},
+            return_value={"npm:lodash@4.17.22"},
         ),
         patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
         patch("repo_ops_js.deno.run", side_effect=fake_run),
     ):
         applied, still_behind = targeted_bump_behind(_ws(tmp_path), [change])
 
-    assert applied == [Change("npm:lodash", "4.17.20", "4.17.21")]
+    assert applied == [Change("npm:lodash", "4.17.20", "4.17.22")]
     assert still_behind == []
     assert captured == [["deno", "update", "npm:lodash"]]
     restore.assert_not_called()
@@ -95,6 +114,40 @@ def test_targeted_bump_restores_when_snapshot_does_not_advance(
         patch(
             "repo_ops_js.deno.snapshot_workspace_files",
             side_effect=[snapshot, snapshot],
+        ),
+        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
+        patch(
+            "repo_ops_js.deno.run",
+            return_value=subprocess.CompletedProcess(
+                ["deno", "update", "npm:chalk"],
+                0,
+                stdout="",
+                stderr="",
+            ),
+        ),
+    ):
+        applied, still_behind = targeted_bump_behind(_ws(tmp_path), [change])
+
+    assert applied == []
+    assert still_behind == [change]
+    restore.assert_called_once_with(tmp_path, snapshot, "deno")
+
+
+def test_targeted_bump_restores_when_landed_version_does_not_advance(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    change = Change("npm:chalk", "5.2.0", "5.3.0")
+    snapshot = {"deno.lock": b"original"}
+
+    with (
+        patch(
+            "repo_ops_js.deno.snapshot_workspace_files",
+            side_effect=[snapshot, {"deno.lock": b"changed"}],
+        ),
+        patch(
+            "repo_ops_js.deno.versions_deno_lock",
+            return_value={"npm:chalk@5.2.0"},
         ),
         patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
         patch(
