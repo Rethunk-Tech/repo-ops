@@ -219,6 +219,7 @@ def collect_components(
     *,
     enrich_licenses: bool = False,
     license_cache_dir: Path | None = None,
+    allow_network: bool = True,
 ) -> list[dict[str, str]]:
     """Walk *root* for lockfiles; return sorted list of unique component dicts.
 
@@ -394,7 +395,10 @@ def collect_components(
     if enrich_licenses:
         for component in components:
             license_id = enrich_component(
-                component, root, cache_dir=license_cache_dir, allow_network=True
+                component,
+                root,
+                cache_dir=license_cache_dir,
+                allow_network=allow_network,
             )
             if license_id:
                 component["license"] = license_id
@@ -557,6 +561,8 @@ scope:
   Component licenses are emitted as NOASSERTION by default. Use
   --enrich-licenses to read local package metadata and optionally query
   registry metadata cached under XDG_CACHE_HOME.
+  --enrich-licenses-local reads local metadata and cached registry metadata
+  without network access.
 """
 
 
@@ -606,6 +612,15 @@ def build_sbom_parser() -> argparse.ArgumentParser:
             "registry metadata (opt-in)."
         ),
     )
+    parser.add_argument(
+        "--enrich-licenses-local",
+        action="store_true",
+        default=_env_flag("REPO_OPS_ENRICH_LICENSES_LOCAL"),
+        help=(
+            "Enrich licenses from local metadata and cached registry responses "
+            "without network access."
+        ),
+    )
     add_verbose_argument(parser)
     return parser
 
@@ -623,7 +638,9 @@ def main(argv: list[str] | None = None) -> int:
     all_components: list[dict[str, str]] = []
     for root_str in roots:
         for comp in collect_components(
-            Path(root_str), enrich_licenses=args.enrich_licenses
+            Path(root_str),
+            enrich_licenses=args.enrich_licenses or args.enrich_licenses_local,
+            allow_network=not args.enrich_licenses_local,
         ):
             if comp["purl"] not in purl_seen:
                 purl_seen.add(comp["purl"])

@@ -936,6 +936,7 @@ scope (best-effort):
     (offline); jsr:/http(s): specifiers have no local license source.
   --enrich-licenses optionally resolves UNKNOWN npm/PyPI/crates entries from
   local metadata and registry metadata cached under XDG_CACHE_HOME.
+  --enrich-licenses-local performs the same resolution without network access.
 
 allow/deny list format:
   SPDX identifiers, comma-separated, case-insensitive.
@@ -990,6 +991,15 @@ def build_license_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--enrich-licenses-local",
+        action="store_true",
+        default=_env_flag("REPO_OPS_ENRICH_LICENSES_LOCAL"),
+        help=(
+            "Enrich unknown licenses from local metadata and cached registry "
+            "responses without network access."
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         dest="json_out",
@@ -1030,7 +1040,7 @@ def main(argv: list[str] | None = None) -> int:
         root_packages.extend(scan_go_licenses(root))
         root_packages.extend(scan_rust_licenses(root))
         root_packages.extend(scan_deno_licenses(root))
-        if args.enrich_licenses:
+        if args.enrich_licenses or args.enrich_licenses_local:
             for package in root_packages:
                 if package.license_id != UNKNOWN_LICENSE:
                     continue
@@ -1039,7 +1049,7 @@ def main(argv: list[str] | None = None) -> int:
                     package.version,
                     package.ecosystem,
                     root,
-                    allow_network=True,
+                    allow_network=not args.enrich_licenses_local,
                 )
                 if license_id:
                     package.license_id = license_id
