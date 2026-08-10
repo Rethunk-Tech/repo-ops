@@ -439,10 +439,10 @@ max_version = "99"          # effectively unbounded — the workspace override
 workspace = "packages/modern-app"
 ```
 
-**Enforcement scope (this release):** JS (npm, yarn, pnpm, bun), Go, and the
-Python managers (uv, hatch, pdm, pipenv, poetry, pip-tools). Not yet wired:
-containers, GitHub Actions, submodules, pre-commit — same rule schema, just
-not consulted by those checkers yet.
+**Enforcement scope (this release):** JS (npm, yarn, pnpm, bun), Go, the Python
+managers (uv, hatch, pdm, pipenv, poetry, pip-tools), and pre-commit. Not yet
+wired: containers, GitHub Actions, and submodules — same rule schema, just not
+consulted by those checkers yet.
 
 **How it's enforced, per ecosystem:**
 
@@ -464,3 +464,6 @@ not consulted by those checkers yet.
   than an installed tree, so a hold is enforced by passing an ephemeral pip
   constraints file (`name<=ceiling` for held direct deps) to the compile
   step — `requirements.in` itself is never modified.
+- **pre-commit** — tag rev bumps and SHA-refresh targets whose resolved tag
+  version exceeds a hold ceiling are filtered out of check and apply. Existing
+  revs already above a ceiling are not clamped post-apply yet.
