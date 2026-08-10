@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from repo_ops_upgrade import submodules
 from repo_ops_upgrade.submodules import (
     _REPORT_ONLY_PREFIX,
     SubmoduleLink,
@@ -167,6 +168,13 @@ def test_fetch_remote_tags_file_not_found_returns_none() -> None:
     assert tags is None
 
 
+def test_fetch_remote_tag_refs_preserves_commit_shas() -> None:
+    stdout = "abc123\trefs/tags/v1.0.0\ndef456\trefs/tags/v1.1.0\n"
+    with patch("subprocess.run", return_value=_ok_proc(stdout)):
+        refs = submodules._fetch_remote_tag_refs("https://example.com/repo.git")
+    assert refs == [("abc123", "v1.0.0"), ("def456", "v1.1.0")]
+
+
 def test_fetch_remote_tags_cached(tmp_path: Path) -> None:
     """Second call with the same URL must not re-invoke subprocess."""
     stdout = "abc\trefs/tags/v1.0.0\n"
@@ -202,6 +210,34 @@ def test_check_sha_only_pin_is_report_only(tmp_path: Path) -> None:
     assert _REPORT_ONLY_PREFIX in bumps[0].latest_tag
     assert "no exact tag" in bumps[0].latest_tag
     assert bumps[0].current_tag == ""
+
+
+def test_check_sha_only_pin_refreshes_with_opt_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("REPO_OPS_SUBMODULE_REFRESH_SHA", "1")
+    link = _make_link(tmp_path)
+    current_sha = "a" * 40
+    with (
+        patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value=None),
+        patch(
+            "repo_ops_upgrade.submodules._current_submodule_sha",
+            return_value=current_sha,
+        ),
+        patch(
+            "repo_ops_upgrade.submodules._fetch_remote_tag_refs",
+            return_value=[
+                (current_sha, "v1.0.0"),
+                ("b" * 40, "v1.1.0"),
+                ("c" * 40, "v2.0.0"),
+            ],
+        ),
+    ):
+        bumps = check_submodule_tag_advances([link])
+    assert len(bumps) == 1
+    assert bumps[0].is_actionable
+    assert bumps[0].current_tag == ""
+    assert bumps[0].latest_tag == "v1.1.0"
 
 
 def test_check_non_semver_tag_is_report_only(tmp_path: Path) -> None:
@@ -400,6 +436,33 @@ def test_apply_skips_git_ops_for_report_only(tmp_path: Path) -> None:
     assert not bumps[0].is_actionable
     # run_git must NOT be called for the apply ops (no fetch/checkout/add)
     mock_git.assert_not_called()
+
+
+def test_apply_refreshes_sha_only_pin_with_opt_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("REPO_OPS_SUBMODULE_REFRESH_SHA", "1")
+    link = _make_link(tmp_path)
+    current_sha = "a" * 40
+    with (
+        patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value=None),
+        patch(
+            "repo_ops_upgrade.submodules._current_submodule_sha",
+            return_value=current_sha,
+        ),
+        patch(
+            "repo_ops_upgrade.submodules._fetch_remote_tag_refs",
+            return_value=[(current_sha, "v1.0.0"), ("b" * 40, "v1.1.0")],
+        ),
+        patch(
+            "repo_ops_upgrade.submodules.run_git", return_value=_ok_proc()
+        ) as mock_git,
+    ):
+        bumps = apply_submodule_tag_advances([link], allow_dirty=True)
+    assert len(bumps) == 1
+    assert bumps[0].is_actionable
+    assert mock_git.call_count == 3
+    assert mock_git.call_args_list[1][0][3] == "refs/tags/v1.1.0"
 
 
 def test_apply_continues_on_fetch_failure(tmp_path: Path) -> None:

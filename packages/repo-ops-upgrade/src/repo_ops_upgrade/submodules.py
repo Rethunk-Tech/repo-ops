@@ -243,6 +243,9 @@ _REPORT_ONLY_PREFIX = "[report-only] "
 #: Environment variable opt-in for cross-major tag advances.
 _SUBMODULE_UPDATE_LATEST_ENV = "REPO_OPS_SUBMODULE_UPDATE_LATEST"
 
+#: Environment variable opt-in for refreshing SHA-only submodule pointers.
+_SUBMODULE_REFRESH_SHA_ENV = "REPO_OPS_SUBMODULE_REFRESH_SHA"
+
 #: Bounded timeout (seconds) for ``git ls-remote`` calls.
 _LS_REMOTE_TIMEOUT = 30
 
@@ -253,6 +256,7 @@ _SEMVER_TAG_RE = re.compile(r"^v?(\d+)(?:\.\d+)*(?:[-.][\w.]+)?$")
 #: In-process cache: URL → tag list (or None on error).
 #: One entry per unique upstream URL so repeated checks cost only one RTT.
 _SUBMODULE_TAG_CACHE: dict[str, list[str] | None] = {}
+_SUBMODULE_TAG_REF_CACHE: dict[str, list[tuple[str, str]] | None] = {}
 
 
 @dataclass(frozen=True)
@@ -308,6 +312,18 @@ def _fetch_remote_tags(
     """
     if url in _SUBMODULE_TAG_CACHE:
         return _SUBMODULE_TAG_CACHE[url]
+    refs = _fetch_remote_tag_refs(url, timeout=timeout)
+    tags = None if refs is None else [tag for _, tag in refs]
+    _SUBMODULE_TAG_CACHE[url] = tags
+    return tags
+
+
+def _fetch_remote_tag_refs(
+    url: str, *, timeout: int = _LS_REMOTE_TIMEOUT
+) -> list[tuple[str, str]] | None:
+    """Return ``(commit_sha, tag)`` pairs for a submodule URL."""
+    if url in _SUBMODULE_TAG_REF_CACHE:
+        return _SUBMODULE_TAG_REF_CACHE[url]
 
     try:
         proc = subprocess.run(
@@ -318,28 +334,33 @@ def _fetch_remote_tags(
             env={**os.environ, "GIT_ALLOW_PROTOCOL": "https:ssh"},
         )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        _SUBMODULE_TAG_REF_CACHE[url] = None
         _SUBMODULE_TAG_CACHE[url] = None
         return None
 
     if proc.returncode != 0:
+        _SUBMODULE_TAG_REF_CACHE[url] = None
         _SUBMODULE_TAG_CACHE[url] = None
         return None
 
-    tags: list[str] = []
+    refs: list[tuple[str, str]] = []
     for line in proc.stdout.splitlines():
         parts = line.split("\t", 1)
         if len(parts) == 2 and parts[1].startswith("refs/tags/"):
+            sha = parts[0].strip()
             tag = parts[1][len("refs/tags/") :]
-            if tag:
-                tags.append(tag)
+            if sha and tag:
+                refs.append((sha, tag))
 
-    _SUBMODULE_TAG_CACHE[url] = tags
-    return tags
+    _SUBMODULE_TAG_REF_CACHE[url] = refs
+    _SUBMODULE_TAG_CACHE[url] = [tag for _, tag in refs]
+    return refs
 
 
 def _clear_submodule_tag_cache() -> None:
     """Clear the in-process tag cache (for use in tests)."""
     _SUBMODULE_TAG_CACHE.clear()
+    _SUBMODULE_TAG_REF_CACHE.clear()
 
 
 def _current_submodule_tag(git_repo: Path) -> str | None:
@@ -356,6 +377,18 @@ def _current_submodule_tag(git_repo: Path) -> str | None:
         return None
     tag = proc.stdout.strip()
     return tag or None
+
+
+def _current_submodule_sha(git_repo: Path) -> str | None:
+    """Return the full commit SHA currently checked out in *git_repo*."""
+    try:
+        proc = run_git(git_repo, "rev-parse", "HEAD")
+    except (FileNotFoundError, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    sha = proc.stdout.strip()
+    return sha or None
 
 
 def _resolve_latest_submodule_tag(
@@ -418,6 +451,53 @@ def _resolve_latest_submodule_tag(
     return best_tag
 
 
+def _resolve_sha_refresh(
+    current_sha: str, refs: list[tuple[str, str]]
+) -> tuple[str, str] | None:
+    """Return the newest tag within the major and style resolved from a SHA."""
+    normalized = current_sha.lower()
+    matching: list[tuple[tuple[int, ...], str, str]] = []
+    for tag_sha, tag in refs:
+        candidate_sha = tag_sha.lower()
+        if not (
+            candidate_sha == normalized
+            or (len(normalized) < 40 and candidate_sha.startswith(normalized))
+        ):
+            continue
+        if not _is_semver_tag(tag):
+            continue
+        try:
+            version = semver_tuple(tag.lstrip("vV"))
+        except Exception:
+            continue
+        matching.append((version, tag, tag_sha))
+
+    if not matching:
+        return None
+    _, current_tag, _ = max(matching, key=lambda item: (item[0], item[1]))
+    current_version = semver_tuple(current_tag.lstrip("vV"))
+    want_v = _has_v_prefix(current_tag)
+    candidates: list[tuple[tuple[int, ...], str, str]] = []
+    for tag_sha, tag in refs:
+        if not _is_semver_tag(tag) or _has_v_prefix(tag) != want_v:
+            continue
+        try:
+            version = semver_tuple(tag.lstrip("vV"))
+        except Exception:
+            continue
+        if version and version[0] == current_version[0]:
+            candidates.append((version, tag, tag_sha))
+    if not candidates:
+        return None
+    _, latest_tag, latest_sha = max(candidates, key=lambda item: (item[0], item[1]))
+    latest_sha_lower = latest_sha.lower()
+    if latest_sha_lower == normalized or (
+        len(normalized) < 40 and latest_sha_lower.startswith(normalized)
+    ):
+        return None
+    return current_tag, latest_tag
+
+
 def check_submodule_tag_advances(
     links: list[SubmoduleLink],
 ) -> list[SubmoduleTagBump]:
@@ -435,8 +515,11 @@ def check_submodule_tag_advances(
       no entry.
 
     Set ``REPO_OPS_SUBMODULE_UPDATE_LATEST=1`` to allow cross-major advances.
+    Set ``REPO_OPS_SUBMODULE_REFRESH_SHA=1`` to refresh SHA-only HEADs when
+    their upstream tag history establishes a same-major target.
     """
     allow_cross_major = os.environ.get(_SUBMODULE_UPDATE_LATEST_ENV, "") == "1"
+    refresh_sha = os.environ.get(_SUBMODULE_REFRESH_SHA_ENV, "") == "1"
     bumps: list[SubmoduleTagBump] = []
 
     for link in links:
@@ -448,6 +531,23 @@ def check_submodule_tag_advances(
         current_tag = _current_submodule_tag(link.git_repo)
 
         if current_tag is None:
+            if refresh_sha:
+                current_sha = _current_submodule_sha(link.git_repo)
+                refs = _fetch_remote_tag_refs(url) if current_sha else None
+                resolved = _resolve_sha_refresh(current_sha or "", refs or [])
+                if resolved is not None:
+                    _resolved_current_tag, latest_tag = resolved
+                    bumps.append(
+                        SubmoduleTagBump(
+                            path=link.path,
+                            url=url,
+                            current_tag="",
+                            latest_tag=latest_tag,
+                            parent=link.parent,
+                            git_repo=link.git_repo,
+                        )
+                    )
+                    continue
             bumps.append(
                 SubmoduleTagBump(
                     path=link.path,
