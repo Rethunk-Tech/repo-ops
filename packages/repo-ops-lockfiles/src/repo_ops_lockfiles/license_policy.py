@@ -511,7 +511,8 @@ _GO_LICENSE_FILENAMES = ("LICENSE", "LICENSE.txt", "LICENSE.md", "COPYING")
 
 # Coarse, offline license-text classifier: (SPDX id, required substrings) in
 # priority order. Best-effort only — a handful of distinguishing phrases per
-# license family. BSD-2-Clause is not inferred from text shared with BSD-3-Clause.
+# license family. BSD-3-Clause is checked before BSD-2-Clause because the
+# redistribution clause is shared.
 _LICENSE_TEXT_SIGNATURES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Apache-2.0", ("Apache License", "Version 2.0")),
     ("MPL-2.0", ("Mozilla Public License", "2.0")),
@@ -526,6 +527,7 @@ _LICENSE_TEXT_SIGNATURES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "endorse or promote products derived",
         ),
     ),
+    ("BSD-2-Clause", ("Redistribution and use in source and binary forms",)),
     ("MIT", ("Permission is hereby granted, free of charge",)),
     (
         "ISC",
@@ -540,7 +542,10 @@ _LICENSE_TEXT_SIGNATURES: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 def _classify_license_text(text: str) -> str:
     """Best-effort SPDX id from raw LICENSE file text (offline heuristics)."""
+    lower = text.lower()
     for spdx_id, needles in _LICENSE_TEXT_SIGNATURES:
+        if spdx_id == "BSD-2-Clause" and "endorse or promote products derived" in lower:
+            continue
         if all(n in text for n in needles):
             return spdx_id
     return UNKNOWN_LICENSE

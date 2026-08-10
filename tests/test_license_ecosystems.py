@@ -58,13 +58,23 @@ def test_classify_license_text_mit_and_apache() -> None:
     assert _classify_license_text("some unrecognisable text") == UNKNOWN_LICENSE
 
 
-def test_classify_license_text_requires_bsd_distinguishing_clause() -> None:
-    shared_bsd_text = (
+def test_classify_license_text_distinguishes_bsd2_and_bsd3() -> None:
+    bsd2_text = (
         "Redistribution and use in source and binary forms, with or without "
-        "modification..."
+        "modification, are permitted provided that the following conditions "
+        "are met.\n\n"
+        "1. Redistributions of source code must retain the above copyright "
+        "notice, this list of conditions and the following disclaimer.\n\n"
+        "2. Redistributions in binary form must reproduce the above copyright "
+        "notice, this list of conditions and the following disclaimer in the "
+        "documentation and/or other materials provided with the distribution.\n\n"
+        "THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "
+        '"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT '
+        "LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS "
+        "FOR A PARTICULAR PURPOSE ARE DISCLAIMED."
     )
-    assert classify_license_text(shared_bsd_text) is None
-    assert _classify_license_text(shared_bsd_text) == UNKNOWN_LICENSE
+    assert classify_license_text(bsd2_text) == "BSD-2-Clause"
+    assert _classify_license_text(bsd2_text) == "BSD-2-Clause"
 
     bsd3_text = (
         "Redistribution and use in source and binary forms, with or without "

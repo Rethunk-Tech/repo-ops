@@ -137,6 +137,10 @@ def classify_license_text(text: str) -> str | None:
                 "ENDORSE OR PROMOTE PRODUCTS DERIVED",
             ),
         ),
+        (
+            "BSD-2-Clause",
+            ("REDISTRIBUTION AND USE IN SOURCE AND BINARY FORMS",),
+        ),
         ("MIT", ("PERMISSION IS HEREBY GRANTED, FREE OF CHARGE",)),
         (
             "ISC",
@@ -148,6 +152,11 @@ def classify_license_text(text: str) -> str | None:
         ),
     )
     for identifier, needles in signatures:
+        if (
+            identifier == "BSD-2-Clause"
+            and "ENDORSE OR PROMOTE PRODUCTS DERIVED" in upper
+        ):
+            continue
         if all(needle in upper for needle in needles):
             return identifier
     return None
