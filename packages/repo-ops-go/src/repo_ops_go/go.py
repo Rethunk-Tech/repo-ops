@@ -11,6 +11,12 @@ from collections.abc import Iterator
 from functools import cache
 from pathlib import Path
 
+from repo_ops_core.config import (
+    ambient_env,
+    load_global_config,
+    load_repo_config,
+    resolve_setting,
+)
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.holds import (
     HoldRule,
@@ -138,8 +144,22 @@ def _valid_go_get_target(target: str) -> bool:
     return bool(path) and not path.startswith("-")
 
 
-def _go_upgrade_mode() -> str:
-    raw = os.environ.get(GO_UPGRADE_MODE_ENV, "patch")
+def _go_upgrade_mode(ws: Workspace | None = None) -> str:
+    ambient = ambient_env()
+    process_value = os.environ.get(GO_UPGRADE_MODE_ENV)
+    ambient_value = ambient.get(GO_UPGRADE_MODE_ENV) if ambient is not None else None
+    cli_value = process_value if process_value != ambient_value else None
+    raw = resolve_setting(
+        "go_upgrade_mode",
+        cli_value=cli_value,
+        env=ambient or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
+    if raw is None:
+        raw = "patch"
+    if not isinstance(raw, str):
+        raw = str(raw)
     mode = raw.strip().lower()
     if mode in _VALID_GO_UPGRADE_MODES:
         return mode
@@ -643,7 +663,7 @@ def _explicit_go_get_targets(ws: Workspace) -> list[str]:
 
 
 def check_go(ws: Workspace) -> list[Change]:
-    mode = _go_upgrade_mode()
+    mode = _go_upgrade_mode(ws)
     if mode == "mvs":
         dep_changes = _check_go_mvs(ws)
     else:
@@ -753,7 +773,7 @@ def apply_go(ws: Workspace) -> None:
     # 2. Fleet-wide directive/toolchain bumps (opt-in via env vars).
     _apply_fleet_directive(ws)
 
-    mode = _go_upgrade_mode()
+    mode = _go_upgrade_mode(ws)
     if mode == "mvs":
         _apply_go_mvs(ws)
         _enforce_version_ceilings(ws)
