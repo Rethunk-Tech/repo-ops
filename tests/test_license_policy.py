@@ -714,6 +714,62 @@ def test_network_enrichment_overrides_local_for_license_and_sbom(
     assert calls == [url, url]
 
 
+def test_network_only_enrichment_for_license_and_sbom(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/lodash": {
+                        "name": "lodash",
+                        "version": "4.17.21",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    xdg_cache = tmp_path / "cache"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(xdg_cache))
+    url = "https://registry.npmjs.org/lodash/4.17.21"
+    response = MagicMock()
+    response.read.return_value = json.dumps(
+        {"name": "lodash", "version": "4.17.21", "license": "MIT"}
+    ).encode()
+    response.__enter__.return_value = response
+    calls: list[str] = []
+
+    def network_urlopen(request: object, **kwargs: object) -> MagicMock:
+        calls.append(str(getattr(request, "full_url", "")))
+        return response
+
+    monkeypatch.setattr("urllib.request.urlopen", network_urlopen)
+    rc = main(
+        [
+            "--enrich-licenses-network",
+            "--allow",
+            "MIT",
+            "--json",
+            "--compact",
+            str(tmp_path),
+        ]
+    )
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["unknown"] == 0
+    assert calls == [url]
+
+    cache_file = _cache_path(xdg_cache / "repo-ops" / "licenses", url)
+    cache_file.unlink()
+    assert sbom_main(["--enrich-licenses-network", "--compact", str(tmp_path)]) == 0
+    sbom_payload = json.loads(capsys.readouterr().out)
+    assert sbom_payload["components"][0]["licenses"][0]["expression"] == "MIT"
+    assert calls == [url, url]
+
+
 # ---------------------------------------------------------------------------
 # CLI: parser flags
 # ---------------------------------------------------------------------------
