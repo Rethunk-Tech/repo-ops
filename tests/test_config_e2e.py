@@ -195,6 +195,11 @@ def test_fleet_run_resolves_actions_config_per_checkout(
     repo_b = tmp_path / "repo-b"
     for path in (launcher, repo_a, repo_b):
         path.mkdir()
+    (launcher / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nactions_lint_level = "launcher"\n'
+        'actions_policy_level = "launcher"\n',
+        encoding="utf-8",
+    )
     (repo_a / "pyproject.toml").write_text(
         '[tool.repo-ops]\nactions_lint_level = "block"\n'
         'actions_policy_level = "warn"\n',
