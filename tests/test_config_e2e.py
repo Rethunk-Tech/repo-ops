@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 import repo_ops_upgrade.run as run_mod
 from repo_ops_core.config import apply_config_to_env
+from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 
 # ---------------------------------------------------------------------------
 # apply_config_to_env unit tests
@@ -150,6 +151,97 @@ def test_run_upgrade_env_wins_over_config(
     run_mod.run_upgrade(apply=False, argv=["--flat", str(tmp_path)])
     # env var must be preserved, not overwritten by config
     assert captured["go_upgrade_mode"] == "patch"
+
+
+def test_fleet_run_resolves_actions_config_per_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fleet runs use each bundle's action settings instead of the launch config."""
+    launcher = tmp_path / "launcher"
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    for path in (launcher, repo_a, repo_b):
+        path.mkdir()
+    (repo_a / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nactions_lint_level = "block"\n'
+        'actions_policy_level = "warn"\n',
+        encoding="utf-8",
+    )
+    (repo_b / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nactions_lint_level = "off"\n'
+        'actions_policy_level = "report"\n',
+        encoding="utf-8",
+    )
+
+    workspaces = [
+        Workspace(
+            path=repo_a,
+            ecosystem="actions",
+            manager="actions",
+            git_repo=repo_a,
+            label="repo-a",
+        ),
+        Workspace(
+            path=repo_b,
+            ecosystem="actions",
+            manager="actions",
+            git_repo=repo_b,
+            label="repo-b",
+        ),
+    ]
+    bundles = {
+        workspace.git_repo: RepoBundle(
+            git_repo=workspace.git_repo,
+            label=workspace.label,
+            workspaces=[WorkspaceResult(workspace)],
+        )
+        for workspace in workspaces
+    }
+    captured: dict[Path, tuple[object, object]] = {}
+
+    monkeypatch.chdir(launcher)
+    monkeypatch.delenv("REPO_OPS_ACTIONS_LINT_LEVEL", raising=False)
+    monkeypatch.delenv("REPO_OPS_ACTIONS_POLICY_LEVEL", raising=False)
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "discover_all",
+        lambda *args, **kwargs: workspaces,
+    )
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "group_by_repo",
+        lambda found, roots: bundles.copy(),
+    )
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "merge_action_only_bundles",
+        lambda grouped, roots, follow_symlinks=False: grouped,
+    )
+    monkeypatch.setattr(
+        run_mod.orchestration,
+        "process_workspace",
+        lambda workspace_result, **kwargs: workspace_result,
+    )
+
+    def fake_scan(repo_path: Path, **kwargs: object) -> tuple[list, int]:
+        captured[repo_path] = (kwargs["lint_level"], kwargs["policy_level"])
+        return [], 0
+
+    monkeypatch.setattr(run_mod.actions, "scan_actions", fake_scan)
+    monkeypatch.setattr(
+        run_mod.report, "print_json_report", lambda *args, **kwargs: None
+    )
+
+    rc = run_mod.run_upgrade(
+        apply=False,
+        argv=["--flat", "--json", str(repo_a), str(repo_b)],
+    )
+
+    assert rc == 0
+    assert captured == {
+        repo_a: ("block", "warn"),
+        repo_b: ("off", "report"),
+    }
 
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
