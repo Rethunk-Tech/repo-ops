@@ -291,7 +291,10 @@ def _detect_node_manager(ws: Path) -> str | None:
 
 
 def _detect_python_manager(ws: Path, names: set[str]) -> str:
-    """Return the Python manager signaled by *ws*, or ``"unknown"``."""
+    """Return the Python manager signaled by *ws*, or ``"unknown"``.
+
+    ``uv.lock`` takes precedence over hatch metadata.
+    """
     if "uv.lock" in names:
         return "uv"
     if "poetry.lock" in names:
