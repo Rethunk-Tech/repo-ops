@@ -13,6 +13,11 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from repo_ops_lockfiles.license_enrich import (
+    _cache_path,
+    enrich_license,
+    normalize_spdx,
+)
 from repo_ops_lockfiles.license_policy import (
     UNKNOWN_LICENSE,
     PackageLicense,
@@ -24,11 +29,6 @@ from repo_ops_lockfiles.license_policy import (
     scan_deno_licenses,
     scan_go_licenses,
     scan_rust_licenses,
-)
-from repo_ops_lockfiles.license_enrich import (
-    _cache_path,
-    enrich_license,
-    normalize_spdx,
 )
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 import pytest
+from repo_ops_lockfiles.license_enrich import _cache_path
 from repo_ops_lockfiles.license_policy import (
     UNKNOWN_LICENSE,
     PackageLicense,
@@ -22,7 +23,6 @@ from repo_ops_lockfiles.license_policy import (
     scan_python_dep_licenses,
     scan_python_licenses,
 )
-from repo_ops_lockfiles.license_enrich import _cache_path
 
 # ---------------------------------------------------------------------------
 # Unit: _matches_any

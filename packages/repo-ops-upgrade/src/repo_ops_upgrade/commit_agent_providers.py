@@ -6,9 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from repo_ops_models import RepoBundle
-
 from repo_ops_core.config import load_global_config, load_repo_config, resolve_setting
+from repo_ops_models import RepoBundle
 
 COMMIT_AGENT_PROVIDER_ENV = "REPO_OPS_COMMIT_AGENT_PROVIDER"
 DEFAULT_COMMIT_AGENT_PROVIDER = "cursor"
