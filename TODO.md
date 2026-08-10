@@ -22,23 +22,9 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 **Refs:** `docs/usage.md` § Package holds (“Not yet wired…”); `repo_ops_core.holds`; checkers in `packages/repo-ops-container`, `packages/repo-ops-upgrade/src/repo_ops_upgrade/actions.py`, `precommit.py`, `submodules.py`; `packages/repo-ops-rust`, `packages/repo-ops-js/src/repo_ops_js/deno.py`.
 
-**Traps:** Actions/container “versions” are often digests or floating majors (`v4` vs SHA); a semver ceiling must define digest-refresh / unpin behaviour explicitly. Audit `--fix` advisory overrides must continue to win over holds (parity with JS/Python). Go already documents same-major-only ceilings — do not invent cross-major Go holds.
+**Traps:** Actions/container “versions” are often digests or floating majors (`v4` vs SHA); a semver ceiling must define digest-refresh / unpin behaviour explicitly — including interaction with `--precommit-refresh-sha` / `--submodule-refresh-sha` / Actions/container refresh. Audit `--fix` advisory overrides must continue to win over holds (parity with JS/Python). Go already documents same-major-only ceilings — do not invent cross-major Go holds.
 
 **Acceptance:** A hold on an Actions pin, container tag/digest, pre-commit `rev`, or submodule ref caps plan/apply the same way JS/Go/Python do; docs list each ecosystem; expired holds still skip without rewriting config.
-
----
-
-## Round 7 — Verify depth and pin-move parity
-
-### 7.3 Opt-in SHA refresh for pre-commit and submodule pins
-
-Actions/container already have `--actions-refresh-sha` / `--container-refresh-sha`. Pre-commit SHA `rev:` and submodule SHA-only HEADs stay permanent report-only with no move path — same “why didn’t apply move this?” wall operators hit before those flags existed.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/precommit.py` (SHA rev → report-only); `packages/repo-ops-upgrade/src/repo_ops_upgrade/submodules.py` (SHA-only HEAD → report-only); contrast `actions.py` / `repo-ops-container`; `AGENTS.md` full-coverage sweep table.
-
-**Traps:** Refresh must stay digest-within-intent (same hook repo / same submodule URL), not a silent major leap. Compose into the `--full` umbrella once named. Holds (1.2) should define ceiling behaviour before aggressive refresh. Container SHA-without-tag remains a separate harder case — do not pretend a tag-less digest has a refresh target.
-
-**Acceptance:** Opt-in flags (e.g. `--precommit-refresh-sha`, `--submodule-refresh-sha`) advance those pins when resolvable; docs/AGENTS list them beside the existing refresh flags; without the flags, behaviour stays report-only.
 
 ---
 
@@ -56,28 +42,20 @@ Fleet `plan`/`apply` now resolve per checkout: exclusions, Actions lint/policy l
 
 ---
 
-## Round 23 — Wave 23 follow-ons
+## Round 24 — Wave 24 follow-ons
 
-### 23.3 Enrich: explicit `--enrich-licenses` cannot override LOCAL env
+### 24.1 Enrich: network-only flag path untested
 
-When `REPO_OPS_ENRICH_LICENSES_LOCAL=1`, `allow_network` stays false even if `--enrich-licenses` is also passed (local wins). Documented; no CLI force-network override.
+`--enrich-licenses-network` / `REPO_OPS_ENRICH_LICENSES_NETWORK` overrides LOCAL and is covered when both local and network are set. A run with **only** the network flag (no `--enrich-licenses` / `--enrich-licenses-local`) is not asserted end-to-end.
 
-**Refs:** `license_policy.main`; `sbom.main`; `docs/usage.md` enrich bullets.
+**Refs:** `license_policy.main`; `sbom.main`; `tests/test_license_policy.py`.
 
-**Acceptance:** Optional `--enrich-licenses-network` (or equivalent) that forces network despite LOCAL env, with a regression test; or keep local-wins and close this as wontfix once operators confirm.
+**Acceptance:** Regression where network-only enables enrichment with `allow_network=True`.
 
-### 23.4 Deno targeted guard: lockfile-based verification when node_modules absent
+### 24.2 SHA refresh stays within-major under UPDATE_LATEST
 
-`assert_targets_resolved` skips when the resolver returns no `node_modules` map; Deno `npm:` targeted bumps can therefore pass the ghost-bump guard with zero on-disk package verification.
+`--precommit-refresh-sha` / `--submodule-refresh-sha` intentionally stay within the tagged major even when `REPO_OPS_PRECOMMIT_UPDATE_LATEST` / `REPO_OPS_SUBMODULE_UPDATE_LATEST` (or `--latest` / `--full`) is set. No regression proves SHA refresh does not cross major.
 
-**Refs:** `packages/repo-ops-js/src/repo_ops_js/guards.py` (`assert_targets_resolved`); `packages/repo-ops-js/src/repo_ops_js/deno.py` (`targeted_bump_behind`).
+**Refs:** `precommit._resolve_sha_refresh`; `submodules` SHA refresh path; `tests/test_precommit_pins.py`; `tests/test_submodule_tag_advance.py`.
 
-**Acceptance:** Successful Deno targeted bumps verify via lockfile (or equivalent) when `node_modules` is absent; or document the skip as an explicit limitation with a regression that pins the behaviour.
-
-### 23.5 License policy BSD needle case sensitivity
-
-`license_policy._classify_license_text` matches the BSD-3 endorse/promote needle case-sensitively against lowercase text in some paths; ALL-CAPS LICENSE files can miss BSD-3 while `license_enrich.classify_license_text` (normalized path) still distinguishes.
-
-**Refs:** `license_policy._classify_license_text` / `_LICENSE_TEXT_SIGNATURES`; `license_enrich.classify_license_text`.
-
-**Acceptance:** Both classifiers agree on case-variant BSD-2/BSD-3 LICENSE text; regression covers ALL-CAPS endorse clause.
+**Acceptance:** With refresh-sha + UPDATE_LATEST, a newer different-major tag does not become the refresh target; within-major newest still wins.
