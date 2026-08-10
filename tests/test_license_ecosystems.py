@@ -85,6 +85,16 @@ def test_classify_license_text_distinguishes_bsd2_and_bsd3() -> None:
     assert _classify_license_text(bsd3_text) == "BSD-3-Clause"
 
 
+def test_classify_truncated_bsd3_as_bsd2_best_effort() -> None:
+    truncated_bsd3 = (
+        Path(__file__).parent / "fixtures" / "truncated-bsd3.txt"
+    ).read_text(encoding="utf-8")
+
+    assert "endorse or promote products derived" not in truncated_bsd3.lower()
+    assert classify_license_text(truncated_bsd3) == "BSD-2-Clause"
+    assert _classify_license_text(truncated_bsd3) == "BSD-2-Clause"
+
+
 def test_resolve_go_license_reads_cached_module(tmp_path: Path) -> None:
     gomodcache = tmp_path / "gomodcache"
     mod_dir = gomodcache / "github.com/!example/pkg@v1.2.3"
