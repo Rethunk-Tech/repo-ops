@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 import pytest
 from repo_ops_lockfiles.license_enrich import (
     _cache_path,
+    classify_license_text,
     enrich_license,
     normalize_spdx,
 )
@@ -55,6 +56,23 @@ def test_classify_license_text_mit_and_apache() -> None:
     assert _classify_license_text(apache_text) == "Apache-2.0"
 
     assert _classify_license_text("some unrecognisable text") == UNKNOWN_LICENSE
+
+
+def test_classify_license_text_requires_bsd_distinguishing_clause() -> None:
+    shared_bsd_text = (
+        "Redistribution and use in source and binary forms, with or without "
+        "modification..."
+    )
+    assert classify_license_text(shared_bsd_text) is None
+    assert _classify_license_text(shared_bsd_text) == UNKNOWN_LICENSE
+
+    bsd3_text = (
+        "Redistribution and use in source and binary forms, with or without "
+        "modification... may be used to endorse or promote products derived "
+        "from this software without specific prior written permission."
+    )
+    assert classify_license_text(bsd3_text) == "BSD-3-Clause"
+    assert _classify_license_text(bsd3_text) == "BSD-3-Clause"
 
 
 def test_resolve_go_license_reads_cached_module(tmp_path: Path) -> None:

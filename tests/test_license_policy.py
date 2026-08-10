@@ -23,6 +23,7 @@ from repo_ops_lockfiles.license_policy import (
     scan_python_dep_licenses,
     scan_python_licenses,
 )
+from repo_ops_lockfiles.sbom import build_sbom_parser, main as sbom_main
 
 # ---------------------------------------------------------------------------
 # Unit: _matches_any
@@ -575,6 +576,73 @@ def test_license_enrichment_uses_cached_registry_metadata(
     assert payload["summary"]["allowed"] == 1
 
 
+def test_license_local_enrichment_skips_network(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/lodash": {
+                        "name": "lodash",
+                        "version": "4.17.21",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def network_must_not_run(*args: object, **kwargs: object) -> None:
+        raise AssertionError("local enrichment must not use the network")
+
+    monkeypatch.setattr("urllib.request.urlopen", network_must_not_run)
+    rc = main(
+        [
+            "--enrich-licenses-local",
+            "--json",
+            "--compact",
+            "--no-fail-unknown",
+            str(tmp_path),
+        ]
+    )
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["unknown"] == 1
+
+
+def test_sbom_local_enrichment_skips_network(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/lodash": {
+                        "name": "lodash",
+                        "version": "4.17.21",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def network_must_not_run(*args: object, **kwargs: object) -> None:
+        raise AssertionError("local enrichment must not use the network")
+
+    monkeypatch.setattr("urllib.request.urlopen", network_must_not_run)
+    assert sbom_main(["--enrich-licenses-local", "--compact", str(tmp_path)]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["components"][0]["licenses"][0]["expression"] == "NOASSERTION"
+
+
 # ---------------------------------------------------------------------------
 # CLI: parser flags
 # ---------------------------------------------------------------------------
@@ -588,6 +656,18 @@ def test_license_parser_flags() -> None:
     assert args.allow == "MIT,Apache-2.0"
     assert args.deny == "GPL"
     assert args.enrich_licenses is True
+    assert args.enrich_licenses_local is False
+
+
+def test_local_enrichment_parser_flag_and_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    license_args = build_license_parser().parse_args(["--enrich-licenses-local"])
+    assert license_args.enrich_licenses_local is True
+
+    monkeypatch.setenv("REPO_OPS_ENRICH_LICENSES_LOCAL", "1")
+    license_args = build_license_parser().parse_args([])
+    sbom_args = build_sbom_parser().parse_args([])
+    assert license_args.enrich_licenses_local is True
+    assert sbom_args.enrich_licenses_local is True
 
 
 def test_license_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
