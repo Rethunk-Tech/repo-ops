@@ -407,7 +407,7 @@ def enrich_license(
     """Resolve a dependency's license from local metadata or cached registries."""
     cache = cache_dir if cache_dir is not None else default_license_cache_dir()
     ecosystem = ecosystem.lower()
-    if ecosystem == "npm":
+    if ecosystem in {"npm", "deno"}:
         if root is not None:
             local = _npm_local_license(root, name, version)
             if local:

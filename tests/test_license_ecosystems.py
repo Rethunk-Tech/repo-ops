@@ -269,6 +269,16 @@ def test_enrich_license_uses_cached_npm_registry_metadata(
         )
         == "MIT"
     )
+    assert (
+        enrich_license(
+            "lodash",
+            "4.17.21",
+            "deno",
+            cache_dir=cache,
+            allow_network=False,
+        )
+        == "MIT"
+    )
 
 
 def test_enrich_license_reads_python_and_cargo_metadata(

@@ -242,6 +242,8 @@ licenses are `NOASSERTION` unless enrichment is enabled.
   license ids; container images stay unenriched.
 - `--enrich-licenses-local` — same enrichment from local metadata and XDG
   cache only (`REPO_OPS_ENRICH_LICENSES_LOCAL=1`); no registry network.
+  When both enrichment flags (or both environment variables) are set, local
+  mode wins (no network).
   Implies enrichment is on. Ambiguous BSD-family LICENSE text stays unknown
   rather than guessing `BSD-2-Clause`; `BSD-3-Clause` requires the
   endorse/promote clause.
@@ -261,7 +263,9 @@ policy violations (read-only). Offline by default.
   `REPO_OPS_ENRICH_LICENSES`); can reduce UNKNOWN for npm/PyPI/crates when
   metadata or cache hits exist.
 - `--enrich-licenses-local` — local/cache-only enrichment (env twin
-  `REPO_OPS_ENRICH_LICENSES_LOCAL`); same BSD ambiguity rule as `sbom`.
+  `REPO_OPS_ENRICH_LICENSES_LOCAL`); when both enrichment flags (or both
+  environment variables) are set, local mode wins (no network); same BSD
+  ambiguity rule as `sbom`.
 - `--json` — emit JSON instead of human-readable output (`--compact` for
   single-line).
 
