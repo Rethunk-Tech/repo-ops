@@ -474,6 +474,20 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
 ]
 
 
+_ambient_env: Mapping[str, str] | None = None
+
+
+def set_ambient_env(env: Mapping[str, str] | None) -> None:
+    """Set the caller-provided environment snapshot for config resolution."""
+    global _ambient_env
+    _ambient_env = dict(env) if env is not None else None
+
+
+def ambient_env() -> Mapping[str, str] | None:
+    """Return the caller-provided environment snapshot, when configured."""
+    return _ambient_env
+
+
 def apply_config_to_env(
     *,
     global_cfg: dict[str, Any] | None = None,

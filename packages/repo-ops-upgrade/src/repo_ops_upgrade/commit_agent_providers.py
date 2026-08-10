@@ -6,7 +6,13 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from repo_ops_core.config import load_global_config, load_repo_config, resolve_setting
+from repo_ops_core.config import (
+    ambient_env as _config_ambient_env,
+    load_global_config,
+    load_repo_config,
+    resolve_setting,
+    set_ambient_env as _config_set_ambient_env,
+)
 from repo_ops_models import RepoBundle
 
 COMMIT_AGENT_PROVIDER_ENV = "REPO_OPS_COMMIT_AGENT_PROVIDER"
@@ -34,18 +40,16 @@ _ProviderFactory = Callable[[], CommitAgentProvider]
 
 _FACTORIES: dict[str, _ProviderFactory] = {}
 _builtins_registered = False
-_ambient_env: Mapping[str, str] | None = None
 
 
 def set_ambient_env(env: Mapping[str, str] | None) -> None:
     """Set the caller-provided environment snapshot for config resolution."""
-    global _ambient_env
-    _ambient_env = dict(env) if env is not None else None
+    _config_set_ambient_env(env)
 
 
 def ambient_env() -> Mapping[str, str] | None:
     """Return the caller-provided environment snapshot, when configured."""
-    return _ambient_env
+    return _config_ambient_env()
 
 
 def register_commit_agent_provider(name: str, factory: _ProviderFactory) -> None:
