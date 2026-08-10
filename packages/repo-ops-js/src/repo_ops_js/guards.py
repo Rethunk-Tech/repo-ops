@@ -16,6 +16,7 @@ requested target is still behind, so ``apply_workspace`` marks the workspace
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
@@ -85,6 +86,8 @@ def _semver_lt_pre(installed: str, target: str) -> bool:
 def unresolved_targets(
     ws: Workspace,
     requested: list[Change],
+    *,
+    fallback_resolver: Callable[[Workspace, str], str | None] | None = None,
 ) -> list[tuple[Change, str]]:
     """Return the subset of ``requested`` still behind their target, unraised.
 
@@ -105,6 +108,8 @@ def unresolved_targets(
         resolved = resolved_version_from_node_modules(ws.path, ch.name)
         if resolved is None and ws.git_repo and ws.git_repo != ws.path:
             resolved = resolved_version_from_node_modules(ws.git_repo, ch.name)
+        if resolved is None and fallback_resolver is not None:
+            resolved = fallback_resolver(ws, ch.name)
         if resolved is None:
             continue
         # ``<`` not ``!=``: a legitimate higher in-range resolution is a
@@ -120,6 +125,8 @@ def assert_targets_resolved(
     ws: Workspace,
     requested: list[Change],
     manager: str = "js",
+    *,
+    fallback_resolver: Callable[[Workspace, str], str | None] | None = None,
 ) -> None:
     """Guard against #112 ghost bumps.
 
@@ -136,14 +143,20 @@ def assert_targets_resolved(
     never happened.
 
     Resolution is read from ``node_modules`` (the workspace dir, then the
-    repo root for a hoisted/workspace layout).  When the version can't be
-    read at all, we don't manufacture a failure — a layout we can't see is
-    left to the existing ``overrides_audit`` warnings.
+    repo root for a hoisted/workspace layout).  Deno callers may provide a
+    lockfile fallback resolver for npm specifiers because Deno does not
+    populate ``node_modules``.  When the version can't be read at all, we
+    don't manufacture a failure — a layout we can't see is left to the
+    existing ``overrides_audit`` warnings.
 
     Pre-release note: an installed ``X.Y.Z-rc.1`` does NOT satisfy a stable
     target ``X.Y.Z`` — it is still behind the stable release (semver §11.3).
     """
-    blocked = unresolved_targets(ws, requested)
+    blocked = unresolved_targets(
+        ws,
+        requested,
+        fallback_resolver=fallback_resolver if manager == "deno" else None,
+    )
     if blocked:
         detail = "; ".join(
             f"{ch.name} still at {resolved}, expected >= {(ch.to or '').strip()} (check overrides/resolutions/pins)"

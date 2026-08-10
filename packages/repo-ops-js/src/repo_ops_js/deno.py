@@ -193,7 +193,12 @@ def targeted_bump_behind(
             if moved_up:
                 resolved_change = Change(change.name, change.from_ver, landed)
                 try:
-                    assert_targets_resolved(ws, [resolved_change], manager="deno")
+                    assert_targets_resolved(
+                        ws,
+                        [resolved_change],
+                        manager="deno",
+                        fallback_resolver=_landed_deno_version,
+                    )
                 except RuntimeError:
                     restore_workspace_snapshot(ws.path, snapshot, "deno")
                     still_behind.append(change)
@@ -239,8 +244,11 @@ def apply_deno(ws: Workspace) -> list[Change]:
         if (ch.to or "").strip() not in ("", "?", "latest") and (ch.name or "").strip()
     ]
     if guardable:
-        # Deno may not populate node_modules; assert_targets_resolved skips when
-        # the resolver returns None, so this is best-effort for npm: specifiers.
-        assert_targets_resolved(ws, guardable, manager="deno")
+        assert_targets_resolved(
+            ws,
+            guardable,
+            manager="deno",
+            fallback_resolver=_landed_deno_version,
+        )
     _, behind = targeted_bump_behind(ws, behind)
     return behind
