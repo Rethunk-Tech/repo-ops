@@ -73,6 +73,25 @@ def test_check_precommit_filters_sha_refresh_above_ceiling(
     ):
         assert precommit.check_precommit(ws) == []
 
+def test_apply_precommit_skips_tag_rev_above_ceiling(tmp_path, monkeypatch) -> None:
+    config = _precommit_config(tmp_path)
+    ws = _ws(tmp_path)
+    original = config.read_bytes()
+    monkeypatch.delenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", raising=False)
+
+    with (
+        patch.object(precommit, "_global_holds_cached", return_value=(_held_rule(),)),
+        patch.object(precommit, "_repo_holds_cached", return_value=()),
+        patch.object(
+            precommit,
+            "_fetch_tags_for_repo",
+            return_value=["v1.0.0", "v1.5.0"],
+        ),
+    ):
+        precommit.apply_precommit(ws)
+
+    assert config.read_bytes() == original
+
 def test_apply_precommit_filters_sha_refresh_above_ceiling(
     tmp_path, monkeypatch
 ) -> None:
