@@ -235,6 +235,16 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
         "precommit_update_latest",
         None,
     ),
+    "precommit_refresh_sha": (
+        "REPO_OPS_PRECOMMIT_REFRESH_SHA",
+        "precommit_refresh_sha",
+        None,
+    ),
+    "submodule_refresh_sha": (
+        "REPO_OPS_SUBMODULE_REFRESH_SHA",
+        "submodule_refresh_sha",
+        None,
+    ),
     # Container ecosystem: refresh image digest for SHA-pinned references.
     "container_refresh_sha": (
         "REPO_OPS_CONTAINER_REFRESH_SHA",
@@ -417,6 +427,20 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
         "(none)",
         "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
         "precommit_update_latest",
+        "0",
+    ),
+    (
+        "precommit_refresh_sha",
+        "--precommit-refresh-sha",
+        "REPO_OPS_PRECOMMIT_REFRESH_SHA",
+        "precommit_refresh_sha",
+        "0",
+    ),
+    (
+        "submodule_refresh_sha",
+        "--submodule-refresh-sha",
+        "REPO_OPS_SUBMODULE_REFRESH_SHA",
+        "submodule_refresh_sha",
         "0",
     ),
     (

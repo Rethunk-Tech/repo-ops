@@ -399,7 +399,8 @@ def add_upgrade_common_arguments(
         action="store_true",
         help=(
             "Full-coverage sweep umbrella: enable --latest, "
-            "--actions-refresh-sha, --container-refresh-sha, and all five "
+            "--actions-refresh-sha, --container-refresh-sha, "
+            "--precommit-refresh-sha, --submodule-refresh-sha, and all five "
             "JS/Deno targeted-bump flags (Yarn, npm, pnpm, bun, and Deno). "
             "Opt in explicitly; per-ecosystem policy flags still override it."
         ),
@@ -535,6 +536,34 @@ def add_upgrade_common_arguments(
             "re-pins to the newest major's digest and updates the # vN comment "
             "(supersedes Dependabot's cross-major SHA-pin PRs, e.g. v6→v7). "
             "No effect with --actions-unpin-sha."
+        ),
+    )
+    pol.add_argument(
+        "--precommit-refresh-sha",
+        action=_StoreTrueSetEnv,
+        const="REPO_OPS_PRECOMMIT_REFRESH_SHA",
+        default=False,
+        dest="precommit_refresh_sha",
+        nargs=0,
+        help=(
+            "Refresh SHA-pinned pre-commit hook revisions to the newest "
+            "resolvable release within the pin's current tagged major "
+            "(sets REPO_OPS_PRECOMMIT_REFRESH_SHA). Without this flag, SHA "
+            "pins remain report-only."
+        ),
+    )
+    pol.add_argument(
+        "--submodule-refresh-sha",
+        action=_StoreTrueSetEnv,
+        const="REPO_OPS_SUBMODULE_REFRESH_SHA",
+        default=False,
+        dest="submodule_refresh_sha",
+        nargs=0,
+        help=(
+            "Refresh SHA-only submodule pointers to the newest resolvable "
+            "release within the pin's current tagged major "
+            "(sets REPO_OPS_SUBMODULE_REFRESH_SHA). Without this flag, SHA "
+            "pins remain report-only."
         ),
     )
     pol.add_argument(

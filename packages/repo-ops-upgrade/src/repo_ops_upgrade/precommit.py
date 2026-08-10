@@ -58,6 +58,9 @@ _REPORT_ONLY_PREFIX = "[report-only] "
 # Env-opt-in for cross-major bumps (mirrors REPO_OPS_CONTAINER_UPDATE_LATEST)
 _UPDATE_LATEST_ENV = "REPO_OPS_PRECOMMIT_UPDATE_LATEST"
 
+# Env-opt-in for refreshing SHA-pinned hooks within their tagged major.
+_REFRESH_SHA_ENV = "REPO_OPS_PRECOMMIT_REFRESH_SHA"
+
 # Timeout for git ls-remote (seconds); kept modest since it's per unique repo.
 _LS_REMOTE_TIMEOUT = 30
 
@@ -243,10 +246,11 @@ def _resolve_latest_precommit_rev(
 # Tag fetching (git ls-remote)
 # ---------------------------------------------------------------------------
 
-# In-process cache so repeated checks for the same hook repo cost only one RTT.
+# In-process caches so repeated checks for the same hook repo cost only one RTT.
 # _TAG_CACHE_LOCK serialises all reads and writes so concurrent ThreadPoolExecutor
 # workers for the same URL each pay the subprocess cost at most once (Bug 2 fix).
 _TAG_CACHE: dict[str, list[str] | None] = {}
+_TAG_REF_CACHE: dict[str, list[tuple[str, str]] | None] = {}
 _TAG_CACHE_LOCK = threading.Lock()
 
 
@@ -263,6 +267,25 @@ def _fetch_tags_for_repo(
         if repo_url in _TAG_CACHE:
             return _TAG_CACHE[repo_url]
 
+    refs = _fetch_tag_refs_for_repo(repo_url, timeout=timeout)
+    tags = None if refs is None else [tag for _, tag in refs]
+    with _TAG_CACHE_LOCK:
+        _TAG_CACHE[repo_url] = tags
+    return tags
+
+
+def _fetch_tag_refs_for_repo(
+    repo_url: str, *, timeout: int = _LS_REMOTE_TIMEOUT
+) -> list[tuple[str, str]] | None:
+    """Return ``(commit_sha, tag)`` pairs for *repo_url*.
+
+    The tag names-only cache is sufficient for semver revs, but SHA refresh
+    needs the commit associated with each tag to preserve the pin format.
+    """
+    with _TAG_CACHE_LOCK:
+        if repo_url in _TAG_REF_CACHE:
+            return _TAG_REF_CACHE[repo_url]
+
         try:
             proc = subprocess.run(
                 ["git", "ls-remote", "--tags", "--refs", repo_url],
@@ -271,30 +294,89 @@ def _fetch_tags_for_repo(
                 timeout=timeout,
             )
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            _TAG_REF_CACHE[repo_url] = None
             _TAG_CACHE[repo_url] = None
             return None
 
         if proc.returncode != 0:
+            _TAG_REF_CACHE[repo_url] = None
             _TAG_CACHE[repo_url] = None
             return None
 
-        tags: list[str] = []
+        refs: list[tuple[str, str]] = []
         for line in proc.stdout.splitlines():
             # Format: "<sha>\trefs/tags/<tag>"
             parts = line.split("\t", 1)
             if len(parts) == 2 and parts[1].startswith("refs/tags/"):
+                sha = parts[0].strip()
                 tag = parts[1][len("refs/tags/") :]
-                if tag:
-                    tags.append(tag)
+                if sha and tag:
+                    refs.append((sha, tag))
 
-        _TAG_CACHE[repo_url] = tags
-        return tags
+        _TAG_REF_CACHE[repo_url] = refs
+        _TAG_CACHE[repo_url] = [tag for _, tag in refs]
+        return refs
 
 
 def _clear_tag_cache() -> None:
     """Clear the in-process tag cache (used in tests)."""
     with _TAG_CACHE_LOCK:
         _TAG_CACHE.clear()
+        _TAG_REF_CACHE.clear()
+
+
+def _resolve_sha_refresh(
+    current_sha: str, refs: list[tuple[str, str]]
+) -> tuple[str, str, str] | None:
+    """Resolve a SHA pin to the newest digest within its tagged major.
+
+    The tags attached to the pinned commit establish the hook's version intent.
+    The target keeps that tag's prefix style and major, even when
+    ``REPO_OPS_PRECOMMIT_UPDATE_LATEST`` is enabled.
+    """
+    normalized = current_sha.lower()
+    matching_tags: list[tuple[tuple[int, ...], str, str]] = []
+    for tag_sha, tag in refs:
+        candidate_sha = tag_sha.lower()
+        if not (
+            candidate_sha == normalized
+            or (len(normalized) < 40 and candidate_sha.startswith(normalized))
+        ):
+            continue
+        if not _is_semver_like(tag):
+            continue
+        try:
+            tag_version = semver_tuple(tag.lstrip("v"))
+        except Exception:
+            continue
+        matching_tags.append((tag_version, tag, tag_sha))
+
+    if not matching_tags:
+        return None
+
+    _, current_tag, _ = max(matching_tags, key=lambda item: (item[0], item[1]))
+    current_version = semver_tuple(current_tag.lstrip("v"))
+    want_v = _has_v_prefix(current_tag)
+    candidates: list[tuple[tuple[int, ...], str, str]] = []
+    for tag_sha, tag in refs:
+        if not _is_semver_like(tag) or _has_v_prefix(tag) != want_v:
+            continue
+        try:
+            tag_version = semver_tuple(tag.lstrip("v"))
+        except Exception:
+            continue
+        if tag_version and tag_version[0] == current_version[0]:
+            candidates.append((tag_version, tag, tag_sha))
+
+    if not candidates:
+        return None
+    _, latest_tag, latest_sha = max(candidates, key=lambda item: (item[0], item[1]))
+    latest_sha_lower = latest_sha.lower()
+    if latest_sha_lower == normalized or (
+        len(normalized) < 40 and latest_sha_lower.startswith(normalized)
+    ):
+        return None
+    return latest_sha, current_tag, latest_tag
 
 
 # ---------------------------------------------------------------------------
@@ -311,8 +393,11 @@ def check_precommit(ws: Workspace) -> list[Change]:
 
     Environment variables:
     - ``REPO_OPS_PRECOMMIT_UPDATE_LATEST=1``: allow cross-major bumps.
+    - ``REPO_OPS_PRECOMMIT_REFRESH_SHA=1``: refresh SHA pins within their
+      resolved tagged major.
     """
     allow_cross_major = os.environ.get(_UPDATE_LATEST_ENV, "") == "1"
+    refresh_sha = os.environ.get(_REFRESH_SHA_ENV, "") == "1"
     cfg_path = _find_precommit_config(ws.path)
     if cfg_path is None:
         return []
@@ -335,13 +420,20 @@ def check_precommit(ws: Workspace) -> list[Change]:
             continue
         seen_repos.add(repo_url)
 
-        # SHA-pinned: report-only (cannot auto-update without knowing the tag)
+        # SHA-pinned: report-only unless the tag history can establish intent.
         if _is_sha_rev(rev):
+            if refresh_sha:
+                refs = _fetch_tag_refs_for_repo(repo_url)
+                resolved = _resolve_sha_refresh(rev, refs or [])
+                if resolved is not None:
+                    latest_sha, _current_tag, _latest_tag = resolved
+                    changes.append(Change(name=label, from_ver=rev, to=latest_sha))
+                    continue
             changes.append(
                 Change(
                     name=label,
                     from_ver=rev,
-                    to=f"{_REPORT_ONLY_PREFIX}SHA pin; consider switching to a tag",
+                    to=(f"{_REPORT_ONLY_PREFIX}SHA pin; consider switching to a tag"),
                 )
             )
             continue
@@ -426,6 +518,7 @@ def apply_precommit(ws: Workspace) -> None:
     # Tag cache is already warm from check_precommit above, so these calls are
     # instant cache hits.
     allow_cross_major = os.environ.get(_UPDATE_LATEST_ENV, "") == "1"
+    refresh_sha = os.environ.get(_REFRESH_SHA_ENV, "") == "1"
     repos = _parse_precommit_repos(text)
 
     line_bumps: dict[int, str] = {}  # 1-indexed rev_line_no → target rev
@@ -434,7 +527,16 @@ def apply_precommit(ws: Workspace) -> None:
         from_ver: str = entry["rev"]
         rev_line_no: int = entry["rev_line_no"]
 
-        if _is_sha_rev(from_ver) or not _is_semver_like(from_ver):
+        if _is_sha_rev(from_ver):
+            if refresh_sha:
+                refs = _fetch_tag_refs_for_repo(repo_url)
+                resolved = _resolve_sha_refresh(from_ver, refs or [])
+                if resolved is not None:
+                    new_sha, _current_tag, _latest_tag = resolved
+                    line_bumps[rev_line_no] = new_sha
+            continue
+
+        if not _is_semver_like(from_ver):
             continue
 
         tags = _fetch_tags_for_repo(repo_url)

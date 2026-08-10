@@ -15,11 +15,13 @@ No real subprocesses or network calls are made.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from repo_ops_core.cli import build_upgrade_parser
 from repo_ops_models import Workspace
 from repo_ops_upgrade.precommit import (
     _clear_tag_cache,
@@ -110,6 +112,15 @@ def _fake_ls_remote(tags: list[str]):
     """Return a side-effect for subprocess.run that simulates git ls-remote."""
     fake_sha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
     stdout = "\n".join(f"{fake_sha}\trefs/tags/{t}" for t in tags) + "\n"
+    proc = MagicMock(spec=subprocess.CompletedProcess)
+    proc.returncode = 0
+    proc.stdout = stdout
+    return proc
+
+
+def _fake_ls_remote_refs(refs: list[tuple[str, str]]):
+    """Return a fake ``git ls-remote`` result with tag commit SHAs."""
+    stdout = "\n".join(f"{sha}\trefs/tags/{tag}" for sha, tag in refs) + "\n"
     proc = MagicMock(spec=subprocess.CompletedProcess)
     proc.returncode = 0
     proc.stdout = stdout
@@ -358,6 +369,30 @@ def test_check_precommit_sha_pin_report_only(tmp_path: Path) -> None:
     assert "SHA pin" in changes[0].to
 
 
+def test_check_precommit_sha_pin_refreshes_with_opt_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "1")
+    current_sha = "a" * 40
+    latest_sha = "b" * 40
+    (tmp_path / ".pre-commit-config.yaml").write_text(
+        f"repos:\n- repo: https://github.com/org/tool\n  rev: {current_sha}\n  hooks:\n  - id: x\n"
+    )
+    proc = _fake_ls_remote_refs(
+        [
+            (current_sha, "v1.0.0"),
+            (latest_sha, "v1.1.0"),
+            ("c" * 40, "v2.0.0"),
+        ]
+    )
+    with patch("subprocess.run", return_value=proc):
+        changes = check_precommit(_make_ws(tmp_path))
+    assert len(changes) == 1
+    assert changes[0].from_ver == current_sha
+    assert changes[0].to == latest_sha
+    assert "[report-only]" not in changes[0].to
+
+
 def test_check_precommit_non_semver_rev_report_only(tmp_path: Path) -> None:
     (tmp_path / ".pre-commit-config.yaml").write_text(
         "repos:\n- repo: https://github.com/org/tool\n  rev: main\n  hooks:\n  - id: x\n"
@@ -404,6 +439,14 @@ def test_check_precommit_cross_major_opt_in(
         changes = check_precommit(_make_ws(tmp_path))
     assert len(changes) == 1
     assert changes[0].to == "v2.0.0"
+
+
+def test_precommit_refresh_sha_cli_sets_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", raising=False)
+    parser = build_upgrade_parser(apply=False)
+    args = parser.parse_args(["--precommit-refresh-sha"])
+    assert args.precommit_refresh_sha is True
+    assert os.environ["REPO_OPS_PRECOMMIT_REFRESH_SHA"] == "1"
 
 
 def test_check_precommit_deduplicates_same_repo(tmp_path: Path) -> None:
@@ -522,6 +565,31 @@ def test_apply_precommit_sha_pin_not_modified(tmp_path: Path) -> None:
 
     mock_run.assert_not_called()
     assert cfg.read_text(encoding="utf-8") == original
+
+
+def test_apply_precommit_refreshes_sha_pin_with_opt_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "1")
+    current_sha = "a" * 40
+    latest_sha = "b" * 40
+    original = (
+        "repos:\n"
+        "- repo: https://github.com/org/tool\n"
+        f"  rev: {current_sha}\n"
+        "  hooks:\n"
+        "  - id: x\n"
+    )
+    cfg = tmp_path / ".pre-commit-config.yaml"
+    cfg.write_text(original, encoding="utf-8")
+    proc = _fake_ls_remote_refs(
+        [(current_sha, "v1.0.0"), (latest_sha, "v1.1.0"), ("c" * 40, "v2.0.0")]
+    )
+    with patch("subprocess.run", return_value=proc):
+        apply_precommit(_make_ws(tmp_path))
+    result = cfg.read_text(encoding="utf-8")
+    assert f"rev: {latest_sha}" in result
+    assert f"rev: {current_sha}" not in result
 
 
 # ---------------------------------------------------------------------------
