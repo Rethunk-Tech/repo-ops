@@ -150,30 +150,30 @@ def _run_upgrade_body(
     # Opt-in per-package targeted fallback (#111); only meaningful with --latest,
     # which is what produces the behind_latest work-list it consumes. All five
     # managers' flags must populate their env var or the CLI flag is a no-op (#131).
-    if full_sweep or getattr(args, "yarn_targeted_bump", False):
+    if full_sweep or bool(getattr(args, "yarn_targeted_bump", False)):
         os.environ["REPO_OPS_YARN_TARGETED_BUMP"] = "1"
-    if full_sweep or getattr(args, "npm_targeted_bump", False):
+    if full_sweep or bool(getattr(args, "npm_targeted_bump", False)):
         os.environ["REPO_OPS_NPM_TARGETED_BUMP"] = "1"
-    if full_sweep or getattr(args, "pnpm_targeted_bump", False):
+    if full_sweep or bool(getattr(args, "pnpm_targeted_bump", False)):
         os.environ["REPO_OPS_PNPM_TARGETED_BUMP"] = "1"
-    if full_sweep or getattr(args, "bun_targeted_bump", False):
+    if full_sweep or bool(getattr(args, "bun_targeted_bump", False)):
         os.environ["REPO_OPS_BUN_TARGETED_BUMP"] = "1"
-    if full_sweep or getattr(args, "deno_targeted_bump", False):
+    if full_sweep or bool(getattr(args, "deno_targeted_bump", False)):
         os.environ["REPO_OPS_DENO_TARGETED_BUMP"] = "1"
     if full_sweep:
         os.environ["REPO_OPS_CONTAINER_REFRESH_SHA"] = "1"
     # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects (#132).
-    if getattr(args, "migrate_to_uv_lock", False):
+    if bool(getattr(args, "migrate_to_uv_lock", False)):
         os.environ["REPO_OPS_HATCH_MIGRATE_UV_LOCK"] = "1"
     # --yarn-jobs: cap concurrent yarn isolated-copy extractions to avoid /tmp ENOSPC.
     yarn_jobs = getattr(args, "yarn_jobs", None)
     if yarn_jobs is not None:
         os.environ["REPO_OPS_YARN_MAX_CONCURRENCY"] = str(yarn_jobs)
     # --commit-umbrella: opt in to post-commit umbrella pointer bumps (#125).
-    if getattr(args, "commit_umbrella", False):
+    if bool(getattr(args, "commit_umbrella", False)):
         os.environ["REPO_OPS_COMMIT_UMBRELLA"] = "1"
     # --actions-org-policy: enable org policy enforcement in scan_actions (#125).
-    if getattr(args, "actions_org_policy", False):
+    if bool(getattr(args, "actions_org_policy", False)):
         os.environ["REPO_OPS_ACTIONS_ORG_POLICY"] = "1"
     policy_level = getattr(args, "actions_policy_level", None)
     if policy_level:
