@@ -6,6 +6,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from repo_ops_js.deno import apply_deno, check_deno
 from repo_ops_models import Workspace
 
@@ -256,23 +258,51 @@ def test_apply_deno_raises_when_deno_absent(tmp_path: Path) -> None:
 
 
 def test_apply_deno_calls_ghost_bump_guard(tmp_path: Path) -> None:
-    """apply_deno verifies planned targets after update (F207)."""
-    guard_calls: list[list] = []
+    """apply_deno verifies planned targets from the Deno lockfile."""
 
     def fake_run(cmd, cwd, timeout=None):
         if cmd == ["deno", "outdated"]:
             return subprocess.CompletedProcess(cmd, 0, stdout=_BOX_OUTPUT, stderr="")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    def fake_guard(ws, requested, manager="js", fallback_resolver=None):
-        guard_calls.append([c.name for c in requested])
+    with (
+        patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
+        patch("repo_ops_js.deno.run", side_effect=fake_run),
+        patch(
+            "repo_ops_js.deno.versions_deno_lock",
+            return_value={
+                "jsr:@std/assert@0.226.0",
+                "npm:chalk@5.3.0",
+            },
+        ),
+        patch(
+            "repo_ops_js.guards.resolved_version_from_node_modules", return_value=None
+        ),
+    ):
+        apply_deno(_ws(tmp_path))
+
+
+def test_apply_deno_rejects_lockfile_ghost_bump(tmp_path: Path) -> None:
+    """apply_deno fails when the lockfile remains below a planned target."""
+
+    def fake_run(cmd, cwd, timeout=None):
+        if cmd == ["deno", "outdated"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout=_BOX_OUTPUT, stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
         patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
         patch("repo_ops_js.deno.run", side_effect=fake_run),
-        patch("repo_ops_js.deno.assert_targets_resolved", fake_guard),
+        patch(
+            "repo_ops_js.deno.versions_deno_lock",
+            return_value={
+                "jsr:@std/assert@0.225.0",
+                "npm:chalk@5.2.1",
+            },
+        ),
+        patch(
+            "repo_ops_js.guards.resolved_version_from_node_modules", return_value=None
+        ),
     ):
-        apply_deno(_ws(tmp_path))
-
-    assert guard_calls
-    assert "jsr:@std/assert" in guard_calls[0]
+        with pytest.raises(RuntimeError, match="ghost bump"):
+            apply_deno(_ws(tmp_path))
