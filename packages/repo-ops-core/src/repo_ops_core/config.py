@@ -24,8 +24,8 @@ from __future__ import annotations
 
 import os
 import warnings
-from pathlib import Path
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, cast
 
 from repo_ops_core.constants import (
