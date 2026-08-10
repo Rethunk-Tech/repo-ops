@@ -563,6 +563,8 @@ scope:
   registry metadata cached under XDG_CACHE_HOME.
   --enrich-licenses-local reads local metadata and cached registry metadata
   without network access.
+  --enrich-licenses-network forces registry network access, even when local
+  enrichment is also enabled.
 """
 
 
@@ -621,6 +623,15 @@ def build_sbom_parser() -> argparse.ArgumentParser:
             "without network access."
         ),
     )
+    parser.add_argument(
+        "--enrich-licenses-network",
+        action="store_true",
+        default=_env_flag("REPO_OPS_ENRICH_LICENSES_NETWORK"),
+        help=(
+            "Force registry network enrichment, even when local enrichment "
+            "is also enabled."
+        ),
+    )
     add_verbose_argument(parser)
     return parser
 
@@ -639,8 +650,14 @@ def main(argv: list[str] | None = None) -> int:
     for root_str in roots:
         for comp in collect_components(
             Path(root_str),
-            enrich_licenses=args.enrich_licenses or args.enrich_licenses_local,
-            allow_network=not args.enrich_licenses_local,
+            enrich_licenses=(
+                args.enrich_licenses
+                or args.enrich_licenses_local
+                or args.enrich_licenses_network
+            ),
+            allow_network=(
+                args.enrich_licenses_network or not args.enrich_licenses_local
+            ),
         ):
             if comp["purl"] not in purl_seen:
                 purl_seen.add(comp["purl"])

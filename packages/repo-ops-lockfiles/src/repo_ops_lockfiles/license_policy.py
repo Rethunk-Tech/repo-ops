@@ -942,6 +942,8 @@ scope (best-effort):
   --enrich-licenses optionally resolves UNKNOWN npm/PyPI/crates entries from
   local metadata and registry metadata cached under XDG_CACHE_HOME.
   --enrich-licenses-local performs the same resolution without network access.
+  --enrich-licenses-network forces registry network access, even when local
+  enrichment is also enabled.
 
 allow/deny list format:
   SPDX identifiers, comma-separated, case-insensitive.
@@ -1005,6 +1007,15 @@ def build_license_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--enrich-licenses-network",
+        action="store_true",
+        default=_env_flag("REPO_OPS_ENRICH_LICENSES_NETWORK"),
+        help=(
+            "Force registry network enrichment, even when local enrichment "
+            "is also enabled."
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         dest="json_out",
@@ -1045,7 +1056,11 @@ def main(argv: list[str] | None = None) -> int:
         root_packages.extend(scan_go_licenses(root))
         root_packages.extend(scan_rust_licenses(root))
         root_packages.extend(scan_deno_licenses(root))
-        if args.enrich_licenses or args.enrich_licenses_local:
+        if (
+            args.enrich_licenses
+            or args.enrich_licenses_local
+            or args.enrich_licenses_network
+        ):
             for package in root_packages:
                 if package.license_id != UNKNOWN_LICENSE:
                     continue
@@ -1054,7 +1069,9 @@ def main(argv: list[str] | None = None) -> int:
                     package.version,
                     package.ecosystem,
                     root,
-                    allow_network=not args.enrich_licenses_local,
+                    allow_network=(
+                        args.enrich_licenses_network or not args.enrich_licenses_local
+                    ),
                 )
                 if license_id:
                     package.license_id = license_id
