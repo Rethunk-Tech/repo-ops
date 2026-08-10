@@ -264,8 +264,10 @@ policy violations (read-only). Offline by default.
   metadata or cache hits exist.
 - `--enrich-licenses-local` — local/cache-only enrichment (env twin
   `REPO_OPS_ENRICH_LICENSES_LOCAL`); when both enrichment flags (or both
-  environment variables) are set, local mode wins (no network); same BSD
-  classification rule as `sbom`.
+  environment variables) are set, local mode wins (no network). BSD text
+  classification is best-effort: `BSD-3-Clause` requires the endorse/promote
+  clause; truncated BSD-3 text missing that clause is indistinguishable from
+  `BSD-2-Clause` and classifies as `BSD-2-Clause`.
 - `--json` — emit JSON instead of human-readable output (`--compact` for
   single-line).
 
