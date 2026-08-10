@@ -190,7 +190,14 @@ def targeted_bump_behind(
                 else landed_tuple > from_tuple
             )
             if moved_up:
-                applied.append(Change(change.name, change.from_ver, landed))
+                resolved_change = Change(change.name, change.from_ver, landed)
+                try:
+                    assert_targets_resolved(ws, [resolved_change], manager="deno")
+                except RuntimeError:
+                    restore_workspace_snapshot(ws.path, snapshot, "deno")
+                    still_behind.append(change)
+                else:
+                    applied.append(resolved_change)
                 continue
             restore_workspace_snapshot(ws.path, snapshot, "deno")
             still_behind.append(change)
