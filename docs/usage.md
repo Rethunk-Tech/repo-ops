@@ -338,8 +338,8 @@ Config files (TOML):
 
 Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
 
-For multi-root `plan` and `apply` runs, repository exclusions and Actions
-lint/policy levels are resolved from each checkout's config; the launch
+For multi-root `plan` and `apply` runs, repository exclusions, Actions
+lint/policy levels, and Go upgrade mode are resolved from each checkout's config; the launch
 checkout's config is not inherited by the rest of the fleet. CLI flags and
 caller-provided environment variables retain precedence. Other config keys
 remain invocation/global-scoped for now.
