@@ -180,7 +180,8 @@ def targeted_bump_behind(
         if advanced:
             landed = _landed_deno_version(ws, change.name)
             if landed is None:
-                applied.append(change)
+                restore_workspace_snapshot(ws.path, snapshot, "deno")
+                still_behind.append(change)
                 continue
             landed_tuple = _parseable_semver_tuple(landed)
             from_tuple = _parseable_semver_tuple(change.from_ver)
