@@ -10,10 +10,10 @@ import sys
 from pathlib import Path
 
 import pytest
-from repo_ops_core.config import apply_config_to_env, resolve_setting
-from repo_ops_upgrade import commit_agent_cursor, commit_agent_providers
 import repo_ops_upgrade.run as run_mod
+from repo_ops_core.config import apply_config_to_env, resolve_setting
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
+from repo_ops_upgrade import commit_agent_cursor, commit_agent_providers
 
 # ---------------------------------------------------------------------------
 # apply_config_to_env unit tests
