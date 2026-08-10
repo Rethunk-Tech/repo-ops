@@ -54,6 +54,7 @@ def test_check_precommit_filters_tag_rev_above_ceiling(tmp_path) -> None:
     ):
         assert precommit.check_precommit(ws) == []
 
+
 def test_check_precommit_filters_sha_refresh_above_ceiling(
     tmp_path, monkeypatch
 ) -> None:
@@ -73,6 +74,7 @@ def test_check_precommit_filters_sha_refresh_above_ceiling(
     ):
         assert precommit.check_precommit(ws) == []
 
+
 def test_apply_precommit_skips_tag_rev_above_ceiling(tmp_path, monkeypatch) -> None:
     config = _precommit_config(tmp_path)
     ws = _ws(tmp_path)
@@ -91,6 +93,7 @@ def test_apply_precommit_skips_tag_rev_above_ceiling(tmp_path, monkeypatch) -> N
         precommit.apply_precommit(ws)
 
     assert config.read_bytes() == original
+
 
 def test_apply_precommit_filters_sha_refresh_above_ceiling(
     tmp_path, monkeypatch
