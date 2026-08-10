@@ -264,7 +264,7 @@ def test_apply_deno_calls_ghost_bump_guard(tmp_path: Path) -> None:
             return subprocess.CompletedProcess(cmd, 0, stdout=_BOX_OUTPUT, stderr="")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    def fake_guard(ws, requested, manager="js"):
+    def fake_guard(ws, requested, manager="js", fallback_resolver=None):
         guard_calls.append([c.name for c in requested])
 
     with (

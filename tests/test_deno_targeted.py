@@ -67,6 +67,9 @@ def test_targeted_bump_keeps_changed_snapshot(tmp_path: Path, monkeypatch) -> No
             "repo_ops_js.deno.versions_deno_lock",
             return_value={"npm:lodash@4.17.22"},
         ),
+        patch(
+            "repo_ops_js.guards.resolved_version_from_node_modules", return_value=None
+        ),
         patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
         patch("repo_ops_js.deno.run", side_effect=fake_run),
     ):
@@ -116,8 +119,9 @@ def test_targeted_bump_restores_snapshot_when_guard_raises(
     assert still_behind == [change]
     guard.assert_called_once_with(
         ws,
-        [Change("npm:lodash", "4.17.20", "4.17.22")],
+        [change],
         manager="deno",
+        fallback_resolver=_landed_deno_version,
     )
     restore.assert_called_once_with(tmp_path, snapshot, "deno")
 
@@ -192,6 +196,43 @@ def test_targeted_bump_restores_when_landed_version_does_not_advance(
         patch(
             "repo_ops_js.deno.versions_deno_lock",
             return_value={"npm:chalk@5.2.0"},
+        ),
+        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
+        patch(
+            "repo_ops_js.deno.run",
+            return_value=subprocess.CompletedProcess(
+                ["deno", "update", "npm:chalk"],
+                0,
+                stdout="",
+                stderr="",
+            ),
+        ),
+    ):
+        applied, still_behind = targeted_bump_behind(_ws(tmp_path), [change])
+
+    assert applied == []
+    assert still_behind == [change]
+    restore.assert_called_once_with(tmp_path, snapshot, "deno")
+
+
+def test_targeted_bump_restores_when_lockfile_version_misses_target(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    change = Change("npm:chalk", "5.2.0", "5.3.0")
+    snapshot = {"deno.lock": b"original"}
+
+    with (
+        patch(
+            "repo_ops_js.deno.snapshot_workspace_files",
+            side_effect=[snapshot, {"deno.lock": b"changed"}],
+        ),
+        patch(
+            "repo_ops_js.deno.versions_deno_lock",
+            return_value={"npm:chalk@5.2.1"},
+        ),
+        patch(
+            "repo_ops_js.guards.resolved_version_from_node_modules", return_value=None
         ),
         patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
         patch(
