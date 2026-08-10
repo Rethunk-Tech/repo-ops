@@ -331,11 +331,11 @@ Config files (TOML):
 
 Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
 
-For multi-root `plan` and `apply` runs, repo-scoped settings are resolved from
-each checkout when its bundle is processed; the launch checkout's config is not
-inherited by the rest of the fleet. CLI flags and caller-provided environment
-variables retain precedence over per-checkout config. Repository exclusions and
-Actions lint/policy settings are resolved per checkout.
+For multi-root `plan` and `apply` runs, repository exclusions and Actions
+lint/policy levels are resolved from each checkout's config; the launch
+checkout's config is not inherited by the rest of the fleet. CLI flags and
+caller-provided environment variables retain precedence. Other config keys
+remain invocation/global-scoped for now.
 
 For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 `commit_agent_model` config key selects the agent model; the default is
