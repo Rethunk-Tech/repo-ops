@@ -510,9 +510,8 @@ def scan_python_dep_licenses(root: Path) -> list[PackageLicense]:
 _GO_LICENSE_FILENAMES = ("LICENSE", "LICENSE.txt", "LICENSE.md", "COPYING")
 
 # Coarse, offline license-text classifier: (SPDX id, required substrings) in
-# priority order.  Best-effort only — a handful of distinguishing phrases per
-# license family, checked most-specific-first (e.g. BSD-3-Clause's "endorse
-# or promote" clause before the more general BSD-2-Clause text it contains).
+# priority order. Best-effort only — a handful of distinguishing phrases per
+# license family. BSD-2-Clause is not inferred from text shared with BSD-3-Clause.
 _LICENSE_TEXT_SIGNATURES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Apache-2.0", ("Apache License", "Version 2.0")),
     ("MPL-2.0", ("Mozilla Public License", "2.0")),
@@ -527,7 +526,6 @@ _LICENSE_TEXT_SIGNATURES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "endorse or promote products derived",
         ),
     ),
-    ("BSD-2-Clause", ("Redistribution and use in source and binary forms",)),
     ("MIT", ("Permission is hereby granted, free of charge",)),
     (
         "ISC",

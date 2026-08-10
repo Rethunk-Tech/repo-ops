@@ -137,7 +137,6 @@ def classify_license_text(text: str) -> str | None:
                 "ENDORSE OR PROMOTE PRODUCTS DERIVED",
             ),
         ),
-        ("BSD-2-Clause", ("REDISTRIBUTION AND USE IN SOURCE AND BINARY FORMS",)),
         ("MIT", ("PERMISSION IS HEREBY GRANTED, FREE OF CHARGE",)),
         (
             "ISC",
