@@ -391,6 +391,95 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
     assert captured == {repo_a: "explicit", repo_b: "patch"}
 
 
+def test_fleet_cli_go_upgrade_mode_overrides_checkout_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A CLI Go mode overrides each checkout's config value."""
+    launcher = tmp_path / "launcher"
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    for path in (launcher, repo_a, repo_b):
+        path.mkdir()
+    (repo_a / "pyproject.toml").write_text(
+        '[tool.repo-ops]\ngo_upgrade_mode = "explicit"\n',
+        encoding="utf-8",
+    )
+    (repo_b / "pyproject.toml").write_text(
+        '[tool.repo-ops]\ngo_upgrade_mode = "patch"\n',
+        encoding="utf-8",
+    )
+
+    workspaces = [
+        Workspace(
+            path=repo_a,
+            ecosystem="go",
+            manager="go",
+            git_repo=repo_a,
+            label="repo-a",
+        ),
+        Workspace(
+            path=repo_b,
+            ecosystem="go",
+            manager="go",
+            git_repo=repo_b,
+            label="repo-b",
+        ),
+    ]
+    bundles = {
+        workspace.git_repo: RepoBundle(
+            git_repo=workspace.git_repo,
+            label=workspace.label,
+            workspaces=[WorkspaceResult(workspace)],
+        )
+        for workspace in workspaces
+    }
+    captured: dict[Path, str] = {}
+
+    monkeypatch.chdir(launcher)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "discover_all",
+        lambda *args, **kwargs: workspaces,
+    )
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "group_by_repo",
+        lambda found, roots: bundles.copy(),
+    )
+    monkeypatch.setattr(
+        run_mod.orchestration,
+        "process_workspace",
+        lambda workspace_result, **kwargs: (
+            captured.__setitem__(
+                workspace_result.workspace.git_repo,
+                go_mod._go_upgrade_mode(workspace_result.workspace),
+            ),
+            workspace_result,
+        )[1],
+    )
+    monkeypatch.setattr(
+        run_mod.report, "print_json_report", lambda *args, **kwargs: None
+    )
+
+    rc = run_mod.run_upgrade(
+        apply=False,
+        argv=[
+            "--flat",
+            "--json",
+            "--skip-actions",
+            "--go-upgrade-mode",
+            "mvs",
+            str(repo_a),
+            str(repo_b),
+        ],
+    )
+
+    assert rc == 0
+    assert captured == {repo_a: "mvs", repo_b: "mvs"}
+
+
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 def test_run_upgrade_global_config_applied(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
