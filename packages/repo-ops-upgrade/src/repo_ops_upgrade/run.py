@@ -122,6 +122,16 @@ def _resolve_exit_code(
     return 0
 
 
+def _cli_flag(args: object, name: str) -> bool:
+    """Return True only for an explicit True CLI flag.
+
+    ``bool(getattr(...))`` is unsafe with bare ``MagicMock`` doubles: missing
+    attributes auto-create truthy mocks. Identity ``is True`` matches argparse
+    ``store_true`` and rejects mocks.
+    """
+    return getattr(args, name, False) is True
+
+
 def _run_upgrade_body(
     *,
     apply: bool,
@@ -133,8 +143,8 @@ def _run_upgrade_body(
     # checker modules already read, BEFORE any worker pool starts (#102).
     # Additive: the env-var reads stay; these flags just populate them for this
     # process.
-    full_sweep = bool(getattr(args, "full", False))
-    latest = bool(getattr(args, "latest", False)) or full_sweep
+    full_sweep = _cli_flag(args, "full")
+    latest = _cli_flag(args, "latest") or full_sweep
     if latest:
         os.environ["REPO_OPS_BUN_UPDATE_LATEST"] = "1"
         os.environ["REPO_OPS_PNPM_UPDATE_LATEST"] = "1"
@@ -150,36 +160,36 @@ def _run_upgrade_body(
     # Opt-in per-package targeted fallback (#111); only meaningful with --latest,
     # which is what produces the behind_latest work-list it consumes. All five
     # managers' flags must populate their env var or the CLI flag is a no-op (#131).
-    if full_sweep or bool(getattr(args, "yarn_targeted_bump", False)):
+    if full_sweep or _cli_flag(args, "yarn_targeted_bump"):
         os.environ["REPO_OPS_YARN_TARGETED_BUMP"] = "1"
-    if full_sweep or bool(getattr(args, "npm_targeted_bump", False)):
+    if full_sweep or _cli_flag(args, "npm_targeted_bump"):
         os.environ["REPO_OPS_NPM_TARGETED_BUMP"] = "1"
-    if full_sweep or bool(getattr(args, "pnpm_targeted_bump", False)):
+    if full_sweep or _cli_flag(args, "pnpm_targeted_bump"):
         os.environ["REPO_OPS_PNPM_TARGETED_BUMP"] = "1"
-    if full_sweep or bool(getattr(args, "bun_targeted_bump", False)):
+    if full_sweep or _cli_flag(args, "bun_targeted_bump"):
         os.environ["REPO_OPS_BUN_TARGETED_BUMP"] = "1"
-    if full_sweep or bool(getattr(args, "deno_targeted_bump", False)):
+    if full_sweep or _cli_flag(args, "deno_targeted_bump"):
         os.environ["REPO_OPS_DENO_TARGETED_BUMP"] = "1"
     if full_sweep:
         os.environ["REPO_OPS_CONTAINER_REFRESH_SHA"] = "1"
     # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects (#132).
-    if bool(getattr(args, "migrate_to_uv_lock", False)):
+    if _cli_flag(args, "migrate_to_uv_lock"):
         os.environ["REPO_OPS_HATCH_MIGRATE_UV_LOCK"] = "1"
     # --yarn-jobs: cap concurrent yarn isolated-copy extractions to avoid /tmp ENOSPC.
     yarn_jobs = getattr(args, "yarn_jobs", None)
-    if yarn_jobs is not None:
+    if isinstance(yarn_jobs, int):
         os.environ["REPO_OPS_YARN_MAX_CONCURRENCY"] = str(yarn_jobs)
     # --commit-umbrella: opt in to post-commit umbrella pointer bumps (#125).
-    if bool(getattr(args, "commit_umbrella", False)):
+    if _cli_flag(args, "commit_umbrella"):
         os.environ["REPO_OPS_COMMIT_UMBRELLA"] = "1"
     # --actions-org-policy: enable org policy enforcement in scan_actions (#125).
-    if bool(getattr(args, "actions_org_policy", False)):
+    if _cli_flag(args, "actions_org_policy"):
         os.environ["REPO_OPS_ACTIONS_ORG_POLICY"] = "1"
     policy_level = getattr(args, "actions_policy_level", None)
-    if policy_level:
-        os.environ["REPO_OPS_ACTIONS_POLICY_LEVEL"] = str(policy_level)
+    if isinstance(policy_level, str) and policy_level:
+        os.environ["REPO_OPS_ACTIONS_POLICY_LEVEL"] = policy_level
     go_mode = getattr(args, "go_upgrade_mode", None)
-    if go_mode:
+    if isinstance(go_mode, str) and go_mode:
         os.environ["REPO_OPS_GO_UPGRADE_MODE"] = go_mode
 
     skip_remediations = set()
@@ -453,17 +463,17 @@ def _run_upgrade_body(
     if not args.skip_actions:
         # SHA pins are preserved by default (supply-chain hardening).
         # Only unpin when the user explicitly opts in via --actions-unpin-sha.
-        keep_sha = not bool(getattr(args, "actions_unpin_sha", False))
+        keep_sha = not _cli_flag(args, "actions_unpin_sha")
         # Digest refresh (#109): only meaningful while staying SHA-pinned.
         refresh_sha = keep_sha and (
-            full_sweep or bool(getattr(args, "actions_refresh_sha", False))
+            full_sweep or _cli_flag(args, "actions_refresh_sha")
         )
         _raw_tag_style = getattr(args, "actions_tag_style", "major")
         tag_style: actions.TagStyle = "exact" if _raw_tag_style == "exact" else "major"
         # Cross-major apply (#106): explicit --actions-upgrade-mode wins; otherwise
         # --latest is the umbrella that also opts Actions into latest mode.
         _raw_actions_mode = getattr(args, "actions_upgrade_mode", None)
-        if _raw_actions_mode is None:
+        if not isinstance(_raw_actions_mode, str):
             _raw_actions_mode = "latest" if latest else "normalize"
         actions_mode: actions.ActionsUpgradeMode = (
             "latest" if _raw_actions_mode == "latest" else "normalize"
@@ -567,7 +577,7 @@ def _run_upgrade_body(
 
     if use_json:
         mode: Literal["plan", "apply"] = "apply" if apply else "plan"
-        compact = bool(getattr(args, "compact", False))
+        compact = _cli_flag(args, "compact")
         if json_report_path:
             written = report.write_json_report(
                 Path(json_report_path),

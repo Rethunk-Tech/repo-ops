@@ -1,4 +1,3 @@
-import argparse
 import os
 from unittest.mock import MagicMock
 
@@ -16,7 +15,9 @@ def test_magicmock_args_do_not_enable_targeted_bumps(monkeypatch):
     for name in targeted_env:
         monkeypatch.delenv(name, raising=False)
 
-    args = MagicMock(spec=argparse.Namespace)
+    # Bare MagicMock auto-creates truthy attrs on getattr; bool() must keep
+    # unset targeted-bump flags from enabling env wiring.
+    args = MagicMock()
     args.full = False
     args.latest = False
     args.json = False
