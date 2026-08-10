@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import repo_ops_go.go as go_mod
 import repo_ops_upgrade.run as run_mod
-from repo_ops_core.config import apply_config_to_env, resolve_setting
+from repo_ops_core.config import apply_config_to_env, resolve_setting, set_ambient_env
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import commit_agent_cursor, commit_agent_providers
 
@@ -185,6 +185,29 @@ def test_run_upgrade_env_wins_over_config(
     run_mod.run_upgrade(apply=False, argv=["--flat", str(tmp_path)])
     # env var must be preserved, not overwritten by config
     assert captured["go_upgrade_mode"] == "patch"
+
+
+def test_go_upgrade_mode_cli_value_overrides_ambient_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A process value applied after launch wins over the ambient snapshot."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\ngo_upgrade_mode = "mvs"\n',
+        encoding="utf-8",
+    )
+    workspace = Workspace(
+        path=tmp_path,
+        ecosystem="go",
+        manager="go",
+        git_repo=tmp_path,
+        label="repo",
+    )
+    monkeypatch.setenv("REPO_OPS_GO_UPGRADE_MODE", "explicit")
+    set_ambient_env({"REPO_OPS_GO_UPGRADE_MODE": "patch"})
+    try:
+        assert go_mod._go_upgrade_mode(workspace) == "explicit"
+    finally:
+        set_ambient_env(None)
 
 
 def test_fleet_run_resolves_actions_config_per_checkout(
