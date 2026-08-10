@@ -84,6 +84,10 @@ def test_classify_license_text_distinguishes_bsd2_and_bsd3() -> None:
     assert classify_license_text(bsd3_text) == "BSD-3-Clause"
     assert _classify_license_text(bsd3_text) == "BSD-3-Clause"
 
+    all_caps_bsd3_text = bsd3_text.upper()
+    assert classify_license_text(all_caps_bsd3_text) == "BSD-3-Clause"
+    assert _classify_license_text(all_caps_bsd3_text) == "BSD-3-Clause"
+
 
 def test_classify_truncated_bsd3_as_bsd2_best_effort() -> None:
     truncated_bsd3 = (

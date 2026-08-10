@@ -514,8 +514,8 @@ _GO_LICENSE_FILENAMES = ("LICENSE", "LICENSE.txt", "LICENSE.md", "COPYING")
 # license family. BSD-3-Clause is checked before BSD-2-Clause because the
 # redistribution clause is shared.
 _LICENSE_TEXT_SIGNATURES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Apache-2.0", ("Apache License", "Version 2.0")),
-    ("MPL-2.0", ("Mozilla Public License", "2.0")),
+    ("Apache-2.0", ("APACHE LICENSE", "VERSION 2.0")),
+    ("MPL-2.0", ("MOZILLA PUBLIC LICENSE", "2.0")),
     ("GPL-3.0", ("GNU GENERAL PUBLIC LICENSE", "Version 3")),
     ("GPL-2.0", ("GNU GENERAL PUBLIC LICENSE", "Version 2")),
     ("LGPL-3.0", ("GNU LESSER GENERAL PUBLIC LICENSE", "Version 3")),
@@ -523,30 +523,30 @@ _LICENSE_TEXT_SIGNATURES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "BSD-3-Clause",
         (
-            "Redistribution and use in source and binary forms",
-            "endorse or promote products derived",
+            "REDISTRIBUTION AND USE IN SOURCE AND BINARY FORMS",
+            "ENDORSE OR PROMOTE PRODUCTS DERIVED",
         ),
     ),
-    ("BSD-2-Clause", ("Redistribution and use in source and binary forms",)),
-    ("MIT", ("Permission is hereby granted, free of charge",)),
+    ("BSD-2-Clause", ("REDISTRIBUTION AND USE IN SOURCE AND BINARY FORMS",)),
+    ("MIT", ("PERMISSION IS HEREBY GRANTED, FREE OF CHARGE",)),
     (
         "ISC",
-        ("Permission to use, copy, modify, and/or distribute this software",),
+        ("PERMISSION TO USE, COPY, MODIFY, AND/OR DISTRIBUTE THIS SOFTWARE",),
     ),
     (
         "Unlicense",
-        ("This is free and unencumbered software released into the public domain",),
+        ("THIS IS FREE AND UNENCUMBERED SOFTWARE RELEASED INTO THE PUBLIC DOMAIN",),
     ),
 )
 
 
 def _classify_license_text(text: str) -> str:
     """Best-effort SPDX id from raw LICENSE file text (offline heuristics)."""
-    lower = text.lower()
+    upper = text.upper()
     for spdx_id, needles in _LICENSE_TEXT_SIGNATURES:
-        if spdx_id == "BSD-2-Clause" and "endorse or promote products derived" in lower:
+        if spdx_id == "BSD-2-Clause" and "ENDORSE OR PROMOTE PRODUCTS DERIVED" in upper:
             continue
-        if all(n in text for n in needles):
+        if all(n in upper for n in needles):
             return spdx_id
     return UNKNOWN_LICENSE
 
