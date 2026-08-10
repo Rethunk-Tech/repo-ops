@@ -44,35 +44,19 @@ Actions/container already have `--actions-refresh-sha` / `--container-refresh-sh
 
 ## Round 9 — Wave 17 follow-ons
 
-### 9.1 Fleet apply: per-checkout config besides commit-agent model/provider
+### 9.1 Fleet apply: remaining per-checkout config keys
 
-`run_upgrade` still loads `load_repo_config(Path.cwd())` once and injects via `apply_config_to_env`. Wave 17/18 made `commit_agent_model` and `commit_agent_provider` resolve per `bundle.git_repo` at draft time; other config keys (exclude, jobs, …) still ignore each target checkout’s `config.toml` on multi-root apply.
+Fleet `plan`/`apply` now resolve per checkout: exclusions, Actions lint/policy levels, and commit-agent model/provider (via ambient-env snapshot so injected global config cannot beat per-repo). Other documented keys (`jobs`, `go_upgrade_mode`, timeouts, yarn concurrency, verify profile wiring beyond existing `verify.py` path, etc.) remain invocation/global-scoped.
 
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (`run_upgrade` config load); `repo_ops_core.config.apply_config_to_env` / `resolve_setting`; `commit_agent_cursor._resolve_agent_model` / `commit_agent_providers.commit_agent_provider_name` (per-repo precedent).
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (`_ambient_env`, per-bundle exclude / actions resolve); `repo_ops_core.config.resolve_setting` (`env=` snapshot); `docs/usage.md` config section.
 
-**Traps:** Do not double-apply env injection mid-flight in a way that leaks one repo’s settings into the next. Prefer resolve-at-use (like commit-agent model/provider) over mutating process-wide env per checkout.
+**Traps:** Do not mutate process-wide env per checkout mid-flight. Prefer resolve-at-use with ambient snapshot over `apply_config_to_env` swaps.
 
-**Acceptance:** Documented settings that are repo-scoped honor each checkout’s config on fleet `plan`/`apply`; global + env + CLI precedence unchanged.
+**Acceptance:** Remaining documented repo-scoped settings honor each checkout’s config on fleet runs; CLI + caller env precedence unchanged; docs list which keys are per-checkout vs invocation-scoped.
 
 ---
 
 ## Round 23 — Wave 23 follow-ons
-
-### 23.1 Deno targeted-bump: assert_targets_resolved parity
-
-`targeted_bump_behind` now records the highest landed lock version and restores on non-advance, but unlike bun/npm it still does not call `assert_targets_resolved` after a successful landed bump.
-
-**Refs:** `packages/repo-ops-js/src/repo_ops_js/deno.py`; contrast `repo_ops_js_bun` / `repo_ops_js_npm` targeted paths; `repo_ops_js.guards.assert_targets_resolved`.
-
-**Acceptance:** Successful deno targeted bumps run the same ghost-bump guard (or a deno-lock equivalent) before keeping the applied Change.
-
-### 23.2 BSD text: truncated BSD-3 without endorse still looks like BSD-2
-
-Wave 23 restored `BSD-2-Clause` when redistribution is present and endorse/promote is absent so canonical BSD-2 LICENSE files classify. A truncated BSD-3 text missing the third clause remains indistinguishable and will still classify as BSD-2.
-
-**Refs:** `license_enrich.classify_license_text`; `license_policy._classify_license_text`.
-
-**Acceptance:** Either a stronger positive BSD-2 marker, or documented best-effort limit with a fixture that records the truncated-BSD-3 case explicitly.
 
 ### 23.3 Enrich: explicit `--enrich-licenses` cannot override LOCAL env
 
@@ -81,3 +65,19 @@ When `REPO_OPS_ENRICH_LICENSES_LOCAL=1`, `allow_network` stays false even if `--
 **Refs:** `license_policy.main`; `sbom.main`; `docs/usage.md` enrich bullets.
 
 **Acceptance:** Optional `--enrich-licenses-network` (or equivalent) that forces network despite LOCAL env, with a regression test; or keep local-wins and close this as wontfix once operators confirm.
+
+### 23.4 Deno targeted guard: lockfile-based verification when node_modules absent
+
+`assert_targets_resolved` skips when the resolver returns no `node_modules` map; Deno `npm:` targeted bumps can therefore pass the ghost-bump guard with zero on-disk package verification.
+
+**Refs:** `packages/repo-ops-js/src/repo_ops_js/guards.py` (`assert_targets_resolved`); `packages/repo-ops-js/src/repo_ops_js/deno.py` (`targeted_bump_behind`).
+
+**Acceptance:** Successful Deno targeted bumps verify via lockfile (or equivalent) when `node_modules` is absent; or document the skip as an explicit limitation with a regression that pins the behaviour.
+
+### 23.5 License policy BSD needle case sensitivity
+
+`license_policy._classify_license_text` matches the BSD-3 endorse/promote needle case-sensitively against lowercase text in some paths; ALL-CAPS LICENSE files can miss BSD-3 while `license_enrich.classify_license_text` (normalized path) still distinguishes.
+
+**Refs:** `license_policy._classify_license_text` / `_LICENSE_TEXT_SIGNATURES`; `license_enrich.classify_license_text`.
+
+**Acceptance:** Both classifiers agree on case-variant BSD-2/BSD-3 LICENSE text; regression covers ALL-CAPS endorse clause.
