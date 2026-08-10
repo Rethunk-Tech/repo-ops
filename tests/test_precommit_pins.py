@@ -393,6 +393,31 @@ def test_check_precommit_sha_pin_refreshes_with_opt_in(
     assert "[report-only]" not in changes[0].to
 
 
+def test_check_precommit_sha_refresh_stays_within_major_under_update_latest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "1")
+    monkeypatch.setenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", "1")
+    current_sha = "a" * 40
+    latest_sha = "b" * 40
+    cross_major_sha = "c" * 40
+    (tmp_path / ".pre-commit-config.yaml").write_text(
+        f"repos:\n- repo: https://github.com/org/tool\n  rev: {current_sha}\n  hooks:\n  - id: x\n"
+    )
+    proc = _fake_ls_remote_refs(
+        [
+            (current_sha, "v1.0.0"),
+            (latest_sha, "v1.1.0"),
+            (cross_major_sha, "v2.0.0"),
+        ]
+    )
+    with patch("subprocess.run", return_value=proc):
+        changes = check_precommit(_make_ws(tmp_path))
+    assert len(changes) == 1
+    assert changes[0].to == latest_sha
+    assert changes[0].to != cross_major_sha
+
+
 def test_check_precommit_non_semver_rev_report_only(tmp_path: Path) -> None:
     (tmp_path / ".pre-commit-config.yaml").write_text(
         "repos:\n- repo: https://github.com/org/tool\n  rev: main\n  hooks:\n  - id: x\n"
