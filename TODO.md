@@ -56,34 +56,28 @@ Actions/container already have `--actions-refresh-sha` / `--container-refresh-sh
 
 ---
 
-## Round 21 — Wave 21 follow-ons
+## Round 23 — Wave 23 follow-ons
 
-### 21.1 License enrichment: local-only mode + safer text classification
+### 23.1 Deno targeted-bump: assert_targets_resolved parity
 
-`--enrich-licenses` always sets `allow_network=True`. Air-gapped operators need local METADATA/LICENSE enrichment without registry calls. BSD-family LICENSE text classification can mis-label BSD-3 (and relatives) as `BSD-2-Clause` via a shared needle — prefer `NOASSERTION` on ambiguity.
+`targeted_bump_behind` now records the highest landed lock version and restores on non-advance, but unlike bun/npm it still does not call `assert_targets_resolved` after a successful landed bump.
 
-**Refs:** `packages/repo-ops-lockfiles/src/repo_ops_lockfiles/license_enrich.py`; `sbom.py` / `license_policy.py` enrich wiring.
+**Refs:** `packages/repo-ops-js/src/repo_ops_js/deno.py`; contrast `repo_ops_js_bun` / `repo_ops_js_npm` targeted paths; `repo_ops_js.guards.assert_targets_resolved`.
 
-**Acceptance:** Opt-in local-only enrichment (flag or env); ambiguous LICENSE text stays unknown rather than a wrong SPDX id.
+**Acceptance:** Successful deno targeted bumps run the same ghost-bump guard (or a deno-lock equivalent) before keeping the applied Change.
 
----
+### 23.2 BSD text: truncated BSD-3 without endorse still looks like BSD-2
 
-## Round 22 — Wave 22 follow-ons
+Wave 23 restored `BSD-2-Clause` when redistribution is present and endorse/promote is absent so canonical BSD-2 LICENSE files classify. A truncated BSD-3 text missing the third clause remains indistinguishable and will still classify as BSD-2.
 
-### 22.1 Deno targeted-bump: resolve landed version into Change.to
+**Refs:** `license_enrich.classify_license_text`; `license_policy._classify_license_text`.
 
-`targeted_bump_behind` currently keeps the planned `Change` on success (snapshot delta only). Prefer recording the post-update resolved version when parseable from lock/import map, matching bun/npm applied-Change semantics.
+**Acceptance:** Either a stronger positive BSD-2 marker, or documented best-effort limit with a fixture that records the truncated-BSD-3 case explicitly.
 
-**Refs:** `packages/repo-ops-js/src/repo_ops_js/deno.py` (`targeted_bump_behind`).
+### 23.3 Enrich: explicit `--enrich-licenses` cannot override LOCAL env
 
-### 22.2 Audit Python: hatch vs uv disambiguation when both signals present
+When `REPO_OPS_ENRICH_LICENSES_LOCAL=1`, `allow_network` stays false even if `--enrich-licenses` is also passed (local wins). Documented; no CLI force-network override.
 
-A tree with both `uv.lock` and hatchling metadata may need an explicit precedence rule documented in usage (which label wins).
+**Refs:** `license_policy.main`; `sbom.main`; `docs/usage.md` enrich bullets.
 
-**Refs:** `packages/repo-ops-audit/src/repo_ops_audit/audit.py` (`_detect_workspaces`).
-
-### 22.3 Harden `run.py` getattr for targeted-bump flags
-
-`run.py` uses `if full_sweep or getattr(args, X, False)` without `bool()`. Incomplete MagicMock test doubles auto-create truthy attributes. Production argparse is safe; prefer `bool(getattr(...))` or explicit defaults for test hygiene.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (targeted-bump env wiring).
+**Acceptance:** Optional `--enrich-licenses-network` (or equivalent) that forces network despite LOCAL env, with a regression test; or keep local-wins and close this as wontfix once operators confirm.
