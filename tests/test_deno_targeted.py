@@ -226,6 +226,10 @@ def test_targeted_bump_passes_latest_flag(tmp_path: Path, monkeypatch) -> None:
             "repo_ops_js.deno.snapshot_workspace_files",
             side_effect=[{"deno.lock": b"old"}, {"deno.lock": b"new"}],
         ),
+        patch(
+            "repo_ops_js.deno.versions_deno_lock",
+            return_value={"npm:chalk@5.3.0"},
+        ),
         patch("repo_ops_js.deno.run", side_effect=fake_run),
     ):
         applied, still_behind = targeted_bump_behind(_ws(tmp_path), [change])
@@ -233,6 +237,37 @@ def test_targeted_bump_passes_latest_flag(tmp_path: Path, monkeypatch) -> None:
     assert applied == [change]
     assert still_behind == []
     assert captured == [["deno", "update", "--latest", "npm:chalk"]]
+
+
+def test_targeted_bump_restores_when_landed_version_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    change = Change("npm:chalk", "5.2.0", "5.3.0")
+    snapshot = {"deno.lock": b"original"}
+
+    with (
+        patch(
+            "repo_ops_js.deno.snapshot_workspace_files",
+            side_effect=[snapshot, {"deno.lock": b"changed"}],
+        ),
+        patch("repo_ops_js.deno.versions_deno_lock", return_value=set()),
+        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
+        patch(
+            "repo_ops_js.deno.run",
+            return_value=subprocess.CompletedProcess(
+                ["deno", "update", "npm:chalk"],
+                0,
+                stdout="",
+                stderr="",
+            ),
+        ),
+    ):
+        applied, still_behind = targeted_bump_behind(_ws(tmp_path), [change])
+
+    assert applied == []
+    assert still_behind == [change]
+    restore.assert_called_once_with(tmp_path, snapshot, "deno")
 
 
 def test_apply_deno_runs_targeted_fallback_after_bulk(
