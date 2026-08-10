@@ -449,6 +449,14 @@ def test_precommit_refresh_sha_cli_sets_env(monkeypatch: pytest.MonkeyPatch) -> 
     assert os.environ["REPO_OPS_PRECOMMIT_REFRESH_SHA"] == "1"
 
 
+def test_submodule_refresh_sha_cli_sets_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("REPO_OPS_SUBMODULE_REFRESH_SHA", raising=False)
+    parser = build_upgrade_parser(apply=False)
+    args = parser.parse_args(["--submodule-refresh-sha"])
+    assert args.submodule_refresh_sha is True
+    assert os.environ["REPO_OPS_SUBMODULE_REFRESH_SHA"] == "1"
+
+
 def test_check_precommit_deduplicates_same_repo(tmp_path: Path) -> None:
     """Same repo URL appearing twice → only one Change (or none if up-to-date)."""
     text = (
