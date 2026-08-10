@@ -195,7 +195,7 @@ def targeted_bump_behind(
                 try:
                     assert_targets_resolved(
                         ws,
-                        [resolved_change],
+                        [change],
                         manager="deno",
                         fallback_resolver=_landed_deno_version,
                     )
