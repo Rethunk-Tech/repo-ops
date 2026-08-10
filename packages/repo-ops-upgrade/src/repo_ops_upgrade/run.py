@@ -32,6 +32,7 @@ from repo_ops_models import ActionBump, RepoBundle, Workspace, WorkspaceResult
 
 from repo_ops_upgrade import (
     actions,
+    commit_agent_providers,
     orchestration,
     post_apply_commit,
     report,
@@ -779,6 +780,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     # Config-file settings layer (CLI flag > env > config file > default).
     _g_cfg = load_global_config()
     _ambient_env = dict(os.environ)
+    commit_agent_providers.set_ambient_env(_ambient_env)
 
     wire_verbose(args)
 
