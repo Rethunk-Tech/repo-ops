@@ -211,6 +211,7 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 | `--output PATH` | Write SBOM to `PATH` instead of stdout |
 | `--enrich-licenses` | Opt-in SPDX fill from on-disk/registry metadata (also `REPO_OPS_ENRICH_LICENSES`) |
 | `--enrich-licenses-local` | Local/cache-only SPDX enrichment (also `REPO_OPS_ENRICH_LICENSES_LOCAL`; no registry network) |
+| `--enrich-licenses-network` | Force registry network enrichment even when LOCAL env/flag is set; wins over `--enrich-licenses-local` (`REPO_OPS_ENRICH_LICENSES_NETWORK`) |
 
 #### `license` flags
 
@@ -220,6 +221,7 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 | `--deny LICENSES` | Comma-separated SPDX IDs forbidden |
 | `--enrich-licenses` | Opt-in SPDX enrichment (same as `sbom`; also `REPO_OPS_ENRICH_LICENSES`) |
 | `--enrich-licenses-local` | Local/cache-only enrichment (same as `sbom`; also `REPO_OPS_ENRICH_LICENSES_LOCAL`) |
+| `--enrich-licenses-network` | Force registry network enrichment even when LOCAL env/flag is set; wins over `--enrich-licenses-local` (`REPO_OPS_ENRICH_LICENSES_NETWORK`) |
 | `--no-fail-unknown` | Exit 0 even when unknown licenses are found (default: exit 2) |
 
 #### `install-skill` flags
