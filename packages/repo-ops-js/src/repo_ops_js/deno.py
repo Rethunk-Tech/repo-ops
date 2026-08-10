@@ -6,9 +6,11 @@ import os
 import re
 import shutil
 import sys
+from pathlib import Path
 
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.process import run
+from repo_ops_lockfiles.parsers import versions_deno_lock
 from repo_ops_lockfiles.snapshots import (
     restore_workspace_snapshot,
     snapshot_workspace_files,
@@ -125,6 +127,17 @@ def _parse_deno_outdated(stdout: str) -> tuple[list[Change], list[Change]]:
     return changes, behind_latest
 
 
+def _landed_deno_version(ws: Workspace, name: str) -> str | None:
+    """Return the resolved lockfile version for a package name."""
+    prefix = f"{name}@"
+    for resolved in sorted(versions_deno_lock(Path(ws.path) / "deno.lock")):
+        if resolved.startswith(prefix):
+            version = resolved[len(prefix) :].strip()
+            if version:
+                return version
+    return None
+
+
 def targeted_bump_behind(
     ws: Workspace, behind: list[Change]
 ) -> tuple[list[Change], list[Change]]:
@@ -144,7 +157,10 @@ def targeted_bump_behind(
         if proc.returncode == 0:
             advanced = snapshot_workspace_files(ws.path, "deno") != snapshot
         if advanced:
-            applied.append(change)
+            landed = _landed_deno_version(ws, change.name)
+            applied.append(
+                Change(change.name, change.from_ver, landed) if landed else change
+            )
         else:
             restore_workspace_snapshot(ws.path, snapshot, "deno")
             still_behind.append(change)

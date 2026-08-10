@@ -44,12 +44,16 @@ def test_targeted_bump_keeps_changed_snapshot(tmp_path: Path, monkeypatch) -> No
             "repo_ops_js.deno.snapshot_workspace_files",
             side_effect=[{"deno.lock": b"old"}, {"deno.lock": b"new"}],
         ),
+        patch(
+            "repo_ops_js.deno.versions_deno_lock",
+            return_value={"npm:lodash@4.17.21"},
+        ),
         patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
         patch("repo_ops_js.deno.run", side_effect=fake_run),
     ):
         applied, still_behind = targeted_bump_behind(_ws(tmp_path), [change])
 
-    assert applied == [change]
+    assert applied == [Change("npm:lodash", "4.17.20", "4.17.21")]
     assert still_behind == []
     assert captured == [["deno", "update", "npm:lodash"]]
     restore.assert_not_called()
