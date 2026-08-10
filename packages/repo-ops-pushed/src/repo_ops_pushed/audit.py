@@ -174,10 +174,7 @@ def _github_events(endpoint: str) -> list[dict]:
     pages = response if isinstance(response, list) else [response]
     events: list[dict] = []
     for page in pages:
-        if isinstance(page, list):
-            page_events = page
-        else:
-            page_events = [page]
+        page_events = page if isinstance(page, list) else [page]
         for event in page_events:
             if not isinstance(event, dict):
                 raise GhCollectionError(f"gh api {endpoint} returned invalid events")

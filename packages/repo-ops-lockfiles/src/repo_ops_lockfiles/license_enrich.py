@@ -202,8 +202,10 @@ def _registry_json(
         pass
     if not allow_network:
         return None
+    if urllib.parse.urlparse(url).scheme != "https":
+        return None
 
-    request = urllib.request.Request(
+    request = urllib.request.Request(  # noqa: S310
         url,
         headers={
             "Accept": "application/json",
@@ -211,7 +213,7 @@ def _registry_json(
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=5) as response:
+        with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, ValueError, json.JSONDecodeError):
         return None

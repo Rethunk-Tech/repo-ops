@@ -23,7 +23,8 @@ from repo_ops_lockfiles.license_policy import (
     scan_python_dep_licenses,
     scan_python_licenses,
 )
-from repo_ops_lockfiles.sbom import build_sbom_parser, main as sbom_main
+from repo_ops_lockfiles.sbom import build_sbom_parser
+from repo_ops_lockfiles.sbom import main as sbom_main
 
 # ---------------------------------------------------------------------------
 # Unit: _matches_any
