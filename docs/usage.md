@@ -151,8 +151,8 @@ lockfiles; no auto-commit).
 | ----------- | -------------- | ------- |
 | `go` | `govulncheck` | `govulncheck -json ./...`; workspace skipped if not on PATH |
 | `node` | `npm` / `yarn` / `pnpm` / `bun` | detected from lockfile; `bun audit` text-parsed (no `--json`) |
-| `py-uv` | `uv` + `pip-audit` | `uv run pip-audit --format json`; skipped when pip-audit not importable |
-| `py-poetry` / `py-pdm` / `py-pipenv` / `py-hatch` / `py-pip-tools` | manager + `pip-audit` | manager-native export then `pip-audit`; JSON `skip_reason` when export/tool missing (never false-clean `ok`) |
+| `py-uv` | `uv` + `pip-audit` | `uv run pip-audit --format json`; skipped when pip-audit not importable. When `uv.lock` and hatchling metadata both exist, `uv.lock` wins (`py-uv` / `uv`). |
+| `py-poetry` / `py-pdm` / `py-pipenv` / `py-hatch` / `py-pip-tools` | manager + `pip-audit` | manager-native export then `pip-audit`; JSON `skip_reason` when export/tool missing (never false-clean `ok`). `py-hatch` only when hatch signals exist and no competing lock (`uv.lock` / poetry / pdm / Pipfile). |
 | `rust` | `cargo` + `cargo-audit` | `cargo audit --json`; skipped if `cargo audit --version` fails |
 | `deno` | `deno` | `deno audit --json` when supported, otherwise `deno audit`; skipped when not on PATH |
 
@@ -240,6 +240,11 @@ licenses are `NOASSERTION` unless enrichment is enabled.
 - `--enrich-licenses` — opt-in SPDX fill from on-disk package metadata and
   cached registry lookups (`REPO_OPS_ENRICH_LICENSES=1`). Never invents
   license ids; container images stay unenriched.
+- `--enrich-licenses-local` — same enrichment from local metadata and XDG
+  cache only (`REPO_OPS_ENRICH_LICENSES_LOCAL=1`); no registry network.
+  Implies enrichment is on. Ambiguous BSD-family LICENSE text stays unknown
+  rather than guessing `BSD-2-Clause`; `BSD-3-Clause` requires the
+  endorse/promote clause.
 
 ### `license` — dependency license policy scan
 
@@ -255,6 +260,8 @@ policy violations (read-only). Offline by default.
 - `--enrich-licenses` — same opt-in enrichment as `sbom` (env twin
   `REPO_OPS_ENRICH_LICENSES`); can reduce UNKNOWN for npm/PyPI/crates when
   metadata or cache hits exist.
+- `--enrich-licenses-local` — local/cache-only enrichment (env twin
+  `REPO_OPS_ENRICH_LICENSES_LOCAL`); same BSD ambiguity rule as `sbom`.
 - `--json` — emit JSON instead of human-readable output (`--compact` for
   single-line).
 
