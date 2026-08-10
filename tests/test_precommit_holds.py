@@ -54,6 +54,24 @@ def test_check_precommit_filters_tag_rev_above_ceiling(tmp_path) -> None:
     ):
         assert precommit.check_precommit(ws) == []
 
+def test_check_precommit_filters_sha_refresh_above_ceiling(
+    tmp_path, monkeypatch
+) -> None:
+    _precommit_config(tmp_path, rev="a" * 40)
+    ws = _ws(tmp_path)
+    refs = [
+        ("a" * 40, "v1.0.0"),
+        ("b" * 40, "v1.5.0"),
+        ("c" * 40, "v2.0.0"),
+    ]
+    monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "1")
+
+    with (
+        patch.object(precommit, "_global_holds_cached", return_value=(_held_rule(),)),
+        patch.object(precommit, "_repo_holds_cached", return_value=()),
+        patch.object(precommit, "_fetch_tag_refs_for_repo", return_value=refs),
+    ):
+        assert precommit.check_precommit(ws) == []
 
 def test_apply_precommit_filters_sha_refresh_above_ceiling(
     tmp_path, monkeypatch
