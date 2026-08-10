@@ -36,10 +36,18 @@ import os
 import re
 import subprocess
 import threading
+from functools import cache
 from pathlib import Path
 from typing import Any
 
+from repo_ops_core.holds import (
+    HoldRule,
+    load_global_holds,
+    load_repo_holds,
+    resolve_hold,
+)
 from repo_ops_core.version_utils import semver_tuple
+from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 
 # ---------------------------------------------------------------------------
@@ -172,6 +180,52 @@ def _repo_short_name(repo_url: str) -> str:
     # e.g. https://github.com/pre-commit/pre-commit-hooks → pre-commit/pre-commit-hooks
     m = re.search(r"[:/]([^/]+/[^/]+?)(?:\.git)?$", repo_url)
     return m.group(1) if m else repo_url
+
+
+# ---------------------------------------------------------------------------
+# Package version-ceiling ("hold") rules
+# ---------------------------------------------------------------------------
+
+
+@cache
+def _global_holds_cached() -> tuple[HoldRule, ...]:
+    return tuple(load_global_holds())
+
+
+@cache
+def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
+    return tuple(load_repo_holds(Path(repo_root)))
+
+
+def _workspace_rel(ws: Workspace) -> str:
+    try:
+        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
+    except ValueError:
+        return "."
+    return rel or "."
+
+
+def _resolve_precommit_hold(ws: Workspace, package: str) -> HoldRule | None:
+    """Return the active pre-commit hold for *package*, if any."""
+    repo_root = str(ws.git_repo.resolve())
+    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
+    if not rules:
+        return None
+    return resolve_hold(
+        rules,
+        package=package,
+        ecosystem="precommit",
+        manager=ws.manager,
+        workspace_rel=_workspace_rel(ws),
+    )
+
+
+def _target_within_hold(ws: Workspace, package: str, target_version: str) -> bool:
+    """Return whether a resolved tag target is allowed by its active hold."""
+    rule = _resolve_precommit_hold(ws, package)
+    return rule is None or version_satisfies_ceiling(
+        target_version.lstrip("v"), rule.max_version
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -426,7 +480,9 @@ def check_precommit(ws: Workspace) -> list[Change]:
                 refs = _fetch_tag_refs_for_repo(repo_url)
                 resolved = _resolve_sha_refresh(rev, refs or [])
                 if resolved is not None:
-                    latest_sha, _current_tag, _latest_tag = resolved
+                    latest_sha, _current_tag, latest_tag = resolved
+                    if not _target_within_hold(ws, label, latest_tag):
+                        continue
                     changes.append(Change(name=label, from_ver=rev, to=latest_sha))
                     continue
             changes.append(
@@ -467,6 +523,8 @@ def check_precommit(ws: Workspace) -> list[Change]:
         if latest is None:
             continue  # already at latest or indeterminate
 
+        if not _target_within_hold(ws, label, latest):
+            continue
         changes.append(Change(name=label, from_ver=rev, to=latest))
 
     return changes
@@ -532,7 +590,11 @@ def apply_precommit(ws: Workspace) -> None:
                 refs = _fetch_tag_refs_for_repo(repo_url)
                 resolved = _resolve_sha_refresh(from_ver, refs or [])
                 if resolved is not None:
-                    new_sha, _current_tag, _latest_tag = resolved
+                    new_sha, _current_tag, latest_tag = resolved
+                    if not _target_within_hold(
+                        ws, _repo_short_name(repo_url), latest_tag
+                    ):
+                        continue
                     line_bumps[rev_line_no] = new_sha
             continue
 
@@ -546,7 +608,9 @@ def apply_precommit(ws: Workspace) -> None:
         new_rev = _resolve_latest_precommit_rev(
             from_ver, tags, allow_cross_major=allow_cross_major
         )
-        if new_rev is not None:
+        if new_rev is not None and _target_within_hold(
+            ws, _repo_short_name(repo_url), new_rev
+        ):
             line_bumps[rev_line_no] = new_rev
 
     if not line_bumps:
