@@ -240,6 +240,36 @@ def test_check_sha_only_pin_refreshes_with_opt_in(
     assert bumps[0].latest_tag == "v1.1.0"
 
 
+def test_check_sha_refresh_stays_within_major_under_update_latest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("REPO_OPS_SUBMODULE_REFRESH_SHA", "1")
+    monkeypatch.setenv("REPO_OPS_SUBMODULE_UPDATE_LATEST", "1")
+    link = _make_link(tmp_path)
+    current_sha = "a" * 40
+    with (
+        patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value=None),
+        patch(
+            "repo_ops_upgrade.submodules._current_submodule_sha",
+            return_value=current_sha,
+        ),
+        patch(
+            "repo_ops_upgrade.submodules._fetch_remote_tag_refs",
+            return_value=[
+                (current_sha, "v1.0.0"),
+                ("b" * 40, "v1.1.0"),
+                ("c" * 40, "v2.0.0"),
+            ],
+        ),
+    ):
+        bumps = check_submodule_tag_advances([link])
+    assert len(bumps) == 1
+    assert bumps[0].is_actionable
+    assert bumps[0].current_tag == ""
+    assert bumps[0].latest_tag == "v1.1.0"
+    assert bumps[0].latest_tag != "v2.0.0"
+
+
 def test_check_non_semver_tag_is_report_only(tmp_path: Path) -> None:
     link = _make_link(tmp_path)
     with patch(
