@@ -231,7 +231,7 @@ def _run_upgrade_body(
     )
     bundles = {path: bundles[path] for path in kept_paths}
 
-    include_submodules = getattr(args, "submodules", False)
+    include_submodules = _cli_flag(args, "submodules")
     submodule_order = getattr(args, "submodule_order", "discovery")
     need_submodule_scan = include_submodules or (
         apply and submodule_order == "children-first"
@@ -301,7 +301,7 @@ def _run_upgrade_body(
     # The scope fingerprint ensures a differently-scoped resume (e.g. different
     # --filter) does not false-skip repos outside the prior run's scope.
     _resume_mode = apply and (
-        os.environ.get("REPO_OPS_RESUME") == "1" or getattr(args, "resume", False)
+        os.environ.get("REPO_OPS_RESUME") == "1" or _cli_flag(args, "resume")
     )
     _checkpoint: dict[str, str] = {}
     _checkpoint_lock = threading.Lock()
@@ -530,7 +530,7 @@ def _run_upgrade_body(
         ) as _actions_pool:
             list(_actions_pool.map(_scan_one_bundle_actions, list(bundles.values())))
 
-    only_outdated = getattr(args, "only_outdated", False)
+    only_outdated = _cli_flag(args, "only_outdated")
     if only_outdated:
         for bundle in bundles.values():
             bundle.workspaces = [
@@ -627,9 +627,9 @@ def _run_upgrade_body(
             child_outcomes, commit_exit = post_apply_commit.run_post_apply_commits(
                 bundles,
                 mode=commit_mode,
-                dry_run=getattr(args, "commit_dry_run", False),
+                dry_run=_cli_flag(args, "commit_dry_run"),
                 allow_dirty=args.allow_dirty,
-                commit_on_fail=getattr(args, "commit_on_fail", False),
+                commit_on_fail=_cli_flag(args, "commit_on_fail"),
                 quiet=args.quiet,
                 max_workers=args.jobs,
                 submodule_gitlink_map=submodule_gitlink_map
@@ -667,7 +667,7 @@ def _run_upgrade_body(
                     submodule_links,
                     child_outcomes,
                     mode=commit_mode,
-                    dry_run=getattr(args, "commit_dry_run", False),
+                    dry_run=_cli_flag(args, "commit_dry_run"),
                     quiet=args.quiet,
                 )
                 if umbrella_exit != 0:
@@ -678,12 +678,12 @@ def _run_upgrade_body(
             # commit this run. Skipped when --commit-dry-run is active (no
             # real commits to push). When --pr is absent, this block is never
             # entered — byte-identical to today's in-place-commit behaviour.
-            if getattr(args, "pr", False):
+            if _cli_flag(args, "pr"):
                 # Lazy import: pr.py pulls in subprocess + gh; avoid the cost
                 # on every apply run when --pr is not set.
                 from repo_ops_upgrade import pr as _pr_mod
 
-                commit_dry_run = getattr(args, "commit_dry_run", False)
+                commit_dry_run = _cli_flag(args, "commit_dry_run")
                 if commit_dry_run:
                     if not args.quiet:
                         print(
@@ -781,7 +781,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     wire_verbose(args)
 
     roots = resolve_scan_roots(list(args.roots or DEFAULT_ROOTS), parser)
-    follow_symlinks = bool(getattr(args, "follow_symlinks", False))
+    follow_symlinks = _cli_flag(args, "follow_symlinks")
     if args.log_file:
         with tee_stdout_stderr(Path(args.log_file).expanduser()):
             return _run_upgrade_body(
