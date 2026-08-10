@@ -21,6 +21,7 @@ from repo_ops_core.config import (
     apply_config_to_env,
     load_global_config,
     load_repo_config,
+    resolve_setting,
 )
 from repo_ops_core.constants import DEFAULT_ROOTS
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
@@ -132,6 +133,13 @@ def _cli_flag(args: object, name: str) -> bool:
     return getattr(args, name, False) is True
 
 
+def _single_checkout_config_scope(args: argparse.Namespace, roots: list[str]) -> bool:
+    """Return whether the invocation targets the current checkout directly."""
+    if not _cli_flag(args, "flat") or len(roots) != 1:
+        return False
+    return Path(roots[0]).resolve() == Path.cwd().resolve()
+
+
 def _run_upgrade_body(
     *,
     apply: bool,
@@ -223,12 +231,25 @@ def _run_upgrade_body(
             follow_symlinks=follow_symlinks,
         )
 
+    _global_cfg: dict[str, Any] = getattr(args, "_repo_ops_global_config", {})
+    _ambient_env: dict[str, str] = getattr(args, "_repo_ops_ambient_env", {})
+    _repo_cfgs = {
+        bundle.git_repo: load_repo_config(bundle.git_repo)
+        for bundle in bundles.values()
+    }
     exclude_patterns: list[str] = getattr(args, "exclude_patterns", None) or []
-    kept_paths, excluded_count = filter_repo_paths(
-        list(bundles),
-        exclude_patterns,
-        label_fn=lambda path: bundles[path].label,
-    )
+    kept_paths: list[Path] = []
+    excluded_count = 0
+    for path, bundle in bundles.items():
+        repo_exclude = _repo_cfgs.get(bundle.git_repo, {}).get("exclude")
+        bundle_exclude = merge_exclude_patterns(exclude_patterns, repo_exclude)
+        bundle_kept, bundle_excluded = filter_repo_paths(
+            [path],
+            bundle_exclude,
+            label_fn=lambda candidate: bundles[candidate].label,
+        )
+        kept_paths.extend(bundle_kept)
+        excluded_count += bundle_excluded
     bundles = {path: bundles[path] for path in kept_paths}
 
     include_submodules = _cli_flag(args, "submodules")
@@ -500,8 +521,20 @@ def _run_upgrade_body(
                     tag_style=tag_style,
                     upgrade_mode=actions_mode,
                     tag_cache=local_cache,
-                    lint_level=getattr(args, "actions_lint_level", None),
-                    policy_level=getattr(args, "actions_policy_level", None),
+                    lint_level=resolve_setting(
+                        "actions_lint_level",
+                        cli_value=getattr(args, "actions_lint_level", None),
+                        global_cfg=_global_cfg,
+                        repo_cfg=_repo_cfgs.get(bundle.git_repo),
+                        env=_ambient_env,
+                    ),
+                    policy_level=resolve_setting(
+                        "actions_policy_level",
+                        cli_value=getattr(args, "actions_policy_level", None),
+                        global_cfg=_global_cfg,
+                        repo_cfg=_repo_cfgs.get(bundle.git_repo),
+                        env=_ambient_env,
+                    ),
                 )
             except Exception as exc:
                 # Isolate: a non-WorkflowParseError (e.g. OSError writing a
@@ -743,13 +776,21 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     if getattr(args, "json_report_path", None) and not args.json:
         parser.error("--json-out requires --json")
 
-    # Config-file settings layer (CLI flag > env > config file > default, #TASK-1).
-    # Load global + CWD per-repo configs and inject into os.environ for env-var-backed
-    # settings before the flag→env wiring in _run_upgrade_body.  Skips any var that's
-    # already set (user shell or a prior CLI flag).
+    # Config-file settings layer (CLI flag > env > config file > default).
     _g_cfg = load_global_config()
-    _r_cfg = load_repo_config(Path.cwd())
+    _ambient_env = dict(os.environ)
+
+    wire_verbose(args)
+
+    roots = resolve_scan_roots(list(args.roots or DEFAULT_ROOTS), parser)
+    _single_checkout = _single_checkout_config_scope(args, roots)
+    _r_cfg = load_repo_config(Path.cwd()) if _single_checkout else {}
+    # Keep the compatibility environment injection for a direct single-checkout
+    # invocation. Fleet runs resolve repo-scoped settings at use instead of
+    # leaking the launch checkout's config into every worker.
     apply_config_to_env(global_cfg=_g_cfg, repo_cfg=_r_cfg)
+    args._repo_ops_global_config = _g_cfg
+    args._repo_ops_ambient_env = _ambient_env
 
     # ``jobs`` has no env-var channel — apply from config directly to args before the
     # cpu_count fallback so the documented config-file default takes effect.
@@ -778,9 +819,6 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
         _excl_cfg,
     )
 
-    wire_verbose(args)
-
-    roots = resolve_scan_roots(list(args.roots or DEFAULT_ROOTS), parser)
     follow_symlinks = _cli_flag(args, "follow_symlinks")
     if args.log_file:
         with tee_stdout_stderr(Path(args.log_file).expanduser()):

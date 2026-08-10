@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import warnings
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any, cast
 
 from repo_ops_core.constants import (
@@ -491,6 +492,7 @@ def resolve_setting(
     cli_value: Any = None,
     global_cfg: dict[str, Any] | None = None,
     repo_cfg: dict[str, Any] | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> Any:
     """Resolve one setting using priority: CLI > env > config > default.
 
@@ -504,6 +506,10 @@ def resolve_setting(
         Pre-loaded global config dict (avoids re-reading the file per call).
     repo_cfg:
         Pre-loaded per-repo config dict.
+    env:
+        Optional environment snapshot used for resolution.  Passing a snapshot
+        lets callers distinguish caller-provided environment values from
+        config values injected into the process environment for compatibility.
     """
     entry = _SETTINGS_MAP.get(name)
     if entry is None:
@@ -513,7 +519,7 @@ def resolve_setting(
     if cli_value is not None:
         return cli_value
     if env_var:
-        env_val = os.environ.get(env_var)
+        env_val = (os.environ if env is None else env).get(env_var)
         if env_val is not None:
             return env_val
     if repo_cfg and config_key in repo_cfg:
