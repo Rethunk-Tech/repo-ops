@@ -179,14 +179,14 @@ def targeted_bump_behind(
             advanced = snapshot_workspace_files(ws.path, "deno") != snapshot
         if advanced:
             landed = _landed_deno_version(ws, change.name)
-            landed_tuple = _parseable_semver_tuple(landed) if landed else None
-            if landed_tuple is None:
+            if landed is None:
                 applied.append(change)
                 continue
+            landed_tuple = _parseable_semver_tuple(landed)
             from_tuple = _parseable_semver_tuple(change.from_ver)
             moved_up = (
                 landed != change.from_ver
-                if from_tuple is None
+                if landed_tuple is None or from_tuple is None
                 else landed_tuple > from_tuple
             )
             if moved_up:
