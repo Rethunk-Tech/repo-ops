@@ -47,7 +47,9 @@ pushes.
 - **Cross-major Actions bumps:** By default a newer major upstream (e.g. `actions/checkout@v4` → `v6`) is **report only**. `--actions-upgrade-mode=latest` (or the `--latest` umbrella) applies it: tag-style `major` rewrites to the floating `@v{max}` (only when a bare `v{max}` tag exists upstream — same safety check as normalize), tag-style `exact` rewrites to the highest `@v{max}.M.P`. When the newest major cannot be safely targeted, it falls back to normalize/report-only. An explicit `--actions-upgrade-mode` overrides the `--latest` umbrella. For SHA-pinned actions, combine `--actions-refresh-sha` with `--latest` to re-pin to the newest major's commit SHA (with comment update) — see SHA digest refresh below.
 - **SHA pins (default: preserve):** By default, `uses: owner/repo@<sha>` pins are **report only** on apply (supply-chain hardening). Opt in to tag resolution with `--actions-unpin-sha`. When unpinning: (1) trailing `# vN[.N.N]` comment → use that major; (2) tags API SHA→tag lookup → highest semver tag for that commit. If neither resolves, the SHA is reported but left untouched. `--actions-tag-style=major` (default) → `@vN`; `exact` → highest `@vN.M.P` within the resolved major (falls back to `@vN`).
 - **SHA digest refresh (keep pinned):** `--actions-refresh-sha` keeps a `uses: owner/repo@<sha>  # vN` action pinned **by digest** but advances the SHA to the commit of the newest `vN.M.P` release **within its current major**, preserving the `# vN` comment. Use this to supersede Dependabot's digest-pin bumps (e.g. `actions/checkout` `6.0.2 → 6.0.3`) without un-hardening the pin to a floating tag. Combined with `--latest` (or `--actions-upgrade-mode=latest`), also **crosses major boundaries**: re-pins to the newest major's commit SHA and updates the `# vN` comment to the new major (e.g. `# v6` → `# v7`) — superseding Dependabot's cross-major SHA-pin PRs such as `actions/checkout` v6→v7 or `sigstore/cosign-installer` v3→v4. Falls back to within-major refresh when the newest major has no exact `vN.M.P` tag. The major is resolved from the `# vN` comment, else the tags API. No effect with `--actions-unpin-sha` (that resolves the SHA to a tag instead); a no-op when the major can't be resolved or the pin is already the newest digest.
-- **Full coverage (`--full`):** This opt-in umbrella enables `--latest`, `--actions-refresh-sha`, `--container-refresh-sha`, and all five targeted-bump flags (`--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, `--bun-targeted-bump`, and `--deno-targeted-bump`). It does not change defaults when absent. `--latest` alone is incomplete: it does not refresh SHA-pinned Actions or container digests and does not close yarn/npm/pnpm/bun/deno `behind_latest` gaps.
+- **Pre-commit SHA refresh:** `--precommit-refresh-sha` keeps resolvable SHA-pinned `rev:` entries pinned by digest while advancing them to the newest release within the tagged major for the same hook repository. Without the flag, SHA pins remain report only; unresolvable pins remain unchanged.
+- **Submodule SHA refresh:** `--submodule-refresh-sha` keeps SHA-only submodule HEADs pinned by commit while advancing them to the newest resolvable release within the tagged major for the same `.gitmodules` URL. Without the flag, SHA-only pointers remain report only; unresolvable pins remain unchanged.
+- **Full coverage (`--full`):** This opt-in umbrella enables `--latest`, `--actions-refresh-sha`, `--container-refresh-sha`, `--precommit-refresh-sha`, `--submodule-refresh-sha`, and all five targeted-bump flags (`--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, `--bun-targeted-bump`, and `--deno-targeted-bump`). It does not change defaults when absent. `--latest` alone is incomplete: it does not refresh SHA-pinned Actions, container digests, pre-commit revisions, or submodule pointers and does not close yarn/npm/pnpm/bun/deno `behind_latest` gaps.
 - **Human-only filtering (`--only-outdated`):** Human-readable output can be limited to entries with outdated dependencies. JSON output remains complete and unfiltered; `--only-outdated` does not remove rows from JSON reports.
 - **Remediations:** `--skip-remediations` accepts the current remediation IDs below. Remediations are enabled by default unless marked off.
 
@@ -94,7 +96,7 @@ When JSON is enabled, audit and pushed report excluded repositories in
 | **pdm** | `pdm update --dry-run` / `pdm update` (in-range); skipped with a WARN when `pdm` is not on PATH | — |
 | **pipenv** | venv `pip list --outdated --format=json` (via `pipenv --venv`, read-only; never creates a venv) / `pipenv update`; skipped with a WARN when `pipenv` is not on PATH or the venv is not initialised | — |
 | **deno** | `deno outdated` / `deno outdated --update` (Deno ≥ 2.x); supports both box-drawing and plain-text output; skipped with a WARN when `deno` is not on PATH | `REPO_OPS_DENO_UPDATE_LATEST=1` → adds `--latest`; add `--deno-targeted-bump` (`REPO_OPS_DENO_TARGETED_BUMP=1`) for behind-latest fallback via selective `deno update <pkg>` |
-| **pre-commit** | Checks `.pre-commit-config.yaml` hook revs against latest upstream tags (within-major only by default) | `REPO_OPS_PRECOMMIT_UPDATE_LATEST=1` → allow cross-major rev bumps |
+| **pre-commit** | Checks `.pre-commit-config.yaml` hook revs against latest upstream tags (within-major only by default); SHA pins are report-only | `REPO_OPS_PRECOMMIT_UPDATE_LATEST=1` → allow cross-major rev bumps; `--precommit-refresh-sha` (`REPO_OPS_PRECOMMIT_REFRESH_SHA=1`) → refresh resolvable SHA pins within their tagged major |
 | **GitHub Actions** | `--actions-upgrade-mode=normalize` (default): normalize exact tag pins to the floating major (`@vN`); a newer major upstream is reported only. SHA pins: report only (preserve digest). | `--actions-upgrade-mode=latest` (or `--latest`) → also apply cross-major bumps; `--actions-unpin-sha` → resolve SHA pins to tags; `--actions-refresh-sha` → advance digest within current major (with `--latest`: cross-major re-pin + comment update); `--actions-tag-style=exact` → highest `@vN.M.P` when unpinning. With `--actions-org-policy`, `--actions-policy-level=report | warn | block` (default `report`) controls whether violating pin rewrites are annotated only, warned, or blocked (`policy-blocked`) |
 | **container** | Checks `FROM` / `image:` references in Dockerfiles and Compose files; SHA-pinned images are report-only by default | `REPO_OPS_CONTAINER_UPDATE_LATEST=1` (or `--latest`) → allow cross-major tag bumps; `REPO_OPS_CONTAINER_REFRESH_SHA=1` → advance SHA digest for `image:tag@sha256:…` pins to the latest digest for the same tag (keeps pin hardened, advances to current content) |
 
@@ -124,7 +126,7 @@ A `resolutions`/`overrides`/`pnpm.overrides` manifest pin blocking the target is
 
 ### Submodule tag-advance
 
-When `--submodules` is active, `plan` detects available semver tag advances for each discovered submodule (comparing the current registered commit against upstream tags). By default only **within-major** advances are surfaced. Set `REPO_OPS_SUBMODULE_UPDATE_LATEST=1` to also surface and apply **cross-major** tag advances. `apply --submodule-order=children-first` applies submodule pointer updates before parent umbrella commits.
+When `--submodules` is active, `plan` detects available semver tag advances for each discovered submodule (comparing the current registered commit against upstream tags). By default only **within-major** advances are surfaced. Set `REPO_OPS_SUBMODULE_UPDATE_LATEST=1` to also surface and apply **cross-major** tag advances. Set `--submodule-refresh-sha` (`REPO_OPS_SUBMODULE_REFRESH_SHA=1`) to refresh SHA-only HEADs when the same `.gitmodules` URL resolves their tagged major. `apply --submodule-order=children-first` applies submodule pointer updates before parent umbrella commits.
 
 ### Apply resume
 
@@ -242,8 +244,10 @@ licenses are `NOASSERTION` unless enrichment is enabled.
   license ids; container images stay unenriched.
 - `--enrich-licenses-local` — same enrichment from local metadata and XDG
   cache only (`REPO_OPS_ENRICH_LICENSES_LOCAL=1`); no registry network.
-  When both enrichment flags (or both environment variables) are set, local
-  mode wins (no network).
+- `--enrich-licenses-network` — force registry network enrichment even when
+  LOCAL env/flag is set; wins over `--enrich-licenses-local`
+  (`REPO_OPS_ENRICH_LICENSES_NETWORK=1`).
+  When local and network modes are both set, network mode wins.
   Implies enrichment is on. `BSD-3-Clause` requires the endorse/promote
   clause; redistribution text without that clause classifies as
   `BSD-2-Clause` (truncated BSD-3 without the third clause is indistinguishable).
@@ -264,7 +268,10 @@ policy violations (read-only). Offline by default.
   metadata or cache hits exist.
 - `--enrich-licenses-local` — local/cache-only enrichment (env twin
   `REPO_OPS_ENRICH_LICENSES_LOCAL`); when both enrichment flags (or both
-  environment variables) are set, local mode wins (no network). BSD text
+  environment variables) are set, local mode wins unless network mode is
+  explicitly forced. `--enrich-licenses-network` — force registry network
+  enrichment even when LOCAL env/flag is set; wins over
+  `--enrich-licenses-local` (`REPO_OPS_ENRICH_LICENSES_NETWORK=1`). BSD text
   classification is best-effort: `BSD-3-Clause` requires the endorse/promote
   clause; truncated BSD-3 text missing that clause is indistinguishable from
   `BSD-2-Clause` and classifies as `BSD-2-Clause`.
@@ -377,7 +384,9 @@ For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 | container_refresh_sha | (none) | `REPO_OPS_CONTAINER_REFRESH_SHA` | `container_refresh_sha` | `0` |
 | hatch_migrate_uv_lock | `--migrate-to-uv-lock` | `REPO_OPS_HATCH_MIGRATE_UV_LOCK` | `hatch_migrate_uv_lock` | `0` |
 | precommit_update_latest | (none) | `REPO_OPS_PRECOMMIT_UPDATE_LATEST` | `precommit_update_latest` | `0` |
+| precommit_refresh_sha | `--precommit-refresh-sha` | `REPO_OPS_PRECOMMIT_REFRESH_SHA` | `precommit_refresh_sha` | `0` |
 | submodule_update_latest | (none) | `REPO_OPS_SUBMODULE_UPDATE_LATEST` | `submodule_update_latest` | `0` |
+| submodule_refresh_sha | `--submodule-refresh-sha` | `REPO_OPS_SUBMODULE_REFRESH_SHA` | `submodule_refresh_sha` | `0` |
 | resume | (none) | `REPO_OPS_RESUME` | `resume` | `0` |
 | remediate_go_generate | (none) | `REPO_OPS_REMEDIATE_GO_GENERATE` | `remediate_go_generate` | `0` |
 | audit_fail_on | `--fail-on` | `REPO_OPS_AUDIT_FAIL_ON` | `audit_fail_on` | `high` |

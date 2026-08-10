@@ -181,6 +181,8 @@ def _run_upgrade_body(
         os.environ["REPO_OPS_DENO_TARGETED_BUMP"] = "1"
     if full_sweep:
         os.environ["REPO_OPS_CONTAINER_REFRESH_SHA"] = "1"
+        os.environ["REPO_OPS_PRECOMMIT_REFRESH_SHA"] = "1"
+        os.environ["REPO_OPS_SUBMODULE_REFRESH_SHA"] = "1"
     # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects (#132).
     if _cli_flag(args, "migrate_to_uv_lock"):
         os.environ["REPO_OPS_HATCH_MIGRATE_UV_LOCK"] = "1"
