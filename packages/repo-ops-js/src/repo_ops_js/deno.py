@@ -115,6 +115,14 @@ def _deno_import_map_paths(ws: Workspace) -> list[Path]:
     workspace_root = Path(ws.path).resolve()
     default_paths = {workspace_root / name for name in _DENO_IMPORT_MAP_FILENAMES}
     config_paths: set[Path] = set()
+    safe_default_paths: set[Path] = set()
+    for default_path in default_paths:
+        resolved_path = default_path.resolve()
+        try:
+            resolved_path.relative_to(workspace_root)
+        except ValueError:
+            continue
+        safe_default_paths.add(resolved_path)
     for config_name in _DENO_CONFIG_FILENAMES:
         config_path = workspace_root / config_name
         if not config_path.is_file():
@@ -132,7 +140,7 @@ def _deno_import_map_paths(ws: Workspace) -> list[Path]:
             config_paths.add(import_map_path)
     existing_config_paths = {path for path in config_paths if path.is_file()}
     paths = sorted(
-        (default_paths | config_paths),
+        (safe_default_paths | config_paths),
         key=lambda path: path.as_posix(),
     )
     return [
@@ -154,6 +162,37 @@ def _deno_update_command(ws: Workspace) -> list[str]:
     return command
 
 
+def _deno_snapshot_paths(ws: Workspace) -> set[Path]:
+    workspace_root = Path(ws.path).resolve()
+    paths = set(_deno_import_map_paths(ws))
+    for config_name in _DENO_CONFIG_FILENAMES:
+        config_path = workspace_root / config_name
+        try:
+            config_path.resolve().relative_to(workspace_root)
+        except ValueError:
+            continue
+        if config_path.is_file():
+            paths.add(config_path)
+    return paths
+
+
+def _snapshot_deno_workspace(ws: Workspace) -> dict[Path, bytes]:
+    snapshot = dict(snapshot_workspace_files(ws.path, "deno"))
+    for path in _deno_snapshot_paths(ws):
+        snapshot[path] = path.read_bytes()
+    return snapshot
+
+
+def _restore_deno_workspace(ws: Workspace, before: dict[Path, bytes]) -> None:
+    after = _snapshot_deno_workspace(ws)
+    for path in set(before) | set(after):
+        if path in before:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(before[path])
+        elif path.exists():
+            path.unlink()
+
+
 def set_deno_audit_version_overrides(overrides: dict[str, str]) -> None:
     _AUDIT_VERSION_OVERRIDES.clear()
     _AUDIT_VERSION_OVERRIDES.update(overrides)
@@ -161,6 +200,25 @@ def set_deno_audit_version_overrides(overrides: dict[str, str]) -> None:
 
 def clear_deno_audit_version_overrides() -> None:
     _AUDIT_VERSION_OVERRIDES.clear()
+
+
+def apply_deno_audit_version_overrides(ws: Workspace) -> None:
+    for name, version in _AUDIT_VERSION_OVERRIDES.items():
+        snapshot = _snapshot_deno_workspace(ws)
+        proc = run(
+            [
+                *_deno_update_command(ws),
+                _deno_version_target(name, version),
+            ],
+            ws.path,
+            timeout=resolve_timeout_apply(),
+        )
+        landed = _landed_deno_version(ws, name) if proc.returncode == 0 else None
+        if landed == _deno_precise_version(version):
+            continue
+        _restore_deno_workspace(ws, snapshot)
+        detail = proc.stderr.strip() if proc.returncode != 0 else "target not landed"
+        raise RuntimeError(f"deno audit override failed for {name}@{version}: {detail}")
 
 
 def _deno_version_target(name: str, version: str) -> str:
