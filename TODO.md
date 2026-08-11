@@ -30,28 +30,28 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 ---
 
-## Round 33 — Wave 33 audit carry-forwards
+## Round 34 — Wave 34 audit carry-forwards
 
-### 33.1 Config exclude tests: chdir + real TOML instead of stubbing load_repo_config
+### 34.1 Doctor: retire stubbed skill-drift main test or keep as unit-style
 
-Audit and pushed config-exclude tests monkeypatch `load_repo_config` to return exclude dicts. That proves `merge_exclude_patterns` wiring through `main`, not that `load_repo_config(Path.cwd())` is actually consulted. Prefer chdir + real `pyproject.toml` / `.repo-ops.toml` (or the existing e2e/dependabot chdir patterns).
+`test_main_reports_mutated_skill_content_as_drift` covers real mutated install through `doctor.main`. Sibling `test_main_warns_when_installed_skill_drifts` still stubs `probe_skill_drift` entirely. Either remove the stubbed test as redundant or keep it explicitly as a cheap unit-style path.
 
-**Refs:** `tests/test_audit.py`; `tests/test_pushed.py`; `tests/test_dependabot_sweep.py`; `tests/test_config_e2e.py`.
+**Refs:** `tests/test_doctor.py`.
 
-**Acceptance:** At least one audit and one pushed exclude test load exclude patterns from an on-disk checkout config without stubbing `load_repo_config`.
+**Acceptance:** Stubbed main skill-drift test is removed, or a short comment/docstring marks it as unit-style probe stub (no history prose).
 
-### 33.2 Audit gate env tests: isolate global config.toml
+### 34.2 Config-exclude tests: JSON summary.excluded parity
 
-Autouse fixture stubs cwd `load_repo_config` to `{}`, but env-only gate tests do not pin `XDG_CONFIG_HOME` or stub `load_global_config`. Operator `~/.config/repo-ops/config.toml` can still inject `audit_fail_on*` via `apply_config_to_env` when those env vars are unset.
+On-disk config exclude tests in audit/pushed assert human `excluded:` lines / seen repos. CLI exclude tests also assert `--json` `summary.excluded`. Optional parity for the config-driven paths.
 
-**Refs:** `tests/test_audit_config_gates.py`; `repo_ops_audit.audit.main`.
+**Refs:** `tests/test_audit.py`; `tests/test_pushed.py`.
 
-**Acceptance:** Env-only gate tests pin empty/global-free XDG config (or stub `load_global_config` → `{}`) so only the test env drives the gate.
+**Acceptance:** At least one audit and one pushed on-disk-config exclude test assert JSON `summary.excluded` (or equivalent) without stubbing `load_repo_config`.
 
-### 33.3 Doctor: main/JSON path for mutated skill content drift
+### 34.3 Audit gate TOML tests: pop all apply_config_to_env keys
 
-`test_probe_skill_drift_reports_mutated_install` covers `probe_skill_drift()` directly. Dangling-symlink coverage exists for `doctor.main` JSON; mutated SKILL.md content drift through `main` / `--json` is still unit-level only.
+TOML config gate tests `finally`-pop the single promoted key under test. Belt-and-suspenders: pop every key `apply_config_to_env` may set from the written `config.toml` so leftover env cannot leak across tests.
 
-**Refs:** `tests/test_doctor.py`; `repo_ops_doctor.doctor.probe_skill_drift`.
+**Refs:** `tests/test_audit_config_gates.py`; `repo_ops_core.config.apply_config_to_env`.
 
-**Acceptance:** A `doctor.main` (human and/or `--json`) test asserts mutated installed skill content appears in `skill_drift`.
+**Acceptance:** TOML-driven gate tests clear all env keys their fixture config can promote, not only the asserted gate key.
