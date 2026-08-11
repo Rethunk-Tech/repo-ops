@@ -8,7 +8,11 @@ from repo_ops_core.holds import HoldRule
 from repo_ops_js.deno import (
     _enforce_deno_version_ceilings,
     _filter_held_deno_changes,
+    _deno_targeted_bump_enabled,
+    _deno_update_latest_enabled,
     check_deno,
+    clear_deno_audit_version_overrides,
+    set_deno_audit_version_overrides,
     targeted_bump_behind,
 )
 from repo_ops_models import Change, Workspace
@@ -42,8 +46,10 @@ def _proc(stdout: str = "", returncode: int = 0, stderr: str = ""):
 
 @pytest.fixture(autouse=True)
 def _no_repo_holds():
+    clear_deno_audit_version_overrides()
     with patch(_REPO_HOLDS_CACHE, return_value=()):
         yield
+    clear_deno_audit_version_overrides()
 
 
 def test_check_deno_filters_past_ceiling_from_planned_and_behind(tmp_path) -> None:
@@ -117,6 +123,34 @@ def test_targeted_bump_restores_landing_above_ceiling(tmp_path, monkeypatch) -> 
     restore_mock.assert_called_once()
 
 
+def test_targeted_bump_audit_override_wins_over_hold_ceiling(
+    tmp_path, monkeypatch
+) -> None:
+    ws = _ws(tmp_path)
+    change = Change(_PACKAGE, "1.0.0", "2.0.0")
+    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    set_deno_audit_version_overrides({_PACKAGE: "1.4.0"})
+    with (
+        patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
+        patch(
+            "repo_ops_js.deno.snapshot_workspace_files",
+            side_effect=[object(), object()],
+        ),
+        patch("repo_ops_js.deno._landed_deno_version", return_value="1.4.0"),
+        patch("repo_ops_js.deno.assert_targets_resolved"),
+        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+    ):
+        applied, still_behind = targeted_bump_behind(ws, [change])
+
+    assert applied == [Change(_PACKAGE, "1.0.0", "1.4.0")]
+    assert still_behind == []
+    assert run_mock.call_args.args[0] == [
+        "deno",
+        "update",
+        f"{_PACKAGE}@1.4.0",
+    ]
+
+
 def test_enforce_deno_version_ceilings_clamps_resolved_above_ceiling(tmp_path) -> None:
     ws = _ws(tmp_path)
     with (
@@ -138,6 +172,54 @@ def test_enforce_deno_version_ceilings_clamps_resolved_above_ceiling(tmp_path) -
         f"{_PACKAGE}@<=1.5",
     ]
     restore_mock.assert_not_called()
+
+
+def test_enforce_deno_version_ceilings_passes_default_import_map(tmp_path) -> None:
+    ws = _ws(tmp_path)
+    import_map = tmp_path / "import_map.json"
+    import_map.write_text("{}", encoding="utf-8")
+    with (
+        patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
+        patch(
+            "repo_ops_js.deno._landed_deno_version",
+            side_effect=["2.0.0", "1.5.0"],
+        ),
+        patch("repo_ops_js.deno._deno_lock_package_names", return_value={_PACKAGE}),
+        patch("repo_ops_js.deno.snapshot_workspace_files", return_value=object()),
+        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore_mock,
+        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+    ):
+        _enforce_deno_version_ceilings(ws)
+
+    assert run_mock.call_args.args[0] == [
+        "deno",
+        "update",
+        "--import-map",
+        str(import_map),
+        f"{_PACKAGE}@<=1.5",
+    ]
+    restore_mock.assert_not_called()
+
+
+def test_deno_flags_resolve_per_checkout_config(tmp_path) -> None:
+    latest_ws = _ws(tmp_path / "latest")
+    targeted_ws = _ws(tmp_path / "targeted")
+
+    def repo_config(repo_root):
+        return {
+            "deno_update_latest": repo_root == latest_ws.git_repo,
+            "deno_targeted_bump": repo_root == targeted_ws.git_repo,
+        }
+
+    with (
+        patch("repo_ops_js.deno.ambient_env", return_value={}),
+        patch("repo_ops_js.deno.load_global_config", return_value={}),
+        patch("repo_ops_js.deno.load_repo_config", side_effect=repo_config),
+    ):
+        assert _deno_update_latest_enabled(latest_ws) is True
+        assert _deno_update_latest_enabled(targeted_ws) is False
+        assert _deno_targeted_bump_enabled(latest_ws) is False
+        assert _deno_targeted_bump_enabled(targeted_ws) is True
 
 
 @pytest.mark.parametrize("package", [_PACKAGE, "jsr:@std/held"])

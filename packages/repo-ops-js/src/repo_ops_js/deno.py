@@ -10,6 +10,12 @@ import sys
 from functools import cache
 from pathlib import Path
 
+from repo_ops_core.config import (
+    ambient_env,
+    load_global_config,
+    load_repo_config,
+    resolve_setting,
+)
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.holds import (
     HoldRule,
@@ -32,7 +38,12 @@ _DENO_UPDATE_LATEST_ENV = "REPO_OPS_DENO_UPDATE_LATEST"
 _DENO_TARGETED_BUMP_ENV = "REPO_OPS_DENO_TARGETED_BUMP"
 _TRUE_VALUES = ("1", "true", "yes", "on")
 _DENO_CONFIG_FILENAMES = ("deno.json", "deno.jsonc")
-_DENO_IMPORT_MAP_FILENAMES = ("import_map.json", "import-map.json")
+_DENO_IMPORT_MAP_FILENAMES = (
+    "import_map.json",
+    "import-map.json",
+    "import_map.jsonc",
+    "import-map.jsonc",
+)
 _AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 _SEMVER_RE = re.compile(
     r"^[vV]?\d+(?:\.\d+)*(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
@@ -40,12 +51,48 @@ _SEMVER_RE = re.compile(
 )
 
 
-def _deno_update_latest_enabled() -> bool:
-    return os.environ.get(_DENO_UPDATE_LATEST_ENV, "").strip().lower() in _TRUE_VALUES
+def _process_env_cli_override(env_var: str) -> str | None:
+    """Return a process value changed after the ambient environment snapshot."""
+    ambient = ambient_env()
+    if ambient is None:
+        return None
+    process_value = os.environ.get(env_var)
+    if env_var not in ambient:
+        if process_value is None:
+            return None
+        setting = env_var.removeprefix("REPO_OPS_").lower()
+        global_value = load_global_config().get(setting)
+        if global_value is True:
+            global_value = "1"
+        elif global_value is False:
+            global_value = "0"
+        return (
+            None
+            if global_value is not None and process_value == str(global_value)
+            else process_value
+        )
+    return process_value if process_value != ambient[env_var] else None
 
 
-def _deno_targeted_bump_enabled() -> bool:
-    return os.environ.get(_DENO_TARGETED_BUMP_ENV, "").strip().lower() in _TRUE_VALUES
+def _deno_setting(name: str, env_var: str, ws: Workspace | None = None) -> bool:
+    raw = resolve_setting(
+        name,
+        cli_value=_process_env_cli_override(env_var),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip().lower() in _TRUE_VALUES
+
+
+def _deno_update_latest_enabled(ws: Workspace | None = None) -> bool:
+    return _deno_setting("deno_update_latest", _DENO_UPDATE_LATEST_ENV, ws)
+
+
+def _deno_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
+    return _deno_setting("deno_targeted_bump", _DENO_TARGETED_BUMP_ENV, ws)
 
 
 def _parseable_semver_tuple(version: str) -> tuple[int, ...] | None:
@@ -66,31 +113,35 @@ def _deno_precise_version(version: str) -> str:
 def _deno_import_map_paths(ws: Workspace) -> list[Path]:
     """Return import maps usable by Deno in this workspace."""
     workspace_root = Path(ws.path).resolve()
+    default_paths = {workspace_root / name for name in _DENO_IMPORT_MAP_FILENAMES}
+    config_paths: set[Path] = set()
     for config_name in _DENO_CONFIG_FILENAMES:
         config_path = workspace_root / config_name
         if not config_path.is_file():
             continue
         try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-        except (OSError, TypeError, json.JSONDecodeError):
+            config_text = config_path.read_text(encoding="utf-8")
+        except OSError:
             continue
-        import_map = config.get("importMap") if isinstance(config, dict) else None
-        if not isinstance(import_map, str) or not import_map.strip():
-            continue
-        import_map_path = (config_path.parent / import_map).resolve()
-        try:
-            import_map_path.relative_to(workspace_root)
-        except ValueError:
-            continue
-        if import_map_path.is_file():
-            return [import_map_path]
+        for match in re.finditer(r'"importMap"\s*:\s*"([^"]+)"', config_text):
+            import_map_path = (workspace_root / match.group(1)).resolve()
+            try:
+                import_map_path.relative_to(workspace_root)
+            except ValueError:
+                continue
+            config_paths.add(import_map_path)
+    existing_config_paths = {path for path in config_paths if path.is_file()}
+    paths = sorted(
+        (default_paths | config_paths),
+        key=lambda path: path.as_posix(),
+    )
     return [
-        path
-        for path in sorted(
-            (workspace_root / name for name in _DENO_IMPORT_MAP_FILENAMES),
-            key=lambda path: path.as_posix(),
-        )
-        if path.is_file()
+        *sorted(existing_config_paths, key=lambda path: path.as_posix()),
+        *(
+            path
+            for path in paths
+            if path.is_file() and path not in existing_config_paths
+        ),
     ]
 
 
@@ -192,16 +243,18 @@ def check_deno(ws: Workspace) -> tuple[list[Change], list[Change]]:
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "deno outdated failed")
-    changes, behind_latest = _parse_deno_outdated(proc.stdout)
+    changes, behind_latest = _parse_deno_outdated(proc.stdout, ws)
     return (
         _filter_held_deno_changes(ws, changes),
         _filter_held_deno_changes(ws, behind_latest),
     )
 
 
-def _parse_deno_outdated(stdout: str) -> tuple[list[Change], list[Change]]:
+def _parse_deno_outdated(
+    stdout: str, ws: Workspace | None = None
+) -> tuple[list[Change], list[Change]]:
     """Parse ``deno outdated`` stdout into ``(changes, behind_latest)``."""
-    want_latest = _deno_update_latest_enabled()
+    want_latest = _deno_update_latest_enabled(ws)
     changes: list[Change] = []
     behind_latest: list[Change] = []
     # Plain text: "name  current  update  latest" OR "name  current  latest"
@@ -370,7 +423,7 @@ def targeted_bump_behind(
     ws: Workspace, behind: list[Change]
 ) -> tuple[list[Change], list[Change]]:
     """Run a reversible per-package ``deno update`` for behind-latest deps."""
-    if not behind or not _deno_targeted_bump_enabled():
+    if not behind or not _deno_targeted_bump_enabled(ws):
         return [], behind
     applied: list[Change] = []
     still_behind: list[Change] = []
@@ -389,7 +442,7 @@ def targeted_bump_behind(
         if audit_override is not None:
             cmd.append(_deno_version_target(change.name, audit_override))
         elif hold is None:
-            if _deno_update_latest_enabled():
+            if _deno_update_latest_enabled(ws):
                 cmd.append("--latest")
             cmd.append(change.name)
         else:
@@ -519,7 +572,7 @@ def apply_deno(ws: Workspace) -> list[Change]:
         raise RuntimeError(f"deno not on PATH for {ws.path}")
     planned, behind = check_deno(ws)
     cmd = ["deno", "outdated", "--update"]
-    if _deno_update_latest_enabled():
+    if _deno_update_latest_enabled(ws):
         cmd.append("--latest")
     proc = run(
         cmd,
