@@ -67,6 +67,9 @@ pushes.
 
 `go_generate` remains off unless `REPO_OPS_REMEDIATE_GO_GENERATE=1` is set.
 
+- **Bun remediations:** execute installed package binaries via `bunx` (the
+  `pm_exec_prefix("bun")` command prefix), not `bun run`.
+
 - Parallelism: `--jobs` must be a positive integer (default `8`).
 - **Staleness scoring:** every run persists per-repo behind-latest history (`$XDG_CACHE_HOME/repo-ops/state.json`) and reports `staleness_score` (behind-latest count × days since the repo first fell behind) and `new_behind_since_last_run` in JSON, plus a top-3 staleness footer line when any score is nonzero. Disable all state persistence with `REPO_OPS_NO_STATE=1`.
 
@@ -80,7 +83,7 @@ pushes.
 - **`--exclude PATTERN`:** Repeatable on `plan`, `apply`, `audit`, `dependabot`, and `pushed`. A repository is skipped when a pattern substring- or fnmatch-matches its label or absolute path.
 
 When JSON is enabled, audit and pushed report excluded repositories in
-`summary.excluded`; dependabot reports them in `summary.excluded_repos`.
+`summary.excluded`; dependabot uses the same canonical `summary.excluded` key.
 
 ### Ecosystem upgrade modes (plan and apply)
 
