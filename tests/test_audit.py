@@ -756,6 +756,11 @@ def test_audit_exclude_filters_repositories_from_config(
     drop.mkdir()
     seen: list[str] = []
 
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nexclude = ["drop"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         "repo_ops_audit.audit.discover_repos",
         lambda *args, **kwargs: {
@@ -764,10 +769,6 @@ def test_audit_exclude_filters_repositories_from_config(
         },
     )
     monkeypatch.setattr("repo_ops_audit.audit.load_global_config", lambda: {})
-    monkeypatch.setattr(
-        "repo_ops_audit.audit.load_repo_config",
-        lambda repo: {"exclude": ["drop"]},
-    )
     monkeypatch.setattr(
         "repo_ops_audit.audit._detect_workspaces",
         lambda repo: [(repo, "go", "go")],
@@ -800,6 +801,11 @@ def test_audit_exclude_cli_wins_over_config(
         repo.mkdir()
     seen: list[str] = []
 
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nexclude = ["config-excluded"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         "repo_ops_audit.audit.discover_repos",
         lambda *args, **kwargs: {
@@ -809,10 +815,6 @@ def test_audit_exclude_cli_wins_over_config(
         },
     )
     monkeypatch.setattr("repo_ops_audit.audit.load_global_config", lambda: {})
-    monkeypatch.setattr(
-        "repo_ops_audit.audit.load_repo_config",
-        lambda repo: {"exclude": ["config-excluded"]},
-    )
     monkeypatch.setattr(
         "repo_ops_audit.audit._detect_workspaces",
         lambda repo: [(repo, "go", "go")],
