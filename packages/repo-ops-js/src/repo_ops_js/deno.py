@@ -31,6 +31,8 @@ from repo_ops_js.guards import assert_targets_resolved
 _DENO_UPDATE_LATEST_ENV = "REPO_OPS_DENO_UPDATE_LATEST"
 _DENO_TARGETED_BUMP_ENV = "REPO_OPS_DENO_TARGETED_BUMP"
 _TRUE_VALUES = ("1", "true", "yes", "on")
+_DENO_CONFIG_FILENAMES = ("deno.json", "deno.jsonc")
+_DENO_IMPORT_MAP_FILENAMES = ("import_map.json", "import-map.json")
 _SEMVER_RE = re.compile(
     r"^[vV]?\d+(?:\.\d+)*(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
@@ -58,6 +60,46 @@ def _deno_precise_version(version: str) -> str:
     if not parts or len(parts) > 3 or any(not part.isdigit() for part in parts):
         return normalized
     return ".".join(parts)
+
+
+def _deno_import_map_paths(ws: Workspace) -> list[Path]:
+    """Return import maps usable by Deno in this workspace."""
+    workspace_root = Path(ws.path).resolve()
+    for config_name in _DENO_CONFIG_FILENAMES:
+        config_path = workspace_root / config_name
+        if not config_path.is_file():
+            continue
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, json.JSONDecodeError):
+            continue
+        import_map = config.get("importMap") if isinstance(config, dict) else None
+        if not isinstance(import_map, str) or not import_map.strip():
+            continue
+        import_map_path = (config_path.parent / import_map).resolve()
+        try:
+            import_map_path.relative_to(workspace_root)
+        except ValueError:
+            continue
+        if import_map_path.is_file():
+            return [import_map_path]
+    return [
+        path
+        for path in sorted(
+            (workspace_root / name for name in _DENO_IMPORT_MAP_FILENAMES),
+            key=lambda path: path.as_posix(),
+        )
+        if path.is_file()
+    ]
+
+
+def _deno_update_command(ws: Workspace) -> list[str]:
+    """Return a Deno update command with the workspace import map."""
+    command = ["deno", "update"]
+    import_maps = _deno_import_map_paths(ws)
+    if import_maps:
+        command.extend(["--import-map", str(import_maps[0])])
+    return command
 
 
 def _deno_version_target(name: str, version: str) -> str:
@@ -331,7 +373,7 @@ def targeted_bump_behind(
             still_behind.append(change)
             continue
         snapshot = snapshot_workspace_files(ws.path, "deno")
-        cmd = ["deno", "update"]
+        cmd = _deno_update_command(ws)
         if hold is None:
             if _deno_update_latest_enabled():
                 cmd.append("--latest")
@@ -399,7 +441,10 @@ def _enforce_deno_version_ceilings(
             continue
         snapshot = snapshot_workspace_files(ws.path, "deno")
         proc = run(
-            ["deno", "update", _deno_ceiling_target(name, rule.max_version)],
+            [
+                *_deno_update_command(ws),
+                _deno_ceiling_target(name, rule.max_version),
+            ],
             ws.path,
             timeout=resolve_timeout_apply(),
         )
@@ -415,7 +460,7 @@ def _enforce_deno_version_ceilings(
         target = _highest_deno_version(candidates, rule.max_version)
         if target is not None:
             proc = run(
-                ["deno", "update", _deno_version_target(name, target)],
+                [*_deno_update_command(ws), _deno_version_target(name, target)],
                 ws.path,
                 timeout=resolve_timeout_apply(),
             )
