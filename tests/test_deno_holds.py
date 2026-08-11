@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
 from unittest.mock import patch
 
 import pytest
 from repo_ops_core.holds import HoldRule
 from repo_ops_js.deno import (
-    _enforce_deno_version_ceilings,
-    _filter_held_deno_changes,
+    _deno_import_map_paths,
     _deno_targeted_bump_enabled,
     _deno_update_latest_enabled,
+    _enforce_deno_version_ceilings,
+    _filter_held_deno_changes,
+    _snapshot_deno_workspace,
+    apply_deno_audit_version_overrides,
     check_deno,
     clear_deno_audit_version_overrides,
     set_deno_audit_version_overrides,
@@ -104,10 +108,10 @@ def test_targeted_bump_restores_landing_above_ceiling(tmp_path, monkeypatch) -> 
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
         patch(
-            "repo_ops_js.deno.snapshot_workspace_files",
+            "repo_ops_js.deno._snapshot_deno_workspace",
             side_effect=[object(), object()],
         ),
-        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore_mock,
+        patch("repo_ops_js.deno._restore_deno_workspace") as restore_mock,
         patch("repo_ops_js.deno._landed_deno_version", return_value="2.0.0"),
         patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
     ):
@@ -123,6 +127,74 @@ def test_targeted_bump_restores_landing_above_ceiling(tmp_path, monkeypatch) -> 
     restore_mock.assert_called_once()
 
 
+def test_apply_deno_audit_version_overrides_runs_without_targeted_bump(
+    tmp_path, monkeypatch
+) -> None:
+    ws = _ws(tmp_path)
+    monkeypatch.delenv("REPO_OPS_DENO_TARGETED_BUMP", raising=False)
+    set_deno_audit_version_overrides({_PACKAGE: "1.4.0"})
+    with (
+        patch("repo_ops_js.deno._snapshot_deno_workspace", return_value={}),
+        patch("repo_ops_js.deno._landed_deno_version", return_value="1.4.0"),
+        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+    ):
+        apply_deno_audit_version_overrides(ws)
+
+    assert run_mock.call_args.args[0] == [
+        "deno",
+        "update",
+        f"{_PACKAGE}@1.4.0",
+    ]
+
+
+def test_snapshot_deno_workspace_includes_maps_and_configs(tmp_path) -> None:
+    ws = _ws(tmp_path)
+    import_map = tmp_path / "custom-map.json"
+    import_map.write_bytes(b"{}")
+    (tmp_path / "deno.json").write_text(
+        '{"importMap":"custom-map.json"}', encoding="utf-8"
+    )
+    with patch("repo_ops_js.deno.snapshot_workspace_files", return_value={}):
+        snapshot = _snapshot_deno_workspace(ws)
+
+    assert import_map in snapshot
+    assert tmp_path / "deno.json" in snapshot
+
+
+def test_deno_import_map_config_precedes_default_map(tmp_path) -> None:
+    ws = _ws(tmp_path)
+    configured = tmp_path / "z-map.json"
+    configured.write_bytes(b"{}")
+    (tmp_path / "import_map.json").write_bytes(b"{}")
+    (tmp_path / "deno.json").write_text('{"importMap":"z-map.json"}', encoding="utf-8")
+
+    assert _deno_import_map_paths(ws)[0] == configured
+
+
+def test_deno_import_map_default_selection_is_stable(tmp_path) -> None:
+    ws = _ws(tmp_path)
+    first = tmp_path / "import-map.json"
+    second = tmp_path / "import_map.json"
+    first.write_bytes(b"{}")
+    second.write_bytes(b"{}")
+
+    assert _deno_import_map_paths(ws)[0] == first.resolve()
+
+
+def test_deno_import_map_rejects_parent_and_symlink_escape(tmp_path) -> None:
+    ws = _ws(tmp_path)
+    outside = tmp_path.parent / "outside-import-map.json"
+    outside.write_bytes(b"{}")
+    (tmp_path / "deno.json").write_text(
+        '{"importMap":"../outside-import-map.json"}', encoding="utf-8"
+    )
+    assert _deno_import_map_paths(ws) == []
+
+    (tmp_path / "deno.json").unlink()
+    os.symlink(outside, tmp_path / "import_map.json")
+    assert _deno_import_map_paths(ws) == []
+
+
 def test_targeted_bump_audit_override_wins_over_hold_ceiling(
     tmp_path, monkeypatch
 ) -> None:
@@ -133,7 +205,7 @@ def test_targeted_bump_audit_override_wins_over_hold_ceiling(
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
         patch(
-            "repo_ops_js.deno.snapshot_workspace_files",
+            "repo_ops_js.deno._snapshot_deno_workspace",
             side_effect=[object(), object()],
         ),
         patch("repo_ops_js.deno._landed_deno_version", return_value="1.4.0"),
@@ -160,8 +232,8 @@ def test_enforce_deno_version_ceilings_clamps_resolved_above_ceiling(tmp_path) -
             side_effect=["2.0.0", "1.5.0"],
         ),
         patch("repo_ops_js.deno._deno_lock_package_names", return_value={_PACKAGE}),
-        patch("repo_ops_js.deno.snapshot_workspace_files", return_value=object()),
-        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore_mock,
+        patch("repo_ops_js.deno._snapshot_deno_workspace", return_value=object()),
+        patch("repo_ops_js.deno._restore_deno_workspace") as restore_mock,
         patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
     ):
         _enforce_deno_version_ceilings(ws)
@@ -185,8 +257,8 @@ def test_enforce_deno_version_ceilings_passes_default_import_map(tmp_path) -> No
             side_effect=["2.0.0", "1.5.0"],
         ),
         patch("repo_ops_js.deno._deno_lock_package_names", return_value={_PACKAGE}),
-        patch("repo_ops_js.deno.snapshot_workspace_files", return_value=object()),
-        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore_mock,
+        patch("repo_ops_js.deno._snapshot_deno_workspace", return_value=object()),
+        patch("repo_ops_js.deno._restore_deno_workspace") as restore_mock,
         patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
     ):
         _enforce_deno_version_ceilings(ws)
@@ -246,8 +318,8 @@ def test_enforce_deno_version_ceilings_falls_back_to_published_patch(
         ),
         patch("repo_ops_js.deno._deno_lock_package_names", return_value={package}),
         patch("repo_ops_js.deno._deno_lock_versions", return_value=[]),
-        patch("repo_ops_js.deno.snapshot_workspace_files", return_value=object()),
-        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore_mock,
+        patch("repo_ops_js.deno._snapshot_deno_workspace", return_value=object()),
+        patch("repo_ops_js.deno._restore_deno_workspace") as restore_mock,
         patch(
             "repo_ops_js.deno.run",
             side_effect=[
