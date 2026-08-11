@@ -318,8 +318,10 @@ def test_targeted_bump_keeps_held_overrides_pin(tmp_path: Path, monkeypatch) -> 
             return_value=(_held_rule(package="is-odd", max_version="0.1.2"),),
         ),
         patch("repo_ops_js_bun.bun.run", side_effect=_fake_run),
+        patch("repo_ops_js_bun.bun.release_unheld_pin") as release_pin,
     ):
         targeted_bump_behind(ws, [Change("is-odd", "0.1.2", "1.0.0")])
 
+    release_pin.assert_not_called()
     pkg_after = json.loads((tmp_path / "package.json").read_text(encoding="utf-8"))
     assert pkg_after["overrides"]["is-odd"] == "0.1.2"
