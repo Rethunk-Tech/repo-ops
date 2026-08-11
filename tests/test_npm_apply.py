@@ -50,6 +50,25 @@ def test_apply_npm_raises_on_ghost_bump_overrides_pin() -> None:
     assert "4.17.20" in str(exc_info.value)
 
 
+def test_apply_npm_targeted_bump_defers_ghost_to_retry() -> None:
+    """Targeted bump mode sends a ghost target to the per-package retry."""
+    change = Change("lodash", "4.17.20", "4.17.21")
+    with (
+        patch("repo_ops_js_npm.npm.run", _fake_run_ok),
+        patch(_OUTDATED, return_value=([change], [])),
+        patch(_RESOLVER_PATH, return_value="4.17.20"),
+        patch("repo_ops_js_npm.npm._npm_targeted_bump_enabled", return_value=True),
+        patch(
+            "repo_ops_js_npm.npm.targeted_bump_behind",
+            return_value=([], [change]),
+        ) as retry,
+    ):
+        assert apply_npm(_ws()) == [change]
+
+    retry.assert_called_once()
+    assert retry.call_args.args[1] == [change]
+
+
 def test_apply_npm_ok_when_resolved_at_target() -> None:
     """Resolved version at or above target → no ghost bump raised."""
     for resolved in ("4.17.21", "4.17.22"):
