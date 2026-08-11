@@ -180,6 +180,37 @@ def test_targeted_bump_reverts_ghost_bump(tmp_path: Path, monkeypatch) -> None:
     assert (tmp_path / "package-lock.json").read_bytes() == original_lock
 
 
+def test_npm_targeted_bump_restores_snapshot_when_guard_raises(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Guard raise must restore lockfile after a targeted install."""
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
+    _seed(tmp_path)
+    original_lock = (tmp_path / "package-lock.json").read_bytes()
+    ws = _ws(tmp_path)
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        (tmp_path / "package-lock.json").write_text("mutated-lock\n", encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    def fake_guard(ws, requested, manager="npm"):
+        raise RuntimeError("ghost bump: npm upgrade blocked")
+
+    with (
+        patch("repo_ops_js_npm.npm.run", fake_run),
+        patch(
+            "repo_ops_js_npm.npm.resolved_version_from_node_modules",
+            return_value="19.0.0",
+        ),
+        patch("repo_ops_js_npm.npm.assert_targets_resolved", fake_guard),
+    ):
+        applied, still_behind = targeted_bump_behind(ws, _REACT_BEHIND)
+
+    assert applied == []
+    assert still_behind == _REACT_BEHIND
+    assert (tmp_path / "package-lock.json").read_bytes() == original_lock
+
+
 def test_targeted_bump_reverts_when_resolver_returns_none(
     tmp_path: Path, monkeypatch
 ) -> None:
