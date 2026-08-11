@@ -58,6 +58,7 @@ def test_apply_npm_targeted_bump_defers_ghost_to_retry() -> None:
         patch(_OUTDATED, return_value=([change], [])),
         patch(_RESOLVER_PATH, return_value="4.17.20"),
         patch("repo_ops_js_npm.npm._npm_targeted_bump_enabled", return_value=True),
+        patch("repo_ops_js_npm.npm.assert_targets_resolved") as guard,
         patch(
             "repo_ops_js_npm.npm.targeted_bump_behind",
             return_value=([], [change]),
@@ -67,6 +68,7 @@ def test_apply_npm_targeted_bump_defers_ghost_to_retry() -> None:
 
     retry.assert_called_once()
     assert retry.call_args.args[1] == [change]
+    guard.assert_not_called()
 
 
 def test_apply_npm_ok_when_resolved_at_target() -> None:
