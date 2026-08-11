@@ -55,6 +55,42 @@ def test_apply_pnpm_raises_on_ghost_bump_overrides_pin() -> None:
     assert "1.6.0" in str(exc_info.value)
 
 
+def test_apply_pnpm_targeted_bump_defers_ghost_to_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A blocked initial target is handed to targeted_bump_behind."""
+    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
+    blocked = Change("axios", "1.6.0", "1.7.0")
+    retry_inputs: list[list[Change]] = []
+
+    def fake_targeted_bump(ws, behind):
+        retry_inputs.append(list(behind))
+        return [], behind
+
+    with (
+        patch("repo_ops_js_pnpm.pnpm.run", _fake_run_ok),
+        patch(_OUTDATED, return_value=([blocked], [])),
+        patch(
+            "repo_ops_js_pnpm.pnpm.unresolved_targets",
+            return_value=[(blocked, "1.6.0")],
+        ),
+        patch(
+            "repo_ops_js_pnpm.pnpm.assert_targets_resolved",
+            side_effect=RuntimeError("initial guard must defer"),
+        ) as initial_guard,
+        patch(
+            "repo_ops_js_pnpm.pnpm.targeted_bump_behind",
+            side_effect=fake_targeted_bump,
+        ),
+        patch("repo_ops_js_pnpm.pnpm.enforce_holds", return_value=[]),
+    ):
+        behind = apply_pnpm(_ws())
+
+    initial_guard.assert_not_called()
+    assert retry_inputs == [[blocked]]
+    assert behind == [blocked]
+
+
 def test_apply_pnpm_ok_when_resolved_at_target() -> None:
     """Resolved version at or above target → no ghost bump raised."""
     for resolved in ("1.7.0", "1.8.0"):
