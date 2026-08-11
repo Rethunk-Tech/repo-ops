@@ -147,6 +147,65 @@ def test_plan_json_v1_schema_compact_and_null_omission(tmp_path: Path, capsys) -
     assert rc in (0, 1)
 
 
+def test_plan_exclude_filters_repositories_from_config(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    repos = {}
+    for name in ("keep", "drop"):
+        repo = tmp_path / name
+        repo.mkdir()
+        _init_git_repo(repo)
+        if name == "drop":
+            (repo / "pyproject.toml").write_text(
+                '[tool.repo-ops]\nexclude = ["drop"]\n',
+                encoding="utf-8",
+            )
+        (repo / "package.json").write_text(
+            '{"name":"%s","packageManager":"npm@10.0.0"}' % name,
+            encoding="utf-8",
+        )
+        (repo / "package-lock.json").write_text("{}", encoding="utf-8")
+        repos[name] = repo
+
+    monkeypatch.chdir(tmp_path)
+    register_all()
+    seen: list[Path] = []
+
+    def _record_workspace(wr, **_kwargs):
+        seen.append(wr.workspace.path)
+        return wr
+
+    with (
+        patch("repo_ops_upgrade.run.load_global_config", return_value={}),
+        patch(
+            "repo_ops_upgrade.run.orchestration.process_workspace",
+            side_effect=_record_workspace,
+        ),
+    ):
+        rc = main_plan([str(tmp_path), "--json", "--skip-actions"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert rc in (0, 1)
+    assert seen == [repos["keep"].resolve()]
+    assert payload["summary"]["excluded"] == 1
+
+    seen.clear()
+    with (
+        patch("repo_ops_upgrade.run.load_global_config", return_value={}),
+        patch(
+            "repo_ops_upgrade.run.orchestration.process_workspace",
+            side_effect=_record_workspace,
+        ),
+    ):
+        rc = main_plan([str(tmp_path), "--skip-actions"])
+
+    captured = capsys.readouterr()
+    assert rc in (0, 1)
+    assert seen == [repos["keep"].resolve()]
+    assert "excluded 1 repo(s) by exclude patterns" in captured.err
+
+
 def test_inventory_json_compact_schema_contract(tmp_path: Path, capsys) -> None:
     """F086/F089: inventory --json --compact matches plan schema_version contract."""
     from repo_ops_inventory.scan import main as inventory_main
