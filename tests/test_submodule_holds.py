@@ -44,31 +44,36 @@ def _ok_proc() -> MagicMock:
     return proc
 
 
-def test_check_filters_tag_advance_above_ceiling(tmp_path: Path) -> None:
+def test_check_surfaces_tag_hold_clamp_at_upstream_latest(tmp_path: Path) -> None:
     link = _make_link(tmp_path)
 
     with (
         patch.object(submodules, "_global_holds_cached", return_value=(_held_rule(),)),
         patch.object(submodules, "_repo_holds_cached", return_value=()),
-        patch.object(submodules, "_current_submodule_tag", return_value="v1.0.0"),
+        patch.object(submodules, "_current_submodule_tag", return_value="v1.5.0"),
         patch.object(
             submodules,
             "_fetch_remote_tags",
-            return_value=["v1.0.0", "v1.5.0"],
+            return_value=["v1.0.0", "v1.4.0", "v1.5.0"],
         ),
     ):
-        assert check_submodule_tag_advances([link]) == []
+        bumps = check_submodule_tag_advances([link])
+
+    assert len(bumps) == 1
+    assert bumps[0].current_tag == "v1.5.0"
+    assert bumps[0].latest_tag == "v1.4.0"
+    assert bumps[0].is_actionable
 
 
-def test_check_filters_sha_refresh_above_ceiling(
+def test_check_surfaces_sha_hold_clamp_without_refresh(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_SUBMODULE_REFRESH_SHA", "1")
+    monkeypatch.delenv("REPO_OPS_SUBMODULE_REFRESH_SHA", raising=False)
     link = _make_link(tmp_path)
     current_sha = "a" * 40
     refs = [
-        (current_sha, "v1.0.0"),
-        ("b" * 40, "v1.5.0"),
+        (current_sha, "v1.5.0"),
+        ("b" * 40, "v1.0.0"),
         ("c" * 40, "v2.0.0"),
     ]
 
@@ -79,7 +84,12 @@ def test_check_filters_sha_refresh_above_ceiling(
         patch.object(submodules, "_current_submodule_sha", return_value=current_sha),
         patch.object(submodules, "_fetch_remote_tag_refs", return_value=refs),
     ):
-        assert check_submodule_tag_advances([link]) == []
+        bumps = check_submodule_tag_advances([link])
+
+    assert len(bumps) == 1
+    assert bumps[0].current_tag == ""
+    assert bumps[0].latest_tag == "v1.0.0"
+    assert bumps[0].is_actionable
 
 
 def test_apply_clamps_tag_above_ceiling(tmp_path: Path) -> None:
@@ -88,7 +98,11 @@ def test_apply_clamps_tag_above_ceiling(tmp_path: Path) -> None:
     with (
         patch.object(submodules, "_global_holds_cached", return_value=(_held_rule(),)),
         patch.object(submodules, "_repo_holds_cached", return_value=()),
-        patch.object(submodules, "_current_submodule_tag", return_value="v1.5.0"),
+        patch.object(
+            submodules,
+            "_current_submodule_tag",
+            side_effect=["v1.5.0", "v1.4.0"],
+        ),
         patch.object(
             submodules,
             "_fetch_remote_tags",
