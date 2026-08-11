@@ -75,10 +75,9 @@ def test_check_precommit_filters_sha_refresh_above_ceiling(
         assert precommit.check_precommit(ws) == []
 
 
-def test_apply_precommit_skips_tag_rev_above_ceiling(tmp_path, monkeypatch) -> None:
-    config = _precommit_config(tmp_path)
+def test_apply_precommit_clamps_tag_rev_above_ceiling(tmp_path, monkeypatch) -> None:
+    config = _precommit_config(tmp_path, rev="v1.5.0")
     ws = _ws(tmp_path)
-    original = config.read_bytes()
     monkeypatch.delenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", raising=False)
 
     with (
@@ -87,26 +86,25 @@ def test_apply_precommit_skips_tag_rev_above_ceiling(tmp_path, monkeypatch) -> N
         patch.object(
             precommit,
             "_fetch_tags_for_repo",
-            return_value=["v1.0.0", "v1.5.0"],
+            return_value=["v1.0.0", "v1.4.0", "v1.5.0"],
         ),
     ):
         precommit.apply_precommit(ws)
 
-    assert config.read_bytes() == original
+    assert "rev: v1.4.0" in config.read_text(encoding="utf-8")
 
 
-def test_apply_precommit_filters_sha_refresh_above_ceiling(
+def test_apply_precommit_clamps_resolvable_sha_above_ceiling(
     tmp_path, monkeypatch
 ) -> None:
     config = _precommit_config(tmp_path, rev="a" * 40)
     ws = _ws(tmp_path)
     refs = [
-        ("a" * 40, "v1.0.0"),
-        ("b" * 40, "v1.5.0"),
+        ("a" * 40, "v1.5.0"),
+        ("b" * 40, "v1.4.0"),
         ("c" * 40, "v2.0.0"),
     ]
-    monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "1")
-    original = config.read_bytes()
+    monkeypatch.delenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", raising=False)
 
     with (
         patch.object(precommit, "_global_holds_cached", return_value=(_held_rule(),)),
@@ -115,7 +113,7 @@ def test_apply_precommit_filters_sha_refresh_above_ceiling(
     ):
         precommit.apply_precommit(ws)
 
-    assert config.read_bytes() == original
+    assert f"rev: {'b' * 40}" in config.read_text(encoding="utf-8")
 
 
 def test_expired_precommit_hold_is_ignored_without_rewriting_hold_config(

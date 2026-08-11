@@ -443,6 +443,106 @@ def _resolve_sha_refresh(
     return latest_sha, current_tag, latest_tag
 
 
+def _resolve_hold_tag_target(
+    current_rev: str, tags: list[str], rule: HoldRule
+) -> str | None:
+    """Return the highest tag at or below *rule* when *current_rev* violates it."""
+    if not _is_semver_like(current_rev):
+        return None
+    try:
+        current_version = semver_tuple(current_rev.lstrip("v"))
+    except Exception:
+        logger.warning(
+            "ignoring invalid semver rev %r while enforcing pre-commit hold",
+            current_rev,
+        )
+        return None
+    if version_satisfies_ceiling(current_rev.lstrip("v"), rule.max_version):
+        return None
+
+    want_v = _has_v_prefix(current_rev)
+    candidates: list[tuple[tuple[int, ...], str]] = []
+    for tag in tags:
+        if not _is_semver_like(tag) or _has_v_prefix(tag) != want_v:
+            continue
+        try:
+            tag_version = semver_tuple(tag.lstrip("v"))
+        except Exception:
+            logger.warning(
+                "ignoring invalid semver tag %r while enforcing pre-commit hold",
+                tag,
+            )
+            continue
+        if version_satisfies_ceiling(tag.lstrip("v"), rule.max_version):
+            candidates.append((tag_version, tag))
+
+    if not candidates:
+        return None
+    target_version, target_tag = max(candidates, key=lambda item: (item[0], item[1]))
+    if target_version >= current_version:
+        return None
+    return target_tag
+
+
+def _resolve_hold_sha_target(
+    current_sha: str, refs: list[tuple[str, str]], rule: HoldRule
+) -> str | None:
+    """Return the SHA for the highest held tag when *current_sha* violates it."""
+    normalized = current_sha.lower()
+    matching_tags: list[tuple[tuple[int, ...], str, str]] = []
+    for tag_sha, tag in refs:
+        candidate_sha = tag_sha.lower()
+        if not (
+            candidate_sha == normalized
+            or (len(normalized) < 40 and candidate_sha.startswith(normalized))
+        ):
+            continue
+        if not _is_semver_like(tag):
+            continue
+        try:
+            tag_version = semver_tuple(tag.lstrip("v"))
+        except Exception:
+            logger.warning(
+                "ignoring invalid semver tag %r while enforcing pre-commit hold",
+                tag,
+            )
+            continue
+        matching_tags.append((tag_version, tag, tag_sha))
+
+    if not matching_tags:
+        return None
+    current_version, current_tag, _ = max(
+        matching_tags, key=lambda item: (item[0], item[1])
+    )
+    if version_satisfies_ceiling(current_tag.lstrip("v"), rule.max_version):
+        return None
+
+    want_v = _has_v_prefix(current_tag)
+    candidates: list[tuple[tuple[int, ...], str, str]] = []
+    for tag_sha, tag in refs:
+        if not _is_semver_like(tag) or _has_v_prefix(tag) != want_v:
+            continue
+        try:
+            tag_version = semver_tuple(tag.lstrip("v"))
+        except Exception:
+            logger.warning(
+                "ignoring invalid semver tag %r while enforcing pre-commit hold",
+                tag,
+            )
+            continue
+        if version_satisfies_ceiling(tag.lstrip("v"), rule.max_version):
+            candidates.append((tag_version, tag, tag_sha))
+
+    if not candidates:
+        return None
+    target_version, _target_tag, target_sha = max(
+        candidates, key=lambda item: (item[0], item[1])
+    )
+    if target_version >= current_version:
+        return None
+    return target_sha
+
+
 # ---------------------------------------------------------------------------
 # Check
 # ---------------------------------------------------------------------------
@@ -545,6 +645,36 @@ def check_precommit(ws: Workspace) -> list[Change]:
 # ---------------------------------------------------------------------------
 
 
+def _enforce_version_ceilings(
+    ws: Workspace, repos: list[dict[str, Any]]
+) -> dict[int, str]:
+    """Return line replacements that clamp held pre-commit revs."""
+    line_bumps: dict[int, str] = {}
+    for entry in repos:
+        repo_url: str = entry["repo"]
+        rev: str = entry["rev"]
+        line_no: int = entry["rev_line_no"]
+        package = _repo_short_name(repo_url)
+        rule = _resolve_precommit_hold(ws, package)
+        if rule is None:
+            continue
+
+        if _is_sha_rev(rev):
+            target = _resolve_hold_sha_target(
+                rev, _fetch_tag_refs_for_repo(repo_url) or [], rule
+            )
+        elif _is_semver_like(rev):
+            target = _resolve_hold_tag_target(
+                rev, _fetch_tags_for_repo(repo_url) or [], rule
+            )
+        else:
+            continue
+
+        if target is not None:
+            line_bumps[line_no] = target
+    return line_bumps
+
+
 def apply_precommit(ws: Workspace) -> None:
     """Apply rev: bumps in-place (byte-preserving single-line edits).
 
@@ -565,11 +695,8 @@ def apply_precommit(ws: Workspace) -> None:
     if cfg_path is None:
         return
 
-    changes = check_precommit(ws)
-    # Keep only actionable changes (no report-only prefix); also warms tag cache.
-    actionable = [c for c in changes if not c.to.startswith(_REPORT_ONLY_PREFIX)]
-    if not actionable:
-        return
+    # Discover regular bumps first; this also warms the tag caches.
+    check_precommit(ws)
 
     # Bug 3 fix: read as bytes, decode via latin-1 (lossless — byte N decodes to
     # U+00NN and re-encodes back to byte N, so non-UTF-8 content is never
@@ -623,6 +750,7 @@ def apply_precommit(ws: Workspace) -> None:
         ):
             line_bumps[rev_line_no] = new_rev
 
+    line_bumps.update(_enforce_version_ceilings(ws, repos))
     if not line_bumps:
         return
 
