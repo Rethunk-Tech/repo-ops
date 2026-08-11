@@ -7,6 +7,7 @@ from repo_ops_js_bun.bun import (
     _bun_targeted_bump_enabled,
     _bun_update_latest_enabled,
 )
+from repo_ops_js_npm.npm import _npm_targeted_bump_enabled
 from repo_ops_js_pnpm.pnpm import (
     _pnpm_targeted_bump_enabled,
     _pnpm_update_latest_enabled,
@@ -93,3 +94,31 @@ def test_js_flags_resolve_per_checkout_config(
         assert update_enabled(targeted_ws) is False
         assert targeted_enabled(latest_ws) is False
         assert targeted_enabled(targeted_ws) is True
+
+
+def test_npm_targeted_bump_resolves_per_checkout_config(tmp_path) -> None:
+    disabled_ws = Workspace(
+        path=tmp_path / "disabled",
+        ecosystem="node",
+        manager="npm",
+        git_repo=tmp_path / "disabled",
+        label="npm-disabled",
+    )
+    targeted_ws = Workspace(
+        path=tmp_path / "targeted",
+        ecosystem="node",
+        manager="npm",
+        git_repo=tmp_path / "targeted",
+        label="npm-targeted",
+    )
+
+    def repo_config(repo_root):
+        return {"npm_targeted_bump": repo_root == targeted_ws.git_repo}
+
+    with (
+        patch("repo_ops_js_npm.npm.ambient_env", return_value={}),
+        patch("repo_ops_js_npm.npm.load_global_config", return_value={}),
+        patch("repo_ops_js_npm.npm.load_repo_config", side_effect=repo_config),
+    ):
+        assert _npm_targeted_bump_enabled(disabled_ws) is False
+        assert _npm_targeted_bump_enabled(targeted_ws) is True
