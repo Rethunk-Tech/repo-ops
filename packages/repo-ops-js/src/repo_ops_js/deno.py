@@ -50,6 +50,19 @@ def _parseable_semver_tuple(version: str) -> tuple[int, ...] | None:
     return semver_tuple(version)
 
 
+def _deno_precise_version(version: str) -> str:
+    """Normalize a numeric hold ceiling to Deno's exact-version syntax."""
+    normalized = version.strip().lstrip("vV")
+    parts = normalized.split(".")
+    if not parts or len(parts) > 3 or any(not part.isdigit() for part in parts):
+        return normalized
+    return ".".join([*parts, *("0" for _ in range(3 - len(parts)))])
+
+
+def _deno_version_target(name: str, version: str) -> str:
+    return f"{name}@{_deno_precise_version(version)}"
+
+
 @cache
 def _global_holds_cached() -> tuple[HoldRule, ...]:
     return tuple(load_global_holds())
@@ -242,9 +255,12 @@ def targeted_bump_behind(
             continue
         snapshot = snapshot_workspace_files(ws.path, "deno")
         cmd = ["deno", "update"]
-        if _deno_update_latest_enabled():
-            cmd.append("--latest")
-        cmd.append(change.name)
+        if hold is None:
+            if _deno_update_latest_enabled():
+                cmd.append("--latest")
+            cmd.append(change.name)
+        else:
+            cmd.append(_deno_version_target(change.name, change.to))
         proc = run(cmd, ws.path, timeout=resolve_timeout_apply())
         advanced = False
         if proc.returncode == 0:
@@ -306,7 +322,7 @@ def _enforce_deno_version_ceilings(
             continue
         snapshot = snapshot_workspace_files(ws.path, "deno")
         proc = run(
-            ["deno", "update", name],
+            ["deno", "update", _deno_version_target(name, rule.max_version)],
             ws.path,
             timeout=resolve_timeout_apply(),
         )

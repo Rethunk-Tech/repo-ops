@@ -20,7 +20,7 @@ _PACKAGE = "npm:held"
 def _ws(tmp_path) -> Workspace:
     return Workspace(
         path=tmp_path,
-        ecosystem="js",
+        ecosystem="deno",
         manager="deno",
         git_repo=tmp_path,
         label="deno",
@@ -28,7 +28,7 @@ def _ws(tmp_path) -> Workspace:
 
 
 def _held_rule(**overrides) -> HoldRule:
-    defaults = {"package": _PACKAGE, "max_version": "1.5"}
+    defaults = {"package": _PACKAGE, "max_version": "1.5", "ecosystem": "deno"}
     defaults.update(overrides)
     return HoldRule(**defaults)
 
@@ -93,6 +93,7 @@ def test_targeted_bump_restores_landing_above_ceiling(tmp_path, monkeypatch) -> 
     ws = _ws(tmp_path)
     change = Change(_PACKAGE, "1.0.0", "1.4.0")
     monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "1")
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
         patch(
@@ -101,12 +102,17 @@ def test_targeted_bump_restores_landing_above_ceiling(tmp_path, monkeypatch) -> 
         ),
         patch("repo_ops_js.deno.restore_workspace_snapshot") as restore_mock,
         patch("repo_ops_js.deno._landed_deno_version", return_value="2.0.0"),
-        patch("repo_ops_js.deno.run", return_value=_proc()),
+        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
     ):
         applied, still_behind = targeted_bump_behind(ws, [change])
 
     assert applied == []
     assert still_behind == [change]
+    assert run_mock.call_args.args[0] == [
+        "deno",
+        "update",
+        f"{_PACKAGE}@1.4.0",
+    ]
     restore_mock.assert_called_once()
 
 
@@ -118,11 +124,16 @@ def test_enforce_deno_version_ceilings_clamps_resolved_above_ceiling(tmp_path) -
             "repo_ops_js.deno._landed_deno_version",
             side_effect=["2.0.0", "1.5.0"],
         ),
+        patch("repo_ops_js.deno._deno_lock_package_names", return_value={_PACKAGE}),
         patch("repo_ops_js.deno.snapshot_workspace_files", return_value=object()),
         patch("repo_ops_js.deno.restore_workspace_snapshot") as restore_mock,
         patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
     ):
-        _enforce_deno_version_ceilings(ws, [_PACKAGE])
+        _enforce_deno_version_ceilings(ws)
 
-    assert run_mock.call_args.args[0] == ["deno", "update", _PACKAGE]
+    assert run_mock.call_args.args[0] == [
+        "deno",
+        "update",
+        f"{_PACKAGE}@1.5.0",
+    ]
     restore_mock.assert_not_called()
