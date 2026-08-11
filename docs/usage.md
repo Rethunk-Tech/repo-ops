@@ -344,8 +344,8 @@ lint/policy levels, Go upgrade mode, `go_work_sync`, `go_directive`, and
 config is not inherited by the rest of the fleet. CLI flags and caller-provided
 environment variables retain precedence. `timeout_check`, `timeout_apply`,
 `timeout_verify`, `find_timeout`, and `git_timeout` are also resolved from each
-checkout's config. `jobs`, `yarn_max_concurrency`, and `*_update_latest` remain
-invocation/global-scoped.
+checkout's config, as is `node_verify_script`. `jobs`, `yarn_max_concurrency`,
+and `*_update_latest` remain invocation/global-scoped.
 
 For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 `commit_agent_model` config key selects the agent model; the default is
@@ -358,8 +358,8 @@ For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 | go_upgrade_mode | `--go-upgrade-mode` | `REPO_OPS_GO_UPGRADE_MODE` | `go_upgrade_mode` | `patch` |
 | actions_lint_level | `--actions-lint-level` | `REPO_OPS_ACTIONS_LINT_LEVEL` | `actions_lint_level` | `block` |
 | timeout_check | (none) | `REPO_OPS_TIMEOUT_CHECK` | `timeout_check` | `60` |
-| timeout_apply | (none) | `REPO_OPS_TIMEOUT_APPLY` | `timeout_apply` | `300` |
-| timeout_verify | (none) | `REPO_OPS_TIMEOUT_VERIFY` | `timeout_verify` | `120` |
+| timeout_apply | (none) | `REPO_OPS_TIMEOUT_APPLY` | `timeout_apply` | `60` |
+| timeout_verify | (none) | `REPO_OPS_TIMEOUT_VERIFY` | `timeout_verify` | `60` |
 | find_timeout | (none) | `REPO_OPS_FIND_TIMEOUT` | `find_timeout` | `60` |
 | git_timeout | (none) | `REPO_OPS_GIT_TIMEOUT` | `git_timeout` | `10` |
 | bun_update_latest | `--latest` | `REPO_OPS_BUN_UPDATE_LATEST` | `bun_update_latest` | `0` |
