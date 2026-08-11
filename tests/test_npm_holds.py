@@ -277,8 +277,10 @@ def test_targeted_bump_keeps_held_overrides_pin(tmp_path: Path, monkeypatch) -> 
         patch(_REPO_HOLDS_CACHE, return_value=()),
         patch("repo_ops_js_npm.npm.run", side_effect=_fake_run),
         patch(_RESOLVER_PATH, return_value="0.1.2"),
+        patch("repo_ops_js_npm.npm.release_unheld_pin") as release_pin,
     ):
         targeted_bump_behind(ws, [Change("is-odd", "0.1.2", "1.0.0")])
 
+    release_pin.assert_not_called()
     pkg_after = json.loads((tmp_path / "package.json").read_text(encoding="utf-8"))
     assert pkg_after["overrides"]["is-odd"] == "0.1.2"
