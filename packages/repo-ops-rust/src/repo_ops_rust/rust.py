@@ -21,7 +21,7 @@ from repo_ops_core.holds import (
 )
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import version_satisfies_ceiling
+from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 
 
@@ -135,17 +135,34 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
         ]
         if not violating:
             continue
-        target = _cargo_precise_version(rule.max_version)
-        proc = run(
-            ["cargo", "update", "-p", crate_name, "--precise", target],
-            ws.path,
-            timeout=resolve_timeout_apply(),
+        candidates = [
+            version
+            for version in versions
+            if version_satisfies_ceiling(version, rule.max_version)
+        ]
+        target = (
+            max(candidates, key=semver_tuple)
+            if candidates
+            else _cargo_precise_version(rule.max_version)
         )
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"hold: failed to clamp {crate_name} back to <={rule.max_version} "
-                f"(cargo): {proc.stderr.strip()}"
+        for resolved_version in violating:
+            proc = run(
+                [
+                    "cargo",
+                    "update",
+                    "-p",
+                    f"{crate_name}@{resolved_version}",
+                    "--precise",
+                    target,
+                ],
+                ws.path,
+                timeout=resolve_timeout_apply(),
             )
+            if proc.returncode != 0:
+                raise RuntimeError(
+                    f"hold: failed to clamp {crate_name}@{resolved_version} "
+                    f"back to <={rule.max_version} (cargo): {proc.stderr.strip()}"
+                )
         landed = _cargo_resolved_versions(ws).get(crate_name, ())
         if not landed or any(
             not version_satisfies_ceiling(version, rule.max_version)

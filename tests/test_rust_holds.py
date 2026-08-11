@@ -17,7 +17,7 @@ def _ws(tmp_path) -> Workspace:
     return Workspace(
         path=tmp_path,
         ecosystem="rust",
-        manager="cargo",
+        manager="rust",
         git_repo=tmp_path,
         label="crate",
     )
@@ -41,12 +41,21 @@ def _proc(stdout: str = "", returncode: int = 0, stderr: str = ""):
     )()
 
 
-def _metadata(crate_version: str) -> str:
-    package_id = f"registry+https://example.invalid#{_CRATE}@{crate_version}"
+def _metadata(crate_versions: str | tuple[str, ...]) -> str:
+    if isinstance(crate_versions, str):
+        crate_versions = (crate_versions,)
+    packages = [
+        {
+            "id": f"registry+https://example.invalid#{_CRATE}@{version}",
+            "name": _CRATE,
+            "version": version,
+        }
+        for version in crate_versions
+    ]
     return json.dumps(
         {
-            "packages": [{"id": package_id, "name": _CRATE, "version": crate_version}],
-            "resolve": {"nodes": [{"id": package_id}]},
+            "packages": packages,
+            "resolve": {"nodes": [{"id": package["id"]} for package in packages]},
         }
     )
 
@@ -56,6 +65,22 @@ def test_check_rust_filters_change_past_ceiling(tmp_path) -> None:
 
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
+        patch(
+            "repo_ops_rust.rust.run",
+            return_value=_proc("    Updating serde v1.2.0 -> v2.0.0\n"),
+        ),
+    ):
+        assert check_rust(ws) == []
+
+
+def test_check_rust_matches_rust_ecosystem_hold(tmp_path) -> None:
+    ws = _ws(tmp_path)
+
+    with (
+        patch(
+            _GLOBAL_HOLDS_CACHE,
+            return_value=(_held_rule(ecosystem="rust"),),
+        ),
         patch(
             "repo_ops_rust.rust.run",
             return_value=_proc("    Updating serde v1.2.0 -> v2.0.0\n"),
@@ -82,25 +107,37 @@ def test_check_rust_keeps_change_within_ceiling(tmp_path) -> None:
 
 def test_apply_rust_clamps_resolved_crate_above_ceiling(tmp_path) -> None:
     ws = _ws(tmp_path)
-    versions = {_CRATE: "1.8.0"}
+    versions = ["1.8.0", "1.5.7"]
     clamp_calls: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0):
         if cmd == ["cargo", "update"]:
             return _proc()
         if cmd == ["cargo", "metadata", "--format-version", "1"]:
-            return _proc(_metadata(versions[_CRATE]))
-        if cmd == ["cargo", "update", "-p", _CRATE, "--precise", "1.5.0"]:
+            return _proc(_metadata(tuple(versions)))
+        if cmd == [
+            "cargo",
+            "update",
+            "-p",
+            f"{_CRATE}@1.8.0",
+            "--precise",
+            "1.5.7",
+        ]:
             clamp_calls.append(cmd)
-            versions[_CRATE] = "1.5.0"
+            versions[:] = ["1.5.7"]
             return _proc()
         raise AssertionError(f"unexpected command: {cmd}")
 
     with (
-        patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
+        patch(
+            _GLOBAL_HOLDS_CACHE,
+            return_value=(_held_rule(),),
+        ),
         patch("repo_ops_rust.rust.run", side_effect=fake_run),
     ):
         apply_rust(ws)
 
-    assert clamp_calls == [["cargo", "update", "-p", _CRATE, "--precise", "1.5.0"]]
-    assert versions[_CRATE] == "1.5.0"
+    assert clamp_calls == [
+        ["cargo", "update", "-p", f"{_CRATE}@1.8.0", "--precise", "1.5.7"]
+    ]
+    assert versions[0] == "1.5.7"
