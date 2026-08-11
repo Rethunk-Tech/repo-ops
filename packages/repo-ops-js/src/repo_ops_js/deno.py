@@ -26,10 +26,7 @@ from repo_ops_core.holds import (
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_lockfiles.parsers import versions_deno_lock
-from repo_ops_lockfiles.snapshots import (
-    restore_workspace_snapshot,
-    snapshot_workspace_files,
-)
+from repo_ops_lockfiles.snapshots import snapshot_workspace_files
 from repo_ops_models import Change, Workspace
 
 from repo_ops_js.guards import assert_targets_resolved
@@ -267,7 +264,7 @@ def _filter_held_deno_changes(ws: Workspace, changes: list[Change]) -> list[Chan
     return [
         change
         for change in changes
-        if (audit_override := _AUDIT_VERSION_OVERRIDES.get(change.name)) is not None
+        if _AUDIT_VERSION_OVERRIDES.get(change.name) is not None
         or (rule := _resolve_deno_hold(ws, change.name)) is None
         or version_satisfies_ceiling(change.to, rule.max_version)
     ]
@@ -495,7 +492,7 @@ def targeted_bump_behind(
         ):
             still_behind.append(change)
             continue
-        snapshot = snapshot_workspace_files(ws.path, "deno")
+        snapshot = _snapshot_deno_workspace(ws)
         cmd = _deno_update_command(ws)
         if audit_override is not None:
             cmd.append(_deno_version_target(change.name, audit_override))
@@ -508,11 +505,11 @@ def targeted_bump_behind(
         proc = run(cmd, ws.path, timeout=resolve_timeout_apply())
         advanced = False
         if proc.returncode == 0:
-            advanced = snapshot_workspace_files(ws.path, "deno") != snapshot
+            advanced = _snapshot_deno_workspace(ws) != snapshot
         if advanced:
             landed = _landed_deno_version(ws, change.name)
             if landed is None:
-                restore_workspace_snapshot(ws.path, snapshot, "deno")
+                _restore_deno_workspace(ws, snapshot)
                 still_behind.append(change)
                 continue
             if (
@@ -520,7 +517,7 @@ def targeted_bump_behind(
                 and hold is not None
                 and not version_satisfies_ceiling(landed, hold.max_version)
             ):
-                restore_workspace_snapshot(ws.path, snapshot, "deno")
+                _restore_deno_workspace(ws, snapshot)
                 still_behind.append(change)
                 continue
             landed_tuple = _parseable_semver_tuple(landed)
@@ -548,15 +545,15 @@ def targeted_bump_behind(
                         fallback_resolver=_landed_deno_version,
                     )
                 except RuntimeError:
-                    restore_workspace_snapshot(ws.path, snapshot, "deno")
+                    _restore_deno_workspace(ws, snapshot)
                     still_behind.append(change)
                 else:
                     applied.append(resolved_change)
                 continue
-            restore_workspace_snapshot(ws.path, snapshot, "deno")
+            _restore_deno_workspace(ws, snapshot)
             still_behind.append(change)
         else:
-            restore_workspace_snapshot(ws.path, snapshot, "deno")
+            _restore_deno_workspace(ws, snapshot)
             still_behind.append(change)
     return applied, still_behind
 
@@ -575,7 +572,7 @@ def _enforce_deno_version_ceilings(
         resolved = _landed_deno_version(ws, name)
         if resolved is None or version_satisfies_ceiling(resolved, rule.max_version):
             continue
-        snapshot = snapshot_workspace_files(ws.path, "deno")
+        snapshot = _snapshot_deno_workspace(ws)
         proc = run(
             [
                 *_deno_update_command(ws),
@@ -588,7 +585,7 @@ def _enforce_deno_version_ceilings(
         if landed is not None and version_satisfies_ceiling(landed, rule.max_version):
             continue
 
-        restore_workspace_snapshot(ws.path, snapshot, "deno")
+        _restore_deno_workspace(ws, snapshot)
         candidates = [
             *_deno_outdated_versions(ws, name),
             *_deno_lock_versions(ws, name),
@@ -606,7 +603,7 @@ def _enforce_deno_version_ceilings(
             or landed is None
             or not version_satisfies_ceiling(landed, rule.max_version)
         ):
-            restore_workspace_snapshot(ws.path, snapshot, "deno")
+            _restore_deno_workspace(ws, snapshot)
             raise RuntimeError(
                 f"hold: failed to clamp {name} to <= {rule.max_version} (deno); "
                 "set an exact three-component max_version if the ceiling is "
