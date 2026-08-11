@@ -7,6 +7,10 @@ from repo_ops_js_bun.bun import (
     _bun_targeted_bump_enabled,
     _bun_update_latest_enabled,
 )
+from repo_ops_js_pnpm.pnpm import (
+    _pnpm_targeted_bump_enabled,
+    _pnpm_update_latest_enabled,
+)
 from repo_ops_js_yarn.yarn import (
     _yarn_targeted_bump_enabled,
     _yarn_update_latest_enabled,
@@ -39,6 +43,14 @@ from repo_ops_models import Workspace
             "bun_targeted_bump",
             _bun_update_latest_enabled,
             _bun_targeted_bump_enabled,
+        ),
+        (
+            "pnpm",
+            "repo_ops_js_pnpm.pnpm",
+            "pnpm_update_latest",
+            "pnpm_targeted_bump",
+            _pnpm_update_latest_enabled,
+            _pnpm_targeted_bump_enabled,
         ),
     ],
 )
