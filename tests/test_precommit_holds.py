@@ -57,6 +57,26 @@ def test_check_precommit_filters_tag_rev_above_ceiling(tmp_path) -> None:
         assert precommit.check_precommit(ws) == []
 
 
+def test_check_precommit_surfaces_tag_clamp_at_upstream_latest(tmp_path) -> None:
+    _precommit_config(tmp_path, rev="v1.5.0")
+    ws = _ws(tmp_path)
+
+    with (
+        patch.object(precommit, "_global_holds_cached", return_value=(_held_rule(),)),
+        patch.object(precommit, "_repo_holds_cached", return_value=()),
+        patch.object(
+            precommit,
+            "_fetch_tags_for_repo",
+            return_value=["v1.4.0", "v1.5.0"],
+        ),
+    ):
+        changes = precommit.check_precommit(ws)
+
+    assert len(changes) == 1
+    assert changes[0].from_ver == "v1.5.0"
+    assert changes[0].to == "v1.4.0"
+
+
 def test_check_precommit_filters_sha_refresh_above_ceiling(
     tmp_path, monkeypatch
 ) -> None:
@@ -75,6 +95,31 @@ def test_check_precommit_filters_sha_refresh_above_ceiling(
         patch.object(precommit, "_fetch_tag_refs_for_repo", return_value=refs),
     ):
         assert precommit.check_precommit(ws) == []
+
+
+def test_check_precommit_surfaces_sha_clamp_at_upstream_latest(
+    tmp_path, monkeypatch
+) -> None:
+    current_sha = "a" * 40
+    target_sha = "b" * 40
+    _precommit_config(tmp_path, rev=current_sha)
+    ws = _ws(tmp_path)
+    monkeypatch.delenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", raising=False)
+    refs = [
+        (target_sha, "v1.4.0"),
+        (current_sha, "v1.5.0"),
+    ]
+
+    with (
+        patch.object(precommit, "_global_holds_cached", return_value=(_held_rule(),)),
+        patch.object(precommit, "_repo_holds_cached", return_value=()),
+        patch.object(precommit, "_fetch_tag_refs_for_repo", return_value=refs),
+    ):
+        changes = precommit.check_precommit(ws)
+
+    assert len(changes) == 1
+    assert changes[0].from_ver == current_sha
+    assert changes[0].to == target_sha
 
 
 def test_apply_precommit_clamps_tag_rev_above_ceiling(tmp_path, monkeypatch) -> None:
