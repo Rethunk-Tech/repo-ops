@@ -17,6 +17,7 @@ import pytest
 from repo_ops_go.go import (
     GO_WORK_SYNC_ENV,
     _go_work_dirs,
+    _go_work_sync_enabled,
     _run_with_go_work_retry,
     check_go,
     classify_go_error,
@@ -189,6 +190,53 @@ def _make_ws(tmp_path: Path) -> Workspace:
         git_repo=tmp_path,
         label="mod",
     )
+
+
+def test_go_work_sync_uses_repo_config(tmp_path: Path) -> None:
+    """A checkout config enables go.work retry behavior without ambient env."""
+    ws = _make_ws(tmp_path)
+
+    with (
+        patch.dict("os.environ", {}, clear=True),
+        patch("repo_ops_go.go.ambient_env", return_value={}),
+        patch("repo_ops_go.go.load_repo_config", return_value={"go_work_sync": True}),
+        patch("repo_ops_go.go.load_global_config", return_value={}),
+    ):
+        assert _go_work_sync_enabled(ws) is True
+
+
+def test_go_work_sync_ambient_env_overrides_repo_config(tmp_path: Path) -> None:
+    """Ambient environment config takes precedence over checkout config."""
+    ws = _make_ws(tmp_path)
+
+    with (
+        patch.dict("os.environ", {}, clear=True),
+        patch(
+            "repo_ops_go.go.ambient_env",
+            return_value={GO_WORK_SYNC_ENV: "0"},
+        ),
+        patch("repo_ops_go.go.load_repo_config", return_value={"go_work_sync": True}),
+        patch("repo_ops_go.go.load_global_config", return_value={}),
+    ):
+        assert _go_work_sync_enabled(ws) is False
+
+
+def test_go_work_sync_cli_env_overrides_ambient_and_repo(
+    tmp_path: Path,
+) -> None:
+    """A process-level override takes precedence over ambient and repo config."""
+    ws = _make_ws(tmp_path)
+
+    with (
+        patch.dict("os.environ", {GO_WORK_SYNC_ENV: "1"}, clear=True),
+        patch(
+            "repo_ops_go.go.ambient_env",
+            return_value={GO_WORK_SYNC_ENV: "0"},
+        ),
+        patch("repo_ops_go.go.load_repo_config", return_value={"go_work_sync": False}),
+        patch("repo_ops_go.go.load_global_config", return_value={}),
+    ):
+        assert _go_work_sync_enabled(ws) is True
 
 
 def test_go_work_sync_off_no_retry(tmp_path: Path) -> None:
