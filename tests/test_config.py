@@ -267,3 +267,39 @@ def test_container_refresh_sha_from_config_file(tmp_path) -> None:
         # (was flipping container digest-refresh on for unrelated tests).
         os.environ.pop("REPO_OPS_CONTAINER_REFRESH_SHA", None)
         monkeypatch.undo()
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
+def test_precommit_refresh_sha_from_config_file(tmp_path) -> None:
+    """REPO_OPS_PRECOMMIT_REFRESH_SHA can be set via config file."""
+    from repo_ops_core.config import apply_config_to_env
+
+    cfg = {"precommit_refresh_sha": True}
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.delenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", raising=False)
+    try:
+        apply_config_to_env(global_cfg=cfg)
+        assert os.environ.get("REPO_OPS_PRECOMMIT_REFRESH_SHA") == "1"
+    finally:
+        # apply_config_to_env writes os.environ directly; monkeypatch.undo()
+        # does not revert that, so pop it to avoid leaking into later tests.
+        os.environ.pop("REPO_OPS_PRECOMMIT_REFRESH_SHA", None)
+        monkeypatch.undo()
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
+def test_submodule_refresh_sha_from_config_file(tmp_path) -> None:
+    """REPO_OPS_SUBMODULE_REFRESH_SHA can be set via config file."""
+    from repo_ops_core.config import apply_config_to_env
+
+    cfg = {"submodule_refresh_sha": True}
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.delenv("REPO_OPS_SUBMODULE_REFRESH_SHA", raising=False)
+    try:
+        apply_config_to_env(global_cfg=cfg)
+        assert os.environ.get("REPO_OPS_SUBMODULE_REFRESH_SHA") == "1"
+    finally:
+        # apply_config_to_env writes os.environ directly; monkeypatch.undo()
+        # does not revert that, so pop it to avoid leaking into later tests.
+        os.environ.pop("REPO_OPS_SUBMODULE_REFRESH_SHA", None)
+        monkeypatch.undo()
