@@ -150,16 +150,16 @@ def test_plan_json_v1_schema_compact_and_null_omission(tmp_path: Path, capsys) -
 def test_plan_exclude_filters_repositories_from_config(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
+    _init_git_repo(tmp_path)
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nexclude = ["drop"]\n',
+        encoding="utf-8",
+    )
     repos = {}
     for name in ("keep", "drop"):
         repo = tmp_path / name
         repo.mkdir()
         _init_git_repo(repo)
-        if name == "drop":
-            (repo / "pyproject.toml").write_text(
-                '[tool.repo-ops]\nexclude = ["drop"]\n',
-                encoding="utf-8",
-            )
         (repo / "package.json").write_text(
             '{"name":"%s","packageManager":"npm@10.0.0"}' % name,
             encoding="utf-8",
@@ -182,7 +182,7 @@ def test_plan_exclude_filters_repositories_from_config(
             side_effect=_record_workspace,
         ),
     ):
-        rc = main_plan([str(tmp_path), "--json", "--skip-actions"])
+        rc = main_plan([str(tmp_path), "--json", "--flat", "--skip-actions"])
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -198,7 +198,7 @@ def test_plan_exclude_filters_repositories_from_config(
             side_effect=_record_workspace,
         ),
     ):
-        rc = main_plan([str(tmp_path), "--skip-actions"])
+        rc = main_plan([str(tmp_path), "--flat", "--skip-actions"])
 
     captured = capsys.readouterr()
     assert rc in (0, 1)
