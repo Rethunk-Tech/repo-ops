@@ -212,6 +212,54 @@ def test_apply_bun_targeted_bump_defers_ghost_to_retry(monkeypatch) -> None:
     assert behind == [blocked]
 
 
+def test_apply_bun_bare_update_defers_ghost_to_retry(monkeypatch) -> None:
+    """A blocked bare update is handed to targeted_bump_behind."""
+    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
+    calls: list[list[str]] = []
+    retry_inputs: list[list[Change]] = []
+    blocked = Change("zod", "3.25.76", "4.0.0")
+    valid_results = [False, True]
+
+    def fake_valid_package_name(name):
+        return valid_results.pop(0)
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    def fake_targeted_bump(ws, behind):
+        retry_inputs.append(list(behind))
+        return [], behind
+
+    with (
+        patch("repo_ops_js_bun.bun.run", fake_run),
+        patch(
+            "repo_ops_js_bun.bun.check_bun",
+            return_value=([blocked], []),
+        ),
+        patch(_RESOLVER_PATH, return_value="3.25.76"),
+        patch(
+            "repo_ops_js_bun.bun._valid_bun_package_name",
+            side_effect=fake_valid_package_name,
+        ),
+        patch(
+            "repo_ops_js_bun.bun.assert_targets_resolved",
+            side_effect=RuntimeError("initial guard must defer"),
+        ) as initial_guard,
+        patch(
+            "repo_ops_js_bun.bun.targeted_bump_behind",
+            side_effect=fake_targeted_bump,
+        ),
+        patch("repo_ops_js_bun.bun.enforce_holds", return_value=[]),
+    ):
+        behind = apply_bun(_ghost_ws())
+
+    initial_guard.assert_not_called()
+    assert calls == [["bun", "update"]]
+    assert retry_inputs == [[blocked]]
+    assert behind == [blocked]
+
+
 def test_apply_bun_ok_when_resolved_meets_or_exceeds_target() -> None:
     """A resolution at or above the requested target is a real upgrade, not a ghost."""
 
