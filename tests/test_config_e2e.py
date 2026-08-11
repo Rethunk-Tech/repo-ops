@@ -420,6 +420,96 @@ def test_fleet_run_resolves_timeouts_per_checkout(
     }
 
 
+def test_fleet_run_resolves_node_verify_script_per_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fleet workers use each checkout's node verify script."""
+    launcher = tmp_path / "launcher"
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    for path in (launcher, repo_a, repo_b):
+        path.mkdir()
+    (launcher / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nnode_verify_script = "launcher-script"\n',
+        encoding="utf-8",
+    )
+    for path, script in (
+        (repo_a, "repo-a-script"),
+        (repo_b, "repo-b-script"),
+    ):
+        (path / "pyproject.toml").write_text(
+            f'[tool.repo-ops]\nnode_verify_script = "{script}"\n',
+            encoding="utf-8",
+        )
+        (path / "package.json").write_text(
+            json.dumps({"scripts": {script: f"echo {script}"}}),
+            encoding="utf-8",
+        )
+
+    workspaces = [
+        Workspace(
+            path=path,
+            ecosystem="node",
+            manager="npm",
+            git_repo=path,
+            label=path.name,
+        )
+        for path in (repo_a, repo_b)
+    ]
+    bundles = {
+        workspace.git_repo: RepoBundle(
+            git_repo=workspace.git_repo,
+            label=workspace.label,
+            workspaces=[WorkspaceResult(workspace)],
+        )
+        for workspace in workspaces
+    }
+    captured: dict[Path, str] = {}
+
+    monkeypatch.chdir(launcher)
+    monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "discover_all",
+        lambda *args, **kwargs: workspaces,
+    )
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "group_by_repo",
+        lambda found, roots: bundles.copy(),
+    )
+
+    def fake_run(cmd: list[str], cwd: Path, timeout: int = 0):
+        if cmd[:2] == ["npm", "run"]:
+            captured[cwd] = cmd[2]
+        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    def process_workspace(workspace_result: WorkspaceResult, **kwargs: object):
+        assert verify_mod.verify_node(workspace_result.workspace) is None
+        return workspace_result
+
+    monkeypatch.setattr(verify_mod, "run", fake_run)
+    monkeypatch.setattr(
+        run_mod.orchestration,
+        "process_workspace",
+        process_workspace,
+    )
+    monkeypatch.setattr(
+        run_mod.report, "print_json_report", lambda *args, **kwargs: None
+    )
+
+    rc = run_mod.run_upgrade(
+        apply=False,
+        argv=["--flat", "--json", "--skip-actions", str(repo_a), str(repo_b)],
+    )
+
+    assert rc == 0
+    assert captured == {
+        repo_a: "repo-a-script",
+        repo_b: "repo-b-script",
+    }
+
+
 def test_timeout_resolver_uses_global_config_outside_checkout_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
