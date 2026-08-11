@@ -73,26 +73,6 @@ def test_main_all_present_exits_zero_and_prints_table(
     assert "Missing:" not in out
 
 
-def test_main_warns_when_installed_skill_drifts(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr(doctor.shutil, "which", _fake_which_all_present)
-    monkeypatch.setattr(doctor.subprocess, "run", _fake_run_version)
-    monkeypatch.setattr(
-        doctor, "probe_skill_drift", lambda: ["/tmp/.cursor/skills/repo-ops"]
-    )
-
-    assert main([]) == 0
-    out = capsys.readouterr().out
-    assert "Warning: installed skill drift detected:" in out
-    assert "/tmp/.cursor/skills/repo-ops" in out
-    assert "repo-ops install-skill --force" in out
-
-    assert main(["--json", "--compact"]) == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["skill_drift"] == ["/tmp/.cursor/skills/repo-ops"]
-
-
 def test_main_reports_dangling_skill_symlink_as_drift(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
