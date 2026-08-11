@@ -161,7 +161,7 @@ def test_plan_exclude_filters_repositories_from_config(
         repo.mkdir()
         _init_git_repo(repo)
         (repo / "package.json").write_text(
-            '{"name":"%s","packageManager":"npm@10.0.0"}' % name,
+            f'{{"name":"{name}","packageManager":"npm@10.0.0"}}',
             encoding="utf-8",
         )
         (repo / "package-lock.json").write_text("{}", encoding="utf-8")

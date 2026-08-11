@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-
 from repo_ops_inventory.counting import (
     count_dep_edges,
     count_installed_node,
