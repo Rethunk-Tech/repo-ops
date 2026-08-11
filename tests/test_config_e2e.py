@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+import repo_ops_go
 import repo_ops_go.go as go_mod
 import repo_ops_upgrade.run as run_mod
 from repo_ops_core.config import apply_config_to_env, resolve_setting, set_ambient_env
@@ -337,6 +339,27 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
             ")\n",
             encoding="utf-8",
         )
+        subprocess.run(["git", "init", "--quiet", str(path)], check=True)
+        subprocess.run(
+            ["git", "-C", str(path), "add", "go.mod", "pyproject.toml"],
+            check=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(path),
+                "-c",
+                "user.name=repo-ops-test",
+                "-c",
+                "user.email=repo-ops-test@example.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "fixture",
+            ],
+            check=True,
+        )
 
     workspaces = [
         Workspace(
@@ -358,7 +381,7 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
         workspace.git_repo: RepoBundle(
             git_repo=workspace.git_repo,
             label=workspace.label,
-            workspaces=[WorkspaceResult(workspace)],
+            workspaces=[WorkspaceResult(workspace, status="pending")],
         )
         for workspace in workspaces
     }
@@ -416,15 +439,20 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
         return type("Proc", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
 
     monkeypatch.setattr(go_mod, "run", fake_go_run)
+    repo_ops_go.register()
 
-    def capture_process(workspace_result: WorkspaceResult, **kwargs: object):
-        changes = go_mod.check_go(workspace_result.workspace)
-        captured[workspace_result.workspace.git_repo] = [
-            change.name for change in changes
-        ]
-        return workspace_result
+    original_check_workspace = run_mod.orchestration.ecosystems.check_workspace
 
-    monkeypatch.setattr(run_mod.orchestration, "process_workspace", capture_process)
+    def capture_check_workspace(workspace: Workspace, **kwargs: object):
+        result = original_check_workspace(workspace, **kwargs)
+        captured[workspace.git_repo] = [change.name for change in result.changes]
+        return result
+
+    monkeypatch.setattr(
+        run_mod.orchestration.ecosystems,
+        "check_workspace",
+        capture_check_workspace,
+    )
     monkeypatch.setattr(
         run_mod.report, "print_json_report", lambda *args, **kwargs: None
     )
@@ -440,7 +468,7 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
         ],
     )
 
-    assert rc == 0
+    assert rc == 1
     assert captured == {
         repo_a: ["example.com/patch", "example.com/minor"],
         repo_b: ["example.com/patch"],
