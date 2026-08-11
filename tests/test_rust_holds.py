@@ -10,6 +10,7 @@ from repo_ops_rust.rust import apply_rust, check_rust
 
 _GLOBAL_HOLDS_CACHE = "repo_ops_rust.rust._global_holds_cached"
 _REPO_HOLDS_CACHE = "repo_ops_rust.rust._repo_holds_cached"
+_REGISTRY_VERSIONS = "repo_ops_rust.rust._cargo_registry_versions"
 _CRATE = "serde"
 
 
@@ -132,6 +133,45 @@ def test_apply_rust_clamps_resolved_crate_above_ceiling(tmp_path) -> None:
         patch(
             _GLOBAL_HOLDS_CACHE,
             return_value=(_held_rule(),),
+        ),
+        patch("repo_ops_rust.rust.run", side_effect=fake_run),
+    ):
+        apply_rust(ws)
+
+    assert clamp_calls == [
+        ["cargo", "update", "-p", f"{_CRATE}@1.8.0", "--precise", "1.5.7"]
+    ]
+    assert versions[0] == "1.5.7"
+
+
+def test_apply_rust_uses_highest_published_prefix_version(tmp_path) -> None:
+    ws = _ws(tmp_path)
+    versions = ["1.8.0"]
+    clamp_calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout=0):
+        if cmd == ["cargo", "update"]:
+            return _proc()
+        if cmd == ["cargo", "metadata", "--format-version", "1"]:
+            return _proc(_metadata(tuple(versions)))
+        if cmd == [
+            "cargo",
+            "update",
+            "-p",
+            f"{_CRATE}@1.8.0",
+            "--precise",
+            "1.5.7",
+        ]:
+            clamp_calls.append(cmd)
+            versions[:] = ["1.5.7"]
+            return _proc()
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    with (
+        patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
+        patch(
+            _REGISTRY_VERSIONS,
+            return_value=("1.5.7", "1.5.2", "1.4.9"),
         ),
         patch("repo_ops_rust.rust.run", side_effect=fake_run),
     ):
