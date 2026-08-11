@@ -19,6 +19,7 @@ from repo_ops_core.cli import (
 )
 from repo_ops_core.config import (
     apply_config_to_env,
+    checkout_config_scope,
     load_global_config,
     load_repo_config,
     resolve_setting,
@@ -286,39 +287,47 @@ def _run_upgrade_body(
         # workspace, not get silently dropped from results and reported clean
         # with exit 0 (#62). Mutate and return the input result so its
         # workspace.path still matches in reconciliation below.
-        try:
-            return orchestration.process_workspace(
-                wr,
-                do_apply=apply,
-                do_verify=apply and not args.no_verify,
-                verify_test=apply and args.verify_test,
-                skip_remediations=skip_remediations,
-                allow_dirty=args.allow_dirty,
-                on_verify_fail=getattr(args, "on_verify_fail", "keep"),
-                quiet=args.quiet,
-                repo_started_dirty=repo_started_dirty,
-            )
-        except Exception as exc:
-            wr.status = "fail"
-            wr.error = str(exc)
-            return wr
+        with checkout_config_scope(
+            global_cfg=_global_cfg,
+            repo_cfg=_repo_cfgs.get(wr.workspace.git_repo),
+        ):
+            try:
+                return orchestration.process_workspace(
+                    wr,
+                    do_apply=apply,
+                    do_verify=apply and not args.no_verify,
+                    verify_test=apply and args.verify_test,
+                    skip_remediations=skip_remediations,
+                    allow_dirty=args.allow_dirty,
+                    on_verify_fail=getattr(args, "on_verify_fail", "keep"),
+                    quiet=args.quiet,
+                    repo_started_dirty=repo_started_dirty,
+                )
+            except Exception as exc:
+                wr.status = "fail"
+                wr.error = str(exc)
+                return wr
 
     def _process_repo(bundle: RepoBundle) -> list[WorkspaceResult]:
-        results: list[WorkspaceResult] = []
-        # Snapshot the repo's dirty state once, before any workspace in this
-        # bundle is processed, rather than re-checking live per workspace. All
-        # workspaces in a bundle share bundle.git_repo and share one commit at
-        # the end of the run, so an earlier sibling's own already-applied (not
-        # yet committed) changes must not make a later sibling look dirty and
-        # get skipped outright. Issue #152.
-        repo_started_dirty = is_git_dirty(bundle.git_repo) if apply else None
-        for wr in bundle.workspaces:
-            updated = _process_one(wr, repo_started_dirty=repo_started_dirty)
-            results.append(updated)
-            if args.fail_fast and updated.status == "fail":
-                _FAIL_FAST.set()
-                break
-        return results
+        with checkout_config_scope(
+            global_cfg=_global_cfg,
+            repo_cfg=_repo_cfgs.get(bundle.git_repo),
+        ):
+            results: list[WorkspaceResult] = []
+            # Snapshot the repo's dirty state once, before any workspace in this
+            # bundle is processed, rather than re-checking live per workspace. All
+            # workspaces in a bundle share bundle.git_repo and share one commit at
+            # the end of the run, so an earlier sibling's own already-applied (not
+            # yet committed) changes must not make a later sibling look dirty and
+            # get skipped outright. Issue #152.
+            repo_started_dirty = is_git_dirty(bundle.git_repo) if apply else None
+            for wr in bundle.workspaces:
+                updated = _process_one(wr, repo_started_dirty=repo_started_dirty)
+                results.append(updated)
+                if args.fail_fast and updated.status == "fail":
+                    _FAIL_FAST.set()
+                    break
+            return results
 
     # Resume / checkpoint (REPO_OPS_RESUME=1 or --resume): skip repos that
     # already completed apply+commit in a previous run at their current HEAD.
@@ -515,47 +524,51 @@ def _run_upgrade_body(
             local_cache: dict[str, dict | None] = {}
             with _tag_cache_lock:
                 local_cache.update(run_tag_cache)
-            try:
-                bumps, count = actions.scan_actions(
-                    bundle.git_repo,
-                    apply=apply,
-                    keep_sha=keep_sha,
-                    refresh_sha=refresh_sha,
-                    tag_style=tag_style,
-                    upgrade_mode=actions_mode,
-                    tag_cache=local_cache,
-                    lint_level=resolve_setting(
-                        "actions_lint_level",
-                        cli_value=getattr(args, "actions_lint_level", None),
-                        global_cfg=_global_cfg,
-                        repo_cfg=_repo_cfgs.get(bundle.git_repo),
-                        env=_ambient_env,
-                    ),
-                    policy_level=resolve_setting(
-                        "actions_policy_level",
-                        cli_value=getattr(args, "actions_policy_level", None),
-                        global_cfg=_global_cfg,
-                        repo_cfg=_repo_cfgs.get(bundle.git_repo),
-                        env=_ambient_env,
-                    ),
-                )
-            except Exception as exc:
-                # Isolate: a non-WorkflowParseError (e.g. OSError writing a
-                # workflow) must surface as a FAILED actions entry rather than
-                # propagating through the pool and tearing down the whole run
-                # AFTER lockfiles were already mutated on disk (#TASK-2).
-                bundle.actions = [
-                    ActionBump(
-                        workflow="(error)",
-                        action="(worker)",
-                        pin="",
-                        latest="",
-                        status="fail",
-                        detail=str(exc),
+            with checkout_config_scope(
+                global_cfg=_global_cfg,
+                repo_cfg=_repo_cfgs.get(bundle.git_repo),
+            ):
+                try:
+                    bumps, count = actions.scan_actions(
+                        bundle.git_repo,
+                        apply=apply,
+                        keep_sha=keep_sha,
+                        refresh_sha=refresh_sha,
+                        tag_style=tag_style,
+                        upgrade_mode=actions_mode,
+                        tag_cache=local_cache,
+                        lint_level=resolve_setting(
+                            "actions_lint_level",
+                            cli_value=getattr(args, "actions_lint_level", None),
+                            global_cfg=_global_cfg,
+                            repo_cfg=_repo_cfgs.get(bundle.git_repo),
+                            env=_ambient_env,
+                        ),
+                        policy_level=resolve_setting(
+                            "actions_policy_level",
+                            cli_value=getattr(args, "actions_policy_level", None),
+                            global_cfg=_global_cfg,
+                            repo_cfg=_repo_cfgs.get(bundle.git_repo),
+                            env=_ambient_env,
+                        ),
                     )
-                ]
-                bundle.actions_workflows_scanned = 0
-                return
+                except Exception as exc:
+                    # Isolate: a non-WorkflowParseError (e.g. OSError writing a
+                    # workflow) must surface as a FAILED actions entry rather than
+                    # propagating through the pool and tearing down the whole run
+                    # AFTER lockfiles were already mutated on disk (#TASK-2).
+                    bundle.actions = [
+                        ActionBump(
+                            workflow="(error)",
+                            action="(worker)",
+                            pin="",
+                            latest="",
+                            status="fail",
+                            detail=str(exc),
+                        )
+                    ]
+                    bundle.actions_workflows_scanned = 0
+                    return
             with _tag_cache_lock:
                 run_tag_cache.update(local_cache)
             bundle.actions = bumps

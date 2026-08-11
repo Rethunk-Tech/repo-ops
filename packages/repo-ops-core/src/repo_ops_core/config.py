@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import os
 import warnings
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, cast
 
@@ -475,6 +477,9 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
 
 
 _ambient_env: Mapping[str, str] | None = None
+_checkout_config: ContextVar[tuple[dict[str, Any], dict[str, Any]] | None] = ContextVar(
+    "repo_ops_checkout_config", default=None
+)
 
 
 def set_ambient_env(env: Mapping[str, str] | None) -> None:
@@ -486,6 +491,25 @@ def set_ambient_env(env: Mapping[str, str] | None) -> None:
 def ambient_env() -> Mapping[str, str] | None:
     """Return the caller-provided environment snapshot, when configured."""
     return _ambient_env
+
+
+@contextmanager
+def checkout_config_scope(
+    *,
+    global_cfg: Mapping[str, Any] | None = None,
+    repo_cfg: Mapping[str, Any] | None = None,
+) -> Iterator[None]:
+    """Resolve config-file settings for the checkout active in this context."""
+    token = _checkout_config.set((dict(global_cfg or {}), dict(repo_cfg or {})))
+    try:
+        yield
+    finally:
+        _checkout_config.reset(token)
+
+
+def active_checkout_config() -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Return config layers for the checkout active in this context."""
+    return _checkout_config.get()
 
 
 def apply_config_to_env(

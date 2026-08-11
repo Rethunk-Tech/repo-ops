@@ -16,6 +16,13 @@ import repo_ops_go
 import repo_ops_go.go as go_mod
 import repo_ops_upgrade.run as run_mod
 from repo_ops_core.config import apply_config_to_env, resolve_setting, set_ambient_env
+from repo_ops_core.constants import (
+    resolve_find_timeout,
+    resolve_git_timeout,
+    resolve_timeout_apply,
+    resolve_timeout_check,
+    resolve_timeout_verify,
+)
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import commit_agent_cursor, commit_agent_providers
 
@@ -306,6 +313,109 @@ def test_fleet_run_resolves_actions_config_per_checkout(
     assert captured == {
         repo_a: ("block", "warn"),
         repo_b: ("off", "report"),
+    }
+
+
+def test_fleet_run_resolves_timeouts_per_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fleet workers use each checkout's timeout settings."""
+    launcher = tmp_path / "launcher"
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    for path in (launcher, repo_a, repo_b):
+        path.mkdir()
+    (launcher / "pyproject.toml").write_text(
+        "[tool.repo-ops]\ntimeout_check = 99\n", encoding="utf-8"
+    )
+    (repo_a / "pyproject.toml").write_text(
+        "[tool.repo-ops]\n"
+        "timeout_check = 11\n"
+        "timeout_apply = 12\n"
+        "timeout_verify = 13\n"
+        "find_timeout = 14\n"
+        "git_timeout = 15\n",
+        encoding="utf-8",
+    )
+    (repo_b / "pyproject.toml").write_text(
+        "[tool.repo-ops]\n"
+        "timeout_check = 21\n"
+        "timeout_apply = 22\n"
+        "timeout_verify = 23\n"
+        "find_timeout = 24\n"
+        "git_timeout = 25\n",
+        encoding="utf-8",
+    )
+
+    workspaces = [
+        Workspace(
+            path=path,
+            ecosystem="actions",
+            manager="actions",
+            git_repo=path,
+            label=path.name,
+        )
+        for path in (repo_a, repo_b)
+    ]
+    bundles = {
+        workspace.git_repo: RepoBundle(
+            git_repo=workspace.git_repo,
+            label=workspace.label,
+            workspaces=[WorkspaceResult(workspace)],
+        )
+        for workspace in workspaces
+    }
+    captured: dict[Path, tuple[int, int, int, float, float]] = {}
+
+    monkeypatch.chdir(launcher)
+    for env_var in (
+        "REPO_OPS_TIMEOUT_CHECK",
+        "REPO_OPS_TIMEOUT_APPLY",
+        "REPO_OPS_TIMEOUT_VERIFY",
+        "REPO_OPS_FIND_TIMEOUT",
+        "REPO_OPS_GIT_TIMEOUT",
+    ):
+        monkeypatch.delenv(env_var, raising=False)
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "discover_all",
+        lambda *args, **kwargs: workspaces,
+    )
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "group_by_repo",
+        lambda found, roots: bundles.copy(),
+    )
+
+    def capture_timeouts(workspace_result: WorkspaceResult, **kwargs: object):
+        workspace = workspace_result.workspace
+        captured[workspace.git_repo] = (
+            resolve_timeout_check(),
+            resolve_timeout_apply(),
+            resolve_timeout_verify(),
+            resolve_find_timeout(),
+            resolve_git_timeout(),
+        )
+        return workspace_result
+
+    monkeypatch.setattr(
+        run_mod.orchestration,
+        "process_workspace",
+        capture_timeouts,
+    )
+    monkeypatch.setattr(
+        run_mod.report, "print_json_report", lambda *args, **kwargs: None
+    )
+
+    rc = run_mod.run_upgrade(
+        apply=False,
+        argv=["--flat", "--json", "--skip-actions", str(repo_a), str(repo_b)],
+    )
+
+    assert rc == 0
+    assert captured == {
+        repo_a: (11, 12, 13, 14.0, 15.0),
+        repo_b: (21, 22, 23, 24.0, 25.0),
     }
 
 
