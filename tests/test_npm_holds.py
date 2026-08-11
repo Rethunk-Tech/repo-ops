@@ -211,3 +211,74 @@ def test_apply_npm_raises_when_clamp_cannot_satisfy_ceiling(
         pytest.raises(RuntimeError, match="hold"),
     ):
         apply_npm(ws)
+
+
+def _seed_is_odd_pin(d: Path) -> None:
+    pkg = json.dumps(
+        {
+            "dependencies": {"is-odd": ">=0.1.0 <2.0.0"},
+            "overrides": {"is-odd": "0.1.2"},
+        }
+    )
+    (d / "package.json").write_text(pkg, encoding="utf-8")
+    (d / "package-lock.json").write_text("{}", encoding="utf-8")
+    nm_dir = d / "node_modules" / "is-odd"
+    nm_dir.mkdir(parents=True)
+    (nm_dir / "package.json").write_text(
+        json.dumps({"version": "0.1.2"}), encoding="utf-8"
+    )
+
+
+def test_targeted_bump_releases_unheld_overrides_pin(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """An unheld package's overrides pin is removed before the bump."""
+    _seed_is_odd_pin(tmp_path)
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
+    ws = _ws(tmp_path)
+    captured_cmds: list[list[str]] = []
+
+    def _fake_run(cmd, cwd, timeout=600, env=None):
+        captured_cmds.append(cmd)
+        if "install" in cmd and any("is-odd@" in c for c in cmd):
+            (tmp_path / "node_modules" / "is-odd" / "package.json").write_text(
+                json.dumps({"version": "1.0.0"}), encoding="utf-8"
+            )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch(_GLOBAL_HOLDS_CACHE, return_value=()),
+        patch(_REPO_HOLDS_CACHE, return_value=()),
+        patch("repo_ops_js_npm.npm.run", side_effect=_fake_run),
+    ):
+        applied, behind = targeted_bump_behind(ws, [Change("is-odd", "0.1.2", "1.0.0")])
+
+    assert captured_cmds == [["npm", "install", "--save", "is-odd@latest"]]
+    assert not behind
+    assert applied == [Change("is-odd", "0.1.2", "1.0.0")]
+    pkg_after = json.loads((tmp_path / "package.json").read_text(encoding="utf-8"))
+    assert "is-odd" not in pkg_after.get("overrides", {})
+
+
+def test_targeted_bump_keeps_held_overrides_pin(tmp_path: Path, monkeypatch) -> None:
+    """An active hold leaves the package's overrides pin in place."""
+    _seed_is_odd_pin(tmp_path)
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
+    ws = _ws(tmp_path)
+
+    def _fake_run(cmd, cwd, timeout=600, env=None):
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch(
+            _GLOBAL_HOLDS_CACHE,
+            return_value=(_held_rule(package="is-odd", max_version="0.1.2"),),
+        ),
+        patch(_REPO_HOLDS_CACHE, return_value=()),
+        patch("repo_ops_js_npm.npm.run", side_effect=_fake_run),
+        patch(_RESOLVER_PATH, return_value="0.1.2"),
+    ):
+        targeted_bump_behind(ws, [Change("is-odd", "0.1.2", "1.0.0")])
+
+    pkg_after = json.loads((tmp_path / "package.json").read_text(encoding="utf-8"))
+    assert pkg_after["overrides"]["is-odd"] == "0.1.2"
