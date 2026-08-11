@@ -16,7 +16,7 @@ Conventions and quick reference for AI coding agents (Cursor, Claude Code, etc.)
 | `repo-ops plan --full` (preview drift) | `repo-ops plan --full --log-file plan.log` |
 | Update deps in one checkout | `repo-ops plan --flat /path` then `repo-ops apply --flat /path` |
 
-`$FULL_SWEEP_FLAGS` = `--latest --actions-refresh-sha --container-refresh-sha --yarn-targeted-bump --npm-targeted-bump --pnpm-targeted-bump --bun-targeted-bump --deno-targeted-bump`; equivalently, use `repo-ops plan --full` or `repo-ops apply --full`. See **Full-coverage sweep** below. `--latest` alone silently skips container digest refresh and JS/Deno targeted-bump gap-closing; a plain `--latest` run will under-report drift every single time unless the caller also knows to add these.
+`$FULL_SWEEP_FLAGS` = `--latest --actions-refresh-sha --container-refresh-sha --precommit-refresh-sha --submodule-refresh-sha --yarn-targeted-bump --npm-targeted-bump --pnpm-targeted-bump --bun-targeted-bump --deno-targeted-bump`; equivalently, use `repo-ops plan --full` or `repo-ops apply --full`. See **Full-coverage sweep** below. `--latest` alone silently skips container, pre-commit, and submodule digest refresh plus JS/Deno targeted-bump gap-closing; a plain `--latest` run will under-report drift every single time unless the caller also knows to add these.
 
 ### Subcommands
 
@@ -69,6 +69,7 @@ repo-ops apply --full --log-file apply.log
 
 # Expanded equivalent when individual policy flags are needed
 repo-ops apply --latest --actions-refresh-sha --container-refresh-sha \
+  --precommit-refresh-sha --submodule-refresh-sha \
   --yarn-targeted-bump --npm-targeted-bump --pnpm-targeted-bump --bun-targeted-bump \
   --deno-targeted-bump \
   --log-file apply.log
@@ -97,7 +98,7 @@ repo-ops apply --submodule-order=children-first --submodules /path/to/umbrella
 
 Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode` wins over the umbrella for that ecosystem. npm has no latest mode (semver ranges only). Targeted-bump fallbacks (move `behind_latest` gaps instead of only reporting them) exist for yarn/npm/pnpm/bun/deno: `--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, `--bun-targeted-bump`, `--deno-targeted-bump`. Rust majors stay out of scope for repo-ops (`cargo update` only refreshes within existing Cargo constraints; bump majors by hand). Details: `repo-ops plan --help` and [docs/usage.md — Ecosystem upgrade modes](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply).
 
-**`--latest` does NOT imply `--actions-refresh-sha`, `--container-refresh-sha`, or any `--*-targeted-bump` flag.** Each is independently opt-in even though `--latest` sounds like it should cover them. For routine bulk maintenance, always use `--full` (or the expanded **full-coverage sweep** combo in Essential invocations above), not bare `--latest`.
+**`--latest` does NOT imply `--actions-refresh-sha`, `--container-refresh-sha`, `--precommit-refresh-sha`, `--submodule-refresh-sha`, or any `--*-targeted-bump` flag.** Each is independently opt-in even though `--latest` sounds like it should cover them. For routine bulk maintenance, always use `--full` (or the expanded **full-coverage sweep** combo in Essential invocations above), not bare `--latest`.
 
 ### Full-coverage sweep — what each flag actually catches
 
@@ -105,6 +106,8 @@ Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode
 | ------ | --------- | -------------------------- |
 | `--actions-refresh-sha` | Digest bumps for SHA-pinned GitHub Actions | Not implied by `--latest`; silently report-only without it |
 | `--container-refresh-sha` | Digest bumps for SHA-pinned container base images (`FROM image@sha256:...`) | No mention in the default flag set at all; easy to never discover without reading `apply --help` end to end |
+| `--precommit-refresh-sha` | Digest bumps for resolvable SHA-pinned pre-commit hook revisions | Not implied by `--latest`; SHA pins stay report-only without it |
+| `--submodule-refresh-sha` | Digest bumps for resolvable SHA-only submodule HEADs | Not implied by `--latest`; SHA pins stay report-only without it |
 | `--yarn-targeted-bump` / `--npm-targeted-bump` / `--pnpm-targeted-bump` / `--bun-targeted-bump` / `--deno-targeted-bump` | Moves `behind_latest` peer/group-constrained packages instead of only reporting them | `--latest` still leaves these packages in the `behind_latest` report bucket, which reads as "handled" if the summary counts aren't checked closely |
 
 A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinned; set REPO_OPS_CONTAINER_REFRESH_SHA=1 to refresh digest` line are the tells that one of these flags is missing from the invocation — never treat a `--latest`-only run as a complete sweep.
@@ -130,7 +133,7 @@ A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinn
 | `--filter ECO` | inventory, plan, apply | Limit to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno` |
 | `--manager MANAGER` | plan, apply | Limit to one package manager |
 | `--latest` | plan, apply | Aggressive cross-range upgrades (see above) |
-| `--full` | plan, apply | Full-coverage sweep: `--latest` plus digest refresh and yarn/npm/pnpm/bun/deno targeted bumps |
+| `--full` | plan, apply | Full-coverage sweep: `--latest` plus Actions/container/pre-commit/submodule digest refresh and yarn/npm/pnpm/bun/deno targeted bumps |
 | `--allow-dirty` | plan, apply | Process dirty git worktrees |
 | `--skip-actions` | plan, apply | Dependency-only (no Actions pin audit) |
 | `--log-file PATH` | plan, apply | Combined stdout/stderr transcript |
@@ -148,6 +151,8 @@ A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinn
 | `--actions-tag-style STYLE` | plan, apply | Tag style when unpinning SHA pins: `major` (default) or `exact` |
 | `--actions-unpin-sha` | plan, apply | Resolve SHA-pinned Actions to version tags on apply |
 | `--actions-refresh-sha` | plan, apply | Bump digest pins within major; with `--latest` crosses major |
+| `--precommit-refresh-sha` | plan, apply | Refresh resolvable SHA-pinned pre-commit revisions within their tagged major; report-only by default |
+| `--submodule-refresh-sha` | plan, apply | Refresh resolvable SHA-only submodule HEADs within their tagged major; report-only by default |
 | `--actions-org-policy` | plan, apply | Fetch org allowed-actions policy and flag violations |
 | `--actions-policy-level block\|warn\|report` | plan, apply | How org-policy violations gate pin rewrites (default `report`) |
 | `--actions-lint-level block\|warn\|off` | plan, apply | Actionlint gate policy |
@@ -206,6 +211,7 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 | `--output PATH` | Write SBOM to `PATH` instead of stdout |
 | `--enrich-licenses` | Opt-in SPDX fill from on-disk/registry metadata (also `REPO_OPS_ENRICH_LICENSES`) |
 | `--enrich-licenses-local` | Local/cache-only SPDX enrichment (also `REPO_OPS_ENRICH_LICENSES_LOCAL`; no registry network) |
+| `--enrich-licenses-network` | Force registry network enrichment even when LOCAL env/flag is set; wins over `--enrich-licenses-local` (`REPO_OPS_ENRICH_LICENSES_NETWORK`) |
 
 #### `license` flags
 
@@ -215,6 +221,7 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 | `--deny LICENSES` | Comma-separated SPDX IDs forbidden |
 | `--enrich-licenses` | Opt-in SPDX enrichment (same as `sbom`; also `REPO_OPS_ENRICH_LICENSES`) |
 | `--enrich-licenses-local` | Local/cache-only enrichment (same as `sbom`; also `REPO_OPS_ENRICH_LICENSES_LOCAL`) |
+| `--enrich-licenses-network` | Force registry network enrichment even when LOCAL env/flag is set; wins over `--enrich-licenses-local` (`REPO_OPS_ENRICH_LICENSES_NETWORK`) |
 | `--no-fail-unknown` | Exit 0 even when unknown licenses are found (default: exit 2) |
 
 #### `install-skill` flags
@@ -272,6 +279,7 @@ When changing behavior, keep these aligned with code and docs:
 
 - **Plan vs apply:** plan/check is read-only for lockfiles and workflows; plan may run `corepack prepare` (network) for Yarn checks; Node Corepack runs on apply (`repo_ops_upgrade.registry.apply_workspace`) for npm/pnpm/yarn only — Corepack has no bun shim, so bun workspaces skip it and use the `bun` on PATH.
 - **SHA-pinned Actions:** preserved by default (report only); unpin to tags only with `--actions-unpin-sha`. Digest bumps within major: `--actions-refresh-sha`. Cross-major digest re-pin (supersedes Dependabot major-bump PRs): `--actions-refresh-sha --latest` (or `--actions-upgrade-mode=latest`); updates SHA and `# vN` comment to the new major.
+- **SHA-pinned pre-commit and submodule refs:** preserved by default (report only); `--precommit-refresh-sha` and `--submodule-refresh-sha` opt into resolvable same-major SHA refreshes without changing their upstream repository or URL intent.
 - **Discovery:** `resolve_scan_roots`, optional `--follow-symlinks`, `--flat`, actions-only repos — [docs/usage.md — Security and discovery](docs/usage.md#security-and-discovery).
 - **Docs tiers:** README (orientation + Documentation table), HUMANS (quickstart + doc links), docs/ (deep reference), this file (agent quick reference + coordination), CONTRIBUTING (commits/style).
 
