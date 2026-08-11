@@ -87,6 +87,28 @@ def test_fail_on_cli_flag_overrides_env(
     assert rc == 1
 
 
+def test_fail_on_cli_flag_overrides_config_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Explicit --fail-on high wins over audit_fail_on=never in config.toml."""
+    config_dir = tmp_path / "repo-ops"
+    config_dir.mkdir()
+    (config_dir / "config.toml").write_text(
+        'audit_fail_on = "never"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON", raising=False)
+    try:
+        with (
+            patch("repo_ops_audit.audit.discover_repos", return_value={}),
+            patch("repo_ops_audit.audit.run_audit", return_value=_results(high=1)),
+        ):
+            rc = main(["--fail-on", "high", str(tmp_path)])
+    finally:
+        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON", None)
+    assert rc == 1
+
+
 def test_fail_on_unknown_env_applies_when_flag_absent(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -133,4 +155,27 @@ def test_fail_on_unknown_cli_flag_overrides_env(
         patch("repo_ops_audit.audit.run_audit", return_value=_results(unknown=1)),
     ):
         rc = main(["--fail-on", "never", "--fail-on-unknown", str(tmp_path)])
+    assert rc == 1
+
+
+def test_fail_on_unknown_cli_flag_overrides_config_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Explicit --fail-on-unknown wins over audit_fail_on_unknown=false in config.toml."""
+    config_dir = tmp_path / "repo-ops"
+    config_dir.mkdir()
+    (config_dir / "config.toml").write_text(
+        "audit_fail_on_unknown = false\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON", raising=False)
+    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", raising=False)
+    try:
+        with (
+            patch("repo_ops_audit.audit.discover_repos", return_value={}),
+            patch("repo_ops_audit.audit.run_audit", return_value=_results(unknown=1)),
+        ):
+            rc = main(["--fail-on", "never", "--fail-on-unknown", str(tmp_path)])
+    finally:
+        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", None)
     assert rc == 1
