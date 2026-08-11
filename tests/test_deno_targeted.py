@@ -70,7 +70,7 @@ def test_targeted_bump_keeps_changed_snapshot(tmp_path: Path, monkeypatch) -> No
         patch(
             "repo_ops_js.guards.resolved_version_from_node_modules", return_value=None
         ),
-        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
+        patch("repo_ops_js.deno._restore_deno_workspace") as restore,
         patch("repo_ops_js.deno.run", side_effect=fake_run),
     ):
         applied, still_behind = targeted_bump_behind(_ws(tmp_path), [change])
@@ -98,7 +98,7 @@ def test_targeted_bump_restores_snapshot_when_guard_raises(
             "repo_ops_js.deno.versions_deno_lock",
             return_value={"npm:lodash@4.17.22"},
         ),
-        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
+        patch("repo_ops_js.deno._restore_deno_workspace") as restore,
         patch(
             "repo_ops_js.deno.assert_targets_resolved",
             side_effect=RuntimeError("ghost bump"),
@@ -123,7 +123,7 @@ def test_targeted_bump_restores_snapshot_when_guard_raises(
         manager="deno",
         fallback_resolver=_landed_deno_version,
     )
-    restore.assert_called_once_with(tmp_path, snapshot, "deno")
+    restore.assert_called_once_with(ws, snapshot)
 
 
 def test_targeted_bump_restores_after_failure(tmp_path: Path, monkeypatch) -> None:
@@ -133,7 +133,7 @@ def test_targeted_bump_restores_after_failure(tmp_path: Path, monkeypatch) -> No
 
     with (
         patch("repo_ops_js.deno.snapshot_workspace_files", return_value=snapshot),
-        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
+        patch("repo_ops_js.deno._restore_deno_workspace") as restore,
         patch(
             "repo_ops_js.deno.run",
             return_value=subprocess.CompletedProcess(
@@ -148,7 +148,7 @@ def test_targeted_bump_restores_after_failure(tmp_path: Path, monkeypatch) -> No
 
     assert applied == []
     assert still_behind == [change]
-    restore.assert_called_once_with(tmp_path, snapshot, "deno")
+    restore.assert_called_once_with(_ws(tmp_path), snapshot)
 
 
 def test_targeted_bump_restores_when_snapshot_does_not_advance(
@@ -163,7 +163,7 @@ def test_targeted_bump_restores_when_snapshot_does_not_advance(
             "repo_ops_js.deno.snapshot_workspace_files",
             side_effect=[snapshot, snapshot],
         ),
-        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
+        patch("repo_ops_js.deno._restore_deno_workspace") as restore,
         patch(
             "repo_ops_js.deno.run",
             return_value=subprocess.CompletedProcess(
@@ -178,7 +178,7 @@ def test_targeted_bump_restores_when_snapshot_does_not_advance(
 
     assert applied == []
     assert still_behind == [change]
-    restore.assert_called_once_with(tmp_path, snapshot, "deno")
+    restore.assert_called_once_with(_ws(tmp_path), snapshot)
 
 
 def test_targeted_bump_restores_when_landed_version_does_not_advance(
@@ -197,7 +197,7 @@ def test_targeted_bump_restores_when_landed_version_does_not_advance(
             "repo_ops_js.deno.versions_deno_lock",
             return_value={"npm:chalk@5.2.0"},
         ),
-        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
+        patch("repo_ops_js.deno._restore_deno_workspace") as restore,
         patch(
             "repo_ops_js.deno.run",
             return_value=subprocess.CompletedProcess(
@@ -212,7 +212,7 @@ def test_targeted_bump_restores_when_landed_version_does_not_advance(
 
     assert applied == []
     assert still_behind == [change]
-    restore.assert_called_once_with(tmp_path, snapshot, "deno")
+    restore.assert_called_once_with(_ws(tmp_path), snapshot)
 
 
 def test_targeted_bump_restores_when_lockfile_version_misses_target(
@@ -234,7 +234,7 @@ def test_targeted_bump_restores_when_lockfile_version_misses_target(
         patch(
             "repo_ops_js.guards.resolved_version_from_node_modules", return_value=None
         ),
-        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
+        patch("repo_ops_js.deno._restore_deno_workspace") as restore,
         patch(
             "repo_ops_js.deno.run",
             return_value=subprocess.CompletedProcess(
@@ -249,7 +249,7 @@ def test_targeted_bump_restores_when_lockfile_version_misses_target(
 
     assert applied == []
     assert still_behind == [change]
-    restore.assert_called_once_with(tmp_path, snapshot, "deno")
+    restore.assert_called_once_with(_ws(tmp_path), snapshot)
 
 
 def test_targeted_bump_passes_latest_flag(tmp_path: Path, monkeypatch) -> None:
@@ -293,7 +293,7 @@ def test_targeted_bump_restores_when_landed_version_missing(
             side_effect=[snapshot, {"deno.lock": b"changed"}],
         ),
         patch("repo_ops_js.deno.versions_deno_lock", return_value=set()),
-        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore,
+        patch("repo_ops_js.deno._restore_deno_workspace") as restore,
         patch(
             "repo_ops_js.deno.run",
             return_value=subprocess.CompletedProcess(
@@ -308,7 +308,7 @@ def test_targeted_bump_restores_when_landed_version_missing(
 
     assert applied == []
     assert still_behind == [change]
-    restore.assert_called_once_with(tmp_path, snapshot, "deno")
+    restore.assert_called_once_with(_ws(tmp_path), snapshot)
 
 
 def test_apply_deno_runs_targeted_fallback_after_bulk(
