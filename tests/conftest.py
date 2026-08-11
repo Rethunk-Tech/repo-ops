@@ -26,6 +26,18 @@ _ENV_PREFIX = "REPO_OPS_"
 
 
 @pytest.fixture(autouse=True)
+def _isolate_ambient_config() -> Iterator[None]:
+    """Clear the process-wide config snapshot between tests."""
+    from repo_ops_core.config import set_ambient_env
+
+    set_ambient_env(None)
+    try:
+        yield
+    finally:
+        set_ambient_env(None)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_state_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point the XDG cache (and thus the repo-ops state store) at a tmp dir.
 

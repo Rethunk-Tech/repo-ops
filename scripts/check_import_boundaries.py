@@ -104,6 +104,7 @@ APP_PKG_ALLOWED_IMPORTS: dict[str, frozenset[str]] = {
         {
             "repo_ops_core",
             "repo_ops_models",
+            "repo_ops_js",
             "repo_ops_js_npm",
             "repo_ops_js_yarn",
             "repo_ops_js_pnpm",

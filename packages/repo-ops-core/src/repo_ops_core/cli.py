@@ -874,6 +874,7 @@ def build_upgrade_parser(*, apply: bool) -> argparse.ArgumentParser:
         description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=epilog,
+        allow_abbrev=False,
     )
     add_upgrade_common_arguments(parser, apply=apply)
     return parser

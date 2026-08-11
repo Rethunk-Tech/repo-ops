@@ -158,12 +158,14 @@ def _cargo_precise_version(crate_name: str, max_version: str) -> str:
     )
 
 
-def _cargo_resolved_versions(ws: Workspace) -> dict[str, tuple[str, ...]]:
+def _cargo_resolved_versions(
+    ws: Workspace, *, timeout: int | None = None
+) -> dict[str, tuple[str, ...]]:
     """Return resolved Cargo package versions grouped by crate name."""
     proc = run(
         ["cargo", "metadata", "--format-version", "1"],
         ws.path,
-        timeout=resolve_timeout_check(),
+        timeout=resolve_timeout_check() if timeout is None else timeout,
     )
     if proc.returncode != 0:
         return {}
@@ -220,7 +222,8 @@ def _filter_held_rust_changes(ws: Workspace, changes: list[Change]) -> list[Chan
 
 def _enforce_version_ceilings(ws: Workspace) -> None:
     """Clamp resolved Cargo crates that exceed active hold ceilings."""
-    resolved = _cargo_resolved_versions(ws)
+    timeout = resolve_timeout_apply()
+    resolved = _cargo_resolved_versions(ws, timeout=timeout)
     for crate_name, versions in sorted(resolved.items()):
         audit_override = _AUDIT_VERSION_OVERRIDES.get(crate_name)
         rule = _resolve_crate_hold(ws, crate_name)
@@ -269,7 +272,7 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
                     f"hold: failed to clamp {crate_name}@{resolved_version} "
                     f"back to {ceiling_label} (cargo): {proc.stderr.strip()}"
                 )
-        landed = _cargo_resolved_versions(ws).get(crate_name, ())
+        landed = _cargo_resolved_versions(ws, timeout=timeout).get(crate_name, ())
         if audit_override is not None:
             still_invalid = not landed or any(
                 version != audit_override for version in landed

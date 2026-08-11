@@ -807,6 +807,7 @@ def test_apply_remediations_dispatches_deno_native_fix(tmp_path) -> None:
     with (
         patch("shutil.which", return_value="/usr/bin/deno"),
         patch("repo_ops_audit.audit._apply_deno_audit", return_value=expected) as apply,
+        patch("repo_ops_js.deno.apply_deno_audit_version_overrides"),
     ):
         outcomes = apply_remediations([item], do_verify=False)
     assert outcomes == [expected]

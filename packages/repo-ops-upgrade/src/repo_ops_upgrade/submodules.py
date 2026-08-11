@@ -723,10 +723,12 @@ def check_submodule_tag_advances(
             continue
 
         current_tag = _current_submodule_tag(link.git_repo)
+        hold = _resolve_submodule_hold(link)
 
         if current_tag is None:
-            current_sha = _current_submodule_sha(link.git_repo)
-            hold = _resolve_submodule_hold(link)
+            current_sha = (
+                _current_submodule_sha(link.git_repo) if (hold or refresh_sha) else None
+            )
             refs: list[tuple[str, str]] | None = None
             if hold is not None and current_sha:
                 refs = _fetch_remote_tag_refs(url)
