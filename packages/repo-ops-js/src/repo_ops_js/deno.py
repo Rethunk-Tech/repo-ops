@@ -6,11 +6,18 @@ import os
 import re
 import shutil
 import sys
+from functools import cache
 from pathlib import Path
 
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
+from repo_ops_core.holds import (
+    HoldRule,
+    load_global_holds,
+    load_repo_holds,
+    resolve_hold,
+)
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import semver_tuple
+from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_lockfiles.parsers import versions_deno_lock
 from repo_ops_lockfiles.snapshots import (
     restore_workspace_snapshot,
@@ -43,6 +50,51 @@ def _parseable_semver_tuple(version: str) -> tuple[int, ...] | None:
     return semver_tuple(version)
 
 
+@cache
+def _global_holds_cached() -> tuple[HoldRule, ...]:
+    return tuple(load_global_holds())
+
+
+@cache
+def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
+    return tuple(load_repo_holds(Path(repo_root)))
+
+
+def _workspace_rel(ws: Workspace) -> str:
+    try:
+        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
+    except ValueError:
+        return "."
+    return rel or "."
+
+
+def _resolve_deno_hold(ws: Workspace, package: str) -> HoldRule | None:
+    """Return the active hold rule for *package* in this workspace, if any."""
+    repo_root = str(ws.git_repo.resolve())
+    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
+    if not rules:
+        return None
+    return resolve_hold(
+        rules,
+        package=package,
+        ecosystem=ws.ecosystem,
+        manager=ws.manager,
+        workspace_rel=_workspace_rel(ws),
+    )
+
+
+def _filter_held_deno_changes(ws: Workspace, changes: list[Change]) -> list[Change]:
+    """Drop changes whose target exceeds an active package hold."""
+    return [
+        change
+        for change in changes
+        if (
+            (rule := _resolve_deno_hold(ws, change.name)) is None
+            or version_satisfies_ceiling(change.to, rule.max_version)
+        )
+    ]
+
+
 def check_deno(ws: Workspace) -> tuple[list[Change], list[Change]]:
     """Return pending upgrades for a Deno workspace.
 
@@ -71,7 +123,11 @@ def check_deno(ws: Workspace) -> tuple[list[Change], list[Change]]:
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "deno outdated failed")
-    return _parse_deno_outdated(proc.stdout)
+    changes, behind_latest = _parse_deno_outdated(proc.stdout)
+    return (
+        _filter_held_deno_changes(ws, changes),
+        _filter_held_deno_changes(ws, behind_latest),
+    )
 
 
 def _parse_deno_outdated(stdout: str) -> tuple[list[Change], list[Change]]:
@@ -159,6 +215,16 @@ def _landed_deno_version(ws: Workspace, name: str) -> str | None:
     return max(versions)
 
 
+def _deno_lock_package_names(ws: Workspace) -> set[str]:
+    """Return package identities recorded in the resolved Deno lockfile."""
+    names: set[str] = set()
+    for resolved in versions_deno_lock(Path(ws.path) / "deno.lock"):
+        name, separator, version = resolved.rpartition("@")
+        if separator and name and version:
+            names.add(name)
+    return names
+
+
 def targeted_bump_behind(
     ws: Workspace, behind: list[Change]
 ) -> tuple[list[Change], list[Change]]:
@@ -168,6 +234,12 @@ def targeted_bump_behind(
     applied: list[Change] = []
     still_behind: list[Change] = []
     for change in behind:
+        hold = _resolve_deno_hold(ws, change.name)
+        if hold is not None and not version_satisfies_ceiling(
+            change.to, hold.max_version
+        ):
+            still_behind.append(change)
+            continue
         snapshot = snapshot_workspace_files(ws.path, "deno")
         cmd = ["deno", "update"]
         if _deno_update_latest_enabled():
@@ -180,6 +252,12 @@ def targeted_bump_behind(
         if advanced:
             landed = _landed_deno_version(ws, change.name)
             if landed is None:
+                restore_workspace_snapshot(ws.path, snapshot, "deno")
+                still_behind.append(change)
+                continue
+            if hold is not None and not version_satisfies_ceiling(
+                landed, hold.max_version
+            ):
                 restore_workspace_snapshot(ws.path, snapshot, "deno")
                 still_behind.append(change)
                 continue
@@ -211,6 +289,40 @@ def targeted_bump_behind(
             restore_workspace_snapshot(ws.path, snapshot, "deno")
             still_behind.append(change)
     return applied, still_behind
+
+
+def _enforce_deno_version_ceilings(
+    ws: Workspace, candidate_names: list[str] | None = None
+) -> None:
+    """Clamp held packages that remain above their ceiling after an update."""
+    candidates = set(candidate_names or ())
+    candidates.update(_deno_lock_package_names(ws))
+    for name in sorted(candidates):
+        rule = _resolve_deno_hold(ws, name)
+        if rule is None:
+            continue
+        resolved = _landed_deno_version(ws, name)
+        if resolved is None or version_satisfies_ceiling(resolved, rule.max_version):
+            continue
+        snapshot = snapshot_workspace_files(ws.path, "deno")
+        proc = run(
+            ["deno", "update", name],
+            ws.path,
+            timeout=resolve_timeout_apply(),
+        )
+        if proc.returncode != 0:
+            restore_workspace_snapshot(ws.path, snapshot, "deno")
+            raise RuntimeError(
+                f"hold: failed to clamp {name} back to <={rule.max_version} "
+                f"(deno): {proc.stderr.strip()}"
+            )
+        landed = _landed_deno_version(ws, name)
+        if landed is None or not version_satisfies_ceiling(landed, rule.max_version):
+            restore_workspace_snapshot(ws.path, snapshot, "deno")
+            raise RuntimeError(
+                f"hold: {name} still at {landed or resolved} after clamp "
+                f"attempt, expected <= {rule.max_version} (deno)"
+            )
 
 
 def apply_deno(ws: Workspace) -> list[Change]:
@@ -251,4 +363,5 @@ def apply_deno(ws: Workspace) -> list[Change]:
             fallback_resolver=_landed_deno_version,
         )
     _, behind = targeted_bump_behind(ws, behind)
+    _enforce_deno_version_ceilings(ws, [change.name for change in [*planned, *behind]])
     return behind
