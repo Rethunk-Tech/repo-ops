@@ -49,11 +49,3 @@ Fleet `plan`/`apply` now resolve per checkout: exclusions, Actions lint/policy l
 **Refs:** `packages/repo-ops-go/src/repo_ops_go/go.py` (`_go_work_sync_enabled`); `tests/test_go_env_classify.py`.
 
 **Acceptance:** A focused test proves global config alone enables `go_work_sync` when repo/ambient/CLI are unset.
-
-### 27.2 Actions workspace-scoped holds limitation
-
-`_resolve_actions_hold` hardcodes `workspace_rel="."`, so workspace-scoped `[[hold]]` rules cannot target per-workflow paths. Acceptable for repo-level Actions pins unless monorepo workflow scoping is required.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/actions.py` (`_resolve_actions_hold`); `docs/usage.md` § Package holds actions bullet.
-
-**Acceptance:** Document the limitation in usage, or pass a workflow-relative path if monorepo scoping is chosen later.

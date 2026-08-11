@@ -471,14 +471,22 @@ schema, just not consulted by those checkers yet.
   plan entries and clamped on apply to the highest available tag within the
   ceiling.
 - **actions** — `package` is the action repo id (e.g. `actions/checkout`).
-  Outbound tag bumps and SHA-refresh targets above the ceiling are filtered;
-  pins already above the ceiling are clamped on apply to the highest
-  available tag within the ceiling (SHA pins keep digest form when a matching
-  tag exists). Holds do not change the default keep-SHA / unpin policy.
-- **container** — `package` is the image name without tag or digest (e.g.
-  `docker.io/library/node`). Tag bumps and tagged digest refreshes whose tag
-  semver exceeds the ceiling are filtered; above-ceiling tagged refs clamp on
-  apply. SHA-only pins without tag intent stay report-only.
+  Outbound tag bumps and SHA-refresh targets above the ceiling are filtered.
+  Pins already above the ceiling (tag or resolvable SHA) are surfaced as
+  actionable plan entries and clamped on apply to the highest available tag
+  within the ceiling (SHA pins keep digest form when a matching tag exists).
+  An active hold also blocks normalize-to-floating-`@vN` when the exact pin
+  exceeds the ceiling. Holds do not change the default keep-SHA / unpin
+  policy. Workspace-scoped holds use repo root (`.`); per-workflow path
+  scoping is not supported.
+- **container** — `package` is the image name without tag or digest. Hold
+  lookup canonicalizes Docker Hub aliases, so `docker.io/library/node`
+  matches `FROM node:…` / `library/node:…`. Tag bumps and tagged digest
+  refreshes whose tag semver exceeds the ceiling are filtered; above-ceiling
+  tagged refs are surfaced in plan and clamped on apply. SHA-only pins
+  without tag intent stay report-only.
 - **submodule** — `package` is the submodule path from `.gitmodules`. Tag
-  advances and SHA-refresh targets above the ceiling are filtered; above-ceiling
-  refs clamp on apply to the highest available tag within the ceiling.
+  advances and SHA-refresh targets above the ceiling are filtered.
+  Above-ceiling tagged or resolvable SHA refs are surfaced as actionable
+  plan entries and clamped on apply to the highest available tag within the
+  ceiling.
