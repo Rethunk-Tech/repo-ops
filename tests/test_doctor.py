@@ -95,6 +95,7 @@ def test_main_reports_dangling_skill_symlink_as_drift(
     out = capsys.readouterr().out
     assert "Warning: installed skill drift detected:" in out
     assert str(destination) in out
+    assert "Run: repo-ops install-skill --force" in out
 
     assert main(["--json", "--compact"]) == 0
     payload = json.loads(capsys.readouterr().out)
@@ -125,6 +126,7 @@ def test_main_reports_mutated_skill_content_as_drift(
     out = capsys.readouterr().out
     assert "Warning: installed skill drift detected:" in out
     assert str(destination) in out
+    assert "Run: repo-ops install-skill --force" in out
 
     assert main(["--json", "--compact"]) == 0
     payload = json.loads(capsys.readouterr().out)
