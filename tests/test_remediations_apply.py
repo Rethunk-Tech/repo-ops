@@ -204,6 +204,7 @@ def test_apply_biome_success(tmp_path: Path) -> None:
     assert ok is True
     assert "(ok)" in detail
     cmd = mock_run.call_args[0][0]
+    assert cmd[0] == "bunx"
     assert "biome" in cmd and "migrate" in cmd and "--write" in cmd
 
 
@@ -218,6 +219,7 @@ def test_apply_playwright_success(tmp_path: Path) -> None:
     assert "playwright install" in detail
     assert "(ok)" in detail
     cmd = mock_run.call_args[0][0]
+    assert cmd[0] == "bunx"
     assert "playwright" in cmd and "install" in cmd
 
 
