@@ -339,10 +339,11 @@ Config files (TOML):
 Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
 
 For multi-root `plan` and `apply` runs, repository exclusions, Actions
-lint/policy levels, Go upgrade mode, and `go_work_sync` are resolved from each
-checkout's config; the launch checkout's config is not inherited by the rest of
-the fleet. CLI flags and caller-provided environment variables retain
-precedence. Other config keys remain invocation/global-scoped for now.
+lint/policy levels, Go upgrade mode, `go_work_sync`, `go_directive`, and
+`go_toolchain` are resolved from each checkout's config; the launch checkout's
+config is not inherited by the rest of the fleet. CLI flags and caller-provided
+environment variables retain precedence. Timeouts, jobs, and `*_update_latest`
+remain invocation/global-scoped for now.
 
 For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 `commit_agent_model` config key selects the agent model; the default is
