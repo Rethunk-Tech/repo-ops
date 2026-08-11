@@ -369,7 +369,10 @@ def _cargo_local_license(name: str, version: str) -> str | None:
     for package_dir in sources.glob(f"*/{name}-{version}"):
         cargo_toml = package_dir / "Cargo.toml"
         try:
-            import tomllib
+            try:
+                import tomllib
+            except ImportError:
+                import tomli as tomllib
 
             data = tomllib.loads(cargo_toml.read_text(encoding="utf-8"))
         except (OSError, ValueError):
