@@ -5,6 +5,7 @@ All subprocess and git calls are mocked — no network traffic, no real gh/git.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -552,6 +553,55 @@ def test_dependabot_exclude_cli_wins_over_config(
     scanned_paths = {call.args[0] for call in mock_remote.call_args_list}
     assert scanned_paths == {config_excluded, kept}
     assert "excluded: 1 repo(s)" in capsys.readouterr().out
+
+
+def test_dependabot_exclude_filters_repositories_from_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    keep = tmp_path / "keep"
+    drop = tmp_path / "drop"
+    keep.mkdir()
+    drop.mkdir()
+    seen: list[str] = []
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nexclude = ["drop"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "repo_ops_dependabot.dependabot.discover_repos",
+        lambda *args, **kwargs: {
+            "keep-common": str(keep),
+            "drop-common": str(drop),
+        },
+    )
+    monkeypatch.setattr(
+        "repo_ops_dependabot.dependabot.load_global_config",
+        lambda: {},
+    )
+    monkeypatch.setattr(
+        "repo_ops_dependabot.dependabot._github_remote",
+        lambda repo: seen.append(repo) or "https://github.com/owner/repo",
+    )
+    monkeypatch.setattr(
+        "repo_ops_dependabot.dependabot._gh_list_dependabot_prs",
+        lambda *args, **kwargs: ([], ""),
+    )
+    monkeypatch.setattr(
+        "repo_ops_dependabot.dependabot.run_git",
+        lambda *args, **kwargs: MagicMock(returncode=0, stdout=""),
+    )
+
+    assert main([str(tmp_path)]) == 0
+    assert seen == [str(keep)]
+    assert "excluded: 1 repo(s)" in capsys.readouterr().out
+
+    assert main([str(tmp_path), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["excluded_repos"] == 1
 
 
 def test_dependabot_close_calls_gh_pr_close(tmp_path: Path) -> None:
