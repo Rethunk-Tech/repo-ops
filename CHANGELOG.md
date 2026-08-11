@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Bun remediations invoked package.json scripts instead of package binaries:** `pm_exec_prefix("bun")` returned `["bun", "run"]`, so remediations like `biome migrate --write` became `bun run biome migrate --write` — running the `biome` script and appending args (e.g. `biome check --write . migrate --write`). Now uses `bunx` to execute installed binaries directly, matching yarn/pnpm/npm exec semantics.
 
+### Changed
+
+- **Dependabot JSON summary:** renamed `summary.excluded_repos` to the fleet-canonical `summary.excluded`; consumers must migrate to the new key.
+
 ## [0.22.1] - 2026-07-28
 
 ### Fixed
