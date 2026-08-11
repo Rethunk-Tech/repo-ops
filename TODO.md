@@ -30,34 +30,44 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 ---
 
-## Round 36 — Wave 36 in flight
+## Round 36 — Wave 36 audit carry-forwards
 
-### 36.1 Plan on-disk exclude + JSON `summary.excluded`
+### 36.1 npm/pnpm apply-level ghost defer
 
-Hermetic two-repo fixture; `[tool.repo-ops] exclude` in `pyproject.toml`; assert plan human footer + JSON `summary.excluded`.
+Yarn/bun fold blocked initial `assert_targets_resolved` into targeted-bump retry via `unresolved_targets`. `apply_npm` / `apply_pnpm` still raise unconditionally when `changes` exist and a pin blocks — no defer when `--*-targeted-bump` is on.
 
-**Owns:** `tests/test_plan_json_output.py`
+**Refs:** `repo_ops_js_npm.npm`; `repo_ops_js_pnpm.pnpm`; yarn/bun `_fold_blocked_into_behind` / `unresolved_targets` call sites.
 
-### 36.2 npm/pnpm unheld-pin targeted-bump parity
+**Acceptance:** With targeted-bump enabled, npm/pnpm apply defer ghost-blocked targets into `targeted_bump_behind` instead of failing the workspace on the first guard.
 
-Mirror yarn’s release-unheld / keep-held resolutions/overrides tests for npm and pnpm `targeted_bump_behind`.
+### 36.2 Bun integration: targeted-bump releases unheld pin
 
-**Owns:** `tests/test_npm_holds.py`, `tests/test_pnpm_holds.py`
+`tests/integration/test_bun_ghost_bump.py` covers raise-without-targeted-bump only. Yarn has `test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising`. Unit coverage for bun defer/release landed in wave36; fleet/integration path still open.
 
-### 36.3 Bun unheld-pin + targeted-bump ghost defer
+**Refs:** `tests/integration/test_bun_ghost_bump.py`; `tests/integration/test_yarn_ghost_bump.py`.
 
-Holds parity for unheld/held pins; unit test that targeted-bump defers initial ghost raise into retry.
+**Acceptance:** Integration test: bun apply with targeted-bump releases an unheld overrides pin and advances instead of raising.
 
-**Owns:** `tests/test_bun_holds.py`, `tests/test_bun_apply.py`
+### 36.3 Deno targeted-bump unheld-pin parity
 
-### 36.4 `unresolved_targets` + monorepo pin release
+npm/pnpm/bun/yarn hold tests now cover `release_unheld_pin` wiring. Deno has no analogous holds/release-unheld targeted-bump tests.
 
-Unit-test `unresolved_targets`; extend `release_unheld_pin` for nested workspace `package.json`.
+**Refs:** `repo_ops_js.deno`; `tests/test_*_holds.py` yarn/npm/pnpm/bun patterns.
 
-**Owns:** `tests/test_js_guards.py` (new), `tests/test_overrides_release_unheld_pin.py`
+**Acceptance:** Deno targeted-bump releases unheld pins and keeps held pins (unit tests mirroring other JS managers).
 
-### 36.5 Inventory `--sort` column coverage
+### 36.4 Dependabot JSON `excluded` key consistency
 
-Parametrize remaining sort keys: `name`, `versions`, `on-disk`, `edges` (direct already covered).
+Dependabot JSON uses `summary.excluded_repos`; plan/audit/pushed use `summary.excluded`. Pre-existing schema drift.
 
-**Owns:** `tests/test_inventory.py`
+**Refs:** `tests/test_dependabot_sweep.py`; `repo_ops_dependabot.dependabot`; `repo_ops_upgrade.report.build_run_summary`.
+
+**Acceptance:** One canonical JSON field name for excluded-repo counts across subcommands (with migration note if renaming).
+
+### 36.5 Docs: bun remediations use `bunx`
+
+CHANGELOG [Unreleased] documents `pm_exec_prefix("bun")` → `bunx`; `docs/usage.md` is silent.
+
+**Refs:** `docs/usage.md`; `CHANGELOG.md` [Unreleased]; `repo_ops_js.workspaces.pm_exec_prefix`.
+
+**Acceptance:** Usage docs state bun remediations execute via `bunx`, not `bun run`.
