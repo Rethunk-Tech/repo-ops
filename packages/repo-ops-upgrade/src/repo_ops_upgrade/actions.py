@@ -1380,6 +1380,30 @@ def scan_actions(
 
             bare_major_exists = M in info["bare_majors"]
             max_major = info["max_major"]
+            hold_rule = _resolve_actions_hold(repo, action)
+            hold_target = (
+                _resolve_hold_action_tag_target(
+                    pin, info.get("all_tags", set()), hold_rule
+                )
+                if hold_rule is not None
+                else None
+            )
+            if hold_target is not None:
+                if not policy_blocked:
+                    bumps.append(
+                        ActionBump(
+                            workflow=rel,
+                            action=action,
+                            pin=pin,
+                            latest=hold_target,
+                            status="ok",
+                            detail=(
+                                f"hold clamp {pin} -> {hold_target} "
+                                f"(<={hold_rule.max_version})"
+                            ),
+                        )
+                    )
+                continue
 
             # In latest mode, a newer major upstream is rewritten (not just
             # reported), provided it can be safely targeted (#106).
@@ -1429,7 +1453,15 @@ def scan_actions(
                 # else: up to date, emit nothing
             else:
                 # Exact/minor pin (e.g. v3.19.0) — try to collapse to floating major.
-                if bare_major_exists and _target_within_hold(repo, action, desired):
+                hold_has_finer_ceiling = (
+                    hold_rule is not None
+                    and len(semver_tuple(hold_rule.max_version)) > 1
+                )
+                if (
+                    bare_major_exists
+                    and not hold_has_finer_ceiling
+                    and _target_within_hold(repo, action, desired)
+                ):
                     detail = f"normalize to floating major v{M}"
                     if newer_major:
                         detail += f"; newer major v{max_major} available"
