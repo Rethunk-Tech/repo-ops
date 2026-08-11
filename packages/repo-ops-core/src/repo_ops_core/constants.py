@@ -84,13 +84,14 @@ def _resolve_timeout(setting: str, env_var: str, default: int) -> int:
     global_cfg, repo_cfg = (
         config_layers if config_layers is not None else (load_global_config(), {})
     )
+    ambient = ambient_env()
     raw = resolve_setting(
         setting,
         global_cfg=global_cfg,
         repo_cfg=repo_cfg,
-        env=ambient_env(),
+        env=ambient,
     )
-    if raw is None:
+    if raw is None and ambient is None:
         raw = os.environ.get(env_var, "")
     raw = str(raw).strip()
     if raw:
