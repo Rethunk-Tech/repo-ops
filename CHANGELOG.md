@@ -746,7 +746,13 @@ Note: `v0.20.1` was tagged but its release build failed the `ruff format --check
 
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.22.1...HEAD
+[0.22.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.22.0...v0.22.1
+[0.22.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.21.0...v0.22.0
+[0.21.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.20.4...v0.21.0
+[0.20.4]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.20.3...v0.20.4
+[0.20.3]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.20.2...v0.20.3
+[0.20.2]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.20.0...v0.20.2
 [0.20.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.18.0...v0.18.1
