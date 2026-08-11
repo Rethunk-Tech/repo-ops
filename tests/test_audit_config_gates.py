@@ -8,6 +8,7 @@ covered separately.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -56,11 +57,14 @@ def test_fail_on_from_config_file(
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON", raising=False)
-    with (
-        patch("repo_ops_audit.audit.discover_repos", return_value={}),
-        patch("repo_ops_audit.audit.run_audit", return_value=_results(high=1)),
-    ):
-        rc = main([str(tmp_path)])
+    try:
+        with (
+            patch("repo_ops_audit.audit.discover_repos", return_value={}),
+            patch("repo_ops_audit.audit.run_audit", return_value=_results(high=1)),
+        ):
+            rc = main([str(tmp_path)])
+    finally:
+        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON", None)
     assert rc == 0
 
 
@@ -102,11 +106,14 @@ def test_fail_on_unknown_from_config_file(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON", raising=False)
     monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", raising=False)
-    with (
-        patch("repo_ops_audit.audit.discover_repos", return_value={}),
-        patch("repo_ops_audit.audit.run_audit", return_value=_results(unknown=1)),
-    ):
-        rc = main(["--fail-on", "never", str(tmp_path)])
+    try:
+        with (
+            patch("repo_ops_audit.audit.discover_repos", return_value={}),
+            patch("repo_ops_audit.audit.run_audit", return_value=_results(unknown=1)),
+        ):
+            rc = main(["--fail-on", "never", str(tmp_path)])
+    finally:
+        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", None)
     assert rc == 1
 
 
