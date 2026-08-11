@@ -578,7 +578,7 @@ def test_dependabot_exclude_cli_wins_over_config(
     ):
         assert main(["--exclude", "cli-excluded", "--json", str(tmp_path)]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["summary"]["excluded_repos"] == 1
+    assert payload["summary"]["excluded"] == 1
 
 
 def test_dependabot_exclude_filters_repositories_from_config(
@@ -627,7 +627,7 @@ def test_dependabot_exclude_filters_repositories_from_config(
 
     assert main([str(tmp_path), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["summary"]["excluded_repos"] == 1
+    assert payload["summary"]["excluded"] == 1
 
 
 def test_dependabot_close_calls_gh_pr_close(tmp_path: Path) -> None:

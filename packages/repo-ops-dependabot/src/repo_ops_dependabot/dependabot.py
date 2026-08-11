@@ -1396,7 +1396,7 @@ def main(argv: list[str] | None = None) -> int:
             ],
             "summary": {
                 "repos": len(results),
-                "excluded_repos": excluded_count,
+                "excluded": excluded_count,
                 "total_prs": sum(len(r.prs) for r in results),
                 "superseded": sum(
                     1
