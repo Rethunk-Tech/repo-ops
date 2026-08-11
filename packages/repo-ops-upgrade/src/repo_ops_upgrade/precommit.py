@@ -593,8 +593,17 @@ def check_precommit(ws: Workspace) -> list[Change]:
 
         # SHA-pinned: report-only unless the tag history can establish intent.
         if _is_sha_rev(rev):
-            if refresh_sha:
+            hold = _resolve_precommit_hold(ws, label)
+            refs: list[tuple[str, str]] | None = None
+            if hold is not None:
                 refs = _fetch_tag_refs_for_repo(repo_url)
+                if refs is not None:
+                    hold_target = _resolve_hold_sha_target(rev, refs, hold)
+                    if hold_target is not None:
+                        changes.append(Change(name=label, from_ver=rev, to=hold_target))
+                        continue
+            if refresh_sha:
+                refs = refs if refs is not None else _fetch_tag_refs_for_repo(repo_url)
                 resolved = _resolve_sha_refresh(rev, refs or [])
                 if resolved is not None:
                     latest_sha, _current_tag, latest_tag = resolved
@@ -633,6 +642,13 @@ def check_precommit(ws: Workspace) -> list[Change]:
                 )
             )
             continue
+
+        hold = _resolve_precommit_hold(ws, label)
+        if hold is not None:
+            hold_target = _resolve_hold_tag_target(rev, tags, hold)
+            if hold_target is not None:
+                changes.append(Change(name=label, from_ver=rev, to=hold_target))
+                continue
 
         latest = _resolve_latest_precommit_rev(
             rev, tags, allow_cross_major=allow_cross_major
