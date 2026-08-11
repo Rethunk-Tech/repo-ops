@@ -83,11 +83,15 @@ def test_fail_on_cli_flag_overrides_env(
 ) -> None:
     """Explicit --fail-on high wins over REPO_OPS_AUDIT_FAIL_ON=never in the env."""
     monkeypatch.setenv("REPO_OPS_AUDIT_FAIL_ON", "never")
-    with (
-        patch("repo_ops_audit.audit.discover_repos", return_value={}),
-        patch("repo_ops_audit.audit.run_audit", return_value=_results(high=1)),
-    ):
-        rc = main(["--fail-on", "high", str(tmp_path)])
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    try:
+        with (
+            patch("repo_ops_audit.audit.discover_repos", return_value={}),
+            patch("repo_ops_audit.audit.run_audit", return_value=_results(high=1)),
+        ):
+            rc = main(["--fail-on", "high", str(tmp_path)])
+    finally:
+        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON", None)
     assert rc == 1
 
 
@@ -158,11 +162,15 @@ def test_fail_on_unknown_cli_flag_overrides_env(
 ) -> None:
     """Explicit --fail-on-unknown wins even when the env var says '0' (off)."""
     monkeypatch.setenv("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", "0")
-    with (
-        patch("repo_ops_audit.audit.discover_repos", return_value={}),
-        patch("repo_ops_audit.audit.run_audit", return_value=_results(unknown=1)),
-    ):
-        rc = main(["--fail-on", "never", "--fail-on-unknown", str(tmp_path)])
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    try:
+        with (
+            patch("repo_ops_audit.audit.discover_repos", return_value={}),
+            patch("repo_ops_audit.audit.run_audit", return_value=_results(unknown=1)),
+        ):
+            rc = main(["--fail-on", "never", "--fail-on-unknown", str(tmp_path)])
+    finally:
+        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", None)
     assert rc == 1
 
 
