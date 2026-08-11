@@ -55,6 +55,13 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+from repo_ops_core.config import (
+    ambient_env,
+    load_global_config,
+    load_repo_config,
+    process_env_cli_override,
+    resolve_setting,
+)
 from repo_ops_core.holds import (
     HoldRule,
     load_global_holds,
@@ -77,6 +84,19 @@ _COMPOSE_NAMES = frozenset(
         "compose.yaml",
     }
 )
+
+
+def _container_flag_enabled(setting: str, env_var: str, ws: Workspace) -> bool:
+    raw = resolve_setting(
+        setting,
+        cli_value=process_env_cli_override(env_var),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(ws.git_repo),
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def is_container_workspace(directory: Path) -> bool:
@@ -992,8 +1012,12 @@ def check_container(ws: Workspace) -> list[Change]:
     - ``REPO_OPS_CONTAINER_REFRESH_SHA=1``: for ``image:tag@sha256:...`` pins,
       query the manifest and report/apply a digest update if it has changed.
     """
-    allow_cross_major = os.environ.get("REPO_OPS_CONTAINER_UPDATE_LATEST", "") == "1"
-    refresh_sha = os.environ.get("REPO_OPS_CONTAINER_REFRESH_SHA", "") == "1"
+    allow_cross_major = _container_flag_enabled(
+        "container_update_latest", "REPO_OPS_CONTAINER_UPDATE_LATEST", ws
+    )
+    refresh_sha = _container_flag_enabled(
+        "container_refresh_sha", "REPO_OPS_CONTAINER_REFRESH_SHA", ws
+    )
     changes: list[Change] = []
     # (image, tag, sha) dedup — sha must be part of the key so multi-stage
     # files that pin the same image:tag at different digests get each

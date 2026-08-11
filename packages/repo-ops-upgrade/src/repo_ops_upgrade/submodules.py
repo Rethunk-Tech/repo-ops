@@ -12,6 +12,13 @@ from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 
+from repo_ops_core.config import (
+    ambient_env,
+    load_global_config,
+    load_repo_config,
+    process_env_cli_override,
+    resolve_setting,
+)
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
 from repo_ops_core.holds import (
@@ -267,6 +274,32 @@ _SEMVER_TAG_RE = re.compile(r"^v?(\d+)(?:\.\d+)*(?:[-.][\w.]+)?$")
 #: One entry per unique upstream URL so repeated checks cost only one RTT.
 _SUBMODULE_TAG_CACHE: dict[str, list[str] | None] = {}
 _SUBMODULE_TAG_REF_CACHE: dict[str, list[tuple[str, str]] | None] = {}
+
+
+def _submodule_update_latest_enabled(repo_root: Path) -> bool:
+    raw = resolve_setting(
+        "submodule_update_latest",
+        cli_value=process_env_cli_override(_SUBMODULE_UPDATE_LATEST_ENV),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(repo_root),
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _submodule_refresh_sha_enabled(repo_root: Path) -> bool:
+    raw = resolve_setting(
+        "submodule_refresh_sha",
+        cli_value=process_env_cli_override(_SUBMODULE_REFRESH_SHA_ENV),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(repo_root),
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -679,11 +712,11 @@ def check_submodule_tag_advances(
     Set ``REPO_OPS_SUBMODULE_REFRESH_SHA=1`` to refresh SHA-only HEADs when
     their upstream tag history establishes a same-major target.
     """
-    allow_cross_major = os.environ.get(_SUBMODULE_UPDATE_LATEST_ENV, "") == "1"
-    refresh_sha = os.environ.get(_SUBMODULE_REFRESH_SHA_ENV, "") == "1"
     bumps: list[SubmoduleTagBump] = []
 
     for link in links:
+        allow_cross_major = _submodule_update_latest_enabled(link.parent)
+        refresh_sha = _submodule_refresh_sha_enabled(link.parent)
         url = link.url
         if not url:
             # No URL recorded — cannot resolve upstream; skip silently.

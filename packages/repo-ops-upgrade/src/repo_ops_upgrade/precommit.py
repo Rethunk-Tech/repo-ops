@@ -33,7 +33,6 @@ and add a ``consider_precommit(mdir)`` call inside
 from __future__ import annotations
 
 import logging
-import os
 import re
 import subprocess
 import threading
@@ -41,6 +40,13 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+from repo_ops_core.config import (
+    ambient_env,
+    load_global_config,
+    load_repo_config,
+    process_env_cli_override,
+    resolve_setting,
+)
 from repo_ops_core.holds import (
     HoldRule,
     load_global_holds,
@@ -85,6 +91,32 @@ _REPO_LINE_RE = re.compile(r"^\s*-\s+repo:\s+(.+?)\s*$")
 
 # Regex to match "  rev: <value>" lines (leading whitespace required).
 _REV_LINE_RE = re.compile(r"^(\s+)rev:\s+(.+?)\s*$")
+
+
+def _precommit_update_latest_enabled(ws: Workspace) -> bool:
+    raw = resolve_setting(
+        "precommit_update_latest",
+        cli_value=process_env_cli_override(_UPDATE_LATEST_ENV),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(ws.git_repo),
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _precommit_refresh_sha_enabled(ws: Workspace) -> bool:
+    raw = resolve_setting(
+        "precommit_refresh_sha",
+        cli_value=process_env_cli_override(_REFRESH_SHA_ENV),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(ws.git_repo),
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 # ---------------------------------------------------------------------------
@@ -567,8 +599,8 @@ def check_precommit(ws: Workspace) -> list[Change]:
     - ``REPO_OPS_PRECOMMIT_REFRESH_SHA=1``: refresh SHA pins within their
       resolved tagged major.
     """
-    allow_cross_major = os.environ.get(_UPDATE_LATEST_ENV, "") == "1"
-    refresh_sha = os.environ.get(_REFRESH_SHA_ENV, "") == "1"
+    allow_cross_major = _precommit_update_latest_enabled(ws)
+    refresh_sha = _precommit_refresh_sha_enabled(ws)
     cfg_path = _find_precommit_config(ws.path)
     if cfg_path is None:
         return []
@@ -760,8 +792,8 @@ def apply_precommit(ws: Workspace) -> None:
     # each get an independent key and their own target rev.
     # Tag cache is already warm from check_precommit above, so these calls are
     # instant cache hits.
-    allow_cross_major = os.environ.get(_UPDATE_LATEST_ENV, "") == "1"
-    refresh_sha = os.environ.get(_REFRESH_SHA_ENV, "") == "1"
+    allow_cross_major = _precommit_update_latest_enabled(ws)
+    refresh_sha = _precommit_refresh_sha_enabled(ws)
     repos = _parse_precommit_repos(text)
 
     line_bumps: dict[int, str] = {}  # 1-indexed rev_line_no → target rev
