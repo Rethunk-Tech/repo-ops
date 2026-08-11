@@ -361,8 +361,21 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
             _raise_classified(proc.stderr, "go mod tidy failed", ws.path)
 
 
-def _go_work_sync_enabled() -> bool:
-    return os.environ.get(GO_WORK_SYNC_ENV, "").strip() == "1"
+def _go_work_sync_enabled(ws: Workspace | None = None) -> bool:
+    ambient = ambient_env()
+    process_value = os.environ.get(GO_WORK_SYNC_ENV)
+    ambient_value = ambient.get(GO_WORK_SYNC_ENV) if ambient is not None else None
+    cli_value = process_value if process_value != ambient_value else None
+    raw = resolve_setting(
+        "go_work_sync",
+        cli_value=cli_value,
+        env=ambient or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 # ---------------------------------------------------------------------------
@@ -592,7 +605,7 @@ def _run_with_go_work_retry(
         return proc
     stderr = proc.stderr.strip()
     if (
-        _go_work_sync_enabled()
+        _go_work_sync_enabled(ws)
         and (
             "listed in go.work file requires go >=" in stderr
             or ("reading go.work" in stderr and "requires go" in stderr)
