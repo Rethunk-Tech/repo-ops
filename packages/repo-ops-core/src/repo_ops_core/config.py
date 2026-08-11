@@ -193,6 +193,7 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
     "npm_targeted_bump": ("REPO_OPS_NPM_TARGETED_BUMP", "npm_targeted_bump", None),
     "pnpm_targeted_bump": ("REPO_OPS_PNPM_TARGETED_BUMP", "pnpm_targeted_bump", None),
     "bun_targeted_bump": ("REPO_OPS_BUN_TARGETED_BUMP", "bun_targeted_bump", None),
+    "deno_update_latest": ("REPO_OPS_DENO_UPDATE_LATEST", "deno_update_latest", None),
     "deno_targeted_bump": ("REPO_OPS_DENO_TARGETED_BUMP", "deno_targeted_bump", None),
     "go_work_sync": ("REPO_OPS_GO_WORK_SYNC", "go_work_sync", None),
     "no_progress": ("REPO_OPS_NO_PROGRESS", "no_progress", None),
@@ -323,6 +324,13 @@ SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
         "--latest",
         "REPO_OPS_YARN_UPDATE_LATEST",
         "yarn_update_latest",
+        "0",
+    ),
+    (
+        "deno_update_latest",
+        "--latest",
+        "REPO_OPS_DENO_UPDATE_LATEST",
+        "deno_update_latest",
         "0",
     ),
     (
