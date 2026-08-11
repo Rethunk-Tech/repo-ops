@@ -727,6 +727,10 @@ def test_main_exclude_prints_excluded_count(
 def test_main_exclude_uses_repo_config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nexclude = ["drop"]\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
     keep = tmp_path / "keep"
     drop = tmp_path / "drop"
     keep.mkdir()
@@ -741,7 +745,6 @@ def test_main_exclude_uses_repo_config(
             "drop-common": str(drop),
         },
     )
-    monkeypatch.setattr(audit, "load_repo_config", lambda _root: {"exclude": ["drop"]})
 
     def fake_pushed(repo: str, filters: Filters) -> dict[str, None]:
         seen.append(repo)
@@ -758,6 +761,10 @@ def test_main_exclude_uses_repo_config(
 def test_main_exclude_cli_wins_over_config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nexclude = ["config-excluded"]\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
     cli_excluded = tmp_path / "cli-excluded"
     config_excluded = tmp_path / "config-excluded"
     kept = tmp_path / "kept"
@@ -775,9 +782,6 @@ def test_main_exclude_cli_wins_over_config(
         },
     )
     monkeypatch.setattr(audit, "load_global_config", lambda: {})
-    monkeypatch.setattr(
-        audit, "load_repo_config", lambda _root: {"exclude": ["config-excluded"]}
-    )
 
     def fake_pushed(repo: str, filters: Filters) -> dict[str, None]:
         seen.append(repo)
