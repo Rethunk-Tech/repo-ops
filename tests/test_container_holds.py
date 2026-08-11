@@ -1,0 +1,160 @@
+"""Container image pin hold enforcement."""
+
+from contextlib import contextmanager
+from unittest.mock import patch
+
+import pytest
+
+from repo_ops_container import container
+from repo_ops_core.holds import HoldRule
+from repo_ops_models import Workspace
+
+
+def _ws(tmp_path) -> Workspace:
+    return Workspace(
+        path=tmp_path,
+        ecosystem="container",
+        manager="container",
+        git_repo=tmp_path,
+        label="repo",
+    )
+
+
+def _dockerfile(tmp_path, ref: str = "1.0.0") -> object:
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        f"FROM docker.io/library/node:{ref}\n",
+        encoding="utf-8",
+    )
+    return dockerfile
+
+
+def _held_rule(**overrides) -> HoldRule:
+    defaults = {
+        "package": "docker.io/library/node",
+        "max_version": "1.4",
+        "ecosystem": "container",
+    }
+    defaults.update(overrides)
+    return HoldRule(**defaults)
+
+
+@contextmanager
+def _held_holds():
+    with (
+        patch.object(
+            container,
+            "_global_holds_cached",
+            return_value=(_held_rule(),),
+        ),
+        patch.object(container, "_repo_holds_cached", return_value=()),
+    ):
+        yield
+
+
+def test_check_container_filters_tag_bump_above_ceiling(tmp_path) -> None:
+    _dockerfile(tmp_path)
+    ws = _ws(tmp_path)
+
+    with (
+        _held_holds(),
+        patch.object(
+            container,
+            "_fetch_tags",
+            return_value=["1.0.0", "1.5.0"],
+        ),
+    ):
+        assert container.check_container(ws) == []
+
+
+def test_check_container_filters_digest_refresh_above_ceiling(
+    tmp_path, monkeypatch
+) -> None:
+    digest = "a" * 64
+    _dockerfile(tmp_path, ref=f"1.5.0@sha256:{digest}")
+    ws = _ws(tmp_path)
+    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
+
+    with (
+        _held_holds(),
+        patch.object(
+            container,
+            "_fetch_manifest_digest",
+            return_value=f"sha256:{'b' * 64}",
+        ),
+    ):
+        assert container.check_container(ws) == []
+
+
+def test_apply_container_clamps_tag_and_digest_to_ceiling(
+    tmp_path, monkeypatch
+) -> None:
+    old_digest = "a" * 64
+    new_digest = f"sha256:{'b' * 64}"
+    dockerfile = _dockerfile(tmp_path, ref=f"1.5.0@sha256:{old_digest}")
+    ws = _ws(tmp_path)
+    monkeypatch.delenv("REPO_OPS_CONTAINER_REFRESH_SHA", raising=False)
+
+    with (
+        _held_holds(),
+        patch.object(
+            container,
+            "_fetch_tags",
+            return_value=["1.0.0", "1.4.0", "1.5.0"],
+        ),
+        patch.object(
+            container,
+            "_fetch_manifest_digest",
+            return_value=new_digest,
+        ),
+    ):
+        container.apply_container(ws)
+
+    assert dockerfile.read_text(encoding="utf-8") == (
+        f"FROM docker.io/library/node:1.4.0@{new_digest}\n"
+    )
+
+
+def test_apply_container_raises_when_no_tag_satisfies_ceiling(tmp_path) -> None:
+    _dockerfile(tmp_path, ref="1.5.0")
+    ws = _ws(tmp_path)
+
+    with (
+        _held_holds(),
+        patch.object(
+            container,
+            "_fetch_tags",
+            return_value=["1.5.0", "1.6.0"],
+        ),
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match=r"hold: failed to clamp docker\.io/library/node back to <=1\.4 \(container\)",
+        ):
+            container.apply_container(ws)
+
+
+def test_apply_container_ignores_expired_hold_without_rewriting_config(
+    tmp_path,
+) -> None:
+    dockerfile = _dockerfile(tmp_path, ref="1.5.0")
+    hold_config = tmp_path / ".repo-ops.toml"
+    hold_config.write_text(
+        '[[hold]]\npackage = "docker.io/library/node"\nmax_version = "1.0"\n'
+        'until = "2020-01-01"\necosystem = "container"\n',
+        encoding="utf-8",
+    )
+    original_hold_config = hold_config.read_bytes()
+    ws = _ws(tmp_path)
+
+    with patch.object(
+        container,
+        "_fetch_tags",
+        return_value=["1.4.0", "1.5.0"],
+    ):
+        container.apply_container(ws)
+
+    assert dockerfile.read_text(encoding="utf-8") == (
+        "FROM docker.io/library/node:1.5.0\n"
+    )
+    assert hold_config.read_bytes() == original_hold_config
