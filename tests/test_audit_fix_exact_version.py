@@ -512,6 +512,52 @@ def test_apply_remediations_sets_rust_overrides_before_process_workspace(
     assert _AUDIT_VERSION_OVERRIDES == {}
 
 
+def test_apply_remediations_applies_deno_overrides_after_audit_fix(
+    tmp_path: Path,
+) -> None:
+    items = [
+        RemediationItem(
+            package="npm:lodash",
+            safe_version="4.17.21",
+            ecosystem="deno",
+            workspace=str(tmp_path),
+        )
+    ]
+    audit_outcome = MagicMock(status="ok")
+    helper_calls: list[tuple[Workspace, dict[str, str]]] = []
+
+    def _capture_apply(ws: Workspace) -> None:
+        from repo_ops_js.deno import _AUDIT_VERSION_OVERRIDES
+
+        helper_calls.append((ws, dict(_AUDIT_VERSION_OVERRIDES)))
+
+    with (
+        patch("repo_ops_audit.audit.shutil.which", return_value="/usr/bin/deno"),
+        patch(
+            "repo_ops_audit.audit._apply_deno_audit",
+            return_value=audit_outcome,
+        ),
+        patch("repo_ops_core.git.git_repo_for", return_value=tmp_path),
+        patch(
+            "repo_ops_js.deno.apply_deno_audit_version_overrides",
+            side_effect=_capture_apply,
+        ),
+    ):
+        outcomes = apply_remediations(items)
+
+    assert outcomes == [audit_outcome]
+    assert len(helper_calls) == 1
+    ws, overrides = helper_calls[0]
+    assert ws.path == tmp_path
+    assert ws.ecosystem == "deno"
+    assert ws.manager == "deno"
+    assert overrides == {"npm:lodash": "4.17.21"}
+
+    from repo_ops_js.deno import _AUDIT_VERSION_OVERRIDES
+
+    assert _AUDIT_VERSION_OVERRIDES == {}
+
+
 def test_apply_remediations_sets_pnpm_overrides(tmp_path: Path) -> None:
     """apply_remediations injects pnpm version overrides for pnpm workspaces."""
     (tmp_path / "package.json").write_text("{}", encoding="utf-8")
