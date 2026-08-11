@@ -33,6 +33,7 @@ _DENO_TARGETED_BUMP_ENV = "REPO_OPS_DENO_TARGETED_BUMP"
 _TRUE_VALUES = ("1", "true", "yes", "on")
 _DENO_CONFIG_FILENAMES = ("deno.json", "deno.jsonc")
 _DENO_IMPORT_MAP_FILENAMES = ("import_map.json", "import-map.json")
+_AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 _SEMVER_RE = re.compile(
     r"^[vV]?\d+(?:\.\d+)*(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
@@ -102,6 +103,15 @@ def _deno_update_command(ws: Workspace) -> list[str]:
     return command
 
 
+def set_deno_audit_version_overrides(overrides: dict[str, str]) -> None:
+    _AUDIT_VERSION_OVERRIDES.clear()
+    _AUDIT_VERSION_OVERRIDES.update(overrides)
+
+
+def clear_deno_audit_version_overrides() -> None:
+    _AUDIT_VERSION_OVERRIDES.clear()
+
+
 def _deno_version_target(name: str, version: str) -> str:
     return f"{name}@{_deno_precise_version(version)}"
 
@@ -148,10 +158,9 @@ def _filter_held_deno_changes(ws: Workspace, changes: list[Change]) -> list[Chan
     return [
         change
         for change in changes
-        if (
-            (rule := _resolve_deno_hold(ws, change.name)) is None
-            or version_satisfies_ceiling(change.to, rule.max_version)
-        )
+        if (audit_override := _AUDIT_VERSION_OVERRIDES.get(change.name)) is not None
+        or (rule := _resolve_deno_hold(ws, change.name)) is None
+        or version_satisfies_ceiling(change.to, rule.max_version)
     ]
 
 
@@ -366,15 +375,20 @@ def targeted_bump_behind(
     applied: list[Change] = []
     still_behind: list[Change] = []
     for change in behind:
+        audit_override = _AUDIT_VERSION_OVERRIDES.get(change.name)
         hold = _resolve_deno_hold(ws, change.name)
-        if hold is not None and not version_satisfies_ceiling(
-            change.to, hold.max_version
+        if (
+            audit_override is None
+            and hold is not None
+            and not version_satisfies_ceiling(change.to, hold.max_version)
         ):
             still_behind.append(change)
             continue
         snapshot = snapshot_workspace_files(ws.path, "deno")
         cmd = _deno_update_command(ws)
-        if hold is None:
+        if audit_override is not None:
+            cmd.append(_deno_version_target(change.name, audit_override))
+        elif hold is None:
             if _deno_update_latest_enabled():
                 cmd.append("--latest")
             cmd.append(change.name)
@@ -390,8 +404,10 @@ def targeted_bump_behind(
                 restore_workspace_snapshot(ws.path, snapshot, "deno")
                 still_behind.append(change)
                 continue
-            if hold is not None and not version_satisfies_ceiling(
-                landed, hold.max_version
+            if (
+                audit_override is None
+                and hold is not None
+                and not version_satisfies_ceiling(landed, hold.max_version)
             ):
                 restore_workspace_snapshot(ws.path, snapshot, "deno")
                 still_behind.append(change)
@@ -408,7 +424,15 @@ def targeted_bump_behind(
                 try:
                     assert_targets_resolved(
                         ws,
-                        [change],
+                        [
+                            change
+                            if audit_override is None
+                            else Change(
+                                change.name,
+                                change.from_ver,
+                                audit_override,
+                            )
+                        ],
                         manager="deno",
                         fallback_resolver=_landed_deno_version,
                     )
@@ -433,8 +457,9 @@ def _enforce_deno_version_ceilings(
     candidates = set(candidate_names or ())
     candidates.update(_deno_lock_package_names(ws))
     for name in sorted(candidates):
+        audit_override = _AUDIT_VERSION_OVERRIDES.get(name)
         rule = _resolve_deno_hold(ws, name)
-        if rule is None:
+        if audit_override is not None or rule is None:
             continue
         resolved = _landed_deno_version(ws, name)
         if resolved is None or version_satisfies_ceiling(resolved, rule.max_version):
