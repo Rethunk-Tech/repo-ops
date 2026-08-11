@@ -237,16 +237,42 @@ def test_resume_from_config_file(tmp_path) -> None:
     """REPO_OPS_RESUME can be set via config file."""
     from repo_ops_core.config import apply_config_to_env
 
-    cfg = {"resume": True}
+    cfg_dir = tmp_path / "repo-ops"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.toml").write_text("resume = true\n", encoding="utf-8")
     monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("REPO_OPS_RESUME", raising=False)
     try:
-        apply_config_to_env(global_cfg=cfg)
+        apply_config_to_env(global_cfg=load_global_config())
         assert os.environ.get("REPO_OPS_RESUME") == "1"
     finally:
         # apply_config_to_env writes os.environ directly; monkeypatch.undo()
         # does not revert that, so pop it to avoid leaking into later tests.
         os.environ.pop("REPO_OPS_RESUME", None)
+        monkeypatch.undo()
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
+def test_hatch_migrate_uv_lock_from_config_file(tmp_path) -> None:
+    """REPO_OPS_HATCH_MIGRATE_UV_LOCK can be set via config file."""
+    from repo_ops_core.config import apply_config_to_env
+
+    cfg_dir = tmp_path / "repo-ops"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.toml").write_text(
+        "hatch_migrate_uv_lock = true\n", encoding="utf-8"
+    )
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", raising=False)
+    try:
+        apply_config_to_env(global_cfg=load_global_config())
+        assert os.environ.get("REPO_OPS_HATCH_MIGRATE_UV_LOCK") == "1"
+    finally:
+        # apply_config_to_env writes os.environ directly; monkeypatch.undo()
+        # does not revert that, so pop it to avoid leaking into later tests.
+        os.environ.pop("REPO_OPS_HATCH_MIGRATE_UV_LOCK", None)
         monkeypatch.undo()
 
 
