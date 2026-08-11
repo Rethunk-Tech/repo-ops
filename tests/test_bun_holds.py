@@ -254,3 +254,72 @@ def test_apply_bun_raises_when_clamp_cannot_satisfy_ceiling(
         pytest.raises(RuntimeError, match="hold"),
     ):
         apply_bun(ws)
+
+
+# ---------------------------------------------------------------------------
+# (e) targeted bump releases a legacy (unheld) overrides pin
+# ---------------------------------------------------------------------------
+
+
+def _seed_is_odd_pin(d: Path, *, installed_version: str = "0.1.2") -> None:
+    pkg = json.dumps(
+        {
+            "dependencies": {"is-odd": ">=0.1.0 <2.0.0"},
+            "overrides": {"is-odd": "0.1.2"},
+        }
+    )
+    (d / "package.json").write_text(pkg, encoding="utf-8")
+    nm_dir = d / "node_modules" / "is-odd"
+    nm_dir.mkdir(parents=True)
+    (nm_dir / "package.json").write_text(
+        json.dumps({"version": installed_version}), encoding="utf-8"
+    )
+
+
+def test_targeted_bump_releases_unheld_overrides_pin(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """An untracked overrides pin is released so the retry can advance."""
+    _seed_is_odd_pin(tmp_path)
+    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
+    ws = _ws(tmp_path)
+
+    def _fake_run(cmd, cwd, timeout=600, env=None):
+        (tmp_path / "node_modules" / "is-odd" / "package.json").write_text(
+            json.dumps({"version": "1.0.0"}), encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch(_GLOBAL_HOLDS_CACHE, return_value=()),
+        patch(_REPO_HOLDS_CACHE, return_value=()),
+        patch("repo_ops_js_bun.bun.run", side_effect=_fake_run),
+    ):
+        applied, behind = targeted_bump_behind(ws, [Change("is-odd", "0.1.2", "1.0.0")])
+
+    assert not behind
+    assert applied == [Change("is-odd", "0.1.2", "1.0.0")]
+    pkg_after = json.loads((tmp_path / "package.json").read_text(encoding="utf-8"))
+    assert "is-odd" not in pkg_after.get("overrides", {})
+
+
+def test_targeted_bump_keeps_held_overrides_pin(tmp_path: Path, monkeypatch) -> None:
+    """An active hold leaves its overrides pin untouched during retry."""
+    _seed_is_odd_pin(tmp_path)
+    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
+    ws = _ws(tmp_path)
+
+    def _fake_run(cmd, cwd, timeout=600, env=None):
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch(
+            _GLOBAL_HOLDS_CACHE,
+            return_value=(_held_rule(package="is-odd", max_version="0.1.2"),),
+        ),
+        patch("repo_ops_js_bun.bun.run", side_effect=_fake_run),
+    ):
+        targeted_bump_behind(ws, [Change("is-odd", "0.1.2", "1.0.0")])
+
+    pkg_after = json.loads((tmp_path / "package.json").read_text(encoding="utf-8"))
+    assert pkg_after["overrides"]["is-odd"] == "0.1.2"
