@@ -339,10 +339,10 @@ Config files (TOML):
 Python 3.11+ only; skipped with a warning on 3.10 unless `tomli` is installed.
 
 For multi-root `plan` and `apply` runs, repository exclusions, Actions
-lint/policy levels, and Go upgrade mode are resolved from each checkout's config; the launch
-checkout's config is not inherited by the rest of the fleet. CLI flags and
-caller-provided environment variables retain precedence. Other config keys
-remain invocation/global-scoped for now.
+lint/policy levels, Go upgrade mode, and `go_work_sync` are resolved from each
+checkout's config; the launch checkout's config is not inherited by the rest of
+the fleet. CLI flags and caller-provided environment variables retain
+precedence. Other config keys remain invocation/global-scoped for now.
 
 For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 `commit_agent_model` config key selects the agent model; the default is
@@ -411,7 +411,7 @@ sidecar for non-Python repos), via a `[[hold]]` array-of-tables:
 package = "typescript"       # exact name or fnmatch glob, e.g. "@types/*"
 max_version = "6"            # ceiling: "6" blocks major 7+, "5.9" blocks >5.9, "5.9.2" is exact
 until = "2026-09-01"         # optional ISO date; omit = indefinite hold
-ecosystem = "js"             # optional filter: js|npm|yarn|pnpm|bun|go|py|pdm|pipenv|pip-tools|poetry|hatch
+ecosystem = "js"             # optional filter: js|npm|yarn|pnpm|bun|go|py|pdm|pipenv|pip-tools|poetry|hatch|precommit|actions|container|submodule
 workspace = "packages/legacy-app"  # optional fnmatch glob, relative to repo root; omit = whole repo
 reason = "TS7 breaking changes; wait for ecosystem to catch up"   # free text, documentation only
 ```
@@ -440,9 +440,9 @@ workspace = "packages/modern-app"
 ```
 
 **Enforcement scope (this release):** JS (npm, yarn, pnpm, bun), Go, the Python
-managers (uv, hatch, pdm, pipenv, poetry, pip-tools), and pre-commit. Not yet
-wired: containers, GitHub Actions, and submodules — same rule schema, just not
-consulted by those checkers yet.
+managers (uv, hatch, pdm, pipenv, poetry, pip-tools), pre-commit, GitHub
+Actions, containers, and submodules. Not yet wired: Rust and Deno — same rule
+schema, just not consulted by those checkers yet.
 
 **How it's enforced, per ecosystem:**
 
@@ -464,7 +464,21 @@ consulted by those checkers yet.
   than an installed tree, so a hold is enforced by passing an ephemeral pip
   constraints file (`name<=ceiling` for held direct deps) to the compile
   step — `requirements.in` itself is never modified.
-- **pre-commit** — tag rev bumps and SHA-refresh targets whose resolved tag
-  version exceeds a hold ceiling are filtered out of check and apply. Existing
-  tag revs, and resolvable SHA revs, already above a ceiling are clamped
-  post-apply to the highest available tag within the ceiling.
+- **pre-commit** — `package` is the hook repo id (e.g. `example/hook`). Tag
+  rev bumps and SHA-refresh targets whose resolved tag version exceeds a hold
+  ceiling are filtered out of check and apply. Existing tag revs, and
+  resolvable SHA revs, already above a ceiling are surfaced as actionable
+  plan entries and clamped on apply to the highest available tag within the
+  ceiling.
+- **actions** — `package` is the action repo id (e.g. `actions/checkout`).
+  Outbound tag bumps and SHA-refresh targets above the ceiling are filtered;
+  pins already above the ceiling are clamped on apply to the highest
+  available tag within the ceiling (SHA pins keep digest form when a matching
+  tag exists). Holds do not change the default keep-SHA / unpin policy.
+- **container** — `package` is the image name without tag or digest (e.g.
+  `docker.io/library/node`). Tag bumps and tagged digest refreshes whose tag
+  semver exceeds the ceiling are filtered; above-ceiling tagged refs clamp on
+  apply. SHA-only pins without tag intent stay report-only.
+- **submodule** — `package` is the submodule path from `.gitmodules`. Tag
+  advances and SHA-refresh targets above the ceiling are filtered; above-ceiling
+  refs clamp on apply to the highest available tag within the ceiling.
