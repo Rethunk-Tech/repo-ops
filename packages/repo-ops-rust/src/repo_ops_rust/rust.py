@@ -13,7 +13,7 @@ import re
 from functools import cache
 from http.client import HTTPSConnection
 from pathlib import Path
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.holds import (
@@ -64,9 +64,10 @@ def _cargo_registry_versions(crate_name: str) -> tuple[str, ...]:
     """Return published, non-yanked versions for a crate."""
     endpoint = f"/api/v1/crates/{quote(crate_name, safe='')}/versions"
     versions: set[str] = set()
-    page = 1
-    while True:
-        query = urlencode({"page": page, "per_page": 100})
+    query = "?per_page=100"
+    seen_queries: set[str] = set()
+    while query not in seen_queries:
+        seen_queries.add(query)
         connection = HTTPSConnection(
             "crates.io",
             timeout=resolve_timeout_check(),
@@ -74,7 +75,7 @@ def _cargo_registry_versions(crate_name: str) -> tuple[str, ...]:
         try:
             connection.request(
                 "GET",
-                f"{endpoint}?{query}",
+                f"{endpoint}{query}",
                 headers={"User-Agent": "repo-ops"},
             )
             response = connection.getresponse()
@@ -94,6 +95,7 @@ def _cargo_registry_versions(crate_name: str) -> tuple[str, ...]:
                 f"registry lookup returned invalid data for {crate_name}"
             )
 
+        before_count = len(versions)
         entries = document.get("versions")
         if not isinstance(entries, list):
             raise RuntimeError(f"registry lookup returned no versions for {crate_name}")
@@ -103,22 +105,18 @@ def _cargo_registry_versions(crate_name: str) -> tuple[str, ...]:
             version = entry.get("num")
             if isinstance(version, str):
                 versions.add(version)
+        if len(versions) == before_count:
+            break
 
         meta = document.get("meta")
         next_page = meta.get("next_page") if isinstance(meta, dict) else None
-        if next_page in (None, ""):
+        if next_page in (None, "") or next_page in seen_queries:
             break
-        try:
-            next_page_number = int(next_page)
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError(
-                f"registry lookup returned invalid pagination for {crate_name}"
-            ) from exc
-        if next_page_number <= page:
+        if not isinstance(next_page, str) or not next_page.startswith("?"):
             raise RuntimeError(
                 f"registry lookup returned invalid pagination for {crate_name}"
             )
-        page = next_page_number
+        query = next_page
     return tuple(versions)
 
 
