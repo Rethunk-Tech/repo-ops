@@ -74,7 +74,11 @@ def test_fail_on_from_config_file(
         ):
             rc = main([str(tmp_path)])
     finally:
-        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON", None)
+        for env_name in (
+            "REPO_OPS_AUDIT_FAIL_ON",
+            "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
+        ):
+            os.environ.pop(env_name, None)
     assert rc == 0
 
 
@@ -113,7 +117,11 @@ def test_fail_on_cli_flag_overrides_config_file(
         ):
             rc = main(["--fail-on", "high", str(tmp_path)])
     finally:
-        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON", None)
+        for env_name in (
+            "REPO_OPS_AUDIT_FAIL_ON",
+            "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
+        ):
+            os.environ.pop(env_name, None)
     assert rc == 1
 
 
@@ -153,7 +161,11 @@ def test_fail_on_unknown_from_config_file(
         ):
             rc = main(["--fail-on", "never", str(tmp_path)])
     finally:
-        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", None)
+        for env_name in (
+            "REPO_OPS_AUDIT_FAIL_ON",
+            "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
+        ):
+            os.environ.pop(env_name, None)
     assert rc == 1
 
 
@@ -193,5 +205,9 @@ def test_fail_on_unknown_cli_flag_overrides_config_file(
         ):
             rc = main(["--fail-on", "never", "--fail-on-unknown", str(tmp_path)])
     finally:
-        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", None)
+        for env_name in (
+            "REPO_OPS_AUDIT_FAIL_ON",
+            "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
+        ):
+            os.environ.pop(env_name, None)
     assert rc == 1
