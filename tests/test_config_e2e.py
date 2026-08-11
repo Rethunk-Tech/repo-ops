@@ -5,6 +5,7 @@ Task 1: resolve_setting / apply_config_to_env wiring (#TASK-1).
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -327,6 +328,15 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
         '[tool.repo-ops]\ngo_upgrade_mode = "patch"\n',
         encoding="utf-8",
     )
+    for path in (repo_a, repo_b):
+        (path / "go.mod").write_text(
+            "module example.com/main\n\ngo 1.24\n\n"
+            "require (\n"
+            "\texample.com/patch v1.2.3\n"
+            "\texample.com/minor v1.2.3\n"
+            ")\n",
+            encoding="utf-8",
+        )
 
     workspaces = [
         Workspace(
@@ -352,8 +362,36 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
         )
         for workspace in workspaces
     }
-    captured: dict[Path, str] = {}
-
+    captured: dict[Path, list[str]] = {}
+    go_list_stdout = "\n".join(
+        json.dumps(module)
+        for module in (
+            {
+                "Path": "example.com/patch",
+                "Version": "v1.2.3",
+                "Update": {
+                    "Path": "example.com/patch",
+                    "Version": "v1.2.4",
+                },
+            },
+            {
+                "Path": "example.com/minor",
+                "Version": "v1.2.3",
+                "Update": {
+                    "Path": "example.com/minor",
+                    "Version": "v1.3.0",
+                },
+            },
+        )
+    )
+    go_mod_stdout = json.dumps(
+        {
+            "Require": [
+                {"Path": "example.com/patch", "Version": "v1.2.3"},
+                {"Path": "example.com/minor", "Version": "v1.2.3"},
+            ]
+        }
+    )
     monkeypatch.chdir(launcher)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
@@ -367,28 +405,46 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
         "group_by_repo",
         lambda found, roots: bundles.copy(),
     )
-    monkeypatch.setattr(
-        run_mod.orchestration,
-        "process_workspace",
-        lambda workspace_result, **kwargs: (
-            captured.__setitem__(
-                workspace_result.workspace.git_repo,
-                go_mod._go_upgrade_mode(workspace_result.workspace),
-            ),
-            workspace_result,
-        )[1],
-    )
+
+    def fake_go_run(cmd: list[str], cwd: Path, timeout: int = 0):
+        if cmd == ["go", "mod", "edit", "-json"]:
+            stdout = go_mod_stdout
+        elif cmd == ["go", "list", "-m", "-u", "-json", "all"]:
+            stdout = go_list_stdout
+        else:
+            raise AssertionError(f"unexpected command: {cmd}")
+        return type("Proc", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
+
+    monkeypatch.setattr(go_mod, "run", fake_go_run)
+
+    def capture_process(workspace_result: WorkspaceResult, **kwargs: object):
+        changes = go_mod.check_go(workspace_result.workspace)
+        captured[workspace_result.workspace.git_repo] = [
+            change.name for change in changes
+        ]
+        return workspace_result
+
+    monkeypatch.setattr(run_mod.orchestration, "process_workspace", capture_process)
     monkeypatch.setattr(
         run_mod.report, "print_json_report", lambda *args, **kwargs: None
     )
 
     rc = run_mod.run_upgrade(
         apply=False,
-        argv=["--flat", "--json", "--skip-actions", str(repo_a), str(repo_b)],
+        argv=[
+            "--flat",
+            "--json",
+            "--skip-actions",
+            str(repo_a),
+            str(repo_b),
+        ],
     )
 
     assert rc == 0
-    assert captured == {repo_a: "explicit", repo_b: "patch"}
+    assert captured == {
+        repo_a: ["example.com/patch", "example.com/minor"],
+        repo_b: ["example.com/patch"],
+    }
 
 
 def test_fleet_cli_go_upgrade_mode_overrides_checkout_config(
