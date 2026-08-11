@@ -256,6 +256,34 @@ def test_json_out_writes_file(
     assert printed == str(out_path)
 
 
+def test_json_out_includes_skill_drift(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from repo_ops.install_skill import main as install_skill_main
+
+    monkeypatch.setattr(doctor.shutil, "which", _fake_which_all_present)
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run_version)
+    destination = tmp_path / ".cursor" / "skills" / "repo-ops"
+    assert install_skill_main(["--dest", str(destination)]) == 0
+    capsys.readouterr()
+    monkeypatch.setattr("repo_ops.install_skill.resolve_home", lambda _home: tmp_path)
+    monkeypatch.setattr(
+        "repo_ops.install_skill.destinations_for",
+        lambda _target, _home: [("cursor", destination)],
+    )
+
+    skill_file = destination / "SKILL.md"
+    skill_file.write_text(skill_file.read_text(encoding="utf-8") + "\nmutated\n")
+    out_path = tmp_path / "doctor.json"
+
+    assert main(["--json", "--json-out", str(out_path)]) == 0
+
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["skill_drift"] == [str(destination)]
+    printed = capsys.readouterr().out.strip()
+    assert printed == str(out_path)
+
+
 def test_json_out_requires_json_flag() -> None:
     with pytest.raises(SystemExit):
         main(["--json-out", "/tmp/doctor.json"])
