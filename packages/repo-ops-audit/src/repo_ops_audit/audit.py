@@ -2348,13 +2348,26 @@ def apply_remediations(
                 outcomes.append(ApplyOutcome(ws_path, "skip", "deno not on PATH"))
             else:
                 from repo_ops_js.deno import (
+                    apply_deno_audit_version_overrides,
                     clear_deno_audit_version_overrides,
                     set_deno_audit_version_overrides,
                 )
 
                 set_deno_audit_version_overrides(_deno_ws_overrides.get(ws_path, {}))
                 try:
-                    outcomes.append(_apply_deno_audit(ws_path, do_verify=do_verify))
+                    outcome = _apply_deno_audit(ws_path, do_verify=do_verify)
+                    if outcome.status == "ok":
+                        path = Path(ws_path)
+                        git_root = git_repo_for(path) or path
+                        deno_ws = _Workspace(
+                            path=path,
+                            ecosystem="deno",
+                            manager="deno",
+                            git_repo=git_root,
+                            label=ws_path,
+                        )
+                        apply_deno_audit_version_overrides(deno_ws)
+                    outcomes.append(outcome)
                 finally:
                     clear_deno_audit_version_overrides()
             continue
