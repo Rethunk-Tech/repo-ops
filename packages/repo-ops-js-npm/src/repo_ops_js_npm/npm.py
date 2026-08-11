@@ -16,7 +16,7 @@ from repo_ops_core.config import (
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
-from repo_ops_js.guards import assert_targets_resolved
+from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 from repo_ops_js.holds import (
     direct_dependency_names,
     enforce_holds,
@@ -329,7 +329,15 @@ def apply_npm(ws: Workspace) -> list[Change]:
         if proc2.returncode != 0:
             raise RuntimeError(proc2.stderr.strip() or "npm install failed")
         if changes:
-            assert_targets_resolved(ws, changes, manager="npm")
+            if _npm_targeted_bump_enabled(ws):
+                blocked = unresolved_targets(ws, changes)
+                behind_names = {c.name for c in behind}
+                for change, _resolved in blocked:
+                    if change.name not in behind_names:
+                        behind.append(change)
+                        behind_names.add(change.name)
+            else:
+                assert_targets_resolved(ws, changes, manager="npm")
     applied, behind = targeted_bump_behind(ws, behind)
     candidate_names = direct_dependency_names(_read_pkg_json(ws.path)) | {
         c.name for c in (*changes, *applied, *behind)
