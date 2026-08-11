@@ -144,11 +144,18 @@ def _valid_go_get_target(target: str) -> bool:
     return bool(path) and not path.startswith("-")
 
 
+def _process_env_cli_override(env_var: str) -> str | None:
+    """Return a process value changed after the ambient environment snapshot."""
+    ambient = ambient_env()
+    if ambient is None or env_var not in ambient:
+        return None
+    process_value = os.environ.get(env_var)
+    return process_value if process_value != ambient[env_var] else None
+
+
 def _go_upgrade_mode(ws: Workspace | None = None) -> str:
     ambient = ambient_env()
-    process_value = os.environ.get(GO_UPGRADE_MODE_ENV)
-    ambient_value = ambient.get(GO_UPGRADE_MODE_ENV) if ambient is not None else None
-    cli_value = process_value if process_value != ambient_value else None
+    cli_value = _process_env_cli_override(GO_UPGRADE_MODE_ENV)
     raw = resolve_setting(
         "go_upgrade_mode",
         cli_value=cli_value,
@@ -363,9 +370,7 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
 
 def _go_work_sync_enabled(ws: Workspace | None = None) -> bool:
     ambient = ambient_env()
-    process_value = os.environ.get(GO_WORK_SYNC_ENV)
-    ambient_value = ambient.get(GO_WORK_SYNC_ENV) if ambient is not None else None
-    cli_value = process_value if process_value != ambient_value else None
+    cli_value = _process_env_cli_override(GO_WORK_SYNC_ENV)
     raw = resolve_setting(
         "go_work_sync",
         cli_value=cli_value,
@@ -477,9 +482,7 @@ def _go_directive_target(ws: Workspace | None = None) -> str | None:
     Returns ``None`` when the env var is unset or empty.
     """
     ambient = ambient_env()
-    process_value = os.environ.get(GO_DIRECTIVE_ENV)
-    ambient_value = ambient.get(GO_DIRECTIVE_ENV) if ambient is not None else None
-    cli_value = process_value if process_value != ambient_value else None
+    cli_value = _process_env_cli_override(GO_DIRECTIVE_ENV)
     raw = resolve_setting(
         "go_directive",
         cli_value=cli_value,
@@ -498,9 +501,7 @@ def _go_toolchain_target(ws: Workspace | None = None) -> str | None:
     when unset or empty.
     """
     ambient = ambient_env()
-    process_value = os.environ.get(GO_TOOLCHAIN_ENV)
-    ambient_value = ambient.get(GO_TOOLCHAIN_ENV) if ambient is not None else None
-    cli_value = process_value if process_value != ambient_value else None
+    cli_value = _process_env_cli_override(GO_TOOLCHAIN_ENV)
     raw = resolve_setting(
         "go_toolchain",
         cli_value=cli_value,
