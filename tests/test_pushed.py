@@ -745,6 +745,7 @@ def test_main_exclude_uses_repo_config(
             "drop-common": str(drop),
         },
     )
+    monkeypatch.setattr(audit, "load_global_config", lambda: {})
 
     def fake_pushed(repo: str, filters: Filters) -> dict[str, None]:
         seen.append(repo)
