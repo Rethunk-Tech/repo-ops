@@ -745,3 +745,91 @@ def test_audit_exclude_filters_repositories(
     assert main([str(tmp_path), "--exclude", "drop", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["summary"]["excluded"] == 1
+
+
+def test_audit_exclude_filters_repositories_from_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    keep = tmp_path / "keep"
+    drop = tmp_path / "drop"
+    keep.mkdir()
+    drop.mkdir()
+    seen: list[str] = []
+
+    monkeypatch.setattr(
+        "repo_ops_audit.audit.discover_repos",
+        lambda *args, **kwargs: {
+            "keep-common": str(keep),
+            "drop-common": str(drop),
+        },
+    )
+    monkeypatch.setattr("repo_ops_audit.audit.load_global_config", lambda: {})
+    monkeypatch.setattr(
+        "repo_ops_audit.audit.load_repo_config",
+        lambda repo: {"exclude": ["drop"]},
+    )
+    monkeypatch.setattr(
+        "repo_ops_audit.audit._detect_workspaces",
+        lambda repo: [(repo, "go", "go")],
+    )
+
+    def fake_audit(ws: str, ecosystem: str, manager: str) -> WorkspaceResult:
+        seen.append(ws)
+        return WorkspaceResult(
+            label=ws,
+            path=ws,
+            ecosystem=ecosystem,
+            manager=manager,
+            status="ok",
+        )
+
+    monkeypatch.setattr("repo_ops_audit.audit.audit_workspace", fake_audit)
+
+    assert main([str(tmp_path)]) == 0
+    assert seen == [str(keep)]
+    assert "Excluded repos: 1" in capsys.readouterr().out
+
+
+def test_audit_exclude_cli_wins_over_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cli_excluded = tmp_path / "cli-excluded"
+    config_excluded = tmp_path / "config-excluded"
+    kept = tmp_path / "kept"
+    for repo in (cli_excluded, config_excluded, kept):
+        repo.mkdir()
+    seen: list[str] = []
+
+    monkeypatch.setattr(
+        "repo_ops_audit.audit.discover_repos",
+        lambda *args, **kwargs: {
+            "cli": str(cli_excluded),
+            "config": str(config_excluded),
+            "kept": str(kept),
+        },
+    )
+    monkeypatch.setattr("repo_ops_audit.audit.load_global_config", lambda: {})
+    monkeypatch.setattr(
+        "repo_ops_audit.audit.load_repo_config",
+        lambda repo: {"exclude": ["config-excluded"]},
+    )
+    monkeypatch.setattr(
+        "repo_ops_audit.audit._detect_workspaces",
+        lambda repo: [(repo, "go", "go")],
+    )
+
+    def fake_audit(ws: str, ecosystem: str, manager: str) -> WorkspaceResult:
+        seen.append(ws)
+        return WorkspaceResult(
+            label=ws,
+            path=ws,
+            ecosystem=ecosystem,
+            manager=manager,
+            status="ok",
+        )
+
+    monkeypatch.setattr("repo_ops_audit.audit.audit_workspace", fake_audit)
+
+    assert main(["--exclude", "cli-excluded", str(tmp_path)]) == 0
+    assert set(seen) == {str(config_excluded), str(kept)}
+    assert "Excluded repos: 1" in capsys.readouterr().out
