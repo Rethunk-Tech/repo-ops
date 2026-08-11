@@ -336,6 +336,12 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
         'go_toolchain = "1.26.4"\n',
         encoding="utf-8",
     )
+    global_config_dir = tmp_path / "config" / "repo-ops"
+    global_config_dir.mkdir(parents=True)
+    (global_config_dir / "config.toml").write_text(
+        'go_upgrade_mode = "mvs"\ngo_directive = "1.90"\ngo_toolchain = "go1.90.1"\n',
+        encoding="utf-8",
+    )
     for path in (repo_a, repo_b):
         (path / "go.mod").write_text(
             "module example.com/main\n\ngo 1.24\n\n"
@@ -424,6 +430,8 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
     monkeypatch.chdir(launcher)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
+    monkeypatch.delenv("REPO_OPS_GO_DIRECTIVE", raising=False)
+    monkeypatch.delenv("REPO_OPS_GO_TOOLCHAIN", raising=False)
     monkeypatch.setattr(
         run_mod.workspace_discovery,
         "discover_all",
