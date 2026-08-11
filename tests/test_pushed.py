@@ -755,6 +755,42 @@ def test_main_exclude_uses_repo_config(
     assert seen == [str(keep)]
 
 
+def test_main_exclude_cli_wins_over_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cli_excluded = tmp_path / "cli-excluded"
+    config_excluded = tmp_path / "config-excluded"
+    kept = tmp_path / "kept"
+    for repo in (cli_excluded, config_excluded, kept):
+        repo.mkdir()
+    seen: list[str] = []
+
+    monkeypatch.setattr(
+        audit,
+        "discover_repos",
+        lambda *args, **kwargs: {
+            "cli": str(cli_excluded),
+            "config": str(config_excluded),
+            "kept": str(kept),
+        },
+    )
+    monkeypatch.setattr(audit, "load_global_config", lambda: {})
+    monkeypatch.setattr(
+        audit, "load_repo_config", lambda _root: {"exclude": ["config-excluded"]}
+    )
+
+    def fake_pushed(repo: str, filters: Filters) -> dict[str, None]:
+        seen.append(repo)
+        return {"a" * 40: None}
+
+    monkeypatch.setattr(audit, "pushed_commits_for_repo", fake_pushed)
+
+    assert main(["--exclude", "cli-excluded", str(tmp_path)]) == 0
+
+    assert "Excluded repos: 1" in capsys.readouterr().out
+    assert set(seen) == {str(config_excluded), str(kept)}
+
+
 def test_main_exclude_prints_zero_when_nothing_matches(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
