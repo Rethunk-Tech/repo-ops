@@ -692,9 +692,31 @@ def check_submodule_tag_advances(
         current_tag = _current_submodule_tag(link.git_repo)
 
         if current_tag is None:
+            current_sha = _current_submodule_sha(link.git_repo)
+            hold = _resolve_submodule_hold(link)
+            refs: list[tuple[str, str]] | None = None
+            if hold is not None and current_sha:
+                refs = _fetch_remote_tag_refs(url)
+                if refs is not None:
+                    hold_target = _resolve_hold_sha_target(current_sha, refs, hold)
+                    if hold_target is not None:
+                        bumps.append(
+                            SubmoduleTagBump(
+                                path=link.path,
+                                url=url,
+                                current_tag="",
+                                latest_tag=hold_target,
+                                parent=link.parent,
+                                git_repo=link.git_repo,
+                            )
+                        )
+                        continue
             if refresh_sha:
-                current_sha = _current_submodule_sha(link.git_repo)
-                refs = _fetch_remote_tag_refs(url) if current_sha else None
+                refs = (
+                    refs
+                    if refs is not None
+                    else (_fetch_remote_tag_refs(url) if current_sha else None)
+                )
                 resolved = _resolve_sha_refresh(current_sha or "", refs or [])
                 if resolved is not None:
                     _resolved_current_tag, latest_tag = resolved
@@ -752,6 +774,22 @@ def check_submodule_tag_advances(
                 )
             )
             continue
+
+        hold = _resolve_submodule_hold(link)
+        if hold is not None:
+            hold_target = _resolve_hold_tag_target(current_tag, tags, hold)
+            if hold_target is not None:
+                bumps.append(
+                    SubmoduleTagBump(
+                        path=link.path,
+                        url=url,
+                        current_tag=current_tag,
+                        latest_tag=hold_target,
+                        parent=link.parent,
+                        git_repo=link.git_repo,
+                    )
+                )
+                continue
 
         latest = _resolve_latest_submodule_tag(
             current_tag, tags, allow_cross_major=allow_cross_major
