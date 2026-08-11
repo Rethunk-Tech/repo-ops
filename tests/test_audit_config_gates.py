@@ -16,6 +16,12 @@ import pytest
 from repo_ops_audit.audit import VulnCount, WorkspaceResult, main
 
 
+@pytest.fixture(autouse=True)
+def _ignore_cwd_repo_config():
+    with patch("repo_ops_audit.audit.load_repo_config", return_value={}):
+        yield
+
+
 def _results(**counts: int) -> list[WorkspaceResult]:
     return [
         WorkspaceResult(
