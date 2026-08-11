@@ -51,10 +51,17 @@ import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
+from functools import cache
 from pathlib import Path
 from typing import Any
 
-from repo_ops_core.version_utils import semver_tuple
+from repo_ops_core.holds import (
+    HoldRule,
+    load_global_holds,
+    load_repo_holds,
+    resolve_hold,
+)
+from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 
 # ---------------------------------------------------------------------------
@@ -865,6 +872,99 @@ def _resolve_latest_tag(
 
 
 # ---------------------------------------------------------------------------
+# Package version-ceiling ("hold") rules
+# ---------------------------------------------------------------------------
+
+
+@cache
+def _global_holds_cached() -> tuple[HoldRule, ...]:
+    return tuple(load_global_holds())
+
+
+@cache
+def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
+    return tuple(load_repo_holds(Path(repo_root)))
+
+
+def _workspace_rel(ws: Workspace) -> str:
+    try:
+        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
+    except ValueError:
+        return "."
+    return rel or "."
+
+
+def _resolve_container_hold(ws: Workspace, package: str) -> HoldRule | None:
+    """Return the active container hold for *package*, if any."""
+    repo_root = str(ws.git_repo.resolve())
+    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
+    if not rules:
+        return None
+    return resolve_hold(
+        rules,
+        package=package,
+        ecosystem="container",
+        manager=ws.manager,
+        workspace_rel=_workspace_rel(ws),
+    )
+
+
+def _tag_version_for_hold(tag: str) -> str | None:
+    match = _SEMVER_SUFFIX_RE.match(tag)
+    return match.group("version") if match else None
+
+
+def _target_within_hold(ws: Workspace, package: str, target_tag: str) -> bool:
+    """Return whether a semver tag target is allowed by its active hold."""
+    rule = _resolve_container_hold(ws, package)
+    tag_version = _tag_version_for_hold(target_tag)
+    return (
+        rule is None
+        or tag_version is None
+        or version_satisfies_ceiling(tag_version, rule.max_version)
+    )
+
+
+def _resolve_hold_tag_target(
+    current_tag: str, tags: list[str], rule: HoldRule
+) -> str | None:
+    """Return the highest tag at or below *rule* when *current_tag* violates it."""
+    current_version = _tag_version_for_hold(current_tag)
+    if current_version is None:
+        return None
+    try:
+        current_tup = semver_tuple(current_version)
+    except Exception:
+        return None
+    if version_satisfies_ceiling(current_version, rule.max_version):
+        return None
+
+    suffix = _extract_suffix(current_tag)
+    if suffix is None:
+        return None
+    candidates: list[tuple[tuple[int, ...], str]] = []
+    for tag in tags:
+        if not _is_semver_tag(tag) or _extract_suffix(tag) != suffix:
+            continue
+        tag_version = _tag_version_for_hold(tag)
+        if tag_version is None:
+            continue
+        try:
+            tag_tup = semver_tuple(tag_version)
+        except Exception:
+            continue
+        if version_satisfies_ceiling(tag_version, rule.max_version):
+            candidates.append((tag_tup, tag))
+
+    if not candidates:
+        return None
+    target_tup, target_tag = max(candidates, key=lambda item: (item[0], item[1]))
+    if target_tup >= current_tup:
+        return None
+    return target_tag
+
+
+# ---------------------------------------------------------------------------
 # Check
 # ---------------------------------------------------------------------------
 
@@ -945,6 +1045,8 @@ def check_container(ws: Workspace) -> list[Change]:
                         # Already current; no change needed
                         pass
                     else:
+                        if not _target_within_hold(ws, image, tag):
+                            continue
                         # Digest has changed — actionable update
                         changes.append(
                             Change(
@@ -1004,6 +1106,8 @@ def check_container(ws: Workspace) -> list[Change]:
                 # Already at latest or indeterminate
                 continue
 
+            if not _target_within_hold(ws, image, latest):
+                continue
             changes.append(Change(name=f"{image}:{tag}", from_ver=tag, to=latest))
 
     return changes
@@ -1054,6 +1158,75 @@ def _replace_digest_in_line(
     return line
 
 
+def _replace_image_ref_in_line(
+    line: str,
+    image: str,
+    old_tag: str,
+    old_sha: str,
+    new_tag: str,
+    new_sha: str,
+) -> str:
+    """Replace a held ``<image>:<tag>@<sha>`` reference in one line."""
+    old = f"{image}:{old_tag}@{old_sha}"
+    new = f"{image}:{new_tag}@{new_sha}"
+    if old in line:
+        return line.replace(old, new, 1)
+    return line
+
+
+def _enforce_version_ceilings(
+    ws: Workspace, refs: list[dict[str, Any]]
+) -> dict[int, tuple[str, str, str | None, str, str | None]]:
+    """Return line replacements that clamp held container image refs."""
+    line_bumps: dict[int, tuple[str, str, str | None, str, str | None]] = {}
+    for ref in refs:
+        image: str = ref["image"]
+        current_tag: str | None = ref["tag"]
+        current_sha: str | None = ref["sha"]
+        line_no: int = ref["line_no"]
+        if not current_tag or _tag_version_for_hold(current_tag) is None:
+            continue
+
+        rule = _resolve_container_hold(ws, image)
+        if rule is None:
+            continue
+        current_version = _tag_version_for_hold(current_tag)
+        if current_version is None or version_satisfies_ceiling(
+            current_version, rule.max_version
+        ):
+            continue
+
+        tags = _fetch_tags(image)
+        if tags is None:
+            raise RuntimeError(
+                f"hold: failed to clamp {image} back to <={rule.max_version} "
+                "(container): tag fetch failed while resolving image pin"
+            )
+        target_tag = _resolve_hold_tag_target(current_tag, tags, rule)
+        if target_tag is None:
+            raise RuntimeError(
+                f"hold: failed to clamp {image} back to <={rule.max_version} "
+                "(container): no available tag satisfies ceiling"
+            )
+
+        target_sha: str | None = None
+        if current_sha is not None:
+            target_sha = _fetch_manifest_digest(image, target_tag)
+            if target_sha is None:
+                raise RuntimeError(
+                    f"hold: failed to clamp {image} back to <={rule.max_version} "
+                    "(container): digest query failed for held tag"
+                )
+        line_bumps[line_no] = (
+            image,
+            current_tag,
+            current_sha,
+            target_tag,
+            target_sha,
+        )
+    return line_bumps
+
+
 def apply_container(ws: Workspace) -> None:
     """Apply image tag bumps and digest refreshes in-place (byte-preserving single-line edits).
 
@@ -1077,9 +1250,6 @@ def apply_container(ws: Workspace) -> None:
         else:
             tag_bumps.append((image, ch.from_ver, ch.to))
 
-    if not tag_bumps and not sha_bumps:
-        return
-
     for cf in find_container_files(ws.path):
         # Apply bumps in-place (byte-preserving, CRLF-safe).
         # Use newline="" so Python does not translate \r\n → \n on read or
@@ -1088,6 +1258,23 @@ def apply_container(ws: Workspace) -> None:
             original = fh.read()
         lines = original.splitlines(keepends=True)
         changed = False
+        hold_bumps = _enforce_version_ceilings(ws, _parse_image_refs(cf))
+
+        for line_no, (image, old_tag, old_sha, new_tag, new_sha) in hold_bumps.items():
+            i = line_no - 1
+            if not 0 <= i < len(lines):
+                continue
+            if old_sha is None:
+                updated = _replace_tag_in_line(lines[i], image, old_tag, new_tag)
+            elif new_sha is not None:
+                updated = _replace_image_ref_in_line(
+                    lines[i], image, old_tag, old_sha, new_tag, new_sha
+                )
+            else:
+                continue
+            if updated != lines[i]:
+                lines[i] = updated
+                changed = True
 
         # Patch every line carrying the outdated ref, not just the first:
         # multi-stage files legitimately pin the same base image at more
