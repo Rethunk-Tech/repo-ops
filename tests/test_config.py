@@ -203,6 +203,7 @@ def test_settings_table_hatch_migrate_uv_lock_env_var() -> None:
     row = next(r for r in SETTINGS_TABLE if r[0] == "hatch_migrate_uv_lock")
     assert row[2] == "REPO_OPS_HATCH_MIGRATE_UV_LOCK"
 
+
 def test_settings_table_audit_fail_on_columns() -> None:
     row = next(r for r in SETTINGS_TABLE if r[0] == "audit_fail_on")
     assert row[1] == "--fail-on"
@@ -210,12 +211,14 @@ def test_settings_table_audit_fail_on_columns() -> None:
     assert row[3] == "audit_fail_on"
     assert row[4] == "high"
 
+
 def test_settings_table_audit_fail_on_unknown_columns() -> None:
     row = next(r for r in SETTINGS_TABLE if r[0] == "audit_fail_on_unknown")
     assert row[1] == "--fail-on-unknown"
     assert row[2] == "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN"
     assert row[3] == "audit_fail_on_unknown"
     assert row[4] == "0"
+
 
 def test_resolve_setting_resume(monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_RESUME", "1")
@@ -267,6 +270,7 @@ def test_resume_from_config_file(tmp_path) -> None:
         os.environ.pop("REPO_OPS_RESUME", None)
         monkeypatch.undo()
 
+
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 def test_audit_fail_on_from_config_file(tmp_path) -> None:
     """REPO_OPS_AUDIT_FAIL_ON can be set via config file."""
@@ -287,6 +291,7 @@ def test_audit_fail_on_from_config_file(tmp_path) -> None:
         os.environ.pop("REPO_OPS_AUDIT_FAIL_ON", None)
         monkeypatch.undo()
 
+
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 def test_audit_fail_on_unknown_from_config_file(tmp_path) -> None:
     """REPO_OPS_AUDIT_FAIL_ON_UNKNOWN can be set via config file."""
@@ -306,6 +311,7 @@ def test_audit_fail_on_unknown_from_config_file(tmp_path) -> None:
     finally:
         os.environ.pop("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", None)
         monkeypatch.undo()
+
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 def test_hatch_migrate_uv_lock_from_config_file(tmp_path) -> None:
