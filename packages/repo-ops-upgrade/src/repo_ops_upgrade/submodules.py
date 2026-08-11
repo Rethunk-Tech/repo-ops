@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import configparser
 import contextlib
+import logging
 import os
 import re
 import subprocess
@@ -13,6 +14,8 @@ from pathlib import Path
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
 from repo_ops_core.version_utils import semver_tuple
+
+logger = logging.getLogger(__name__)
 
 SubmoduleOrder = str  # "discovery" | "children-first"
 
@@ -469,6 +472,7 @@ def _resolve_sha_refresh(
         try:
             version = semver_tuple(tag.lstrip("vV"))
         except Exception:
+            logger.debug("Skipping invalid semver tag %r during SHA refresh", tag)
             continue
         matching.append((version, tag, tag_sha))
 
@@ -484,6 +488,7 @@ def _resolve_sha_refresh(
         try:
             version = semver_tuple(tag.lstrip("vV"))
         except Exception:
+            logger.debug("Skipping invalid semver tag %r during SHA refresh", tag)
             continue
         if version and version[0] == current_version[0]:
             candidates.append((version, tag, tag_sha))
