@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from repo_ops_js.deno import apply_deno, check_deno
 from repo_ops_models import Workspace
 
@@ -303,6 +302,6 @@ def test_apply_deno_rejects_lockfile_ghost_bump(tmp_path: Path) -> None:
         patch(
             "repo_ops_js.guards.resolved_version_from_node_modules", return_value=None
         ),
+        pytest.raises(RuntimeError, match="ghost bump"),
     ):
-        with pytest.raises(RuntimeError, match="ghost bump"):
-            apply_deno(_ws(tmp_path))
+        apply_deno(_ws(tmp_path))
