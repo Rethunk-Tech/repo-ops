@@ -20,10 +20,12 @@ def _ws(tmp_path) -> Workspace:
     )
 
 
-def _dockerfile(tmp_path, ref: str = "1.0.0") -> object:
+def _dockerfile(
+    tmp_path, ref: str = "1.0.0", image: str = "docker.io/library/node"
+) -> object:
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        f"FROM docker.io/library/node:{ref}\n",
+        f"FROM {image}:{ref}\n",
         encoding="utf-8",
     )
     return dockerfile
@@ -52,8 +54,10 @@ def _held_holds():
         yield
 
 
-def test_check_container_filters_tag_bump_above_ceiling(tmp_path) -> None:
-    _dockerfile(tmp_path)
+def test_check_container_surfaces_clamp_when_upstream_latest_exceeds_ceiling(
+    tmp_path,
+) -> None:
+    _dockerfile(tmp_path, ref="1.5.0")
     ws = _ws(tmp_path)
 
     with (
@@ -61,10 +65,37 @@ def test_check_container_filters_tag_bump_above_ceiling(tmp_path) -> None:
         patch.object(
             container,
             "_fetch_tags",
-            return_value=["1.0.0", "1.5.0"],
+            return_value=["1.0.0", "1.4.0", "1.5.0", "1.6.0"],
         ),
     ):
-        assert container.check_container(ws) == []
+        changes = container.check_container(ws)
+
+    assert len(changes) == 1
+    assert changes[0].name == "docker.io/library/node:1.5.0"
+    assert changes[0].from_ver == "1.5.0"
+    assert changes[0].to == "1.4.0"
+
+
+def test_check_container_matches_fully_qualified_hold_for_short_image(
+    tmp_path,
+) -> None:
+    _dockerfile(tmp_path, ref="1.5.0", image="node")
+    ws = _ws(tmp_path)
+
+    with (
+        _held_holds(),
+        patch.object(
+            container,
+            "_fetch_tags",
+            return_value=["1.0.0", "1.4.0", "1.5.0"],
+        ),
+    ):
+        changes = container.check_container(ws)
+
+    assert len(changes) == 1
+    assert changes[0].name == "node:1.5.0"
+    assert changes[0].from_ver == "1.5.0"
+    assert changes[0].to == "1.4.0"
 
 
 def test_check_container_filters_digest_refresh_above_ceiling(
