@@ -9,11 +9,18 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass, field
+from functools import cache
 from pathlib import Path
 
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
-from repo_ops_core.version_utils import semver_tuple
+from repo_ops_core.holds import (
+    HoldRule,
+    load_global_holds,
+    load_repo_holds,
+    resolve_hold,
+)
+from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 
 logger = logging.getLogger(__name__)
 
@@ -509,6 +516,149 @@ def _resolve_sha_refresh(
     return current_tag, latest_tag
 
 
+# ---------------------------------------------------------------------------
+# Package version-ceiling ("hold") rules
+# ---------------------------------------------------------------------------
+
+
+@cache
+def _global_holds_cached() -> tuple[HoldRule, ...]:
+    return tuple(load_global_holds())
+
+
+@cache
+def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
+    return tuple(load_repo_holds(Path(repo_root)))
+
+
+def _resolve_submodule_hold(link: SubmoduleLink) -> HoldRule | None:
+    """Return the active submodule hold for *link*, if any."""
+    repo_root = str(link.parent.resolve())
+    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
+    if not rules:
+        return None
+    return resolve_hold(
+        rules,
+        package=link.path,
+        ecosystem="submodule",
+        manager="submodule",
+        workspace_rel=link.path,
+    )
+
+
+def _target_within_hold(link: SubmoduleLink, target_tag: str) -> bool:
+    """Return whether a resolved tag target is allowed by its active hold."""
+    rule = _resolve_submodule_hold(link)
+    return rule is None or version_satisfies_ceiling(
+        target_tag.lstrip("vV"), rule.max_version
+    )
+
+
+def _resolve_hold_tag_target(
+    current_tag: str, tags: list[str], rule: HoldRule
+) -> str | None:
+    """Return the highest tag at or below *rule* when *current_tag* violates it."""
+    if not _is_semver_tag(current_tag):
+        return None
+    try:
+        current_version = semver_tuple(current_tag.lstrip("vV"))
+    except Exception:
+        logger.warning(
+            "ignoring invalid semver tag %r while enforcing submodule hold",
+            current_tag,
+        )
+        return None
+    if version_satisfies_ceiling(current_tag.lstrip("vV"), rule.max_version):
+        return None
+
+    want_v = _has_v_prefix(current_tag)
+    candidates: list[tuple[tuple[int, ...], str]] = []
+    for tag in tags:
+        if not _is_semver_tag(tag) or _has_v_prefix(tag) != want_v:
+            continue
+        try:
+            tag_version = semver_tuple(tag.lstrip("vV"))
+        except Exception:
+            logger.warning(
+                "ignoring invalid semver tag %r while enforcing submodule hold",
+                tag,
+            )
+            continue
+        if version_satisfies_ceiling(tag.lstrip("vV"), rule.max_version):
+            candidates.append((tag_version, tag))
+
+    if not candidates:
+        return None
+    target_version, target_tag = max(candidates, key=lambda item: (item[0], item[1]))
+    if target_version >= current_version:
+        return None
+    return target_tag
+
+
+def _matching_sha_tags(
+    current_sha: str, refs: list[tuple[str, str]]
+) -> list[tuple[tuple[int, ...], str, str]]:
+    """Return semver tags attached to *current_sha*."""
+    normalized = current_sha.lower()
+    matching_tags: list[tuple[tuple[int, ...], str, str]] = []
+    for tag_sha, tag in refs:
+        candidate_sha = tag_sha.lower()
+        if not (
+            candidate_sha == normalized
+            or (len(normalized) < 40 and candidate_sha.startswith(normalized))
+        ):
+            continue
+        if not _is_semver_tag(tag):
+            continue
+        try:
+            tag_version = semver_tuple(tag.lstrip("vV"))
+        except Exception:
+            logger.warning(
+                "ignoring invalid semver tag %r while enforcing submodule hold",
+                tag,
+            )
+            continue
+        matching_tags.append((tag_version, tag, tag_sha))
+    return matching_tags
+
+
+def _resolve_hold_sha_target(
+    current_sha: str, refs: list[tuple[str, str]], rule: HoldRule
+) -> str | None:
+    """Return the highest held tag when *current_sha* violates its hold."""
+    matching_tags = _matching_sha_tags(current_sha, refs)
+    if not matching_tags:
+        return None
+    current_version, current_tag, _ = max(
+        matching_tags, key=lambda item: (item[0], item[1])
+    )
+    if version_satisfies_ceiling(current_tag.lstrip("vV"), rule.max_version):
+        return None
+
+    want_v = _has_v_prefix(current_tag)
+    candidates: list[tuple[tuple[int, ...], str]] = []
+    for _tag_sha, tag in refs:
+        if not _is_semver_tag(tag) or _has_v_prefix(tag) != want_v:
+            continue
+        try:
+            tag_version = semver_tuple(tag.lstrip("vV"))
+        except Exception:
+            logger.warning(
+                "ignoring invalid semver tag %r while enforcing submodule hold",
+                tag,
+            )
+            continue
+        if version_satisfies_ceiling(tag.lstrip("vV"), rule.max_version):
+            candidates.append((tag_version, tag))
+
+    if not candidates:
+        return None
+    target_version, target_tag = max(candidates, key=lambda item: (item[0], item[1]))
+    if target_version >= current_version:
+        return None
+    return target_tag
+
+
 def check_submodule_tag_advances(
     links: list[SubmoduleLink],
 ) -> list[SubmoduleTagBump]:
@@ -548,6 +698,8 @@ def check_submodule_tag_advances(
                 resolved = _resolve_sha_refresh(current_sha or "", refs or [])
                 if resolved is not None:
                     _resolved_current_tag, latest_tag = resolved
+                    if not _target_within_hold(link, latest_tag):
+                        continue
                     bumps.append(
                         SubmoduleTagBump(
                             path=link.path,
@@ -606,6 +758,8 @@ def check_submodule_tag_advances(
         )
         if latest is None:
             continue  # already at latest or indeterminate
+        if not _target_within_hold(link, latest):
+            continue
 
         bumps.append(
             SubmoduleTagBump(
@@ -637,6 +791,7 @@ def apply_submodule_tag_advances(
     3. Checks out the new tag with ``--detach refs/tags/<tag>`` to avoid
        ambiguity when a branch name shadows a tag name.
     4. Stages the updated gitlink pointer in the parent repo.
+    5. Clamps held pointers that are already above their version ceiling.
 
     Non-actionable bumps (SHA-only, non-semver, network errors) are skipped.
     Subprocess failures for individual submodules are caught so one broken
@@ -695,4 +850,92 @@ def apply_submodule_tag_advances(
         with contextlib.suppress(FileNotFoundError, OSError):
             run_git(bump.parent, "add", bump.path, timeout=30)
 
+    _enforce_version_ceilings(links, allow_dirty=allow_dirty)
     return bumps
+
+
+def _enforce_version_ceilings(links: list[SubmoduleLink], *, allow_dirty: bool) -> None:
+    """Clamp held submodule pointers that exceed their version ceilings."""
+    for link in links:
+        rule = _resolve_submodule_hold(link)
+        if rule is None or not link.url:
+            continue
+
+        current_tag = _current_submodule_tag(link.git_repo)
+        if current_tag is None:
+            current_sha = _current_submodule_sha(link.git_repo)
+            refs = _fetch_remote_tag_refs(link.url) if current_sha else None
+            if refs is None:
+                if current_sha is not None:
+                    raise RuntimeError(
+                        f"hold: failed to clamp {link.path} back to <="
+                        f"{rule.max_version} (submodule): tag fetch failed "
+                        "while resolving SHA pin"
+                    )
+                continue
+            matching_tags = _matching_sha_tags(current_sha or "", refs)
+            if not matching_tags:
+                continue
+            _, current_tag, _ = max(matching_tags, key=lambda item: (item[0], item[1]))
+            if version_satisfies_ceiling(current_tag.lstrip("vV"), rule.max_version):
+                continue
+            target_tag = _resolve_hold_sha_target(current_sha or "", refs, rule)
+            if target_tag is None:
+                raise RuntimeError(
+                    f"hold: failed to clamp {link.path} back to <="
+                    f"{rule.max_version} (submodule): no available tag "
+                    "satisfies ceiling"
+                )
+        elif _is_semver_tag(current_tag):
+            if version_satisfies_ceiling(current_tag.lstrip("vV"), rule.max_version):
+                continue
+            tags = _fetch_remote_tags(link.url)
+            if tags is None:
+                raise RuntimeError(
+                    f"hold: failed to clamp {link.path} back to <="
+                    f"{rule.max_version} (submodule): tag fetch failed "
+                    "while resolving tag pin"
+                )
+            target_tag = _resolve_hold_tag_target(current_tag, tags, rule)
+            if target_tag is None:
+                raise RuntimeError(
+                    f"hold: failed to clamp {link.path} back to <="
+                    f"{rule.max_version} (submodule): no available tag "
+                    "satisfies ceiling"
+                )
+        else:
+            continue
+
+        if not allow_dirty and is_git_dirty(link.git_repo):
+            continue
+
+        try:
+            fetch_proc = run_git(
+                link.git_repo,
+                "fetch",
+                "--",
+                link.url,
+                f"refs/tags/{target_tag}:refs/tags/{target_tag}",
+                env={**os.environ, "GIT_ALLOW_PROTOCOL": "https:ssh"},
+                timeout=120,
+            )
+        except (FileNotFoundError, OSError):
+            continue
+        if fetch_proc.returncode != 0:
+            continue
+
+        try:
+            checkout_proc = run_git(
+                link.git_repo,
+                "checkout",
+                "--detach",
+                f"refs/tags/{target_tag}",
+                timeout=30,
+            )
+        except (FileNotFoundError, OSError):
+            continue
+        if checkout_proc.returncode != 0:
+            continue
+
+        with contextlib.suppress(FileNotFoundError, OSError):
+            run_git(link.parent, "add", link.path, timeout=30)
