@@ -32,6 +32,7 @@ and add a ``consider_precommit(mdir)`` call inside
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import subprocess
@@ -70,6 +71,8 @@ _REFRESH_SHA_ENV = "REPO_OPS_PRECOMMIT_REFRESH_SHA"
 
 # Timeout for git ls-remote (seconds); kept modest since it's per unique repo.
 _LS_REMOTE_TIMEOUT = 30
+
+logger = logging.getLogger(__name__)
 
 # A rev: value that is a hex commit SHA (7-40 hex chars).
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
@@ -401,6 +404,10 @@ def _resolve_sha_refresh(
         try:
             tag_version = semver_tuple(tag.lstrip("v"))
         except Exception:
+            logger.warning(
+                "ignoring invalid semver tag %r during pre-commit SHA refresh",
+                tag,
+            )
             continue
         matching_tags.append((tag_version, tag, tag_sha))
 
@@ -417,6 +424,10 @@ def _resolve_sha_refresh(
         try:
             tag_version = semver_tuple(tag.lstrip("v"))
         except Exception:
+            logger.warning(
+                "ignoring invalid semver tag %r during pre-commit SHA refresh",
+                tag,
+            )
             continue
         if tag_version and tag_version[0] == current_version[0]:
             candidates.append((tag_version, tag, tag_sha))
