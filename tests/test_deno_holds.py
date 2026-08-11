@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 import pytest
@@ -134,6 +135,51 @@ def test_enforce_deno_version_ceilings_clamps_resolved_above_ceiling(tmp_path) -
     assert run_mock.call_args.args[0] == [
         "deno",
         "update",
-        f"{_PACKAGE}@1.5.0",
+        f"{_PACKAGE}@<=1.5",
     ]
     restore_mock.assert_not_called()
+
+
+@pytest.mark.parametrize("package", [_PACKAGE, "jsr:@std/held"])
+def test_enforce_deno_version_ceilings_falls_back_to_published_patch(
+    tmp_path, package
+) -> None:
+    ws = _ws(tmp_path)
+    outdated = json.dumps(
+        {
+            "packages": [
+                {
+                    "name": package,
+                    "current": "2.0.0",
+                    "latest": "1.5.7",
+                }
+            ]
+        }
+    )
+    with (
+        patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(package=package),)),
+        patch(
+            "repo_ops_js.deno._landed_deno_version",
+            side_effect=["2.0.0", "1.5.7"],
+        ),
+        patch("repo_ops_js.deno._deno_lock_package_names", return_value={package}),
+        patch("repo_ops_js.deno._deno_lock_versions", return_value=[]),
+        patch("repo_ops_js.deno.snapshot_workspace_files", return_value=object()),
+        patch("repo_ops_js.deno.restore_workspace_snapshot") as restore_mock,
+        patch(
+            "repo_ops_js.deno.run",
+            side_effect=[
+                _proc(returncode=1, stderr="unsupported range"),
+                _proc(stdout=outdated),
+                _proc(),
+            ],
+        ) as run_mock,
+    ):
+        _enforce_deno_version_ceilings(ws)
+
+    assert [call.args[0] for call in run_mock.call_args_list] == [
+        ["deno", "update", f"{package}@<=1.5"],
+        ["deno", "outdated", "--json"],
+        ["deno", "update", f"{package}@1.5.7"],
+    ]
+    restore_mock.assert_called_once()
