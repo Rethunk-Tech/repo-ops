@@ -161,6 +161,77 @@ def test_resolve_setting_no_lint_cache(monkeypatch) -> None:
     assert result == "1"
 
 
+def test_resolve_setting_actions_policy_level(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_ACTIONS_POLICY_LEVEL", "warn")
+    result = resolve_setting("actions_policy_level")
+    assert result == "warn"
+
+
+def test_resolve_setting_precommit_refresh_sha(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "1")
+    result = resolve_setting("precommit_refresh_sha")
+    assert result == "1"
+
+
+def test_resolve_setting_submodule_refresh_sha(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_SUBMODULE_REFRESH_SHA", "1")
+    result = resolve_setting("submodule_refresh_sha")
+    assert result == "1"
+
+
+def test_resolve_setting_precommit_refresh_sha_repo_config_wins_over_unset_env(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", raising=False)
+    result = resolve_setting(
+        "precommit_refresh_sha",
+        repo_cfg={"precommit_refresh_sha": True},
+    )
+    assert result is True
+
+
+def test_resolve_setting_commit_agent_provider(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_COMMIT_AGENT_PROVIDER", "cursor")
+    result = resolve_setting("commit_agent_provider")
+    assert result == "cursor"
+
+
+def test_resolve_setting_bun_update_latest(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
+    result = resolve_setting("bun_update_latest")
+    assert result == "1"
+
+
+def test_resolve_setting_pnpm_update_latest(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_PNPM_UPDATE_LATEST", "1")
+    result = resolve_setting("pnpm_update_latest")
+    assert result == "1"
+
+
+def test_resolve_setting_yarn_update_latest(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_YARN_UPDATE_LATEST", "1")
+    result = resolve_setting("yarn_update_latest")
+    assert result == "1"
+
+
+def test_resolve_setting_deno_update_latest(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "1")
+    result = resolve_setting("deno_update_latest")
+    assert result == "1"
+
+
+def test_resolve_setting_bun_targeted_bump(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
+    result = resolve_setting("bun_targeted_bump")
+    assert result == "1"
+
+
+def test_resolve_setting_deno_targeted_bump(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    result = resolve_setting("deno_targeted_bump")
+    assert result == "1"
+
+
 # --- New env-gate settings (#138) ---
 
 
