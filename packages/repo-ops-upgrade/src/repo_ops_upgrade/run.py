@@ -18,8 +18,8 @@ from repo_ops_core.cli import (
     wire_verbose,
 )
 from repo_ops_core.config import (
-    apply_config_to_env,
     ambient_env,
+    apply_config_to_env,
     checkout_config_scope,
     load_global_config,
     load_repo_config,
