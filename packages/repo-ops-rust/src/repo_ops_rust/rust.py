@@ -224,12 +224,12 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
     for crate_name, versions in sorted(resolved.items()):
         audit_override = _AUDIT_VERSION_OVERRIDES.get(crate_name)
         rule = _resolve_crate_hold(ws, crate_name)
-        if audit_override is None and rule is None:
-            continue
         if audit_override is not None:
             violating = [version for version in versions if version != audit_override]
             target = audit_override
-        else:
+            ceiling_label = f"audit override {audit_override}"
+            expected_landed = f"== {audit_override}"
+        elif rule is not None:
             violating = [
                 version
                 for version in versions
@@ -245,6 +245,10 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
                 if candidates
                 else _cargo_precise_version(crate_name, rule.max_version)
             )
+            ceiling_label = f"hold ceiling {rule.max_version}"
+            expected_landed = f"<= {rule.max_version}"
+        else:
+            continue
         if not violating:
             continue
         for resolved_version in violating:
@@ -261,34 +265,26 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
                 timeout=resolve_timeout_apply(),
             )
             if proc.returncode != 0:
-                expected = (
-                    f"audit override {audit_override}"
-                    if audit_override is not None
-                    else f"hold ceiling {rule.max_version}"
-                )
                 raise RuntimeError(
                     f"hold: failed to clamp {crate_name}@{resolved_version} "
-                    f"back to {expected} (cargo): {proc.stderr.strip()}"
+                    f"back to {ceiling_label} (cargo): {proc.stderr.strip()}"
                 )
         landed = _cargo_resolved_versions(ws).get(crate_name, ())
         if audit_override is not None:
             still_invalid = not landed or any(
                 version != audit_override for version in landed
             )
-        else:
+        elif rule is not None:
             still_invalid = not landed or any(
                 not version_satisfies_ceiling(version, rule.max_version)
                 for version in landed
             )
+        else:
+            still_invalid = True
         if still_invalid:
-            expected = (
-                f"== {audit_override}"
-                if audit_override is not None
-                else f"<= {rule.max_version}"
-            )
             raise RuntimeError(
                 f"hold: {crate_name} still at {', '.join(landed) or violating[-1]} "
-                f"after clamp attempt, expected {expected} (cargo)"
+                f"after clamp attempt, expected {expected_landed} (cargo)"
             )
 
 
