@@ -401,7 +401,7 @@ For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 | submodule_update_latest | (none) | `REPO_OPS_SUBMODULE_UPDATE_LATEST` | `submodule_update_latest` | `0` |
 | submodule_refresh_sha | `--submodule-refresh-sha` | `REPO_OPS_SUBMODULE_REFRESH_SHA` | `submodule_refresh_sha` | `0` |
 | resume | (none) | `REPO_OPS_RESUME` | `resume` | `0` |
-| remediate_go_generate | (none) | `REPO_OPS_REMEDIATE_GO_GENERATE` | `remediate_go_generate` | `0` |
+| remediate_go_generate | (none) | `REPO_OPS_REMEDIATE_GO_GENERATE` | (none) | `0` |
 | audit_fail_on | `--fail-on` | `REPO_OPS_AUDIT_FAIL_ON` | `audit_fail_on` | `high` |
 | audit_fail_on_unknown | `--fail-on-unknown` | `REPO_OPS_AUDIT_FAIL_ON_UNKNOWN` | `audit_fail_on_unknown` | `0` |
 
