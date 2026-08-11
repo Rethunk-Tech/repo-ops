@@ -22,7 +22,7 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 ### 30.1 Fleet config e2e: Yarn / Bun / Deno manager paths
 
-`tests/test_config_e2e.py` fleet harness covers pnpm, npm, container, pre-commit, and submodule per-checkout readers. Wave 31 added **unit** coverage for yarn/bun per-checkout update-latest/targeted-bump in `tests/test_js_manager_checkout_flags.py`; Deno still has direct helper coverage only. Fleet-path e2e for yarn/bun/deno remains deferred.
+`tests/test_config_e2e.py` fleet harness covers pnpm, npm, container, pre-commit, and submodule per-checkout readers. Unit coverage for yarn/bun/pnpm update-latest/targeted-bump and npm targeted-bump lives in `tests/test_js_manager_checkout_flags.py` (mocked `load_repo_config`). Deno still has direct helper coverage only. Fleet-path e2e for yarn/bun/deno remains deferred.
 
 **Refs:** `tests/test_config_e2e.py`; `tests/test_js_manager_checkout_flags.py`; `repo_ops_js_yarn.yarn`; `repo_ops_js_bun.bun`; `repo_ops_js.deno`.
 
@@ -30,12 +30,12 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 ---
 
-## Round 31 — Wave 31 audit carry-forwards
+## Round 32 — Wave 32 audit carry-forwards
 
-### 31.1 `test_container_refresh_sha_from_config_file` still bypasses TOML load
+### 32.1 Audit config-file tests: isolate cwd repo config
 
-Wave 31 rewrote precommit/submodule refresh-sha tests to load a real `config.toml` via `load_global_config()`. The older sibling `test_container_refresh_sha_from_config_file` still injects an in-memory dict into `apply_config_to_env` and leaves `tmp_path` unused — same false-green pattern.
+`test_fail_on_from_config_file` / `test_fail_on_unknown_from_config_file` exercise global TOML via `XDG_CONFIG_HOME`, but `main()` also calls `load_repo_config(Path.cwd())`. A checkout with `[tool.repo-ops]` audit keys can skew the gate under test.
 
-**Refs:** `tests/test_config.py` (`test_container_refresh_sha_from_config_file`); pattern to copy: `test_precommit_refresh_sha_from_config_file`.
+**Refs:** `tests/test_audit_config_gates.py`; `repo_ops_audit.audit.main`.
 
-**Acceptance:** Container refresh-sha test writes/reads a real global `config.toml` through `load_global_config()` before `apply_config_to_env`, matching the precommit/submodule siblings.
+**Acceptance:** Config-file gate tests patch `repo_ops_audit.audit.load_repo_config` to `{}` (or otherwise hermeticize cwd) so only the written global TOML drives the env promotion.
