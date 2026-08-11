@@ -515,7 +515,9 @@ def test_dependabot_parser_exclude_patterns() -> None:
 
 
 def test_dependabot_exclude_cli_wins_over_config(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     cli_excluded = str(tmp_path / "cli-excluded")
     config_excluded = str(tmp_path / "config-excluded")
@@ -525,6 +527,11 @@ def test_dependabot_exclude_cli_wins_over_config(
         "config": config_excluded,
         "kept": kept,
     }
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nexclude = ["config-excluded"]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
     with (
         patch(
             "repo_ops_dependabot.dependabot.discover_repos",
@@ -533,10 +540,6 @@ def test_dependabot_exclude_cli_wins_over_config(
         patch(
             "repo_ops_dependabot.dependabot.load_global_config",
             return_value={},
-        ),
-        patch(
-            "repo_ops_dependabot.dependabot.load_repo_config",
-            return_value={"exclude": ["config-excluded"]},
         ),
         patch(
             "repo_ops_dependabot.dependabot._github_remote",
@@ -553,6 +556,29 @@ def test_dependabot_exclude_cli_wins_over_config(
     scanned_paths = {call.args[0] for call in mock_remote.call_args_list}
     assert scanned_paths == {config_excluded, kept}
     assert "excluded: 1 repo(s)" in capsys.readouterr().out
+
+    with (
+        patch(
+            "repo_ops_dependabot.dependabot.discover_repos",
+            return_value=discovered,
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot.load_global_config",
+            return_value={},
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._github_remote",
+            return_value="https://github.com/owner/repo",
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_list_dependabot_prs",
+            return_value=([], ""),
+        ),
+        patch("repo_ops_dependabot.dependabot.run_git"),
+    ):
+        assert main(["--exclude", "cli-excluded", "--json", str(tmp_path)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["excluded_repos"] == 1
 
 
 def test_dependabot_exclude_filters_repositories_from_config(
