@@ -15,6 +15,7 @@ import pytest
 import repo_ops_go
 import repo_ops_go.go as go_mod
 import repo_ops_upgrade.run as run_mod
+import repo_ops_upgrade.verify as verify_mod
 from repo_ops_core.config import apply_config_to_env, resolve_setting, set_ambient_env
 from repo_ops_core.constants import (
     resolve_find_timeout,
@@ -417,6 +418,42 @@ def test_fleet_run_resolves_timeouts_per_checkout(
         repo_a: (11, 12, 13, 14.0, 15.0),
         repo_b: (21, 22, 23, 24.0, 25.0),
     }
+
+
+def test_node_verify_script_uses_ambient_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Injected process values do not override the caller environment snapshot."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.repo-ops]\nnode_verify_script = "configured"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "package.json").write_text(
+        json.dumps({"scripts": {"caller": "echo caller", "configured": "echo config"}}),
+        encoding="utf-8",
+    )
+    workspace = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="npm",
+        git_repo=tmp_path,
+        label="repo",
+    )
+    commands: list[list[str]] = []
+
+    def fake_run(cmd: list[str], cwd: Path, timeout: int = 0):
+        commands.append(cmd)
+        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setenv("REPO_OPS_NODE_VERIFY_SCRIPT", "injected")
+    set_ambient_env({"REPO_OPS_NODE_VERIFY_SCRIPT": "caller"})
+    monkeypatch.setattr(verify_mod, "run", fake_run)
+    try:
+        assert verify_mod.verify_node(workspace) is None
+    finally:
+        set_ambient_env(None)
+
+    assert commands == [["npm", "ci"], ["npm", "run", "caller"]]
 
 
 def test_fleet_run_resolves_go_upgrade_mode_per_checkout(

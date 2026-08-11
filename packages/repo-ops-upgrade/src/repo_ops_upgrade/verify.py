@@ -34,7 +34,12 @@ import re
 import shutil
 from typing import Any
 
-from repo_ops_core.config import load_global_config, load_repo_config
+from repo_ops_core.config import (
+    ambient_env,
+    load_global_config,
+    load_repo_config,
+    resolve_setting,
+)
 from repo_ops_core.constants import resolve_timeout_verify
 from repo_ops_core.filesystem import read_json_file, read_toml_file
 from repo_ops_core.process import run
@@ -199,7 +204,12 @@ def _resolve_verify_timeout_with_profile(profile: dict[str, Any]) -> int:
     *profile* is the merged ``[verify]`` dict from :func:`_load_verify_profile`.
     """
     # Env var always wins (one-shot override for CI pipelines).
-    env_raw = os.environ.get(_TIMEOUT_VERIFY_ENV, "").strip()
+    ambient = ambient_env()
+    env_raw = (
+        (os.environ if ambient is None else ambient)
+        .get(_TIMEOUT_VERIFY_ENV, "")
+        .strip()
+    )
     if env_raw:
         try:
             val = float(env_raw)
@@ -245,12 +255,18 @@ def verify_node(ws: Workspace) -> str | None:
         if proc.returncode != 0 or (mgr == "yarn" and YARN_PEER_WARN.search(combined)):
             return combined.strip() or f"{mgr} immutable install failed"
 
-    # Env override wins: explicit empty string → skip the script step entirely.
-    env_val = os.environ.get(_NODE_VERIFY_SCRIPT_ENV)
+    # Caller environment wins over top-level config; the ambient snapshot keeps
+    # config values injected for another checkout from leaking into this one.
+    env_val = resolve_setting(
+        "node_verify_script",
+        global_cfg=load_global_config(),
+        repo_cfg=load_repo_config(ws.git_repo),
+        env=ambient_env(),
+    )
     if env_val is not None:
-        if env_val.strip() == "":
+        if str(env_val).strip() == "":
             return None
-        script_name: str | None = env_val.strip()
+        script_name: str | None = str(env_val).strip()
     else:
         # Per-repo config script override (next in precedence after env var).
         cfg_script = profile.get("script")
