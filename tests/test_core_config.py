@@ -36,9 +36,11 @@ def test_settings_table_timeout_defaults_match_constants() -> None:
 
 
 def test_settings_map_matches_settings_table() -> None:
-    by_name = {row[0]: row for row in SETTINGS_TABLE}
-    assert set(config_mod._SETTINGS_MAP) == set(by_name)
+    table_names = [row[0] for row in SETTINGS_TABLE]
+    assert len(table_names) == len(set(table_names))
+    assert set(config_mod._SETTINGS_MAP) == set(table_names)
 
+    by_name = {row[0]: row for row in SETTINGS_TABLE}
     for name, (env_var, config_key, _default) in config_mod._SETTINGS_MAP.items():
         _setting, _flag, table_env_var, table_config_key, _table_default = by_name[name]
         assert env_var == (None if table_env_var == "(none)" else table_env_var)
