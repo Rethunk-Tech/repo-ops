@@ -54,6 +54,36 @@ def test_release_unheld_pin_removes_nested_workspace_pin(tmp_path: Path) -> None
     assert _read_package(workspace_package) == {"name": "foo"}
 
 
+def test_release_unheld_pin_removes_nested_workspace_override(tmp_path: Path) -> None:
+    _write_package(tmp_path, {"workspaces": ["packages/*"]})
+    workspace_package = tmp_path / "packages" / "foo" / "package.json"
+    workspace_package.parent.mkdir(parents=True)
+    workspace_package.write_text(
+        json.dumps({"name": "foo", "overrides": {"left-pad": "1.3.0"}}),
+        encoding="utf-8",
+    )
+
+    assert release_unheld_pin(tmp_path, "left-pad") is True
+
+    assert _read_package(workspace_package) == {"name": "foo"}
+
+
+def test_release_unheld_pin_removes_nested_workspace_pnpm_override(
+    tmp_path: Path,
+) -> None:
+    _write_package(tmp_path, {"workspaces": ["packages/*"]})
+    workspace_package = tmp_path / "packages" / "foo" / "package.json"
+    workspace_package.parent.mkdir(parents=True)
+    workspace_package.write_text(
+        json.dumps({"name": "foo", "pnpm": {"overrides": {"left-pad": "1.3.0"}}}),
+        encoding="utf-8",
+    )
+
+    assert release_unheld_pin(tmp_path, "left-pad") is True
+
+    assert _read_package(workspace_package) == {"name": "foo", "pnpm": {}}
+
+
 def test_release_unheld_pin_removes_pnpm_override(tmp_path: Path) -> None:
     package_path = _write_package(
         tmp_path,
