@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from pathlib import Path
 
+from repo_ops_core.config import (
+    ambient_env,
+    load_global_config,
+    load_repo_config,
+    process_env_cli_override,
+    resolve_setting,
+)
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
@@ -74,12 +80,30 @@ def clear_bun_audit_version_overrides() -> None:
     _AUDIT_VERSION_OVERRIDES = {}
 
 
-def _bun_update_latest_enabled() -> bool:
-    return os.environ.get(_BUN_UPDATE_LATEST_ENV, "").strip().lower() in _TRUE_VALUES
+def _bun_update_latest_enabled(ws: Workspace | None = None) -> bool:
+    raw = resolve_setting(
+        "bun_update_latest",
+        cli_value=process_env_cli_override(_BUN_UPDATE_LATEST_ENV),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in _TRUE_VALUES
 
 
-def _bun_targeted_bump_enabled() -> bool:
-    return os.environ.get(_BUN_TARGETED_BUMP_ENV, "").strip().lower() in _TRUE_VALUES
+def _bun_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
+    raw = resolve_setting(
+        "bun_targeted_bump",
+        cli_value=process_env_cli_override(_BUN_TARGETED_BUMP_ENV),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in _TRUE_VALUES
 
 
 def _valid_bun_package_name(name: str) -> bool:
@@ -111,7 +135,7 @@ def _changes_from_bun_json(
     exercising the parser in isolation (no ``Workspace``) keep prior
     behavior; ``check_bun`` always passes the real workspace.
     """
-    want_latest = _bun_update_latest_enabled()
+    want_latest = _bun_update_latest_enabled(ws)
     changes: list[Change] = []
     behind_latest: list[Change] = []
     try:
@@ -163,7 +187,7 @@ def _changes_from_bun_text(
     unit tests exercising the parser in isolation keep prior behavior;
     ``check_bun`` always passes the real workspace.
     """
-    want_latest = _bun_update_latest_enabled()
+    want_latest = _bun_update_latest_enabled(ws)
     changes: list[Change] = []
     behind_latest: list[Change] = []
     for raw in stdout.splitlines():
@@ -242,7 +266,7 @@ def targeted_bump_behind(
     ``(applied, still_behind)`` — ``applied`` carries the real resolved version
     landed.
     """
-    if not behind or not _bun_targeted_bump_enabled():
+    if not behind or not _bun_targeted_bump_enabled(ws):
         return [], behind
     applied: list[Change] = []
     still_behind: list[Change] = []
@@ -427,7 +451,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
             and _valid_bun_package_name((ch.name or "").strip())
         ]
         if guardable:
-            if _bun_targeted_bump_enabled():
+                if _bun_targeted_bump_enabled(ws):
                 # Defer to the targeted-bump retry below (which can release
                 # an unheld legacy pin) instead of hard-failing here; a
                 # still-blocked package after that best-effort retry lands
@@ -441,7 +465,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
-    if _bun_targeted_bump_enabled():
+    if _bun_targeted_bump_enabled(ws):
         behind = _fold_blocked_into_behind(ws, requested, behind)
     else:
         assert_targets_resolved(ws, requested, manager="bun")

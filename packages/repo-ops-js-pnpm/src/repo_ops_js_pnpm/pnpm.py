@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
+from repo_ops_core.config import (
+    ambient_env,
+    load_global_config,
+    load_repo_config,
+    process_env_cli_override,
+    resolve_setting,
+)
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
@@ -54,12 +60,30 @@ def clear_pnpm_audit_version_overrides() -> None:
     _AUDIT_VERSION_OVERRIDES = {}
 
 
-def _pnpm_update_latest_enabled() -> bool:
-    return os.environ.get(_PNPM_UPDATE_LATEST_ENV, "").strip().lower() in _TRUE_VALUES
+def _pnpm_update_latest_enabled(ws: Workspace | None = None) -> bool:
+    raw = resolve_setting(
+        "pnpm_update_latest",
+        cli_value=process_env_cli_override(_PNPM_UPDATE_LATEST_ENV),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in _TRUE_VALUES
 
 
-def _pnpm_targeted_bump_enabled() -> bool:
-    return os.environ.get(_PNPM_TARGETED_BUMP_ENV, "").strip().lower() in _TRUE_VALUES
+def _pnpm_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
+    raw = resolve_setting(
+        "pnpm_targeted_bump",
+        cli_value=process_env_cli_override(_PNPM_TARGETED_BUMP_ENV),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in _TRUE_VALUES
 
 
 def _bucket_pnpm_pkg(
@@ -87,7 +111,7 @@ def _bucket_pnpm_pkg(
     bucketing logic in isolation (no ``Workspace``) keep prior behavior;
     ``_pnpm_outdated`` always passes the real workspace.
     """
-    if _pnpm_update_latest_enabled():  # noqa: SIM102
+    if _pnpm_update_latest_enabled(ws):  # noqa: SIM102
         # Treat latest as the upgrade target — mirrors apply_pnpm --latest.
         if latest not in ("?", "") and cur != latest:
             held_rule = resolve_package_hold(ws, name) if ws is not None else None
@@ -170,7 +194,7 @@ def check_pnpm(ws: Workspace) -> tuple[list[Change], list[Change]]:
     apply path will actually do.
     """
     changes, behind = _pnpm_outdated(ws)
-    if _pnpm_targeted_bump_enabled() and behind:
+    if _pnpm_targeted_bump_enabled(ws) and behind:
         promoted: list[Change] = []
         still_behind: list[Change] = []
         for c in behind:
@@ -210,7 +234,7 @@ def targeted_bump_behind(
     ``(applied, still_behind)`` — ``applied`` carries the real resolved version
     landed.
     """
-    if not behind or not _pnpm_targeted_bump_enabled():
+    if not behind or not _pnpm_targeted_bump_enabled(ws):
         return [], behind
     applied: list[Change] = []
     still_behind: list[Change] = []
@@ -327,7 +351,7 @@ def apply_pnpm(ws: Workspace) -> list[Change]:
     if changes or not handled:
         # Match npm conservative bumps (semver ranges) unless the user opts into latest.
         cmd = ["pnpm", "update", "-r"]
-        if _pnpm_update_latest_enabled():
+        if _pnpm_update_latest_enabled(ws):
             cmd.append("--latest")
         proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:

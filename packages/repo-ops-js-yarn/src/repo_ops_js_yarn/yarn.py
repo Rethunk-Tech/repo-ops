@@ -14,6 +14,13 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 
+from repo_ops_core.config import (
+    ambient_env,
+    load_global_config,
+    load_repo_config,
+    process_env_cli_override,
+    resolve_setting,
+)
 from repo_ops_core.constants import resolve_timeout_apply
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
@@ -195,12 +202,30 @@ def _is_pnp_workspace(ws_path: Path) -> bool:
     return False
 
 
-def _yarn_update_latest_enabled() -> bool:
-    return os.environ.get(_YARN_UPDATE_LATEST_ENV, "").strip().lower() in _TRUE_VALUES
+def _yarn_update_latest_enabled(ws: Workspace | None = None) -> bool:
+    raw = resolve_setting(
+        "yarn_update_latest",
+        cli_value=process_env_cli_override(_YARN_UPDATE_LATEST_ENV),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in _TRUE_VALUES
 
 
-def _yarn_targeted_bump_enabled() -> bool:
-    return os.environ.get(_YARN_TARGETED_BUMP_ENV, "").strip().lower() in _TRUE_VALUES
+def _yarn_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
+    raw = resolve_setting(
+        "yarn_targeted_bump",
+        cli_value=process_env_cli_override(_YARN_TARGETED_BUMP_ENV),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in _TRUE_VALUES
 
 
 def _yarn_up_cmd() -> list[str]:
@@ -389,7 +414,7 @@ def _latest_published(mdir: Path, name: str) -> str | None:
     return ver if isinstance(ver, str) else None
 
 
-def behind_after_up(mdir: Path) -> list[Change]:
+def behind_after_up(mdir: Path, *, ws: Workspace | None = None) -> list[Change]:
     """Direct deps with a newer published version that ``yarn up`` did not apply.
 
     yarn's resolver (especially under ``yarn up -R '*'``) can keep a package below
@@ -401,7 +426,7 @@ def behind_after_up(mdir: Path) -> list[Change]:
     gap is meaningful and the extra registry lookups are warranted. Resilient: any
     ``yarn npm info`` failure skips that package rather than failing the run.
     """
-    if not _yarn_update_latest_enabled():
+    if not _yarn_update_latest_enabled(ws):
         return []
     lock = mdir / "yarn.lock"
     if not lock.is_file():
@@ -445,7 +470,7 @@ def targeted_bump_behind(
     direct callers that predate holds (including existing tests) keep the prior
     audit-override/latest fallback behavior when omitted.
     """
-    if not behind or not _yarn_targeted_bump_enabled():
+    if not behind or not _yarn_targeted_bump_enabled(ws):
         return [], behind
     lock = mdir / "yarn.lock"
     if not lock.is_file():
@@ -538,7 +563,7 @@ def check_yarn_snapshot(
         ):
             changes.append(Change("package.json", "changed", "changed"))
         snapshot_overrides = overrides_audit(mdir, "yarn")
-        behind = behind_after_up(mdir)
+        behind = behind_after_up(mdir, ws=ws)
         # Optionally move (not just report) the gap; applied bumps become planned
         # changes so plan previews what apply will land (issue #111).
         applied, behind = targeted_bump_behind(mdir, behind, ws=ws)
@@ -676,7 +701,7 @@ def apply_yarn(ws: Workspace) -> list[Change]:
         raise _command_failure("yarn install failed", proc2)
 
     # --- ghost-bump guard: verify installs against plan ----------------------
-    targeted_bump = _yarn_targeted_bump_enabled()
+    targeted_bump = _yarn_targeted_bump_enabled(ws)
     if guardable:
         if _is_pnp_workspace(ws.path):
             print(
@@ -693,7 +718,7 @@ def apply_yarn(ws: Workspace) -> list[Change]:
         # it. Anything still unresolved after that best-effort retry lands
         # in behind_latest, same as any other targeted-bump miss.
 
-    behind = behind_after_up(ws.path)
+    behind = behind_after_up(ws.path, ws=ws)
     if audit_handled:
         behind = [c for c in behind if c.name not in audit_handled]
     if guardable and targeted_bump and not _is_pnp_workspace(ws.path):
