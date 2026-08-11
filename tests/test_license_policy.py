@@ -24,7 +24,7 @@ from repo_ops_lockfiles.license_policy import (
     scan_python_dep_licenses,
     scan_python_licenses,
 )
-from repo_ops_lockfiles.sbom import build_sbom_parser
+from repo_ops_lockfiles.sbom import build_sbom_parser, enrich_component
 from repo_ops_lockfiles.sbom import main as sbom_main
 
 # ---------------------------------------------------------------------------
@@ -752,6 +752,11 @@ def test_network_only_enrichment_for_license_and_sbom(
         "repo_ops_lockfiles.license_policy.enrich_license",
         enrich_spy,
     )
+    enrich_component_spy = MagicMock(wraps=enrich_component)
+    monkeypatch.setattr(
+        "repo_ops_lockfiles.sbom.enrich_component",
+        enrich_component_spy,
+    )
     rc = main(
         [
             "--enrich-licenses-network",
@@ -775,6 +780,8 @@ def test_network_only_enrichment_for_license_and_sbom(
     sbom_payload = json.loads(capsys.readouterr().out)
     assert sbom_payload["components"][0]["licenses"][0]["expression"] == "MIT"
     assert calls == [url, url]
+    assert enrich_component_spy.call_args is not None
+    assert enrich_component_spy.call_args.kwargs["allow_network"] is True
 
 
 # ---------------------------------------------------------------------------
