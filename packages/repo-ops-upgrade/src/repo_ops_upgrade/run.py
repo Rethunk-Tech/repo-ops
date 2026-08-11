@@ -812,7 +812,10 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     # Keep the compatibility environment injection for a direct single-checkout
     # invocation. Fleet runs resolve repo-scoped settings at use instead of
     # leaking the launch checkout's config into every worker.
-    apply_config_to_env(global_cfg=_g_cfg, repo_cfg=_r_cfg)
+    apply_config_to_env(
+        global_cfg=_g_cfg if _single_checkout else {},
+        repo_cfg=_r_cfg,
+    )
     # Snapshot after config injection so injected config values remain ambient;
     # later CLI flag writes are the only process values classified as overrides.
     _ambient_env = dict(os.environ)
