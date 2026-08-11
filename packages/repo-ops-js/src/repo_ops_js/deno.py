@@ -203,6 +203,53 @@ def _release_deno_import_pins(value: object, package: str) -> bool:
     return changed
 
 
+def _strip_deno_jsonc_comments(text: str) -> str:
+    result: list[str] = []
+    in_string = False
+    escaped = False
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if in_string:
+            result.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            index += 1
+            continue
+        if char == '"':
+            in_string = True
+            result.append(char)
+            index += 1
+        elif text.startswith("//", index):
+            newline = text.find("\n", index + 2)
+            if newline == -1:
+                break
+            result.append("\n")
+            index = newline + 1
+        elif text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            if end == -1:
+                break
+            result.extend("\n" for char in text[index : end + 2] if char == "\n")
+            index = end + 2
+        else:
+            result.append(char)
+            index += 1
+    return re.sub(r",(\s*[}\]])", r"\1", "".join(result))
+
+
+def _load_deno_json(path: Path) -> object:
+    text = path.read_text(encoding="utf-8")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return json.loads(_strip_deno_jsonc_comments(text))
+
+
 def _release_unheld_deno_pin(ws: Workspace, package: str) -> bool:
     """Remove an exact version pin from Deno import maps for an unheld package."""
     paths = set(_deno_import_map_paths(ws))
@@ -215,7 +262,7 @@ def _release_unheld_deno_pin(ws: Workspace, package: str) -> bool:
     changed = False
     for path in sorted(paths, key=lambda item: item.as_posix()):
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload = _load_deno_json(path)
         except (OSError, TypeError, json.JSONDecodeError):
             continue
         file_changed = False

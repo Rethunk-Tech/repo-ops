@@ -12,6 +12,7 @@ from repo_ops_js.deno import (
     _deno_update_latest_enabled,
     _enforce_deno_version_ceilings,
     _filter_held_deno_changes,
+    _release_unheld_deno_pin,
     _snapshot_deno_workspace,
     apply_deno_audit_version_overrides,
     check_deno,
@@ -267,6 +268,26 @@ def test_deno_import_map_rejects_parent_and_symlink_escape(tmp_path) -> None:
     (tmp_path / "deno.json").unlink()
     os.symlink(outside, tmp_path / "import_map.json")
     assert _deno_import_map_paths(ws) == []
+
+
+@pytest.mark.parametrize("filename", ["deno.jsonc", "import_map.jsonc"])
+def test_release_unheld_deno_pin_handles_jsonc(tmp_path, filename) -> None:
+    ws = _ws(tmp_path)
+    (tmp_path / filename).write_text(
+        """
+        {
+          // Keep this comment while parsing JSONC.
+          "imports": {
+            "npm:is-odd": "npm:is-odd@0.1.2",
+          },
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    assert _release_unheld_deno_pin(ws, "npm:is-odd") is True
+    payload = json.loads((tmp_path / filename).read_text(encoding="utf-8"))
+    assert payload["imports"]["npm:is-odd"] == "npm:is-odd"
 
 
 def test_targeted_bump_audit_override_wins_over_hold_ceiling(
