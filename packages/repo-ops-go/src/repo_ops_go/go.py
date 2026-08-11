@@ -471,25 +471,46 @@ def _plan_go_work_directive_changes(go_work_dir: Path) -> list[Change]:
     return []
 
 
-def _go_directive_target() -> str | None:
-    """Return the target ``go`` directive version from ``REPO_OPS_GO_DIRECTIVE``.
+def _go_directive_target(ws: Workspace | None = None) -> str | None:
+    """Return the configured target ``go`` directive version.
 
     Returns ``None`` when the env var is unset or empty.
     """
-    return os.environ.get(GO_DIRECTIVE_ENV, "").strip() or None
+    ambient = ambient_env()
+    process_value = os.environ.get(GO_DIRECTIVE_ENV)
+    ambient_value = ambient.get(GO_DIRECTIVE_ENV) if ambient is not None else None
+    cli_value = process_value if process_value != ambient_value else None
+    raw = resolve_setting(
+        "go_directive",
+        cli_value=cli_value,
+        env=ambient or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
+    return str(raw).strip() if raw is not None and str(raw).strip() else None
 
 
-def _go_toolchain_target() -> str | None:
-    """Return the target ``toolchain`` version from ``REPO_OPS_GO_TOOLCHAIN``.
+def _go_toolchain_target(ws: Workspace | None = None) -> str | None:
+    """Return the configured target ``toolchain`` version.
 
     Normalises the value by stripping a leading ``go`` prefix so callers always
     work with the bare version string (e.g. ``"1.25.10"``).  Returns ``None``
     when unset or empty.
     """
-    raw = os.environ.get(GO_TOOLCHAIN_ENV, "").strip()
+    ambient = ambient_env()
+    process_value = os.environ.get(GO_TOOLCHAIN_ENV)
+    ambient_value = ambient.get(GO_TOOLCHAIN_ENV) if ambient is not None else None
+    cli_value = process_value if process_value != ambient_value else None
+    raw = resolve_setting(
+        "go_toolchain",
+        cli_value=cli_value,
+        env=ambient or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
     if not raw:
         return None
-    return raw.removeprefix("go")
+    return str(raw).strip().removeprefix("go") or None
 
 
 def _gomod_toolchain_directive(ws: Workspace) -> str | None:
@@ -523,8 +544,8 @@ def _plan_fleet_directive_changes(ws: Workspace) -> list[Change]:
     """
     changes: list[Change] = []
 
-    directive_target = _go_directive_target()
-    toolchain_target = _go_toolchain_target()
+    directive_target = _go_directive_target(ws)
+    toolchain_target = _go_toolchain_target(ws)
     if not directive_target and not toolchain_target:
         return []
 
@@ -745,8 +766,8 @@ def _apply_fleet_directive(ws: Workspace) -> None:
     ``go mod edit`` followed by ``go mod tidy``.  No-ops when both env vars
     are unset.
     """
-    directive_target = _go_directive_target()
-    toolchain_target = _go_toolchain_target()
+    directive_target = _go_directive_target(ws)
+    toolchain_target = _go_toolchain_target(ws)
     if not directive_target and not toolchain_target:
         return
 
