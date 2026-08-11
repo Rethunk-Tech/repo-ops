@@ -30,12 +30,28 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 ---
 
-## Round 32 — Wave 32 audit carry-forwards
+## Round 33 — Wave 33 audit carry-forwards
 
-### 32.1 Audit config-file tests: isolate cwd repo config
+### 33.1 Config exclude tests: chdir + real TOML instead of stubbing load_repo_config
 
-`test_fail_on_from_config_file` / `test_fail_on_unknown_from_config_file` exercise global TOML via `XDG_CONFIG_HOME`, but `main()` also calls `load_repo_config(Path.cwd())`. A checkout with `[tool.repo-ops]` audit keys can skew the gate under test.
+Audit and pushed config-exclude tests monkeypatch `load_repo_config` to return exclude dicts. That proves `merge_exclude_patterns` wiring through `main`, not that `load_repo_config(Path.cwd())` is actually consulted. Prefer chdir + real `pyproject.toml` / `.repo-ops.toml` (or the existing e2e/dependabot chdir patterns).
+
+**Refs:** `tests/test_audit.py`; `tests/test_pushed.py`; `tests/test_dependabot_sweep.py`; `tests/test_config_e2e.py`.
+
+**Acceptance:** At least one audit and one pushed exclude test load exclude patterns from an on-disk checkout config without stubbing `load_repo_config`.
+
+### 33.2 Audit gate env tests: isolate global config.toml
+
+Autouse fixture stubs cwd `load_repo_config` to `{}`, but env-only gate tests do not pin `XDG_CONFIG_HOME` or stub `load_global_config`. Operator `~/.config/repo-ops/config.toml` can still inject `audit_fail_on*` via `apply_config_to_env` when those env vars are unset.
 
 **Refs:** `tests/test_audit_config_gates.py`; `repo_ops_audit.audit.main`.
 
-**Acceptance:** Config-file gate tests patch `repo_ops_audit.audit.load_repo_config` to `{}` (or otherwise hermeticize cwd) so only the written global TOML drives the env promotion.
+**Acceptance:** Env-only gate tests pin empty/global-free XDG config (or stub `load_global_config` → `{}`) so only the test env drives the gate.
+
+### 33.3 Doctor: main/JSON path for mutated skill content drift
+
+`test_probe_skill_drift_reports_mutated_install` covers `probe_skill_drift()` directly. Dangling-symlink coverage exists for `doctor.main` JSON; mutated SKILL.md content drift through `main` / `--json` is still unit-level only.
+
+**Refs:** `tests/test_doctor.py`; `repo_ops_doctor.doctor.probe_skill_drift`.
+
+**Acceptance:** A `doctor.main` (human and/or `--json`) test asserts mutated installed skill content appears in `skill_drift`.
