@@ -171,3 +171,69 @@ def test_expired_actions_hold_is_ignored_without_rewriting_hold_config(
 
     assert "uses: actions/checkout@v4.5.0" in workflow.read_text(encoding="utf-8")
     assert hold_config.read_bytes() == original_hold_config
+
+
+def test_check_actions_surfaces_tag_hold_clamp_at_upstream_latest(tmp_path) -> None:
+    _workflow(tmp_path, "v4.5.0")
+    info = _tag_info(["v4.3.0", "v4.5.0", "v4"])
+    global_hold, repo_hold = _hold_patches(_held_rule())
+
+    with (
+        global_hold,
+        repo_hold,
+        patch.object(actions, "action_tag_info", return_value=info),
+    ):
+        bumps, _ = actions.scan_actions(
+            tmp_path,
+            False,
+            lint_level="off",
+        )
+
+    assert any(bump.latest == "v4.3.0" for bump in bumps)
+    assert all(bump.latest != "v4" for bump in bumps)
+
+
+def test_check_actions_surfaces_sha_hold_clamp_without_refresh(tmp_path) -> None:
+    current_sha = "a" * 40
+    target_sha = "b" * 40
+    _workflow(tmp_path, current_sha)
+    info = _tag_info(
+        ["v4.3.0", "v4.5.0", "v4"],
+        {
+            current_sha: ["v4.5.0"],
+            target_sha: ["v4.3.0"],
+        },
+    )
+    global_hold, repo_hold = _hold_patches(_held_rule())
+
+    with (
+        global_hold,
+        repo_hold,
+        patch.object(actions, "action_tag_info", return_value=info),
+    ):
+        bumps, _ = actions.scan_actions(
+            tmp_path,
+            False,
+            keep_sha=True,
+            lint_level="off",
+        )
+
+    assert any(bump.latest == target_sha for bump in bumps)
+    assert all(bump.detail != "SHA-pinned; report only" for bump in bumps)
+
+
+def test_apply_actions_clamps_exact_pin_instead_of_normalizing_to_major(
+    tmp_path,
+) -> None:
+    workflow = _workflow(tmp_path, "v4.5.0")
+    info = _tag_info(["v4.3.0", "v4.5.0", "v4"])
+    global_hold, repo_hold = _hold_patches(_held_rule())
+
+    with (
+        global_hold,
+        repo_hold,
+        patch.object(actions, "action_tag_info", return_value=info),
+    ):
+        actions.scan_actions(tmp_path, True, lint_level="off")
+
+    assert "uses: actions/checkout@v4.3.0" in workflow.read_text(encoding="utf-8")
