@@ -35,6 +35,16 @@ def test_settings_table_timeout_defaults_match_constants() -> None:
     assert TIMEOUT_CHECK == TIMEOUT_APPLY == TIMEOUT_VERIFY == FIND_TIMEOUT == 60
 
 
+def test_settings_map_matches_settings_table() -> None:
+    by_name = {row[0]: row for row in SETTINGS_TABLE}
+    assert set(config_mod._SETTINGS_MAP) == set(by_name)
+
+    for name, (env_var, config_key, _default) in config_mod._SETTINGS_MAP.items():
+        _setting, _flag, table_env_var, table_config_key, _table_default = by_name[name]
+        assert env_var == (None if table_env_var == "(none)" else table_env_var)
+        assert config_key == table_config_key
+
+
 def test_resolve_setting_timeout_defaults_match_resolvers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
