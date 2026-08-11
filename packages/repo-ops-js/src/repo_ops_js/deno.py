@@ -180,6 +180,54 @@ def _snapshot_deno_workspace(ws: Workspace) -> dict[Path, bytes]:
     return snapshot
 
 
+def _deno_package_matches(left: str, right: str) -> bool:
+    return left == right or left.removeprefix("npm:") == right.removeprefix("npm:")
+
+
+def _release_deno_import_pins(value: object, package: str) -> bool:
+    changed = False
+    if not isinstance(value, dict):
+        return changed
+    for key, target in value.items():
+        if isinstance(target, str):
+            base, separator, version = target.rpartition("@")
+            if (
+                separator
+                and _parseable_semver_tuple(version) is not None
+                and _deno_package_matches(base, package)
+            ):
+                value[key] = base
+                changed = True
+        elif isinstance(target, dict):
+            changed |= _release_deno_import_pins(target, package)
+    return changed
+
+
+def _release_unheld_deno_pin(ws: Workspace, package: str) -> bool:
+    """Remove an exact version pin from Deno import maps for an unheld package."""
+    paths = set(_deno_import_map_paths(ws))
+    workspace_root = Path(ws.path).resolve()
+    paths.update(
+        workspace_root / name
+        for name in _DENO_CONFIG_FILENAMES
+        if (workspace_root / name).is_file()
+    )
+    changed = False
+    for path in sorted(paths, key=lambda item: item.as_posix()):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, json.JSONDecodeError):
+            continue
+        file_changed = False
+        if isinstance(payload, dict):
+            for key in ("imports", "scopes"):
+                file_changed |= _release_deno_import_pins(payload.get(key), package)
+        if file_changed:
+            path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+            changed = True
+    return changed
+
+
 def _restore_deno_workspace(ws: Workspace, before: dict[Path, bytes]) -> None:
     after = _snapshot_deno_workspace(ws)
     for path in set(before) | set(after):
@@ -493,6 +541,8 @@ def targeted_bump_behind(
             still_behind.append(change)
             continue
         snapshot = _snapshot_deno_workspace(ws)
+        if audit_override is None and hold is None:
+            _release_unheld_deno_pin(ws, change.name)
         cmd = _deno_update_command(ws)
         if audit_override is not None:
             cmd.append(_deno_version_target(change.name, audit_override))
