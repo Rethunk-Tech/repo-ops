@@ -255,16 +255,20 @@ def test_container_refresh_sha_from_config_file(tmp_path) -> None:
     """REPO_OPS_CONTAINER_REFRESH_SHA can be set via config file."""
     from repo_ops_core.config import apply_config_to_env
 
-    cfg = {"container_refresh_sha": True}
+    cfg_dir = tmp_path / "repo-ops"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.toml").write_text(
+        "container_refresh_sha = true\n", encoding="utf-8"
+    )
     monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("REPO_OPS_CONTAINER_REFRESH_SHA", raising=False)
     try:
-        apply_config_to_env(global_cfg=cfg)
+        apply_config_to_env(global_cfg=load_global_config())
         assert os.environ.get("REPO_OPS_CONTAINER_REFRESH_SHA") == "1"
     finally:
         # apply_config_to_env writes os.environ directly; monkeypatch.undo()
         # does not revert that, so pop it to avoid leaking into later tests
-        # (was flipping container digest-refresh on for unrelated tests).
         os.environ.pop("REPO_OPS_CONTAINER_REFRESH_SHA", None)
         monkeypatch.undo()
 
