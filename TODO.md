@@ -18,21 +18,13 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 ### 1.2 Package holds for remaining pin ecosystems
 
-Pre-commit `[[hold]]` ceilings are wired (filter tag-rev bumps and SHA-refresh targets; expired holds ignored; no post-apply clamp yet). Still unwired: container, GitHub Actions, submodules. Rust and Deno remain outside the enforcement matrix.
+Pre-commit `[[hold]]` ceilings are wired (filter outbound bumps, SHA-refresh targets, and post-apply clamp with loud failure when clamp cannot land; expired holds ignored). Still unwired: container, GitHub Actions, submodules. Rust and Deno remain outside the enforcement matrix.
 
 **Refs:** `docs/usage.md` § Package holds; `repo_ops_core.holds`; checkers in `packages/repo-ops-container`, `packages/repo-ops-upgrade/src/repo_ops_upgrade/actions.py`, `submodules.py`; `packages/repo-ops-rust`, `packages/repo-ops-js/src/repo_ops_js/deno.py`; pre-commit reference: `precommit.py` + `tests/test_precommit_holds.py`.
 
 **Traps:** Actions/container “versions” are often digests or floating majors (`v4` vs SHA); a semver ceiling must define digest-refresh / unpin behaviour explicitly — including interaction with `--submodule-refresh-sha` / Actions/container refresh. Audit `--fix` advisory overrides must continue to win over holds (parity with JS/Python). Go already documents same-major-only ceilings — do not invent cross-major Go holds.
 
 **Acceptance:** A hold on an Actions pin, container tag/digest, or submodule ref caps plan/apply the same way JS/Go/Python/pre-commit do; docs list each ecosystem; expired holds still skip without rewriting config.
-
-### 1.3 Pre-commit hold post-apply clamp
-
-Pre-commit holds filter outbound check/apply Changes only. A rev already sitting above a newly added ceiling is not rewritten back to the ceiling on apply.
-
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/precommit.py`; JS/Go `enforce_holds` / `_enforce_version_ceilings` for the clamp pattern; `docs/usage.md` pre-commit hold bullet.
-
-**Acceptance:** Apply clamps an above-ceiling tag (or resolvable SHA) rev down to the hold ceiling when safe; docs drop the “not clamped post-apply yet” caveat.
 
 ---
 
@@ -50,26 +42,20 @@ Fleet `plan`/`apply` now resolve per checkout: exclusions, Actions lint/policy l
 
 ---
 
-## Round 25 — Wave 25 follow-ons
+## Round 26 — Wave 26 follow-ons
 
-### 25.1 Network-only enrich: assert `allow_network=True` at call site
+### 26.1 Plan visibility for impending post-apply pre-commit clamps
 
-`test_network_only_enrichment_for_license_and_sbom` proves enrichment via network side effects / SBOM output but does not spy `enrich_license(..., allow_network=True)`.
+`check_precommit` / plan can exit clean when a rev is already at upstream latest but still above an active hold ceiling; `apply_precommit` then clamps (or raises if clamp cannot land). Matches Go/JS post-apply-only hold pattern, but plan under-reports impending rewrites.
 
-**Refs:** `tests/test_license_policy.py`; `license_enrich.enrich_license`.
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/precommit.py` (`check_precommit`, `_enforce_version_ceilings`); `docs/usage.md` Package holds.
 
-**Acceptance:** Regression patches `enrich_license` (or equivalent) and asserts `allow_network is True` on the network-only flag path.
+**Acceptance:** Plan surfaces report-only or actionable entries for above-ceiling revs that apply would clamp; docs state the plan/apply asymmetry if deliberately kept.
 
-### 25.2 Fleet go mode E2E via `check_go` path
+### 26.2 Align invalid-semver log level across SHA-refresh helpers
 
-`test_fleet_run_resolves_go_upgrade_mode_per_checkout` observes `_go_upgrade_mode` directly from a patched `process_workspace` rather than mode selection inside `check_go`.
+Pre-commit SHA refresh / hold enforce logs invalid semver tags at `warning`; submodule SHA refresh logs the same condition at `debug`.
 
-**Refs:** `tests/test_config_e2e.py`; `packages/repo-ops-go/src/repo_ops_go/go.py`.
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/precommit.py`; `packages/repo-ops-upgrade/src/repo_ops_upgrade/submodules.py`.
 
-**Acceptance:** Fleet isolation test routes through the registered go check/apply path (or otherwise proves the consumer that plan/apply actually call).
-
-### 25.3 Ruff S112 / deno SIM117 pre-existing gate noise
-
-`uv run ruff check .` is red on pre-wave HEAD for `try/except/continue` in SHA-refresh helpers (`precommit.py`, `submodules.py`) and a SIM117 nested-`with` in `tests/test_deno_check.py`. Wave 25 did not introduce these; import-sort I001s from the wave were fixed.
-
-**Acceptance:** `uv run ruff check .` exits 0 on a clean tree (fix or justified narrow pattern matching the existing `# noqa: S112` sites — prefer logging over suppressions when adding new ones).
+**Acceptance:** Same severity for the same invalid-tag skip in both helpers (pick one level and document why if asymmetric on purpose).
