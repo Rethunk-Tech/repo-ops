@@ -451,6 +451,78 @@ def test_fleet_run_resolves_upgrade_flags_per_checkout(
     }
 
 
+def test_cli_latest_overrides_global_and_checkout_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLI latest remains authoritative when global config has the same value."""
+    from repo_ops_core.config import ambient_env
+    from repo_ops_js_pnpm import pnpm as pnpm_mod
+
+    launcher = tmp_path / "launcher"
+    repo = tmp_path / "repo"
+    launcher.mkdir()
+    repo.mkdir()
+    (tmp_path / "config" / "repo-ops").mkdir(parents=True)
+    (tmp_path / "config" / "repo-ops" / "config.toml").write_text(
+        "pnpm_update_latest = true\n", encoding="utf-8"
+    )
+    (repo / "pyproject.toml").write_text(
+        "[tool.repo-ops]\npnpm_update_latest = false\n", encoding="utf-8"
+    )
+
+    workspace = Workspace(
+        path=repo,
+        ecosystem="node",
+        manager="pnpm",
+        git_repo=repo,
+        label="repo",
+    )
+    bundle = RepoBundle(
+        git_repo=repo,
+        label="repo",
+        workspaces=[WorkspaceResult(workspace)],
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.chdir(launcher)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.delenv("REPO_OPS_PNPM_UPDATE_LATEST", raising=False)
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "discover_all",
+        lambda *args, **kwargs: [workspace],
+    )
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "group_by_repo",
+        lambda found, roots: {repo: bundle},
+    )
+
+    def capture_resolution(workspace_result: WorkspaceResult, **kwargs: object):
+        captured["resolved"] = pnpm_mod._pnpm_update_latest_enabled(workspace)
+        captured["ambient_has_cli_key"] = "REPO_OPS_PNPM_UPDATE_LATEST" in (
+            ambient_env() or {}
+        )
+        return workspace_result
+
+    monkeypatch.setattr(
+        run_mod.orchestration,
+        "process_workspace",
+        capture_resolution,
+    )
+    monkeypatch.setattr(
+        run_mod.report, "print_json_report", lambda *args, **kwargs: None
+    )
+
+    rc = run_mod.run_upgrade(
+        apply=False,
+        argv=["--flat", "--json", "--skip-actions", "--latest", str(repo)],
+    )
+
+    assert rc == 0
+    assert captured == {"resolved": True, "ambient_has_cli_key": False}
+
+
 def test_fleet_run_resolves_timeouts_per_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
