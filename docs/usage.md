@@ -412,7 +412,7 @@ sidecar for non-Python repos), via a `[[hold]]` array-of-tables:
 package = "typescript"       # exact name or fnmatch glob, e.g. "@types/*"
 max_version = "6"            # ceiling: "6" blocks major 7+, "5.9" blocks >5.9, "5.9.2" is exact
 until = "2026-09-01"         # optional ISO date; omit = indefinite hold
-ecosystem = "js"             # optional filter: js|npm|yarn|pnpm|bun|go|py|pdm|pipenv|pip-tools|poetry|hatch|precommit|actions|container|submodule
+ecosystem = "js"             # optional filter: js|npm|yarn|pnpm|bun|deno|go|rust|py|pdm|pipenv|pip-tools|poetry|hatch|precommit|actions|container|submodule
 workspace = "packages/legacy-app"  # optional fnmatch glob, relative to repo root; omit = whole repo
 reason = "TS7 breaking changes; wait for ecosystem to catch up"   # free text, documentation only
 ```
@@ -440,10 +440,11 @@ max_version = "99"          # effectively unbounded — the workspace override
 workspace = "packages/modern-app"
 ```
 
-**Enforcement scope (this release):** JS (npm, yarn, pnpm, bun), Go, the Python
-managers (uv, hatch, pdm, pipenv, poetry, pip-tools), pre-commit, GitHub
-Actions, containers, and submodules. Not yet wired: Rust and Deno — same rule
-schema, just not consulted by those checkers yet.
+**Enforcement scope (this release):** JS (npm, yarn, pnpm, bun), Deno, Go,
+Rust/Cargo, the Python managers (uv, hatch, pdm, pipenv, poetry, pip-tools),
+pre-commit, GitHub Actions, containers, and submodules. Not yet wired: audit
+`--fix` advisory overrides that would lift a hold for a pin-ecosystem
+remediation (parity with JS/Python audit override paths).
 
 **How it's enforced, per ecosystem:**
 
@@ -452,11 +453,19 @@ schema, just not consulted by those checkers yet.
   resolved above its ceiling (e.g. a hold added after the fact) is clamped
   back down at the end of `apply` via a targeted install. Shows up in the
   existing `behind_latest` report bucket, not a new field.
+- **deno** — `package` matches Deno outdated identities (`npm:…`, `jsr:…`).
+  Outdated/planned and `behind_latest` targets above the ceiling are filtered;
+  targeted bumps refuse to land above the ceiling; already-above-ceiling
+  packages are clamped post-apply via selective `deno update`.
 - **go** — Go's own resolver never crosses a major version boundary on its
   own (major ≥2 lives in the import path, e.g. `.../v2`), so a Go hold caps
   a same-major minor/patch version. Enforced the same way: filtered out of
   reported changes, and clamped back down post-apply via `go get
   <path>@<=ceiling>`.
+- **rust** — `package` is the Cargo crate name. Planned `cargo update`
+  bumps above the ceiling are filtered from check; post-apply clamp uses
+  `cargo update -p <crate> --precise <version>` (prefix ceilings normalize to
+  an exact three-component version, e.g. `1.5` → `1.5.0`).
 - **uv / hatch / pdm / pipenv / poetry** — none of these has a per-package
   targeted install (`apply` regenerates the whole lockfile), so the
   post-apply clamp-down (read the lockfile, `<manager> add pkg<=ceiling` to
