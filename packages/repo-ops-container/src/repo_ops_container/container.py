@@ -902,11 +902,19 @@ def _resolve_container_hold(ws: Workspace, package: str) -> HoldRule | None:
         return None
     return resolve_hold(
         rules,
-        package=package,
+        package=_canonical_hold_package(package),
         ecosystem="container",
         manager=ws.manager,
         workspace_rel=_workspace_rel(ws),
     )
+
+
+def _canonical_hold_package(package: str) -> str:
+    """Return the stable package key used for container hold matching."""
+    host, repo = _normalize_docker_image(package)
+    if host == _DOCKER_REGISTRY_HOST:
+        host = "docker.io"
+    return f"{host}/{repo}"
 
 
 def _tag_version_for_hold(tag: str) -> str | None:
