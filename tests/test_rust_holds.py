@@ -282,3 +282,67 @@ def test_apply_rust_uses_highest_published_prefix_version(tmp_path) -> None:
         ["cargo", "update", "-p", f"{_CRATE}@1.8.0", "--precise", "1.5.7"]
     ]
     assert versions[0] == "1.5.7"
+
+
+def test_apply_rust_audit_override_without_hold(tmp_path) -> None:
+    ws = _ws(tmp_path)
+    versions = ["2.1.0"]
+    override_calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout=0):
+        if cmd == ["cargo", "update"]:
+            return _proc()
+        if cmd == ["cargo", "metadata", "--format-version", "1"]:
+            return _proc(_metadata(tuple(versions)))
+        if cmd == [
+            "cargo",
+            "update",
+            "-p",
+            f"{_CRATE}@2.1.0",
+            "--precise",
+            "2.0.0",
+        ]:
+            override_calls.append(cmd)
+            versions[:] = ["2.0.0"]
+            return _proc()
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    set_rust_audit_version_overrides({_CRATE: "2.0.0"})
+    try:
+        with (
+            patch(_GLOBAL_HOLDS_CACHE, return_value=()),
+            patch("repo_ops_rust.rust.run", side_effect=fake_run),
+        ):
+            apply_rust(ws)
+    finally:
+        clear_rust_audit_version_overrides()
+
+    assert override_calls == [
+        ["cargo", "update", "-p", f"{_CRATE}@2.1.0", "--precise", "2.0.0"]
+    ]
+    assert versions == ["2.0.0"]
+
+
+def test_apply_rust_skips_unheld_crate_without_audit_override(tmp_path) -> None:
+    ws = _ws(tmp_path)
+    versions = ["2.1.0"]
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout=0):
+        calls.append(cmd)
+        if cmd == ["cargo", "update"]:
+            return _proc()
+        if cmd == ["cargo", "metadata", "--format-version", "1"]:
+            return _proc(_metadata(tuple(versions)))
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    with (
+        patch(_GLOBAL_HOLDS_CACHE, return_value=()),
+        patch("repo_ops_rust.rust.run", side_effect=fake_run),
+    ):
+        apply_rust(ws)
+
+    assert calls == [
+        ["cargo", "update"],
+        ["cargo", "metadata", "--format-version", "1"],
+    ]
