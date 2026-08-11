@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from repo_ops_core.holds import HoldRule
 from repo_ops_models import Workspace
 from repo_ops_upgrade import precommit
@@ -94,6 +96,48 @@ def test_apply_precommit_clamps_tag_rev_above_ceiling(tmp_path, monkeypatch) -> 
     assert "rev: v1.4.0" in config.read_text(encoding="utf-8")
 
 
+def test_apply_precommit_raises_when_no_tag_satisfies_ceiling(
+    tmp_path, monkeypatch
+) -> None:
+    config = _precommit_config(tmp_path, rev="v1.5.0")
+    ws = _ws(tmp_path)
+    monkeypatch.delenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", raising=False)
+
+    with (
+        patch.object(precommit, "_global_holds_cached", return_value=(_held_rule(),)),
+        patch.object(precommit, "_repo_holds_cached", return_value=()),
+        patch.object(
+            precommit,
+            "_fetch_tags_for_repo",
+            return_value=["v1.5.0", "v1.6.0"],
+        ),
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match=r"hold: failed to clamp example/hook back to <=1\.4 \(pre-commit\)",
+        ):
+            precommit.apply_precommit(ws)
+
+
+def test_apply_precommit_raises_when_hold_tag_fetch_fails(
+    tmp_path, monkeypatch
+) -> None:
+    _precommit_config(tmp_path, rev="v1.5.0")
+    ws = _ws(tmp_path)
+    monkeypatch.delenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", raising=False)
+
+    with (
+        patch.object(precommit, "_global_holds_cached", return_value=(_held_rule(),)),
+        patch.object(precommit, "_repo_holds_cached", return_value=()),
+        patch.object(precommit, "_fetch_tags_for_repo", return_value=None),
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match=r"hold: failed to clamp example/hook back to <=1\.4 \(pre-commit\)",
+        ):
+            precommit.apply_precommit(ws)
+
+
 def test_apply_precommit_clamps_resolvable_sha_above_ceiling(
     tmp_path, monkeypatch
 ) -> None:
@@ -114,6 +158,30 @@ def test_apply_precommit_clamps_resolvable_sha_above_ceiling(
         precommit.apply_precommit(ws)
 
     assert f"rev: {'b' * 40}" in config.read_text(encoding="utf-8")
+
+
+def test_apply_precommit_does_not_clamp_expired_hold(tmp_path, monkeypatch) -> None:
+    config = _precommit_config(tmp_path, rev="v1.5.0")
+    hold_config = tmp_path / ".repo-ops.toml"
+    hold_config.write_text(
+        '[[hold]]\npackage = "example/hook"\nmax_version = "1.0"\n'
+        'until = "2020-01-01"\necosystem = "precommit"\n',
+        encoding="utf-8",
+    )
+    ws = _ws(tmp_path)
+    monkeypatch.delenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", raising=False)
+
+    with (
+        patch.object(precommit, "_global_holds_cached", return_value=()),
+        patch.object(
+            precommit,
+            "_fetch_tags_for_repo",
+            return_value=["v1.4.0", "v1.5.0"],
+        ),
+    ):
+        precommit.apply_precommit(ws)
+
+    assert "rev: v1.5.0" in config.read_text(encoding="utf-8")
 
 
 def test_expired_precommit_hold_is_ignored_without_rewriting_hold_config(
