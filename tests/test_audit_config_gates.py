@@ -44,11 +44,15 @@ def test_fail_on_env_applies_when_flag_absent(
     proving the env var (not the "high" argparse default) drove the gate.
     """
     monkeypatch.setenv("REPO_OPS_AUDIT_FAIL_ON", "critical")
-    with (
-        patch("repo_ops_audit.audit.discover_repos", return_value={}),
-        patch("repo_ops_audit.audit.run_audit", return_value=_results(high=1)),
-    ):
-        rc = main([str(tmp_path)])
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    try:
+        with (
+            patch("repo_ops_audit.audit.discover_repos", return_value={}),
+            patch("repo_ops_audit.audit.run_audit", return_value=_results(high=1)),
+        ):
+            rc = main([str(tmp_path)])
+    finally:
+        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON", None)
     assert rc == 0
 
 
@@ -114,11 +118,15 @@ def test_fail_on_unknown_env_applies_when_flag_absent(
 ) -> None:
     """REPO_OPS_AUDIT_FAIL_ON_UNKNOWN=1 + no flag → unknown findings trigger exit 1."""
     monkeypatch.setenv("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", "1")
-    with (
-        patch("repo_ops_audit.audit.discover_repos", return_value={}),
-        patch("repo_ops_audit.audit.run_audit", return_value=_results(unknown=1)),
-    ):
-        rc = main(["--fail-on", "never", str(tmp_path)])
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    try:
+        with (
+            patch("repo_ops_audit.audit.discover_repos", return_value={}),
+            patch("repo_ops_audit.audit.run_audit", return_value=_results(unknown=1)),
+        ):
+            rc = main(["--fail-on", "never", str(tmp_path)])
+    finally:
+        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", None)
     assert rc == 1
 
 
