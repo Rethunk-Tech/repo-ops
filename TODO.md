@@ -32,14 +32,6 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 ## Round 36 — Wave 36 audit carry-forwards
 
-### 36.1 npm/pnpm apply-level ghost defer
-
-Yarn/bun fold blocked initial `assert_targets_resolved` into targeted-bump retry via `unresolved_targets`. `apply_npm` / `apply_pnpm` still raise unconditionally when `changes` exist and a pin blocks — no defer when `--*-targeted-bump` is on.
-
-**Refs:** `repo_ops_js_npm.npm`; `repo_ops_js_pnpm.pnpm`; yarn/bun `_fold_blocked_into_behind` / `unresolved_targets` call sites.
-
-**Acceptance:** With targeted-bump enabled, npm/pnpm apply defer ghost-blocked targets into `targeted_bump_behind` instead of failing the workspace on the first guard.
-
 ### 36.2 Bun integration: targeted-bump releases unheld pin
 
 `tests/integration/test_bun_ghost_bump.py` covers raise-without-targeted-bump only. Yarn has `test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising`. Unit coverage for bun defer/release landed in wave36; fleet/integration path still open.
@@ -48,26 +40,22 @@ Yarn/bun fold blocked initial `assert_targets_resolved` into targeted-bump retry
 
 **Acceptance:** Integration test: bun apply with targeted-bump releases an unheld overrides pin and advances instead of raising.
 
-### 36.3 Deno targeted-bump unheld-pin parity
+---
 
-npm/pnpm/bun/yarn hold tests now cover `release_unheld_pin` wiring. Deno has no analogous holds/release-unheld targeted-bump tests.
+## Round 37 — Wave 37 audit carry-forwards
 
-**Refs:** `repo_ops_js.deno`; `tests/test_*_holds.py` yarn/npm/pnpm/bun patterns.
+### 37.1 Deno apply-level ghost defer parity
 
-**Acceptance:** Deno targeted-bump releases unheld pins and keeps held pins (unit tests mirroring other JS managers).
+npm/pnpm/yarn/bun fold blocked initial `assert_targets_resolved` into targeted-bump retry when `--*-targeted-bump` is on. `apply_deno` still hard-fails ghost before `targeted_bump_behind`.
 
-### 36.4 Dependabot JSON `excluded` key consistency
+**Refs:** `repo_ops_js.deno` `apply_deno`; npm/pnpm `_fold_blocked_into_behind` / yarn fold sites.
 
-Dependabot JSON uses `summary.excluded_repos`; plan/audit/pushed use `summary.excluded`. Pre-existing schema drift.
+**Acceptance:** With Deno targeted-bump enabled, ghost-blocked targets defer into `targeted_bump_behind` instead of failing the workspace on the first guard.
 
-**Refs:** `tests/test_dependabot_sweep.py`; `repo_ops_dependabot.dependabot`; `repo_ops_upgrade.report.build_run_summary`.
+### 37.2 Deno pin-release: `jsr:` identifiers and prefix matching
 
-**Acceptance:** One canonical JSON field name for excluded-repo counts across subcommands (with migration note if renaming).
+Unheld-pin release / package match coverage today exercises `npm:`-style import-map pins. `_deno_package_matches` only strips the `npm:` prefix; `jsr:` pins lack release/hold parity tests.
 
-### 36.5 Docs: bun remediations use `bunx`
+**Refs:** `repo_ops_js.deno` `_release_unheld_deno_pin` / `_deno_package_matches`; `tests/test_deno_holds.py`.
 
-CHANGELOG [Unreleased] documents `pm_exec_prefix("bun")` → `bunx`; `docs/usage.md` is silent.
-
-**Refs:** `docs/usage.md`; `CHANGELOG.md` [Unreleased]; `repo_ops_js.workspaces.pm_exec_prefix`.
-
-**Acceptance:** Usage docs state bun remediations execute via `bunx`, not `bun run`.
+**Acceptance:** `jsr:` (and any other supported Deno registry prefix) unheld pins release and held pins stay, with unit coverage mirroring the npm-pin cases.
