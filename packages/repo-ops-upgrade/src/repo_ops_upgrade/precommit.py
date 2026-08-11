@@ -484,10 +484,10 @@ def _resolve_hold_tag_target(
     return target_tag
 
 
-def _resolve_hold_sha_target(
-    current_sha: str, refs: list[tuple[str, str]], rule: HoldRule
-) -> str | None:
-    """Return the SHA for the highest held tag when *current_sha* violates it."""
+def _matching_sha_tags(
+    current_sha: str, refs: list[tuple[str, str]]
+) -> list[tuple[tuple[int, ...], str, str]]:
+    """Return semver tags attached to *current_sha*."""
     normalized = current_sha.lower()
     matching_tags: list[tuple[tuple[int, ...], str, str]] = []
     for tag_sha, tag in refs:
@@ -508,7 +508,14 @@ def _resolve_hold_sha_target(
             )
             continue
         matching_tags.append((tag_version, tag, tag_sha))
+    return matching_tags
 
+
+def _resolve_hold_sha_target(
+    current_sha: str, refs: list[tuple[str, str]], rule: HoldRule
+) -> str | None:
+    """Return the SHA for the highest held tag when *current_sha* violates it."""
+    matching_tags = _matching_sha_tags(current_sha, refs)
     if not matching_tags:
         return None
     current_version, current_tag, _ = max(
@@ -660,18 +667,43 @@ def _enforce_version_ceilings(
             continue
 
         if _is_sha_rev(rev):
-            target = _resolve_hold_sha_target(
-                rev, _fetch_tag_refs_for_repo(repo_url) or [], rule
-            )
+            refs = _fetch_tag_refs_for_repo(repo_url)
+            if refs is None:
+                raise RuntimeError(
+                    f"hold: failed to clamp {package} back to <={rule.max_version} "
+                    "(pre-commit): tag fetch failed while resolving SHA pin"
+                )
+            matching_tags = _matching_sha_tags(rev, refs)
+            if not matching_tags:
+                continue
+            _, current_tag, _ = max(matching_tags, key=lambda item: (item[0], item[1]))
+            if version_satisfies_ceiling(current_tag.lstrip("v"), rule.max_version):
+                continue
+            target = _resolve_hold_sha_target(rev, refs, rule)
+            if target is None:
+                raise RuntimeError(
+                    f"hold: failed to clamp {package} back to <={rule.max_version} "
+                    "(pre-commit): no available tag satisfies ceiling"
+                )
         elif _is_semver_like(rev):
-            target = _resolve_hold_tag_target(
-                rev, _fetch_tags_for_repo(repo_url) or [], rule
-            )
+            if version_satisfies_ceiling(rev.lstrip("v"), rule.max_version):
+                continue
+            tags = _fetch_tags_for_repo(repo_url)
+            if tags is None:
+                raise RuntimeError(
+                    f"hold: failed to clamp {package} back to <={rule.max_version} "
+                    "(pre-commit): tag fetch failed while resolving tag rev"
+                )
+            target = _resolve_hold_tag_target(rev, tags, rule)
+            if target is None:
+                raise RuntimeError(
+                    f"hold: failed to clamp {package} back to <={rule.max_version} "
+                    "(pre-commit): no available tag satisfies ceiling"
+                )
         else:
             continue
 
-        if target is not None:
-            line_bumps[line_no] = target
+        line_bumps[line_no] = target
     return line_bumps
 
 
