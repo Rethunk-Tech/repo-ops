@@ -27,37 +27,3 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 **Refs:** `tests/test_config_e2e.py`; `tests/test_js_manager_checkout_flags.py`; `repo_ops_js_yarn.yarn`; `repo_ops_js_bun.bun`; `repo_ops_js.deno`.
 
 **Acceptance:** Fleet e2e asserts divergent per-checkout resolution for yarn and bun update-latest/targeted-bump (and deno via fleet path, not only direct helpers).
-
----
-
-## Round 35 — Wave 35 in flight
-
-### 35.1 Dependabot on-disk exclude + JSON `excluded_repos`
-
-Mirror audit/pushed hermetic on-disk exclude tests: write `[tool.repo-ops] exclude` in `pyproject.toml`, do not mock `load_repo_config`, assert scan set + human `excluded: N repo(s)` + JSON `summary.excluded_repos`.
-
-**Owns:** `tests/test_dependabot_sweep.py`
-
-### 35.2 SETTINGS_MAP ↔ SETTINGS_TABLE parity guard
-
-One invariant: map keys == SETTINGS_TABLE names; env/config columns align per row.
-
-**Owns:** `tests/test_core_config.py`
-
-### 35.3 `resolve_setting` env coverage holes
-
-Env-backed unit tests for `actions_policy_level`, refresh-sha settings, `commit_agent_provider`, yarn/bun/pnpm/deno update-latest and bun/deno targeted-bump. No fleet e2e.
-
-**Owns:** `tests/test_config.py`
-
-### 35.4 `pm_exec_prefix` npm/pnpm parity
-
-Assert npm → `npx --yes`, pnpm → `pnpm exec` beside existing yarn/bun tests.
-
-**Owns:** `tests/test_upgrade.py`
-
-### 35.5 Doctor `--json-out` includes `skill_drift`
-
-Mutated skill install; `--json --json-out PATH` file payload lists drift; stdout path-only.
-
-**Owns:** `tests/test_doctor.py`
