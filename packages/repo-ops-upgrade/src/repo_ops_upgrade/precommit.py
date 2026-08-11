@@ -46,8 +46,7 @@ from repo_ops_core.holds import (
     load_repo_holds,
     resolve_hold,
 )
-from repo_ops_core.version_utils import semver_tuple
-from repo_ops_core.version_utils import version_satisfies_ceiling
+from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 
 # ---------------------------------------------------------------------------

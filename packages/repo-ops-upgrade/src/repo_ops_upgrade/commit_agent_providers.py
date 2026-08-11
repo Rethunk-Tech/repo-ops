@@ -8,9 +8,13 @@ from typing import Protocol, runtime_checkable
 
 from repo_ops_core.config import (
     ambient_env as _config_ambient_env,
+)
+from repo_ops_core.config import (
     load_global_config,
     load_repo_config,
     resolve_setting,
+)
+from repo_ops_core.config import (
     set_ambient_env as _config_set_ambient_env,
 )
 from repo_ops_models import RepoBundle

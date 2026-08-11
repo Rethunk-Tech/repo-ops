@@ -19,10 +19,10 @@ from repo_ops_core.cli import (
 )
 from repo_ops_core.config import (
     apply_config_to_env,
-    set_ambient_env,
     load_global_config,
     load_repo_config,
     resolve_setting,
+    set_ambient_env,
 )
 from repo_ops_core.constants import DEFAULT_ROOTS
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
