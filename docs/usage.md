@@ -344,8 +344,17 @@ lint/policy levels, Go upgrade mode, `go_work_sync`, `go_directive`, and
 config is not inherited by the rest of the fleet. CLI flags and caller-provided
 environment variables retain precedence. `timeout_check`, `timeout_apply`,
 `timeout_verify`, `find_timeout`, and `git_timeout` are also resolved from each
-checkout's config, as is `node_verify_script`. `jobs`, `yarn_max_concurrency`,
-and `*_update_latest` remain invocation/global-scoped.
+checkout's config, as is `node_verify_script`.
+
+Config scope is explicit:
+
+- **Per-checkout:** `*_update_latest`, `*_targeted_bump`, and the
+  config-backed refresh keys (`container_refresh_sha`, `precommit_refresh_sha`,
+  and `submodule_refresh_sha`) are read from each checkout. The Deno
+  `deno_update_latest` and `deno_targeted_bump` settings follow the same rule.
+- **Invocation-scoped:** `jobs` and `yarn_max_concurrency` apply to the whole
+  run. CLI flags and caller-provided environment variables override the
+  corresponding config value for every checkout.
 
 For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 `commit_agent_model` config key selects the agent model; the default is

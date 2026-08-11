@@ -317,6 +317,140 @@ def test_fleet_run_resolves_actions_config_per_checkout(
     }
 
 
+def test_fleet_run_resolves_upgrade_flags_per_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fleet workers use each checkout's latest, targeted, and refresh flags."""
+    from repo_ops_container import container as container_mod
+    from repo_ops_js_npm import npm as npm_mod
+    from repo_ops_js_pnpm import pnpm as pnpm_mod
+    from repo_ops_upgrade import precommit as precommit_mod
+    from repo_ops_upgrade import submodules as submodules_mod
+
+    launcher = tmp_path / "launcher"
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    for path in (launcher, repo_a, repo_b):
+        path.mkdir()
+    (launcher / "pyproject.toml").write_text(
+        "[tool.repo-ops]\n"
+        "pnpm_update_latest = false\n"
+        "npm_targeted_bump = false\n"
+        "container_refresh_sha = false\n",
+        encoding="utf-8",
+    )
+    (repo_a / "pyproject.toml").write_text(
+        "[tool.repo-ops]\n"
+        "pnpm_update_latest = true\n"
+        "npm_targeted_bump = true\n"
+        "container_update_latest = true\n"
+        "container_refresh_sha = true\n"
+        "precommit_update_latest = true\n"
+        "precommit_refresh_sha = true\n"
+        "submodule_update_latest = true\n"
+        "submodule_refresh_sha = true\n",
+        encoding="utf-8",
+    )
+    (repo_b / "pyproject.toml").write_text(
+        "[tool.repo-ops]\n"
+        "pnpm_update_latest = false\n"
+        "npm_targeted_bump = false\n"
+        "container_update_latest = false\n"
+        "container_refresh_sha = false\n"
+        "precommit_update_latest = false\n"
+        "precommit_refresh_sha = false\n"
+        "submodule_update_latest = false\n"
+        "submodule_refresh_sha = false\n",
+        encoding="utf-8",
+    )
+
+    workspaces = [
+        Workspace(
+            path=path,
+            ecosystem="node",
+            manager="pnpm",
+            git_repo=path,
+            label=path.name,
+        )
+        for path in (repo_a, repo_b)
+    ]
+    bundles = {
+        workspace.git_repo: RepoBundle(
+            git_repo=workspace.git_repo,
+            label=workspace.label,
+            workspaces=[WorkspaceResult(workspace)],
+        )
+        for workspace in workspaces
+    }
+    captured: dict[Path, tuple[bool, ...]] = {}
+
+    monkeypatch.chdir(launcher)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    for env_var in (
+        "REPO_OPS_PNPM_UPDATE_LATEST",
+        "REPO_OPS_NPM_TARGETED_BUMP",
+        "REPO_OPS_CONTAINER_UPDATE_LATEST",
+        "REPO_OPS_CONTAINER_REFRESH_SHA",
+        "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
+        "REPO_OPS_PRECOMMIT_REFRESH_SHA",
+        "REPO_OPS_SUBMODULE_UPDATE_LATEST",
+        "REPO_OPS_SUBMODULE_REFRESH_SHA",
+    ):
+        monkeypatch.delenv(env_var, raising=False)
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "discover_all",
+        lambda *args, **kwargs: workspaces,
+    )
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "group_by_repo",
+        lambda found, roots: bundles.copy(),
+    )
+
+    def capture_flags(workspace_result: WorkspaceResult, **kwargs: object):
+        workspace = workspace_result.workspace
+        captured[workspace.git_repo] = (
+            pnpm_mod._pnpm_update_latest_enabled(workspace),
+            npm_mod._npm_targeted_bump_enabled(workspace),
+            container_mod._container_flag_enabled(
+                "container_update_latest",
+                "REPO_OPS_CONTAINER_UPDATE_LATEST",
+                workspace,
+            ),
+            container_mod._container_flag_enabled(
+                "container_refresh_sha",
+                "REPO_OPS_CONTAINER_REFRESH_SHA",
+                workspace,
+            ),
+            precommit_mod._precommit_update_latest_enabled(workspace),
+            precommit_mod._precommit_refresh_sha_enabled(workspace),
+            submodules_mod._submodule_update_latest_enabled(workspace.git_repo),
+            submodules_mod._submodule_refresh_sha_enabled(workspace.git_repo),
+        )
+        return workspace_result
+
+    monkeypatch.setattr(
+        run_mod.orchestration,
+        "process_workspace",
+        capture_flags,
+    )
+    monkeypatch.setattr(
+        run_mod.report, "print_json_report", lambda *args, **kwargs: None
+    )
+
+    rc = run_mod.run_upgrade(
+        apply=False,
+        argv=["--flat", "--json", "--skip-actions", str(repo_a), str(repo_b)],
+    )
+
+    assert rc == 0
+    assert captured == {
+        repo_a: (True, True, True, True, True, True, True, True),
+        repo_b: (False, False, False, False, False, False, False, False),
+    }
+
+
 def test_fleet_run_resolves_timeouts_per_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
