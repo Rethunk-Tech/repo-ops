@@ -790,6 +790,10 @@ def test_audit_exclude_filters_repositories_from_config(
     assert seen == [str(keep)]
     assert "Excluded repos: 1" in capsys.readouterr().out
 
+    assert main([str(tmp_path), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["summary"]["excluded"] == 1
+
 
 def test_audit_exclude_cli_wins_over_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
