@@ -1307,6 +1307,30 @@ def scan_actions(
                                     )
                                 continue
                         # Unresolvable major / no newer digest → report only below.
+                    info = action_tag_info(action, cache=_cache)
+                    hold_rule = _resolve_actions_hold(repo, action)
+                    hold_resolution = (
+                        _resolve_hold_action_sha_target(pin, info, hold_rule)
+                        if info is not None and hold_rule is not None
+                        else None
+                    )
+                    if hold_resolution is not None:
+                        target_sha, current_tag, target_tag = hold_resolution
+                        if not policy_blocked:
+                            bumps.append(
+                                ActionBump(
+                                    workflow=rel,
+                                    action=action,
+                                    pin=pin,
+                                    latest=target_sha,
+                                    status="ok",
+                                    detail=(
+                                        f"hold clamp {current_tag} -> {target_tag} "
+                                        f"(<={hold_rule.max_version})"
+                                    ),
+                                )
+                            )
+                        continue
                     bumps.append(
                         ActionBump(
                             workflow=rel,
