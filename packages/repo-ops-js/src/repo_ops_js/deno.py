@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -51,16 +52,20 @@ def _parseable_semver_tuple(version: str) -> tuple[int, ...] | None:
 
 
 def _deno_precise_version(version: str) -> str:
-    """Normalize a numeric hold ceiling to Deno's exact-version syntax."""
+    """Normalize a numeric Deno version without inventing a patch."""
     normalized = version.strip().lstrip("vV")
     parts = normalized.split(".")
     if not parts or len(parts) > 3 or any(not part.isdigit() for part in parts):
         return normalized
-    return ".".join([*parts, *("0" for _ in range(3 - len(parts)))])
+    return ".".join(parts)
 
 
 def _deno_version_target(name: str, version: str) -> str:
     return f"{name}@{_deno_precise_version(version)}"
+
+
+def _deno_ceiling_target(name: str, version: str) -> str:
+    return f"{name}@<={_deno_precise_version(version)}"
 
 
 @cache
@@ -209,13 +214,7 @@ def _parse_deno_outdated(stdout: str) -> tuple[list[Change], list[Change]]:
 
 def _landed_deno_version(ws: Workspace, name: str) -> str | None:
     """Return the resolved lockfile version for a package name."""
-    prefix = f"{name}@"
-    versions = [
-        resolved[len(prefix) :].strip()
-        for resolved in versions_deno_lock(Path(ws.path) / "deno.lock")
-        if resolved.startswith(prefix)
-    ]
-    versions = [version for version in versions if version]
+    versions = _deno_lock_versions(ws, name)
     if not versions:
         return None
     parseable = [
@@ -226,6 +225,84 @@ def _landed_deno_version(ws: Workspace, name: str) -> str | None:
     if parseable:
         return max(parseable, key=lambda item: item[0])[1]
     return max(versions)
+
+
+def _deno_lock_versions(ws: Workspace, name: str) -> list[str]:
+    """Return all resolved lockfile versions for a package name."""
+    prefix = f"{name}@"
+    versions = [
+        resolved[len(prefix) :].strip()
+        for resolved in versions_deno_lock(Path(ws.path) / "deno.lock")
+        if resolved.startswith(prefix)
+    ]
+    return [version for version in versions if version]
+
+
+def _deno_outdated_versions(ws: Workspace, name: str) -> list[str]:
+    """Return version candidates for *name* from Deno's JSON report."""
+    proc = run(
+        ["deno", "outdated", "--json"],
+        ws.path,
+        timeout=resolve_timeout_apply(),
+    )
+    if proc.returncode != 0:
+        return []
+    try:
+        payload = json.loads(proc.stdout)
+    except (TypeError, json.JSONDecodeError):
+        return []
+
+    candidates: set[str] = set()
+
+    def collect_versions(value: object) -> None:
+        if isinstance(value, str) and _parseable_semver_tuple(value) is not None:
+            candidates.add(value)
+        elif isinstance(value, list):
+            for item in value:
+                collect_versions(item)
+
+    def visit(value: object, package_name: str | None = None) -> None:
+        if isinstance(value, dict):
+            identity = package_name
+            for key in ("name", "package", "specifier", "id"):
+                candidate = value.get(key)
+                if isinstance(candidate, str):
+                    identity = candidate
+                    break
+            if identity == name:
+                for key in (
+                    "current",
+                    "update",
+                    "wanted",
+                    "latest",
+                    "version",
+                    "versions",
+                    "available",
+                ):
+                    collect_versions(value.get(key))
+            for key, child in value.items():
+                visit(child, name if key == name else identity)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item, package_name)
+
+    visit(payload)
+    return sorted(
+        candidates,
+        key=lambda version: _parseable_semver_tuple(version) or (),
+    )
+
+
+def _highest_deno_version(versions: list[str], max_version: str) -> str | None:
+    compatible = [
+        (parsed, version)
+        for version in versions
+        if (parsed := _parseable_semver_tuple(version)) is not None
+        and version_satisfies_ceiling(version, max_version)
+    ]
+    if not compatible:
+        return None
+    return max(compatible, key=lambda item: item[0])[1]
 
 
 def _deno_lock_package_names(ws: Workspace) -> set[str]:
@@ -322,22 +399,37 @@ def _enforce_deno_version_ceilings(
             continue
         snapshot = snapshot_workspace_files(ws.path, "deno")
         proc = run(
-            ["deno", "update", _deno_version_target(name, rule.max_version)],
+            ["deno", "update", _deno_ceiling_target(name, rule.max_version)],
             ws.path,
             timeout=resolve_timeout_apply(),
         )
-        if proc.returncode != 0:
-            restore_workspace_snapshot(ws.path, snapshot, "deno")
-            raise RuntimeError(
-                f"hold: failed to clamp {name} back to <={rule.max_version} "
-                f"(deno): {proc.stderr.strip()}"
+        landed = _landed_deno_version(ws, name) if proc.returncode == 0 else None
+        if landed is not None and version_satisfies_ceiling(landed, rule.max_version):
+            continue
+
+        restore_workspace_snapshot(ws.path, snapshot, "deno")
+        candidates = [
+            *_deno_outdated_versions(ws, name),
+            *_deno_lock_versions(ws, name),
+        ]
+        target = _highest_deno_version(candidates, rule.max_version)
+        if target is not None:
+            proc = run(
+                ["deno", "update", _deno_version_target(name, target)],
+                ws.path,
+                timeout=resolve_timeout_apply(),
             )
-        landed = _landed_deno_version(ws, name)
-        if landed is None or not version_satisfies_ceiling(landed, rule.max_version):
+            landed = _landed_deno_version(ws, name) if proc.returncode == 0 else None
+        if (
+            target is None
+            or landed is None
+            or not version_satisfies_ceiling(landed, rule.max_version)
+        ):
             restore_workspace_snapshot(ws.path, snapshot, "deno")
             raise RuntimeError(
-                f"hold: {name} still at {landed or resolved} after clamp "
-                f"attempt, expected <= {rule.max_version} (deno)"
+                f"hold: failed to clamp {name} to <= {rule.max_version} (deno); "
+                "set an exact three-component max_version if the ceiling is "
+                "not published"
             )
 
 
