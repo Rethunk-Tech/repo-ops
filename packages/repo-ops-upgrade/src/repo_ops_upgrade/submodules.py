@@ -472,7 +472,10 @@ def _resolve_sha_refresh(
         try:
             version = semver_tuple(tag.lstrip("vV"))
         except Exception:
-            logger.debug("Skipping invalid semver tag %r during SHA refresh", tag)
+            logger.warning(
+                "ignoring invalid semver tag %r during submodule SHA refresh",
+                tag,
+            )
             continue
         matching.append((version, tag, tag_sha))
 
@@ -488,7 +491,10 @@ def _resolve_sha_refresh(
         try:
             version = semver_tuple(tag.lstrip("vV"))
         except Exception:
-            logger.debug("Skipping invalid semver tag %r during SHA refresh", tag)
+            logger.warning(
+                "ignoring invalid semver tag %r during submodule SHA refresh",
+                tag,
+            )
             continue
         if version and version[0] == current_version[0]:
             candidates.append((version, tag, tag_sha))
