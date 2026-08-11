@@ -90,6 +90,26 @@ def test_fail_on_unknown_env_applies_when_flag_absent(
     assert rc == 1
 
 
+def test_fail_on_unknown_from_config_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """audit_fail_on_unknown=true in config.toml enables the unknown gate."""
+    config_dir = tmp_path / "repo-ops"
+    config_dir.mkdir()
+    (config_dir / "config.toml").write_text(
+        "audit_fail_on_unknown = true\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON", raising=False)
+    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", raising=False)
+    with (
+        patch("repo_ops_audit.audit.discover_repos", return_value={}),
+        patch("repo_ops_audit.audit.run_audit", return_value=_results(unknown=1)),
+    ):
+        rc = main(["--fail-on", "never", str(tmp_path)])
+    assert rc == 1
+
+
 def test_fail_on_unknown_cli_flag_overrides_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
