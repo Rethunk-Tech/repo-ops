@@ -205,6 +205,19 @@ def test_go_work_sync_uses_repo_config(tmp_path: Path) -> None:
         assert _go_work_sync_enabled(ws) is True
 
 
+def test_go_work_sync_uses_global_config(tmp_path: Path) -> None:
+    """Global config enables go.work retry behavior without repo or ambient config."""
+    ws = _make_ws(tmp_path)
+
+    with (
+        patch.dict("os.environ", {}, clear=True),
+        patch("repo_ops_go.go.ambient_env", return_value={}),
+        patch("repo_ops_go.go.load_repo_config", return_value={}),
+        patch("repo_ops_go.go.load_global_config", return_value={"go_work_sync": True}),
+    ):
+        assert _go_work_sync_enabled(ws) is True
+
+
 def test_go_work_sync_ambient_env_overrides_repo_config(tmp_path: Path) -> None:
     """Ambient environment config takes precedence over checkout config."""
     ws = _make_ws(tmp_path)
