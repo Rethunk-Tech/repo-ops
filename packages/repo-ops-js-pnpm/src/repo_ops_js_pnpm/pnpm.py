@@ -16,7 +16,7 @@ from repo_ops_core.config import (
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
-from repo_ops_js.guards import assert_targets_resolved
+from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 from repo_ops_js.holds import (
     direct_dependency_names,
     enforce_holds,
@@ -328,6 +328,22 @@ def _read_pkg_json(mdir: Path) -> dict[str, object]:
         return {}
 
 
+def _fold_blocked_into_behind(
+    ws: Workspace, guardable: list[Change], behind: list[Change]
+) -> list[Change]:
+    """Merge still-unresolved targets into ``behind`` by package name."""
+    blocked = unresolved_targets(ws, guardable)
+    if not blocked:
+        return behind
+    behind_names = {c.name for c in behind}
+    merged = list(behind)
+    for change, _resolved in blocked:
+        if change.name not in behind_names:
+            merged.append(change)
+            behind_names.add(change.name)
+    return merged
+
+
 def apply_pnpm(ws: Workspace) -> list[Change]:
     """Apply pnpm upgrades; returns still-behind deps after optional targeted bumps.
 
@@ -360,7 +376,10 @@ def apply_pnpm(ws: Workspace) -> list[Change]:
         if proc2.returncode != 0:
             raise RuntimeError(proc2.stderr.strip() or "pnpm install failed")
         if changes:
-            assert_targets_resolved(ws, changes, manager="pnpm")
+            if _pnpm_targeted_bump_enabled(ws):
+                behind = _fold_blocked_into_behind(ws, changes, behind)
+            else:
+                assert_targets_resolved(ws, changes, manager="pnpm")
     applied, behind = targeted_bump_behind(ws, behind)
     # End-of-apply hold safety net: this is the PRIMARY mechanism protecting a
     # held package from `pnpm update -r --latest` above (a blanket, bulk
