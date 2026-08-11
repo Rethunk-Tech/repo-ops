@@ -16,15 +16,13 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 **Acceptance:** A `v*` tag run publishes to PyPI; `pip install repo-ops` / `uv tool install repo-ops` from PyPI matches the GitHub Release version; [#124](https://github.com/Rethunk-Tech/repo-ops/issues/124) closed with a verified publish log.
 
-### 1.2 Package holds for remaining pin ecosystems
+### 1.2 Package holds residuals (Rust / Deno / audit override)
 
-Pre-commit `[[hold]]` ceilings are wired (filter outbound bumps, SHA-refresh targets, and post-apply clamp with loud failure when clamp cannot land; expired holds ignored). Still unwired: container, GitHub Actions, submodules. Rust and Deno remain outside the enforcement matrix.
+Actions, container, and submodule `[[hold]]` ceilings are wired (filter, plan clamp visibility, post-apply clamp, expired holds). Still unwired: Rust and Deno. Pin-ecosystem audit `--fix` advisory overrides (parity with JS/Python) remain deferred.
 
-**Refs:** `docs/usage.md` § Package holds; `repo_ops_core.holds`; checkers in `packages/repo-ops-container`, `packages/repo-ops-upgrade/src/repo_ops_upgrade/actions.py`, `submodules.py`; `packages/repo-ops-rust`, `packages/repo-ops-js/src/repo_ops_js/deno.py`; pre-commit reference: `precommit.py` + `tests/test_precommit_holds.py`.
+**Refs:** `docs/usage.md` § Package holds; `repo_ops_core.holds`; `packages/repo-ops-rust`; `packages/repo-ops-js/src/repo_ops_js/deno.py`; JS `audit_override` pattern in `repo_ops_js`.
 
-**Traps:** Actions/container “versions” are often digests or floating majors (`v4` vs SHA); a semver ceiling must define digest-refresh / unpin behaviour explicitly — including interaction with `--submodule-refresh-sha` / Actions/container refresh. Audit `--fix` advisory overrides must continue to win over holds (parity with JS/Python). Go already documents same-major-only ceilings — do not invent cross-major Go holds.
-
-**Acceptance:** A hold on an Actions pin, container tag/digest, or submodule ref caps plan/apply the same way JS/Go/Python/pre-commit do; docs list each ecosystem; expired holds still skip without rewriting config.
+**Acceptance:** Rust/Deno holds match other ecosystems; audit `--fix` wins over holds where an override path exists; docs list each.
 
 ---
 
@@ -32,9 +30,9 @@ Pre-commit `[[hold]]` ceilings are wired (filter outbound bumps, SHA-refresh tar
 
 ### 9.1 Fleet apply: remaining per-checkout config keys
 
-Fleet `plan`/`apply` now resolve per checkout: exclusions, Actions lint/policy levels, commit-agent model/provider, and `go_upgrade_mode` (via ambient-env snapshot so injected global config cannot beat per-repo). Other documented keys (`jobs`, timeouts, yarn concurrency, verify profile wiring beyond existing `verify.py` path, `*_update_latest` / `*_targeted_bump`, etc.) remain invocation/global-scoped.
+Fleet `plan`/`apply` now resolve per checkout: exclusions, Actions lint/policy levels, commit-agent model/provider, `go_upgrade_mode`, and `go_work_sync` (via ambient-env snapshot). Other documented keys (`jobs`, timeouts, yarn concurrency, verify profile wiring beyond existing `verify.py` path, `*_update_latest` / `*_targeted_bump`, etc.) remain invocation/global-scoped.
 
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py` (`_ambient_env`, per-bundle exclude / actions resolve); `repo_ops_core.config` (`set_ambient_env` / `ambient_env` / `resolve_setting`); `packages/repo-ops-go/src/repo_ops_go/go.py` (`_go_upgrade_mode`); `docs/usage.md` config section; `tests/test_config_e2e.py`.
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/run.py`; `repo_ops_core.config`; `packages/repo-ops-go/src/repo_ops_go/go.py`; `docs/usage.md` config section; `tests/test_config_e2e.py`.
 
 **Traps:** Do not mutate process-wide env per checkout mid-flight. Prefer resolve-at-use with ambient snapshot over `apply_config_to_env` swaps. `jobs` / yarn concurrency are process-global thread-pool knobs — do not pretend they are per-checkout without an architecture change.
 
@@ -42,20 +40,20 @@ Fleet `plan`/`apply` now resolve per checkout: exclusions, Actions lint/policy l
 
 ---
 
-## Round 26 — Wave 26 follow-ons
+## Round 27 — Wave 27 audit carry-forwards
 
-### 26.1 Plan visibility for impending post-apply pre-commit clamps
+### 27.1 `go_work_sync` global-config-only precedence test
 
-`check_precommit` / plan can exit clean when a rev is already at upstream latest but still above an active hold ceiling; `apply_precommit` then clamps (or raises if clamp cannot land). Matches Go/JS post-apply-only hold pattern, but plan under-reports impending rewrites.
+`_go_work_sync_enabled` mirrors `_go_upgrade_mode` (repo / ambient / CLI). Tests cover those three; missing coverage for `global_cfg`-only enablement with empty repo config and empty ambient.
 
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/precommit.py` (`check_precommit`, `_enforce_version_ceilings`); `docs/usage.md` Package holds.
+**Refs:** `packages/repo-ops-go/src/repo_ops_go/go.py` (`_go_work_sync_enabled`); `tests/test_go_env_classify.py`.
 
-**Acceptance:** Plan surfaces report-only or actionable entries for above-ceiling revs that apply would clamp; docs state the plan/apply asymmetry if deliberately kept.
+**Acceptance:** A focused test proves global config alone enables `go_work_sync` when repo/ambient/CLI are unset.
 
-### 26.2 Align invalid-semver log level across SHA-refresh helpers
+### 27.2 Actions workspace-scoped holds limitation
 
-Pre-commit SHA refresh / hold enforce logs invalid semver tags at `warning`; submodule SHA refresh logs the same condition at `debug`.
+`_resolve_actions_hold` hardcodes `workspace_rel="."`, so workspace-scoped `[[hold]]` rules cannot target per-workflow paths. Acceptable for repo-level Actions pins unless monorepo workflow scoping is required.
 
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/precommit.py`; `packages/repo-ops-upgrade/src/repo_ops_upgrade/submodules.py`.
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/actions.py` (`_resolve_actions_hold`); `docs/usage.md` § Package holds actions bullet.
 
-**Acceptance:** Same severity for the same invalid-tag skip in both helpers (pick one level and document why if asymmetric on purpose).
+**Acceptance:** Document the limitation in usage, or pass a workflow-relative path if monorepo scoping is chosen later.
