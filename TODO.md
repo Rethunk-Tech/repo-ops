@@ -27,3 +27,37 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 **Refs:** `tests/test_config_e2e.py`; `tests/test_js_manager_checkout_flags.py`; `repo_ops_js_yarn.yarn`; `repo_ops_js_bun.bun`; `repo_ops_js.deno`.
 
 **Acceptance:** Fleet e2e asserts divergent per-checkout resolution for yarn and bun update-latest/targeted-bump (and deno via fleet path, not only direct helpers).
+
+---
+
+## Round 36 — Wave 36 in flight
+
+### 36.1 Plan on-disk exclude + JSON `summary.excluded`
+
+Hermetic two-repo fixture; `[tool.repo-ops] exclude` in `pyproject.toml`; assert plan human footer + JSON `summary.excluded`.
+
+**Owns:** `tests/test_plan_json_output.py`
+
+### 36.2 npm/pnpm unheld-pin targeted-bump parity
+
+Mirror yarn’s release-unheld / keep-held resolutions/overrides tests for npm and pnpm `targeted_bump_behind`.
+
+**Owns:** `tests/test_npm_holds.py`, `tests/test_pnpm_holds.py`
+
+### 36.3 Bun unheld-pin + targeted-bump ghost defer
+
+Holds parity for unheld/held pins; unit test that targeted-bump defers initial ghost raise into retry.
+
+**Owns:** `tests/test_bun_holds.py`, `tests/test_bun_apply.py`
+
+### 36.4 `unresolved_targets` + monorepo pin release
+
+Unit-test `unresolved_targets`; extend `release_unheld_pin` for nested workspace `package.json`.
+
+**Owns:** `tests/test_js_guards.py` (new), `tests/test_overrides_release_unheld_pin.py`
+
+### 36.5 Inventory `--sort` column coverage
+
+Parametrize remaining sort keys: `name`, `versions`, `on-disk`, `edges` (direct already covered).
+
+**Owns:** `tests/test_inventory.py`
