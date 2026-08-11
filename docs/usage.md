@@ -466,4 +466,5 @@ consulted by those checkers yet.
   step — `requirements.in` itself is never modified.
 - **pre-commit** — tag rev bumps and SHA-refresh targets whose resolved tag
   version exceeds a hold ceiling are filtered out of check and apply. Existing
-  revs already above a ceiling are not clamped post-apply yet.
+  tag revs, and resolvable SHA revs, already above a ceiling are clamped
+  post-apply to the highest available tag within the ceiling.
