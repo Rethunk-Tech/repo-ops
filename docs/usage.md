@@ -444,9 +444,10 @@ workspace = "packages/modern-app"
 
 **Enforcement scope (this release):** JS (npm, yarn, pnpm, bun), Deno, Go,
 Rust/Cargo, the Python managers (uv, hatch, pdm, pipenv, poetry, pip-tools),
-pre-commit, GitHub Actions, containers, and submodules. Not yet wired: audit
-`--fix` advisory overrides that would lift a hold for a pin-ecosystem
-remediation (parity with JS/Python audit override paths).
+pre-commit, GitHub Actions, containers, and submodules. `audit --fix`
+advisory overrides take precedence over active holds for JS, Deno, Rust/Cargo,
+and Python pin remediations, so a known-safe advisory target can lift a hold
+for that remediation only.
 
 **How it's enforced, per ecosystem:**
 
@@ -460,7 +461,8 @@ remediation (parity with JS/Python audit override paths).
   targeted bumps refuse to land above the ceiling; already-above-ceiling
   packages are clamped post-apply via selective `deno update` to a version
   within the ceiling; a prefix ceiling does not require its exact `.0` patch
-  to exist.
+  to exist. An advisory-safe version supplied by `audit --fix` overrides the
+  hold for that remediation.
 - **go** — Go's own resolver never crosses a major version boundary on its
   own (major ≥2 lives in the import path, e.g. `.../v2`), so a Go hold caps
   a same-major minor/patch version. Enforced the same way: filtered out of
@@ -472,6 +474,8 @@ remediation (parity with JS/Python audit override paths).
   registry version within a prefix ceiling. If no such version can be
   resolved, the clamp fails clearly and suggests an exact three-component
   `max_version`; it does not assume that `1.5.0` exists for a `1.5` ceiling.
+  An advisory-safe version supplied by `audit --fix` overrides the hold for
+  that crate and is used as the exact Cargo target.
 - **uv / hatch / pdm / pipenv / poetry** — none of these has a per-package
   targeted install (`apply` regenerates the whole lockfile), so the
   post-apply clamp-down (read the lockfile, `<manager> add pkg<=ceiling` to

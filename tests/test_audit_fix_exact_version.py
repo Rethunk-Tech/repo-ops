@@ -469,6 +469,49 @@ def test_apply_remediations_clears_npm_overrides_after_workspace(
     )
 
 
+def test_apply_remediations_sets_rust_overrides_before_process_workspace(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "Cargo.toml").write_text('[package]\nname = "demo"\n', encoding="utf-8")
+
+    items = [
+        RemediationItem(
+            package="serde",
+            safe_version=">= 2.0.0",
+            ecosystem="rust",
+            workspace=str(tmp_path),
+        )
+    ]
+
+    overrides_captured: list[dict[str, str]] = []
+
+    def _fake_process_workspace(result, **kwargs):
+        from repo_ops_rust.rust import _AUDIT_VERSION_OVERRIDES
+
+        overrides_captured.append(dict(_AUDIT_VERSION_OVERRIDES))
+        mock = MagicMock()
+        mock.status = "ok"
+        mock.error = None
+        mock.changes = []
+        return mock
+
+    with (
+        patch("repo_ops_audit.audit._try_register_manager", return_value=True),
+        patch("repo_ops_core.git.git_repo_for", return_value=tmp_path),
+        patch(
+            "repo_ops_upgrade.orchestration.process_workspace",
+            side_effect=_fake_process_workspace,
+        ),
+    ):
+        apply_remediations(items)
+
+    assert overrides_captured == [{"serde": "2.0.0"}]
+
+    from repo_ops_rust.rust import _AUDIT_VERSION_OVERRIDES
+
+    assert _AUDIT_VERSION_OVERRIDES == {}
+
+
 def test_apply_remediations_sets_pnpm_overrides(tmp_path: Path) -> None:
     """apply_remediations injects pnpm version overrides for pnpm workspaces."""
     (tmp_path / "package.json").write_text("{}", encoding="utf-8")
