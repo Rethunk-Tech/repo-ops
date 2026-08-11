@@ -1107,6 +1107,19 @@ def check_container(ws: Workspace) -> list[Change]:
                 )
                 continue
 
+            rule = _resolve_container_hold(ws, image)
+            if rule is not None:
+                clamp_target = _resolve_hold_tag_target(tag, available, rule)
+                if clamp_target is not None:
+                    changes.append(
+                        Change(
+                            name=f"{image}:{tag}",
+                            from_ver=tag,
+                            to=clamp_target,
+                        )
+                    )
+                    continue
+
             latest = _resolve_latest_tag(
                 tag, available, allow_cross_major=allow_cross_major
             )
