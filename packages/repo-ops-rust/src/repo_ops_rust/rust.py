@@ -11,7 +11,9 @@ from __future__ import annotations
 import json
 import re
 from functools import cache
+from http.client import HTTPSConnection
 from pathlib import Path
+from urllib.parse import quote, urlencode
 
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.holds import (
@@ -58,11 +60,93 @@ def _resolve_crate_hold(ws: Workspace, crate_name: str) -> HoldRule | None:
     )
 
 
-def _cargo_precise_version(max_version: str) -> str:
-    """Normalize a hold ceiling to an exact Cargo version target."""
+def _cargo_registry_versions(crate_name: str) -> tuple[str, ...]:
+    """Return published, non-yanked versions for a crate."""
+    endpoint = f"/api/v1/crates/{quote(crate_name, safe='')}/versions"
+    versions: set[str] = set()
+    page = 1
+    while True:
+        query = urlencode({"page": page, "per_page": 100})
+        connection = HTTPSConnection(
+            "crates.io",
+            timeout=resolve_timeout_check(),
+        )
+        try:
+            connection.request(
+                "GET",
+                f"{endpoint}?{query}",
+                headers={"User-Agent": "repo-ops"},
+            )
+            response = connection.getresponse()
+            if not 200 <= response.status < 300:
+                raise RuntimeError(
+                    f"registry lookup returned HTTP {response.status} for {crate_name}"
+                )
+            document = json.loads(response.read().decode("utf-8"))
+        except (OSError, UnicodeError, ValueError) as exc:
+            raise RuntimeError(
+                f"registry lookup failed for {crate_name}: {exc}"
+            ) from exc
+        finally:
+            connection.close()
+        if not isinstance(document, dict):
+            raise RuntimeError(
+                f"registry lookup returned invalid data for {crate_name}"
+            )
+
+        entries = document.get("versions")
+        if not isinstance(entries, list):
+            raise RuntimeError(f"registry lookup returned no versions for {crate_name}")
+        for entry in entries:
+            if not isinstance(entry, dict) or entry.get("yanked") is True:
+                continue
+            version = entry.get("num")
+            if isinstance(version, str):
+                versions.add(version)
+
+        meta = document.get("meta")
+        next_page = meta.get("next_page") if isinstance(meta, dict) else None
+        if next_page in (None, ""):
+            break
+        try:
+            next_page_number = int(next_page)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"registry lookup returned invalid pagination for {crate_name}"
+            ) from exc
+        if next_page_number <= page:
+            raise RuntimeError(
+                f"registry lookup returned invalid pagination for {crate_name}"
+            )
+        page = next_page_number
+    return tuple(versions)
+
+
+def _cargo_precise_version(crate_name: str, max_version: str) -> str:
+    """Resolve a hold ceiling to an exact published Cargo version."""
     parts = [part for part in max_version.strip().lstrip("v").split(".") if part]
-    padded = (parts + ["0"] * 3)[:3]
-    return ".".join(padded)
+    if len(parts) == 3:
+        return ".".join(parts)
+
+    try:
+        candidates = [
+            version
+            for version in _cargo_registry_versions(crate_name)
+            if version_satisfies_ceiling(version, max_version)
+        ]
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"hold: failed to resolve {crate_name} ceiling {max_version!r} "
+            "from the Cargo registry; use an exact three-component "
+            "max_version for a published release"
+        ) from exc
+    if candidates:
+        return max(candidates, key=semver_tuple)
+    raise RuntimeError(
+        f"hold: no published {crate_name} version satisfies ceiling "
+        f"{max_version!r}; use an exact three-component max_version for a "
+        "published release"
+    )
 
 
 def _cargo_resolved_versions(ws: Workspace) -> dict[str, tuple[str, ...]]:
@@ -143,7 +227,7 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
         target = (
             max(candidates, key=semver_tuple)
             if candidates
-            else _cargo_precise_version(rule.max_version)
+            else _cargo_precise_version(crate_name, rule.max_version)
         )
         for resolved_version in violating:
             proc = run(
