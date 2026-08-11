@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from repo_ops_lockfiles.license_enrich import _cache_path
+from repo_ops_lockfiles.license_enrich import _cache_path, enrich_license
 from repo_ops_lockfiles.license_policy import (
     UNKNOWN_LICENSE,
     PackageLicense,
@@ -747,6 +747,11 @@ def test_network_only_enrichment_for_license_and_sbom(
         return response
 
     monkeypatch.setattr("urllib.request.urlopen", network_urlopen)
+    enrich_spy = MagicMock(wraps=enrich_license)
+    monkeypatch.setattr(
+        "repo_ops_lockfiles.license_policy.enrich_license",
+        enrich_spy,
+    )
     rc = main(
         [
             "--enrich-licenses-network",
@@ -761,6 +766,8 @@ def test_network_only_enrichment_for_license_and_sbom(
     payload = json.loads(capsys.readouterr().out)
     assert payload["summary"]["unknown"] == 0
     assert calls == [url]
+    assert enrich_spy.call_args is not None
+    assert enrich_spy.call_args.kwargs["allow_network"] is True
 
     cache_file = _cache_path(xdg_cache / "repo-ops" / "licenses", url)
     cache_file.unlink()
