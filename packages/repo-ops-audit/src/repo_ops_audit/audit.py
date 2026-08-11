@@ -2307,6 +2307,22 @@ def apply_remediations(
                 item.safe_version
             )
 
+    _rust_ws_overrides: dict[str, dict[str, str]] = {}
+    for item in remediations:
+        if item.ecosystem == "rust":
+            safe_version = _extract_min_version_from_constraint(item.safe_version)
+            if safe_version:
+                _rust_ws_overrides.setdefault(item.workspace, {})[item.package] = (
+                    safe_version
+                )
+
+    _deno_ws_overrides: dict[str, dict[str, str]] = {}
+    for item in remediations:
+        if item.ecosystem == "deno":
+            _deno_ws_overrides.setdefault(item.workspace, {})[item.package] = (
+                item.safe_version
+            )
+
     # Go workspaces bypass the registry/orchestration path entirely: apply
     # directly via `go get`/`go mod tidy` (mirrors the standalone
     # `_apply_cargo_targeted` pattern) rather than going through
@@ -2331,7 +2347,16 @@ def apply_remediations(
             if shutil.which("deno") is None:
                 outcomes.append(ApplyOutcome(ws_path, "skip", "deno not on PATH"))
             else:
-                outcomes.append(_apply_deno_audit(ws_path, do_verify=do_verify))
+                from repo_ops_js.deno import (
+                    clear_deno_audit_version_overrides,
+                    set_deno_audit_version_overrides,
+                )
+
+                set_deno_audit_version_overrides(_deno_ws_overrides.get(ws_path, {}))
+                try:
+                    outcomes.append(_apply_deno_audit(ws_path, do_verify=do_verify))
+                finally:
+                    clear_deno_audit_version_overrides()
             continue
 
         if not _try_register_manager(manager):
@@ -2345,6 +2370,7 @@ def apply_remediations(
         # For JS workspaces: inject advisory-safe version overrides so the
         # targeted-bump path uses `pkg@safe_version` instead of `pkg@latest`.
         _js_clear = None
+        _rust_clear = None
         if ecosystem == "node":
             ws_overrides = _js_ws_overrides.get(ws_path, {})
             if ws_overrides:
@@ -2380,6 +2406,16 @@ def apply_remediations(
 
                     set_bun_audit_version_overrides(ws_overrides)
                     _js_clear = clear_bun_audit_version_overrides
+        elif ecosystem == "rust":
+            ws_overrides = _rust_ws_overrides.get(ws_path, {})
+            if ws_overrides:
+                from repo_ops_rust.rust import (
+                    clear_rust_audit_version_overrides,
+                    set_rust_audit_version_overrides,
+                )
+
+                set_rust_audit_version_overrides(ws_overrides)
+                _rust_clear = clear_rust_audit_version_overrides
 
         path = Path(ws_path)
         git_root = git_repo_for(path) or path
@@ -2416,6 +2452,8 @@ def apply_remediations(
             # Always clear JS overrides so they don't bleed into subsequent calls.
             if _js_clear is not None:
                 _js_clear()
+            if _rust_clear is not None:
+                _rust_clear()
 
     return outcomes
 
