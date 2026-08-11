@@ -283,8 +283,10 @@ def test_targeted_bump_releases_unheld_overrides_pin(
     _seed_is_odd_pin(tmp_path)
     monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
     ws = _ws(tmp_path)
+    captured_cmds: list[list[str]] = []
 
     def _fake_run(cmd, cwd, timeout=600, env=None):
+        captured_cmds.append(list(cmd))
         (tmp_path / "node_modules" / "is-odd" / "package.json").write_text(
             json.dumps({"version": "1.0.0"}), encoding="utf-8"
         )
@@ -299,6 +301,7 @@ def test_targeted_bump_releases_unheld_overrides_pin(
 
     assert not behind
     assert applied == [Change("is-odd", "0.1.2", "1.0.0")]
+    assert captured_cmds == [["bun", "add", "is-odd@latest"]]
     pkg_after = json.loads((tmp_path / "package.json").read_text(encoding="utf-8"))
     assert "is-odd" not in pkg_after.get("overrides", {})
 
