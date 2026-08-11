@@ -342,8 +342,10 @@ For multi-root `plan` and `apply` runs, repository exclusions, Actions
 lint/policy levels, Go upgrade mode, `go_work_sync`, `go_directive`, and
 `go_toolchain` are resolved from each checkout's config; the launch checkout's
 config is not inherited by the rest of the fleet. CLI flags and caller-provided
-environment variables retain precedence. Timeouts, jobs, and `*_update_latest`
-remain invocation/global-scoped for now.
+environment variables retain precedence. `timeout_check`, `timeout_apply`,
+`timeout_verify`, `find_timeout`, and `git_timeout` are also resolved from each
+checkout's config. `jobs`, `yarn_max_concurrency`, and `*_update_latest` remain
+invocation/global-scoped.
 
 For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 `commit_agent_model` config key selects the agent model; the default is
@@ -456,7 +458,9 @@ remediation (parity with JS/Python audit override paths).
 - **deno** — `package` matches Deno outdated identities (`npm:…`, `jsr:…`).
   Outdated/planned and `behind_latest` targets above the ceiling are filtered;
   targeted bumps refuse to land above the ceiling; already-above-ceiling
-  packages are clamped post-apply via selective `deno update`.
+  packages are clamped post-apply via selective `deno update` to a version
+  within the ceiling; a prefix ceiling does not require its exact `.0` patch
+  to exist.
 - **go** — Go's own resolver never crosses a major version boundary on its
   own (major ≥2 lives in the import path, e.g. `.../v2`), so a Go hold caps
   a same-major minor/patch version. Enforced the same way: filtered out of
@@ -464,8 +468,10 @@ remediation (parity with JS/Python audit override paths).
   <path>@<=ceiling>`.
 - **rust** — `package` is the Cargo crate name. Planned `cargo update`
   bumps above the ceiling are filtered from check; post-apply clamp uses
-  `cargo update -p <crate> --precise <version>` (prefix ceilings normalize to
-  an exact three-component version, e.g. `1.5` → `1.5.0`).
+  `cargo update -p <crate> --precise <version>` with the highest published
+  registry version within a prefix ceiling. If no such version can be
+  resolved, the clamp fails clearly and suggests an exact three-component
+  `max_version`; it does not assume that `1.5.0` exists for a `1.5` ceiling.
 - **uv / hatch / pdm / pipenv / poetry** — none of these has a per-package
   targeted install (`apply` regenerates the whole lockfile), so the
   post-apply clamp-down (read the lockfile, `<manager> add pkg<=ceiling` to
