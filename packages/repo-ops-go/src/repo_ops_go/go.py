@@ -147,9 +147,23 @@ def _valid_go_get_target(target: str) -> bool:
 def _process_env_cli_override(env_var: str) -> str | None:
     """Return a process value changed after the ambient environment snapshot."""
     ambient = ambient_env()
-    if ambient is None or env_var not in ambient:
+    if ambient is None:
         return None
     process_value = os.environ.get(env_var)
+    if env_var not in ambient:
+        if process_value is None:
+            return None
+        setting = env_var.removeprefix("REPO_OPS_").lower()
+        global_value = load_global_config().get(setting)
+        if global_value is True:
+            global_value = "1"
+        elif global_value is False:
+            global_value = "0"
+        return (
+            None
+            if global_value is not None and process_value == str(global_value)
+            else process_value
+        )
     return process_value if process_value != ambient[env_var] else None
 
 
