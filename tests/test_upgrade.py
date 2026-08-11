@@ -190,7 +190,10 @@ def test_apply_rust_invokes_cargo_update(monkeypatch):
 
     with patch("repo_ops_rust.rust.run", fake_run_ok):
         apply_rust(ws)
-    assert calls == [["cargo", "update"]]
+    assert calls == [
+        ["cargo", "update"],
+        ["cargo", "metadata", "--format-version", "1"],
+    ]
 
     def fake_run_fail(cmd, cwd, timeout=600, env=None):
         return subprocess.CompletedProcess(
