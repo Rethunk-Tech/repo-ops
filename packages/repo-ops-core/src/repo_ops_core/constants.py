@@ -76,11 +76,14 @@ def _resolve_timeout(setting: str, env_var: str, default: int) -> int:
     from repo_ops_core.config import (
         active_checkout_config,
         ambient_env,
+        load_global_config,
         resolve_setting,
     )
 
     config_layers = active_checkout_config()
-    global_cfg, repo_cfg = config_layers or ({}, {})
+    global_cfg, repo_cfg = (
+        config_layers if config_layers is not None else (load_global_config(), {})
+    )
     raw = resolve_setting(
         setting,
         global_cfg=global_cfg,

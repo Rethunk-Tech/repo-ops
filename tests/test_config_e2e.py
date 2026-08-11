@@ -420,6 +420,22 @@ def test_fleet_run_resolves_timeouts_per_checkout(
     }
 
 
+def test_timeout_resolver_uses_global_config_outside_checkout_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Discovery-time timeout resolution retains the global config layer."""
+    config_dir = tmp_path / "config" / "repo-ops"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text("timeout_check = 31\n", encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.delenv("REPO_OPS_TIMEOUT_CHECK", raising=False)
+    set_ambient_env({})
+    try:
+        assert resolve_timeout_check() == 31
+    finally:
+        set_ambient_env(None)
+
+
 def test_node_verify_script_uses_ambient_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
