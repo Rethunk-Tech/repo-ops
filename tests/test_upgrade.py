@@ -118,6 +118,18 @@ def test_remediations_pm_exec_prefix_bun():
     assert pm_exec_prefix("bun") == ["bunx"]
 
 
+def test_remediations_pm_exec_prefix_npm():
+    from repo_ops_js.workspaces import pm_exec_prefix
+
+    assert pm_exec_prefix("npm") == ["npx", "--yes"]
+
+
+def test_remediations_pm_exec_prefix_pnpm():
+    from repo_ops_js.workspaces import pm_exec_prefix
+
+    assert pm_exec_prefix("pnpm") == ["pnpm", "exec"]
+
+
 def test_resolved_version_from_node_modules_scoped(tmp_path):
     from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 
