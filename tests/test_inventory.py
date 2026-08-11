@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from repo_ops_inventory.counting import (
     count_dep_edges,
     count_installed_node,
@@ -433,6 +435,73 @@ def test_inventory_sort_direct_descending(tmp_path: Path, capsys) -> None:
     rows = json.loads(capsys.readouterr().out)["rows"]
     assert [r["name"] for r in rows] == ["org/high", "org/low"]
     assert rows[0]["direct"] >= rows[1]["direct"]
+
+
+@pytest.mark.parametrize(
+    ("sort_key", "row_key", "expected_names"),
+    [
+        ("name", "name", ["org/alpha", "org/zeta"]),
+        ("versions", "versions", ["org/zeta", "org/alpha"]),
+        ("on-disk", "on_disk", ["org/alpha", "org/zeta"]),
+        ("edges", "edges", ["org/zeta", "org/alpha"]),
+    ],
+)
+def test_inventory_sort_remaining_columns(
+    tmp_path: Path, capsys, sort_key: str, row_key: str, expected_names: list[str]
+) -> None:
+    import json
+
+    from repo_ops_inventory.scan import main as inventory_main
+
+    org = tmp_path / "org"
+    alpha = org / "alpha"
+    zeta = org / "zeta"
+    alpha.mkdir(parents=True)
+    zeta.mkdir(parents=True)
+
+    (alpha / "package.json").write_text(json.dumps({"dependencies": {"a": "^1.0.0"}}))
+    (alpha / "package-lock.json").write_text(
+        json.dumps({"packages": {"node_modules/a": {"version": "1.0.0"}}})
+    )
+    for package in ("a", "b"):
+        package_dir = alpha / "node_modules" / package
+        package_dir.mkdir(parents=True)
+        (package_dir / "package.json").write_text(json.dumps({"name": package}))
+
+    (zeta / "package.json").write_text(
+        json.dumps(
+            {
+                "dependencies": {
+                    "a": "^1.0.0",
+                    "b": "^2.0.0",
+                    "c": "^3.0.0",
+                }
+            }
+        )
+    )
+    (zeta / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/a": {"version": "1.0.0"},
+                    "node_modules/b": {"version": "2.0.0"},
+                    "node_modules/c": {"version": "3.0.0"},
+                }
+            }
+        )
+    )
+    package_dir = zeta / "node_modules" / "a"
+    package_dir.mkdir(parents=True)
+    (package_dir / "package.json").write_text(json.dumps({"name": "a"}))
+
+    rc = inventory_main([str(tmp_path), "--json", "--sort", sort_key])
+    assert rc == 0
+    rows = json.loads(capsys.readouterr().out)["rows"]
+    assert [row["name"] for row in rows] == expected_names
+    if sort_key == "name":
+        assert rows[0][row_key] <= rows[1][row_key]
+    else:
+        assert rows[0][row_key] > rows[1][row_key]
 
 
 def test_inventory_top_truncates_human_output(tmp_path: Path, capsys) -> None:
