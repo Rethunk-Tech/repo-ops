@@ -130,10 +130,11 @@ def test_apply_raises_when_hold_cannot_be_clamped(tmp_path: Path) -> None:
             submodules,
             "_fetch_remote_tags",
             return_value=["v1.5.0", "v1.6.0"],
-        ),pytest.raises(
-        RuntimeError,
-        match=r"hold: failed to clamp sub back to <=1\.4 \(submodule\)",
-    )
+        ),
+        pytest.raises(
+            RuntimeError,
+            match=r"hold: failed to clamp sub back to <=1\.4 \(submodule\)",
+        ),
     ):
         apply_submodule_tag_advances([link], allow_dirty=True)
 

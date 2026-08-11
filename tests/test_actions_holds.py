@@ -139,10 +139,11 @@ def test_apply_actions_raises_when_no_tag_satisfies_ceiling(tmp_path) -> None:
     with (
         global_hold,
         repo_hold,
-        patch.object(actions, "action_tag_info", return_value=info),pytest.raises(
-        RuntimeError,
-        match=r"hold: failed to clamp actions/checkout back to <=4\.3 \(actions\)",
-    )
+        patch.object(actions, "action_tag_info", return_value=info),
+        pytest.raises(
+            RuntimeError,
+            match=r"hold: failed to clamp actions/checkout back to <=4\.3 \(actions\)",
+        ),
     ):
         actions.scan_actions(tmp_path, True, lint_level="off")
 
