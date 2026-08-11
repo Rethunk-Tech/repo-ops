@@ -374,6 +374,7 @@ For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 | bun_update_latest | `--latest` | `REPO_OPS_BUN_UPDATE_LATEST` | `bun_update_latest` | `0` |
 | pnpm_update_latest | `--latest` | `REPO_OPS_PNPM_UPDATE_LATEST` | `pnpm_update_latest` | `0` |
 | yarn_update_latest | `--latest` | `REPO_OPS_YARN_UPDATE_LATEST` | `yarn_update_latest` | `0` |
+| deno_update_latest | `--latest` | `REPO_OPS_DENO_UPDATE_LATEST` | `deno_update_latest` | `0` |
 | yarn_targeted_bump | `--yarn-targeted-bump` | `REPO_OPS_YARN_TARGETED_BUMP` | `yarn_targeted_bump` | `0` |
 | npm_targeted_bump | `--npm-targeted-bump` | `REPO_OPS_NPM_TARGETED_BUMP` | `npm_targeted_bump` | `0` |
 | pnpm_targeted_bump | `--pnpm-targeted-bump` | `REPO_OPS_PNPM_TARGETED_BUMP` | `pnpm_targeted_bump` | `0` |
