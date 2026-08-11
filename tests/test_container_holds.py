@@ -4,7 +4,6 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
-
 from repo_ops_container import container
 from repo_ops_core.holds import HoldRule
 from repo_ops_models import Workspace
@@ -157,12 +156,12 @@ def test_apply_container_raises_when_no_tag_satisfies_ceiling(tmp_path) -> None:
             "_fetch_tags",
             return_value=["1.5.0", "1.6.0"],
         ),
-    ):
-        with pytest.raises(
+        pytest.raises(
             RuntimeError,
             match=r"hold: failed to clamp docker\.io/library/node back to <=1\.4 \(container\)",
-        ):
-            container.apply_container(ws)
+        ),
+    ):
+        container.apply_container(ws)
 
 
 def test_apply_container_ignores_expired_hold_without_rewriting_config(

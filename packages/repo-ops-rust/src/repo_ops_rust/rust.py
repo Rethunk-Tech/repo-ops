@@ -13,13 +13,13 @@ import re
 from functools import cache
 from pathlib import Path
 
+from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.holds import (
     HoldRule,
     load_global_holds,
     load_repo_holds,
     resolve_hold,
 )
-from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace

@@ -957,10 +957,7 @@ def _resolve_hold_tag_target(
         tag_version = _tag_version_for_hold(tag)
         if tag_version is None:
             continue
-        try:
-            tag_tup = semver_tuple(tag_version)
-        except Exception:
-            continue
+        tag_tup = semver_tuple(tag_version)
         if version_satisfies_ceiling(tag_version, rule.max_version):
             candidates.append((tag_tup, tag))
 

@@ -4,10 +4,8 @@ import re
 from unittest.mock import patch
 
 import pytest
-
 from repo_ops_core.holds import HoldRule
 from repo_ops_upgrade import actions
-
 
 _ACTION = "actions/checkout"
 
@@ -141,13 +139,12 @@ def test_apply_actions_raises_when_no_tag_satisfies_ceiling(tmp_path) -> None:
     with (
         global_hold,
         repo_hold,
-        patch.object(actions, "action_tag_info", return_value=info),
+        patch.object(actions, "action_tag_info", return_value=info),pytest.raises(
+        RuntimeError,
+        match=r"hold: failed to clamp actions/checkout back to <=4\.3 \(actions\)",
+    )
     ):
-        with pytest.raises(
-            RuntimeError,
-            match=r"hold: failed to clamp actions/checkout back to <=4\.3 \(actions\)",
-        ):
-            actions.scan_actions(tmp_path, True, lint_level="off")
+        actions.scan_actions(tmp_path, True, lint_level="off")
 
 
 def test_expired_actions_hold_is_ignored_without_rewriting_hold_config(

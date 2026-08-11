@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from repo_ops_core.holds import HoldRule
 from repo_ops_upgrade import submodules
 from repo_ops_upgrade.submodules import (
@@ -131,13 +130,12 @@ def test_apply_raises_when_hold_cannot_be_clamped(tmp_path: Path) -> None:
             submodules,
             "_fetch_remote_tags",
             return_value=["v1.5.0", "v1.6.0"],
-        ),
+        ),pytest.raises(
+        RuntimeError,
+        match=r"hold: failed to clamp sub back to <=1\.4 \(submodule\)",
+    )
     ):
-        with pytest.raises(
-            RuntimeError,
-            match=r"hold: failed to clamp sub back to <=1\.4 \(submodule\)",
-        ):
-            apply_submodule_tag_advances([link], allow_dirty=True)
+        apply_submodule_tag_advances([link], allow_dirty=True)
 
 
 def test_expired_hold_is_ignored_without_config_rewrite(
