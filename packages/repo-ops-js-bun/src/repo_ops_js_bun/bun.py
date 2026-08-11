@@ -451,7 +451,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
             and _valid_bun_package_name((ch.name or "").strip())
         ]
         if guardable:
-                if _bun_targeted_bump_enabled(ws):
+            if _bun_targeted_bump_enabled(ws):
                 # Defer to the targeted-bump retry below (which can release
                 # an unheld legacy pin) instead of hard-failing here; a
                 # still-blocked package after that best-effort retry lands
