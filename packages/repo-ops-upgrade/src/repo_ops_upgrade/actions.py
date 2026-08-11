@@ -1309,28 +1309,27 @@ def scan_actions(
                         # Unresolvable major / no newer digest → report only below.
                     info = action_tag_info(action, cache=_cache)
                     hold_rule = _resolve_actions_hold(repo, action)
-                    hold_resolution = (
-                        _resolve_hold_action_sha_target(pin, info, hold_rule)
-                        if info is not None and hold_rule is not None
-                        else None
-                    )
-                    if hold_resolution is not None:
-                        target_sha, current_tag, target_tag = hold_resolution
-                        if not policy_blocked:
-                            bumps.append(
-                                ActionBump(
-                                    workflow=rel,
-                                    action=action,
-                                    pin=pin,
-                                    latest=target_sha,
-                                    status="ok",
-                                    detail=(
-                                        f"hold clamp {current_tag} -> {target_tag} "
-                                        f"(<={hold_rule.max_version})"
-                                    ),
+                    if info is not None and hold_rule is not None:
+                        hold_resolution = _resolve_hold_action_sha_target(
+                            pin, info, hold_rule
+                        )
+                        if hold_resolution is not None:
+                            target_sha, current_tag, target_tag = hold_resolution
+                            if not policy_blocked:
+                                bumps.append(
+                                    ActionBump(
+                                        workflow=rel,
+                                        action=action,
+                                        pin=pin,
+                                        latest=target_sha,
+                                        status="ok",
+                                        detail=(
+                                            f"hold clamp {current_tag} -> {target_tag} "
+                                            f"(<={hold_rule.max_version})"
+                                        ),
+                                    )
                                 )
-                            )
-                        continue
+                            continue
                     bumps.append(
                         ActionBump(
                             workflow=rel,
@@ -1405,29 +1404,26 @@ def scan_actions(
             bare_major_exists = M in info["bare_majors"]
             max_major = info["max_major"]
             hold_rule = _resolve_actions_hold(repo, action)
-            hold_target = (
-                _resolve_hold_action_tag_target(
+            if hold_rule is not None:
+                hold_target = _resolve_hold_action_tag_target(
                     pin, info.get("all_tags", set()), hold_rule
                 )
-                if hold_rule is not None
-                else None
-            )
-            if hold_target is not None:
-                if not policy_blocked:
-                    bumps.append(
-                        ActionBump(
-                            workflow=rel,
-                            action=action,
-                            pin=pin,
-                            latest=hold_target,
-                            status="ok",
-                            detail=(
-                                f"hold clamp {pin} -> {hold_target} "
-                                f"(<={hold_rule.max_version})"
-                            ),
+                if hold_target is not None:
+                    if not policy_blocked:
+                        bumps.append(
+                            ActionBump(
+                                workflow=rel,
+                                action=action,
+                                pin=pin,
+                                latest=hold_target,
+                                status="ok",
+                                detail=(
+                                    f"hold clamp {pin} -> {hold_target} "
+                                    f"(<={hold_rule.max_version})"
+                                ),
+                            )
                         )
-                    )
-                continue
+                    continue
 
             # In latest mode, a newer major upstream is rewritten (not just
             # reported), provided it can be safely targeted (#106).
