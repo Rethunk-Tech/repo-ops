@@ -1,11 +1,9 @@
 """Tests for audit's config/env-driven --fail-on / --fail-on-unknown gates.
 
 Precedence is CLI flag > env var (REPO_OPS_AUDIT_FAIL_ON /
-REPO_OPS_AUDIT_FAIL_ON_UNKNOWN) > default. ``main()`` also calls
-apply_config_to_env, which promotes TOML config-file values into these same
-env vars — but resolves against the real filesystem, which has no repo-ops
-config files in the test sandbox, so these tests only exercise the env-var
-layer (already sufficient to prove the precedence chain end to end).
+REPO_OPS_AUDIT_FAIL_ON_UNKNOWN) > TOML config via XDG_CONFIG_HOME > default.
+The tests cover both env and TOML config-file layers; CLI overrides remain
+covered separately.
 """
 
 from __future__ import annotations
@@ -39,6 +37,25 @@ def test_fail_on_env_applies_when_flag_absent(
     proving the env var (not the "high" argparse default) drove the gate.
     """
     monkeypatch.setenv("REPO_OPS_AUDIT_FAIL_ON", "critical")
+    with (
+        patch("repo_ops_audit.audit.discover_repos", return_value={}),
+        patch("repo_ops_audit.audit.run_audit", return_value=_results(high=1)),
+    ):
+        rc = main([str(tmp_path)])
+    assert rc == 0
+
+
+def test_fail_on_from_config_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """audit_fail_on=critical in config.toml sets the gate when no flag is passed."""
+    config_dir = tmp_path / "repo-ops"
+    config_dir.mkdir()
+    (config_dir / "config.toml").write_text(
+        'audit_fail_on = "critical"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON", raising=False)
     with (
         patch("repo_ops_audit.audit.discover_repos", return_value={}),
         patch("repo_ops_audit.audit.run_audit", return_value=_results(high=1)),
