@@ -16,6 +16,7 @@ from repo_ops_doctor.doctor import (
     probe_all,
     probe_binary,
     probe_gh_auth,
+    probe_skill_drift,
 )
 
 
@@ -118,6 +119,27 @@ def test_main_reports_dangling_skill_symlink_as_drift(
     assert main(["--json", "--compact"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["skill_drift"] == [str(destination)]
+
+
+def test_probe_skill_drift_reports_mutated_install(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from repo_ops.install_skill import main as install_skill_main
+
+    destination = tmp_path / ".cursor" / "skills" / "repo-ops"
+    assert install_skill_main(["--dest", str(destination)]) == 0
+    monkeypatch.setattr("repo_ops.install_skill.resolve_home", lambda _home: tmp_path)
+    monkeypatch.setattr(
+        "repo_ops.install_skill.destinations_for",
+        lambda _target, _home: [("cursor", destination)],
+    )
+
+    assert str(destination) not in probe_skill_drift()
+
+    skill_file = destination / "SKILL.md"
+    skill_file.write_text(skill_file.read_text(encoding="utf-8") + "\nmutated\n")
+
+    assert str(destination) in probe_skill_drift()
 
 
 # ---------------------------------------------------------------------------
