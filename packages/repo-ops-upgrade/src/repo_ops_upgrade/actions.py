@@ -12,11 +12,18 @@ import shutil
 import subprocess
 import sys
 import time
+from functools import cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
+from repo_ops_core.holds import (
+    HoldRule,
+    load_global_holds,
+    load_repo_holds,
+    resolve_hold,
+)
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import semver_tuple
+from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import ActionBump
 
 from repo_ops_upgrade.workflow_uses import (
@@ -737,6 +744,223 @@ def _resolve_latest_target(info: dict, tag_style: TagStyle) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Package version-ceiling ("hold") rules
+# ---------------------------------------------------------------------------
+
+
+@cache
+def _global_holds_cached() -> tuple[HoldRule, ...]:
+    return tuple(load_global_holds())
+
+
+@cache
+def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
+    return tuple(load_repo_holds(Path(repo_root)))
+
+
+def _resolve_actions_hold(repo: Path, package: str) -> HoldRule | None:
+    """Return the active Actions hold for *package*, if any."""
+    repo_root = str(repo.resolve())
+    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
+    if not rules:
+        return None
+    return resolve_hold(
+        rules,
+        package=package,
+        ecosystem="actions",
+        manager="actions",
+        workspace_rel=".",
+    )
+
+
+def _target_within_hold(repo: Path, package: str, target_version: str) -> bool:
+    """Return whether a resolved action tag is allowed by its active hold."""
+    rule = _resolve_actions_hold(repo, package)
+    return rule is None or version_satisfies_ceiling(
+        target_version.lstrip("v"), rule.max_version
+    )
+
+
+def _action_tag_version(tag: str) -> tuple[int, ...] | None:
+    if not _MAJOR_TAG_RE.match(tag):
+        return None
+    try:
+        return semver_tuple(tag.lstrip("v"))
+    except Exception:
+        return None
+
+
+def _resolve_hold_action_tag_target(
+    current_ref: str, tags: set[str], rule: HoldRule
+) -> str | None:
+    """Return the highest action tag at or below *rule* when held back."""
+    current_version = _action_tag_version(current_ref)
+    if current_version is None or version_satisfies_ceiling(
+        current_ref.lstrip("v"), rule.max_version
+    ):
+        return None
+
+    candidates: list[tuple[tuple[int, ...], str]] = []
+    for tag in tags:
+        tag_version = _action_tag_version(tag)
+        if tag_version is None:
+            continue
+        if version_satisfies_ceiling(tag.lstrip("v"), rule.max_version):
+            candidates.append((tag_version, tag))
+    if not candidates:
+        return None
+    target_version, target_tag = max(candidates, key=lambda item: (item[0], item[1]))
+    if target_version >= current_version:
+        return None
+    return target_tag
+
+
+def _matching_action_sha_tags(
+    current_sha: str, info: dict
+) -> list[tuple[tuple[int, ...], str, str]]:
+    """Return semver tags attached to *current_sha*."""
+    normalized = current_sha.lower()
+    if normalized.startswith("sha"):
+        normalized = normalized[3:]
+    sha_to_tags: dict[str, list[str]] = info.get("sha_to_tags", {})
+    matching_keys: list[str] = []
+    if normalized in sha_to_tags:
+        matching_keys.append(normalized)
+    elif len(normalized) < 40:
+        matches = [key for key in sha_to_tags if key.startswith(normalized)]
+        if len(matches) == 1:
+            matching_keys = matches
+
+    matching: list[tuple[tuple[int, ...], str, str]] = []
+    for sha in matching_keys:
+        for tag in sha_to_tags[sha]:
+            tag_version = _action_tag_version(tag)
+            if tag_version is not None:
+                matching.append((tag_version, tag, sha))
+    return matching
+
+
+def _resolve_hold_action_sha_target(
+    current_sha: str, info: dict, rule: HoldRule
+) -> tuple[str, str, str] | None:
+    """Return ``(target_sha, current_tag, target_tag)`` for a held SHA pin."""
+    matching_tags = _matching_action_sha_tags(current_sha, info)
+    if not matching_tags:
+        return None
+    current_version, current_tag, _ = max(
+        matching_tags, key=lambda item: (item[0], item[1])
+    )
+    if version_satisfies_ceiling(current_tag.lstrip("v"), rule.max_version):
+        return None
+
+    candidates: list[tuple[tuple[int, ...], str, str]] = []
+    for sha, tags in info.get("sha_to_tags", {}).items():
+        for tag in tags:
+            tag_version = _action_tag_version(tag)
+            if tag_version is None:
+                continue
+            if version_satisfies_ceiling(tag.lstrip("v"), rule.max_version):
+                candidates.append((tag_version, tag, sha))
+    if not candidates:
+        return None
+    target_version, target_tag, target_sha = max(
+        candidates, key=lambda item: (item[0], item[1])
+    )
+    if target_version >= current_version:
+        return None
+    return target_sha, current_tag, target_tag
+
+
+def _enforce_version_ceilings(
+    repo: Path,
+    pins: list[Any],
+    *,
+    tag_cache: dict[str, dict | None] | None = None,
+) -> list[PinReplacement]:
+    """Return replacements that clamp held Actions pins."""
+    replacements: list[PinReplacement] = []
+    for uses in pins:
+        action, pin = uses.action, uses.pin
+        rule = _resolve_actions_hold(repo, action)
+        if rule is None:
+            continue
+
+        info = action_tag_info(action, cache=tag_cache)
+        if _SHA_RE.fullmatch(pin):
+            if info is None:
+                raise RuntimeError(
+                    f"hold: failed to clamp {action} back to <={rule.max_version} "
+                    "(actions): tag fetch failed while resolving SHA pin"
+                )
+            resolved = _resolve_hold_action_sha_target(pin, info, rule)
+            if resolved is None:
+                matching_tags = _matching_action_sha_tags(pin, info)
+                if matching_tags:
+                    _, current_tag, _ = max(
+                        matching_tags, key=lambda item: (item[0], item[1])
+                    )
+                    if not version_satisfies_ceiling(
+                        current_tag.lstrip("v"), rule.max_version
+                    ):
+                        raise RuntimeError(
+                            f"hold: failed to clamp {action} back to <={rule.max_version} "
+                            "(actions): no available tag satisfies ceiling"
+                        )
+                continue
+            target_sha, current_tag, target_tag = resolved
+            comment_rewrite: tuple[str, str] | None = None
+            if uses.comment:
+                current_major = _action_tag_version(current_tag)
+                target_major = _action_tag_version(target_tag)
+                if (
+                    current_major
+                    and target_major
+                    and current_major[0] != target_major[0]
+                ):
+                    comment_rewrite = (
+                        f"# v{current_major[0]}",
+                        f"# v{target_major[0]}",
+                    )
+            replacements.append(
+                PinReplacement(
+                    action=action,
+                    pin=pin,
+                    latest=target_sha,
+                    line=uses.line or None,
+                    drop_comment=False,
+                    comment_rewrite=comment_rewrite,
+                )
+            )
+            continue
+
+        current_version = _action_tag_version(pin)
+        if current_version is None or version_satisfies_ceiling(
+            pin.lstrip("v"), rule.max_version
+        ):
+            continue
+        if info is None:
+            raise RuntimeError(
+                f"hold: failed to clamp {action} back to <={rule.max_version} "
+                "(actions): tag fetch failed while resolving tag pin"
+            )
+        target = _resolve_hold_action_tag_target(pin, info.get("all_tags", set()), rule)
+        if target is None:
+            raise RuntimeError(
+                f"hold: failed to clamp {action} back to <={rule.max_version} "
+                "(actions): no available tag satisfies ceiling"
+            )
+        replacements.append(
+            PinReplacement(
+                action=action,
+                pin=pin,
+                latest=target,
+                line=uses.line or None,
+            )
+        )
+    return replacements
+
+
 def _run_actionlint(
     wf: Path,
     repo: Path,
@@ -1034,7 +1258,9 @@ def scan_actions(
                             already_current = pin_norm == new_sha or (
                                 len(pin_norm) < 40 and new_sha.startswith(pin_norm)
                             )
-                            if not already_current:
+                            if not already_current and _target_within_hold(
+                                repo, action, tag
+                            ):
                                 cross_major = (
                                     target_major is not None
                                     and major is not None
@@ -1115,6 +1341,8 @@ def scan_actions(
                     continue
 
                 target_tag, detail = resolution
+                if not _target_within_hold(repo, action, target_tag):
+                    continue
                 if not policy_blocked:
                     bumps.append(
                         ActionBump(
@@ -1161,6 +1389,8 @@ def scan_actions(
                 if upgrade_mode == "latest" and newer_major
                 else None
             )
+            if latest_target and not _target_within_hold(repo, action, latest_target):
+                latest_target = None
 
             if latest_target and latest_target != pin:
                 if not policy_blocked:
@@ -1199,7 +1429,7 @@ def scan_actions(
                 # else: up to date, emit nothing
             else:
                 # Exact/minor pin (e.g. v3.19.0) — try to collapse to floating major.
-                if bare_major_exists:
+                if bare_major_exists and _target_within_hold(repo, action, desired):
                     detail = f"normalize to floating major v{M}"
                     if newer_major:
                         detail += f"; newer major v{max_major} available"
@@ -1229,7 +1459,11 @@ def scan_actions(
                     # e.g. astral-sh/setup-uv publishes only vN.M.P tags, so
                     # v8.1.0 would otherwise never move while v8.2.0 exists.
                     in_major = _highest_exact_in_major(info, M)
-                    if in_major and in_major != pin:
+                    if (
+                        in_major
+                        and in_major != pin
+                        and _target_within_hold(repo, action, in_major)
+                    ):
                         detail = (
                             f"advance exact pin within v{M} "
                             "(no floating major tag upstream)"
@@ -1267,6 +1501,8 @@ def scan_actions(
                                 detail="no floating major tag upstream; report only",
                             )
                         )
+        if apply:
+            replacements.extend(_enforce_version_ceilings(repo, pins, tag_cache=_cache))
         if apply and replacements:
             try:
                 update_workflow_pins(wf, replacements)
