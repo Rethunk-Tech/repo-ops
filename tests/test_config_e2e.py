@@ -323,11 +323,17 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
         encoding="utf-8",
     )
     (repo_a / "pyproject.toml").write_text(
-        '[tool.repo-ops]\ngo_upgrade_mode = "explicit"\n',
+        "[tool.repo-ops]\n"
+        'go_upgrade_mode = "explicit"\n'
+        'go_directive = "1.25"\n'
+        'go_toolchain = "go1.25.3"\n',
         encoding="utf-8",
     )
     (repo_b / "pyproject.toml").write_text(
-        '[tool.repo-ops]\ngo_upgrade_mode = "patch"\n',
+        "[tool.repo-ops]\n"
+        'go_upgrade_mode = "patch"\n'
+        'go_directive = "1.26"\n'
+        'go_toolchain = "1.26.4"\n',
         encoding="utf-8",
     )
     for path in (repo_a, repo_b):
@@ -385,7 +391,7 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
         )
         for workspace in workspaces
     }
-    captured: dict[Path, list[str]] = {}
+    captured: dict[Path, list[tuple[str, str]]] = {}
     go_list_stdout = "\n".join(
         json.dumps(module)
         for module in (
@@ -445,7 +451,9 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
 
     def capture_check_workspace(workspace: Workspace, **kwargs: object):
         result = original_check_workspace(workspace, **kwargs)
-        captured[workspace.git_repo] = [change.name for change in result.changes]
+        captured[workspace.git_repo] = [
+            (change.name, change.to) for change in result.changes
+        ]
         return result
 
     monkeypatch.setattr(
@@ -470,8 +478,17 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
 
     assert rc == 1
     assert captured == {
-        repo_a: ["example.com/patch", "example.com/minor"],
-        repo_b: ["example.com/patch"],
+        repo_a: [
+            ("example.com/patch", "v1.2.4"),
+            ("example.com/minor", "v1.3.0"),
+            ("go directive", "1.25"),
+            ("go toolchain", "1.25.3"),
+        ],
+        repo_b: [
+            ("example.com/patch", "v1.2.4"),
+            ("go directive", "1.26"),
+            ("go toolchain", "1.26.4"),
+        ],
     }
 
 
