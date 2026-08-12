@@ -42,47 +42,7 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 ---
 
-## Round 37 — Wave 37 audit carry-forwards
-
-### 37.1 Deno apply-level ghost defer parity
-
-npm/pnpm/yarn/bun fold blocked initial `assert_targets_resolved` into targeted-bump retry when `--*-targeted-bump` is on. `apply_deno` still hard-fails ghost before `targeted_bump_behind`.
-
-**Refs:** `repo_ops_js.deno` `apply_deno`; npm/pnpm `_fold_blocked_into_behind` / yarn fold sites.
-
-**Acceptance:** With Deno targeted-bump enabled, ghost-blocked targets defer into `targeted_bump_behind` instead of failing the workspace on the first guard.
-
-### 37.2 Deno pin-release: `jsr:` identifiers and prefix matching
-
-Unheld-pin release / package match coverage today exercises `npm:`-style import-map pins. `_deno_package_matches` only strips the `npm:` prefix; `jsr:` pins lack release/hold parity tests.
-
-**Refs:** `repo_ops_js.deno` `_release_unheld_deno_pin` / `_deno_package_matches`; `tests/test_deno_holds.py`.
-
-**Acceptance:** `jsr:` (and any other supported Deno registry prefix) unheld pins release and held pins stay, with unit coverage mirroring the npm-pin cases.
-
----
-
 ## Round 38 — Packaging, holds, and SBOM shape
-
-### 38.1 Declare `tomli` for Python 3.10 runtime (not only pytest)
-
-`repo_ops_core.filesystem` and `repo_ops_core.config` import `tomli` when stdlib `tomllib` is absent. `repo_ops_lockfiles.license_enrich` does the same for on-disk `Cargo.toml`. Neither `packages/repo-ops-core` nor `packages/repo-ops-lockfiles` declares `tomli`; the lockfile only pulls it in as a pytest extra (`python_full_version < '3.11'`). A 3.10 `uv tool install` / wheel install without the workspace `dev` group therefore hits `ModuleNotFoundError` at `filesystem` import (hard fail), while config's `_load_toml` path is written to skip. Docs still say “skipped with a warning on 3.10 unless `tomli` is installed.”
-
-**Refs:** `packages/repo-ops-core/src/repo_ops_core/filesystem.py`; `packages/repo-ops-core/src/repo_ops_core/config.py`; `packages/repo-ops-lockfiles/src/repo_ops_lockfiles/license_enrich.py`; `packages/repo-ops-core/pyproject.toml`; `packages/repo-ops-lockfiles/pyproject.toml`; `docs/usage.md` (Settings reference, 3.10 note).
-
-**Traps:** Marker must be `python_version < "3.11"` so 3.11+ keeps stdlib-only. Do not rely on pytest's transitive `tomli`. `filesystem.read_toml_file` currently assumes the import succeeded — either declare the dep or match config's skip-and-warn. Align `license_enrich` with the same helper rather than a third copy of the try/import.
-
-**Acceptance:** `repo-ops-core` (and lockfiles if it keeps a local import) depends on `tomli` under the 3.10 marker; a clean 3.10 install without pytest still loads config, `read_toml_file`, and Cargo license enrichment. Import of `filesystem` does not raise when `tomli` is present; when it is absent, behavior matches the documented skip/warn rather than crashing at import.
-
-### 38.2 Hold clamp must not rewrite Python manifests
-
-Post-apply hold enforcement for uv/hatch (`uv add <pkg><=ceiling>`), poetry (`poetry add …`), and pdm (`pdm add …`) writes a new constraint into `pyproject.toml` / the manager manifest. pip-tools already clamps via an ephemeral constraints file and does **not** rewrite `requirements.in`. A routine `--latest` apply that then clamps a hold therefore leaves a permanent manifest pin the operator never asked to commit. uv documents `uv lock --upgrade-package <pkg>==<version>` as lock-only; that is the right shape.
-
-**Refs:** `packages/repo-ops-py/src/repo_ops_py/uv_lock.py` `_enforce_version_ceilings`; `packages/repo-ops-py-poetry/src/repo_ops_py_poetry/poetry.py`; `packages/repo-ops-py-pdm/src/repo_ops_py_pdm/pdm.py`; `packages/repo-ops-py-pip-tools/src/repo_ops_py_pip_tools/pip_tools.py`; `packages/repo-ops-audit/src/repo_ops_audit/audit.py` `_apply_py_uv_targeted` (same `uv add` pattern for `--fix`).
-
-**Traps:** `uv add` / `poetry add` / `pdm add` are the current tests' expected argv — changing the command is a behavior change, not a rename. Audit `--fix` pinning to an exact safe version *does* belong in the manifest; hold clamp does not. Do not use `uv add` for holds even with `--frozen`. Hatch delegates to `uv_lock` — one fix covers both.
-
-**Acceptance:** Hold clamp for uv/hatch/poetry/pdm updates the lockfile (and only the lockfile) to a version `<= max_version`. `pyproject.toml` / Poetry/PDM dependency tables are byte-identical before vs after a hold clamp. Audit `--fix` exact pins may still rewrite the manifest. pip-tools remains constraints-file-only.
 
 ### 38.3 CycloneDX emit: 1.4 `metadata.tools[]` vs current spec
 
@@ -104,7 +64,7 @@ Post-apply hold enforcement for uv/hatch (`uv add <pkg><=ceiling>`), poetry (`po
 
 **Refs:** `docs/usage.md` § Ecosystem upgrade modes; `packages/repo-ops-py-poetry/src/repo_ops_py_poetry/poetry.py`; `packages/repo-ops-py-pdm/src/repo_ops_py_pdm/pdm.py`; `packages/repo-ops-py-pipenv/src/repo_ops_py_pipenv/pipenv.py`; `packages/repo-ops-py-pip-tools/src/repo_ops_py_pip_tools/pip_tools.py`; `packages/repo-ops-core/src/repo_ops_core/cli.py` (flag wiring for JS targeted-bump).
 
-**Traps:** Do not silently rewrite `^1.2` to `^2` in `pyproject.toml` without an opt-in flag (same contract as `--yarn-targeted-bump`). pip-tools `requirements.in` pins are the constraint — a “latest” mode must be explicit. pipenv must not create a venv (existing check is read-only via `pipenv --venv`). Hold ceilings from 38.2 must apply to any new bump path.
+**Traps:** Do not silently rewrite `^1.2` to `^2` in `pyproject.toml` without an opt-in flag (same contract as `--yarn-targeted-bump`). pip-tools `requirements.in` pins are the constraint — a “latest” mode must be explicit. pipenv must not create a venv (existing check is read-only via `pipenv --venv`). Hold clamp is lock-only (uv `lock --upgrade-package`; poetry/pdm/pipenv snapshot-restore the manifest) and must apply to any new bump path.
 
 **Acceptance:** Opt-in flags (or a documented “Python has no latest mode” sentence that is true for all four) exist for poetry/pdm/pipenv/pip-tools. With the flag, a direct dep whose lock is behind a newer published version that requires a constraint bump is either moved (revert-on-failure, like JS targeted-bump) or listed in `behind_latest` instead of `[ok]`. `--full` either includes those flags or the docs say Python constraint bumps stay manual.
 
@@ -128,22 +88,48 @@ Overrides audit treats `catalog:` protocol pins as non-stale (`repo_ops_js.overr
 
 **Acceptance:** Without a new flag, rust behavior is unchanged. With the flag, a direct crates.io dep whose latest published version is outside the current req can be bumped in `Cargo.toml` + lock, reverted on `cargo update` failure, and listed in `behind_latest` when skipped. Path/git/workspace crates never get a registry bump.
 
-### 39.4 `doctor` does not probe `ruff`
+---
 
-Verify runs `ruff check` when ruff is a dev dependency (`repo_ops_upgrade.verify`). `repo-ops doctor`’s static binary table includes pyrefly, hatch, pip-audit, actionlint, and cargo-audit, but not `ruff`. A missing ruff only shows up mid-apply as a verify failure.
+## Round 40 — Wave 40 audit carry-forwards
 
-**Refs:** `packages/repo-ops-doctor/src/repo_ops_doctor/doctor.py` `_BINARIES`; `packages/repo-ops-upgrade/src/repo_ops_upgrade/verify.py`; `docs/usage.md` § `doctor`; `AGENTS.md` doctor probe list.
+### 40.1 Collapse config `_TOMLLIB_AVAILABLE` onto `TOML_AVAILABLE`
 
-**Traps:** Doctor is “binaries we shell out to,” not “every possible verify tool.” `mypy` was dropped from this repo’s verify in favor of pyrefly but verify still has a mypy branch — do not add mypy to doctor unless it is still invoked. Keep ecosystem label `python`.
+`config.py` imports `TOML_AVAILABLE` from filesystem then aliases `_TOMLLIB_AVAILABLE = TOML_AVAILABLE`. Tests patch the alias (`tests/test_core_config.py`).
 
-**Acceptance:** `repo-ops doctor` reports ruff found/missing/version like the other Python tools; `--strict` fails when ruff is absent. HUMANS/usage/AGENTS doctor lists include it. No duplicate probe for `ruff format`.
+**Refs:** `packages/repo-ops-core/src/repo_ops_core/config.py`; `packages/repo-ops-core/src/repo_ops_core/filesystem.py`; `tests/test_core_config.py`.
 
-### 39.5 SBOM drops reusable GitHub Actions workflows
+**Acceptance:** One name. Tests patch that name. Behavior of skip-and-warn on 3.10 without tomli is unchanged.
 
-`collect` emits `pkg:github/owner/repo@ref` only when `action.count("/") == 1`. Reusable workflows (`owner/repo/.github/workflows/ci.yml@v1`) and nested action paths (`owner/repo/subdir`) are skipped. Those refs are still upgraded by the Actions pin rewriter and counted by inventory.
+### 40.2 Single `_hold_ceiling_spec` helper
 
-**Refs:** `packages/repo-ops-lockfiles/src/repo_ops_lockfiles/sbom.py` (workflow walk, `count("/") != 1` skip); `packages/repo-ops-upgrade/src/repo_ops_upgrade/workflow_uses.py`; `packages/repo-ops-inventory/src/repo_ops_inventory/counting.py` `count_actions`.
+Identical pad-to-three-component `<=` spec lives in `uv_lock.py`, `poetry.py`, `pdm.py`, `pipenv.py`, and `pip_tools.py`.
 
-**Traps:** PURL for a reusable workflow is not `pkg:github/owner/repo@ref` with a lost path — keep the extra path in `name` or qualifier so two workflows in one repo do not collapse. Local `./` and docker:// uses stay out. License enrichment for Actions is already limited.
+**Refs:** those five modules; `repo_ops_core.holds` or `repo_ops_core.version_utils`.
 
-**Acceptance:** SBOM components include reusable-workflow and nested-action `uses:` pins with distinct purls/names. Local and docker uses remain omitted. Inventory/plan action counts and SBOM component counts agree on those refs.
+**Acceptance:** One helper; all five managers call it. Ceiling padding semantics unchanged.
+
+### 40.3 `filesystem` tomli import should catch `ImportError`
+
+The tomli fallback only catches `ModuleNotFoundError`. A broken tomli install that raises a broader `ImportError` still crashes `import repo_ops_core.filesystem`.
+
+**Refs:** `packages/repo-ops-core/src/repo_ops_core/filesystem.py`.
+
+**Traps:** Do not swallow `KeyboardInterrupt`. Keep skip-and-warn when the parser is absent.
+
+**Acceptance:** `import repo_ops_core.filesystem` succeeds when tomli exists but fails to import; `TOML_AVAILABLE` is false and `read_toml_file` returns None.
+
+### 40.4 Doctor test does not lock `pyrefly` before `ruff`
+
+`BinarySpec("ruff", "python")` sits after `pyrefly` in `_BINARIES`. JSON tests include both names in a set, not order.
+
+**Refs:** `packages/repo-ops-doctor/src/repo_ops_doctor/doctor.py`; `tests/test_doctor.py`.
+
+**Acceptance:** A test asserts `pyrefly` precedes `ruff` in the probe table / JSON binaries list.
+
+### 40.5 SBOM local `uses:` that do not start with `.`
+
+Workflow collect skips `action.startswith(".")` and `docker://`. A `../.github/workflows/foo.yml` local ref would be emitted as a github component.
+
+**Refs:** `packages/repo-ops-lockfiles/src/repo_ops_lockfiles/sbom.py` workflow walk.
+
+**Acceptance:** Local-path `uses:` (relative, including `../`) stay omitted. Marketplace, nested, and reusable-workflow refs stay included.
