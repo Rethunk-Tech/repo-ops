@@ -33,6 +33,7 @@ from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from repo_ops_core.cli import (
     add_roots_argument,
@@ -184,8 +185,13 @@ def _purl_oci(name: str, ref: str) -> str:
 
 def _purl_github(owner_repo: str, ref: str) -> str:
     """pkg:github purl; *owner_repo* is ``owner/repo`` (an Actions action ref)."""
-    namespace = "/".join(owner_repo.split("/")[:2])
-    return f"pkg:github/{namespace}@{ref}"
+    parts = owner_repo.split("/")
+    namespace = "/".join(parts[:2])
+    purl = f"pkg:github/{namespace}@{ref}"
+    if len(parts) > 2:
+        subpath = "/".join(parts[2:])
+        purl += f"?subpath={quote(subpath, safe='')}"
+    return purl
 
 
 # ---------------------------------------------------------------------------
