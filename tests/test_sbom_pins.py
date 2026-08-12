@@ -125,6 +125,8 @@ def test_local_reusable_workflow_ref_excluded_from_pins(tmp_path: Path) -> None:
         "jobs:\n"
         "  call:\n"
         "    uses: ./.github/workflows/shared.yml\n"
+        "  call-parent:\n"
+        "    uses: ../.github/workflows/foo.yml@v1\n"
         "  build:\n"
         "    runs-on: ubuntu-latest\n"
         "    steps:\n"

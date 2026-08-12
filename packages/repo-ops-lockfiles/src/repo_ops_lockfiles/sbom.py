@@ -194,6 +194,14 @@ def _purl_github(owner_repo: str, ref: str) -> str:
     return purl
 
 
+def _is_local_action_ref(action: str) -> bool:
+    """Return whether an Actions ``uses:`` value is a local or Docker ref."""
+    return (
+        action.startswith(("docker://", ".", "/", "~"))
+        or action.split("/", 1)[0] == ".."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Component collection
 # ---------------------------------------------------------------------------
@@ -387,7 +395,7 @@ def collect_components(
                 for pin in pins:
                     action = pin.action
                     # Local and Docker action references are not package pins.
-                    if action.startswith(".") or action.startswith("docker://"):
+                    if _is_local_action_ref(action):
                         continue
                     _add(
                         action,
