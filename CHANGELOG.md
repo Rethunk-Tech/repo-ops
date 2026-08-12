@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`repo-ops doctor` probes `ruff`:** same found/missing/version row as the other Python toolchain binaries (`pyrefly`, hatch, pip-audit). `--strict` fails when ruff is absent. No `ruff format` probe.
+- **SBOM GitHub Actions components include reusable workflows and nested actions:** `uses: owner/repo/.github/workflows/ci.yml@v1` and `owner/repo/subdir` are emitted with the full path as `name` and a `?subpath=` PURL qualifier so two workflows in one repo at the same ref do not collapse. Local `./` and `docker://` uses stay omitted.
+
 ### Fixed
 
+- **Python 3.10 TOML parsing crashed at `filesystem` import without pytest's tomli extra:** `repo-ops-core` now depends on `tomli` under `python_version < "3.11"`. When the parser is still missing, `read_toml_file` and config skip-and-warn instead of raising. Cargo license enrichment uses the same helper.
+- **Hold clamp rewrote Python manifests:** uv/hatch clamp with `uv lock --upgrade-package <pkg><=ceiling>` (lock only). poetry/pdm/pipenv still run add/install then restore `pyproject.toml` / `Pipfile` bytes. Audit `--fix` still uses `uv add pkg==safe`. pip-tools remains constraints-file-only.
+- **Deno `apply` hard-failed ghost bumps before targeted-bump retry:** with `--deno-targeted-bump`, unresolved planned targets fold into `behind` and retry, matching npm. Without the flag, ghost still raises.
+- **Deno hold/release ignored `jsr:` import-map pins and treated `npm:`/`jsr:` tails as the same package:** prefix match is registry-aware; unprefixed names still match their registry form.
 - **Bun remediations invoked package.json scripts instead of package binaries:** `pm_exec_prefix("bun")` returned `["bun", "run"]`, so remediations like `biome migrate --write` became `bun run biome migrate --write` — running the `biome` script and appending args (e.g. `biome check --write . migrate --write`). Now uses `bunx` to execute installed binaries directly, matching yarn/pnpm/npm exec semantics.
 
 ### Changed
