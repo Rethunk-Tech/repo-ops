@@ -220,6 +220,7 @@ def test_json_output_shape(
         "gh",
         "uv",
         "pyrefly",
+        "ruff",
         "hatch",
         "poetry",
         "pre-commit",
