@@ -8,6 +8,7 @@ import pytest
 from repo_ops_core.holds import HoldRule
 from repo_ops_js.deno import (
     _deno_import_map_paths,
+    _deno_package_matches,
     _deno_targeted_bump_enabled,
     _deno_update_latest_enabled,
     _enforce_deno_version_ceilings,
@@ -61,6 +62,19 @@ def _seed_assert_pin(d) -> None:
         json.dumps({"imports": {"jsr:@std/assert": "jsr:@std/assert@1.0.0"}}),
         encoding="utf-8",
     )
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "expected"),
+    [
+        ("npm:lodash", "npm:lodash", True),
+        ("npm:lodash", "lodash", True),
+        ("npm:lodash", "jsr:lodash", False),
+        ("jsr:@std/assert", "@std/assert", True),
+    ],
+)
+def test_deno_package_matches_registry_aware(left, right, expected) -> None:
+    assert _deno_package_matches(left, right) is expected
 
 
 @pytest.fixture(autouse=True)
