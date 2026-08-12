@@ -105,7 +105,7 @@ def test_load_repo_config_keeps_sidecar_when_tomllib_unavailable(
     (tmp_path / "pyproject.toml").write_text(
         "[tool.repo-ops]\njobs = 9\n", encoding="utf-8"
     )
-    monkeypatch.setattr(config_mod, "_TOMLLIB_AVAILABLE", False)
+    monkeypatch.setattr(config_mod, "TOML_AVAILABLE", False)
     monkeypatch.setattr(config_mod, "_warned", False)
     monkeypatch.setattr(
         config_mod,
