@@ -42,20 +42,6 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 ---
 
-## Round 38 — Packaging, holds, and SBOM shape
-
-### 38.3 CycloneDX emit: 1.4 `metadata.tools[]` vs current spec
-
-`emit_cyclonedx` hard-codes `specVersion: "1.4"` and the 1.4 `metadata.tools` array of `{vendor,name,version}`. CycloneDX 1.5+ (library default now includes 1.6/1.7) moved tools to `metadata.tools.components` / `.services`. GitHub dependency-graph and several OSV consumers prefer ≥1.5 JSON. SPDX path is separate and can stay.
-
-**Refs:** `packages/repo-ops-lockfiles/src/repo_ops_lockfiles/sbom.py` `emit_cyclonedx`; `docs/usage.md` § `sbom`.
-
-**Traps:** 1.5+ rejects the old `tools[]` object shape if `specVersion` is bumped without migrating the field. Keep 1.4 as an explicit `--format`/`spec` choice if anything already consumes the current document. Do not pull `cyclonedx-python-lib` unless emit complexity actually needs the model; a targeted dict-shape bump is enough.
-
-**Acceptance:** Default CycloneDX JSON validates as ≥1.5 (tools in the 1.5+ location). Existing 1.4 consumers either still work via an opt-in spec flag or are documented as dropped. `--enrich-licenses` expressions still serialize under the chosen spec.
-
----
-
 ## Round 39 — Upgrade-mode and discovery gaps
 
 ### 39.1 Python managers: no `--latest` / targeted-bump
@@ -90,46 +76,40 @@ Overrides audit treats `catalog:` protocol pins as non-stale (`repo_ops_js.overr
 
 ---
 
-## Round 40 — Wave 40 audit carry-forwards
+## Round 41 — Wave 41 audit carry-forwards
 
-### 40.1 Collapse config `_TOMLLIB_AVAILABLE` onto `TOML_AVAILABLE`
+### 41.1 Go hold ceiling still duplicates pad-to-three
 
-`config.py` imports `TOML_AVAILABLE` from filesystem then aliases `_TOMLLIB_AVAILABLE = TOML_AVAILABLE`. Tests patch the alias (`tests/test_core_config.py`).
+Python managers call `repo_ops_core.version_utils.hold_ceiling_spec`. `packages/repo-ops-go/src/repo_ops_go/go.py` still has `_HOLD_CEILING_PAD` and `_go_ceiling_query` (`<=v` + same three-component pad).
 
-**Refs:** `packages/repo-ops-core/src/repo_ops_core/config.py`; `packages/repo-ops-core/src/repo_ops_core/filesystem.py`; `tests/test_core_config.py`.
+**Refs:** `go.py` `_go_ceiling_query`; `version_utils.hold_ceiling_spec`.
 
-**Acceptance:** One name. Tests patch that name. Behavior of skip-and-warn on 3.10 without tomli is unchanged.
+**Traps:** Go queries need the `v` prefix (`<=v6.999999.999999`). Do not change Python `<=` PEP 440 shape.
 
-### 40.2 Single `_hold_ceiling_spec` helper
+**Acceptance:** Go uses the shared pad (or a thin `v`-prefixed wrapper). Padding semantics unchanged.
 
-Identical pad-to-three-component `<=` spec lives in `uv_lock.py`, `poetry.py`, `pdm.py`, `pipenv.py`, and `pip_tools.py`.
+### 41.2 CycloneDX tool provenance: `author` vs `publisher`
 
-**Refs:** those five modules; `repo_ops_core.holds` or `repo_ops_core.version_utils`.
+`emit_cyclonedx` maps 1.4 `vendor` to component `author: "Rethunk-Tech"`. CycloneDX 1.5+ also has `publisher` and structured `authors[]`; GitHub/OSV consumers may prefer those.
 
-**Acceptance:** One helper; all five managers call it. Ceiling padding semantics unchanged.
+**Refs:** `packages/repo-ops-lockfiles/src/repo_ops_lockfiles/sbom.py` `emit_cyclonedx`; CycloneDX 1.5 metadata.tools.components.
 
-### 40.3 `filesystem` tomli import should catch `ImportError`
+**Acceptance:** Tool component identity is schema-valid and matches how GitHub dependency-graph / common validators expect org provenance. Tests lock the chosen fields.
 
-The tomli fallback only catches `ModuleNotFoundError`. A broken tomli install that raises a broader `ImportError` still crashes `import repo_ops_core.filesystem`.
+### 41.3 CycloneDX emit has no schema-validation test
 
-**Refs:** `packages/repo-ops-core/src/repo_ops_core/filesystem.py`.
+`tests/test_sbom.py` asserts dict equality for `specVersion` and `metadata.tools`. No CI check against `bom-1.5.schema.json`.
 
-**Traps:** Do not swallow `KeyboardInterrupt`. Keep skip-and-warn when the parser is absent.
+**Refs:** `tests/test_sbom.py`; CycloneDX JSON schema.
 
-**Acceptance:** `import repo_ops_core.filesystem` succeeds when tomli exists but fails to import; `TOML_AVAILABLE` is false and `read_toml_file` returns None.
+**Traps:** Do not add `cyclonedx-python-lib` only to validate. A vendored/minimal schema fixture or a skip-if-uninstalled jsonschema check is enough.
 
-### 40.4 Doctor test does not lock `pyrefly` before `ruff`
+**Acceptance:** A unit test fails if `emit_cyclonedx` output is invalid 1.5 JSON (tools shape, required keys).
 
-`BinarySpec("ruff", "python")` sits after `pyrefly` in `_BINARIES`. JSON tests include both names in a set, not order.
+### 41.4 Filesystem tomli-reload test mutates `sys.modules`
 
-**Refs:** `packages/repo-ops-doctor/src/repo_ops_doctor/doctor.py`; `tests/test_doctor.py`.
+`test_tomli_import_error_marks_parser_unavailable` reloads `filesystem` and rewrites `sys.modules["tomllib"/"tomli"]`. Finally restores, but the pattern is brittle under parallel collection.
 
-**Acceptance:** A test asserts `pyrefly` precedes `ruff` in the probe table / JSON binaries list.
+**Refs:** `tests/test_filesystem.py`.
 
-### 40.5 SBOM local `uses:` that do not start with `.`
-
-Workflow collect skips `action.startswith(".")` and `docker://`. A `../.github/workflows/foo.yml` local ref would be emitted as a github component.
-
-**Refs:** `packages/repo-ops-lockfiles/src/repo_ops_lockfiles/sbom.py` workflow walk.
-
-**Acceptance:** Local-path `uses:` (relative, including `../`) stay omitted. Marketplace, nested, and reusable-workflow refs stay included.
+**Acceptance:** The ImportError fallback is still covered without leaking parser modules across tests (isolate via a subprocess or a dedicated import helper that tests can call without reload).
