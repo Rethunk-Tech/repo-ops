@@ -39,8 +39,6 @@ from repo_ops_core.constants import (
 )
 from repo_ops_core.filesystem import TOML_AVAILABLE, read_toml_file
 
-_TOMLLIB_AVAILABLE = TOML_AVAILABLE
-
 # ---------------------------------------------------------------------------
 # TOML loading helpers
 # ---------------------------------------------------------------------------
@@ -48,7 +46,7 @@ _TOMLLIB_AVAILABLE = TOML_AVAILABLE
 
 def _load_toml(path: Path) -> dict[str, Any]:
     """Load a TOML file; return empty dict on any error."""
-    if not _TOMLLIB_AVAILABLE:
+    if not TOML_AVAILABLE:
         return {}
     return read_toml_file(path) or {}
 
@@ -85,7 +83,7 @@ def load_global_config() -> dict[str, Any]:
     path = _global_config_path()
     if not path.is_file():
         return {}
-    if not _TOMLLIB_AVAILABLE:
+    if not TOML_AVAILABLE:
         _warn_no_tomllib_once()
         return {}
     return _load_toml(path)
@@ -101,7 +99,7 @@ def load_dot_repo_ops_config(repo_root: Path) -> dict[str, Any]:
     sidecar = repo_root / ".repo-ops.toml"
     if not sidecar.is_file():
         return {}
-    if not _TOMLLIB_AVAILABLE:
+    if not TOML_AVAILABLE:
         _warn_no_tomllib_once()
         return {}
     return _load_toml(sidecar)
@@ -119,7 +117,7 @@ def load_repo_config(repo_root: Path) -> dict[str, Any]:
     pyproject = repo_root / "pyproject.toml"
     if not pyproject.is_file():
         return sidecar_cfg
-    if not _TOMLLIB_AVAILABLE:
+    if not TOML_AVAILABLE:
         # pyproject cannot be parsed, but a sidecar already loaded above must
         # still apply (non-Python repos often use only .repo-ops.toml).
         _warn_no_tomllib_once()
