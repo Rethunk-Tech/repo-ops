@@ -65,13 +65,44 @@ def test_collect_components_includes_actions_pins(tmp_path: Path) -> None:
     gh = {c["purl"] for c in components if c["purl"].startswith("pkg:github/")}
     assert "pkg:github/actions/checkout@v4" in gh
     assert "pkg:github/actions/setup-node@v4.0.1" in gh
-    assert "pkg:github/acme/shared@v1" in gh
-    assert "pkg:github/acme/shared@v2" in gh
+    assert "pkg:github/acme/shared@v1?subpath=.github%2Fworkflows%2Fci.yml" in gh
+    assert "pkg:github/acme/shared@v2?subpath=actions%2Flint" in gh
     names = {c["name"] for c in components}
     assert "acme/shared/.github/workflows/ci.yml" in names
     assert "acme/shared/actions/lint" in names
     assert "./.github/workflows/shared.yml" not in names
     assert "docker://alpine" not in names
+
+
+def test_reusable_workflow_paths_at_same_ref_stay_distinct(tmp_path: Path) -> None:
+    wf_dir = tmp_path / ".github" / "workflows"
+    wf_dir.mkdir(parents=True)
+    (wf_dir / "ci.yml").write_text(
+        "name: CI\n"
+        "on: [push]\n"
+        "jobs:\n"
+        "  ci:\n"
+        "    uses: acme/shared/.github/workflows/ci.yml@v1\n"
+        "  deploy:\n"
+        "    uses: acme/shared/.github/workflows/deploy.yml@v1\n",
+        encoding="utf-8",
+    )
+
+    components = collect_components(tmp_path)
+    reusable = [
+        component
+        for component in components
+        if component["name"].startswith("acme/shared/.github/workflows/")
+    ]
+
+    assert {component["name"] for component in reusable} == {
+        "acme/shared/.github/workflows/ci.yml",
+        "acme/shared/.github/workflows/deploy.yml",
+    }
+    assert {component["purl"] for component in reusable} == {
+        "pkg:github/acme/shared@v1?subpath=.github%2Fworkflows%2Fci.yml",
+        "pkg:github/acme/shared@v1?subpath=.github%2Fworkflows%2Fdeploy.yml",
+    }
 
 
 def test_collect_components_dockerfile_stage_ref_excluded(tmp_path: Path) -> None:
