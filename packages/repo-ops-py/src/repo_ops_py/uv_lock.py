@@ -98,16 +98,17 @@ def _filter_held_changes(ws: Workspace, changes: list[Change]) -> list[Change]:
 
 
 def _enforce_version_ceilings(ws: Workspace) -> None:
-    """Post-apply clamp-down: correct any locked package resolved above its ceiling.
+    """Post-apply lock-only clamp: correct any resolved package above its ceiling.
 
     Reads every package's resolved version from ``uv.lock`` and, for those
-    with an active hold rule the resolved version violates, runs a targeted
-    ``uv add <pkg><=ceiling>`` to correct it. Raises if the correction still
-    can't satisfy the ceiling — a hold that silently didn't hold is worse
-    than a loud failure. Also catches a hold added *after* the package was
-    already locked above the ceiling (``uv lock --upgrade --dry-run`` only
-    reports packages that would move, so a package already resolved past a
-    brand-new ceiling never appears in ``check_uv_lock``'s changes).
+    with an active hold rule the resolved version violates, runs
+    ``uv lock --upgrade-package <pkg><=ceiling>`` so only the lockfile changes.
+    Raises if the correction still can't satisfy the ceiling — a hold that
+    silently didn't hold is worse than a loud failure. Also catches a hold
+    added after the package was already locked above the ceiling (``uv lock
+    --upgrade --dry-run`` only reports packages that would move, so a package
+    already resolved past a brand-new ceiling never appears in
+    ``check_uv_lock``'s changes).
     """
     versions = _uv_lock_versions(ws)
     if not versions:
@@ -117,7 +118,11 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
         if rule is None or version_satisfies_ceiling(resolved, rule.max_version):
             continue
         spec = f"{name}{_hold_ceiling_spec(rule.max_version)}"
-        proc = run(["uv", "add", spec], ws.path, timeout=resolve_timeout_apply())
+        proc = run(
+            ["uv", "lock", "--upgrade-package", spec],
+            ws.path,
+            timeout=resolve_timeout_apply(),
+        )
         if proc.returncode != 0:
             raise RuntimeError(
                 f"hold: failed to clamp {name} back to <={rule.max_version} "
