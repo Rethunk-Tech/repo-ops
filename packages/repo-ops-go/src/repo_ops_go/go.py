@@ -25,7 +25,11 @@ from repo_ops_core.holds import (
     resolve_hold,
 )
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
+from repo_ops_core.version_utils import (
+    hold_ceiling_spec,
+    semver_tuple,
+    version_satisfies_ceiling,
+)
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import GO_UPGRADE_RE
 
@@ -256,8 +260,6 @@ def _gomod_require_paths(ws: Workspace) -> set[str] | None:
 # caps a same-major minor/patch version, not a major bump. Still useful (e.g.
 # "stay on 1.5.x for now"), just lower-stakes than the JS ecosystems.
 
-_HOLD_CEILING_PAD = "999999"
-
 
 @cache
 def _global_holds_cached() -> tuple[HoldRule, ...]:
@@ -300,9 +302,7 @@ def _go_ceiling_query(max_version: str) -> str:
     "ceiling is a prefix" semantics (ceiling ``"6"`` allows any 6.x.y, not just
     exactly ``v6.0.0``).
     """
-    parts = [p for p in max_version.strip().split(".") if p]
-    padded = (parts + [_HOLD_CEILING_PAD] * 3)[:3]
-    return "<=v" + ".".join(padded)
+    return "<=v" + hold_ceiling_spec(max_version).removeprefix("<=")
 
 
 def _resolved_go_module_version(ws: Workspace, module_path: str) -> str | None:
