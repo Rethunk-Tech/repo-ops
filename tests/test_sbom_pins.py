@@ -35,7 +35,15 @@ def _write_workflow(root: Path) -> None:
         "    runs-on: ubuntu-latest\n"
         "    steps:\n"
         "      - uses: actions/checkout@v4\n"
-        "      - uses: actions/setup-node@v4.0.1\n",
+        "      - uses: actions/setup-node@v4.0.1\n"
+        "  reusable:\n"
+        "    uses: acme/shared/.github/workflows/ci.yml@v1\n"
+        "  nested:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - uses: acme/shared/actions/lint@v2\n"
+        "      - uses: ./.github/workflows/shared.yml\n"
+        "      - uses: docker://alpine@3.20\n",
         encoding="utf-8",
     )
 
@@ -57,6 +65,13 @@ def test_collect_components_includes_actions_pins(tmp_path: Path) -> None:
     gh = {c["purl"] for c in components if c["purl"].startswith("pkg:github/")}
     assert "pkg:github/actions/checkout@v4" in gh
     assert "pkg:github/actions/setup-node@v4.0.1" in gh
+    assert "pkg:github/acme/shared@v1" in gh
+    assert "pkg:github/acme/shared@v2" in gh
+    names = {c["name"] for c in components}
+    assert "acme/shared/.github/workflows/ci.yml" in names
+    assert "acme/shared/actions/lint" in names
+    assert "./.github/workflows/shared.yml" not in names
+    assert "docker://alpine" not in names
 
 
 def test_collect_components_dockerfile_stage_ref_excluded(tmp_path: Path) -> None:
