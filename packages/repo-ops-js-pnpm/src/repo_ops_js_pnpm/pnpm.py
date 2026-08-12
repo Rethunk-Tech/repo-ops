@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import MutableMapping
+from io import StringIO
 from pathlib import Path
+from typing import Any
+
+from ruamel.yaml.error import YAMLError
 
 from repo_ops_core.config import (
     ambient_env,
@@ -31,6 +36,7 @@ from repo_ops_lockfiles.snapshots import (
     snapshot_workspace_files,
 )
 from repo_ops_models import Change, Workspace
+from repo_ops_upgrade.workflow_uses import _yaml_loader
 
 _PNPM_UPDATE_LATEST_ENV = "REPO_OPS_PNPM_UPDATE_LATEST"
 _PNPM_TARGETED_BUMP_ENV = "REPO_OPS_PNPM_TARGETED_BUMP"
@@ -86,6 +92,83 @@ def _pnpm_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
     return str(raw or "").strip().lower() in _TRUE_VALUES
 
 
+def _catalog_workspace_path(ws: Workspace) -> Path:
+    return ws.path / "pnpm-workspace.yaml"
+
+
+def _catalog_tables(data: Any) -> list[MutableMapping[Any, Any]]:
+    if not isinstance(data, MutableMapping):
+        return []
+    tables: list[MutableMapping[Any, Any]] = []
+    default = data.get("catalog")
+    if isinstance(default, MutableMapping):
+        tables.append(default)
+    named = data.get("catalogs")
+    if isinstance(named, MutableMapping):
+        tables.extend(
+            table for table in named.values() if isinstance(table, MutableMapping)
+        )
+    return tables
+
+
+def _is_catalog_protocol(value: str) -> bool:
+    prefix, separator, _rest = value.partition(":")
+    return bool(
+        separator
+        and prefix.replace("+", "").replace("-", "").replace(".", "").isalnum()
+    )
+
+
+def _catalog_specs(ws: Workspace) -> dict[str, str]:
+    path = _catalog_workspace_path(ws)
+    if not path.is_file():
+        return {}
+    try:
+        data = _yaml_loader().load(path)
+    except (OSError, YAMLError):
+        return {}
+    specs: dict[str, str] = {}
+    for table in _catalog_tables(data):
+        for package, value in table.items():
+            if (
+                isinstance(package, str)
+                and isinstance(value, str)
+                and not _is_catalog_protocol(value.strip())
+            ):
+                specs.setdefault(package, value)
+    return specs
+
+
+def _rewrite_catalog_package(ws: Workspace, package: str, target: str) -> bool:
+    path = _catalog_workspace_path(ws)
+    if not path.is_file():
+        return False
+    try:
+        yaml = _yaml_loader()
+        data = yaml.load(path)
+    except (OSError, YAMLError):
+        return False
+    changed = False
+    for table in _catalog_tables(data):
+        value = table.get(package)
+        if not isinstance(value, str) or _is_catalog_protocol(value.strip()):
+            continue
+        prefix = value[:1] if value.startswith(("^", "~")) else ""
+        replacement = f"{prefix}{target}" if prefix else target
+        if value != replacement:
+            table[package] = replacement
+            changed = True
+    if not changed:
+        return False
+    output = StringIO()
+    yaml.dump(data, output)
+    try:
+        path.write_text(output.getvalue(), encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
 def _bucket_pnpm_pkg(
     name: str,
     cur: str,
@@ -139,6 +222,7 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
         raise RuntimeError(proc.stderr.strip() or "pnpm outdated failed")
     changes: list[Change] = []
     behind_latest: list[Change] = []
+    outdated: dict[str, tuple[str, str, str]] = {}
     if proc.stdout.strip():
         try:
             data = json.loads(proc.stdout)
@@ -149,6 +233,7 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
                         cur = str(meta.get("current", "?"))
                         wanted = str(meta.get("wanted", "?"))
                         latest = str(meta.get("latest", "?"))
+                        outdated[name] = (cur, wanted, latest)
                         _bucket_pnpm_pkg(
                             name, cur, wanted, latest, changes, behind_latest, ws=ws
                         )
@@ -158,6 +243,7 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
                         cur = str(meta.get("current", "?"))
                         wanted = str(meta.get("wanted", "?"))
                         latest = str(meta.get("latest", "?"))
+                        outdated[str(meta["name"])] = (cur, wanted, latest)
                         _bucket_pnpm_pkg(
                             str(meta["name"]),
                             cur,
@@ -173,6 +259,25 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
                 f"WARN: pnpm outdated returned non-JSON output: {snippet!r}",
                 file=sys.stderr,
             )
+    catalog_specs = _catalog_specs(ws)
+    if catalog_specs:
+        catalog_names = set(catalog_specs)
+        changes[:] = [c for c in changes if c.name not in catalog_names]
+        behind_latest[:] = [c for c in behind_latest if c.name not in catalog_names]
+        for name, spec in catalog_specs.items():
+            meta = outdated.get(name)
+            if meta is None:
+                continue
+            cur, wanted, latest = meta
+            target = (
+                latest
+                if latest not in ("?", "") and cur != latest
+                else wanted
+                if wanted not in ("?", "") and cur != wanted
+                else ""
+            )
+            if target:
+                behind_latest.append(Change(name, spec, target))
     return changes, behind_latest
 
 
@@ -238,16 +343,37 @@ def targeted_bump_behind(
         return [], behind
     applied: list[Change] = []
     still_behind: list[Change] = []
+    catalog_names = set(_catalog_specs(ws))
     for change in behind:
         snap = snapshot_workspace_files(ws.path, "pnpm")
         audit_target = _AUDIT_VERSION_OVERRIDES.get(change.name)
+        held_rule = None if audit_target else resolve_package_hold(ws, change.name)
+        if change.name in catalog_names:
+            target = (
+                audit_target
+                if audit_target
+                else hold_version_spec(held_rule)
+                if held_rule is not None
+                else change.to
+            )
+            if not target or not _rewrite_catalog_package(ws, change.name, target):
+                still_behind.append(change)
+                continue
+            if held_rule is None and not audit_target:
+                release_unheld_pin(ws.path, change.name)
+            install = run(["pnpm", "install"], ws.path, timeout=TIMEOUT_APPLY)
+            if install.returncode == 0:
+                applied.append(Change(change.name, change.from_ver, target))
+            else:
+                restore_workspace_snapshot(ws.path, snap, "pnpm")
+                still_behind.append(change)
+            continue
         if audit_target:
             # Audit path wins: a security remediation must not be silently
             # blocked by a routine hold policy. pnpm add installs an explicit
             # version and updates both manifest and lockfile.
             cmd = ["pnpm", "add", f"{change.name}@{audit_target}"]
         else:
-            held_rule = resolve_package_hold(ws, change.name)
             if held_rule is not None:
                 # A hold ceiling: pin via `pnpm add` (installs and updates
                 # the manifest range in one step, same as the audit path).
