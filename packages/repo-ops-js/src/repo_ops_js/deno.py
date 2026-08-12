@@ -181,10 +181,20 @@ def _snapshot_deno_workspace(ws: Workspace) -> dict[Path, bytes]:
 
 
 def _deno_package_matches(left: str, right: str) -> bool:
-    def normalize(package: str) -> str:
-        return package.removeprefix("npm:").removeprefix("jsr:")
+    def normalize(package: str) -> tuple[str | None, str]:
+        for registry in ("npm", "jsr"):
+            prefix = f"{registry}:"
+            if package.startswith(prefix):
+                return registry, package.removeprefix(prefix)
+        return None, package
 
-    return normalize(left) == normalize(right)
+    left_registry, left_name = normalize(left)
+    right_registry, right_name = normalize(right)
+    return left_name == right_name and (
+        left_registry is None
+        or right_registry is None
+        or left_registry == right_registry
+    )
 
 
 def _release_deno_import_pins(value: object, package: str) -> bool:
