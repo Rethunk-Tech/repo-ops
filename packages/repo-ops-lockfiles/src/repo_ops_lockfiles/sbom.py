@@ -458,7 +458,8 @@ def emit_cyclonedx(
                 "components": [
                     {
                         "type": "application",
-                        "author": "Rethunk-Tech",
+                        "publisher": "Rethunk-Tech",
+                        "authors": [{"name": "Rethunk-Tech"}],
                         "name": "repo-ops",
                         "version": tv,
                     }

@@ -280,7 +280,8 @@ def test_emit_cyclonedx_metadata() -> None:
         "components": [
             {
                 "type": "application",
-                "author": "Rethunk-Tech",
+                "publisher": "Rethunk-Tech",
+                "authors": [{"name": "Rethunk-Tech"}],
                 "name": "repo-ops",
                 "version": "1.0.0",
             }
