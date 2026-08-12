@@ -20,7 +20,7 @@ except ModuleNotFoundError:
         import tomli as _third_party_tomllib
 
         _tomllib = _third_party_tomllib
-    except ModuleNotFoundError:
+    except ImportError:
         pass
 
 TOML_AVAILABLE = _tomllib is not None
