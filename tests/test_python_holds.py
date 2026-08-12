@@ -75,9 +75,11 @@ def test_apply_uv_lock_clamps_package_above_ceiling(tmp_path: Path) -> None:
         )
 
     _write_lock()
+    clamp_commands: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=None, env=None):
-        if cmd[:2] == ["uv", "add"]:
+        if cmd[:3] == ["uv", "lock", "--upgrade-package"]:
+            clamp_commands.append(cmd)
             versions["typescript-stub"] = "6.9.0"
             _write_lock()
             return _proc()
@@ -94,6 +96,9 @@ def test_apply_uv_lock_clamps_package_above_ceiling(tmp_path: Path) -> None:
     ):
         uv_lock.apply_uv_lock(_uv_ws(tmp_path))
 
+    assert clamp_commands == [
+        ["uv", "lock", "--upgrade-package", "typescript-stub<=6.999999.999999"]
+    ]
     assert "typescript-stub@7" not in lock_path.read_text(encoding="utf-8")
 
 
@@ -130,7 +135,7 @@ def test_apply_uv_lock_raises_when_corrective_install_command_fails(
     )
 
     def fake_run(cmd, cwd, timeout=None, env=None):
-        if cmd[:2] == ["uv", "add"]:
+        if cmd[:3] == ["uv", "lock", "--upgrade-package"]:
             return _proc(returncode=1, stderr="resolver conflict")
         return _proc()
 
@@ -165,9 +170,13 @@ def test_apply_pdm_clamps_package_above_ceiling(tmp_path: Path) -> None:
     lock_path.write_text(
         '[[package]]\nname = "typescript-stub"\nversion = "7.2.0"\n', encoding="utf-8"
     )
+    manifest_path = tmp_path / "pyproject.toml"
+    manifest_before = b"[project]\nname = 'demo'\n"
+    manifest_path.write_bytes(manifest_before)
 
     def fake_run(cmd, cwd, timeout=None):
         if cmd[:2] == ["pdm", "add"]:
+            manifest_path.write_bytes(b"[project]\nname = 'changed'\n")
             lock_path.write_text(
                 '[[package]]\nname = "typescript-stub"\nversion = "6.9.0"\n',
                 encoding="utf-8",
@@ -185,6 +194,7 @@ def test_apply_pdm_clamps_package_above_ceiling(tmp_path: Path) -> None:
         pdm.apply_pdm(_pdm_ws(tmp_path))
 
     assert "6.9.0" in lock_path.read_text(encoding="utf-8")
+    assert manifest_path.read_bytes() == manifest_before
 
 
 def test_apply_pdm_raises_when_clamp_fails(tmp_path: Path) -> None:
@@ -233,9 +243,13 @@ def test_apply_pipenv_clamps_package_above_ceiling(tmp_path: Path) -> None:
         )
 
     _write_lock("7.2.0")
+    manifest_path = tmp_path / "Pipfile"
+    manifest_before = b"[packages]\ntypescript-stub = '*'\n"
+    manifest_path.write_bytes(manifest_before)
 
     def fake_run(cmd, cwd, timeout=None):
         if cmd[:2] == ["pipenv", "install"]:
+            manifest_path.write_bytes(b"[packages]\ntypescript-stub = 'changed'\n")
             _write_lock("6.9.0")
         return _proc()
 
@@ -252,6 +266,7 @@ def test_apply_pipenv_clamps_package_above_ceiling(tmp_path: Path) -> None:
         pipenv.apply_pipenv(_pipenv_ws(tmp_path))
 
     assert "6.9.0" in lock_path.read_text(encoding="utf-8")
+    assert manifest_path.read_bytes() == manifest_before
 
 
 def test_apply_pipenv_raises_when_clamp_fails(tmp_path: Path) -> None:
@@ -298,9 +313,13 @@ def test_apply_poetry_clamps_package_above_ceiling(tmp_path: Path) -> None:
     lock_path.write_text(
         '[[package]]\nname = "typescript-stub"\nversion = "7.2.0"\n', encoding="utf-8"
     )
+    manifest_path = tmp_path / "pyproject.toml"
+    manifest_before = b"[project]\nname = 'demo'\n"
+    manifest_path.write_bytes(manifest_before)
 
     def fake_run(cmd, cwd, timeout=None):
         if cmd[:2] == ["poetry", "add"]:
+            manifest_path.write_bytes(b"[project]\nname = 'changed'\n")
             lock_path.write_text(
                 '[[package]]\nname = "typescript-stub"\nversion = "6.9.0"\n',
                 encoding="utf-8",
@@ -320,6 +339,7 @@ def test_apply_poetry_clamps_package_above_ceiling(tmp_path: Path) -> None:
         poetry.apply_poetry(_poetry_ws(tmp_path))
 
     assert "6.9.0" in lock_path.read_text(encoding="utf-8")
+    assert manifest_path.read_bytes() == manifest_before
 
 
 def test_apply_poetry_raises_when_clamp_fails(tmp_path: Path) -> None:
