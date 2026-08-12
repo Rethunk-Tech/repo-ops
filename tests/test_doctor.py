@@ -241,6 +241,21 @@ def test_json_output_shape(
     assert payload["gh_auth"]["authenticated"] is True
 
 
+def test_pyrefly_precedes_ruff_in_probe_and_json_order(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    probe_names = [spec.name for spec in doctor._BINARIES]
+    assert probe_names.index("pyrefly") < probe_names.index("ruff")
+
+    monkeypatch.setattr(doctor.shutil, "which", _fake_which_all_present)
+    monkeypatch.setattr(doctor.subprocess, "run", _fake_run_version)
+
+    assert main(["--json", "--compact"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    json_names = [binary["name"] for binary in payload["binaries"]]
+    assert json_names.index("pyrefly") < json_names.index("ruff")
+
+
 def test_json_out_writes_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
