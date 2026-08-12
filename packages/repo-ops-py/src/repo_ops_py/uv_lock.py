@@ -15,7 +15,7 @@ from repo_ops_core.holds import (
     resolve_hold,
 )
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import version_satisfies_ceiling
+from repo_ops_core.version_utils import hold_ceiling_spec, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 
 # ---------------------------------------------------------------------------
@@ -26,8 +26,6 @@ from repo_ops_models import Change, Workspace
 # ``uv lock --upgrade`` regenerates the whole lockfile — so unlike the JS
 # ecosystems, this clamp-down is the *only* enforcement mechanism, not a
 # safety net.
-
-_HOLD_CEILING_PAD = "999999"
 
 
 @cache
@@ -60,17 +58,6 @@ def _resolve_pkg_hold(ws: Workspace, package: str) -> HoldRule | None:
         manager=ws.manager,
         workspace_rel=_workspace_rel(ws),
     )
-
-
-def _hold_ceiling_spec(max_version: str) -> str:
-    """PEP 440 upper-bound constraint for a hold ceiling (e.g. ``<=6.999999.999999``).
-
-    Components the ceiling omits are padded with a very large sentinel so
-    they're effectively unconstrained (ceiling ``"6"`` allows any 6.x.y).
-    """
-    parts = [p for p in max_version.strip().split(".") if p]
-    padded = (parts + [_HOLD_CEILING_PAD] * 3)[:3]
-    return "<=" + ".".join(padded)
 
 
 def _uv_lock_versions(ws: Workspace) -> dict[str, str]:
@@ -117,7 +104,7 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
         rule = _resolve_pkg_hold(ws, name)
         if rule is None or version_satisfies_ceiling(resolved, rule.max_version):
             continue
-        spec = f"{name}{_hold_ceiling_spec(rule.max_version)}"
+        spec = f"{name}{hold_ceiling_spec(rule.max_version)}"
         proc = run(
             ["uv", "lock", "--upgrade-package", spec],
             ws.path,

@@ -19,6 +19,7 @@ from repo_ops_core.holds import (
     resolve_hold,
 )
 from repo_ops_core.process import run
+from repo_ops_core.version_utils import hold_ceiling_spec
 from repo_ops_models import Change, Workspace
 from repo_ops_py.requirements import parse_requirements_lines
 
@@ -35,7 +36,6 @@ from repo_ops_py.requirements import parse_requirements_lines
 # place. The constraints file is temporary and never written into
 # requirements.in itself — config/manifest files stay untouched.
 
-_HOLD_CEILING_PAD = "999999"
 _REQ_NAME_RE = re.compile(r"^([A-Za-z0-9_.-]+)")
 
 
@@ -71,13 +71,6 @@ def _resolve_pkg_hold(ws: Workspace, package: str) -> HoldRule | None:
     )
 
 
-def _hold_ceiling_spec(max_version: str) -> str:
-    """PEP 440 upper-bound constraint for a hold ceiling (e.g. ``<=6.999999.999999``)."""
-    parts = [p for p in max_version.strip().split(".") if p]
-    padded = (parts + [_HOLD_CEILING_PAD] * 3)[:3]
-    return "<=" + ".".join(padded)
-
-
 def _requirements_in_names(req_in: Path) -> set[str]:
     """Direct dependency names from requirements.in (name only, spec ignored).
 
@@ -109,7 +102,7 @@ def _hold_constraints_file(ws: Workspace, req_in: Path):
     for name in sorted(_requirements_in_names(req_in)):
         rule = _resolve_pkg_hold(ws, name)
         if rule is not None:
-            lines.append(f"{name}{_hold_ceiling_spec(rule.max_version)}")
+            lines.append(f"{name}{hold_ceiling_spec(rule.max_version)}")
     if not lines:
         yield None
         return
