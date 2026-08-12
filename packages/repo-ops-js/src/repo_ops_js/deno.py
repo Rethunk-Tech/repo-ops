@@ -181,7 +181,10 @@ def _snapshot_deno_workspace(ws: Workspace) -> dict[Path, bytes]:
 
 
 def _deno_package_matches(left: str, right: str) -> bool:
-    return left == right or left.removeprefix("npm:") == right.removeprefix("npm:")
+    def normalize(package: str) -> str:
+        return package.removeprefix("npm:").removeprefix("jsr:")
+
+    return normalize(left) == normalize(right)
 
 
 def _release_deno_import_pins(value: object, package: str) -> bool:
