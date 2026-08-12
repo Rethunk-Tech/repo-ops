@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 from repo_ops_js.deno import apply_deno, check_deno
-from repo_ops_models import Workspace
+from repo_ops_models import Change, Workspace
 
 
 def _ws(tmp_path: Path) -> Workspace:
@@ -281,8 +281,9 @@ def test_apply_deno_calls_ghost_bump_guard(tmp_path: Path) -> None:
         apply_deno(_ws(tmp_path))
 
 
-def test_apply_deno_rejects_lockfile_ghost_bump(tmp_path: Path) -> None:
+def test_apply_deno_rejects_lockfile_ghost_bump(tmp_path: Path, monkeypatch) -> None:
     """apply_deno fails when the lockfile remains below a planned target."""
+    monkeypatch.delenv("REPO_OPS_DENO_TARGETED_BUMP", raising=False)
 
     def fake_run(cmd, cwd, timeout=None):
         if cmd == ["deno", "outdated"]:
@@ -305,3 +306,35 @@ def test_apply_deno_rejects_lockfile_ghost_bump(tmp_path: Path) -> None:
         pytest.raises(RuntimeError, match="ghost bump"),
     ):
         apply_deno(_ws(tmp_path))
+
+
+def test_apply_deno_defers_lockfile_ghost_bump_with_targeted_bump(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Targeted mode folds unresolved bulk targets into the retry list."""
+    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    ghost = Change("jsr:@std/assert", "0.225.0", "0.226.0")
+
+    def fake_run(cmd, cwd, timeout=None):
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
+        patch("repo_ops_js.deno.check_deno", return_value=([ghost], [])),
+        patch("repo_ops_js.deno.run", side_effect=fake_run),
+        patch(
+            "repo_ops_js.deno.versions_deno_lock",
+            return_value={"jsr:@std/assert@0.225.0"},
+        ),
+        patch(
+            "repo_ops_js.guards.resolved_version_from_node_modules", return_value=None
+        ),
+        patch(
+            "repo_ops_js.deno.targeted_bump_behind",
+            return_value=([], [ghost]),
+        ) as targeted,
+    ):
+        result = apply_deno(_ws(tmp_path))
+
+    targeted.assert_called_once_with(_ws(tmp_path), [ghost])
+    assert result == [ghost]

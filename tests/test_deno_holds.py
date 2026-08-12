@@ -56,6 +56,13 @@ def _seed_is_odd_pin(d) -> None:
     )
 
 
+def _seed_assert_pin(d) -> None:
+    (d / "import_map.json").write_text(
+        json.dumps({"imports": {"jsr:@std/assert": "jsr:@std/assert@1.0.0"}}),
+        encoding="utf-8",
+    )
+
+
 @pytest.fixture(autouse=True)
 def _no_repo_holds():
     clear_deno_audit_version_overrides()
@@ -200,6 +207,75 @@ def test_targeted_bump_keeps_held_import_map_pin(tmp_path, monkeypatch) -> None:
         "imports"
     ]
     assert imports["npm:is-odd"] == "npm:is-odd@0.1.2"
+
+
+def test_targeted_bump_releases_unheld_jsr_import_map_pin(
+    tmp_path, monkeypatch
+) -> None:
+    _seed_assert_pin(tmp_path)
+    ws = _ws(tmp_path)
+    change = Change("jsr:@std/assert", "1.0.0", "1.1.0")
+    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    with (
+        patch(_GLOBAL_HOLDS_CACHE, return_value=()),
+        patch(
+            "repo_ops_js.deno._snapshot_deno_workspace",
+            side_effect=[object(), object()],
+        ),
+        patch("repo_ops_js.deno._landed_deno_version", return_value="1.1.0"),
+        patch("repo_ops_js.deno.assert_targets_resolved"),
+        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+    ):
+        applied, still_behind = targeted_bump_behind(ws, [change])
+
+    assert applied == [change]
+    assert still_behind == []
+    assert run_mock.call_args.args[0] == [
+        "deno",
+        "update",
+        "--import-map",
+        str(tmp_path / "import_map.json"),
+        "jsr:@std/assert",
+    ]
+    imports = json.loads((tmp_path / "import_map.json").read_text(encoding="utf-8"))[
+        "imports"
+    ]
+    assert imports["jsr:@std/assert"] == "jsr:@std/assert"
+
+
+def test_targeted_bump_keeps_held_jsr_import_map_pin(tmp_path, monkeypatch) -> None:
+    _seed_assert_pin(tmp_path)
+    ws = _ws(tmp_path)
+    change = Change("jsr:@std/assert", "1.0.0", "1.1.0")
+    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    with (
+        patch(
+            _GLOBAL_HOLDS_CACHE,
+            return_value=(_held_rule(package="jsr:@std/assert", max_version="1.1.0"),),
+        ),
+        patch(
+            "repo_ops_js.deno._snapshot_deno_workspace",
+            side_effect=[object(), object()],
+        ),
+        patch("repo_ops_js.deno._landed_deno_version", return_value="1.1.0"),
+        patch("repo_ops_js.deno.assert_targets_resolved"),
+        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+    ):
+        applied, still_behind = targeted_bump_behind(ws, [change])
+
+    assert applied == [change]
+    assert still_behind == []
+    assert run_mock.call_args.args[0] == [
+        "deno",
+        "update",
+        "--import-map",
+        str(tmp_path / "import_map.json"),
+        "jsr:@std/assert@1.1.0",
+    ]
+    imports = json.loads((tmp_path / "import_map.json").read_text(encoding="utf-8"))[
+        "imports"
+    ]
+    assert imports["jsr:@std/assert"] == "jsr:@std/assert@1.0.0"
 
 
 def test_apply_deno_audit_version_overrides_runs_without_targeted_bump(
