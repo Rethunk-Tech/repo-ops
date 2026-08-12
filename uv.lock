@@ -461,6 +461,12 @@ requires-dist = [
 name = "repo-ops-core"
 version = "0.22.1"
 source = { editable = "packages/repo-ops-core" }
+dependencies = [
+    { name = "tomli", marker = "python_full_version < '3.11'" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.4.1" }]
 
 [[package]]
 name = "repo-ops-dependabot"
