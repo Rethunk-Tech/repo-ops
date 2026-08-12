@@ -12,6 +12,7 @@ from repo_ops_go.go import (
     _enforce_version_ceilings,
     _explicit_go_get_targets,
     _filter_held_go_changes,
+    _go_ceiling_query,
     _workspace_rel,
     apply_go,
 )
@@ -59,6 +60,20 @@ def _fake_run_with_gomod(list_stdout: str, require_paths: list[str]):
         return _proc(stdout)
 
     return fake_run
+
+
+@pytest.mark.parametrize(
+    ("max_version", "expected"),
+    [
+        ("6", "<=v6.999999.999999"),
+        ("5.9", "<=v5.9.999999"),
+        ("1.2.3", "<=v1.2.3"),
+    ],
+)
+def test_go_ceiling_query_uses_shared_hold_padding(
+    max_version: str, expected: str
+) -> None:
+    assert _go_ceiling_query(max_version) == expected
 
 
 def test_changes_from_go_list_json_then_filter_held_past_ceiling(tmp_path) -> None:
