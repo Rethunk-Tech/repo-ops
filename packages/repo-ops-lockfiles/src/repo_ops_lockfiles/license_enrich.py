@@ -17,6 +17,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from repo_ops_core.filesystem import read_toml_file
+
 UNKNOWN_LICENSE = "UNKNOWN"
 
 _ALIASES = {
@@ -368,14 +370,8 @@ def _cargo_local_license(name: str, version: str) -> str | None:
         return None
     for package_dir in sources.glob(f"*/{name}-{version}"):
         cargo_toml = package_dir / "Cargo.toml"
-        try:
-            try:
-                import tomllib
-            except ImportError:
-                import tomli as tomllib
-
-            data = tomllib.loads(cargo_toml.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        data = read_toml_file(cargo_toml)
+        if data is None:
             continue
         package = data.get("package")
         if not isinstance(package, dict):
