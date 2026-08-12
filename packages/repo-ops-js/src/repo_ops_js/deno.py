@@ -29,7 +29,7 @@ from repo_ops_lockfiles.parsers import versions_deno_lock
 from repo_ops_lockfiles.snapshots import snapshot_workspace_files
 from repo_ops_models import Change, Workspace
 
-from repo_ops_js.guards import assert_targets_resolved
+from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 
 _DENO_UPDATE_LATEST_ENV = "REPO_OPS_DENO_UPDATE_LATEST"
 _DENO_TARGETED_BUMP_ENV = "REPO_OPS_DENO_TARGETED_BUMP"
@@ -739,12 +739,24 @@ def apply_deno(ws: Workspace) -> list[Change]:
         if (ch.to or "").strip() not in ("", "?", "latest") and (ch.name or "").strip()
     ]
     if guardable:
-        assert_targets_resolved(
-            ws,
-            guardable,
-            manager="deno",
-            fallback_resolver=_landed_deno_version,
-        )
+        if _deno_targeted_bump_enabled(ws):
+            blocked = unresolved_targets(
+                ws,
+                guardable,
+                fallback_resolver=_landed_deno_version,
+            )
+            behind_names = {change.name for change in behind}
+            for change, _resolved in blocked:
+                if change.name not in behind_names:
+                    behind.append(change)
+                    behind_names.add(change.name)
+        else:
+            assert_targets_resolved(
+                ws,
+                guardable,
+                manager="deno",
+                fallback_resolver=_landed_deno_version,
+            )
     _, behind = targeted_bump_behind(ws, behind)
     _enforce_deno_version_ceilings(ws, [change.name for change in [*planned, *behind]])
     return behind
