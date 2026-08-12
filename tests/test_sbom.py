@@ -290,6 +290,67 @@ def test_emit_cyclonedx_metadata() -> None:
     assert meta["component"]["name"] == "my-app"
 
 
+def test_emit_cyclonedx_tools_match_1_5_schema() -> None:
+    doc = emit_cyclonedx(
+        _COMPONENTS,
+        "my-app",
+        tool_version="1.0.0",
+        timestamp="2024-01-01T00:00:00+00:00",
+        serial="s",
+    )
+    tools = doc["metadata"]["tools"]
+    schema = {
+        "type": "object",
+        "required": ["components"],
+        "properties": {
+            "components": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["type", "name", "version", "publisher", "authors"],
+                    "properties": {
+                        "type": {"type": "string"},
+                        "name": {"type": "string"},
+                        "version": {"type": "string"},
+                        "publisher": {"type": "string"},
+                        "authors": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": ["name"],
+                                "properties": {"name": {"type": "string"}},
+                            },
+                        },
+                    },
+                    "not": {"required": ["author"]},
+                },
+            }
+        },
+    }
+
+    try:
+        from jsonschema import validate
+    except ImportError:
+        assert isinstance(tools, dict)
+        components = tools.get("components")
+        assert isinstance(components, list)
+        for component in components:
+            assert isinstance(component, dict)
+            assert isinstance(component.get("type"), str)
+            assert isinstance(component.get("name"), str)
+            assert isinstance(component.get("version"), str)
+            assert isinstance(component.get("publisher"), str)
+            assert "author" not in component
+            authors = component.get("authors")
+            assert isinstance(authors, list)
+            assert all(
+                isinstance(author, dict) and isinstance(author.get("name"), str)
+                for author in authors
+            )
+    else:
+        validate(instance=tools, schema=schema)
+
+
 def test_emit_cyclonedx_components() -> None:
     doc = emit_cyclonedx(
         _COMPONENTS,
