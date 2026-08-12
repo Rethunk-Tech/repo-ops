@@ -61,6 +61,7 @@ _BINARIES: tuple[BinarySpec, ...] = (
     BinarySpec("gh", "vcs"),
     BinarySpec("uv", "python"),
     BinarySpec("pyrefly", "python"),
+    BinarySpec("ruff", "python"),
     BinarySpec("hatch", "python"),
     BinarySpec("pip-compile", "python"),
     BinarySpec("poetry", "python"),
