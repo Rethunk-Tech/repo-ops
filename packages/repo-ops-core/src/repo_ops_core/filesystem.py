@@ -10,10 +10,20 @@ from typing import Any
 
 from repo_ops_core.constants import EXCLUDE_PATH_FRAGMENTS
 
+_tomllib: Any | None = None
 try:
-    import tomllib
+    import tomllib as _stdlib_tomllib
+
+    _tomllib = _stdlib_tomllib
 except ModuleNotFoundError:
-    import tomli as tomllib
+    try:
+        import tomli as _third_party_tomllib
+
+        _tomllib = _third_party_tomllib
+    except ModuleNotFoundError:
+        pass
+
+TOML_AVAILABLE = _tomllib is not None
 
 
 def write_json_atomic(path: Path, payload: Any, *, compact: bool = False) -> Path:
@@ -55,8 +65,10 @@ def read_json_file(path: Path) -> dict[str, Any] | None:
 
 
 def read_toml_file(path: Path) -> dict[str, Any] | None:
+    if _tomllib is None:
+        return None
     try:
-        data = tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
+        data = _tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
     except Exception:
         return None
     return data if isinstance(data, dict) else None

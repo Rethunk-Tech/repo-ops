@@ -37,19 +37,9 @@ from repo_ops_core.constants import (
     TIMEOUT_CHECK,
     TIMEOUT_VERIFY,
 )
+from repo_ops_core.filesystem import TOML_AVAILABLE, read_toml_file
 
-_TOMLLIB_AVAILABLE = False
-try:
-    import tomllib as _tomllib
-
-    _TOMLLIB_AVAILABLE = True
-except ModuleNotFoundError:
-    try:
-        import tomli as _tomllib
-
-        _TOMLLIB_AVAILABLE = True
-    except ModuleNotFoundError:
-        pass
+_TOMLLIB_AVAILABLE = TOML_AVAILABLE
 
 # ---------------------------------------------------------------------------
 # TOML loading helpers
@@ -60,12 +50,7 @@ def _load_toml(path: Path) -> dict[str, Any]:
     """Load a TOML file; return empty dict on any error."""
     if not _TOMLLIB_AVAILABLE:
         return {}
-    try:
-        with path.open("rb") as fh:
-            data: dict[str, Any] = _tomllib.load(fh)
-            return data
-    except Exception:
-        return {}
+    return read_toml_file(path) or {}
 
 
 _warned: bool = False
