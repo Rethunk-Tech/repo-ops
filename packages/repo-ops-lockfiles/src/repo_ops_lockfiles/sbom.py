@@ -1,6 +1,6 @@
 """SBOM (Software Bill of Materials) generation from lockfile dependencies.
 
-Supports CycloneDX 1.4 JSON and SPDX 2.3 JSON output formats.
+Supports CycloneDX 1.5 JSON and SPDX 2.3 JSON output formats.
 Reuses the existing lockfile parsers (parsers.py) to enumerate resolved
 name@version pairs, then emits a standards-valid SBOM document.
 
@@ -443,24 +443,27 @@ def emit_cyclonedx(
     timestamp: str | None = None,
     serial: str | None = None,
 ) -> dict[str, object]:
-    """Return a CycloneDX 1.4 BOM dict suitable for JSON serialisation."""
+    """Return a CycloneDX 1.5 BOM dict suitable for JSON serialisation."""
     tv = tool_version or _resolve_tool_version()
     ts = timestamp or datetime.now(tz=timezone.utc).isoformat()
     sn = serial or str(uuid.uuid4())
     return {
         "bomFormat": "CycloneDX",
-        "specVersion": "1.4",
+        "specVersion": "1.5",
         "serialNumber": f"urn:uuid:{sn}",
         "version": 1,
         "metadata": {
             "timestamp": ts,
-            "tools": [
-                {
-                    "vendor": "Rethunk-Tech",
-                    "name": "repo-ops",
-                    "version": tv,
-                }
-            ],
+            "tools": {
+                "components": [
+                    {
+                        "type": "application",
+                        "author": "Rethunk-Tech",
+                        "name": "repo-ops",
+                        "version": tv,
+                    }
+                ]
+            },
             "component": {
                 "type": "application",
                 "name": root_name,
@@ -558,7 +561,7 @@ exit codes:
   1  argument error or I/O failure
 
 formats:
-  cyclonedx  CycloneDX 1.4 JSON (default)  https://cyclonedx.org/specification/overview/
+  cyclonedx  CycloneDX 1.5 JSON (default)  https://cyclonedx.org/specification/overview/
   spdx       SPDX 2.3 JSON                 https://spdx.github.io/spdx-spec/
 
 scope:

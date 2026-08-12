@@ -238,6 +238,8 @@ The shared `--exclude PATTERN` filter also applies to this sweep and to
 `repo-ops sbom [root_dir ...]` builds a Software Bill of Materials from
 discovered lockfile dependencies (read-only). Offline by default; component
 licenses are `NOASSERTION` unless enrichment is enabled.
+The default CycloneDX JSON uses specification 1.5; CycloneDX 1.4 consumers that
+require `metadata.tools[]` are dropped.
 
 - `--format cyclonedx|spdx` — output format (default: `cyclonedx`).
 - `--output PATH` — write the SBOM to `PATH` instead of stdout.

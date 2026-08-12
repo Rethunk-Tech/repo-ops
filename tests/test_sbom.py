@@ -260,7 +260,7 @@ def test_emit_cyclonedx_schema_keys() -> None:
         serial="test-serial",
     )
     assert doc["bomFormat"] == "CycloneDX"
-    assert doc["specVersion"] == "1.4"
+    assert doc["specVersion"] == "1.5"
     assert doc["serialNumber"] == "urn:uuid:test-serial"
     assert doc["version"] == 1
 
@@ -276,8 +276,16 @@ def test_emit_cyclonedx_metadata() -> None:
     meta = doc["metadata"]
     assert isinstance(meta, dict)
     tools = meta["tools"]
-    assert isinstance(tools, list)
-    assert tools[0]["name"] == "repo-ops"
+    assert tools == {
+        "components": [
+            {
+                "type": "application",
+                "author": "Rethunk-Tech",
+                "name": "repo-ops",
+                "version": "1.0.0",
+            }
+        ]
+    }
     assert meta["component"]["name"] == "my-app"
 
 
