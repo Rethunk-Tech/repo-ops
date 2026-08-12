@@ -5,24 +5,26 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from repo_ops_core.constants import EXCLUDE_PATH_FRAGMENTS
 
-_tomllib: Any | None = None
-try:
-    import tomllib as _stdlib_tomllib
 
-    _tomllib = _stdlib_tomllib
-except ModuleNotFoundError:
+def load_toml_parser(importer: Callable[[str], Any] | None = None) -> Any | None:
+    if importer is None:
+        importer = __import__
     try:
-        import tomli as _third_party_tomllib
+        return importer("tomllib")
+    except ModuleNotFoundError:
+        try:
+            return importer("tomli")
+        except ImportError:
+            return None
 
-        _tomllib = _third_party_tomllib
-    except ImportError:
-        pass
 
+_tomllib: Any | None = load_toml_parser()
 TOML_AVAILABLE = _tomllib is not None
 
 
