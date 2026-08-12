@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import builtins
-import importlib
 import json
-import sys
 from pathlib import Path
 
 import pytest
 from repo_ops_core import filesystem as filesystem_mod
 from repo_ops_core.filesystem import (
+    load_toml_parser,
     read_json_file,
     read_toml_file,
     should_exclude,
@@ -89,15 +88,7 @@ def test_read_toml_file_skips_when_parser_unavailable(
     assert read_toml_file(path) is None
 
 
-def test_tomli_import_error_marks_parser_unavailable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / "config.toml"
-    path.write_text("jobs = 3\n", encoding="utf-8")
-    sentinel = object()
-    parser_modules = {
-        name: sys.modules.get(name, sentinel) for name in ("tomllib", "tomli")
-    }
+def test_tomli_import_error_marks_parser_unavailable() -> None:
     original_import = builtins.__import__
 
     def broken_import(
@@ -113,17 +104,4 @@ def test_tomli_import_error_marks_parser_unavailable(
             raise ImportError("tomli is broken")
         return original_import(name, globals, locals, fromlist, level)
 
-    try:
-        with monkeypatch.context() as isolated:
-            isolated.setattr(builtins, "__import__", broken_import)
-            importlib.reload(filesystem_mod)
-
-            assert filesystem_mod.TOML_AVAILABLE is False
-            assert filesystem_mod.read_toml_file(path) is None
-    finally:
-        for name, module in parser_modules.items():
-            if module is sentinel:
-                sys.modules.pop(name, None)
-            else:
-                sys.modules[name] = module
-        importlib.reload(filesystem_mod)
+    assert load_toml_parser(importer=broken_import) is None
