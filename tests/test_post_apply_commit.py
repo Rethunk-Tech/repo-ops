@@ -153,6 +153,13 @@ def test_allow_dirty_scopes_commit_to_upgrade_paths(tmp_path: Path) -> None:
     assert "wip.txt" not in plan.files
 
 
+def test_pnpm_root_workspace_yaml_in_commit_scope() -> None:
+    assert post_apply_commit._manifest_names_for_manager("pnpm") == {
+        "package.json",
+        "pnpm-workspace.yaml",
+    }
+
+
 def test_dirty_start_no_upgrade_changes_skips(tmp_path: Path) -> None:
     # #108: when the repo started dirty but no workspace produced changes, the
     # commit is scoped to upgrade paths (none here), so it skips rather than

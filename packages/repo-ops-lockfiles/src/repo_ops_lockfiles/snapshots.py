@@ -102,6 +102,8 @@ def snapshot_workspace_files(mdir: Path, manager: str) -> dict[Path, bytes]:
         names = DENO_LOCKFILES
     else:
         names = ()
+    if manager == "pnpm":
+        names = (*names, "pnpm-workspace.yaml")
     out: dict[Path, bytes] = {}
     for name in names:
         p = mdir / name

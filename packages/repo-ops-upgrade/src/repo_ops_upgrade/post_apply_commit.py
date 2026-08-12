@@ -100,7 +100,10 @@ def _manifest_names_for_manager(manager: str) -> frozenset[str]:
     already captures its manifest. Issue #108.
     """
     if manager in ("yarn", "npm", "pnpm", "bun"):
-        return frozenset({"package.json"})
+        names = {"package.json"}
+        if manager == "pnpm":
+            names.add("pnpm-workspace.yaml")
+        return frozenset(names)
     if manager in ("uv", "hatch", "pip-tools", "poetry", "pdm"):
         return frozenset({"pyproject.toml"})
     if manager == "pipenv":
