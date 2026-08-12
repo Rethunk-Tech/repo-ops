@@ -10,11 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`repo-ops doctor` probes `ruff`:** same found/missing/version row as the other Python toolchain binaries (`pyrefly`, hatch, pip-audit). `--strict` fails when ruff is absent. No `ruff format` probe.
-- **SBOM GitHub Actions components include reusable workflows and nested actions:** `uses: owner/repo/.github/workflows/ci.yml@v1` and `owner/repo/subdir` are emitted with the full path as `name` and a `?subpath=` PURL qualifier so two workflows in one repo at the same ref do not collapse. Local `./` and `docker://` uses stay omitted.
+- **SBOM GitHub Actions components include reusable workflows and nested actions:** `uses: owner/repo/.github/workflows/ci.yml@v1` and `owner/repo/subdir` are emitted with the full path as `name` and a `?subpath=` PURL qualifier so two workflows in one repo at the same ref do not collapse. Local `./`, `../`, and `docker://` uses stay omitted.
 
 ### Fixed
 
-- **Python 3.10 TOML parsing crashed at `filesystem` import without pytest's tomli extra:** `repo-ops-core` now depends on `tomli` under `python_version < "3.11"`. When the parser is still missing, `read_toml_file` and config skip-and-warn instead of raising. Cargo license enrichment uses the same helper.
+- **Python 3.10 TOML parsing crashed at `filesystem` import without pytest's tomli extra:** `repo-ops-core` now depends on `tomli` under `python_version < "3.11"`. When the parser is still missing, or when `tomli` raises `ImportError`, `read_toml_file` and config skip-and-warn instead of raising. Cargo license enrichment uses the same helper.
 - **Hold clamp rewrote Python manifests:** uv/hatch clamp with `uv lock --upgrade-package <pkg><=ceiling>` (lock only). poetry/pdm/pipenv still run add/install then restore `pyproject.toml` / `Pipfile` bytes. Audit `--fix` still uses `uv add pkg==safe`. pip-tools remains constraints-file-only.
 - **Deno `apply` hard-failed ghost bumps before targeted-bump retry:** with `--deno-targeted-bump`, unresolved planned targets fold into `behind` and retry, matching npm. Without the flag, ghost still raises.
 - **Deno hold/release ignored `jsr:` import-map pins and treated `npm:`/`jsr:` tails as the same package:** prefix match is registry-aware; unprefixed names still match their registry form.
@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CycloneDX SBOM default is spec 1.5:** `metadata.tools` is an object with `components[]` (`type`, `author`, `name`, `version`). The 1.4 `tools[]` `{vendor,name,version}` shape is dropped; there is no 1.4 opt-in flag.
 - **Dependabot JSON summary:** renamed `summary.excluded_repos` to the fleet-canonical `summary.excluded`; consumers must migrate to the new key.
 
 ## [0.22.1] - 2026-07-28
