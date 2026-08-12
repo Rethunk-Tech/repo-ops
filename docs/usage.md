@@ -304,7 +304,7 @@ for Python packages. See `repo-ops license --help` epilog for SPDX compound-expr
 
 `repo-ops doctor` probes the binaries repo-ops shells out to across all
 ecosystems (read-only; no scan roots, no `root_dir` arguments): `git`, `gh`,
-`uv`, `pip-compile`, `poetry`, `pipenv`, `pdm`, `pip-audit`, `pyrefly`, `hatch`,
+`uv`, `pip-compile`, `poetry`, `pipenv`, `pdm`, `pip-audit`, `pyrefly`, `ruff`, `hatch`,
 `pre-commit`, `npm`, `pnpm`, `yarn`, `bun`, `corepack`, `deno`, `go`, `gofmt`,
 `govulncheck`, `cargo`, `cargo-audit` (via `cargo audit --version`), `actionlint`. Each is resolved via
 `shutil.which`; found binaries also get a

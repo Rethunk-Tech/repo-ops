@@ -20,7 +20,7 @@ gaps.
 
 `--verify-test` enables Go and Rust tests during apply verification. Hatch
 verification includes mypy and pyrefly when configured; pyrefly project
-excludes are passed through as CLI flags. `doctor` checks for `pyrefly`, `hatch`,
+excludes are passed through as CLI flags. `doctor` checks for `pyrefly`, `ruff`, `hatch`,
 and `pre-commit` alongside the other toolchain binaries.
 
 When using `--commit=agent`, set `REPO_OPS_COMMIT_AGENT_MODEL` or the
@@ -30,7 +30,7 @@ When using `--commit=agent`, set `REPO_OPS_COMMIT_AGENT_MODEL` or the
 
 - [uv](https://docs.astral.sh/uv/) and Python >= 3.10
 - Git on `PATH`
-- Optional: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, `hatch`, `pyrefly`, `pre-commit`, …) and `gh` / `actionlint` for Actions pin audits — run `repo-ops doctor` to see which are found and whether `gh` is authenticated
+- Optional: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, `hatch`, `pyrefly`, `ruff`, `pre-commit`, …) and `gh` / `actionlint` for Actions pin audits — run `repo-ops doctor` to see which are found and whether `gh` is authenticated
 
 ## Documentation
 
