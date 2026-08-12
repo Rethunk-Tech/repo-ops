@@ -112,8 +112,19 @@ def test_load_repo_config_keeps_sidecar_when_tomllib_unavailable(
         "load_dot_repo_ops_config",
         lambda _root: {"jobs": 3},
     )
-    with pytest.warns(UserWarning, match="config files will be ignored"):
+    with pytest.warns(UserWarning, match="config files will be ignored") as records:
         assert load_repo_config(tmp_path) == {"jobs": 3}
+        assert load_repo_config(tmp_path) == {"jobs": 3}
+    assert len(records) == 1
+
+
+def test_load_repo_config_reads_toml_with_shared_loader(tmp_path: Path) -> None:
+    (tmp_path / ".repo-ops.toml").write_text("jobs = 3\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.repo-ops]\njobs = 9\n", encoding="utf-8"
+    )
+
+    assert load_repo_config(tmp_path) == {"jobs": 9}
 
 
 def test_container_cli_flags_set_env(monkeypatch: pytest.MonkeyPatch) -> None:

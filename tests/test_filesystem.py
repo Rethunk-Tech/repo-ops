@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from repo_ops_core import filesystem as filesystem_mod
 from repo_ops_core.filesystem import (
     read_json_file,
     read_toml_file,
@@ -73,3 +74,13 @@ def test_read_toml_file_happy_and_invalid(tmp_path: Path) -> None:
     bad = tmp_path / "bad.toml"
     bad.write_text("[[[broken", encoding="utf-8")
     assert read_toml_file(bad) is None
+
+
+def test_read_toml_file_skips_when_parser_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("jobs = 3\n", encoding="utf-8")
+    monkeypatch.setattr(filesystem_mod, "_tomllib", None)
+
+    assert read_toml_file(path) is None
