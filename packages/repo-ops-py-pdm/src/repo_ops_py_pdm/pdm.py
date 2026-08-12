@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 import re
 import shutil
 import sys
@@ -28,6 +30,16 @@ from repo_ops_models import Change, Workspace
 # whole lockfile — so this clamp-down is the only enforcement mechanism.
 
 _HOLD_CEILING_PAD = "999999"
+
+
+@contextmanager
+def _preserve_manifest(path: Path) -> Iterator[None]:
+    original = path.read_bytes() if path.exists() else None
+    try:
+        yield
+    finally:
+        if original is not None:
+            path.write_bytes(original)
 
 
 @cache
@@ -108,7 +120,12 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
         if rule is None or version_satisfies_ceiling(resolved, rule.max_version):
             continue
         spec = f"{name}{_hold_ceiling_spec(rule.max_version)}"
-        proc = run(["pdm", "add", spec], ws.path, timeout=resolve_timeout_apply())
+        with _preserve_manifest(ws.path / "pyproject.toml"):
+            proc = run(
+                ["pdm", "add", spec],
+                ws.path,
+                timeout=resolve_timeout_apply(),
+            )
         if proc.returncode != 0:
             raise RuntimeError(
                 f"hold: failed to clamp {name} back to <={rule.max_version} "
