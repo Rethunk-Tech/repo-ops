@@ -184,7 +184,8 @@ def _purl_oci(name: str, ref: str) -> str:
 
 def _purl_github(owner_repo: str, ref: str) -> str:
     """pkg:github purl; *owner_repo* is ``owner/repo`` (an Actions action ref)."""
-    return f"pkg:github/{owner_repo}@{ref}"
+    namespace = "/".join(owner_repo.split("/")[:2])
+    return f"pkg:github/{namespace}@{ref}"
 
 
 # ---------------------------------------------------------------------------
@@ -379,10 +380,8 @@ def collect_components(
                     continue
                 for pin in pins:
                     action = pin.action
-                    # Only marketplace/repo action refs (owner/repo) are
-                    # packages; local (./path) and reusable-workflow refs
-                    # with extra path segments are not.
-                    if action.startswith(".") or action.count("/") != 1:
+                    # Local and Docker action references are not package pins.
+                    if action.startswith(".") or action.startswith("docker://"):
                         continue
                     _add(
                         action,
