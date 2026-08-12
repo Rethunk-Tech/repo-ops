@@ -127,7 +127,7 @@ def test_apply_uv_lock_raises_when_corrective_install_command_fails(
     tmp_path: Path,
 ) -> None:
     """Distinct failure mode from 'landed but still over ceiling': the
-    corrective `uv add` command itself errors out (e.g. resolver conflict)."""
+    corrective lock command itself errors out (e.g. resolver conflict)."""
     from repo_ops_py import uv_lock
 
     (tmp_path / "uv.lock").write_text(
