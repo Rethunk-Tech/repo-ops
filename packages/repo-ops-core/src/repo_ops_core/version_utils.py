@@ -20,6 +20,13 @@ def semver_tuple(v: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
+def hold_ceiling_spec(max_version: str) -> str:
+    """Return a PEP 440 upper-bound constraint for a hold ceiling."""
+    parts = [p for p in max_version.strip().split(".") if p]
+    padded = (parts + ["999999"] * 3)[:3]
+    return "<=" + ".".join(padded)
+
+
 def version_satisfies_ceiling(version: str, ceiling: str) -> bool:
     """Return True when *version* does not exceed a hold rule's *ceiling*.
 

@@ -1,6 +1,10 @@
 """Tests for pure version utilities."""
 
-from repo_ops_core.version_utils import normalize_version, semver_tuple
+from repo_ops_core.version_utils import (
+    hold_ceiling_spec,
+    normalize_version,
+    semver_tuple,
+)
 
 
 def test_normalize_version_strips_prefixes_and_prerelease():
@@ -33,6 +37,12 @@ def test_semver_tuple_uppercase_V_prefix():
     # V1.2.3 must parse as (1,2,3), not (0,2,3) — closes #58
     assert semver_tuple("V1.2.3") == (1, 2, 3)
     assert normalize_version("V1.2.3") == "1.2.3"
+
+
+def test_hold_ceiling_spec_pads_to_three_components():
+    assert hold_ceiling_spec("6") == "<=6.999999.999999"
+    assert hold_ceiling_spec("5.9") == "<=5.9.999999"
+    assert hold_ceiling_spec("1.2.3") == "<=1.2.3"
 
 
 def test_normalize_version_space_after_operator_and_build_metadata():
