@@ -7,6 +7,7 @@ requirements one crate at a time with ``cargo update --precise``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from functools import cache
@@ -423,6 +424,7 @@ def _cargo_latest_direct_changes_cached(
     workspace_path: str,
     manifest_mtime_ns: int,
     manifest_size: int,
+    manifest_digest: str,
 ) -> tuple[Change, ...]:
     manifest = Path(workspace_path) / "Cargo.toml"
     dependencies = _cargo_manifest_dependencies(manifest)
@@ -442,12 +444,15 @@ def _cargo_latest_direct_changes_cached(
 
 def _cargo_latest_direct_changes(ws: Workspace) -> list[Change]:
     manifest = (ws.path / "Cargo.toml").resolve()
+    manifest_bytes = manifest.read_bytes()
+    manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
     stat = manifest.stat()
     return list(
         _cargo_latest_direct_changes_cached(
             str(ws.path.resolve()),
             stat.st_mtime_ns,
             stat.st_size,
+            manifest_digest,
         )
     )
 

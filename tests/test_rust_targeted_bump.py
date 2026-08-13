@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops_core.holds import HoldRule
 from repo_ops_models import Workspace
-from repo_ops_rust.rust import apply_rust, check_rust
+from repo_ops_rust.rust import (
+    _cargo_latest_direct_changes,
+    apply_rust,
+    check_rust,
+)
 
 
 def _ws(path: Path) -> Workspace:
@@ -59,6 +64,35 @@ def test_check_rust_reports_direct_dependency_behind_latest(
     assert [(change.name, change.from_ver, change.to) for change in behind] == [
         ("serde", "^1.0", "2.0.0")
     ]
+
+
+def test_cargo_latest_changes_cache_keys_on_manifest_digest(tmp_path: Path) -> None:
+    manifest = tmp_path / "Cargo.toml"
+    initial = (
+        b'[package]\nname = "demo"\nversion = "0.1.0"\n\n'
+        b'[dependencies]\nserde = "1.0"\n'
+    )
+    replacement = initial.replace(b"serde", b"regex")
+    manifest.write_bytes(initial)
+    original_stat = manifest.stat()
+
+    with patch(
+        "repo_ops_rust.rust._cargo_registry_versions",
+        return_value=("2.0.0",),
+    ):
+        first = _cargo_latest_direct_changes(_ws(tmp_path))
+        manifest.write_bytes(replacement)
+        os.utime(
+            manifest,
+            ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+        )
+        replacement_stat = manifest.stat()
+        second = _cargo_latest_direct_changes(_ws(tmp_path))
+
+    assert replacement_stat.st_mtime_ns == original_stat.st_mtime_ns
+    assert replacement_stat.st_size == original_stat.st_size
+    assert [(change.name, change.to) for change in first] == [("serde", "2.0.0")]
+    assert [(change.name, change.to) for change in second] == [("regex", "2.0.0")]
 
 
 def test_check_rust_targeted_bump_defaults_off_without_config(
