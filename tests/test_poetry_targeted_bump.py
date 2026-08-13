@@ -5,7 +5,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops_models import Change, Workspace
-from repo_ops_py_poetry.poetry import apply_poetry, check_poetry
+from repo_ops_py_poetry.poetry import (
+    _poetry_requirement_satisfied,
+    apply_poetry,
+    check_poetry,
+)
 
 
 def _ws(tmp_path: Path) -> Workspace:
@@ -28,6 +32,12 @@ def _seed_workspace(tmp_path: Path) -> None:
         '[[package]]\nname = "requests"\nversion = "2.31.0"\n',
         encoding="utf-8",
     )
+
+
+def test_poetry_bare_version_uses_caret_range() -> None:
+    assert _poetry_requirement_satisfied("2.31.0", "2.28.0") is True
+    assert _poetry_requirement_satisfied("3.0.0", "2.28.0") is False
+    assert _poetry_requirement_satisfied("2.31.0", "==2.28.0") is False
 
 
 def test_check_poetry_reports_constraint_bump(tmp_path: Path) -> None:
