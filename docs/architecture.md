@@ -6,7 +6,7 @@ Package layout and filesystem map for the `repo-ops` uv workspace under `package
 
 - `packages/repo-ops-core/` — shared constants, git, filesystem, process, CLI helpers, and targeted-bump requirement matching (`repo_ops_core`; `requirement.requirement_satisfied` is the caret/range helper — Cargo stays here rather than PEP 440 `SpecifierSet`)
 - `packages/repo-ops-models/` — dataclasses (`repo_ops_models`)
-- `packages/repo-ops-lockfiles/` — lockfile parsers and snapshot diff; also hosts the `sbom` and `license` subcommands (`repo_ops_lockfiles`)
+- `packages/repo-ops-lockfiles/` — lockfile parsers (`versions_*` including go.sum, Cargo.lock, requirements.txt) and snapshot diff; also hosts the `sbom` and `license` subcommands (`repo_ops_lockfiles`)
 - `packages/repo-ops-js/` — Node workspace helpers and overrides audit (`repo_ops_js`)
 - `packages/repo-ops-js-{npm,pnpm,bun,yarn}/` — PM check/apply plugins with `register()`
 - `packages/repo-ops-go/`, `repo-ops-rust/` — Go and Rust check/apply plugins

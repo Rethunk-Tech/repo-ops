@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **pnpm workspace catalogs:** plan/apply read `catalog:` and `catalogs:` in `pnpm-workspace.yaml`. With `--pnpm-targeted-bump`, catalog versions bump (hold ceilings and snapshot/restore on failed or ghost `pnpm install`); without it, catalog drift is `behind_latest`. `pnpm-workspace.yaml` is in apply commit scope. Protocol pins (`workspace:`, `file:`, …) are left alone; npm epoch pins (`1:2.3.4`) are versions.
 - **`repo-ops doctor` probes `ruff`:** same found/missing/version row as the other Python toolchain binaries (`pyrefly`, hatch, pip-audit). `--strict` fails when ruff is absent. No `ruff format` probe.
 - **SBOM GitHub Actions components include reusable workflows and nested actions:** `uses: owner/repo/.github/workflows/ci.yml@v1` and `owner/repo/subdir` are emitted with the full path as `name` and a `?subpath=` PURL qualifier so two workflows in one repo at the same ref do not collapse. Local `./`, `../`, and `docker://` uses stay omitted.
-- **JSR license enrichment:** `--enrich-licenses` resolves `pkg:jsr` / ecosystem `jsr` from cached `https://jsr.io/@scope/name/<version>_meta.json`, then `jsr.json` / `deno.json`. Unscoped names and unrecognized SPDX stay unresolved. Offline `license` still reports only Deno `npm:` specifiers from DENO_DIR.
+- **JSR license enrichment:** `--enrich-licenses` resolves `pkg:jsr` / ecosystem `jsr` from cached `https://jsr.io/@scope/name/<version>_meta.json`, then `jsr.json` / `deno.json`. Unscoped names and unrecognized SPDX stay unresolved. Offline `license` emits Deno `jsr:` rows as UNKNOWN so enrich can fill them; `http(s):` specifiers stay omitted.
+- **Go license enrichment:** `--enrich-licenses` resolves `pkg:golang` / ecosystem `go`/`golang` from GOMODCACHE (`resolve_go_license`), same layout as `repo-ops license` go.sum scanning.
 
 ### Fixed
 
@@ -35,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dependabot `--scaffold` mapped `pnpm-lock.yaml` to `npm`:** that lockfile now emits `package-ecosystem: pnpm`. Compose detection includes `docker-compose.yaml`, `compose.yml`, and `compose.yaml` as well as `docker-compose.yml`.
 - **JSR enrichment returned `None` when `_meta.json` had a present-but-empty `license`:** a non-normalizing meta license falls through to `jsr.json` / `deno.json`.
 - **`license` dropped poetry.lock packages with no version:** named rows still appear with version `?`, matching uv.lock.
+- **`license` skipped `deno.lock` `jsr:` specifiers:** they are scanned as UNKNOWN and filled when `--enrich-licenses` is on.
+- **`versions_deno_lock` omitted v3 `packages.jsr`:** keys are emitted as `jsr:@scope/pkg@version`, matching the top-level `jsr` section.
+- **Dependabot never high-confidence-resolved `deno.lock`:** npm: and jsr: entries participate in supersession like other lock parsers.
+- **Inventory `edges` ignored `pdm.lock` / `Pipfile.lock`:** those locks count resolved packages before falling back to manifests. Pinned `requirements.txt` / `-dev` / `-test` fill `versions` when no Python lock exists.
+- **`classify_commit_subject` missed `Cargo.lock`, `pdm.lock`, `Pipfile.lock`, `requirements.in`, and Deno lockfiles:** those basenames get Rust / Python / Deno subjects instead of the generic deps line.
 
 ### Changed
 
@@ -42,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CycloneDX SBOM default is spec 1.5:** `metadata.tools` is an object with `components[]` (`type`, `publisher`, `authors[]`, `name`, `version`). The 1.4 `tools[]` `{vendor,name,version}` shape and the 1.4-style `author` string are dropped; there is no 1.4 opt-in flag.
 - **Go hold ceilings use shared `hold_ceiling_spec`:** `go get` queries stay `<=v` plus the same three-component pad as Python managers.
 - **Dependabot JSON summary:** renamed `summary.excluded_repos` to the fleet-canonical `summary.excluded`; consumers must migrate to the new key.
-- **SBOM uv.lock / poetry.lock collection uses `versions_uv_lock` / `versions_poetry_lock`:** the duplicate inline TOML helper is gone; go.sum, Cargo.lock, and requirements.txt stay inline.
+- **SBOM lock collection uses shared parsers:** uv.lock, poetry.lock, go.sum, Cargo.lock, and `requirements.txt` / `-dev` / `-test` go through `repo_ops_lockfiles.parsers`. Inventory reuses the Cargo.lock and requirements parsers.
 
 ## [0.22.1] - 2026-07-28
 
