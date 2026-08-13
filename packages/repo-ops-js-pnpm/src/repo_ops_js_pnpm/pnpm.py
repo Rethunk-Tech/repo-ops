@@ -28,6 +28,7 @@ from repo_ops_js.holds import (
     resolve_package_hold,
 )
 from repo_ops_js.overrides import release_unheld_pin
+from repo_ops_lockfiles.parsers import versions_pnpm_lock
 from repo_ops_lockfiles.snapshots import (
     resolved_version_from_node_modules,
     restore_workspace_snapshot,
@@ -165,7 +166,19 @@ def _catalog_spec_is_behind(spec: str, target: str) -> bool:
 
 
 def _catalog_spec_from_version(spec: str) -> str:
-    return spec.lstrip("^~>=").split(maxsplit=1)[0]
+    return normalize_version(spec)
+
+
+def _catalog_lock_from_ver(ws: Workspace, name: str, spec: str) -> str:
+    try:
+        resolved = versions_pnpm_lock(ws.path / "pnpm-lock.yaml")
+    except OSError:
+        return _catalog_spec_from_version(spec)
+    prefix = f"{name}@"
+    matches = [token[len(prefix) :] for token in resolved if token.startswith(prefix)]
+    if not matches:
+        return _catalog_spec_from_version(spec)
+    return min(matches, key=_catalog_version_key)
 
 
 def _latest_published(ws: Workspace, name: str) -> str | None:
@@ -326,7 +339,7 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
                     behind_latest.append(
                         Change(
                             name,
-                            _catalog_spec_from_version(from_ver),
+                            _catalog_lock_from_ver(ws, name, from_ver),
                             latest,
                         )
                     )
