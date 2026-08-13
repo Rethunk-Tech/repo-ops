@@ -4,7 +4,7 @@ Package layout and filesystem map for the `repo-ops` uv workspace under `package
 
 ## Layout and files
 
-- `packages/repo-ops-core/` — shared constants, git, filesystem, process, CLI helpers (`repo_ops_core`)
+- `packages/repo-ops-core/` — shared constants, git, filesystem, process, CLI helpers, and targeted-bump requirement matching (`repo_ops_core`; `requirement.requirement_satisfied` is the caret/range helper — Cargo stays here rather than PEP 440 `SpecifierSet`)
 - `packages/repo-ops-models/` — dataclasses (`repo_ops_models`)
 - `packages/repo-ops-lockfiles/` — lockfile parsers and snapshot diff; also hosts the `sbom` and `license` subcommands (`repo_ops_lockfiles`)
 - `packages/repo-ops-js/` — Node workspace helpers and overrides audit (`repo_ops_js`)
