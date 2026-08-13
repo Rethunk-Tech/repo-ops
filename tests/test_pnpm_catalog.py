@@ -121,6 +121,25 @@ def test_catalog_drift_is_behind_latest_without_targeted_bump(
     assert behind == [Change("react", "18.2.0", "19.0.0")]
 
 
+def test_catalog_drift_is_reported_when_outdated_omits_package(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _seed(tmp_path)
+    monkeypatch.delenv("REPO_OPS_PNPM_TARGETED_BUMP", raising=False)
+    monkeypatch.delenv("REPO_OPS_PNPM_UPDATE_LATEST", raising=False)
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        if cmd[:3] == ["pnpm", "view", "react"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="19.0.0\n", stderr="")
+        return subprocess.CompletedProcess(cmd, 1, stdout="{}", stderr="")
+
+    with patch("repo_ops_js_pnpm.pnpm.run", side_effect=fake_run):
+        changes, behind = check_pnpm(_ws(tmp_path))
+
+    assert changes == []
+    assert behind == [Change("react", "18.2.0", "19.0.0")]
+
+
 def test_targeted_catalog_bump_updates_default_and_named_tables(
     tmp_path: Path, monkeypatch
 ) -> None:

@@ -164,6 +164,22 @@ def _catalog_spec_is_behind(spec: str, target: str) -> bool:
     return spec != target
 
 
+def _catalog_spec_from_version(spec: str) -> str:
+    return spec.lstrip("^~>=").split(maxsplit=1)[0]
+
+
+def _latest_published(ws: Workspace, name: str) -> str | None:
+    """Latest published version via ``pnpm view`` (None on any failure)."""
+    try:
+        proc = run(["pnpm", "view", name, "version"], ws.path, timeout=TIMEOUT_CHECK)
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    latest = proc.stdout.strip()
+    return latest or None
+
+
 def _rewrite_catalog_package(ws: Workspace, package: str, target: str) -> bool:
     path = _catalog_workspace_path(ws)
     if not path.is_file():
@@ -296,6 +312,21 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
         for name, specs in catalog_specs.items():
             meta = outdated.get(name)
             if meta is None:
+                latest = _latest_published(ws, name)
+                if latest is None:
+                    continue
+                behind_specs = [
+                    spec for spec in specs if _catalog_spec_is_behind(spec, latest)
+                ]
+                if behind_specs:
+                    from_ver = min(behind_specs, key=_catalog_version_key)
+                    behind_latest.append(
+                        Change(
+                            name,
+                            _catalog_spec_from_version(from_ver),
+                            latest,
+                        )
+                    )
                 continue
             cur, wanted, latest = meta
             target = (
