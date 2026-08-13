@@ -206,8 +206,10 @@ Mutually exclusive with **`--scaffold`** (scaffold mode does not scan PRs).
 - **`--write`** — with `--scaffold`, actually write `.github/dependabot.yml` (requires `--scaffold`).
 - **`--schedule INTERVAL`** — schedule for generated entries (`daily`/`weekly`/`monthly`; default `weekly`).
 
-Scaffold detection covers npm, Bun lockfiles (`package-ecosystem: bun`), Deno,
-pre-commit, pip, Go modules, Cargo, Docker, and GitHub Actions. This is separate
+Scaffold detection covers npm, pnpm (`pnpm-lock.yaml` → `package-ecosystem: pnpm`),
+Bun lockfiles (`package-ecosystem: bun`), Deno, pre-commit, pip, Go modules, Cargo,
+Docker (`Dockerfile`, `docker-compose.yml` / `.yaml`, `compose.yml` / `.yaml`),
+and GitHub Actions. This is separate
 from supersession parsing, which determines whether existing Dependabot PRs are
 already satisfied by local manifests or lockfiles.
 
@@ -248,7 +250,8 @@ consumers that require `metadata.tools[]` are dropped.
 - `--output PATH` — write the SBOM to `PATH` instead of stdout.
 - `--compact` — emit single-line JSON instead of pretty-printed.
 - `--enrich-licenses` — opt-in SPDX fill from on-disk package metadata and
-  cached registry lookups (`REPO_OPS_ENRICH_LICENSES=1`). Never invents
+  cached registry lookups (`REPO_OPS_ENRICH_LICENSES=1`), including JSR
+  (`jsr.io` version meta, then `jsr.json` / `deno.json`). Never invents
   license ids; container images stay unenriched.
 - `--enrich-licenses-local` — same enrichment from local metadata and XDG
   cache only (`REPO_OPS_ENRICH_LICENSES_LOCAL=1`); no registry network.
@@ -272,7 +275,7 @@ policy violations (read-only). Offline by default.
 - `--no-fail-unknown` — exit `0` even when unknown licenses are found
   (default: exit `2` when unknown licenses exist in ecosystems with a local extractor).
 - `--enrich-licenses` — same opt-in enrichment as `sbom` (env twin
-  `REPO_OPS_ENRICH_LICENSES`); can reduce UNKNOWN for npm/PyPI/crates when
+  `REPO_OPS_ENRICH_LICENSES`); can reduce UNKNOWN for npm/PyPI/crates/JSR when
   metadata or cache hits exist.
 - `--enrich-licenses-local` — local/cache-only enrichment (env twin
   `REPO_OPS_ENRICH_LICENSES_LOCAL`); when both enrichment flags (or both
@@ -299,7 +302,7 @@ excluded from this bucket).
 | Python (uv.lock) | locked packages + adjacent venv `*.dist-info/METADATA` |
 | Go | `go.sum` pairs via LICENSE files in GOMODCACHE |
 | Rust | `Cargo.lock` via `cargo metadata --offline` |
-| Deno | `deno.lock` npm specifiers via DENO_DIR npm cache |
+| Deno | `deno.lock` `npm:` specifiers via DENO_DIR npm cache; `jsr:` ids fill only with `--enrich-licenses` |
 | container | no local license source (always unknown; does not trigger exit `2`) |
 
 Poetry, PDM, and pipenv lockfiles without an installed venv may report unknown

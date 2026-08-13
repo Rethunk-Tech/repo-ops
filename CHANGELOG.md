@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **pnpm workspace catalogs:** plan/apply read `catalog:` and `catalogs:` in `pnpm-workspace.yaml`. With `--pnpm-targeted-bump`, catalog versions bump (hold ceilings and snapshot/restore on failed or ghost `pnpm install`); without it, catalog drift is `behind_latest`. `pnpm-workspace.yaml` is in apply commit scope. Protocol pins (`workspace:`, `file:`, …) are left alone; npm epoch pins (`1:2.3.4`) are versions.
 - **`repo-ops doctor` probes `ruff`:** same found/missing/version row as the other Python toolchain binaries (`pyrefly`, hatch, pip-audit). `--strict` fails when ruff is absent. No `ruff format` probe.
 - **SBOM GitHub Actions components include reusable workflows and nested actions:** `uses: owner/repo/.github/workflows/ci.yml@v1` and `owner/repo/subdir` are emitted with the full path as `name` and a `?subpath=` PURL qualifier so two workflows in one repo at the same ref do not collapse. Local `./`, `../`, and `docker://` uses stay omitted.
+- **JSR license enrichment:** `--enrich-licenses` resolves `pkg:jsr` / ecosystem `jsr` from cached `https://jsr.io/@scope/name/<version>_meta.json`, then `jsr.json` / `deno.json`. Unscoped names and unrecognized SPDX stay unresolved. Offline `license` still reports only Deno `npm:` specifiers from DENO_DIR.
 
 ### Fixed
 
@@ -30,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deno `apply` hard-failed ghost bumps before targeted-bump retry:** with `--deno-targeted-bump`, unresolved planned targets fold into `behind` and retry, matching npm. Without the flag, ghost still raises.
 - **Deno hold/release ignored `jsr:` import-map pins and treated `npm:`/`jsr:` tails as the same package:** prefix match is registry-aware; unprefixed names still match their registry form.
 - **Bun remediations invoked package.json scripts instead of package binaries:** `pm_exec_prefix("bun")` returned `["bun", "run"]`, so remediations like `biome migrate --write` became `bun run biome migrate --write` — running the `biome` script and appending args (e.g. `biome check --write . migrate --write`). Now uses `bunx` to execute installed binaries directly, matching yarn/pnpm/npm exec semantics.
+- **`inventory` undercounted declared Python/Rust deps:** `direct` unions Cargo `[workspace.dependencies]` with package dependency tables (same name once), and counts Pipfile `[packages]`/`[dev-packages]`, `[tool.pdm.dev-dependencies]` groups, and `requirements.in`. uv.lock / poetry.lock versions use the shared TOML parsers instead of a line scanner.
+- **Dependabot `--scaffold` mapped `pnpm-lock.yaml` to `npm`:** that lockfile now emits `package-ecosystem: pnpm`. Compose detection includes `docker-compose.yaml`, `compose.yml`, and `compose.yaml` as well as `docker-compose.yml`.
+- **JSR enrichment returned `None` when `_meta.json` had a present-but-empty `license`:** a non-normalizing meta license falls through to `jsr.json` / `deno.json`.
+- **`license` dropped poetry.lock packages with no version:** named rows still appear with version `?`, matching uv.lock.
 
 ### Changed
 
@@ -37,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CycloneDX SBOM default is spec 1.5:** `metadata.tools` is an object with `components[]` (`type`, `publisher`, `authors[]`, `name`, `version`). The 1.4 `tools[]` `{vendor,name,version}` shape and the 1.4-style `author` string are dropped; there is no 1.4 opt-in flag.
 - **Go hold ceilings use shared `hold_ceiling_spec`:** `go get` queries stay `<=v` plus the same three-component pad as Python managers.
 - **Dependabot JSON summary:** renamed `summary.excluded_repos` to the fleet-canonical `summary.excluded`; consumers must migrate to the new key.
+- **SBOM uv.lock / poetry.lock collection uses `versions_uv_lock` / `versions_poetry_lock`:** the duplicate inline TOML helper is gone; go.sum, Cargo.lock, and requirements.txt stay inline.
 
 ## [0.22.1] - 2026-07-28
 
