@@ -396,11 +396,23 @@ def classify_commit_subject(files: list[str]) -> str:
         ".github" in p.replace("\\", "/") for p in files
     )
     has_go = any(n in ("go.mod", "go.sum") for n in names)
-    has_rust = any(n.endswith(".toml") and "cargo" in n for n in names)
+    has_rust = any(
+        n == "cargo.lock" or (n.endswith(".toml") and "cargo" in n) for n in names
+    )
     has_python = any(
-        n in ("pyproject.toml", "uv.lock", "poetry.lock", "requirements.txt")
+        n
+        in (
+            "pyproject.toml",
+            "uv.lock",
+            "poetry.lock",
+            "pdm.lock",
+            "pipfile.lock",
+            "requirements.txt",
+            "requirements.in",
+        )
         for n in names
     )
+    has_deno = any(n in ("deno.lock", "deno.json", "deno.jsonc") for n in names)
     has_node = any(
         n
         in (
@@ -424,6 +436,8 @@ def classify_commit_subject(files: list[str]) -> str:
         dep_parts.append("Python dependencies")
     if has_node:
         dep_parts.append("Node lockfiles and manifests")
+    if has_deno:
+        dep_parts.append("Deno lockfiles")
 
     has_deps = bool(dep_parts)
 
@@ -442,6 +456,7 @@ def classify_commit_subject(files: list[str]) -> str:
                 "Node lockfiles and manifests": (
                     "chore(deps): update Node lockfiles and manifests"
                 ),
+                "Deno lockfiles": "chore(deps): update Deno lockfiles",
             }
             return labels[dep_parts[0]]
         # Multiple dep ecosystems, no CI: "deps" scope, enumerate them.

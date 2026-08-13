@@ -870,6 +870,35 @@ def test_upgrade_scoped_paths_includes_nested_remediation_file(
 # ---------------------------------------------------------------------------
 
 
+def test_classify_cargo_lock_as_rust() -> None:
+    assert post_apply_commit.classify_commit_subject(["Cargo.lock"]) == (
+        "chore(deps): update Rust lockfiles"
+    )
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["pdm.lock", "Pipfile.lock", "requirements.in"],
+)
+def test_classify_python_lockfiles(filename: str) -> None:
+    assert post_apply_commit.classify_commit_subject([filename]) == (
+        "chore(deps): update Python dependencies"
+    )
+
+
+def test_classify_deno_lock_as_deno() -> None:
+    assert post_apply_commit.classify_commit_subject(["deno.lock"]) == (
+        "chore(deps): update Deno lockfiles"
+    )
+
+
+def test_classify_mixed_rust_and_ci_pins() -> None:
+    subject = post_apply_commit.classify_commit_subject(
+        ["Cargo.lock", ".github/workflows/ci.yml"]
+    )
+    assert subject == "chore(deps,ci): update Rust lockfiles and CI pins"
+
+
 def test_classify_mixed_node_and_ci_pins() -> None:
     """#116: yarn.lock + workflow file must not collapse to chore(ci)-only subject."""
     files = ["yarn.lock", ".github/workflows/ci.yml"]
