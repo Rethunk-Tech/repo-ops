@@ -54,7 +54,6 @@ from repo_ops_lockfiles.parsers import (
     versions_npm_lock,
     versions_pdm_lock,
     versions_pipenv_lock,
-    versions_poetry_lock,
     versions_pnpm_lock,
     versions_yarn_lock,
 )
@@ -425,10 +424,10 @@ def scan_python_dep_licenses(root: Path) -> list[PackageLicense]:
     """Return PackageLicense for third-party packages locked in Python lockfiles.
 
     Scans ``uv.lock``, ``poetry.lock``, ``pdm.lock``, and ``Pipfile.lock`` under
-    *root*. Poetry entries use the shared lock parser. For uv.lock, workspace
-    members (``editable``/``virtual`` sources) are skipped — those are the
-    repo's own manifests, covered by :func:`scan_python_licenses`. License ids
-    come from an adjacent
+    *root*. Poetry packages are read from TOML so rows without versions are
+    retained. For uv.lock, workspace members (``editable``/``virtual`` sources)
+    are skipped — those are the repo's own manifests, covered by
+    :func:`scan_python_licenses`. License ids come from an adjacent
     virtualenv's dist-info metadata when present; packages without installed
     metadata are UNKNOWN (offline-first, no network resolution).
     """
@@ -477,10 +476,18 @@ def scan_python_dep_licenses(root: Path) -> list[PackageLicense]:
                     _add(name, str(entry.get("version") or "?"), "uv.lock", licenses)
 
         if "poetry.lock" in fname_set:
-            for entry in versions_poetry_lock(lock_dir / "poetry.lock"):
-                name, ver = _split_nv(entry)
-                if name and ver:
-                    _add(name, ver, "poetry.lock", licenses)
+            data = read_toml_file(lock_dir / "poetry.lock") or {}
+            packages = data.get("package")
+            if isinstance(packages, list):
+                for entry in packages:
+                    if not isinstance(entry, dict):
+                        continue
+                    name = entry.get("name")
+                    if not isinstance(name, str) or not name:
+                        continue
+                    _add(
+                        name, str(entry.get("version") or "?"), "poetry.lock", licenses
+                    )
 
         if "pdm.lock" in fname_set:
             for entry in versions_pdm_lock(lock_dir / "pdm.lock"):
