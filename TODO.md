@@ -93,21 +93,3 @@ Catalog `Change.from_ver` is the workspace-yaml constraint (`^18.2.0`), not the 
 **Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/post_apply_commit.py` `classify_commit_subject`.
 
 **Acceptance:** A commit whose only node file is `pnpm-workspace.yaml` classifies as a node/pnpm deps subject.
-
-### 42.4 Go ceiling docstring still describes local padding
-
-`_go_ceiling_query` delegates to `hold_ceiling_spec`; the docstring still narrates in-function three-component padding.
-
-**Refs:** `packages/repo-ops-go/src/repo_ops_go/go.py` `_go_ceiling_query`.
-
-**Acceptance:** Docstring states the `v`-prefixed wrapper over `hold_ceiling_spec` without implying a local pad loop.
-
-### 42.5 `TOML_AVAILABLE=False` at module init untested
-
-`load_toml_parser(importer=broken)` is covered. Module-level `TOML_AVAILABLE` after both parsers fail at import is not.
-
-**Refs:** `packages/repo-ops-core/src/repo_ops_core/filesystem.py`; `tests/test_filesystem.py`.
-
-**Traps:** Do not `importlib.reload` or rewrite `sys.modules`.
-
-**Acceptance:** Init-time parser-absent path is covered without cross-test module leaks.
