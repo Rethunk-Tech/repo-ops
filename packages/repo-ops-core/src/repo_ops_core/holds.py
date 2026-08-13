@@ -17,7 +17,9 @@ var channel: arrays don't serialize cleanly to env (same reasoning as
     package = "typescript"      # exact name or fnmatch glob, e.g. "@types/*"
     max_version = "6"           # ceiling: "6" blocks major 7+, "5.9" blocks >5.9
     until = "2026-09-01"        # optional ISO date; omit = indefinite hold
-    ecosystem = "js"            # optional filter (matches Workspace.ecosystem/.manager)
+    ecosystem = "node"          # optional filter (matches Workspace.ecosystem/.manager;
+                                 # "js"/"javascript" and "python" are accepted aliases
+                                 # for "node" and "py")
     workspace = "packages/legacy-app"  # optional fnmatch glob, relative to repo root
     reason = "TS7 breaking changes; wait for ecosystem to catch up"  # documentation only
 """
@@ -122,11 +124,64 @@ def _matches_package(rule: HoldRule, package: str) -> bool:
     return fnmatch.fnmatch(package, rule.package)
 
 
+# Discovery (repo_ops_upgrade/discovery.py) never assigns these — they're
+# doc/config-authoring shorthand for the literal it does assign.
+_ECOSYSTEM_ALIASES = {"js": "node", "javascript": "node", "python": "py"}
+
+_KNOWN_ECOSYSTEMS = {
+    "node",
+    "go",
+    "rust",
+    "py",
+    "deno",
+    "container",
+    "precommit",
+    "actions",
+    "submodule",
+}
+_KNOWN_MANAGERS = {
+    "actions",
+    "bun",
+    "cargo",
+    "container",
+    "deno",
+    "go",
+    "npm",
+    "pnpm",
+    "precommit",
+    "rust",
+    "submodule",
+    "yarn",
+    "uv",
+    "pdm",
+    "pipenv",
+    "pip-tools",
+    "poetry",
+    "hatch",
+}
+
+_warned_dead_filter: set[str] = set()
+
+
+def _normalize_ecosystem(value: str) -> str:
+    value = value.strip().lower()
+    return _ECOSYSTEM_ALIASES.get(value, value)
+
+
 def _matches_ecosystem(rule: HoldRule, ecosystem: str, manager: str) -> bool:
     if not rule.ecosystem:
         return True
-    target = rule.ecosystem.strip().lower()
-    return target in (ecosystem.strip().lower(), manager.strip().lower())
+    target = _normalize_ecosystem(rule.ecosystem)
+    if target not in _KNOWN_ECOSYSTEMS and target not in _KNOWN_MANAGERS:
+        if target not in _warned_dead_filter:
+            _warned_dead_filter.add(target)
+            print(
+                f"repo-ops: hold ecosystem filter {rule.ecosystem!r} matches no "
+                "known ecosystem or manager — this hold can never apply",
+                file=sys.stderr,
+            )
+        return False
+    return target in (_normalize_ecosystem(ecosystem), _normalize_ecosystem(manager))
 
 
 def _matches_workspace(rule: HoldRule, workspace_rel: str) -> bool:
@@ -147,9 +202,10 @@ def resolve_hold(
     """Return the most specific active hold rule for *package*, or ``None``.
 
     Matching: exact/glob package name, optional ecosystem filter (matches
-    either the broad ecosystem, e.g. ``"js"``, or the specific manager,
-    e.g. ``"npm"``), optional workspace glob (relative to the repo root),
-    and not expired. Among matches, the most specific wins: a
+    either the broad ecosystem, e.g. ``"node"``, or the specific manager,
+    e.g. ``"npm"``; ``"js"``/``"javascript"`` and ``"python"`` are accepted
+    aliases for ``"node"`` and ``"py"``), optional workspace glob (relative
+    to the repo root), and not expired. Among matches, the most specific wins: a
     workspace-scoped rule beats a repo-wide rule, and a repo-sourced rule
     beats a global-sourced rule at equal specificity — so per-repo config
     can narrow *or* override a global hold for one workspace.
