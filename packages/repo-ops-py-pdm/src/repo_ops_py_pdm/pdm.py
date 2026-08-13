@@ -326,8 +326,16 @@ def _apply_pdm_targeted_bumps(
             _pdm_restore(manifest, manifest_snapshot)
             _pdm_restore(lockfile, lock_snapshot)
             raise
-        lock_advanced = _pdm_snapshot(lockfile) != lock_snapshot
-        if proc.returncode == 0 and lock_advanced:
+        landed_versions = _pdm_lock_versions(ws)
+        landed = next(
+            (
+                version
+                for name, version in landed_versions.items()
+                if name.lower() == candidate.name.lower()
+            ),
+            None,
+        )
+        if proc.returncode == 0 and landed == candidate.to:
             continue
         _pdm_restore(manifest, manifest_snapshot)
         _pdm_restore(lockfile, lock_snapshot)

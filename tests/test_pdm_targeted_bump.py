@@ -112,3 +112,33 @@ def test_apply_pdm_adds_targeted_constraint(tmp_path: Path) -> None:
 
     assert remaining == []
     assert captured == [["pdm", "update"], ["pdm", "add", "requests@^3.0.0"]]
+
+
+def test_apply_pdm_restores_files_when_targeted_add_lands_wrong_version(
+    tmp_path: Path,
+) -> None:
+    _write_fixture(tmp_path)
+    manifest = tmp_path / "pyproject.toml"
+    lockfile = tmp_path / "pdm.lock"
+    original_manifest = manifest.read_bytes()
+    original_lockfile = lockfile.read_bytes()
+
+    def fake_run(cmd, cwd, timeout=None):
+        if cmd[:2] == ["pdm", "add"]:
+            lockfile.write_text(
+                '[[package]]\nname = "requests"\nversion = "2.32.0"\n',
+                encoding="utf-8",
+            )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch.dict(os.environ, {"REPO_OPS_PDM_TARGETED_BUMP": "1"}),
+        patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
+        patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
+        patch("repo_ops_py_pdm.pdm._pdm_latest_version", return_value="3.0.0"),
+    ):
+        remaining = apply_pdm(_ws(tmp_path))
+
+    assert remaining == [Change("requests", "^2.28.0", "3.0.0")]
+    assert manifest.read_bytes() == original_manifest
+    assert lockfile.read_bytes() == original_lockfile
