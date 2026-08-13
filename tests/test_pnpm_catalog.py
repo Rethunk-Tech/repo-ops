@@ -85,7 +85,7 @@ catalogs:
         changes, behind = check_pnpm(_ws(tmp_path))
 
     assert changes == []
-    assert behind == [Change("react", "^18.2.0", "19.0.0")]
+    assert behind == [Change("react", "18.2.0", "19.0.0")]
 
 
 def test_epoch_catalog_pin_is_not_treated_as_protocol(tmp_path: Path) -> None:
@@ -118,7 +118,7 @@ def test_catalog_drift_is_behind_latest_without_targeted_bump(
         changes, behind = check_pnpm(_ws(tmp_path))
 
     assert changes == []
-    assert behind == [Change("react", "^18.2.0", "19.0.0")]
+    assert behind == [Change("react", "18.2.0", "19.0.0")]
 
 
 def test_targeted_catalog_bump_updates_default_and_named_tables(

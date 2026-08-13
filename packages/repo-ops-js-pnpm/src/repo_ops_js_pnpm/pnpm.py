@@ -9,8 +9,6 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
-from ruamel.yaml.error import YAMLError
-
 from repo_ops_core.config import (
     ambient_env,
     load_global_config,
@@ -37,6 +35,7 @@ from repo_ops_lockfiles.snapshots import (
 )
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.workflow_uses import _yaml_loader
+from ruamel.yaml.error import YAMLError
 
 _PNPM_UPDATE_LATEST_ENV = "REPO_OPS_PNPM_UPDATE_LATEST"
 _PNPM_TARGETED_BUMP_ENV = "REPO_OPS_PNPM_TARGETED_BUMP"
@@ -314,10 +313,7 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
                     behind_latest.append(
                         Change(
                             name,
-                            min(
-                                behind_specs,
-                                key=_catalog_version_key,
-                            ),
+                            cur,
                             target,
                         )
                     )
