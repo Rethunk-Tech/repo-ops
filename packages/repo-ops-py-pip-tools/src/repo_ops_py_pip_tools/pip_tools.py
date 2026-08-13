@@ -29,6 +29,7 @@ from repo_ops_core.holds import (
     resolve_hold,
 )
 from repo_ops_core.process import run
+from repo_ops_core.requirement import requirement_satisfied
 from repo_ops_core.version_utils import hold_ceiling_spec
 from repo_ops_models import Change, Workspace
 from repo_ops_py.requirements import parse_requirements_lines
@@ -147,70 +148,8 @@ def _pip_tools_version_parts(version: str) -> tuple[int, int, int]:
     return padded[0], padded[1], padded[2]
 
 
-def _pip_tools_caret_upper_bound(
-    parts: tuple[int, int, int],
-) -> tuple[int, int, int]:
-    major, minor, patch = parts
-    if major:
-        return (major + 1, 0, 0)
-    if minor:
-        return (0, minor + 1, 0)
-    return (0, 0, patch + 1)
-
-
 def _pip_tools_requirement_satisfied(version: str, requirement: str) -> bool:
-    if not requirement or requirement == "*":
-        return True
-    candidate = _pip_tools_version_parts(version)
-    for alternative in requirement.split("||"):
-        constraints = [part.strip() for part in alternative.split(",") if part.strip()]
-        if not constraints:
-            return True
-        satisfied = True
-        for constraint in constraints:
-            match = re.match(
-                r"^(~=|<=|>=|==|!=|<|>|=|~|\^)?\s*"
-                r"(\d+(?:\.\d+){0,2}|\*)$",
-                constraint,
-            )
-            if match is None:
-                satisfied = False
-                break
-            operator = match.group(1) or "=="
-            raw_version = match.group(2)
-            if raw_version == "*":
-                continue
-            parts = _pip_tools_version_parts(raw_version)
-            if operator == "^":
-                if not (
-                    candidate >= parts
-                    and candidate < _pip_tools_caret_upper_bound(parts)
-                ):
-                    satisfied = False
-                    break
-            elif operator in ("~", "~="):
-                if not (candidate >= parts and candidate < (parts[0], parts[1] + 1, 0)):
-                    satisfied = False
-                    break
-            elif operator in ("=", "=="):
-                if candidate != parts:
-                    satisfied = False
-                    break
-            elif operator == "!=":
-                if candidate == parts:
-                    satisfied = False
-                    break
-            elif (
-                (operator == ">=" and candidate < parts)
-                or (operator == ">" and candidate <= parts)
-                or (operator == "<=" and candidate > parts)
-                or (operator == "<" and candidate >= parts)
-            ):
-                satisfied = False
-                break
-        if satisfied:
-            return True
-    return False
+    return requirement_satisfied(version, requirement, default_operator="==")
 
 
 def _pypi_latest(package: str) -> str | None:
