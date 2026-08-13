@@ -295,6 +295,56 @@ def test_enrich_license_uses_cached_npm_registry_metadata(
     )
 
 
+def test_enrich_license_uses_cached_jsr_registry_metadata(tmp_path: Path) -> None:
+    cache = tmp_path / "license-cache"
+    url = "https://jsr.io/@scope/pkg/1.2.3_meta.json"
+    cache_file = _cache_path(cache, url)
+    cache_file.parent.mkdir(parents=True)
+    cache_file.write_text(json.dumps({"license": "MIT"}), encoding="utf-8")
+
+    assert (
+        enrich_license(
+            "@scope/pkg",
+            "1.2.3",
+            "jsr",
+            cache_dir=cache,
+            allow_network=False,
+        )
+        == "MIT"
+    )
+
+
+def test_enrich_license_jsr_without_network_returns_none(tmp_path: Path) -> None:
+    assert (
+        enrich_license(
+            "scope/pkg",
+            "1.2.3",
+            "jsr",
+            cache_dir=tmp_path / "license-cache",
+            allow_network=False,
+        )
+        is None
+    )
+
+
+def test_enrich_license_rejects_unscoped_jsr_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def network_must_not_run(*args: object, **kwargs: object) -> None:
+        raise AssertionError("unscoped JSR package should not be fetched")
+
+    monkeypatch.setattr("urllib.request.urlopen", network_must_not_run)
+    assert (
+        enrich_license(
+            "pkg",
+            "1.2.3",
+            "jsr",
+            cache_dir=tmp_path / "license-cache",
+        )
+        is None
+    )
+
+
 def test_enrich_license_reads_python_and_cargo_metadata(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
