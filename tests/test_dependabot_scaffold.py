@@ -43,6 +43,20 @@ def test_detect_ecosystems_npm(tmp_path: Path) -> None:
     assert "npm" in ecos
 
 
+def test_detect_ecosystems_pnpm(tmp_path: Path) -> None:
+    (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+    entries = detect_ecosystems(tmp_path)
+    ecos = [e["package-ecosystem"] for e in entries]
+    assert ecos == ["pnpm"]
+
+
+def test_detect_ecosystems_npm_lockfile(tmp_path: Path) -> None:
+    (tmp_path / "package-lock.json").write_text("{}\n", encoding="utf-8")
+    entries = detect_ecosystems(tmp_path)
+    ecos = [e["package-ecosystem"] for e in entries]
+    assert ecos == ["npm"]
+
+
 @pytest.mark.parametrize("indicator", ["bun.lock", "bun.lockb"])
 def test_detect_ecosystems_bun(tmp_path: Path, indicator: str) -> None:
     (tmp_path / indicator).write_text("", encoding="utf-8")

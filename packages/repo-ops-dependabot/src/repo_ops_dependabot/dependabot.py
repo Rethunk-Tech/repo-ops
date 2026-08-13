@@ -1095,7 +1095,9 @@ def detect_ecosystems(repo_path: Path) -> list[dict[str, str]]:
         fname_set = set(filenames)
         rel = _rel_dir(dp, repo_path)
 
-        if fname_set & _NODE_INDICATORS:
+        if "pnpm-lock.yaml" in fname_set:
+            _add("pnpm", rel)
+        elif fname_set & _NODE_INDICATORS:
             _add("npm", rel)
         if fname_set & _BUN_INDICATORS:
             _add("bun", rel)
