@@ -91,6 +91,28 @@ def test_versions_uv_lock_basic():
     assert "ruff@0.15.22" in result
 
 
+def test_versions_uv_lock_nested_dependency_name_does_not_override_package():
+    lock = """\
+version = 1
+
+[[package]]
+name = "requests"
+version = "2.31.0"
+
+[[package.dependencies]]
+name = "idna"
+
+[[package]]
+name = "idna"
+version = "3.6"
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "uv.lock"
+        p.write_text(lock)
+        result = versions_uv_lock(p)
+    assert result == {"requests@2.31.0", "idna@3.6"}
+
+
 def test_versions_uv_lock_empty_file():
     with tempfile.TemporaryDirectory() as tmp:
         p = Path(tmp) / "uv.lock"
