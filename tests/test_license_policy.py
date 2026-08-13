@@ -347,6 +347,19 @@ def test_scan_python_dep_licenses_poetry_lock(tmp_path: Path) -> None:
     assert all(p.license_id == UNKNOWN_LICENSE for p in results)
 
 
+def test_scan_python_dep_licenses_poetry_lock_missing_version(tmp_path: Path) -> None:
+    (tmp_path / "poetry.lock").write_text(
+        '[[package]]\nname = "legacy-package"\n',
+        encoding="utf-8",
+    )
+    results = scan_python_dep_licenses(tmp_path)
+
+    assert len(results) == 1
+    assert results[0].name == "legacy-package"
+    assert results[0].version == "?"
+    assert results[0].source == "poetry.lock"
+
+
 def test_scan_python_dep_licenses_pdm_lock(tmp_path: Path) -> None:
     (tmp_path / "pdm.lock").write_text(
         '[[package]]\nname = "httpx"\nversion = "0.27.0"\n',
