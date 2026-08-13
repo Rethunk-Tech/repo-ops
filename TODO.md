@@ -30,18 +30,6 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 ---
 
-## Round 36 — Wave 36 audit carry-forwards
-
-### 36.2 Bun integration: targeted-bump releases unheld pin
-
-`tests/integration/test_bun_ghost_bump.py` covers raise-without-targeted-bump only. Yarn has `test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising`. Unit coverage for bun defer/release landed in wave36; fleet/integration path still open.
-
-**Refs:** `tests/integration/test_bun_ghost_bump.py`; `tests/integration/test_yarn_ghost_bump.py`.
-
-**Acceptance:** Integration test: bun apply with targeted-bump releases an unheld overrides pin and advances instead of raising.
-
----
-
 ## Round 39 — Upgrade-mode and discovery gaps
 
 ### 39.1 Python managers: no `--latest` / targeted-bump
@@ -54,42 +42,32 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 **Acceptance:** Opt-in flags (or a documented “Python has no latest mode” sentence that is true for all four) exist for poetry/pdm/pipenv/pip-tools. With the flag, a direct dep whose lock is behind a newer published version that requires a constraint bump is either moved (revert-on-failure, like JS targeted-bump) or listed in `behind_latest` instead of `[ok]`. `--full` either includes those flags or the docs say Python constraint bumps stay manual.
 
-### 39.3 Opt-in Cargo.toml constraint bump (Rust majors still default-off)
-
-`cargo update` only refreshes within existing `Cargo.toml` reqs; `--latest` is documented as a no-op for rust. Direct-dep major/minor constraint edits stay hand work. That is honest, but there is still no opt-in analog to `--yarn-targeted-bump` (e.g. `cargo update -p crate --precise` already used for holds/audit, plus a manifest req bump).
-
-**Refs:** `packages/repo-ops-rust/src/repo_ops_rust/rust.py`; `docs/usage.md` rust row; `AGENTS.md` (`cargo update` only); `packages/repo-ops-audit` cargo `--precise` path.
-
-**Traps:** Default must remain “no Cargo.toml edits.” Do not take a hard dependency on `cargo-edit` if `cargo update --precise` + a small toml edit suffices. Workspace inheritance (`workspace.dependencies`) and path/git crates must be skipped. Yanked crates.io versions (already fetched in `_cargo_registry_versions`).
-
-**Acceptance:** Without a new flag, rust behavior is unchanged. With the flag, a direct crates.io dep whose latest published version is outside the current req can be bumped in `Cargo.toml` + lock, reverted on `cargo update` failure, and listed in `behind_latest` when skipped. Path/git/workspace crates never get a registry bump.
-
 ---
 
-## Round 42 — Wave 42 audit carry-forwards
+## Round 43 — Wave 43 audit carry-forwards
 
-### 42.1 Catalog drift invisible when absent from `pnpm outdated`
+### 43.1 `apply_rust` re-queries the registry
 
-`_pnpm_outdated` skips a catalog package when `pnpm outdated` JSON has no row (`if meta is None: continue`). A stale `pnpm-workspace.yaml` pin with no outdated entry never appears in `behind_latest`.
+With `--rust-targeted-bump`, `apply_rust` calls `_cargo_latest_direct_changes` again instead of reusing the plan `behind_latest` list. Extra crates.io traffic and a TOCTOU split vs `check_rust`.
 
-**Refs:** `packages/repo-ops-js-pnpm/src/repo_ops_js_pnpm/pnpm.py` `_pnpm_outdated` catalog merge.
+**Refs:** `packages/repo-ops-rust/src/repo_ops_rust/rust.py` `apply_rust`; `check_rust`.
 
-**Traps:** Do not hit the registry on every plan. Skip protocol values. Holds still apply.
+**Acceptance:** Apply uses the same candidate set plan already computed (or an explicit identical helper result cached on the workspace), so a no-drift plan does not hit crates.io twice.
 
-**Acceptance:** Catalog-only constraints that are behind a known latest (from outdated **or** an existing in-tree latest helper) show in `behind_latest` when not actioned.
+### 43.2 Catalog missing-row `from_ver` is the stripped spec
 
-### 42.2 `behind_latest` catalog `from_ver` is the YAML spec
+When `pnpm outdated` has no row, catalog `behind_latest.from_ver` is `_catalog_spec_from_version` (e.g. `18.2.0` from `^18.2.0`), not lockfile-resolved current. Outdated rows already use installed `current`.
 
-Catalog `Change.from_ver` is the workspace-yaml constraint (`^18.2.0`), not the installed `current` from outdated. Other managers report the resolved version.
+**Refs:** `packages/repo-ops-js-pnpm/src/repo_ops_js_pnpm/pnpm.py` `_pnpm_outdated` missing-meta branch; `tests/test_pnpm_catalog.py`.
 
-**Refs:** `pnpm.py` catalog `behind_latest.append`; `tests/test_pnpm_catalog.py`.
+**Traps:** Do not add a registry round-trip to learn current. Skip protocol values.
 
-**Acceptance:** Human/JSON `behind_latest` for catalog packages uses the same `from_ver` convention as non-catalog pnpm rows, or docs state the spec-as-from_ver rule.
+**Acceptance:** Missing-outdated catalog `from_ver` matches lockfile resolved version when the lock is parseable; otherwise the stripped spec remains the fallback.
 
-### 42.3 Commit subject ignores `pnpm-workspace.yaml`
+### 43.3 `_catalog_spec_from_version` uses `lstrip`
 
-`upgrade_scoped_paths` stages `pnpm-workspace.yaml` for pnpm. `classify_commit_subject` `has_node` does not include that basename, so a catalog-only commit gets the generic deps subject.
+`spec.lstrip("^~>=")` is prefix-character stripping, not a semver parse. Epoch pins (`1:2.3.4`) happen to survive; odd prefixes may not.
 
-**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/post_apply_commit.py` `classify_commit_subject`.
+**Refs:** `pnpm.py` `_catalog_spec_from_version`; `normalize_version`.
 
-**Acceptance:** A commit whose only node file is `pnpm-workspace.yaml` classifies as a node/pnpm deps subject.
+**Acceptance:** from_ver extraction uses the same version normalizer as the rest of pnpm catalog compare, with a fixture for a non-caret prefix that `lstrip` would mangle.
