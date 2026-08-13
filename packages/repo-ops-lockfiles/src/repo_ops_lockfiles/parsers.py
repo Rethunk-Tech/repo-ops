@@ -345,4 +345,9 @@ def versions_deno_lock(p: Path) -> set[str]:
         if isinstance(npm_key, str):
             out.add(f"npm:{npm_key}")
 
+    # v3: packages.jsr section; keys are "@scope/pkg@version"
+    for key in pkgs.get("jsr") or {}:
+        if isinstance(key, str):
+            out.add(f"jsr:{key}")
+
     return out

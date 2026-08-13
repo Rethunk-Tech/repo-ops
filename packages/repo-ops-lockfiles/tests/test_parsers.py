@@ -7,6 +7,7 @@ from repo_ops_lockfiles.parsers import (
     parse_package_json_direct,
     versions_bun_lock,
     versions_cargo_lock,
+    versions_deno_lock,
     versions_go_sum,
     versions_npm_lock,
     versions_pnpm_lock,
@@ -109,6 +110,23 @@ click>=8.1
             "requests@2.31.0",
             "flask@3.0.0",
         }
+
+
+def test_versions_deno_lock_v3_packages_jsr():
+    content = """\
+{
+  "version": "3",
+  "packages": {
+    "jsr": {
+      "@scope/pkg@1.0.0": {"integrity": "sha256-example"}
+    }
+  }
+}
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "deno.lock"
+        p.write_text(content)
+        assert versions_deno_lock(p) == {"jsr:@scope/pkg@1.0.0"}
 
 
 def test_versions_pnpm_lock_parses():
