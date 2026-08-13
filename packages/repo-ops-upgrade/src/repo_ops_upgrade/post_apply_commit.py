@@ -407,6 +407,7 @@ def classify_commit_subject(files: list[str]) -> str:
             "package.json",
             "package-lock.json",
             "pnpm-lock.yaml",
+            "pnpm-workspace.yaml",
             "yarn.lock",
             "bun.lock",
             "bun.lockb",
