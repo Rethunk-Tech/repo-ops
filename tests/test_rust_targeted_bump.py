@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+from repo_ops_core.holds import HoldRule
 from repo_ops_models import Workspace
 from repo_ops_rust.rust import apply_rust, check_rust
 
@@ -149,6 +150,60 @@ def test_workspace_dependency_targeted_bump_checks_and_rewrites(
         assert apply_rust(ws) == []
 
     assert 'serde = "2.0.0"' in manifest.read_text(encoding="utf-8")
+
+
+def test_held_crate_stays_behind_latest_and_manifest_unchanged(
+    tmp_path: Path, monkeypatch
+) -> None:
+    manifest = tmp_path / "Cargo.toml"
+    manifest.write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\n\n'
+        '[dependencies]\nserde = "1.0"\n',
+        encoding="utf-8",
+    )
+    lockfile = tmp_path / "Cargo.lock"
+    lockfile.write_text("serde 1.0.0\n", encoding="utf-8")
+    original_manifest = manifest.read_text(encoding="utf-8")
+    hold = HoldRule(package="serde", max_version="1")
+    ws = _ws(tmp_path)
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "true")
+
+    with (
+        patch("repo_ops_rust.rust._global_holds_cached", return_value=(hold,)),
+        patch("repo_ops_rust.rust._repo_holds_cached", return_value=()),
+        patch(
+            "repo_ops_rust.rust.run",
+            return_value=_proc(["cargo", "update", "--dry-run"]),
+        ),
+        patch(
+            "repo_ops_rust.rust._cargo_registry_versions",
+            return_value=("2.0.0",),
+        ),
+    ):
+        result = check_rust(ws)
+
+    assert isinstance(result, tuple)
+    assert [(change.name, change.to) for change in result[1]] == [("serde", "2.0.0")]
+
+    with (
+        patch("repo_ops_rust.rust._global_holds_cached", return_value=(hold,)),
+        patch("repo_ops_rust.rust._repo_holds_cached", return_value=()),
+        patch(
+            "repo_ops_rust.rust.run",
+            return_value=_proc(["cargo", "update"]),
+        ),
+        patch(
+            "repo_ops_rust.rust._cargo_registry_versions",
+            return_value=("2.0.0",),
+        ),
+    ):
+        remaining = apply_rust(ws)
+
+    assert [(change.name, change.to) for change in remaining or []] == [
+        ("serde", "2.0.0")
+    ]
+    assert manifest.read_text(encoding="utf-8") == original_manifest
+    assert lockfile.read_text(encoding="utf-8") == "serde 1.0.0\n"
 
 
 def test_apply_rust_bumps_manifest_and_precise_updates_lock(
