@@ -22,8 +22,8 @@ DEFAULT_MAX_FAILURE_LINES = 20
 
 # Per-manager remediation advice for packages reported behind latest.
 # bun/pnpm/yarn honour --latest (which sets their per-ecosystem env var);
-# go has a 3-way mode flag; npm has no latest mode at all, so the only
-# remediation is a manual pin bump (issue #102).
+# go has a 3-way mode flag; npm and rust have no latest mode of their own, so
+# they use manager-specific targeted bumps or manual pin updates.
 _LATEST_HINT_BY_MANAGER: dict[str, str] = {
     "bun": "run with --latest to include",
     "deno": "run with --latest to include",
@@ -36,6 +36,7 @@ _LATEST_HINT_BY_MANAGER: dict[str, str] = {
         "pass --yarn-targeted-bump to attempt, or bump manually"
     ),
     "go": "run with --go-upgrade-mode=explicit to include",
+    "rust": ("no latest mode; pass --rust-targeted-bump to attempt, or bump manually"),
 }
 _LATEST_HINT_NO_MODE = "no latest mode; bump the pin manually"
 _LATEST_HINT_DEFAULT = "run with --latest to include"
@@ -64,12 +65,17 @@ _DENO_HINT_TARGETED_TRIED = (
     "--deno-targeted-bump was attempted but could not move them "
     "(install failed or version did not advance) — bump manually"
 )
+_RUST_HINT_TARGETED_TRIED = (
+    "--rust-targeted-bump was attempted but could not move them "
+    "(cargo failed or the lockfile did not advance) — bump manually"
+)
 _TARGETED_TRIED_HINT: dict[str, str] = {
     "yarn": _YARN_HINT_TARGETED_TRIED,
     "npm": _NPM_HINT_TARGETED_TRIED,
     "pnpm": _PNPM_HINT_TARGETED_TRIED,
     "bun": _BUN_HINT_TARGETED_TRIED,
     "deno": _DENO_HINT_TARGETED_TRIED,
+    "rust": _RUST_HINT_TARGETED_TRIED,
 }
 
 # Env vars that signal a per-package targeted bump was requested this run. Read
@@ -81,6 +87,7 @@ _TARGETED_BUMP_ENV: dict[str, str] = {
     "pnpm": "REPO_OPS_PNPM_TARGETED_BUMP",
     "bun": "REPO_OPS_BUN_TARGETED_BUMP",
     "deno": "REPO_OPS_DENO_TARGETED_BUMP",
+    "rust": "REPO_OPS_RUST_TARGETED_BUMP",
 }
 _TARGETED_BUMP_TRUE = ("1", "true", "yes", "on")
 
