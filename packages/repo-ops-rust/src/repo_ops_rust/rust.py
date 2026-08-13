@@ -438,8 +438,6 @@ def _cargo_latest_direct_changes(ws: Workspace) -> list[Change]:
 
 def _cargo_dependency_section(header: str) -> bool:
     section = header.strip().strip("[]")
-    if section.startswith("workspace."):
-        return False
     return (
         section
         in {
