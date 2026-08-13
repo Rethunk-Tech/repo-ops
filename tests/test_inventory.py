@@ -79,6 +79,13 @@ def test_count_pipenv_lock_edges(tmp_path: Path):
     assert _python_edges_for_mdir(tmp_path) == len(versions)
 
 
+def test_count_python_pinned_requirements_versions(tmp_path: Path):
+    (tmp_path / "requirements.txt").write_text("foo==1.2.3\nbar>=2.0\n")
+    (tmp_path / "requirements.in").write_text("unpinned\n")
+    _direct, versions, _tag = count_python(tmp_path)
+    assert versions == {"foo@1.2.3"}
+
+
 def test_count_pyproject_edges_without_lock(tmp_path: Path):
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "x"\ndependencies = ["a", "b"]\n'

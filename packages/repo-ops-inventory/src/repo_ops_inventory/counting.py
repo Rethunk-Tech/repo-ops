@@ -361,7 +361,30 @@ def count_python(mdir: Path) -> tuple[int, set[str], str]:
         if pipfile_lock.exists():
             src_tags.append("pipenv")
             versions = versions_pipenv_lock(pipfile_lock)
+    if not versions:
+        versions = _versions_requirements_txt(mdir)
     return direct, versions, "+".join(src_tags) or "none"
+
+
+_REQ_PIN_RE = re.compile(r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*==\s*([^;\s]+)")
+
+
+def _versions_requirements_txt(mdir: Path) -> set[str]:
+    """Parse pinned versions from requirements text files."""
+    versions: set[str] = set()
+    for reqname in (
+        "requirements.txt",
+        "requirements-dev.txt",
+        "requirements-test.txt",
+    ):
+        req = mdir / reqname
+        if not req.exists():
+            continue
+        for line in req.read_text(encoding="utf-8", errors="replace").splitlines():
+            match = _REQ_PIN_RE.match(line.strip())
+            if match:
+                versions.add(f"{match.group(1)}@{match.group(2)}")
+    return versions
 
 
 _UV_LOCK_DEP = re.compile(r"^\s+\{ name =")
