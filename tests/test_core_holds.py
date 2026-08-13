@@ -106,7 +106,7 @@ def test_resolve_hold_no_match_returns_none() -> None:
         resolve_hold(
             rules,
             package="eslint",
-            ecosystem="js",
+            ecosystem="node",
             manager="npm",
             workspace_rel=".",
         )
@@ -119,7 +119,7 @@ def test_resolve_hold_glob_package_match() -> None:
     hit = resolve_hold(
         rules,
         package="@types/node",
-        ecosystem="js",
+        ecosystem="node",
         manager="npm",
         workspace_rel=".",
     )
@@ -133,7 +133,7 @@ def test_resolve_hold_ecosystem_filter() -> None:
         resolve_hold(
             rules,
             package="typescript",
-            ecosystem="js",
+            ecosystem="node",
             manager="npm",
             workspace_rel=".",
         )
@@ -142,7 +142,7 @@ def test_resolve_hold_ecosystem_filter() -> None:
     hit = resolve_hold(
         rules,
         package="typescript",
-        ecosystem="js",
+        ecosystem="node",
         manager="pnpm",
         workspace_rel=".",
     )
@@ -157,7 +157,7 @@ def test_resolve_hold_workspace_glob_scoping() -> None:
         resolve_hold(
             rules,
             package="typescript",
-            ecosystem="js",
+            ecosystem="node",
             manager="npm",
             workspace_rel="packages/legacy",
         )
@@ -166,7 +166,7 @@ def test_resolve_hold_workspace_glob_scoping() -> None:
     hit = resolve_hold(
         rules,
         package="typescript",
-        ecosystem="js",
+        ecosystem="node",
         manager="npm",
         workspace_rel="packages/modern",
     )
@@ -179,7 +179,7 @@ def test_resolve_hold_expired_rule_is_ignored() -> None:
         resolve_hold(
             rules,
             package="typescript",
-            ecosystem="js",
+            ecosystem="node",
             manager="npm",
             workspace_rel=".",
             today=date(2026, 1, 1),
@@ -193,10 +193,96 @@ def test_resolve_hold_not_yet_expired() -> None:
     hit = resolve_hold(
         rules,
         package="typescript",
-        ecosystem="js",
+        ecosystem="node",
         manager="npm",
         workspace_rel=".",
         today=date(2026, 1, 1),
+    )
+    assert hit is not None
+
+
+def test_resolve_hold_expires_day_after_until() -> None:
+    rules = [HoldRule(package="typescript", max_version="6", until="2026-01-01")]
+    assert (
+        resolve_hold(
+            rules,
+            package="typescript",
+            ecosystem="node",
+            manager="npm",
+            workspace_rel=".",
+            today=date(2026, 1, 2),
+        )
+        is None
+    )
+
+
+def test_resolve_hold_applies_on_until_date_inclusive() -> None:
+    rules = [HoldRule(package="typescript", max_version="6", until="2026-01-01")]
+    hit = resolve_hold(
+        rules,
+        package="typescript",
+        ecosystem="node",
+        manager="npm",
+        workspace_rel=".",
+        today=date(2026, 1, 1),
+    )
+    assert hit is not None
+
+
+def test_resolve_hold_unparseable_until_treated_as_non_expiring() -> None:
+    rules = [HoldRule(package="typescript", max_version="6", until="not-a-date")]
+    hit = resolve_hold(
+        rules,
+        package="typescript",
+        ecosystem="node",
+        manager="npm",
+        workspace_rel=".",
+        today=date(2099, 1, 1),
+    )
+    assert hit is not None
+
+
+def test_resolve_hold_unknown_ecosystem_filter_warns_once(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """An ecosystem value that is neither a known ecosystem nor a known manager
+    can never match anything — that must be loud, not silent, and deduped."""
+    rules = [HoldRule(package="typescript", max_version="6", ecosystem="bogus-eco")]
+    for _ in range(2):
+        hit = resolve_hold(
+            rules,
+            package="typescript",
+            ecosystem="node",
+            manager="npm",
+            workspace_rel=".",
+        )
+        assert hit is None
+    err = capsys.readouterr().err
+    assert err.count("bogus-eco") == 1
+    assert "never apply" in err
+
+
+def test_resolve_hold_ecosystem_js_alias_matches_node_workspace() -> None:
+    """Docs (and the module docstring) instruct ``ecosystem = "js"`` — discovery
+    never assigns that literal, only "node", so the alias must resolve or every
+    such rule silently never matches."""
+    rules = [
+        HoldRule(
+            package="typescript",
+            max_version="6",
+            until="2026-11-01",
+            ecosystem="js",
+            workspace="frontend",
+            source="repo",
+        )
+    ]
+    hit = resolve_hold(
+        rules,
+        package="typescript",
+        ecosystem="node",
+        manager="bun",
+        workspace_rel="frontend",
+        today=date(2026, 8, 13),
     )
     assert hit is not None
 
@@ -214,7 +300,7 @@ def test_resolve_hold_workspace_scoped_beats_repo_wide() -> None:
     hit = resolve_hold(
         rules,
         package="typescript",
-        ecosystem="js",
+        ecosystem="node",
         manager="npm",
         workspace_rel="packages/legacy",
     )
@@ -230,7 +316,7 @@ def test_resolve_hold_repo_overrides_global_at_equal_specificity() -> None:
     hit = resolve_hold(
         rules,
         package="typescript",
-        ecosystem="js",
+        ecosystem="node",
         manager="npm",
         workspace_rel=".",
     )
