@@ -28,6 +28,7 @@ from repo_ops_js.holds import (
     resolve_package_hold,
 )
 from repo_ops_js.overrides import release_unheld_pin
+from repo_ops_lockfiles.license_policy import _split_nv
 from repo_ops_lockfiles.parsers import versions_pnpm_lock
 from repo_ops_lockfiles.snapshots import (
     resolved_version_from_node_modules,
@@ -174,8 +175,12 @@ def _catalog_lock_from_ver(ws: Workspace, name: str, spec: str) -> str:
         resolved = versions_pnpm_lock(ws.path / "pnpm-lock.yaml")
     except OSError:
         return _catalog_spec_from_version(spec)
-    prefix = f"{name}@"
-    matches = [token[len(prefix) :] for token in resolved if token.startswith(prefix)]
+    matches = [
+        version
+        for token in resolved
+        for token_name, version in (_split_nv(token),)
+        if token_name == name
+    ]
     if not matches:
         return _catalog_spec_from_version(spec)
     return min(matches, key=_catalog_version_key)

@@ -215,6 +215,35 @@ packages:
     ]
 
 
+def test_missing_catalog_row_ignores_lockfile_prefix_collisions(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _seed(tmp_path)
+    (tmp_path / "pnpm-lock.yaml").write_text(
+        """\
+lockfileVersion: '6.0'
+packages:
+  react-dom@17.0.0:
+    resolution: {integrity: sha512-dom}
+  react@18.3.1:
+    resolution: {integrity: sha512-react}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        if cmd[:3] == ["pnpm", "view", "react"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="19.0.0\n", stderr="")
+        return subprocess.CompletedProcess(cmd, 1, stdout="{}", stderr="")
+
+    with patch("repo_ops_js_pnpm.pnpm.run", side_effect=fake_run):
+        changes, behind = _pnpm_outdated(_ws(tmp_path))
+
+    assert changes == []
+    assert behind == [Change("react", "18.3.1", "19.0.0")]
+
+
 def test_targeted_catalog_bump_updates_default_and_named_tables(
     tmp_path: Path, monkeypatch
 ) -> None:
