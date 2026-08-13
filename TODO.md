@@ -54,16 +54,6 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 **Acceptance:** Opt-in flags (or a documented “Python has no latest mode” sentence that is true for all four) exist for poetry/pdm/pipenv/pip-tools. With the flag, a direct dep whose lock is behind a newer published version that requires a constraint bump is either moved (revert-on-failure, like JS targeted-bump) or listed in `behind_latest` instead of `[ok]`. `--full` either includes those flags or the docs say Python constraint bumps stay manual.
 
-### 39.2 pnpm `catalog:` versions in `pnpm-workspace.yaml`
-
-Overrides audit treats `catalog:` protocol pins as non-stale (`repo_ops_js.overrides`, #50). `repo-ops-js-pnpm` never reads or bumps the `catalogs:` / `catalog:` tables in `pnpm-workspace.yaml`. `pnpm update --latest` can leave catalog-defined versions untouched while member `package.json` still says `catalog:`. Fleet repos using pnpm catalogs then look current in plan/apply.
-
-**Refs:** `packages/repo-ops-js/src/repo_ops_js/overrides.py` (`catalog:` skip); `packages/repo-ops-js-pnpm/src/repo_ops_js_pnpm/`; pnpm workspace catalog docs.
-
-**Traps:** Default vs named catalogs (`catalog:` vs `catalog:foo`). Do not rewrite `workspace:` / `link:` / `file:` siblings. Catalog bumps are workspace-root files — `apply --commit` scoping must include `pnpm-workspace.yaml` (same class of bug as #153 nested manifests). Holds must apply to catalog package names.
-
-**Acceptance:** Plan/apply can advance a catalog entry when `--pnpm-targeted-bump` / `--latest` says to, with snapshot/restore if `pnpm install` fails. Catalog-only drift shows in `behind_latest` when not actioned. `pnpm-workspace.yaml` is in the commit path when the catalog table changed.
-
 ### 39.3 Opt-in Cargo.toml constraint bump (Rust majors still default-off)
 
 `cargo update` only refreshes within existing `Cargo.toml` reqs; `--latest` is documented as a no-op for rust. Direct-dep major/minor constraint edits stay hand work. That is honest, but there is still no opt-in analog to `--yarn-targeted-bump` (e.g. `cargo update -p crate --precise` already used for holds/audit, plus a manifest req bump).
@@ -76,40 +66,48 @@ Overrides audit treats `catalog:` protocol pins as non-stale (`repo_ops_js.overr
 
 ---
 
-## Round 41 — Wave 41 audit carry-forwards
+## Round 42 — Wave 42 audit carry-forwards
 
-### 41.1 Go hold ceiling still duplicates pad-to-three
+### 42.1 Catalog drift invisible when absent from `pnpm outdated`
 
-Python managers call `repo_ops_core.version_utils.hold_ceiling_spec`. `packages/repo-ops-go/src/repo_ops_go/go.py` still has `_HOLD_CEILING_PAD` and `_go_ceiling_query` (`<=v` + same three-component pad).
+`_pnpm_outdated` skips a catalog package when `pnpm outdated` JSON has no row (`if meta is None: continue`). A stale `pnpm-workspace.yaml` pin with no outdated entry never appears in `behind_latest`.
 
-**Refs:** `go.py` `_go_ceiling_query`; `version_utils.hold_ceiling_spec`.
+**Refs:** `packages/repo-ops-js-pnpm/src/repo_ops_js_pnpm/pnpm.py` `_pnpm_outdated` catalog merge.
 
-**Traps:** Go queries need the `v` prefix (`<=v6.999999.999999`). Do not change Python `<=` PEP 440 shape.
+**Traps:** Do not hit the registry on every plan. Skip protocol values. Holds still apply.
 
-**Acceptance:** Go uses the shared pad (or a thin `v`-prefixed wrapper). Padding semantics unchanged.
+**Acceptance:** Catalog-only constraints that are behind a known latest (from outdated **or** an existing in-tree latest helper) show in `behind_latest` when not actioned.
 
-### 41.2 CycloneDX tool provenance: `author` vs `publisher`
+### 42.2 `behind_latest` catalog `from_ver` is the YAML spec
 
-`emit_cyclonedx` maps 1.4 `vendor` to component `author: "Rethunk-Tech"`. CycloneDX 1.5+ also has `publisher` and structured `authors[]`; GitHub/OSV consumers may prefer those.
+Catalog `Change.from_ver` is the workspace-yaml constraint (`^18.2.0`), not the installed `current` from outdated. Other managers report the resolved version.
 
-**Refs:** `packages/repo-ops-lockfiles/src/repo_ops_lockfiles/sbom.py` `emit_cyclonedx`; CycloneDX 1.5 metadata.tools.components.
+**Refs:** `pnpm.py` catalog `behind_latest.append`; `tests/test_pnpm_catalog.py`.
 
-**Acceptance:** Tool component identity is schema-valid and matches how GitHub dependency-graph / common validators expect org provenance. Tests lock the chosen fields.
+**Acceptance:** Human/JSON `behind_latest` for catalog packages uses the same `from_ver` convention as non-catalog pnpm rows, or docs state the spec-as-from_ver rule.
 
-### 41.3 CycloneDX emit has no schema-validation test
+### 42.3 Commit subject ignores `pnpm-workspace.yaml`
 
-`tests/test_sbom.py` asserts dict equality for `specVersion` and `metadata.tools`. No CI check against `bom-1.5.schema.json`.
+`upgrade_scoped_paths` stages `pnpm-workspace.yaml` for pnpm. `classify_commit_subject` `has_node` does not include that basename, so a catalog-only commit gets the generic deps subject.
 
-**Refs:** `tests/test_sbom.py`; CycloneDX JSON schema.
+**Refs:** `packages/repo-ops-upgrade/src/repo_ops_upgrade/post_apply_commit.py` `classify_commit_subject`.
 
-**Traps:** Do not add `cyclonedx-python-lib` only to validate. A vendored/minimal schema fixture or a skip-if-uninstalled jsonschema check is enough.
+**Acceptance:** A commit whose only node file is `pnpm-workspace.yaml` classifies as a node/pnpm deps subject.
 
-**Acceptance:** A unit test fails if `emit_cyclonedx` output is invalid 1.5 JSON (tools shape, required keys).
+### 42.4 Go ceiling docstring still describes local padding
 
-### 41.4 Filesystem tomli-reload test mutates `sys.modules`
+`_go_ceiling_query` delegates to `hold_ceiling_spec`; the docstring still narrates in-function three-component padding.
 
-`test_tomli_import_error_marks_parser_unavailable` reloads `filesystem` and rewrites `sys.modules["tomllib"/"tomli"]`. Finally restores, but the pattern is brittle under parallel collection.
+**Refs:** `packages/repo-ops-go/src/repo_ops_go/go.py` `_go_ceiling_query`.
 
-**Refs:** `tests/test_filesystem.py`.
+**Acceptance:** Docstring states the `v`-prefixed wrapper over `hold_ceiling_spec` without implying a local pad loop.
 
-**Acceptance:** The ImportError fallback is still covered without leaking parser modules across tests (isolate via a subprocess or a dedicated import helper that tests can call without reload).
+### 42.5 `TOML_AVAILABLE=False` at module init untested
+
+`load_toml_parser(importer=broken)` is covered. Module-level `TOML_AVAILABLE` after both parsers fail at import is not.
+
+**Refs:** `packages/repo-ops-core/src/repo_ops_core/filesystem.py`; `tests/test_filesystem.py`.
+
+**Traps:** Do not `importlib.reload` or rewrite `sys.modules`.
+
+**Acceptance:** Init-time parser-absent path is covered without cross-test module leaks.
