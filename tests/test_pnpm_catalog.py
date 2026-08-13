@@ -8,7 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops_js_pnpm.pnpm import (
+    _catalog_spec_from_version,
     _catalog_specs,
+    _pnpm_outdated,
     apply_pnpm,
     check_pnpm,
     targeted_bump_behind,
@@ -60,6 +62,10 @@ def test_catalog_specs_reads_default_and_named_tables_skipping_protocols(
     assert _catalog_specs(_ws(tmp_path)) == {
         "react": ["^18.2.0", "^18.2.0"],
     }
+
+
+def test_catalog_spec_from_version_strips_v_prefix() -> None:
+    assert _catalog_spec_from_version("^v18.2.0") == "18.2.0"
 
 
 def test_catalog_drift_uses_lowest_behind_duplicate_spec(tmp_path: Path) -> None:
@@ -174,6 +180,39 @@ def test_missing_catalog_row_skips_view_without_latest_flags(
     assert changes == []
     assert behind == []
     assert all(cmd[:2] != ["pnpm", "view"] for cmd in commands)
+
+
+def test_missing_catalog_row_from_ver_uses_lockfile_resolved(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _seed(tmp_path)
+    (tmp_path / "pnpm-lock.yaml").write_text(
+        """\
+lockfileVersion: '6.0'
+packages:
+  react@18.3.1:
+    resolution: {integrity: sha512-test}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
+    commands: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        commands.append(list(cmd))
+        if cmd[:3] == ["pnpm", "view", "react"]:
+            return subprocess.CompletedProcess(cmd, 0, stdout="19.0.0\n", stderr="")
+        return subprocess.CompletedProcess(cmd, 1, stdout="{}", stderr="")
+
+    with patch("repo_ops_js_pnpm.pnpm.run", side_effect=fake_run):
+        changes, behind = _pnpm_outdated(_ws(tmp_path))
+
+    assert changes == []
+    assert behind == [Change("react", "18.3.1", "19.0.0")]
+    assert commands == [
+        ["pnpm", "outdated", "--format", "json"],
+        ["pnpm", "view", "react", "version"],
+    ]
 
 
 def test_targeted_catalog_bump_updates_default_and_named_tables(
