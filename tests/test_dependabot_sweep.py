@@ -14,6 +14,7 @@ from repo_ops_dependabot.dependabot import (
     DependabotPR,
     _check_superseded,
     _is_security_title,
+    _lockfile_resolved,
     _manifest_versions,
     _owner_repo,
     _parse_bump,
@@ -23,6 +24,7 @@ from repo_ops_dependabot.dependabot import (
     _version_gte,
     build_dependabot_parser,
     main,
+    scan_repos,
 )
 
 # ---------------------------------------------------------------------------
@@ -677,6 +679,65 @@ def test_dependabot_close_calls_gh_pr_close(tmp_path: Path) -> None:
         mock_close.assert_called_once()
         call_args = mock_close.call_args
         assert call_args[0][1] == 42  # pr_number
+
+
+def test_deno_lock_resolves_npm_and_jsr_high_confidence(tmp_path: Path) -> None:
+    """Deno lockfile entries support high-confidence Dependabot supersession."""
+    fake_repo = str(tmp_path)
+    (tmp_path / "deno.lock").write_text(
+        json.dumps(
+            {
+                "version": "4",
+                "specifiers": {
+                    "npm:chalk@5.3.0": "5.3.0",
+                    "jsr:@scope/pkg@1.2.3": "1.2.3",
+                },
+                "npm": {"chalk@5.3.0": {}},
+                "jsr": {"@scope/pkg@1.2.3": {}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    mock_pr_data = [
+        {
+            "number": 61,
+            "title": "Bump chalk from 5.2.0 to 5.3.0",
+            "headRefName": "dependabot/deno/chalk-5.3.0",
+        },
+        {
+            "number": 62,
+            "title": "Bump @scope/pkg from 1.0.0 to 1.2.3",
+            "headRefName": "dependabot/deno/pkg-1.2.3",
+        },
+    ]
+    mock_git_result = MagicMock(returncode=0, stdout="origin/main\n")
+
+    resolved = _lockfile_resolved(fake_repo)
+    assert resolved["chalk"] == "5.3.0"
+    assert resolved["@scope/pkg"] == "1.2.3"
+    assert resolved["scope/pkg"] == "1.2.3"
+
+    with (
+        patch(
+            "repo_ops_dependabot.dependabot._github_remote",
+            return_value="https://github.com/owner/repo",
+        ),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_list_dependabot_prs",
+            return_value=(mock_pr_data, ""),
+        ),
+        patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
+        patch(
+            "repo_ops_dependabot.dependabot._gh_close_pr", return_value=""
+        ) as mock_close,
+    ):
+        results = scan_repos([fake_repo], do_close=True, repo_paths=[fake_repo])
+
+    prs = results[0].prs
+    assert all(pr.superseded is True for pr in prs)
+    assert all(pr.low_confidence is False for pr in prs)
+    assert {pr.current_ver for pr in prs} == {"5.3.0", "1.2.3"}
+    assert mock_close.call_count == 2
 
 
 def test_bun_lockb_without_bun_never_closes_dependabot_pr(
