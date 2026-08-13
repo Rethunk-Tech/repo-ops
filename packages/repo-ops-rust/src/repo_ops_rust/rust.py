@@ -1,19 +1,24 @@
 """Rust/Cargo upgrade check/apply.
 
-Cargo has no cross-range / aggressive upgrade mode under fleet ``--latest``.
-``REPO_OPS_*_UPDATE_LATEST`` and ``--latest`` do not change cargo behavior;
-``cargo update`` always resolves within existing ``Cargo.toml`` / lockfile
-constraints. Prefer honest docs over inventing a half-mode gate.
+Cargo's normal ``cargo update`` stays within existing ``Cargo.toml``
+constraints. The opt-in targeted bump mode updates direct crates.io
+requirements one crate at a time with ``cargo update --precise``.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 from functools import cache
 from http.client import HTTPSConnection
 from pathlib import Path
 from urllib.parse import quote
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
+    import tomli as tomllib
 
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.holds import (
@@ -291,7 +296,286 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
             )
 
 
-def check_rust(ws: Workspace) -> list[Change]:
+def _cargo_version_parts(version: str) -> tuple[int, int, int]:
+    match = re.search(r"\d+(?:\.\d+){0,2}", version.strip().lstrip("vV"))
+    if match is None:
+        return (0, 0, 0)
+    parts = [int(part) for part in match.group(0).split(".")]
+    padded = (parts + [0, 0, 0])[:3]
+    return padded[0], padded[1], padded[2]
+
+
+def _cargo_caret_upper_bound(parts: tuple[int, int, int]) -> tuple[int, int, int]:
+    major, minor, patch = parts
+    if major:
+        return (major + 1, 0, 0)
+    if minor:
+        return (0, minor + 1, 0)
+    return (0, 0, patch + 1)
+
+
+def _cargo_requirement_satisfied(version: str, requirement: str) -> bool:
+    """Return whether a published Cargo version matches a simple requirement."""
+    candidate = _cargo_version_parts(version)
+    for alternative in requirement.split("||"):
+        constraints = [part.strip() for part in alternative.split(",") if part.strip()]
+        if not constraints:
+            return True
+        satisfied = True
+        for constraint in constraints:
+            match = re.match(
+                r"^(<=|>=|<|>|=|~|\^)?\s*(\d+(?:\.\d+){0,2}|\*)", constraint
+            )
+            if match is None:
+                satisfied = False
+                break
+            operator = match.group(1) or "^"
+            raw_version = match.group(2)
+            if raw_version == "*":
+                continue
+            specified = tuple(int(part) for part in raw_version.split("."))
+            parts = tuple((list(specified) + [0, 0, 0])[:3])
+            if operator in ("^", "~"):
+                upper = (
+                    _cargo_caret_upper_bound(parts)
+                    if operator == "^"
+                    else (parts[0], parts[1] + 1, 0)
+                )
+                if not (candidate >= parts and candidate < upper):
+                    satisfied = False
+                    break
+            elif operator == "=":
+                if candidate != parts:
+                    satisfied = False
+                    break
+            elif operator == ">=" and candidate < parts:
+                satisfied = False
+                break
+            elif operator == ">" and candidate <= parts:
+                satisfied = False
+                break
+            elif operator == "<=" and candidate > parts:
+                satisfied = False
+                break
+            elif operator == "<" and candidate >= parts:
+                satisfied = False
+                break
+        if satisfied:
+            return True
+    return False
+
+
+def _cargo_dependency_tables(
+    document: dict[str, object],
+    path: tuple[str, ...] = (),
+) -> list[tuple[tuple[str, ...], dict[str, object]]]:
+    tables: list[tuple[tuple[str, ...], dict[str, object]]] = []
+    for name, value in document.items():
+        if not isinstance(value, dict):
+            continue
+        child_path = (*path, name)
+        if name in {"dependencies", "dev-dependencies", "build-dependencies"}:
+            if not path or path[0] != "workspace":
+                tables.append((child_path, value))
+        tables.extend(_cargo_dependency_tables(value, child_path))
+    return tables
+
+
+def _cargo_manifest_dependencies(
+    manifest: Path,
+) -> dict[str, list[tuple[str, str]]]:
+    document = tomllib.loads(manifest.read_text(encoding="utf-8"))
+    dependencies: dict[str, list[tuple[str, str]]] = {}
+    for _, table in _cargo_dependency_tables(document):
+        for name, value in table.items():
+            requirement: object = value
+            if isinstance(value, dict):
+                if (
+                    value.get("workspace") is True
+                    or "path" in value
+                    or "git" in value
+                    or value.get("package") not in (None, name)
+                ):
+                    continue
+                requirement = value.get("version")
+            if isinstance(requirement, str):
+                dependencies.setdefault(name, []).append((name, requirement))
+    return dependencies
+
+
+def _cargo_latest_direct_changes(ws: Workspace) -> list[Change]:
+    manifest = ws.path / "Cargo.toml"
+    dependencies = _cargo_manifest_dependencies(manifest)
+    changes: list[Change] = []
+    for crate_name, entries in sorted(dependencies.items()):
+        latest = max(
+            _cargo_registry_versions(crate_name), key=semver_tuple, default=None
+        )
+        if latest is None or all(
+            _cargo_requirement_satisfied(latest, requirement)
+            for _, requirement in entries
+        ):
+            continue
+        changes.append(Change(crate_name, entries[0][1], latest))
+    return changes
+
+
+def _cargo_dependency_section(header: str) -> bool:
+    section = header.strip().strip("[]")
+    if section.startswith("workspace."):
+        return False
+    return (
+        section
+        in {
+            "dependencies",
+            "dev-dependencies",
+            "build-dependencies",
+        }
+        or re.search(
+            r"(?:^|\.)(?:dependencies|dev-dependencies|build-dependencies)(?:\.|$)",
+            section,
+        )
+        is not None
+    )
+
+
+def _cargo_bumped_requirement(requirement: str, latest: str) -> str:
+    stripped = requirement.strip()
+    if stripped.startswith("^"):
+        return f"^{latest}"
+    if stripped.startswith("~"):
+        return f"~{latest}"
+    return latest
+
+
+def _replace_cargo_requirement(
+    manifest: Path,
+    crate_name: str,
+    old_requirement: str,
+    new_requirement: str,
+) -> bool:
+    lines = manifest.read_text(encoding="utf-8").splitlines(keepends=True)
+    section = ""
+    changed = False
+    for index, line in enumerate(lines):
+        header = re.match(r"^\s*(\[[^\]]+\])\s*$", line)
+        if header:
+            section = header.group(1)
+            continue
+        direct_section = _cargo_dependency_section(section)
+        table_section = direct_section and re.search(
+            rf"\.(?:dependencies|dev-dependencies|build-dependencies)\."
+            rf"(?:\"?{re.escape(crate_name)}\"?)$",
+            section.strip().strip("[]"),
+        )
+        if table_section:
+            match = re.match(r"^(\s*)version(\s*=\s*)([\"'])(.*?)(\3)(.*)$", line)
+            if match and match.group(4) == old_requirement:
+                lines[index] = (
+                    f"{match.group(1)}version{match.group(2)}{match.group(3)}"
+                    f"{new_requirement}{match.group(5)}{match.group(6)}"
+                )
+                changed = True
+            continue
+        if not direct_section:
+            continue
+        match = re.match(
+            r"^(\s*)(\"[^\"]+\"|'[^']+'|[A-Za-z0-9_-]+)(\s*=\s*)(.*)$",
+            line,
+        )
+        if not match:
+            continue
+        key = match.group(2).strip("\"'")
+        if key != crate_name:
+            continue
+        value = match.group(4)
+        if value.startswith(('"', "'")):
+            quoted = re.match(r"([\"'])(.*?)(\1)(.*)$", value)
+            if quoted and quoted.group(2) == old_requirement:
+                lines[index] = (
+                    f"{match.group(1)}{match.group(2)}{match.group(3)}"
+                    f"{quoted.group(1)}{new_requirement}{quoted.group(3)}{quoted.group(4)}"
+                )
+                changed = True
+        elif value.lstrip().startswith("{"):
+            version = re.search(
+                r"(\bversion\s*=\s*)([\"'])(.*?)(\2)",
+                value,
+            )
+            if version and version.group(3) == old_requirement:
+                replacement = f"{version.group(1)}{version.group(2)}{new_requirement}{version.group(4)}"
+                lines[index] = (
+                    line[: match.start(4)]
+                    + value[: version.start()]
+                    + replacement
+                    + value[version.end() :]
+                )
+                changed = True
+    if changed:
+        manifest.write_text("".join(lines), encoding="utf-8")
+    return changed
+
+
+def _cargo_snapshot(path: Path) -> bytes | None:
+    return path.read_bytes() if path.is_file() else None
+
+
+def _cargo_restore(path: Path, snapshot: bytes | None) -> None:
+    if snapshot is None:
+        path.unlink(missing_ok=True)
+    else:
+        path.write_bytes(snapshot)
+
+
+def _apply_cargo_targeted_bumps(
+    ws: Workspace,
+    candidates: list[Change],
+) -> list[Change]:
+    manifest = ws.path / "Cargo.toml"
+    lockfile = ws.path / "Cargo.lock"
+    remaining: list[Change] = []
+    for candidate in candidates:
+        rule = _resolve_crate_hold(ws, candidate.name)
+        if rule is not None and not version_satisfies_ceiling(
+            candidate.to, rule.max_version
+        ):
+            remaining.append(candidate)
+            continue
+        manifest_snapshot = _cargo_snapshot(manifest)
+        lock_snapshot = _cargo_snapshot(lockfile)
+        requirement = candidate.from_ver
+        if not _replace_cargo_requirement(
+            manifest,
+            candidate.name,
+            requirement,
+            _cargo_bumped_requirement(requirement, candidate.to),
+        ):
+            remaining.append(candidate)
+            continue
+        proc = run(
+            [
+                "cargo",
+                "update",
+                "-p",
+                candidate.name,
+                "--precise",
+                candidate.to,
+            ],
+            ws.path,
+            timeout=resolve_timeout_apply(),
+        )
+        lock_advanced = _cargo_snapshot(lockfile) != lock_snapshot
+        if proc.returncode == 0 and lock_advanced:
+            continue
+        _cargo_restore(manifest, manifest_snapshot)
+        _cargo_restore(lockfile, lock_snapshot)
+        remaining.append(candidate)
+    return remaining
+
+
+def check_rust(
+    ws: Workspace,
+) -> list[Change] | tuple[list[Change], list[Change]]:
     proc = run(
         ["cargo", "update", "--dry-run"], ws.path, timeout=resolve_timeout_check()
     )
@@ -302,11 +586,18 @@ def check_rust(ws: Workspace) -> list[Change]:
         m = re.search(r"Updating\s+(\S+)\s+v([\d.]+)\s+->\s+v([\d.]+)", line)
         if m:
             changes.append(Change(m.group(1), m.group(2), m.group(3)))
-    return _filter_held_rust_changes(ws, changes)
+    in_range = _filter_held_rust_changes(ws, changes)
+    if os.environ.get("REPO_OPS_RUST_TARGETED_BUMP") != "1":
+        return in_range
+    behind = _cargo_latest_direct_changes(ws)
+    return in_range, _filter_held_rust_changes(ws, behind)
 
 
-def apply_rust(ws: Workspace) -> None:
+def apply_rust(ws: Workspace) -> list[Change] | None:
     proc = run(["cargo", "update"], ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "cargo update failed")
     _enforce_version_ceilings(ws)
+    if os.environ.get("REPO_OPS_RUST_TARGETED_BUMP") != "1":
+        return None
+    return _apply_cargo_targeted_bumps(ws, _cargo_latest_direct_changes(ws))
