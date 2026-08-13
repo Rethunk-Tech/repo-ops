@@ -8,7 +8,6 @@ requirements one crate at a time with ``cargo update --precise``.
 from __future__ import annotations
 
 import json
-import os
 import re
 from functools import cache
 from http.client import HTTPSConnection
@@ -20,6 +19,13 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
     import tomli as tomllib
 
+from repo_ops_core.config import (
+    ambient_env,
+    load_global_config,
+    load_repo_config,
+    process_env_cli_override,
+    resolve_setting,
+)
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.holds import (
     HoldRule,
@@ -32,6 +38,8 @@ from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 
 _AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
+_RUST_TARGETED_BUMP_ENV = "REPO_OPS_RUST_TARGETED_BUMP"
+_TRUE_VALUES = ("1", "true", "yes", "on")
 
 
 def set_rust_audit_version_overrides(overrides: dict[str, str]) -> None:
@@ -41,6 +49,19 @@ def set_rust_audit_version_overrides(overrides: dict[str, str]) -> None:
 
 def clear_rust_audit_version_overrides() -> None:
     _AUDIT_VERSION_OVERRIDES.clear()
+
+
+def _rust_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
+    raw = resolve_setting(
+        "rust_targeted_bump",
+        cli_value=process_env_cli_override(_RUST_TARGETED_BUMP_ENV),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in _TRUE_VALUES
 
 
 @cache
@@ -370,9 +391,7 @@ def _cargo_dependency_tables(
         if not isinstance(value, dict):
             continue
         child_path = (*path, name)
-        if name in {"dependencies", "dev-dependencies", "build-dependencies"} and (
-            not path or path[0] != "workspace"
-        ):
+        if name in {"dependencies", "dev-dependencies", "build-dependencies"}:
             tables.append((child_path, value))
         tables.extend(_cargo_dependency_tables(value, child_path))
     return tables
@@ -584,7 +603,7 @@ def check_rust(
         if m:
             changes.append(Change(m.group(1), m.group(2), m.group(3)))
     in_range = _filter_held_rust_changes(ws, changes)
-    if os.environ.get("REPO_OPS_RUST_TARGETED_BUMP") != "1":
+    if not _rust_targeted_bump_enabled(ws):
         return in_range
     behind = _cargo_latest_direct_changes(ws)
     return in_range, behind
@@ -595,6 +614,6 @@ def apply_rust(ws: Workspace) -> list[Change] | None:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "cargo update failed")
     _enforce_version_ceilings(ws)
-    if os.environ.get("REPO_OPS_RUST_TARGETED_BUMP") != "1":
+    if not _rust_targeted_bump_enabled(ws):
         return None
     return _apply_cargo_targeted_bumps(ws, _cargo_latest_direct_changes(ws))

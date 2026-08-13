@@ -49,7 +49,7 @@ def test_check_rust_reports_direct_dependency_behind_latest(
         ),
         monkeypatch.context() as env,
     ):
-        env.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
+        env.setenv("REPO_OPS_RUST_TARGETED_BUMP", "true")
         result = check_rust(ws)
 
     assert isinstance(result, tuple)
@@ -58,6 +58,51 @@ def test_check_rust_reports_direct_dependency_behind_latest(
     assert [(change.name, change.from_ver, change.to) for change in behind] == [
         ("serde", "^1.0", "2.0.0")
     ]
+
+
+def test_check_rust_targeted_bump_defaults_off_without_config(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("REPO_OPS_RUST_TARGETED_BUMP", raising=False)
+    with (
+        patch(
+            "repo_ops_rust.rust.run",
+            return_value=_proc(["cargo", "update", "--dry-run"]),
+        ),
+        patch("repo_ops_rust.rust.load_global_config", return_value={}),
+    ):
+        result = check_rust(_ws(tmp_path))
+
+    assert isinstance(result, list)
+
+
+def test_check_rust_targeted_bump_reads_repo_config(
+    tmp_path: Path, monkeypatch
+) -> None:
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\n\n'
+        '[dependencies]\nserde = "1.0"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / ".repo-ops.toml").write_text(
+        "rust_targeted_bump = true\n", encoding="utf-8"
+    )
+    monkeypatch.delenv("REPO_OPS_RUST_TARGETED_BUMP", raising=False)
+    with (
+        patch(
+            "repo_ops_rust.rust.run",
+            return_value=_proc(["cargo", "update", "--dry-run"]),
+        ),
+        patch(
+            "repo_ops_rust.rust._cargo_registry_versions",
+            return_value=("2.0.0",),
+        ),
+        patch("repo_ops_rust.rust.load_global_config", return_value={}),
+    ):
+        result = check_rust(_ws(tmp_path))
+
+    assert isinstance(result, tuple)
+    assert result[1][0].name == "serde"
 
 
 def test_apply_rust_bumps_manifest_and_precise_updates_lock(
