@@ -10,13 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`--rust-targeted-bump`:** opt-in Cargo.toml constraint bumps for direct crates.io dependencies (including `[workspace.dependencies]`) whose latest non-yanked release is outside the current req. Snapshot/restore on `cargo update -p --precise` failure; holds stay in `behind_latest`. Not implied by `--latest` or `--full`.
+- **`--poetry-targeted-bump` / `--pdm-targeted-bump`:** opt-in pyproject constraint bumps when a direct dep's lock is behind a published version that the current range cannot take. Reversible per-package `poetry add` / `pdm add`; holds stay in `behind_latest`. Not implied by `--latest` or `--full`. pipenv and pip-tools have no equivalent yet.
 - **pnpm workspace catalogs:** plan/apply read `catalog:` and `catalogs:` in `pnpm-workspace.yaml`. With `--pnpm-targeted-bump`, catalog versions bump (hold ceilings and snapshot/restore on failed or ghost `pnpm install`); without it, catalog drift is `behind_latest`. `pnpm-workspace.yaml` is in apply commit scope. Protocol pins (`workspace:`, `file:`, …) are left alone; npm epoch pins (`1:2.3.4`) are versions.
 - **`repo-ops doctor` probes `ruff`:** same found/missing/version row as the other Python toolchain binaries (`pyrefly`, hatch, pip-audit). `--strict` fails when ruff is absent. No `ruff format` probe.
 - **SBOM GitHub Actions components include reusable workflows and nested actions:** `uses: owner/repo/.github/workflows/ci.yml@v1` and `owner/repo/subdir` are emitted with the full path as `name` and a `?subpath=` PURL qualifier so two workflows in one repo at the same ref do not collapse. Local `./`, `../`, and `docker://` uses stay omitted.
 
 ### Fixed
 
-- **pnpm catalog `behind_latest` used the YAML spec as `from_ver`:** when `pnpm outdated` has a row, catalog packages now report the installed `current`, matching non-catalog pnpm rows. In-range `wanted` bumps stay in `changes` instead of being stripped.
+- **pnpm catalog `behind_latest` used the YAML spec as `from_ver`:** when `pnpm outdated` has a row, catalog packages now report the installed `current`, matching non-catalog pnpm rows. In-range `wanted` bumps stay in `changes` instead of being stripped. Missing-outdated catalog rows use the lockfile-resolved version when `pnpm-lock.yaml` is parseable; spec stripping uses `normalize_version` rather than `lstrip`.
+- **`apply_rust` re-queried crates.io** after `check_rust` in the same process: latest-direct candidates are cached on workspace path plus Cargo.toml mtime/size.
 - **Catalog pins missing from `pnpm outdated` were invisible:** with `--latest` or `--pnpm-targeted-bump`, `pnpm view` fills `behind_latest`; conservative plan does not hit the registry.
 - **Catalog-only `pnpm-workspace.yaml` commits used the generic deps subject:** `classify_commit_subject` treats that basename as Node.
 - **Python 3.10 TOML parsing crashed at `filesystem` import without pytest's tomli extra:** `repo-ops-core` now depends on `tomli` under `python_version < "3.11"`. When the parser is still missing, or when `tomli` raises `ImportError`, `read_toml_file` and config skip-and-warn instead of raising. Cargo license enrichment uses the same helper.

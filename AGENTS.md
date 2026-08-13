@@ -96,7 +96,7 @@ repo-ops apply --submodule-order=children-first --submodules /path/to/umbrella
 - Defaults `REPO_OPS_GO_UPGRADE_MODE` to `explicit` when unset
 - Sets GitHub Actions to `--actions-upgrade-mode=latest`
 
-Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode` wins over the umbrella for that ecosystem. npm has no latest mode (semver ranges only). Targeted-bump fallbacks (move `behind_latest` gaps instead of only reporting them) exist for yarn/npm/pnpm/bun/deno: `--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, `--bun-targeted-bump`, `--deno-targeted-bump`. Those five are in `--full`. Rust stays in-range `cargo update` unless `--rust-targeted-bump` (`REPO_OPS_RUST_TARGETED_BUMP`) opts into Cargo.toml constraint bumps; that flag is **not** part of `--full`. Details: `repo-ops plan --help` and [docs/usage.md — Ecosystem upgrade modes](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply).
+Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode` wins over the umbrella for that ecosystem. npm has no latest mode (semver ranges only). Targeted-bump fallbacks (move `behind_latest` gaps instead of only reporting them) exist for yarn/npm/pnpm/bun/deno: `--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, `--bun-targeted-bump`, `--deno-targeted-bump`. Those five are in `--full`. Rust stays in-range `cargo update` unless `--rust-targeted-bump` (`REPO_OPS_RUST_TARGETED_BUMP`) opts into Cargo.toml constraint bumps; that flag is **not** part of `--full`. Poetry and PDM likewise stay in-range unless `--poetry-targeted-bump` / `--pdm-targeted-bump` (also **not** part of `--full`). pipenv and pip-tools have no targeted-bump flags. Details: `repo-ops plan --help` and [docs/usage.md — Ecosystem upgrade modes](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply).
 
 **`--latest` does NOT imply `--actions-refresh-sha`, `--container-refresh-sha`, `--precommit-refresh-sha`, `--submodule-refresh-sha`, or any `--*-targeted-bump` flag.** Each is independently opt-in even though `--latest` sounds like it should cover them. For routine bulk maintenance, always use `--full` (or the expanded **full-coverage sweep** combo in Essential invocations above), not bare `--latest`.
 
@@ -110,6 +110,7 @@ Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode
 | `--submodule-refresh-sha` | Digest bumps for resolvable SHA-only submodule HEADs | Not implied by `--latest`; SHA pins stay report-only without it |
 | `--yarn-targeted-bump` / `--npm-targeted-bump` / `--pnpm-targeted-bump` / `--bun-targeted-bump` / `--deno-targeted-bump` | Moves `behind_latest` peer/group-constrained packages instead of only reporting them | `--latest` still leaves these packages in the `behind_latest` report bucket, which reads as "handled" if the summary counts aren't checked closely |
 | `--rust-targeted-bump` | Opt-in Cargo.toml constraint bumps for direct crates.io deps (including `[workspace.dependencies]`) outside the current req | **Not** implied by `--latest` or `--full`; default remains in-range `cargo update` only |
+| `--poetry-targeted-bump` / `--pdm-targeted-bump` | Opt-in pyproject constraint bumps when the lock is behind a published version that needs a range change | **Not** implied by `--latest` or `--full`; default remains in-range `poetry update` / `pdm update` |
 
 A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinned; set REPO_OPS_CONTAINER_REFRESH_SHA=1 to refresh digest` line are the tells that one of these flags is missing from the invocation — never treat a `--latest`-only run as a complete sweep.
 
@@ -161,6 +162,7 @@ A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinn
 | `--container-refresh-sha` | plan, apply | Refresh digests for SHA-pinned container image references — **not** implied by `--latest`; use `--full` or pass explicitly |
 | `--yarn-targeted-bump` / `--npm-targeted-bump` / `--pnpm-targeted-bump` / `--bun-targeted-bump` / `--deno-targeted-bump` | plan, apply | Move `behind_latest` peer/group-constrained packages instead of only reporting them — **not** implied by `--latest`; use `--full` or pass explicitly |
 | `--rust-targeted-bump` | plan, apply | Opt-in Cargo.toml constraint bumps — **not** implied by `--latest` or `--full` |
+| `--poetry-targeted-bump` / `--pdm-targeted-bump` | plan, apply | Opt-in Poetry/PDM constraint bumps — **not** implied by `--latest` or `--full` |
 
 #### `pushed` flags
 
