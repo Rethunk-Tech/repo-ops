@@ -32,6 +32,7 @@ from repo_ops_lockfiles.parsers import (
     versions_pipenv_lock,
     versions_pnpm_lock,
     versions_poetry_lock,
+    versions_requirements_txt,
     versions_uv_lock,
     versions_yarn_lock,
 )
@@ -362,29 +363,15 @@ def count_python(mdir: Path) -> tuple[int, set[str], str]:
             src_tags.append("pipenv")
             versions = versions_pipenv_lock(pipfile_lock)
     if not versions:
-        versions = _versions_requirements_txt(mdir)
+        for reqname in (
+            "requirements.txt",
+            "requirements-dev.txt",
+            "requirements-test.txt",
+        ):
+            req = mdir / reqname
+            if req.exists():
+                versions |= versions_requirements_txt(req)
     return direct, versions, "+".join(src_tags) or "none"
-
-
-_REQ_PIN_RE = re.compile(r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*==\s*([^;\s]+)")
-
-
-def _versions_requirements_txt(mdir: Path) -> set[str]:
-    """Parse pinned versions from requirements text files."""
-    versions: set[str] = set()
-    for reqname in (
-        "requirements.txt",
-        "requirements-dev.txt",
-        "requirements-test.txt",
-    ):
-        req = mdir / reqname
-        if not req.exists():
-            continue
-        for line in req.read_text(encoding="utf-8", errors="replace").splitlines():
-            match = _REQ_PIN_RE.match(line.strip())
-            if match:
-                versions.add(f"{match.group(1)}@{match.group(2)}")
-    return versions
 
 
 _UV_LOCK_DEP = re.compile(r"^\s+\{ name =")
