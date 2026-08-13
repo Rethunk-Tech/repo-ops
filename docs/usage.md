@@ -90,7 +90,7 @@ When JSON is enabled, audit and pushed report excluded repositories in
 | Ecosystem | Default behavior | Aggressive / latest opt-in |
 | ----------- | ------------------ | ---------------------------- |
 | **npm** | `npm update` (semver ranges in manifests) | Add `--npm-targeted-bump` (`REPO_OPS_NPM_TARGETED_BUMP=1`) to move deps left behind when a latest-mode bump was attempted |
-| **pnpm** | `pnpm update -r` (within ranges) | `REPO_OPS_PNPM_UPDATE_LATEST=1` → adds `--latest`; add `--pnpm-targeted-bump` (`REPO_OPS_PNPM_TARGETED_BUMP=1`) for behind-latest fallback |
+| **pnpm** | `pnpm update -r` (within ranges) | `REPO_OPS_PNPM_UPDATE_LATEST=1` → adds `--latest`; add `--pnpm-targeted-bump` (`REPO_OPS_PNPM_TARGETED_BUMP=1`) for behind-latest fallback, including `catalog:` / `catalogs:` entries in `pnpm-workspace.yaml` |
 | **yarn** | `yarn up` (Berry, in-range bumps in isolated plan snapshots) | `REPO_OPS_YARN_UPDATE_LATEST=1` → `yarn up -R '*'`; reports direct deps yarn's resolver kept behind their newest published version as `behind_latest` (#110). Add `--yarn-targeted-bump` (`REPO_OPS_YARN_TARGETED_BUMP=1`) to also *move* those gaps: a reversible per-package `yarn up <pkg>@latest`, kept only if the workspace still installs and the version actually advances (#111) |
 | **bun** | `bun update` (within ranges) | `REPO_OPS_BUN_UPDATE_LATEST=1` → includes out-of-range "latest" packages. Add `--bun-targeted-bump` (`REPO_OPS_BUN_TARGETED_BUMP=1`) to also *move* deps `bun update --latest` left behind: a reversible per-package `bun add <pkg>@latest`, kept only if the workspace still installs and the version actually advances |
 | **go** | `REPO_OPS_GO_UPGRADE_MODE=patch` (default) | `explicit` or `mvs` (see below) |
@@ -238,8 +238,9 @@ The shared `--exclude PATTERN` filter also applies to this sweep and to
 `repo-ops sbom [root_dir ...]` builds a Software Bill of Materials from
 discovered lockfile dependencies (read-only). Offline by default; component
 licenses are `NOASSERTION` unless enrichment is enabled.
-The default CycloneDX JSON uses specification 1.5; CycloneDX 1.4 consumers that
-require `metadata.tools[]` are dropped.
+The default CycloneDX JSON uses specification 1.5; the tool component uses
+`publisher` and `authors[]` (not the 1.4 `author` string). CycloneDX 1.4
+consumers that require `metadata.tools[]` are dropped.
 
 - `--format cyclonedx|spdx` — output format (default: `cyclonedx`).
 - `--output PATH` — write the SBOM to `PATH` instead of stdout.

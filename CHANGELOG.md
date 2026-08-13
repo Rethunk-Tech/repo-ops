@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **pnpm workspace catalogs:** plan/apply read `catalog:` and `catalogs:` in `pnpm-workspace.yaml`. With `--pnpm-targeted-bump`, catalog versions bump (hold ceilings and snapshot/restore on failed or ghost `pnpm install`); without it, catalog drift is `behind_latest`. `pnpm-workspace.yaml` is in apply commit scope. Protocol pins (`workspace:`, `file:`, …) are left alone; npm epoch pins (`1:2.3.4`) are versions.
 - **`repo-ops doctor` probes `ruff`:** same found/missing/version row as the other Python toolchain binaries (`pyrefly`, hatch, pip-audit). `--strict` fails when ruff is absent. No `ruff format` probe.
 - **SBOM GitHub Actions components include reusable workflows and nested actions:** `uses: owner/repo/.github/workflows/ci.yml@v1` and `owner/repo/subdir` are emitted with the full path as `name` and a `?subpath=` PURL qualifier so two workflows in one repo at the same ref do not collapse. Local `./`, `../`, and `docker://` uses stay omitted.
 
@@ -22,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **CycloneDX SBOM default is spec 1.5:** `metadata.tools` is an object with `components[]` (`type`, `author`, `name`, `version`). The 1.4 `tools[]` `{vendor,name,version}` shape is dropped; there is no 1.4 opt-in flag.
+- **CycloneDX SBOM default is spec 1.5:** `metadata.tools` is an object with `components[]` (`type`, `publisher`, `authors[]`, `name`, `version`). The 1.4 `tools[]` `{vendor,name,version}` shape and the 1.4-style `author` string are dropped; there is no 1.4 opt-in flag.
+- **Go hold ceilings use shared `hold_ceiling_spec`:** `go get` queries stay `<=v` plus the same three-component pad as Python managers.
 - **Dependabot JSON summary:** renamed `summary.excluded_repos` to the fleet-canonical `summary.excluded`; consumers must migrate to the new key.
 
 ## [0.22.1] - 2026-07-28
