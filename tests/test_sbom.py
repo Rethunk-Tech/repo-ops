@@ -14,36 +14,11 @@ from repo_ops_lockfiles.sbom import (
     _purl_npm,
     _purl_pypi,
     _split_nv,
-    _versions_cargo_lock,
-    _versions_go_sum,
     collect_components,
     emit_cyclonedx,
     emit_spdx,
     main,
 )
-
-
-def test_versions_go_sum_basic(tmp_path: Path) -> None:
-    gosum = tmp_path / "go.sum"
-    gosum.write_text(
-        "golang.org/x/net v0.17.0 h1:abc=\ngolang.org/x/net v0.17.0/go.mod h1:xyz=\n",
-        encoding="utf-8",
-    )
-    result = _versions_go_sum(gosum)
-    # Both lines add entries; /go.mod suffix stripped from version column
-    assert "golang.org/x/net@v0.17.0" in result
-
-
-def test_versions_cargo_lock_basic(tmp_path: Path) -> None:
-    lock = tmp_path / "Cargo.lock"
-    lock.write_text(
-        '[[package]]\nname = "serde"\nversion = "1.0.197"\n'
-        '\n[[package]]\nname = "tokio"\nversion = "1.36.0"\n',
-        encoding="utf-8",
-    )
-    result = _versions_cargo_lock(lock)
-    assert "serde@1.0.197" in result
-    assert "tokio@1.36.0" in result
 
 
 # ---------------------------------------------------------------------------
@@ -550,9 +525,7 @@ def test_collect_components_logs_parse_failure(
     import logging
 
     (tmp_path / "pdm.lock").write_text("not: valid: [[[toml", encoding="utf-8")
-    # Force a raising parser by writing a requirements.txt that is fine, and
-    # monkeypatch via a file that triggers _safe_parse exception path for go.sum
-    # with unreadable content — use chmod if needed. Simpler: patch _versions_go_sum.
+    # Force a raising parser to exercise the _safe_parse exception path.
     from repo_ops_lockfiles import sbom as sbom_mod
 
     (tmp_path / "go.sum").write_text(
@@ -563,10 +536,10 @@ def test_collect_components_logs_parse_failure(
         raise RuntimeError("simulated parse failure")
 
     with caplog.at_level(logging.DEBUG, logger="repo_ops_lockfiles.sbom"):
-        orig = sbom_mod._versions_go_sum
-        sbom_mod._versions_go_sum = _boom  # type: ignore[assignment]
+        orig = sbom_mod.versions_go_sum
+        sbom_mod.versions_go_sum = _boom
         try:
             collect_components(tmp_path)
         finally:
-            sbom_mod._versions_go_sum = orig
+            sbom_mod.versions_go_sum = orig
     assert any("SBOM parse failed" in r.message for r in caplog.records)

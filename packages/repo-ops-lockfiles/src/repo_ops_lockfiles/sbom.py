@@ -4,9 +4,6 @@ Supports CycloneDX 1.5 JSON and SPDX 2.3 JSON output formats.
 Reuses the existing lockfile parsers (parsers.py) to enumerate resolved
 name@version pairs, then emits a standards-valid SBOM document.
 
-Inline parsers supplement the shared set for lockfile types not yet exposed
-in parsers.py (go.sum, Cargo.lock, requirements.txt).
-
 Also includes container image pins (Dockerfile ``FROM`` / compose
 ``image:``, emitted as ``pkg:oci`` purls) and GitHub Actions ``uses:`` pins
 under ``.github/workflows`` (emitted as ``pkg:github`` purls), reusing the
@@ -42,17 +39,20 @@ from repo_ops_core.cli import (
     wire_verbose,
 )
 from repo_ops_core.constants import SKIP_DIRS
-from repo_ops_core.filesystem import read_toml_file, should_exclude, write_json_atomic
+from repo_ops_core.filesystem import should_exclude, write_json_atomic
 
 from repo_ops_lockfiles.license_enrich import enrich_component
 from repo_ops_lockfiles.parsers import (
     versions_bun_lock,
+    versions_cargo_lock,
     versions_deno_lock,
+    versions_go_sum,
     versions_npm_lock,
     versions_pdm_lock,
     versions_pipenv_lock,
     versions_pnpm_lock,
     versions_poetry_lock,
+    versions_requirements_txt,
     versions_uv_lock,
     versions_yarn_lock,
 )
@@ -65,61 +65,6 @@ _LICENSE_NOASSERTION = "NOASSERTION"
 
 def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-# ---------------------------------------------------------------------------
-# Inline parsers for lockfile types not exposed in parsers.py
-# ---------------------------------------------------------------------------
-
-
-def _versions_go_sum(p: Path) -> set[str]:
-    """go.sum → module@version pairs (deduped; /go.mod annotation lines excluded)."""
-    out: set[str] = set()
-    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
-        parts = line.split()
-        if len(parts) >= 2:
-            mod = parts[0]
-            ver_raw = parts[1].split("/")[0]  # strip /go.mod suffix
-            out.add(f"{mod}@{ver_raw}")
-    return out
-
-
-def _versions_cargo_lock(p: Path) -> set[str]:
-    """Cargo.lock → name@version pairs."""
-    out: set[str] = set()
-    name: str | None = None
-    ver: str | None = None
-    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
-        s = line.strip()
-        if s == "[[package]]":
-            if name and ver:
-                out.add(f"{name}@{ver}")
-            name = ver = None
-        elif s.startswith("name = "):
-            name = s.split("=", 1)[1].strip().strip('"')
-        elif s.startswith("version = "):
-            ver = s.split("=", 1)[1].strip().strip('"')
-    if name and ver:
-        out.add(f"{name}@{ver}")
-    return out
-
-
-_REQ_PIN_RE = re.compile(
-    r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*==\s*([^;\s]+)",
-)
-
-
-def _versions_requirements_txt(p: Path) -> set[str]:
-    """requirements.txt pinned ``name==ver`` lines → name@version."""
-    out: set[str] = set()
-    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or line.startswith("-"):
-            continue
-        m = _REQ_PIN_RE.match(line)
-        if m:
-            out.add(f"{m.group(1)}@{m.group(2)}")
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +227,7 @@ def collect_components(
         _py_parsers: list[tuple[str, Callable[[Path], set[str]]]] = [
             ("Pipfile.lock", versions_pipenv_lock),
             ("pdm.lock", versions_pdm_lock),
-            ("requirements.txt", _versions_requirements_txt),
+            ("requirements.txt", versions_requirements_txt),
         ]
         for lf_name, py_parser in _py_parsers:
             if lf_name not in fname_set:
@@ -306,14 +251,14 @@ def collect_components(
 
         # Go
         if "go.sum" in fname_set:
-            for entry in _safe_parse(dp / "go.sum", _versions_go_sum):
+            for entry in _safe_parse(dp / "go.sum", versions_go_sum):
                 if "@" in entry:
                     nm, ver = _split_nv(entry)
                     _add(nm, ver, _purl_golang(nm, ver), "golang")
 
         # Rust
         if "Cargo.lock" in fname_set:
-            for entry in _safe_parse(dp / "Cargo.lock", _versions_cargo_lock):
+            for entry in _safe_parse(dp / "Cargo.lock", versions_cargo_lock):
                 if "@" in entry:
                     nm, ver = _split_nv(entry)
                     _add(nm, ver, _purl_cargo(nm, ver), "cargo")
