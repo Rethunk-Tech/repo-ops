@@ -152,6 +152,42 @@ def test_workspace_dependency_targeted_bump_checks_and_rewrites(
     assert 'serde = "2.0.0"' in manifest.read_text(encoding="utf-8")
 
 
+def test_apply_rust_reuses_check_registry_lookup(tmp_path: Path, monkeypatch) -> None:
+    manifest = tmp_path / "Cargo.toml"
+    lockfile = tmp_path / "Cargo.lock"
+    manifest.write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\n\n'
+        '[dependencies]\nserde = "1.0"\n',
+        encoding="utf-8",
+    )
+    lockfile.write_text("serde 1.0.0\n", encoding="utf-8")
+    registry_calls: list[str] = []
+
+    def registry(crate_name: str) -> tuple[str, ...]:
+        registry_calls.append(crate_name)
+        return ("2.0.0",)
+
+    def fake_run(cmd, cwd, timeout=0):
+        if cmd == ["cargo", "update", "-p", "serde", "--precise", "2.0.0"]:
+            lockfile.write_text("serde 2.0.0\n", encoding="utf-8")
+        return _proc(list(cmd))
+
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
+    ws = _ws(tmp_path)
+    with (
+        patch("repo_ops_rust.rust.run", side_effect=fake_run),
+        patch(
+            "repo_ops_rust.rust._cargo_registry_versions",
+            side_effect=registry,
+        ),
+    ):
+        result = check_rust(ws)
+        assert isinstance(result, tuple)
+        assert apply_rust(ws) == []
+
+    assert registry_calls == ["serde"]
+
+
 def test_held_crate_stays_behind_latest_and_manifest_unchanged(
     tmp_path: Path, monkeypatch
 ) -> None:
