@@ -773,11 +773,11 @@ def resolve_deno_npm_license(
 def scan_deno_licenses(
     root: Path, *, deno_dir: Path | None = None
 ) -> list[PackageLicense]:
-    """Return PackageLicense entries for deno.lock ``npm:`` specifiers.
+    """Return PackageLicense entries for deno.lock npm: and jsr: specifiers.
 
-    Only ``npm:`` specifiers are resolvable offline (via the cached
-    package.json's ``license`` field); ``jsr:``/``http(s):`` specifiers have
-    no local license source and are not reported (no manifest to read).
+    npm: entries resolve offline via the cached package.json's ``license``
+    field. jsr: entries are reported as UNKNOWN for optional enrichment;
+    http(s): and unscoped jsr: entries are skipped.
     """
     results: list[PackageLicense] = []
     cache = deno_dir if deno_dir is not None else _default_deno_dir()
@@ -786,21 +786,35 @@ def scan_deno_licenses(
         if "deno.lock" not in filenames:
             continue
         for entry in versions_deno_lock(Path(dirpath_str) / "deno.lock"):
-            if not entry.startswith("npm:"):
+            if entry.startswith("npm:"):
+                name, ver = _split_npm_specifier(entry[len("npm:") :])
+                if not name or not ver:
+                    continue
+                lic = resolve_deno_npm_license(name, ver, deno_dir=cache)
+                ecosystem = "deno"
+                source = "deno.lock+DENO_DIR" if lic != UNKNOWN_LICENSE else "deno.lock"
+            elif entry.startswith("jsr:"):
+                name, ver = _split_npm_specifier(entry[len("jsr:") :])
+                jsr_name = name.removeprefix("@").split("/")
+                if (
+                    not name.startswith("@")
+                    or len(jsr_name) != 2
+                    or not all(jsr_name)
+                    or not ver
+                ):
+                    continue
+                lic = UNKNOWN_LICENSE
+                ecosystem = "jsr"
+                source = "deno.lock"
+            else:
                 continue
-            name, ver = _split_npm_specifier(entry[len("npm:") :])
-            if not name or not ver:
-                continue
-            lic = resolve_deno_npm_license(name, ver, deno_dir=cache)
             results.append(
                 PackageLicense(
                     name=name,
                     version=ver,
                     license_id=lic,
-                    ecosystem="deno",
-                    source="deno.lock+DENO_DIR"
-                    if lic != UNKNOWN_LICENSE
-                    else "deno.lock",
+                    ecosystem=ecosystem,
+                    source=source,
                 )
             )
     return results

@@ -233,28 +233,48 @@ def test_resolve_deno_npm_license_missing_is_unknown(tmp_path: Path) -> None:
     )
 
 
-def test_scan_deno_licenses_npm_specifiers_only(tmp_path: Path) -> None:
+def test_scan_deno_licenses_npm_and_jsr_specifiers(tmp_path: Path) -> None:
     deno_dir = tmp_path / "denodir"
     _write_deno_npm_cache_pkg(deno_dir, "chalk", "5.3.0", "MIT")
+    license_cache = tmp_path / "license-cache"
+    jsr_url = "https://jsr.io/@scope/pkg/1.2.3_meta.json"
+    jsr_cache_file = _cache_path(license_cache, jsr_url)
+    jsr_cache_file.parent.mkdir(parents=True)
+    jsr_cache_file.write_text(json.dumps({"license": "MIT"}), encoding="utf-8")
     lockfile = tmp_path / "deno.lock"
     lockfile.write_text(
         json.dumps(
             {
-                "version": "3",
-                "packages": {
-                    "npm": {"chalk@5.3.0": {"integrity": "sha512-x"}},
-                },
+                "version": "4",
+                "npm": {"chalk@5.3.0": {"integrity": "sha512-x"}},
+                "jsr": {"@scope/pkg@1.2.3": {}},
             }
         ),
         encoding="utf-8",
     )
     results = scan_deno_licenses(tmp_path, deno_dir=deno_dir)
-    assert len(results) == 1
-    assert results[0].name == "chalk"
-    assert results[0].version == "5.3.0"
-    assert results[0].license_id == "MIT"
-    assert results[0].ecosystem == "deno"
-    assert results[0].source == "deno.lock+DENO_DIR"
+    assert len(results) == 2
+    by_ecosystem = {result.ecosystem: result for result in results}
+    npm_result = by_ecosystem["deno"]
+    assert npm_result.name == "chalk"
+    assert npm_result.version == "5.3.0"
+    assert npm_result.license_id == "MIT"
+    assert npm_result.source == "deno.lock+DENO_DIR"
+    jsr_result = by_ecosystem["jsr"]
+    assert jsr_result.name == "@scope/pkg"
+    assert jsr_result.version == "1.2.3"
+    assert jsr_result.license_id == UNKNOWN_LICENSE
+    assert jsr_result.source == "deno.lock"
+    assert (
+        enrich_license(
+            jsr_result.name,
+            jsr_result.version,
+            jsr_result.ecosystem,
+            cache_dir=license_cache,
+            allow_network=False,
+        )
+        == "MIT"
+    )
 
 
 def test_enrich_license_uses_cached_npm_registry_metadata(
