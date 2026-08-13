@@ -11,6 +11,7 @@ def test_magicmock_args_do_not_enable_targeted_bumps(monkeypatch):
         "REPO_OPS_PNPM_TARGETED_BUMP",
         "REPO_OPS_BUN_TARGETED_BUMP",
         "REPO_OPS_DENO_TARGETED_BUMP",
+        "REPO_OPS_RUST_TARGETED_BUMP",
     )
     for name in targeted_env:
         monkeypatch.delenv(name, raising=False)

@@ -463,6 +463,16 @@ def add_upgrade_common_arguments(
         ),
     )
     pol.add_argument(
+        "--rust-targeted-bump",
+        action="store_true",
+        dest="rust_targeted_bump",
+        help=(
+            "Rust only: opt in to targeted Cargo.toml constraint bumps for direct "
+            "dependencies that remain behind the latest non-yanked release. "
+            "Sets REPO_OPS_RUST_TARGETED_BUMP."
+        ),
+    )
+    pol.add_argument(
         "--yarn-jobs",
         type=int,
         default=None,

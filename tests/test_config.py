@@ -232,6 +232,12 @@ def test_resolve_setting_deno_targeted_bump(monkeypatch) -> None:
     assert result == "1"
 
 
+def test_resolve_setting_rust_targeted_bump(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
+    result = resolve_setting("rust_targeted_bump")
+    assert result == "1"
+
+
 # --- New env-gate settings (#138) ---
 
 

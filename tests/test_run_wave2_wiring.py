@@ -32,6 +32,7 @@ def _fake_args(**overrides) -> MagicMock:
         "pnpm_targeted_bump": False,
         "bun_targeted_bump": False,
         "deno_targeted_bump": False,
+        "rust_targeted_bump": False,
         "migrate_to_uv_lock": False,
         "yarn_jobs": None,
         "commit_umbrella": False,

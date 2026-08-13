@@ -189,6 +189,8 @@ def _run_upgrade_body(
         _set_cli_env("REPO_OPS_BUN_TARGETED_BUMP", "1")
     if full_sweep or _cli_flag(args, "deno_targeted_bump"):
         _set_cli_env("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    if _cli_flag(args, "rust_targeted_bump"):
+        _set_cli_env("REPO_OPS_RUST_TARGETED_BUMP", "1")
     if full_sweep:
         _set_cli_env("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
         _set_cli_env("REPO_OPS_PRECOMMIT_REFRESH_SHA", "1")
