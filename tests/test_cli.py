@@ -250,3 +250,14 @@ def test_upgrade_parser_accepts_npm_pnpm_targeted_bump_flags() -> None:
     args_default = parser.parse_args([])
     assert args_default.npm_targeted_bump is False
     assert args_default.pnpm_targeted_bump is False
+
+
+def test_upgrade_parser_accepts_poetry_pdm_targeted_bump_flags() -> None:
+    """--poetry-targeted-bump and --pdm-targeted-bump flags are registered."""
+    parser = build_upgrade_parser(apply=False)
+    args = parser.parse_args(["--poetry-targeted-bump", "--pdm-targeted-bump"])
+    assert args.poetry_targeted_bump is True
+    assert args.pdm_targeted_bump is True
+    args_default = parser.parse_args([])
+    assert args_default.poetry_targeted_bump is False
+    assert args_default.pdm_targeted_bump is False

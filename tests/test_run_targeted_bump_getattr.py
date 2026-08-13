@@ -12,6 +12,8 @@ def test_magicmock_args_do_not_enable_targeted_bumps(monkeypatch):
         "REPO_OPS_BUN_TARGETED_BUMP",
         "REPO_OPS_DENO_TARGETED_BUMP",
         "REPO_OPS_RUST_TARGETED_BUMP",
+        "REPO_OPS_POETRY_TARGETED_BUMP",
+        "REPO_OPS_PDM_TARGETED_BUMP",
     )
     for name in targeted_env:
         monkeypatch.delenv(name, raising=False)
@@ -37,3 +39,32 @@ def test_magicmock_args_do_not_enable_targeted_bumps(monkeypatch):
     run._run_upgrade_body(apply=False, args=args, roots=[])
 
     assert all(name not in os.environ for name in targeted_env)
+
+
+def test_full_does_not_enable_python_targeted_bumps(monkeypatch):
+    python_targeted_env = (
+        "REPO_OPS_POETRY_TARGETED_BUMP",
+        "REPO_OPS_PDM_TARGETED_BUMP",
+    )
+    for name in python_targeted_env:
+        monkeypatch.delenv(name, raising=False)
+
+    args = MagicMock()
+    args.full = True
+    args.latest = False
+    args.json = False
+    args.flat = False
+    args.eco_filter = None
+    args.skip_actions = True
+    args.jobs = 1
+    args.quiet = True
+    args.strict_exit = False
+    args.max_failures = 0
+
+    monkeypatch.setattr(run.workspace_discovery, "discover_all", lambda *a, **k: [])
+    monkeypatch.setattr(run.workspace_discovery, "group_by_repo", lambda *a, **k: {})
+    monkeypatch.setattr(run.report, "print_run_footer", lambda **kwargs: None)
+
+    run._run_upgrade_body(apply=False, args=args, roots=[])
+
+    assert all(name not in os.environ for name in python_targeted_env)
