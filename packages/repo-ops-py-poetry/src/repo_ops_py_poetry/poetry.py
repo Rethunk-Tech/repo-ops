@@ -316,6 +316,57 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
             )
 
 
+def _poetry_bumped_requirement(requirement: str, latest: str) -> str:
+    stripped = requirement.strip()
+    if stripped.startswith("^"):
+        return f"^{latest}"
+    if stripped.startswith("~"):
+        return f"~{latest}"
+    return latest
+
+
+def _poetry_snapshot(path: Path) -> bytes | None:
+    return path.read_bytes() if path.is_file() else None
+
+
+def _poetry_restore(path: Path, snapshot: bytes | None) -> None:
+    if snapshot is None:
+        path.unlink(missing_ok=True)
+    else:
+        path.write_bytes(snapshot)
+
+
+def _apply_poetry_targeted_bumps(
+    ws: Workspace,
+    candidates: list[Change],
+) -> list[Change]:
+    manifest = ws.path / "pyproject.toml"
+    lockfile = ws.path / "poetry.lock"
+    remaining: list[Change] = []
+    for candidate in candidates:
+        rule = _resolve_pkg_hold(ws, candidate.name)
+        if rule is not None and not version_satisfies_ceiling(
+            candidate.to, rule.max_version
+        ):
+            remaining.append(candidate)
+            continue
+        manifest_snapshot = _poetry_snapshot(manifest)
+        lock_snapshot = _poetry_snapshot(lockfile)
+        bumped = _poetry_bumped_requirement(candidate.from_ver, candidate.to)
+        proc = run(
+            ["poetry", "add", f"{candidate.name}@{bumped}"],
+            ws.path,
+            timeout=resolve_timeout_apply(),
+        )
+        lock_advanced = _poetry_snapshot(lockfile) != lock_snapshot
+        if proc.returncode == 0 and lock_advanced:
+            continue
+        _poetry_restore(manifest, manifest_snapshot)
+        _poetry_restore(lockfile, lock_snapshot)
+        remaining.append(candidate)
+    return remaining
+
+
 def check_poetry(
     ws: Workspace,
 ) -> list[Change] | tuple[list[Change], list[Change]]:
@@ -340,10 +391,13 @@ def check_poetry(
     return in_range, _poetry_latest_direct_changes(ws)
 
 
-def apply_poetry(ws: Workspace) -> None:
+def apply_poetry(ws: Workspace) -> list[Change] | None:
     if not shutil.which("poetry"):
         raise RuntimeError(f"poetry not on PATH for {ws.path}")
     proc = run(["poetry", "update"], ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "poetry update failed")
     _enforce_version_ceilings(ws)
+    if not _poetry_targeted_bump_enabled(ws):
+        return None
+    return _apply_poetry_targeted_bumps(ws, _poetry_latest_direct_changes(ws))
