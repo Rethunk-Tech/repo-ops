@@ -94,7 +94,7 @@ When JSON is enabled, audit and pushed report excluded repositories in
 | **yarn** | `yarn up` (Berry, in-range bumps in isolated plan snapshots) | `REPO_OPS_YARN_UPDATE_LATEST=1` → `yarn up -R '*'`; reports direct deps yarn's resolver kept behind their newest published version as `behind_latest` (#110). Add `--yarn-targeted-bump` (`REPO_OPS_YARN_TARGETED_BUMP=1`) to also *move* those gaps: a reversible per-package `yarn up <pkg>@latest`, kept only if the workspace still installs and the version actually advances (#111) |
 | **bun** | `bun update` (within ranges) | `REPO_OPS_BUN_UPDATE_LATEST=1` → includes out-of-range "latest" packages. Add `--bun-targeted-bump` (`REPO_OPS_BUN_TARGETED_BUMP=1`) to also *move* deps `bun update --latest` left behind: a reversible per-package `bun add <pkg>@latest`, kept only if the workspace still installs and the version actually advances |
 | **go** | `REPO_OPS_GO_UPGRADE_MODE=patch` (default) | `explicit` or `mvs` (see below) |
-| **rust** | `cargo update --dry-run` / `cargo update` (within semver constraints in `Cargo.lock`) | No cross-range / `--latest` mode — `--latest` does not change cargo behavior. Rust major upgrades are out of scope for repo-ops; edit manifests by hand |
+| **rust** | `cargo update --dry-run` / `cargo update` (within semver constraints in `Cargo.lock`) | No cross-range / `--latest` mode — `--latest` does not change cargo behavior. Opt into direct Cargo.toml constraint bumps with `--rust-targeted-bump` (`REPO_OPS_RUST_TARGETED_BUMP=1`); this flag is not part of `--full`. Rust major upgrades are out of scope for repo-ops; edit manifests by hand |
 | **python** | Manager-specific (`uv`, poetry, pip-tools, hatch) | See each plugin's check/apply |
 | **pdm** | `pdm update --dry-run` / `pdm update` (in-range); skipped with a WARN when `pdm` is not on PATH | — |
 | **pipenv** | venv `pip list --outdated --format=json` (via `pipenv --venv`, read-only; never creates a venv) / `pipenv update`; skipped with a WARN when `pipenv` is not on PATH or the venv is not initialised | — |
@@ -386,6 +386,7 @@ For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 | pnpm_targeted_bump | `--pnpm-targeted-bump` | `REPO_OPS_PNPM_TARGETED_BUMP` | `pnpm_targeted_bump` | `0` |
 | bun_targeted_bump | `--bun-targeted-bump` | `REPO_OPS_BUN_TARGETED_BUMP` | `bun_targeted_bump` | `0` |
 | deno_targeted_bump | `--deno-targeted-bump` | `REPO_OPS_DENO_TARGETED_BUMP` | `deno_targeted_bump` | `0` |
+| rust_targeted_bump | `--rust-targeted-bump` | `REPO_OPS_RUST_TARGETED_BUMP` | `rust_targeted_bump` | `0` |
 | go_work_sync | (none) | `REPO_OPS_GO_WORK_SYNC` | `go_work_sync` | `0` |
 | no_progress | (none) | `REPO_OPS_NO_PROGRESS` | `no_progress` | `0` |
 | no_state | (none) | `REPO_OPS_NO_STATE` | `no_state` | `0` |
