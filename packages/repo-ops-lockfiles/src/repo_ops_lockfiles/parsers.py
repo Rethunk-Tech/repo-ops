@@ -1,4 +1,4 @@
-"""Lockfile version parsers (Node, Python, Deno)."""
+"""Lockfile version parsers (Node, Python, Go, Rust, Deno)."""
 
 from __future__ import annotations
 
@@ -239,6 +239,50 @@ def versions_uv_lock(p: Path) -> set[str]:
         ver = pkg.get("version")
         if name and ver:
             out.add(f"{name}@{ver}")
+    return out
+
+
+def versions_go_sum(p: Path) -> set[str]:
+    """go.sum → module@version pairs (deduped; /go.mod annotation lines excluded)."""
+    out: set[str] = set()
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            module = parts[0]
+            version = parts[1].split("/", 1)[0]
+            out.add(f"{module}@{version}")
+    return out
+
+
+def versions_cargo_lock(p: Path) -> set[str]:
+    """Cargo.lock (TOML) → set of name@version."""
+    d = read_toml_file(p) or {}
+    out: set[str] = set()
+    for pkg in d.get("package", []):
+        if not isinstance(pkg, dict):
+            continue
+        name = pkg.get("name")
+        version = pkg.get("version")
+        if name and version:
+            out.add(f"{name}@{version}")
+    return out
+
+
+_REQ_PIN_RE = re.compile(
+    r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*==\s*([^;\s]+)",
+)
+
+
+def versions_requirements_txt(p: Path) -> set[str]:
+    """requirements.txt pinned ``name==ver`` lines → name@version."""
+    out: set[str] = set()
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("-"):
+            continue
+        match = _REQ_PIN_RE.match(line)
+        if match:
+            out.add(f"{match.group(1)}@{match.group(2)}")
     return out
 
 
