@@ -354,8 +354,7 @@ def _cargo_requirement_satisfied(version: str, requirement: str) -> bool:
             raw_version = match.group(2)
             if raw_version == "*":
                 continue
-            specified = tuple(int(part) for part in raw_version.split("."))
-            parts = tuple([*specified, 0, 0, 0][:3])
+            parts = _cargo_version_parts(raw_version)
             if operator in ("^", "~"):
                 upper = (
                     _cargo_caret_upper_bound(parts)
