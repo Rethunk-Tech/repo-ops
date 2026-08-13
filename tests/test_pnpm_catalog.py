@@ -88,6 +88,19 @@ catalogs:
     assert behind == [Change("react", "^18.2.0", "19.0.0")]
 
 
+def test_epoch_catalog_pin_is_not_treated_as_protocol(tmp_path: Path) -> None:
+    (tmp_path / "pnpm-workspace.yaml").write_text(
+        """\
+catalog:
+  epoch-pkg: "1:2.3.4"
+  local-only: workspace:*
+""",
+        encoding="utf-8",
+    )
+
+    assert _catalog_specs(_ws(tmp_path)) == {"epoch-pkg": ["1:2.3.4"]}
+
+
 def test_catalog_drift_is_behind_latest_without_targeted_bump(
     tmp_path: Path, monkeypatch
 ) -> None:
