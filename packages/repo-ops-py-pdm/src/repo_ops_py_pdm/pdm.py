@@ -29,6 +29,7 @@ from repo_ops_core.holds import (
     resolve_hold,
 )
 from repo_ops_core.process import run
+from repo_ops_core.requirement import requirement_satisfied
 from repo_ops_core.version_utils import hold_ceiling_spec, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 
@@ -186,71 +187,8 @@ def _pdm_version_key(version: str) -> tuple[tuple[int, ...], str]:
     return numbers, version
 
 
-def _pdm_caret_upper_bound(
-    parts: tuple[int, ...],
-) -> tuple[int, ...]:
-    padded = (*parts, 0, 0, 0)
-    if padded[0]:
-        return (padded[0] + 1, 0, 0)
-    if padded[1]:
-        return (0, padded[1] + 1, 0)
-    return (0, 0, padded[2] + 1)
-
-
 def _pdm_requirement_satisfied(version: str, requirement: str) -> bool:
-    candidate = _pdm_version_key(version)[0]
-    requirement = requirement.split(";", 1)[0].strip()
-    requirement = re.sub(r"^\[[^\]]+\]", "", requirement).strip()
-    for alternative in requirement.split("||"):
-        constraints = [part.strip() for part in alternative.split(",") if part.strip()]
-        if not constraints:
-            return True
-        satisfied = True
-        for constraint in constraints:
-            match = re.match(
-                r"^(~=|<=|>=|==|<|>|=|~|\^)?\s*"
-                r"(\d+(?:\.\d+){0,2}|\*)$",
-                constraint,
-            )
-            if match is None:
-                satisfied = False
-                break
-            operator = match.group(1) or "^"
-            raw_version = match.group(2)
-            if raw_version == "*":
-                continue
-            parts = _pdm_version_key(raw_version)[0]
-            padded_candidate = (*candidate, 0, 0, 0)
-            padded_parts = (*parts, 0, 0, 0)
-            if operator == "^":
-                if not (
-                    padded_candidate[:3] >= padded_parts[:3]
-                    and padded_candidate[:3] < _pdm_caret_upper_bound(parts)
-                ):
-                    satisfied = False
-                    break
-            elif operator in ("~", "~="):
-                if not (
-                    padded_candidate[:3] >= padded_parts[:3]
-                    and padded_candidate[:3] < (padded_parts[0], padded_parts[1] + 1, 0)
-                ):
-                    satisfied = False
-                    break
-            elif operator in ("=", "=="):
-                if padded_candidate[:3] != padded_parts[:3]:
-                    satisfied = False
-                    break
-            elif (
-                (operator == ">=" and padded_candidate[:3] < padded_parts[:3])
-                or (operator == ">" and padded_candidate[:3] <= padded_parts[:3])
-                or (operator == "<=" and padded_candidate[:3] > padded_parts[:3])
-                or (operator == "<" and padded_candidate[:3] >= padded_parts[:3])
-            ):
-                satisfied = False
-                break
-        if satisfied:
-            return True
-    return False
+    return requirement_satisfied(version, requirement, default_operator="^")
 
 
 def _pdm_latest_direct_changes(ws: Workspace) -> list[Change]:
