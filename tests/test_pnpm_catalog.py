@@ -57,7 +57,35 @@ def test_catalog_specs_reads_default_and_named_tables_skipping_protocols(
 ) -> None:
     _seed(tmp_path)
 
-    assert _catalog_specs(_ws(tmp_path)) == {"react": "^18.2.0"}
+    assert _catalog_specs(_ws(tmp_path)) == {
+        "react": ["^18.2.0", "^18.2.0"],
+    }
+
+
+def test_catalog_drift_uses_lowest_behind_duplicate_spec(tmp_path: Path) -> None:
+    _seed(tmp_path)
+    (tmp_path / "pnpm-workspace.yaml").write_text(
+        """\
+catalog:
+  react: ^18.2.0
+catalogs:
+  modern:
+    react: ^19.0.0
+""",
+        encoding="utf-8",
+    )
+    outdated = json.dumps(
+        {"react": {"current": "18.2.0", "wanted": "18.3.0", "latest": "19.0.0"}}
+    )
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        return subprocess.CompletedProcess(cmd, 1, stdout=outdated, stderr="")
+
+    with patch("repo_ops_js_pnpm.pnpm.run", side_effect=fake_run):
+        changes, behind = check_pnpm(_ws(tmp_path))
+
+    assert changes == []
+    assert behind == [Change("react", "^18.2.0", "19.0.0")]
 
 
 def test_catalog_drift_is_behind_latest_without_targeted_bump(

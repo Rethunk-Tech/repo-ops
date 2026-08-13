@@ -20,7 +20,7 @@ from repo_ops_core.config import (
 )
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import semver_tuple
+from repo_ops_core.version_utils import normalize_version, semver_tuple
 from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 from repo_ops_js.holds import (
     direct_dependency_names,
@@ -112,14 +112,24 @@ def _catalog_tables(data: Any) -> list[MutableMapping[Any, Any]]:
 
 
 def _is_catalog_protocol(value: str) -> bool:
-    prefix, separator, _rest = value.partition(":")
-    return bool(
-        separator
-        and prefix.replace("+", "").replace("-", "").replace(".", "").isalnum()
+    return value.startswith(
+        (
+            "workspace:",
+            "link:",
+            "file:",
+            "portal:",
+            "git+",
+            "github:",
+            "https:",
+            "http:",
+            "npm:",
+            "catalog:",
+            "patch:",
+        )
     )
 
 
-def _catalog_specs(ws: Workspace) -> dict[str, str]:
+def _catalog_specs(ws: Workspace) -> dict[str, list[str]]:
     path = _catalog_workspace_path(ws)
     if not path.is_file():
         return {}
@@ -127,7 +137,7 @@ def _catalog_specs(ws: Workspace) -> dict[str, str]:
         data = _yaml_loader().load(path)
     except (OSError, YAMLError):
         return {}
-    specs: dict[str, str] = {}
+    specs: dict[str, list[str]] = {}
     for table in _catalog_tables(data):
         for package, value in table.items():
             if (
@@ -135,8 +145,24 @@ def _catalog_specs(ws: Workspace) -> dict[str, str]:
                 and isinstance(value, str)
                 and not _is_catalog_protocol(value.strip())
             ):
-                specs.setdefault(package, value)
+                specs.setdefault(package, []).append(value)
     return specs
+
+
+def _catalog_version_key(spec: str) -> tuple[int, tuple[int, ...] | str]:
+    normalized = normalize_version(spec)
+    try:
+        return (0, semver_tuple(normalized))
+    except (TypeError, ValueError):
+        return (1, normalized)
+
+
+def _catalog_spec_is_behind(spec: str, target: str) -> bool:
+    spec_key = _catalog_version_key(spec)
+    target_key = _catalog_version_key(target)
+    if spec_key[0] == target_key[0] == 0:
+        return spec_key < target_key
+    return spec != target
 
 
 def _rewrite_catalog_package(ws: Workspace, package: str, target: str) -> bool:
@@ -264,7 +290,7 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
         catalog_names = set(catalog_specs)
         changes[:] = [c for c in changes if c.name not in catalog_names]
         behind_latest[:] = [c for c in behind_latest if c.name not in catalog_names]
-        for name, spec in catalog_specs.items():
+        for name, specs in catalog_specs.items():
             meta = outdated.get(name)
             if meta is None:
                 continue
@@ -277,7 +303,20 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
                 else ""
             )
             if target:
-                behind_latest.append(Change(name, spec, target))
+                behind_specs = [
+                    spec for spec in specs if _catalog_spec_is_behind(spec, target)
+                ]
+                if behind_specs:
+                    behind_latest.append(
+                        Change(
+                            name,
+                            min(
+                                behind_specs,
+                                key=_catalog_version_key,
+                            ),
+                            target,
+                        )
+                    )
     return changes, behind_latest
 
 
