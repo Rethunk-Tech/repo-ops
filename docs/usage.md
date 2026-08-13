@@ -440,7 +440,10 @@ sidecar for non-Python repos), via a `[[hold]]` array-of-tables:
 package = "typescript"       # exact name or fnmatch glob, e.g. "@types/*"
 max_version = "6"            # ceiling: "6" blocks major 7+, "5.9" blocks >5.9, "5.9.2" is exact
 until = "2026-09-01"         # optional ISO date; omit = indefinite hold
-ecosystem = "js"             # optional filter: js|npm|yarn|pnpm|bun|deno|go|rust|py|pdm|pipenv|pip-tools|poetry|hatch|precommit|actions|container|submodule
+ecosystem = "node"           # optional filter: an ecosystem (node|go|rust|py|deno|container|
+                              # precommit|actions|submodule — the same set --filter accepts, plus
+                              # submodule) or a manager (npm|yarn|pnpm|bun|cargo|uv|pdm|pipenv|
+                              # pip-tools|poetry|hatch); aliases: js/javascript -> node, python -> py
 workspace = "packages/legacy-app"  # optional fnmatch glob, relative to repo root; omit = whole repo
 reason = "TS7 breaking changes; wait for ecosystem to catch up"   # free text, documentation only
 ```
@@ -452,6 +455,13 @@ setting). A rule with `until` in the past is treated as absent — no
 auto-cleanup, no file rewriting (config files stay read-only per the
 Settings reference above); a one-time note is printed to stderr the first
 time an expired hold is skipped.
+
+**Visibility:** a package a hold declined to bump lands in the same
+behind-latest bucket as any other outdated package, but is named as such —
+its behind-latest line reads `held <= <max_version>` (plus `, until <date>`
+when the rule has one), the per-workspace `behind-latest:` header adds a
+`N held` count, and the plan/apply `summary` (JSON and human footer) carries
+a `packages_held` count alongside `packages_behind_latest`.
 
 Example — hold TypeScript fleet-wide at 6.x, but let one already-migrated
 workspace bump freely:
