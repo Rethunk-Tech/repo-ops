@@ -30,20 +30,6 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 ---
 
-## Round 39 — Upgrade-mode and discovery gaps
-
-### 39.1 pipenv / pip-tools: no targeted-bump
-
-Poetry and PDM have `--poetry-targeted-bump` / `--pdm-targeted-bump` (not in `--full`). pipenv and pip-tools still stay inside existing constraints: `pipenv update` and pip-tools compile from `requirements.in` with no constraint-rewrite path. uv remains `uv lock --upgrade` (constraint-respecting).
-
-**Refs:** `packages/repo-ops-py-pipenv/src/repo_ops_py_pipenv/pipenv.py`; `packages/repo-ops-py-pip-tools/src/repo_ops_py_pip_tools/pip_tools.py`; `packages/repo-ops-core/src/repo_ops_core/cli.py`; `docs/usage.md` § Ecosystem upgrade modes.
-
-**Traps:** Do not silently rewrite `requirements.in` pins or Pipfile specs without an opt-in flag. pipenv must not create a venv (existing check is read-only via `pipenv --venv`). Hold clamp must apply to any new bump path.
-
-**Acceptance:** Opt-in flags exist for pipenv and pip-tools, or usage.md states those two stay manual. With the flag, a direct dep whose lock is behind a newer published version that requires a constraint bump is either moved (revert-on-failure) or listed in `behind_latest`. `--full` does not include them unless docs say otherwise.
-
----
-
 ## Round 44 — Wave 1 audit carry-forwards
 
 ### 44.1 Shared requirement parser
@@ -53,29 +39,3 @@ Rust, poetry, and pdm each ship a ~70-line caret/range parser (`_cargo_requireme
 **Refs:** `packages/repo-ops-rust/src/repo_ops_rust/rust.py`; `packages/repo-ops-py-poetry/src/repo_ops_py_poetry/poetry.py`; `packages/repo-ops-py-pdm/src/repo_ops_py_pdm/pdm.py`.
 
 **Acceptance:** One shared helper (or documented why Cargo vs PEP 440 must stay split) with a single default-operator contract and tests.
-
-### 44.2 Poetry/PDM `from_ver` is the constraint, not lock current
-
-Targeted-bump `Change.from_ver` is the pyproject requirement string so apply can preserve `^`/`~`. Plan output therefore does not match pnpm's lock-resolved `current`.
-
-**Refs:** `poetry.py` `_poetry_latest_direct_changes`; `pdm.py` `_pdm_latest_direct_changes`.
-
-**Traps:** Apply still needs the constraint string; do not replace `from_ver` without a second field.
-
-**Acceptance:** Plan JSON/human output shows lock-resolved current (and separately the constraint if needed) without breaking apply prefix preservation.
-
-### 44.3 Rust cache key vs concurrent manifest write
-
-`_cargo_latest_direct_changes` stats Cargo.toml then `@cache`s on `(path, mtime_ns, size)`. A same-size rewrite in the same nanosecond can associate a stale key with new bytes.
-
-**Refs:** `packages/repo-ops-rust/src/repo_ops_rust/rust.py` `_cargo_latest_direct_changes`.
-
-**Acceptance:** Cache key includes content digest, or apply does not rely on mtime uniqueness.
-
-### 44.4 pnpm catalog lock `from_ver` prefix match
-
-`_catalog_lock_from_ver` uses `token.startswith(name + "@")` rather than an exact name split (`license_policy._split_nv`). No false-positive repro at HEAD.
-
-**Refs:** `packages/repo-ops-js-pnpm/src/repo_ops_js_pnpm/pnpm.py` `_catalog_lock_from_ver`.
-
-**Acceptance:** Resolved version is taken only from tokens whose package name equals `name`.
