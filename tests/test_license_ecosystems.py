@@ -143,6 +143,40 @@ def test_scan_go_licenses_from_go_sum(tmp_path: Path) -> None:
     assert all(r.ecosystem == "go" for r in results)
 
 
+def test_enrich_license_reads_golang_license_from_gomodcache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gomodcache = tmp_path / "gomodcache"
+    mod_dir = gomodcache / "github.com/!example/pkg@v1.2.3"
+    mod_dir.mkdir(parents=True)
+    (mod_dir / "LICENSE").write_text(
+        "Permission is hereby granted, free of charge, to any person...",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GOMODCACHE", str(gomodcache))
+
+    assert (
+        enrich_license(
+            "github.com/Example/pkg",
+            "v1.2.3",
+            "golang",
+            cache_dir=tmp_path / "license-cache",
+            allow_network=False,
+        )
+        == "MIT"
+    )
+    assert (
+        enrich_license(
+            "github.com/nope/pkg",
+            "v0.0.1",
+            "go",
+            cache_dir=tmp_path / "license-cache",
+            allow_network=False,
+        )
+        is None
+    )
+
+
 # ---------------------------------------------------------------------------
 # Rust: scan_rust_licenses (cargo metadata mocked; no real subprocess)
 # ---------------------------------------------------------------------------

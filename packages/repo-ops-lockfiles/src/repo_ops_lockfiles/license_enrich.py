@@ -445,6 +445,11 @@ def enrich_license(
         return _npm_registry_license(name, version, cache, allow_network=allow_network)
     if ecosystem == "jsr":
         return _jsr_registry_license(name, version, cache, allow_network=allow_network)
+    if ecosystem in {"golang", "go"}:
+        from repo_ops_lockfiles.license_policy import resolve_go_license
+
+        license_id = resolve_go_license(name, version)
+        return None if license_id == UNKNOWN_LICENSE else license_id
     if ecosystem in {"pypi", "python"}:
         if root is not None:
             local = _dist_info_license(root, name, version)
