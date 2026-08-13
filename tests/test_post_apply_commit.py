@@ -114,6 +114,13 @@ def test_classify_bun_lock_text_format_is_node() -> None:
     )
 
 
+def test_classify_pnpm_workspace_catalog_is_node() -> None:
+    """pnpm workspace catalog changes must classify as Node dependencies."""
+    assert post_apply_commit.classify_commit_subject(["pnpm-workspace.yaml"]) == (
+        "chore(deps): update Node lockfiles and manifests"
+    )
+
+
 def test_skips_verify_fail_by_default(tmp_path: Path) -> None:
     bundle = _bundle(tmp_path)
     bundle.workspaces[0].status = "fail"
