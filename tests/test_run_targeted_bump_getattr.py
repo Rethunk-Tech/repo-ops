@@ -14,6 +14,8 @@ def test_magicmock_args_do_not_enable_targeted_bumps(monkeypatch):
         "REPO_OPS_RUST_TARGETED_BUMP",
         "REPO_OPS_POETRY_TARGETED_BUMP",
         "REPO_OPS_PDM_TARGETED_BUMP",
+        "REPO_OPS_PIPENV_TARGETED_BUMP",
+        "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
     )
     for name in targeted_env:
         monkeypatch.delenv(name, raising=False)
@@ -45,6 +47,8 @@ def test_full_does_not_enable_python_targeted_bumps(monkeypatch):
     python_targeted_env = (
         "REPO_OPS_POETRY_TARGETED_BUMP",
         "REPO_OPS_PDM_TARGETED_BUMP",
+        "REPO_OPS_PIPENV_TARGETED_BUMP",
+        "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
     )
     for name in python_targeted_env:
         monkeypatch.delenv(name, raising=False)

@@ -261,3 +261,14 @@ def test_upgrade_parser_accepts_poetry_pdm_targeted_bump_flags() -> None:
     args_default = parser.parse_args([])
     assert args_default.poetry_targeted_bump is False
     assert args_default.pdm_targeted_bump is False
+
+
+def test_upgrade_parser_accepts_pipenv_pip_tools_targeted_bump_flags() -> None:
+    """Pipenv and pip-tools targeted-bump flags are registered."""
+    parser = build_upgrade_parser(apply=False)
+    args = parser.parse_args(["--pipenv-targeted-bump", "--pip-tools-targeted-bump"])
+    assert args.pipenv_targeted_bump is True
+    assert args.pip_tools_targeted_bump is True
+    args_default = parser.parse_args([])
+    assert args_default.pipenv_targeted_bump is False
+    assert args_default.pip_tools_targeted_bump is False

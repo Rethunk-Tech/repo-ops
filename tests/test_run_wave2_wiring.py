@@ -33,6 +33,10 @@ def _fake_args(**overrides) -> MagicMock:
         "bun_targeted_bump": False,
         "deno_targeted_bump": False,
         "rust_targeted_bump": False,
+        "poetry_targeted_bump": False,
+        "pdm_targeted_bump": False,
+        "pipenv_targeted_bump": False,
+        "pip_tools_targeted_bump": False,
         "migrate_to_uv_lock": False,
         "yarn_jobs": None,
         "commit_umbrella": False,
@@ -95,6 +99,8 @@ def test_full_sweep_sets_policy_env_and_refreshes_actions(
         "REPO_OPS_PNPM_TARGETED_BUMP",
         "REPO_OPS_BUN_TARGETED_BUMP",
         "REPO_OPS_DENO_TARGETED_BUMP",
+        "REPO_OPS_PIPENV_TARGETED_BUMP",
+        "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
     ]
     for name in env_names:
         monkeypatch.delenv(name, raising=False)

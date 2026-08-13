@@ -41,6 +41,10 @@ _LATEST_HINT_BY_MANAGER: dict[str, str] = {
         "no latest mode; pass --poetry-targeted-bump to attempt, or bump manually"
     ),
     "pdm": "no latest mode; pass --pdm-targeted-bump to attempt, or bump manually",
+    "pipenv": "no latest mode; pass --pipenv-targeted-bump to attempt, or bump manually",
+    "pip-tools": (
+        "no latest mode; pass --pip-tools-targeted-bump to attempt, or bump manually"
+    ),
 }
 _LATEST_HINT_NO_MODE = "no latest mode; bump the pin manually"
 _LATEST_HINT_DEFAULT = "run with --latest to include"
@@ -81,6 +85,15 @@ _PDM_HINT_TARGETED_TRIED = (
     "--pdm-targeted-bump was attempted but could not move them "
     "(pdm add failed or the lockfile did not land the target) — bump manually"
 )
+_PIPENV_HINT_TARGETED_TRIED = (
+    "--pipenv-targeted-bump was attempted but could not move them "
+    "(pipenv install failed or the lockfile did not land the target) — bump manually"
+)
+_PIP_TOOLS_HINT_TARGETED_TRIED = (
+    "--pip-tools-targeted-bump was attempted but could not move them "
+    "(compile failed or the requirements.in constraint still blocked the target) — "
+    "bump manually"
+)
 _TARGETED_TRIED_HINT: dict[str, str] = {
     "yarn": _YARN_HINT_TARGETED_TRIED,
     "npm": _NPM_HINT_TARGETED_TRIED,
@@ -90,6 +103,8 @@ _TARGETED_TRIED_HINT: dict[str, str] = {
     "rust": _RUST_HINT_TARGETED_TRIED,
     "poetry": _POETRY_HINT_TARGETED_TRIED,
     "pdm": _PDM_HINT_TARGETED_TRIED,
+    "pipenv": _PIPENV_HINT_TARGETED_TRIED,
+    "pip-tools": _PIP_TOOLS_HINT_TARGETED_TRIED,
 }
 
 # Env vars that signal a per-package targeted bump was requested this run. Read
@@ -104,6 +119,8 @@ _TARGETED_BUMP_ENV: dict[str, str] = {
     "rust": "REPO_OPS_RUST_TARGETED_BUMP",
     "poetry": "REPO_OPS_POETRY_TARGETED_BUMP",
     "pdm": "REPO_OPS_PDM_TARGETED_BUMP",
+    "pipenv": "REPO_OPS_PIPENV_TARGETED_BUMP",
+    "pip-tools": "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
 }
 _TARGETED_BUMP_TRUE = ("1", "true", "yes", "on")
 

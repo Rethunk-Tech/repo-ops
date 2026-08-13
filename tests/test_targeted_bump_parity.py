@@ -274,6 +274,34 @@ def test_pdm_hint_reports_tried_when_requested(monkeypatch) -> None:
     assert "bump manually" in hint
 
 
+def test_pipenv_hint_default_when_not_requested(monkeypatch) -> None:
+    monkeypatch.delenv("REPO_OPS_PIPENV_TARGETED_BUMP", raising=False)
+    hint = _behind_latest_hint("pipenv")
+    assert "--pipenv-targeted-bump" in hint
+    assert "no latest mode" in hint
+
+
+def test_pipenv_hint_reports_tried_when_requested(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_PIPENV_TARGETED_BUMP", "1")
+    hint = _behind_latest_hint("pipenv")
+    assert "--pipenv-targeted-bump was attempted but could not move them" in hint
+    assert "bump manually" in hint
+
+
+def test_pip_tools_hint_default_when_not_requested(monkeypatch) -> None:
+    monkeypatch.delenv("REPO_OPS_PIP_TOOLS_TARGETED_BUMP", raising=False)
+    hint = _behind_latest_hint("pip-tools")
+    assert "--pip-tools-targeted-bump" in hint
+    assert "no latest mode" in hint
+
+
+def test_pip_tools_hint_reports_tried_when_requested(monkeypatch) -> None:
+    monkeypatch.setenv("REPO_OPS_PIP_TOOLS_TARGETED_BUMP", "1")
+    hint = _behind_latest_hint("pip-tools")
+    assert "--pip-tools-targeted-bump was attempted but could not move them" in hint
+    assert "bump manually" in hint
+
+
 # ---------------------------------------------------------------------------
 # Regression: ghost-bump exception must not skip snapshot restore.
 #

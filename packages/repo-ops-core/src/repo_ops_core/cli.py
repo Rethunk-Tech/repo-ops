@@ -493,6 +493,26 @@ def add_upgrade_common_arguments(
         ),
     )
     pol.add_argument(
+        "--pipenv-targeted-bump",
+        action="store_true",
+        dest="pipenv_targeted_bump",
+        help=(
+            "Pipenv only: opt in to targeted Pipfile constraint bumps for "
+            "direct dependencies that remain behind the latest release. "
+            "Sets REPO_OPS_PIPENV_TARGETED_BUMP."
+        ),
+    )
+    pol.add_argument(
+        "--pip-tools-targeted-bump",
+        action="store_true",
+        dest="pip_tools_targeted_bump",
+        help=(
+            "pip-tools only: opt in to targeted requirements.in constraint "
+            "bumps for direct dependencies that remain behind the latest "
+            "release. Sets REPO_OPS_PIP_TOOLS_TARGETED_BUMP."
+        ),
+    )
+    pol.add_argument(
         "--yarn-jobs",
         type=int,
         default=None,

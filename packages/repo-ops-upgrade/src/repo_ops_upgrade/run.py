@@ -177,8 +177,8 @@ def _run_upgrade_body(
         _set_cli_env("REPO_OPS_SUBMODULE_UPDATE_LATEST", "1")
         os.environ.setdefault("REPO_OPS_GO_UPGRADE_MODE", "explicit")
     # Opt-in per-package targeted fallback (#111); only meaningful with --latest,
-    # which is what produces the behind_latest work-list it consumes. All five
-    # managers' flags must populate their env var or the CLI flag is a no-op (#131).
+    # which is what produces the behind_latest work-list it consumes. Each
+    # manager's flag must populate its env var or the CLI flag is a no-op (#131).
     if full_sweep or _cli_flag(args, "yarn_targeted_bump"):
         _set_cli_env("REPO_OPS_YARN_TARGETED_BUMP", "1")
     if full_sweep or _cli_flag(args, "npm_targeted_bump"):
@@ -195,6 +195,10 @@ def _run_upgrade_body(
         _set_cli_env("REPO_OPS_POETRY_TARGETED_BUMP", "1")
     if _cli_flag(args, "pdm_targeted_bump"):
         _set_cli_env("REPO_OPS_PDM_TARGETED_BUMP", "1")
+    if _cli_flag(args, "pipenv_targeted_bump"):
+        _set_cli_env("REPO_OPS_PIPENV_TARGETED_BUMP", "1")
+    if _cli_flag(args, "pip_tools_targeted_bump"):
+        _set_cli_env("REPO_OPS_PIP_TOOLS_TARGETED_BUMP", "1")
     if full_sweep:
         _set_cli_env("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
         _set_cli_env("REPO_OPS_PRECOMMIT_REFRESH_SHA", "1")
