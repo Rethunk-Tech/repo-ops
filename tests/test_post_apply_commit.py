@@ -892,6 +892,18 @@ def test_classify_deno_lock_as_deno() -> None:
     )
 
 
+def test_classify_deno_jsonc_as_deno() -> None:
+    assert post_apply_commit.classify_commit_subject(["deno.jsonc"]) == (
+        "chore(deps): update Deno lockfiles"
+    )
+
+
+def test_classify_mixed_deno_and_node() -> None:
+    assert post_apply_commit.classify_commit_subject(["deno.lock", "yarn.lock"]) == (
+        "chore(deps): update Node lockfiles and manifests, and Deno lockfiles"
+    )
+
+
 def test_classify_mixed_rust_and_ci_pins() -> None:
     subject = post_apply_commit.classify_commit_subject(
         ["Cargo.lock", ".github/workflows/ci.yml"]
