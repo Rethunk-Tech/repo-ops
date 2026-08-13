@@ -64,7 +64,7 @@ def test_check_poetry_reports_constraint_bump(tmp_path: Path) -> None:
 
     in_range, behind = result
     assert in_range == []
-    assert behind == [Change("requests", "^2.28.0", "3.0.0")]
+    assert behind == [Change("requests", "2.31.0", "3.0.0")]
 
 
 def test_apply_poetry_restores_failed_targeted_add(tmp_path: Path) -> None:
@@ -94,12 +94,12 @@ def test_apply_poetry_restores_failed_targeted_add(tmp_path: Path) -> None:
         ),
         patch(
             "repo_ops_py_poetry.poetry._poetry_latest_direct_changes",
-            return_value=[Change("requests", "^2.28.0", "3.0.0")],
+            return_value=[Change("requests", "2.31.0", "3.0.0")],
         ),
     ):
         remaining = apply_poetry(_ws(tmp_path))
 
-    assert remaining == [Change("requests", "^2.28.0", "3.0.0")]
+    assert remaining == [Change("requests", "2.31.0", "3.0.0")]
     assert manifest.read_bytes() == manifest_before
     assert lockfile.read_bytes() == lock_before
     assert calls == [["poetry", "update"], ["poetry", "add", "requests@^3.0.0"]]
@@ -134,12 +134,12 @@ def test_apply_poetry_restores_when_target_version_does_not_land(
         ),
         patch(
             "repo_ops_py_poetry.poetry._poetry_latest_direct_changes",
-            return_value=[Change("requests", "^2.28.0", "3.0.0")],
+            return_value=[Change("requests", "2.31.0", "3.0.0")],
         ),
     ):
         remaining = apply_poetry(_ws(tmp_path))
 
-    assert remaining == [Change("requests", "^2.28.0", "3.0.0")]
+    assert remaining == [Change("requests", "2.31.0", "3.0.0")]
     assert manifest.read_bytes() == manifest_before
     assert lockfile.read_bytes() == lock_before
 
@@ -174,7 +174,7 @@ def test_apply_poetry_keeps_successful_targeted_add(tmp_path: Path) -> None:
         ),
         patch(
             "repo_ops_py_poetry.poetry._poetry_latest_direct_changes",
-            return_value=[Change("requests", "^2.28.0", "3.0.0")],
+            return_value=[Change("requests", "2.31.0", "3.0.0")],
         ),
     ):
         remaining = apply_poetry(_ws(tmp_path))

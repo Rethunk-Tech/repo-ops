@@ -268,7 +268,7 @@ def _poetry_latest_direct_changes(ws: Workspace) -> list[Change]:
             or _poetry_requirement_satisfied(latest, requirement)
         ):
             continue
-        changes.append(Change(name, requirement, latest))
+        changes.append(Change(name, locked, latest))
     return changes
 
 
@@ -342,8 +342,13 @@ def _apply_poetry_targeted_bumps(
 ) -> list[Change]:
     manifest = ws.path / "pyproject.toml"
     lockfile = ws.path / "poetry.lock"
+    dependencies = _poetry_direct_dependencies(manifest)
     remaining: list[Change] = []
     for candidate in candidates:
+        requirement = dependencies.get(candidate.name)
+        if requirement is None:
+            remaining.append(candidate)
+            continue
         rule = _resolve_pkg_hold(ws, candidate.name)
         if rule is not None and not version_satisfies_ceiling(
             candidate.to, rule.max_version
@@ -352,7 +357,7 @@ def _apply_poetry_targeted_bumps(
             continue
         manifest_snapshot = _poetry_snapshot(manifest)
         lock_snapshot = _poetry_snapshot(lockfile)
-        bumped = _poetry_bumped_requirement(candidate.from_ver, candidate.to)
+        bumped = _poetry_bumped_requirement(requirement, candidate.to)
         try:
             proc = run(
                 ["poetry", "add", f"{candidate.name}@{bumped}"],
