@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 from repo_ops_models import Change, Workspace
 from repo_ops_py_pipenv.pipenv import (
-    _pipenv_requirement_satisfied,
     _apply_pipenv_targeted_bumps,
+    _pipenv_requirement_satisfied,
     apply_pipenv,
     check_pipenv,
 )
