@@ -333,8 +333,9 @@ def _jsr_registry_license(
     meta = _registry_json(
         f"{base_url}_meta.json", cache_dir, allow_network=allow_network
     )
-    if isinstance(meta, dict) and "license" in meta:
-        return _json_license(meta)
+    license_id = _json_license(meta)
+    if license_id:
+        return license_id
 
     for filename in ("jsr.json", "deno.json"):
         data = _registry_json(
