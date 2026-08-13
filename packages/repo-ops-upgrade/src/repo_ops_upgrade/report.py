@@ -37,6 +37,10 @@ _LATEST_HINT_BY_MANAGER: dict[str, str] = {
     ),
     "go": "run with --go-upgrade-mode=explicit to include",
     "rust": ("no latest mode; pass --rust-targeted-bump to attempt, or bump manually"),
+    "poetry": (
+        "no latest mode; pass --poetry-targeted-bump to attempt, or bump manually"
+    ),
+    "pdm": "no latest mode; pass --pdm-targeted-bump to attempt, or bump manually",
 }
 _LATEST_HINT_NO_MODE = "no latest mode; bump the pin manually"
 _LATEST_HINT_DEFAULT = "run with --latest to include"
@@ -69,6 +73,14 @@ _RUST_HINT_TARGETED_TRIED = (
     "--rust-targeted-bump was attempted but could not move them "
     "(cargo failed or the lockfile did not advance) — bump manually"
 )
+_POETRY_HINT_TARGETED_TRIED = (
+    "--poetry-targeted-bump was attempted but could not move them "
+    "(poetry add failed or the lockfile did not land the target) — bump manually"
+)
+_PDM_HINT_TARGETED_TRIED = (
+    "--pdm-targeted-bump was attempted but could not move them "
+    "(pdm add failed or the lockfile did not land the target) — bump manually"
+)
 _TARGETED_TRIED_HINT: dict[str, str] = {
     "yarn": _YARN_HINT_TARGETED_TRIED,
     "npm": _NPM_HINT_TARGETED_TRIED,
@@ -76,6 +88,8 @@ _TARGETED_TRIED_HINT: dict[str, str] = {
     "bun": _BUN_HINT_TARGETED_TRIED,
     "deno": _DENO_HINT_TARGETED_TRIED,
     "rust": _RUST_HINT_TARGETED_TRIED,
+    "poetry": _POETRY_HINT_TARGETED_TRIED,
+    "pdm": _PDM_HINT_TARGETED_TRIED,
 }
 
 # Env vars that signal a per-package targeted bump was requested this run. Read
@@ -88,6 +102,8 @@ _TARGETED_BUMP_ENV: dict[str, str] = {
     "bun": "REPO_OPS_BUN_TARGETED_BUMP",
     "deno": "REPO_OPS_DENO_TARGETED_BUMP",
     "rust": "REPO_OPS_RUST_TARGETED_BUMP",
+    "poetry": "REPO_OPS_POETRY_TARGETED_BUMP",
+    "pdm": "REPO_OPS_PDM_TARGETED_BUMP",
 }
 _TARGETED_BUMP_TRUE = ("1", "true", "yes", "on")
 
