@@ -213,6 +213,56 @@ def _pdm_bumped_requirement(requirement: str, latest: str) -> str:
     return f"=={latest}"
 
 
+def _pdm_snapshot(path: Path) -> bytes | None:
+    return path.read_bytes() if path.is_file() else None
+
+
+def _pdm_restore(path: Path, snapshot: bytes | None) -> None:
+    if snapshot is None:
+        path.unlink(missing_ok=True)
+    else:
+        path.write_bytes(snapshot)
+
+
+def _apply_pdm_targeted_bumps(
+    ws: Workspace,
+    candidates: list[Change],
+) -> list[Change]:
+    manifest = ws.path / "pyproject.toml"
+    lockfile = ws.path / "pdm.lock"
+    remaining: list[Change] = []
+    for candidate in candidates:
+        rule = _resolve_pkg_hold(ws, candidate.name)
+        if rule is not None and not version_satisfies_ceiling(
+            candidate.to, rule.max_version
+        ):
+            remaining.append(candidate)
+            continue
+        manifest_snapshot = _pdm_snapshot(manifest)
+        lock_snapshot = _pdm_snapshot(lockfile)
+        try:
+            proc = run(
+                [
+                    "pdm",
+                    "add",
+                    f"{candidate.name}{_pdm_bumped_requirement(candidate.from_ver, candidate.to)}",
+                ],
+                ws.path,
+                timeout=resolve_timeout_apply(),
+            )
+        except Exception:
+            _pdm_restore(manifest, manifest_snapshot)
+            _pdm_restore(lockfile, lock_snapshot)
+            raise
+        lock_advanced = _pdm_snapshot(lockfile) != lock_snapshot
+        if proc.returncode == 0 and lock_advanced:
+            continue
+        _pdm_restore(manifest, manifest_snapshot)
+        _pdm_restore(lockfile, lock_snapshot)
+        remaining.append(candidate)
+    return remaining
+
+
 def _filter_held_changes(ws: Workspace, changes: list[Change]) -> list[Change]:
     kept: list[Change] = []
     for c in changes:
@@ -293,7 +343,7 @@ def check_pdm(
     return in_range, _pdm_latest_direct_changes(ws)
 
 
-def apply_pdm(ws: Workspace) -> None:
+def apply_pdm(ws: Workspace) -> list[Change] | None:
     """Run ``pdm update`` to upgrade all dependencies in the lockfile."""
     if not shutil.which("pdm"):
         raise RuntimeError(f"pdm not on PATH for {ws.path}")
@@ -301,3 +351,6 @@ def apply_pdm(ws: Workspace) -> None:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pdm update failed")
     _enforce_version_ceilings(ws)
+    if not _pdm_targeted_bump_enabled(ws):
+        return None
+    return _apply_pdm_targeted_bumps(ws, _pdm_latest_direct_changes(ws))
