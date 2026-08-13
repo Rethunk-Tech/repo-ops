@@ -269,7 +269,7 @@ def _pdm_latest_direct_changes(ws: Workspace) -> list[Change]:
         if _pdm_version_key(latest) > _pdm_version_key(
             resolved
         ) and not _pdm_requirement_satisfied(latest, requirement):
-            changes.append(Change(name, requirement, latest))
+            changes.append(Change(name, resolved, latest))
     return changes
 
 
@@ -299,8 +299,13 @@ def _apply_pdm_targeted_bumps(
 ) -> list[Change]:
     manifest = ws.path / "pyproject.toml"
     lockfile = ws.path / "pdm.lock"
+    dependencies = _pdm_direct_dependencies(ws)
     remaining: list[Change] = []
     for candidate in candidates:
+        requirement = dependencies.get(candidate.name)
+        if requirement is None:
+            remaining.append(candidate)
+            continue
         rule = _resolve_pkg_hold(ws, candidate.name)
         if rule is not None and not version_satisfies_ceiling(
             candidate.to, rule.max_version
@@ -310,7 +315,7 @@ def _apply_pdm_targeted_bumps(
         manifest_snapshot = _pdm_snapshot(manifest)
         lock_snapshot = _pdm_snapshot(lockfile)
         try:
-            bumped = _pdm_bumped_requirement(candidate.from_ver, candidate.to)
+            bumped = _pdm_bumped_requirement(requirement, candidate.to)
             proc = run(
                 [
                     "pdm",

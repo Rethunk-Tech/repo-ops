@@ -58,7 +58,7 @@ def test_check_pdm_reports_latest_direct_dependency(tmp_path: Path) -> None:
 
     assert result == (
         [],
-        [Change("requests", "^2.28.0", "3.0.0")],
+        [Change("requests", "2.31.0", "3.0.0")],
     )
 
 
@@ -84,7 +84,7 @@ def test_apply_pdm_restores_files_when_targeted_add_fails(tmp_path: Path) -> Non
     ):
         remaining = apply_pdm(_ws(tmp_path))
 
-    assert remaining == [Change("requests", "^2.28.0", "3.0.0")]
+    assert remaining == [Change("requests", "2.31.0", "3.0.0")]
     assert manifest.read_bytes() == original_manifest
     assert lockfile.read_bytes() == original_lockfile
 
@@ -139,6 +139,6 @@ def test_apply_pdm_restores_files_when_targeted_add_lands_wrong_version(
     ):
         remaining = apply_pdm(_ws(tmp_path))
 
-    assert remaining == [Change("requests", "^2.28.0", "3.0.0")]
+    assert remaining == [Change("requests", "2.31.0", "3.0.0")]
     assert manifest.read_bytes() == original_manifest
     assert lockfile.read_bytes() == original_lockfile
