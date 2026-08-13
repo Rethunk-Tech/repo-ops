@@ -101,4 +101,4 @@ def test_apply_pdm_adds_targeted_constraint(tmp_path: Path) -> None:
         remaining = apply_pdm(_ws(tmp_path))
 
     assert remaining == []
-    assert captured == [["pdm", "update"], ["pdm", "add", "requests^3.0.0"]]
+    assert captured == [["pdm", "update"], ["pdm", "add", "requests@^3.0.0"]]

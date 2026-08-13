@@ -53,8 +53,8 @@ def _pdm_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
 # Package version-ceiling ("hold") rules
 # ---------------------------------------------------------------------------
 #
-# PDM has no per-package targeted install — ``pdm update`` regenerates the
-# whole lockfile — so this clamp-down is the only enforcement mechanism.
+# In-range ``pdm update`` handles the lockfile; opt-in targeted ``pdm add``
+# moves direct constraints, while this clamp restores held manifests.
 
 
 @contextmanager
@@ -310,11 +310,14 @@ def _apply_pdm_targeted_bumps(
         manifest_snapshot = _pdm_snapshot(manifest)
         lock_snapshot = _pdm_snapshot(lockfile)
         try:
+            bumped = _pdm_bumped_requirement(candidate.from_ver, candidate.to)
             proc = run(
                 [
                     "pdm",
                     "add",
-                    f"{candidate.name}{_pdm_bumped_requirement(candidate.from_ver, candidate.to)}",
+                    f"{candidate.name}@{bumped}"
+                    if bumped.startswith(("^", "~"))
+                    else f"{candidate.name}{bumped}",
                 ],
                 ws.path,
                 timeout=resolve_timeout_apply(),
