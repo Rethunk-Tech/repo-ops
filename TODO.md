@@ -32,42 +32,50 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 
 ## Round 39 — Upgrade-mode and discovery gaps
 
-### 39.1 Python managers: no `--latest` / targeted-bump
+### 39.1 pipenv / pip-tools: no targeted-bump
 
-`--full` / `--latest` plus `--*-targeted-bump` close JS/Deno `behind_latest` gaps. poetry, pdm, pipenv, and pip-tools have no equivalent: `poetry update` / `pdm update` / `pipenv update` stay inside existing constraints, and usage.md marks pdm/pipenv aggressive mode as “—”. uv already runs `uv lock --upgrade` (constraint-respecting, not a JS-style latest umbrella). Operators on Poetry/PDM fleets therefore under-report the same class of drift `--full` is meant to catch.
+Poetry and PDM have `--poetry-targeted-bump` / `--pdm-targeted-bump` (not in `--full`). pipenv and pip-tools still stay inside existing constraints: `pipenv update` and pip-tools compile from `requirements.in` with no constraint-rewrite path. uv remains `uv lock --upgrade` (constraint-respecting).
 
-**Refs:** `docs/usage.md` § Ecosystem upgrade modes; `packages/repo-ops-py-poetry/src/repo_ops_py_poetry/poetry.py`; `packages/repo-ops-py-pdm/src/repo_ops_py_pdm/pdm.py`; `packages/repo-ops-py-pipenv/src/repo_ops_py_pipenv/pipenv.py`; `packages/repo-ops-py-pip-tools/src/repo_ops_py_pip_tools/pip_tools.py`; `packages/repo-ops-core/src/repo_ops_core/cli.py` (flag wiring for JS targeted-bump).
+**Refs:** `packages/repo-ops-py-pipenv/src/repo_ops_py_pipenv/pipenv.py`; `packages/repo-ops-py-pip-tools/src/repo_ops_py_pip_tools/pip_tools.py`; `packages/repo-ops-core/src/repo_ops_core/cli.py`; `docs/usage.md` § Ecosystem upgrade modes.
 
-**Traps:** Do not silently rewrite `^1.2` to `^2` in `pyproject.toml` without an opt-in flag (same contract as `--yarn-targeted-bump`). pip-tools `requirements.in` pins are the constraint — a “latest” mode must be explicit. pipenv must not create a venv (existing check is read-only via `pipenv --venv`). Hold clamp is lock-only (uv `lock --upgrade-package`; poetry/pdm/pipenv snapshot-restore the manifest) and must apply to any new bump path.
+**Traps:** Do not silently rewrite `requirements.in` pins or Pipfile specs without an opt-in flag. pipenv must not create a venv (existing check is read-only via `pipenv --venv`). Hold clamp must apply to any new bump path.
 
-**Acceptance:** Opt-in flags (or a documented “Python has no latest mode” sentence that is true for all four) exist for poetry/pdm/pipenv/pip-tools. With the flag, a direct dep whose lock is behind a newer published version that requires a constraint bump is either moved (revert-on-failure, like JS targeted-bump) or listed in `behind_latest` instead of `[ok]`. `--full` either includes those flags or the docs say Python constraint bumps stay manual.
+**Acceptance:** Opt-in flags exist for pipenv and pip-tools, or usage.md states those two stay manual. With the flag, a direct dep whose lock is behind a newer published version that requires a constraint bump is either moved (revert-on-failure) or listed in `behind_latest`. `--full` does not include them unless docs say otherwise.
 
 ---
 
-## Round 43 — Wave 43 audit carry-forwards
+## Round 44 — Wave 1 audit carry-forwards
 
-### 43.1 `apply_rust` re-queries the registry
+### 44.1 Shared requirement parser
 
-With `--rust-targeted-bump`, `apply_rust` calls `_cargo_latest_direct_changes` again instead of reusing the plan `behind_latest` list. Extra crates.io traffic and a TOCTOU split vs `check_rust`.
+Rust, poetry, and pdm each ship a ~70-line caret/range parser (`_cargo_requirement_satisfied`, `_poetry_requirement_satisfied`, `_pdm_requirement_satisfied`). Default-operator drift (`^` vs `=`) already happened once.
 
-**Refs:** `packages/repo-ops-rust/src/repo_ops_rust/rust.py` `apply_rust`; `check_rust`.
+**Refs:** `packages/repo-ops-rust/src/repo_ops_rust/rust.py`; `packages/repo-ops-py-poetry/src/repo_ops_py_poetry/poetry.py`; `packages/repo-ops-py-pdm/src/repo_ops_py_pdm/pdm.py`.
 
-**Acceptance:** Apply uses the same candidate set plan already computed (or an explicit identical helper result cached on the workspace), so a no-drift plan does not hit crates.io twice.
+**Acceptance:** One shared helper (or documented why Cargo vs PEP 440 must stay split) with a single default-operator contract and tests.
 
-### 43.2 Catalog missing-row `from_ver` is the stripped spec
+### 44.2 Poetry/PDM `from_ver` is the constraint, not lock current
 
-When `pnpm outdated` has no row, catalog `behind_latest.from_ver` is `_catalog_spec_from_version` (e.g. `18.2.0` from `^18.2.0`), not lockfile-resolved current. Outdated rows already use installed `current`.
+Targeted-bump `Change.from_ver` is the pyproject requirement string so apply can preserve `^`/`~`. Plan output therefore does not match pnpm's lock-resolved `current`.
 
-**Refs:** `packages/repo-ops-js-pnpm/src/repo_ops_js_pnpm/pnpm.py` `_pnpm_outdated` missing-meta branch; `tests/test_pnpm_catalog.py`.
+**Refs:** `poetry.py` `_poetry_latest_direct_changes`; `pdm.py` `_pdm_latest_direct_changes`.
 
-**Traps:** Do not add a registry round-trip to learn current. Skip protocol values.
+**Traps:** Apply still needs the constraint string; do not replace `from_ver` without a second field.
 
-**Acceptance:** Missing-outdated catalog `from_ver` matches lockfile resolved version when the lock is parseable; otherwise the stripped spec remains the fallback.
+**Acceptance:** Plan JSON/human output shows lock-resolved current (and separately the constraint if needed) without breaking apply prefix preservation.
 
-### 43.3 `_catalog_spec_from_version` uses `lstrip`
+### 44.3 Rust cache key vs concurrent manifest write
 
-`spec.lstrip("^~>=")` is prefix-character stripping, not a semver parse. Epoch pins (`1:2.3.4`) happen to survive; odd prefixes may not.
+`_cargo_latest_direct_changes` stats Cargo.toml then `@cache`s on `(path, mtime_ns, size)`. A same-size rewrite in the same nanosecond can associate a stale key with new bytes.
 
-**Refs:** `pnpm.py` `_catalog_spec_from_version`; `normalize_version`.
+**Refs:** `packages/repo-ops-rust/src/repo_ops_rust/rust.py` `_cargo_latest_direct_changes`.
 
-**Acceptance:** from_ver extraction uses the same version normalizer as the rest of pnpm catalog compare, with a fixture for a non-caret prefix that `lstrip` would mangle.
+**Acceptance:** Cache key includes content digest, or apply does not rely on mtime uniqueness.
+
+### 44.4 pnpm catalog lock `from_ver` prefix match
+
+`_catalog_lock_from_ver` uses `token.startswith(name + "@")` rather than an exact name split (`license_policy._split_nv`). No false-positive repro at HEAD.
+
+**Refs:** `packages/repo-ops-js-pnpm/src/repo_ops_js_pnpm/pnpm.py` `_catalog_lock_from_ver`.
+
+**Acceptance:** Resolved version is taken only from tokens whose package name equals `name`.
