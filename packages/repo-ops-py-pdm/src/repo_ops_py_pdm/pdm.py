@@ -4,12 +4,22 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+import json
 import re
 import shutil
 import sys
 from functools import cache
+from http.client import HTTPSConnection
 from pathlib import Path
+from urllib.parse import quote
 
+from repo_ops_core.config import (
+    ambient_env,
+    load_global_config,
+    load_repo_config,
+    process_env_cli_override,
+    resolve_setting,
+)
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.holds import (
@@ -21,6 +31,23 @@ from repo_ops_core.holds import (
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import hold_ceiling_spec, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
+
+_PDM_TARGETED_BUMP_ENV = "REPO_OPS_PDM_TARGETED_BUMP"
+_TRUE_VALUES = ("1", "true", "yes", "on")
+
+
+def _pdm_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
+    raw = resolve_setting(
+        "pdm_targeted_bump",
+        cli_value=process_env_cli_override(_PDM_TARGETED_BUMP_ENV),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in _TRUE_VALUES
+
 
 # ---------------------------------------------------------------------------
 # Package version-ceiling ("hold") rules
@@ -38,6 +65,8 @@ def _preserve_manifest(path: Path) -> Iterator[None]:
     finally:
         if original is not None:
             path.write_bytes(original)
+        else:
+            path.unlink(missing_ok=True)
 
 
 @cache
@@ -86,6 +115,104 @@ def _pdm_lock_versions(ws: Workspace) -> dict[str, str]:
     return out
 
 
+def _pdm_direct_dependencies(ws: Workspace) -> dict[str, str]:
+    document = read_toml_file(ws.path / "pyproject.toml") or {}
+    dependencies: dict[str, str] = {}
+    project = document.get("project")
+    if isinstance(project, dict):
+        raw_dependencies = project.get("dependencies")
+        if isinstance(raw_dependencies, list):
+            for raw_requirement in raw_dependencies:
+                if not isinstance(raw_requirement, str):
+                    continue
+                match = re.match(
+                    r"^\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*(.*)$",
+                    raw_requirement,
+                )
+                if match:
+                    dependencies[match.group(1)] = match.group(2).strip()
+    tool = document.get("tool")
+    pdm = tool.get("pdm") if isinstance(tool, dict) else None
+    pdm_dependencies = pdm.get("dependencies") if isinstance(pdm, dict) else None
+    if isinstance(pdm_dependencies, dict):
+        for name, requirement in pdm_dependencies.items():
+            if isinstance(name, str) and isinstance(requirement, str):
+                dependencies[name] = requirement.strip()
+    return dependencies
+
+
+def _pdm_latest_version(package: str) -> str:
+    connection = HTTPSConnection("pypi.org", timeout=resolve_timeout_check())
+    try:
+        connection.request(
+            "GET",
+            f"/pypi/{quote(package, safe='')}/json",
+            headers={"User-Agent": "repo-ops"},
+        )
+        response = connection.getresponse()
+        if not 200 <= response.status < 300:
+            raise RuntimeError(
+                f"registry lookup returned HTTP {response.status} for {package}"
+            )
+        document = json.loads(response.read().decode("utf-8"))
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise RuntimeError(f"registry lookup failed for {package}: {exc}") from exc
+    finally:
+        connection.close()
+    if not isinstance(document, dict):
+        raise RuntimeError(f"registry lookup returned invalid data for {package}")
+    info = document.get("info")
+    if isinstance(info, dict) and isinstance(info.get("version"), str):
+        return info["version"]
+    releases = document.get("releases")
+    if not isinstance(releases, dict):
+        raise RuntimeError(f"registry lookup returned no version for {package}")
+    versions = [
+        version
+        for version, files in releases.items()
+        if isinstance(version, str)
+        and isinstance(files, list)
+        and any(
+            isinstance(file, dict) and file.get("yanked") is not True for file in files
+        )
+    ]
+    if not versions:
+        raise RuntimeError(f"registry lookup returned no version for {package}")
+    return max(versions, key=_pdm_version_key)
+
+
+def _pdm_version_key(version: str) -> tuple[tuple[int, ...], str]:
+    numbers = tuple(int(part) for part in re.findall(r"\d+", version))
+    return numbers, version
+
+
+def _pdm_latest_direct_changes(ws: Workspace) -> list[Change]:
+    dependencies = _pdm_direct_dependencies(ws)
+    locked = _pdm_lock_versions(ws)
+    locked_normalized = {name.lower(): version for name, version in locked.items()}
+    changes: list[Change] = []
+    for name, requirement in sorted(dependencies.items()):
+        resolved = locked_normalized.get(name.lower())
+        if resolved is None:
+            continue
+        try:
+            latest = _pdm_latest_version(name)
+        except RuntimeError:
+            continue
+        if _pdm_version_key(latest) > _pdm_version_key(resolved):
+            changes.append(Change(name, requirement, latest))
+    return changes
+
+
+def _pdm_bumped_requirement(requirement: str, latest: str) -> str:
+    stripped = requirement.strip()
+    if stripped.startswith("^"):
+        return f"^{latest}"
+    if stripped.startswith("~"):
+        return f"~{latest}"
+    return f"=={latest}"
+
+
 def _filter_held_changes(ws: Workspace, changes: list[Change]) -> list[Change]:
     kept: list[Change] = []
     for c in changes:
@@ -130,7 +257,9 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
             )
 
 
-def check_pdm(ws: Workspace) -> list[Change]:
+def check_pdm(
+    ws: Workspace,
+) -> list[Change] | tuple[list[Change], list[Change]]:
     """Return pending upgrades for a PDM-managed workspace.
 
     Runs ``pdm update --dry-run`` and parses lines of the form::
@@ -158,7 +287,10 @@ def check_pdm(ws: Workspace) -> list[Change]:
         m = re.search(r"[-~]\s+(\S+)\s+([\d][^\s]*)\s+->\s+([\d][^\s]*)", line)
         if m:
             changes.append(Change(m.group(1), m.group(2), m.group(3)))
-    return _filter_held_changes(ws, changes)
+    in_range = _filter_held_changes(ws, changes)
+    if not _pdm_targeted_bump_enabled(ws):
+        return in_range
+    return in_range, _pdm_latest_direct_changes(ws)
 
 
 def apply_pdm(ws: Workspace) -> None:
