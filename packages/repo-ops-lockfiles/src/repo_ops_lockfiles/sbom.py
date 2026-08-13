@@ -228,6 +228,8 @@ def collect_components(
             ("Pipfile.lock", versions_pipenv_lock),
             ("pdm.lock", versions_pdm_lock),
             ("requirements.txt", versions_requirements_txt),
+            ("requirements-dev.txt", versions_requirements_txt),
+            ("requirements-test.txt", versions_requirements_txt),
         ]
         for lf_name, py_parser in _py_parsers:
             if lf_name not in fname_set:

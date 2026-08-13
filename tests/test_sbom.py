@@ -463,9 +463,19 @@ def test_collect_components_requirements_txt(tmp_path: Path) -> None:
         "requests==2.31.0\n# comment\nflask==3.0.0\n",
         encoding="utf-8",
     )
+    (tmp_path / "requirements-dev.txt").write_text(
+        "pytest==8.2.0\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "requirements-test.txt").write_text(
+        "coverage==7.5.0\n",
+        encoding="utf-8",
+    )
     purls = {c["purl"] for c in collect_components(tmp_path)}
     assert "pkg:pypi/requests@2.31.0" in purls
     assert "pkg:pypi/flask@3.0.0" in purls
+    assert "pkg:pypi/pytest@8.2.0" in purls
+    assert "pkg:pypi/coverage@7.5.0" in purls
 
 
 def test_collect_components_deno_npm_and_jsr(tmp_path: Path) -> None:
