@@ -7,12 +7,19 @@ import json
 import os
 import tempfile
 from datetime import date, datetime, timezone
+from functools import cache
 from pathlib import Path
 from typing import Any, Literal
 
+from repo_ops_core.holds import (
+    HoldRule,
+    load_global_holds,
+    load_repo_holds,
+    resolve_hold,
+)
 from repo_ops_core.state import cache_get_dirty_skip, cache_get_staleness
 from repo_ops_core.table import column_width, format_cell
-from repo_ops_models import DIRTY_SKIP_MARKER, RepoBundle, WorkspaceResult
+from repo_ops_models import DIRTY_SKIP_MARKER, RepoBundle, Workspace, WorkspaceResult
 
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 
@@ -156,6 +163,62 @@ def _behind_latest_hint(manager: str) -> str:
     return _LATEST_HINT_BY_MANAGER.get(manager, _LATEST_HINT_DEFAULT)
 
 
+# ---------------------------------------------------------------------------
+# Package version-ceiling ("hold") rules — surfacing a hold-declined bump in
+# the behind-latest bucket it already lands in, rather than a new mechanism.
+# ---------------------------------------------------------------------------
+
+
+@cache
+def _global_holds_cached() -> tuple[HoldRule, ...]:
+    return tuple(load_global_holds())
+
+
+@cache
+def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
+    return tuple(load_repo_holds(Path(repo_root)))
+
+
+def _workspace_rel_for_hold(ws: Workspace) -> str:
+    rel = "."
+    with contextlib.suppress(ValueError):
+        rel = ws.path.relative_to(ws.git_repo).as_posix()
+    return rel
+
+
+def _resolve_report_hold(ws: Workspace, package: str) -> HoldRule | None:
+    """Return the active hold covering *package* in *ws*, if any."""
+    repo_root = str(ws.git_repo.resolve())
+    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
+    if not rules:
+        return None
+    return resolve_hold(
+        rules,
+        package=package,
+        ecosystem=ws.ecosystem,
+        manager=ws.manager,
+        workspace_rel=_workspace_rel_for_hold(ws),
+    )
+
+
+def _behind_latest_holds(wr: WorkspaceResult) -> list[HoldRule | None]:
+    """Active hold (if any) per ``wr.behind_latest`` entry, same order.
+
+    Shared by the row annotation and the summary counter so "held" means the
+    same thing in both places.
+    """
+    return [_resolve_report_hold(wr.workspace, c.name) for c in wr.behind_latest]
+
+
+def _format_behind_latest_annotation(rule: HoldRule | None) -> str:
+    if rule is None:
+        return "(latest)"
+    annotation = f"(latest; held <= {rule.max_version}"
+    if rule.until:
+        annotation += f", until {rule.until}"
+    return annotation + ")"
+
+
 def build_run_summary(
     bundles: dict[Path, RepoBundle],
     *,
@@ -171,6 +234,7 @@ def build_run_summary(
     actions_bumps = 0
     actions_failures = 0
     packages_behind_latest = 0
+    packages_held = 0
     actions_behind_latest = 0
     packages_upgraded = 0
     behind_latest_by_manager: dict[str, int] = {}
@@ -197,6 +261,9 @@ def build_run_summary(
                 behind_latest_by_manager[manager] = (
                     behind_latest_by_manager.get(manager, 0) + n_behind
                 )
+                packages_held += sum(
+                    1 for rule in _behind_latest_holds(wr) if rule is not None
+                )
         action_totals = bundle.actions_summary()
         actions_bumps += action_totals["bumps"]
         actions_failures += action_totals["failures"]
@@ -217,6 +284,7 @@ def build_run_summary(
         "packages_upgraded": packages_upgraded,
         "packages_behind_latest": packages_behind_latest,
         "packages_behind_latest_by_manager": behind_latest_by_manager,
+        "packages_held": packages_held,
         "actions_behind_latest": actions_behind_latest,
         "failure_count": count_failures(bundles),
         "excluded": excluded_count,
@@ -490,14 +558,22 @@ def print_human_report(
                 print(f"    ... and {len(wr.changes) - top_n} more")
             if behind_n > 0:
                 hint = _behind_latest_hint(ws.manager)
-                print(f"    behind-latest: {behind_n} package(s) not actioned ({hint})")
+                behind_holds = _behind_latest_holds(wr)
+                held_n = sum(1 for rule in behind_holds if rule is not None)
+                held_suffix = f", {held_n} held" if held_n else ""
+                print(
+                    f"    behind-latest: {behind_n} package(s) not actioned"
+                    f"{held_suffix} ({hint})"
+                )
                 shown_behind = wr.behind_latest[:top_n]
+                shown_holds = behind_holds[:top_n]
                 bname_w = column_width([c.name for c in shown_behind], "")
                 bfrom_w = column_width([c.from_ver for c in shown_behind], "")
-                for c in shown_behind:
+                for c, rule in zip(shown_behind, shown_holds, strict=True):
+                    annotation = _format_behind_latest_annotation(rule)
                     print(
                         f"      {format_cell(c.name, bname_w)} "
-                        f"{format_cell(c.from_ver, bfrom_w)} → {c.to} (latest)"
+                        f"{format_cell(c.from_ver, bfrom_w)} → {c.to} {annotation}"
                     )
                 if behind_n > top_n:
                     print(f"      ... and {behind_n - top_n} more")
