@@ -79,6 +79,7 @@ from repo_ops_core.git import repo_label, run_git
 from repo_ops_lockfiles.parsers import (
     versions_bun_lock,
     versions_bun_lockb,
+    versions_deno_lock,
     versions_npm_lock,
     versions_pdm_lock,
     versions_pipenv_lock,
@@ -390,6 +391,21 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
                     pkg, ver = _split_name_ver(entry)
                     if pkg:
                         _update(pkg, ver)
+
+    for lockfile in root.rglob("deno.lock"):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
+        with contextlib.suppress(Exception):
+            for entry in versions_deno_lock(lockfile):
+                prefix = ""
+                if entry.startswith(("npm:", "jsr:")):
+                    prefix, entry = entry.split(":", 1)
+                if "@" in entry:
+                    pkg, ver = _split_name_ver(entry)
+                    if pkg:
+                        _update(pkg, ver)
+                        if prefix == "jsr" and pkg.startswith("@"):
+                            _update(pkg[1:], ver)
 
     for lockfile in root.rglob("uv.lock"):
         if any(part in SKIP_DIRS for part in lockfile.parts):
