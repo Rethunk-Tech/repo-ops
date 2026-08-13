@@ -7,6 +7,7 @@ from unittest.mock import patch
 from repo_ops_models import Change, Workspace
 from repo_ops_py_pipenv.pipenv import (
     _pipenv_requirement_satisfied,
+    _apply_pipenv_targeted_bumps,
     apply_pipenv,
     check_pipenv,
 )
@@ -93,6 +94,24 @@ def test_apply_pipenv_skips_targeted_install_without_venv(tmp_path: Path) -> Non
 
     assert remaining == [candidate]
     assert calls == [["pipenv", "update"], ["pipenv", "--venv"]]
+
+
+def test_targeted_pipenv_bump_skips_missing_pipfile_constraint(
+    tmp_path: Path,
+) -> None:
+    _seed_workspace(tmp_path)
+    candidate = Change("flask", "2.3.0", "3.0.0")
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout=None):
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, stdout="/fake/.venv", stderr="")
+
+    with patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run):
+        remaining = _apply_pipenv_targeted_bumps(_ws(tmp_path), [candidate])
+
+    assert remaining == [candidate]
+    assert calls == [["pipenv", "--venv"]]
 
 
 def test_apply_pipenv_restores_failed_targeted_install(tmp_path: Path) -> None:

@@ -331,9 +331,10 @@ def _apply_pipenv_targeted_bumps(
             continue
         manifest_snapshot = _pipenv_snapshot(manifest)
         lock_snapshot = _pipenv_snapshot(lockfile)
-        requirement = _pipenv_direct_dependencies(manifest).get(
-            candidate.name, candidate.from_ver
-        )
+        requirement = _pipenv_direct_dependencies(manifest).get(candidate.name)
+        if requirement is None:
+            remaining.append(candidate)
+            continue
         bumped = _pipenv_bumped_requirement(requirement, candidate.to)
         try:
             proc = run(
