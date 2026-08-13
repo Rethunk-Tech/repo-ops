@@ -234,19 +234,25 @@ def test_apply_pnpm_targets_catalog_drift(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     ws = _ws(tmp_path)
     catalog_change = Change("react", "^18.2.0", "19.0.0")
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        calls.append(list(cmd))
+        node_modules = tmp_path / "node_modules" / "react"
+        node_modules.mkdir(parents=True, exist_ok=True)
+        (node_modules / "package.json").write_text(
+            json.dumps({"version": "19.0.0"}), encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
         patch(
             "repo_ops_js_pnpm.pnpm._pnpm_outdated", return_value=([], [catalog_change])
         ),
-        patch(
-            "repo_ops_js_pnpm.pnpm.run",
-            return_value=subprocess.CompletedProcess(
-                ["pnpm", "install"], 0, stdout="", stderr=""
-            ),
-        ),
+        patch("repo_ops_js_pnpm.pnpm.run", side_effect=fake_run),
     ):
         behind = apply_pnpm(ws)
 
     assert behind == []
+    assert calls == [["pnpm", "install"]]
     assert "^19.0.0" in (tmp_path / "pnpm-workspace.yaml").read_text(encoding="utf-8")

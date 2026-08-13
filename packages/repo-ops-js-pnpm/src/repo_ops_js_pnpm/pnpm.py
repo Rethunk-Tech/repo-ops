@@ -551,7 +551,7 @@ def apply_pnpm(ws: Workspace) -> list[Change]:
     if handled:
         changes = [c for c in changes if c.name not in handled]
         behind = [c for c in behind if c.name not in handled]
-    if changes or not handled:
+    if changes:
         # Match npm conservative bumps (semver ranges) unless the user opts into latest.
         cmd = ["pnpm", "update", "-r"]
         if _pnpm_update_latest_enabled(ws):
