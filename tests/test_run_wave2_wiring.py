@@ -99,8 +99,6 @@ def test_full_sweep_sets_policy_env_and_refreshes_actions(
         "REPO_OPS_PNPM_TARGETED_BUMP",
         "REPO_OPS_BUN_TARGETED_BUMP",
         "REPO_OPS_DENO_TARGETED_BUMP",
-        "REPO_OPS_PIPENV_TARGETED_BUMP",
-        "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
     ]
     for name in env_names:
         monkeypatch.delenv(name, raising=False)
@@ -141,6 +139,8 @@ def test_full_sweep_sets_policy_env_and_refreshes_actions(
         assert os.environ[name] == (
             "patch" if name == "REPO_OPS_GO_UPGRADE_MODE" else "1"
         )
+    assert "REPO_OPS_PIPENV_TARGETED_BUMP" not in os.environ
+    assert "REPO_OPS_PIP_TOOLS_TARGETED_BUMP" not in os.environ
     assert action_kwargs
     assert action_kwargs[0]["refresh_sha"] is True
     assert action_kwargs[0]["upgrade_mode"] == "normalize"
