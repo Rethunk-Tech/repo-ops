@@ -138,6 +138,17 @@ def test_detect_ecosystems_docker(tmp_path: Path) -> None:
     assert "docker" in ecos
 
 
+@pytest.mark.parametrize(
+    "indicator",
+    ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"],
+)
+def test_detect_ecosystems_compose_variants(tmp_path: Path, indicator: str) -> None:
+    (tmp_path / indicator).write_text("services: {}\n", encoding="utf-8")
+    entries = detect_ecosystems(tmp_path)
+    ecos = [e["package-ecosystem"] for e in entries]
+    assert ecos == ["docker"]
+
+
 def test_detect_ecosystems_empty(tmp_path: Path) -> None:
     entries = detect_ecosystems(tmp_path)
     assert entries == []

@@ -1053,7 +1053,15 @@ _PY_INDICATORS: frozenset[str] = frozenset(
 )
 _GO_INDICATORS: frozenset[str] = frozenset({"go.mod"})
 _RUST_INDICATORS: frozenset[str] = frozenset({"Cargo.toml"})
-_DOCKER_INDICATORS: frozenset[str] = frozenset({"Dockerfile", "docker-compose.yml"})
+_DOCKER_INDICATORS: frozenset[str] = frozenset(
+    {
+        "Dockerfile",
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        "compose.yml",
+        "compose.yaml",
+    }
+)
 
 
 def _rel_dir(dp: Path, repo_root: Path) -> str:
