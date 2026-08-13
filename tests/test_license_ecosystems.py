@@ -314,6 +314,53 @@ def test_enrich_license_uses_cached_jsr_registry_metadata(tmp_path: Path) -> Non
     )
 
 
+def test_enrich_license_jsr_falls_through_empty_meta_license(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "license-cache"
+    meta_url = "https://jsr.io/@scope/pkg/1.2.3_meta.json"
+    deno_url = "https://jsr.io/@scope/pkg/1.2.3/deno.json"
+    for url, payload in (
+        (meta_url, {"license": None}),
+        (deno_url, {"license": "MIT"}),
+    ):
+        cache_file = _cache_path(cache, url)
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert (
+        enrich_license(
+            "@scope/pkg",
+            "1.2.3",
+            "jsr",
+            cache_dir=cache,
+            allow_network=False,
+        )
+        == "MIT"
+    )
+
+
+def test_enrich_license_jsr_uses_cached_deno_json_without_meta_license(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "license-cache"
+    url = "https://jsr.io/@scope/pkg/1.2.3/deno.json"
+    cache_file = _cache_path(cache, url)
+    cache_file.parent.mkdir(parents=True)
+    cache_file.write_text(json.dumps({"license": "MIT"}), encoding="utf-8")
+
+    assert (
+        enrich_license(
+            "scope/pkg",
+            "1.2.3",
+            "jsr",
+            cache_dir=cache,
+            allow_network=False,
+        )
+        == "MIT"
+    )
+
+
 def test_enrich_license_jsr_without_network_returns_none(tmp_path: Path) -> None:
     assert (
         enrich_license(
