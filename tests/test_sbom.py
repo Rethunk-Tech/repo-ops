@@ -16,54 +16,11 @@ from repo_ops_lockfiles.sbom import (
     _split_nv,
     _versions_cargo_lock,
     _versions_go_sum,
-    _versions_poetry_uv_lock,
     collect_components,
     emit_cyclonedx,
     emit_spdx,
     main,
 )
-
-# ---------------------------------------------------------------------------
-# Unit: inline parsers
-# ---------------------------------------------------------------------------
-
-
-def test_versions_poetry_uv_lock_basic(tmp_path: Path) -> None:
-    lock = tmp_path / "poetry.lock"
-    lock.write_text(
-        '[[package]]\nname = "requests"\nversion = "2.31.0"\n'
-        '\n[[package]]\nname = "certifi"\nversion = "2024.2.2"\n',
-        encoding="utf-8",
-    )
-    result = _versions_poetry_uv_lock(lock)
-    assert "requests@2.31.0" in result
-    assert "certifi@2024.2.2" in result
-
-
-def test_versions_uv_lock_nested_dependencies_not_misattributed(tmp_path: Path) -> None:
-    """Nested [[package.dependencies]] name= lines must not overwrite the
-    top-level package's tracked name before its version is recorded."""
-    lock = tmp_path / "uv.lock"
-    lock.write_text(
-        "version = 1\n"
-        "\n"
-        "[[package]]\n"
-        'name = "requests"\n'
-        'version = "2.31.0"\n'
-        "\n"
-        "[[package.dependencies]]\n"
-        'name = "certifi"\n'
-        "\n"
-        "[[package.dependencies]]\n"
-        'name = "idna"\n'
-        "\n"
-        "[[package]]\n"
-        'name = "certifi"\n'
-        'version = "2024.2.2"\n',
-        encoding="utf-8",
-    )
-    result = _versions_poetry_uv_lock(lock)
-    assert result == {"requests@2.31.0", "certifi@2024.2.2"}
 
 
 def test_versions_go_sum_basic(tmp_path: Path) -> None:

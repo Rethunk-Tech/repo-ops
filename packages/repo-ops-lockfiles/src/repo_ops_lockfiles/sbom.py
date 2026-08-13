@@ -5,7 +5,7 @@ Reuses the existing lockfile parsers (parsers.py) to enumerate resolved
 name@version pairs, then emits a standards-valid SBOM document.
 
 Inline parsers supplement the shared set for lockfile types not yet exposed
-in parsers.py (uv.lock/poetry.lock, go.sum, Cargo.lock, requirements.txt).
+in parsers.py (go.sum, Cargo.lock, requirements.txt).
 
 Also includes container image pins (Dockerfile ``FROM`` / compose
 ``image:``, emitted as ``pkg:oci`` purls) and GitHub Actions ``uses:`` pins
@@ -52,6 +52,8 @@ from repo_ops_lockfiles.parsers import (
     versions_pdm_lock,
     versions_pipenv_lock,
     versions_pnpm_lock,
+    versions_poetry_lock,
+    versions_uv_lock,
     versions_yarn_lock,
 )
 
@@ -68,35 +70,6 @@ def _env_flag(name: str) -> bool:
 # ---------------------------------------------------------------------------
 # Inline parsers for lockfile types not exposed in parsers.py
 # ---------------------------------------------------------------------------
-
-
-def _versions_poetry_uv_lock(p: Path) -> set[str]:
-    """Parse uv.lock or poetry.lock (TOML top-level [[package]] entries) → name@version.
-
-    Both lockfiles are valid TOML with a top-level ``[[package]]``
-    array-of-tables. A prior line-based scanner tracked ``name``/``version``
-    across lines and reset only on a literal ``[[package]]`` marker; nested
-    ``[[package.dependencies]]`` sub-tables (present in uv.lock) also contain
-    bare ``name = "..."`` lines, which overwrote the tracked name before the
-    version was flushed and misattributed components. Parsing the TOML
-    structure directly and reading only the top-level ``package`` list
-    entries avoids this.
-    """
-    out: set[str] = set()
-    data = read_toml_file(p)
-    if not data:
-        return out
-    packages = data.get("package")
-    if not isinstance(packages, list):
-        return out
-    for entry in packages:
-        if not isinstance(entry, dict):
-            continue
-        name = entry.get("name")
-        ver = entry.get("version")
-        if isinstance(name, str) and name and isinstance(ver, str) and ver:
-            out.add(f"{name}@{ver}")
-    return out
 
 
 def _versions_go_sum(p: Path) -> set[str]:
@@ -319,11 +292,14 @@ def collect_components(
                     nm, ver = _split_nv(entry)
                     _add(nm, ver, _purl_pypi(nm, ver), "pypi")
 
-        # uv.lock / poetry.lock  (inline parser — TOML [[package]] blocks)
-        for lf_name in ("uv.lock", "poetry.lock"):
+        # uv.lock / poetry.lock (shared TOML parsers)
+        for lf_name, lock_parser in (
+            ("uv.lock", versions_uv_lock),
+            ("poetry.lock", versions_poetry_lock),
+        ):
             if lf_name not in fname_set:
                 continue
-            for entry in _safe_parse(dp / lf_name, _versions_poetry_uv_lock):
+            for entry in _safe_parse(dp / lf_name, lock_parser):
                 if "@" in entry:
                     nm, ver = _split_nv(entry)
                     _add(nm, ver, _purl_pypi(nm, ver), "pypi")
