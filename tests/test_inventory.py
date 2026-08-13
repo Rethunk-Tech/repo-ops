@@ -17,10 +17,16 @@ from repo_ops_inventory.counting import (
 
 def test_count_rust_and_python_minimal(tmp_path: Path):
     (tmp_path / "Cargo.toml").write_text('[package]\nname="x"\n[dependencies]\na = "1"')
-    (tmp_path / "Cargo.lock").write_text('[[package]]\nname = "a"\nversion = "1.0"\n')
+    (tmp_path / "Cargo.lock").write_text(
+        "[[package]]\n"
+        'name = "a"\n'
+        'version = "1.0"\n'
+        'dependencies = [{ name = "nested", version = "9.9" }]\n'
+    )
     d, v = count_rust(tmp_path)
     assert d == 1
     assert "a@1.0" in v
+    assert "nested@9.9" not in v
 
     (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = ["b"]')
     d2, _v2, tag = count_python(tmp_path)

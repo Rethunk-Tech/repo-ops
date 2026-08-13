@@ -26,6 +26,7 @@ from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
 from repo_ops_lockfiles.parsers import (
     parse_package_json_direct,
     versions_bun_lock,
+    versions_cargo_lock,
     versions_deno_lock,
     versions_npm_lock,
     versions_pdm_lock,
@@ -273,19 +274,7 @@ def count_rust(mdir: Path) -> tuple[int, set[str]]:
     versions: set[str] = set()
     lock = mdir / "Cargo.lock"
     if lock.exists():
-        name = ver = None
-        for line in lock.read_text(encoding="utf-8", errors="replace").splitlines():
-            s = line.strip()
-            if s == "[[package]]":
-                if name and ver:
-                    versions.add(f"{name}@{ver}")
-                name = ver = None
-            elif s.startswith("name = "):
-                name = s.split("=", 1)[1].strip().strip('"')
-            elif s.startswith("version = "):
-                ver = s.split("=", 1)[1].strip().strip('"')
-        if name and ver:
-            versions.add(f"{name}@{ver}")
+        versions = versions_cargo_lock(lock)
     return direct, versions
 
 
