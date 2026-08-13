@@ -27,6 +27,19 @@ def test_count_rust_and_python_minimal(tmp_path: Path):
     assert "pyproject" in tag
 
 
+def test_count_rust_workspace_dependencies(tmp_path: Path):
+    (tmp_path / "Cargo.toml").write_text(
+        "[workspace.dependencies]\n"
+        'workspace-only = "1"\n'
+        'shared = "1"\n'
+        "[dependencies]\n"
+        "shared = { workspace = true }\n"
+        'package-only = "1"\n'
+    )
+    direct, _versions = count_rust(tmp_path)
+    assert direct == 3
+
+
 def test_count_uv_lock_edges(tmp_path: Path):
     (tmp_path / "uv.lock").write_text(
         """[[package]]

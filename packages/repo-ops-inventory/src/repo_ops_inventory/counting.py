@@ -255,8 +255,12 @@ def count_rust(mdir: Path) -> tuple[int, set[str]]:
     if cargo.exists():
         d = read_toml_file(cargo)
         if d:
+            direct_names: set[str] = set()
             for k in ("dependencies", "dev-dependencies", "build-dependencies"):
-                direct += len(d.get(k) or {})
+                direct_names.update((d.get(k) or {}).keys())
+            workspace = d.get("workspace") or {}
+            direct_names.update((workspace.get("dependencies") or {}).keys())
+            direct = len(direct_names)
     versions: set[str] = set()
     lock = mdir / "Cargo.lock"
     if lock.exists():
