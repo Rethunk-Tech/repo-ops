@@ -1,5 +1,3 @@
-"""End-to-end coverage for Yarn checkout-specific upgrade flags."""
-
 from __future__ import annotations
 
 from pathlib import Path

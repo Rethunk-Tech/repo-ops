@@ -1,5 +1,3 @@
-"""End-to-end tests for per-checkout Bun configuration."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,7 +11,6 @@ from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 def test_fleet_run_resolves_bun_upgrade_flags_per_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Fleet workers use each checkout's Bun upgrade flags."""
     launcher = tmp_path / "launcher"
     repo_a = tmp_path / "repo-a"
     repo_b = tmp_path / "repo-b"

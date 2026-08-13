@@ -1,5 +1,3 @@
-"""End-to-end coverage for per-checkout Deno upgrade configuration."""
-
 from __future__ import annotations
 
 from pathlib import Path
