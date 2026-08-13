@@ -215,7 +215,7 @@ def _pdm_requirement_satisfied(version: str, requirement: str) -> bool:
             if match is None:
                 satisfied = False
                 break
-            operator = match.group(1) or "="
+            operator = match.group(1) or "^"
             raw_version = match.group(2)
             if raw_version == "*":
                 continue

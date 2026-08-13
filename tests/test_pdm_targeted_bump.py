@@ -8,7 +8,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops_models import Change, Workspace
-from repo_ops_py_pdm.pdm import apply_pdm, check_pdm
+from repo_ops_py_pdm.pdm import (
+    _pdm_requirement_satisfied,
+    apply_pdm,
+    check_pdm,
+)
 
 
 def _ws(tmp_path: Path) -> Workspace:
@@ -34,6 +38,12 @@ def _write_fixture(tmp_path: Path) -> None:
 
 def _fake_pdm_run(cmd, cwd, timeout=None):
     return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+
+def test_pdm_bare_version_requirement_is_caret_compatible() -> None:
+    assert _pdm_requirement_satisfied("2.31.0", "2.28.0") is True
+    assert _pdm_requirement_satisfied("3.0.0", "2.28.0") is False
+    assert _pdm_requirement_satisfied("2.31.0", "==2.28.0") is False
 
 
 def test_check_pdm_reports_latest_direct_dependency(tmp_path: Path) -> None:
