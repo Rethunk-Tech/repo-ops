@@ -353,13 +353,18 @@ def _apply_poetry_targeted_bumps(
         manifest_snapshot = _poetry_snapshot(manifest)
         lock_snapshot = _poetry_snapshot(lockfile)
         bumped = _poetry_bumped_requirement(candidate.from_ver, candidate.to)
-        proc = run(
-            ["poetry", "add", f"{candidate.name}@{bumped}"],
-            ws.path,
-            timeout=resolve_timeout_apply(),
-        )
-        lock_advanced = _poetry_snapshot(lockfile) != lock_snapshot
-        if proc.returncode == 0 and lock_advanced:
+        try:
+            proc = run(
+                ["poetry", "add", f"{candidate.name}@{bumped}"],
+                ws.path,
+                timeout=resolve_timeout_apply(),
+            )
+        except Exception:
+            _poetry_restore(manifest, manifest_snapshot)
+            _poetry_restore(lockfile, lock_snapshot)
+            raise
+        landed = _poetry_lock_versions(ws).get(candidate.name)
+        if proc.returncode == 0 and landed == candidate.to:
             continue
         _poetry_restore(manifest, manifest_snapshot)
         _poetry_restore(lockfile, lock_snapshot)
