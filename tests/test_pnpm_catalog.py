@@ -142,7 +142,7 @@ def test_catalog_drift_is_reported_when_outdated_omits_package(
 ) -> None:
     _seed(tmp_path)
     monkeypatch.delenv("REPO_OPS_PNPM_TARGETED_BUMP", raising=False)
-    monkeypatch.delenv("REPO_OPS_PNPM_UPDATE_LATEST", raising=False)
+    monkeypatch.setenv("REPO_OPS_PNPM_UPDATE_LATEST", "1")
 
     def fake_run(cmd, cwd, timeout=600, env=None):
         if cmd[:3] == ["pnpm", "view", "react"]:
@@ -154,6 +154,26 @@ def test_catalog_drift_is_reported_when_outdated_omits_package(
 
     assert changes == []
     assert behind == [Change("react", "18.2.0", "19.0.0")]
+
+
+def test_missing_catalog_row_skips_view_without_latest_flags(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _seed(tmp_path)
+    monkeypatch.delenv("REPO_OPS_PNPM_TARGETED_BUMP", raising=False)
+    monkeypatch.delenv("REPO_OPS_PNPM_UPDATE_LATEST", raising=False)
+    commands: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        commands.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 1, stdout="{}", stderr="")
+
+    with patch("repo_ops_js_pnpm.pnpm.run", side_effect=fake_run):
+        changes, behind = check_pnpm(_ws(tmp_path))
+
+    assert changes == []
+    assert behind == []
+    assert all(cmd[:2] != ["pnpm", "view"] for cmd in commands)
 
 
 def test_targeted_catalog_bump_updates_default_and_named_tables(

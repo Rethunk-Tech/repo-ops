@@ -311,6 +311,10 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
         for name, specs in catalog_specs.items():
             meta = outdated.get(name)
             if meta is None:
+                if not (
+                    _pnpm_update_latest_enabled(ws) or _pnpm_targeted_bump_enabled(ws)
+                ):
+                    continue
                 latest = _latest_published(ws, name)
                 if latest is None:
                     continue
