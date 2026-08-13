@@ -473,6 +473,26 @@ def add_upgrade_common_arguments(
         ),
     )
     pol.add_argument(
+        "--poetry-targeted-bump",
+        action="store_true",
+        dest="poetry_targeted_bump",
+        help=(
+            "Poetry only: opt in to targeted pyproject.toml constraint bumps for "
+            "direct dependencies that remain behind the latest release. "
+            "Sets REPO_OPS_POETRY_TARGETED_BUMP."
+        ),
+    )
+    pol.add_argument(
+        "--pdm-targeted-bump",
+        action="store_true",
+        dest="pdm_targeted_bump",
+        help=(
+            "PDM only: opt in to targeted pyproject.toml constraint bumps for "
+            "direct dependencies that remain behind the latest release. "
+            "Sets REPO_OPS_PDM_TARGETED_BUMP."
+        ),
+    )
+    pol.add_argument(
         "--yarn-jobs",
         type=int,
         default=None,
