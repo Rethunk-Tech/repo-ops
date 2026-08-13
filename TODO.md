@@ -27,15 +27,3 @@ Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher
 **Refs:** `tests/test_config_e2e.py`; `tests/test_js_manager_checkout_flags.py`; `repo_ops_js_yarn.yarn`; `repo_ops_js_bun.bun`; `repo_ops_js.deno`.
 
 **Acceptance:** Fleet e2e asserts divergent per-checkout resolution for yarn and bun update-latest/targeted-bump (and deno via fleet path, not only direct helpers).
-
----
-
-## Round 44 — Wave 1 audit carry-forwards
-
-### 44.1 Shared requirement parser
-
-Rust, poetry, and pdm each ship a ~70-line caret/range parser (`_cargo_requirement_satisfied`, `_poetry_requirement_satisfied`, `_pdm_requirement_satisfied`). Default-operator drift (`^` vs `=`) already happened once.
-
-**Refs:** `packages/repo-ops-rust/src/repo_ops_rust/rust.py`; `packages/repo-ops-py-poetry/src/repo_ops_py_poetry/poetry.py`; `packages/repo-ops-py-pdm/src/repo_ops_py_pdm/pdm.py`.
-
-**Acceptance:** One shared helper (or documented why Cargo vs PEP 440 must stay split) with a single default-operator contract and tests.

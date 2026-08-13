@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Shared targeted-bump requirement matcher:** Poetry, PDM, Cargo, Pipenv, and pip-tools use `repo_ops_core.requirement.requirement_satisfied` with an explicit default operator (`^` for Poetry/PDM/Cargo, `==` for Pipenv/pip-tools). Cargo stays on this helper rather than PEP 440 `SpecifierSet` because Cargo reqs are Cargo semver (caret is not PEP 440).
 - **CycloneDX SBOM default is spec 1.5:** `metadata.tools` is an object with `components[]` (`type`, `publisher`, `authors[]`, `name`, `version`). The 1.4 `tools[]` `{vendor,name,version}` shape and the 1.4-style `author` string are dropped; there is no 1.4 opt-in flag.
 - **Go hold ceilings use shared `hold_ceiling_spec`:** `go get` queries stay `<=v` plus the same three-component pad as Python managers.
 - **Dependabot JSON summary:** renamed `summary.excluded_repos` to the fleet-canonical `summary.excluded`; consumers must migrate to the new key.
