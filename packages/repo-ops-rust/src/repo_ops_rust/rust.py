@@ -301,7 +301,7 @@ def _cargo_version_parts(version: str) -> tuple[int, int, int]:
     if match is None:
         return (0, 0, 0)
     parts = [int(part) for part in match.group(0).split(".")]
-    padded = (parts + [0, 0, 0])[:3]
+    padded = [*parts, 0, 0, 0][:3]
     return padded[0], padded[1], padded[2]
 
 
@@ -334,7 +334,7 @@ def _cargo_requirement_satisfied(version: str, requirement: str) -> bool:
             if raw_version == "*":
                 continue
             specified = tuple(int(part) for part in raw_version.split("."))
-            parts = tuple((list(specified) + [0, 0, 0])[:3])
+            parts = tuple([*specified, 0, 0, 0][:3])
             if operator in ("^", "~"):
                 upper = (
                     _cargo_caret_upper_bound(parts)
@@ -348,16 +348,12 @@ def _cargo_requirement_satisfied(version: str, requirement: str) -> bool:
                 if candidate != parts:
                     satisfied = False
                     break
-            elif operator == ">=" and candidate < parts:
-                satisfied = False
-                break
-            elif operator == ">" and candidate <= parts:
-                satisfied = False
-                break
-            elif operator == "<=" and candidate > parts:
-                satisfied = False
-                break
-            elif operator == "<" and candidate >= parts:
+            elif (
+                (operator == ">=" and candidate < parts)
+                or (operator == ">" and candidate <= parts)
+                or (operator == "<=" and candidate > parts)
+                or (operator == "<" and candidate >= parts)
+            ):
                 satisfied = False
                 break
         if satisfied:
@@ -374,9 +370,10 @@ def _cargo_dependency_tables(
         if not isinstance(value, dict):
             continue
         child_path = (*path, name)
-        if name in {"dependencies", "dev-dependencies", "build-dependencies"}:
-            if not path or path[0] != "workspace":
-                tables.append((child_path, value))
+        if name in {"dependencies", "dev-dependencies", "build-dependencies"} and (
+            not path or path[0] != "workspace"
+        ):
+            tables.append((child_path, value))
         tables.extend(_cargo_dependency_tables(value, child_path))
     return tables
 
