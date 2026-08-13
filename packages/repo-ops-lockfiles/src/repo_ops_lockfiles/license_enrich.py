@@ -318,6 +318,34 @@ def _npm_registry_license(
     return _json_license(data)
 
 
+def _jsr_registry_license(
+    name: str, version: str, cache_dir: Path, *, allow_network: bool
+) -> str | None:
+    parts = name.removeprefix("@").split("/")
+    if len(parts) != 2 or not all(parts):
+        return None
+    scope, package = parts
+    encoded_scope = urllib.parse.quote(scope, safe="")
+    encoded_package = urllib.parse.quote(package, safe="")
+    encoded_version = urllib.parse.quote(version, safe="")
+    base_url = f"https://jsr.io/@{encoded_scope}/{encoded_package}/{encoded_version}"
+
+    meta = _registry_json(
+        f"{base_url}_meta.json", cache_dir, allow_network=allow_network
+    )
+    if isinstance(meta, dict) and "license" in meta:
+        return _json_license(meta)
+
+    for filename in ("jsr.json", "deno.json"):
+        data = _registry_json(
+            f"{base_url}/{filename}", cache_dir, allow_network=allow_network
+        )
+        license_id = _json_license(data)
+        if license_id:
+            return license_id
+    return None
+
+
 def _dist_info_license(root: Path, name: str, version: str) -> str | None:
     normalized_name = re.sub(r"[-_.]+", "-", name).lower()
     for venv_name in (".venv", "venv"):
@@ -414,6 +442,8 @@ def enrich_license(
             if local:
                 return local
         return _npm_registry_license(name, version, cache, allow_network=allow_network)
+    if ecosystem == "jsr":
+        return _jsr_registry_license(name, version, cache, allow_network=allow_network)
     if ecosystem in {"pypi", "python"}:
         if root is not None:
             local = _dist_info_license(root, name, version)
