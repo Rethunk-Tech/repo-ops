@@ -19,7 +19,8 @@ Scope (best-effort)
   (offline/``--offline``; skipped gracefully when ``cargo`` is unavailable).
 - Deno: deno.lock ``npm:`` specifiers resolved via the ``package.json``
   ``license`` field cached under DENO_DIR's npm registry mirror (offline);
-  ``jsr:``/``http(s):`` specifiers have no local license source.
+  ``jsr:`` specifiers are scanned as UNKNOWN and filled by enrichment;
+  ``http(s):`` specifiers are omitted.
 
 Limitations are documented in the output when unknown licenses are found.
 """
@@ -953,7 +954,8 @@ scope (best-effort):
   Rust: Cargo.lock crates resolved via `cargo metadata --offline` (requires
     a local cargo and an already-fetched dependency cache).
   Deno: deno.lock npm: specifiers resolved via DENO_DIR's npm registry cache
-    (offline); jsr:/http(s): specifiers have no local license source.
+    (offline); jsr: specifiers are scanned as UNKNOWN and filled when
+    enrichment is enabled; http(s): specifiers are omitted.
   --enrich-licenses optionally resolves UNKNOWN npm/PyPI/crates entries from
   local metadata and registry metadata cached under XDG_CACHE_HOME.
   --enrich-licenses-local performs the same resolution without network access.
