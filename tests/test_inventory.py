@@ -570,6 +570,31 @@ def test_inventory_jobs_flag_accepted(tmp_path: Path) -> None:
     assert inventory_main([str(tmp_path), "--flat", "--jobs", "1", "--json"]) == 0
 
 
+def test_count_python_pipfile_pdm_requirements_in_and_uv_lock(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "Pipfile").write_text(
+        '[packages]\nflask = "*"\nrequests = "*"\n[dev-packages]\npytest = "*"\n'
+    )
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.pdm.dev-dependencies]\ndev = ["ruff", "mypy"]\ntest = ["pytest"]\n'
+    )
+    (tmp_path / "requirements.in").write_text(
+        "httpx\n\n# local-only note\n-r requirements-base.in\nrich>=13\n"
+    )
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "httpx"\nversion = "0.28.1"\n'
+    )
+
+    direct, versions, tag = count_python(tmp_path)
+
+    assert direct == 8
+    assert versions == {"httpx@0.28.1"}
+    assert "pipfile" in tag
+    assert "req" in tag
+    assert "uv" in tag
+
+
 # ---------- count_python pdm/pipenv (F175) + deno jsonc (F176) ----------
 
 

@@ -5,7 +5,8 @@ Usage: repo-ops inventory [root_dir ...]
 Defaults: standard local roots from constants.DEFAULT_ROOTS
 
 Columns:
-  direct    Declared in manifest(s) (package.json / go.mod / Cargo.toml / pyproject)
+  direct    Declared in manifest(s) (package.json / go.mod / Cargo.toml /
+            pyproject / Pipfile / requirements.in)
   versions  Distinct name@version pairs reachable across lockfiles + build graph.
             For Go uses `go mod graph` (all reachable versions, NOT just MVS-selected).
             For Node parses yarn/npm/pnpm/bun lockfiles for every resolved version.

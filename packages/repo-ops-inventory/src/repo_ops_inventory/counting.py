@@ -31,6 +31,8 @@ from repo_ops_lockfiles.parsers import (
     versions_pdm_lock,
     versions_pipenv_lock,
     versions_pnpm_lock,
+    versions_poetry_lock,
+    versions_uv_lock,
     versions_yarn_lock,
 )
 
@@ -127,7 +129,9 @@ def count_dep_edges(proj: Path) -> int:
         elif "poetry.lock" in names:
             total += _count_poetry_lock_edges(mdir / "poetry.lock")
         elif names & {
+            "Pipfile",
             "pyproject.toml",
+            "requirements.in",
             "requirements.txt",
             "requirements-dev.txt",
             "requirements-test.txt",
@@ -302,7 +306,20 @@ def count_python(mdir: Path) -> tuple[int, set[str], str]:
             direct += len(poetry.get("dev-dependencies") or {})
             for group in (poetry.get("group") or {}).values():
                 direct += len((group or {}).get("dependencies") or {})
+            pdm = (d.get("tool") or {}).get("pdm") or {}
+            for group in (pdm.get("dev-dependencies") or {}).values():
+                direct += len(group or [])
+    pipfile = mdir / "Pipfile"
+    if pipfile.exists():
+        src_tags.append("pipfile")
+        d = read_toml_file(pipfile)
+        if d:
+            for section in ("packages", "dev-packages"):
+                table = d.get(section)
+                if isinstance(table, dict):
+                    direct += len(table)
     for reqname in (
+        "requirements.in",
         "requirements.txt",
         "requirements-dev.txt",
         "requirements-test.txt",
@@ -323,27 +340,18 @@ def count_python(mdir: Path) -> tuple[int, set[str], str]:
         if not lf.exists():
             continue
         src_tags.append(lockname.split(".")[0])
-        name = ver = None
-        for line in lf.read_text(encoding="utf-8", errors="replace").splitlines():
-            s = line.strip()
-            if s == "[[package]]":
-                if name and ver:
-                    versions.add(f"{name}@{ver}")
-                name = ver = None
-            elif s.startswith("name ="):
-                name = s.split("=", 1)[1].strip().strip('"')
-            elif s.startswith("version ="):
-                ver = s.split("=", 1)[1].strip().strip('"')
-        if name and ver:
-            versions.add(f"{name}@{ver}")
-        break
-    # pdm.lock (only when uv/poetry lock not already found)
+        versions = (
+            versions_uv_lock(lf) if lockname == "uv.lock" else versions_poetry_lock(lf)
+        )
+        if versions:
+            break
+    # pdm.lock when uv/poetry produced no versions
     if not versions:
         pdm_lock = mdir / "pdm.lock"
         if pdm_lock.exists():
             src_tags.append("pdm")
             versions = versions_pdm_lock(pdm_lock)
-    # Pipfile.lock (only when no other lockfile found)
+    # Pipfile.lock when no earlier lock produced versions
     if not versions:
         pipfile_lock = mdir / "Pipfile.lock"
         if pipfile_lock.exists():
@@ -398,15 +406,26 @@ def _count_pyproject_direct_edges(pyp: Path) -> int:
     direct += len(poetry.get("dev-dependencies") or {})
     for group in (poetry.get("group") or {}).values():
         direct += len((group or {}).get("dependencies") or {})
+    pdm = (d.get("tool") or {}).get("pdm") or {}
+    for group in (pdm.get("dev-dependencies") or {}).values():
+        direct += len(group or [])
     return direct
 
 
 def _count_python_manifest_edges(mdir: Path, names: set[str]) -> int:
     """Declared deps when no lockfile is present in this directory."""
     total = 0
+    if "Pipfile" in names:
+        d = read_toml_file(mdir / "Pipfile")
+        if d:
+            for section in ("packages", "dev-packages"):
+                table = d.get(section)
+                if isinstance(table, dict):
+                    total += len(table)
     if "pyproject.toml" in names:
         total += _count_pyproject_direct_edges(mdir / "pyproject.toml")
     for reqname in (
+        "requirements.in",
         "requirements.txt",
         "requirements-dev.txt",
         "requirements-test.txt",
@@ -756,7 +775,10 @@ def _python_edges_for_mdir(mdir: Path) -> int:
     names: set[str] = set()
     if (mdir / "pyproject.toml").exists():
         names.add("pyproject.toml")
+    if (mdir / "Pipfile").exists():
+        names.add("Pipfile")
     for reqname in (
+        "requirements.in",
         "requirements.txt",
         "requirements-dev.txt",
         "requirements-test.txt",
