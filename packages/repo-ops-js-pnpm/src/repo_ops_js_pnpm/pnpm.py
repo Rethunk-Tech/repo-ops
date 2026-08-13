@@ -307,7 +307,6 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
     catalog_specs = _catalog_specs(ws)
     if catalog_specs:
         catalog_names = set(catalog_specs)
-        changes[:] = [c for c in changes if c.name not in catalog_names]
         behind_latest[:] = [c for c in behind_latest if c.name not in catalog_names]
         for name, specs in catalog_specs.items():
             meta = outdated.get(name)
@@ -331,9 +330,16 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
             cur, wanted, latest = meta
             target = (
                 latest
-                if latest not in ("?", "") and cur != latest
+                if (
+                    latest not in ("?", "")
+                    and cur != latest
+                    and (
+                        wanted in ("?", "")
+                        or _catalog_version_key(latest) > _catalog_version_key(wanted)
+                    )
+                )
                 else wanted
-                if wanted not in ("?", "") and cur != wanted
+                if (latest in ("?", "") and wanted not in ("?", "") and cur != wanted)
                 else ""
             )
             if target:

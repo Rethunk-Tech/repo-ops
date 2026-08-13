@@ -84,7 +84,7 @@ catalogs:
     with patch("repo_ops_js_pnpm.pnpm.run", side_effect=fake_run):
         changes, behind = check_pnpm(_ws(tmp_path))
 
-    assert changes == []
+    assert changes == [Change("react", "18.2.0", "18.3.0")]
     assert behind == [Change("react", "18.2.0", "19.0.0")]
 
 
@@ -117,8 +117,24 @@ def test_catalog_drift_is_behind_latest_without_targeted_bump(
     with patch("repo_ops_js_pnpm.pnpm.run", side_effect=fake_run):
         changes, behind = check_pnpm(_ws(tmp_path))
 
-    assert changes == []
+    assert changes == [Change("react", "18.2.0", "18.3.0")]
     assert behind == [Change("react", "18.2.0", "19.0.0")]
+
+
+def test_catalog_drift_does_not_double_count_in_range_bump(tmp_path: Path) -> None:
+    _seed(tmp_path)
+    outdated = json.dumps(
+        {"react": {"current": "18.2.0", "wanted": "18.3.0", "latest": "18.3.0"}}
+    )
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        return subprocess.CompletedProcess(cmd, 1, stdout=outdated, stderr="")
+
+    with patch("repo_ops_js_pnpm.pnpm.run", side_effect=fake_run):
+        changes, behind = check_pnpm(_ws(tmp_path))
+
+    assert changes == [Change("react", "18.2.0", "18.3.0")]
+    assert behind == []
 
 
 def test_catalog_drift_is_reported_when_outdated_omits_package(
