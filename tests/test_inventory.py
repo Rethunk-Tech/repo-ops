@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from repo_ops_inventory.counting import (
+    _python_edges_for_mdir,
     count_dep_edges,
     count_installed_node,
     count_python,
@@ -56,6 +57,26 @@ dependencies = [
 """
     )
     assert count_dep_edges(tmp_path) == 2
+
+
+def test_count_pdm_lock_edges(tmp_path: Path):
+    (tmp_path / "pdm.lock").write_text(
+        '[[package]]\nname = "requests"\nversion = "2.32.0"\n'
+    )
+    _direct, versions, _tag = count_python(tmp_path)
+    assert versions == {"requests@2.32.0"}
+    assert count_dep_edges(tmp_path) == len(versions)
+    assert _python_edges_for_mdir(tmp_path) == len(versions)
+
+
+def test_count_pipenv_lock_edges(tmp_path: Path):
+    (tmp_path / "Pipfile.lock").write_text(
+        '{"default": {"flask": {"version": "==3.0.0"}}, "develop": {}}'
+    )
+    _direct, versions, _tag = count_python(tmp_path)
+    assert versions == {"flask@3.0.0"}
+    assert count_dep_edges(tmp_path) == len(versions)
+    assert _python_edges_for_mdir(tmp_path) == len(versions)
 
 
 def test_count_pyproject_edges_without_lock(tmp_path: Path):

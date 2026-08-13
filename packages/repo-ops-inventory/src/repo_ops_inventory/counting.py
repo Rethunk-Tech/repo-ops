@@ -128,6 +128,10 @@ def count_dep_edges(proj: Path) -> int:
             total += _count_uv_lock_edges(mdir / "uv.lock")
         elif "poetry.lock" in names:
             total += _count_poetry_lock_edges(mdir / "poetry.lock")
+        elif "pdm.lock" in names:
+            total += len(versions_pdm_lock(mdir / "pdm.lock"))
+        elif "Pipfile.lock" in names:
+            total += len(versions_pipenv_lock(mdir / "Pipfile.lock"))
         elif names & {
             "Pipfile",
             "pyproject.toml",
@@ -772,6 +776,10 @@ def _python_edges_for_mdir(mdir: Path) -> int:
         return _count_uv_lock_edges(mdir / "uv.lock")
     if (mdir / "poetry.lock").exists():
         return _count_poetry_lock_edges(mdir / "poetry.lock")
+    if (mdir / "pdm.lock").exists():
+        return len(versions_pdm_lock(mdir / "pdm.lock"))
+    if (mdir / "Pipfile.lock").exists():
+        return len(versions_pipenv_lock(mdir / "Pipfile.lock"))
     names: set[str] = set()
     if (mdir / "pyproject.toml").exists():
         names.add("pyproject.toml")
