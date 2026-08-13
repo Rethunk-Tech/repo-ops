@@ -587,7 +587,7 @@ def check_rust(
     if os.environ.get("REPO_OPS_RUST_TARGETED_BUMP") != "1":
         return in_range
     behind = _cargo_latest_direct_changes(ws)
-    return in_range, _filter_held_rust_changes(ws, behind)
+    return in_range, behind
 
 
 def apply_rust(ws: Workspace) -> list[Change] | None:
