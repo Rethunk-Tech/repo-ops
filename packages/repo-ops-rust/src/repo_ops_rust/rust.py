@@ -418,8 +418,13 @@ def _cargo_manifest_dependencies(
     return dependencies
 
 
-def _cargo_latest_direct_changes(ws: Workspace) -> list[Change]:
-    manifest = ws.path / "Cargo.toml"
+@cache
+def _cargo_latest_direct_changes_cached(
+    workspace_path: str,
+    manifest_mtime_ns: int,
+    manifest_size: int,
+) -> tuple[Change, ...]:
+    manifest = Path(workspace_path) / "Cargo.toml"
     dependencies = _cargo_manifest_dependencies(manifest)
     changes: list[Change] = []
     for crate_name, entries in sorted(dependencies.items()):
@@ -432,7 +437,19 @@ def _cargo_latest_direct_changes(ws: Workspace) -> list[Change]:
         ):
             continue
         changes.append(Change(crate_name, entries[0][1], latest))
-    return changes
+    return tuple(changes)
+
+
+def _cargo_latest_direct_changes(ws: Workspace) -> list[Change]:
+    manifest = (ws.path / "Cargo.toml").resolve()
+    stat = manifest.stat()
+    return list(
+        _cargo_latest_direct_changes_cached(
+            str(ws.path.resolve()),
+            stat.st_mtime_ns,
+            stat.st_size,
+        )
+    )
 
 
 def _cargo_dependency_section(header: str) -> bool:
