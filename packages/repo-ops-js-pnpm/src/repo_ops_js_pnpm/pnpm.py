@@ -179,7 +179,11 @@ def _rewrite_catalog_package(ws: Workspace, package: str, target: str) -> bool:
         value = table.get(package)
         if not isinstance(value, str) or _is_catalog_protocol(value.strip()):
             continue
-        prefix = value[:1] if value.startswith(("^", "~")) else ""
+        prefix = (
+            value[:1]
+            if value.startswith(("^", "~")) and not target.startswith(("<", ">", "="))
+            else ""
+        )
         replacement = f"{prefix}{target}" if prefix else target
         if value != replacement:
             table[package] = replacement
@@ -401,8 +405,26 @@ def targeted_bump_behind(
             if held_rule is None and not audit_target:
                 release_unheld_pin(ws.path, change.name)
             install = run(["pnpm", "install"], ws.path, timeout=TIMEOUT_APPLY)
+            landed: str | None = None
             if install.returncode == 0:
-                applied.append(Change(change.name, change.from_ver, target))
+                landed = resolved_version_from_node_modules(ws.path, change.name)
+            advanced = False
+            if landed:
+                try:
+                    advanced = semver_tuple(landed) > semver_tuple(
+                        normalize_version(change.from_ver)
+                    )
+                except (TypeError, ValueError):
+                    advanced = landed != normalize_version(change.from_ver)
+            if landed and advanced:
+                resolved_change = Change(change.name, change.from_ver, landed)
+                try:
+                    assert_targets_resolved(ws, [resolved_change], manager="pnpm")
+                except RuntimeError:
+                    restore_workspace_snapshot(ws.path, snap, "pnpm")
+                    still_behind.append(change)
+                else:
+                    applied.append(resolved_change)
             else:
                 restore_workspace_snapshot(ws.path, snap, "pnpm")
                 still_behind.append(change)
