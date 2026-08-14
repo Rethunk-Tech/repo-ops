@@ -40,7 +40,6 @@ When no trailing `root_dir` arguments are passed, every subcommand except `insta
 - `/usr/local/src`
 - `~/Projects`
 - `~/Documents`
-- `~/bastion-ai-helpers`
 - `~/Apps`
 
 Pass explicit checkout paths to limit scope. Use `--flat` when a root is a single repo (skip org/proj two-level walk).

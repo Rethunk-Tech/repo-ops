@@ -48,7 +48,6 @@ DEFAULT_ROOTS = [
     "/usr/local/src",
     str(Path.home() / "Projects"),
     str(Path.home() / "Documents"),
-    str(Path.home() / "bastion-ai-helpers"),
     str(Path.home() / "Apps"),
 ]
 
