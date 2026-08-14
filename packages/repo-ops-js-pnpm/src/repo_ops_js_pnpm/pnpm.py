@@ -36,12 +36,26 @@ from repo_ops_lockfiles.snapshots import (
     snapshot_workspace_files,
 )
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.workflow_uses import _yaml_loader
+from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
 _PNPM_UPDATE_LATEST_ENV = "REPO_OPS_PNPM_UPDATE_LATEST"
 _PNPM_TARGETED_BUMP_ENV = "REPO_OPS_PNPM_TARGETED_BUMP"
 _TRUE_VALUES = ("1", "true", "yes", "on")
+
+
+def _yaml_loader() -> YAML:
+    yaml = YAML(typ="rt")
+    yaml.preserve_quotes = True
+    yaml.width = 4096
+    # Round-trip mode preserves most formatting on a no-op load+dump, but
+    # block-sequence indent is a dump-time setting, not inferred from the
+    # loaded document — without this, rewriting pnpm-workspace.yaml would
+    # reformat every block sequence to ruamel's default (offset=0) instead
+    # of leaving it untouched.
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    return yaml
+
 
 # Audit version overrides: package → advisory-safe version to use instead of @latest.
 # Populated by repo_ops_audit.audit.apply_remediations before the orchestration apply
