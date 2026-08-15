@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -16,17 +15,18 @@ import pytest
 import repo_ops_go.go as go_mod
 import repo_ops_upgrade.run as run_mod
 import repo_ops_upgrade.verify as verify_mod
-from repo_ops._register import register_all
+from repo_ops_container import container as container_mod
 from repo_ops_core.config import apply_config_to_env, resolve_setting, set_ambient_env
-from repo_ops_core.constants import (
-    resolve_find_timeout,
-    resolve_git_timeout,
-    resolve_timeout_apply,
-    resolve_timeout_check,
-    resolve_timeout_verify,
-)
+from repo_ops_core.constants import resolve_timeout_check
+from repo_ops_js.deno import _deno_targeted_bump_enabled, _deno_update_latest_enabled
+from repo_ops_js_bun import bun as bun_mod
+from repo_ops_js_npm import npm as npm_mod
+from repo_ops_js_pnpm import pnpm as pnpm_mod
+from repo_ops_js_yarn import yarn as yarn_mod
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import commit_agent_cursor
+from repo_ops_upgrade import precommit as precommit_mod
+from repo_ops_upgrade import submodules as submodules_mod
 
 # ---------------------------------------------------------------------------
 # apply_config_to_env unit tests
@@ -272,43 +272,51 @@ def _patch_fleet_discovery(
     )
 
 
-def test_fleet_run_resolves_actions_config_per_checkout(
+def test_fleet_run_resolves_config_per_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Fleet runs use each bundle's action settings instead of the launch config."""
+    """Fleet runs resolve each bundle's own checkout config, not the launcher's
+    — true both for a setting threaded through a scanner's kwargs
+    (actions_lint_level) and one read via a resolver call inside
+    process_workspace (timeout_check), the two shapes config resolution takes
+    across the codebase."""
     launcher = tmp_path / "launcher"
     repo_a = tmp_path / "repo-a"
     repo_b = tmp_path / "repo-b"
     _write_repo_configs(
         {
             launcher: '[tool.repo-ops]\nactions_lint_level = "launcher"\n'
-            'actions_policy_level = "launcher"\n',
-            repo_a: '[tool.repo-ops]\nactions_lint_level = "block"\n'
-            'actions_policy_level = "warn"\n',
-            repo_b: '[tool.repo-ops]\nactions_lint_level = "off"\n'
-            'actions_policy_level = "report"\n',
+            "timeout_check = 99\n",
+            repo_a: '[tool.repo-ops]\nactions_lint_level = "block"\ntimeout_check = 11\n',
+            repo_b: '[tool.repo-ops]\nactions_lint_level = "off"\ntimeout_check = 21\n',
         }
     )
     workspaces, bundles = _fleet_bundles((repo_a, repo_b), "actions", "actions")
-    captured: dict[Path, tuple[object, object]] = {}
+    lint_captured: dict[Path, object] = {}
+    timeout_captured: dict[Path, int] = {}
 
     monkeypatch.chdir(launcher)
     monkeypatch.delenv("REPO_OPS_ACTIONS_LINT_LEVEL", raising=False)
-    monkeypatch.delenv("REPO_OPS_ACTIONS_POLICY_LEVEL", raising=False)
+    monkeypatch.delenv("REPO_OPS_TIMEOUT_CHECK", raising=False)
     _patch_fleet_discovery(monkeypatch, workspaces, bundles)
     monkeypatch.setattr(
         run_mod.workspace_discovery,
         "merge_action_only_bundles",
         lambda grouped, roots, follow_symlinks=False: grouped,
     )
+
+    def capture_timeout(workspace_result: WorkspaceResult, **kwargs: object):
+        timeout_captured[workspace_result.workspace.git_repo] = resolve_timeout_check()
+        return workspace_result
+
     monkeypatch.setattr(
         run_mod.orchestration,
         "process_workspace",
-        lambda workspace_result, **kwargs: workspace_result,
+        capture_timeout,
     )
 
     def fake_scan(repo_path: Path, **kwargs: object) -> tuple[list, int]:
-        captured[repo_path] = (kwargs["lint_level"], kwargs["policy_level"])
+        lint_captured[repo_path] = kwargs["lint_level"]
         return [], 0
 
     monkeypatch.setattr(run_mod.actions, "scan_actions", fake_scan)
@@ -319,70 +327,144 @@ def test_fleet_run_resolves_actions_config_per_checkout(
     )
 
     assert rc == 0
-    assert captured == {
-        repo_a: ("block", "warn"),
-        repo_b: ("off", "report"),
-    }
+    assert lint_captured == {repo_a: "block", repo_b: "off"}
+    assert timeout_captured == {repo_a: 11, repo_b: 21}
 
 
-def test_default_sweep_and_conservative_override_per_checkout_upgrade_flags(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def _bun_flags(workspace: Workspace) -> tuple[bool, ...]:
+    return (
+        bun_mod._bun_update_latest_enabled(workspace),
+        bun_mod._bun_targeted_bump_enabled(workspace),
+    )
+
+
+def _deno_flags(workspace: Workspace) -> tuple[bool, ...]:
+    return (
+        _deno_update_latest_enabled(workspace),
+        _deno_targeted_bump_enabled(workspace),
+    )
+
+
+def _yarn_flags(workspace: Workspace) -> tuple[bool, ...]:
+    return (
+        yarn_mod._yarn_update_latest_enabled(workspace),
+        yarn_mod._yarn_targeted_bump_enabled(workspace),
+    )
+
+
+def _cross_ecosystem_sweep_flags(workspace: Workspace) -> tuple[bool, ...]:
+    return (
+        pnpm_mod._pnpm_update_latest_enabled(workspace),
+        npm_mod._npm_targeted_bump_enabled(workspace),
+        container_mod._container_flag_enabled(
+            "container_update_latest", "REPO_OPS_CONTAINER_UPDATE_LATEST", workspace
+        ),
+        container_mod._container_flag_enabled(
+            "container_refresh_sha", "REPO_OPS_CONTAINER_REFRESH_SHA", workspace
+        ),
+        precommit_mod._precommit_update_latest_enabled(workspace),
+        precommit_mod._precommit_refresh_sha_enabled(workspace),
+        submodules_mod._submodule_update_latest_enabled(workspace.git_repo),
+        submodules_mod._submodule_refresh_sha_enabled(workspace.git_repo),
+    )
+
+
+_SWEEP_FLAG_CASES = [
+    pytest.param(
+        "node",
+        "bun",
+        ("bun_update_latest", "bun_targeted_bump"),
+        ("REPO_OPS_BUN_UPDATE_LATEST", "REPO_OPS_BUN_TARGETED_BUMP"),
+        _bun_flags,
+        id="bun",
+    ),
+    pytest.param(
+        "deno",
+        "deno",
+        ("deno_update_latest", "deno_targeted_bump"),
+        ("REPO_OPS_DENO_UPDATE_LATEST", "REPO_OPS_DENO_TARGETED_BUMP"),
+        _deno_flags,
+        id="deno",
+    ),
+    pytest.param(
+        "node",
+        "yarn",
+        ("yarn_update_latest", "yarn_targeted_bump"),
+        ("REPO_OPS_YARN_UPDATE_LATEST", "REPO_OPS_YARN_TARGETED_BUMP"),
+        _yarn_flags,
+        id="yarn",
+    ),
+    pytest.param(
+        "node",
+        "pnpm",
+        (
+            "pnpm_update_latest",
+            "npm_targeted_bump",
+            "container_update_latest",
+            "container_refresh_sha",
+            "precommit_update_latest",
+            "precommit_refresh_sha",
+            "submodule_update_latest",
+            "submodule_refresh_sha",
+        ),
+        (
+            "REPO_OPS_PNPM_UPDATE_LATEST",
+            "REPO_OPS_NPM_TARGETED_BUMP",
+            "REPO_OPS_CONTAINER_UPDATE_LATEST",
+            "REPO_OPS_CONTAINER_REFRESH_SHA",
+            "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
+            "REPO_OPS_PRECOMMIT_REFRESH_SHA",
+            "REPO_OPS_SUBMODULE_UPDATE_LATEST",
+            "REPO_OPS_SUBMODULE_REFRESH_SHA",
+        ),
+        _cross_ecosystem_sweep_flags,
+        id="cross-ecosystem-sweep",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "ecosystem,manager,config_keys,env_vars,resolve", _SWEEP_FLAG_CASES
+)
+def test_default_sweep_and_conservative_override_per_checkout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    ecosystem: str,
+    manager: str,
+    config_keys: tuple[str, ...],
+    env_vars: tuple[str, ...],
+    resolve,
 ) -> None:
-    """#136: the default sweep no longer force-writes _SWEEP_ENV_VARS to "1" —
+    """#136: the default sweep no longer force-writes these flags to "1" —
     each key's settings-table default is already "1", so per-checkout
-    [tool.repo-ops] settings for these keys are genuinely respected (repo_a's
-    explicit ``true``s and repo_b's explicit ``false``s both resolve as
-    configured). ``--conservative`` still writes an explicit CLI-tier "0" for
-    every key, which outranks per-checkout config unconditionally — both repos
-    resolve to all-False under it regardless of their own config."""
-    from repo_ops_container import container as container_mod
-    from repo_ops_js_npm import npm as npm_mod
-    from repo_ops_js_pnpm import pnpm as pnpm_mod
-    from repo_ops_upgrade import precommit as precommit_mod
-    from repo_ops_upgrade import submodules as submodules_mod
-
+    [tool.repo-ops] settings are genuinely respected (repo_a's explicit
+    ``true``s and repo_b's explicit ``false``s both resolve as configured).
+    ``--conservative`` still writes an explicit CLI-tier "0" for every key,
+    which outranks per-checkout config unconditionally — both repos resolve
+    to all-False under it regardless of their own config."""
     launcher = tmp_path / "launcher"
     repo_a = tmp_path / "repo-a"
     repo_b = tmp_path / "repo-b"
     for path in (launcher, repo_a, repo_b):
         path.mkdir()
     (launcher / "pyproject.toml").write_text(
-        "[tool.repo-ops]\n"
-        "pnpm_update_latest = false\n"
-        "npm_targeted_bump = false\n"
-        "container_refresh_sha = false\n",
+        "[tool.repo-ops]\n" + "".join(f"{key} = false\n" for key in config_keys),
         encoding="utf-8",
     )
     (repo_a / "pyproject.toml").write_text(
-        "[tool.repo-ops]\n"
-        "pnpm_update_latest = true\n"
-        "npm_targeted_bump = true\n"
-        "container_update_latest = true\n"
-        "container_refresh_sha = true\n"
-        "precommit_update_latest = true\n"
-        "precommit_refresh_sha = true\n"
-        "submodule_update_latest = true\n"
-        "submodule_refresh_sha = true\n",
+        "[tool.repo-ops]\n" + "".join(f"{key} = true\n" for key in config_keys),
         encoding="utf-8",
     )
     (repo_b / "pyproject.toml").write_text(
-        "[tool.repo-ops]\n"
-        "pnpm_update_latest = false\n"
-        "npm_targeted_bump = false\n"
-        "container_update_latest = false\n"
-        "container_refresh_sha = false\n"
-        "precommit_update_latest = false\n"
-        "precommit_refresh_sha = false\n"
-        "submodule_update_latest = false\n"
-        "submodule_refresh_sha = false\n",
+        "[tool.repo-ops]\n" + "".join(f"{key} = false\n" for key in config_keys),
         encoding="utf-8",
     )
 
     workspaces = [
         Workspace(
             path=path,
-            ecosystem="node",
-            manager="pnpm",
+            ecosystem=ecosystem,
+            manager=manager,
             git_repo=path,
             label=path.name,
         )
@@ -400,16 +482,7 @@ def test_default_sweep_and_conservative_override_per_checkout_upgrade_flags(
 
     monkeypatch.chdir(launcher)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    for env_var in (
-        "REPO_OPS_PNPM_UPDATE_LATEST",
-        "REPO_OPS_NPM_TARGETED_BUMP",
-        "REPO_OPS_CONTAINER_UPDATE_LATEST",
-        "REPO_OPS_CONTAINER_REFRESH_SHA",
-        "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
-        "REPO_OPS_PRECOMMIT_REFRESH_SHA",
-        "REPO_OPS_SUBMODULE_UPDATE_LATEST",
-        "REPO_OPS_SUBMODULE_REFRESH_SHA",
-    ):
+    for env_var in env_vars:
         monkeypatch.delenv(env_var, raising=False)
     monkeypatch.setattr(
         run_mod.workspace_discovery,
@@ -423,24 +496,8 @@ def test_default_sweep_and_conservative_override_per_checkout_upgrade_flags(
     )
 
     def capture_flags(workspace_result: WorkspaceResult, **kwargs: object):
-        workspace = workspace_result.workspace
-        captured[workspace.git_repo] = (
-            pnpm_mod._pnpm_update_latest_enabled(workspace),
-            npm_mod._npm_targeted_bump_enabled(workspace),
-            container_mod._container_flag_enabled(
-                "container_update_latest",
-                "REPO_OPS_CONTAINER_UPDATE_LATEST",
-                workspace,
-            ),
-            container_mod._container_flag_enabled(
-                "container_refresh_sha",
-                "REPO_OPS_CONTAINER_REFRESH_SHA",
-                workspace,
-            ),
-            precommit_mod._precommit_update_latest_enabled(workspace),
-            precommit_mod._precommit_refresh_sha_enabled(workspace),
-            submodules_mod._submodule_update_latest_enabled(workspace.git_repo),
-            submodules_mod._submodule_refresh_sha_enabled(workspace.git_repo),
+        captured[workspace_result.workspace.git_repo] = resolve(
+            workspace_result.workspace
         )
         return workspace_result
 
@@ -470,8 +527,8 @@ def test_default_sweep_and_conservative_override_per_checkout_upgrade_flags(
     )
     assert rc == 0
     assert captured == {
-        repo_a: (True, True, True, True, True, True, True, True),
-        repo_b: (False, False, False, False, False, False, False, False),
+        repo_a: tuple(True for _ in config_keys),
+        repo_b: tuple(False for _ in config_keys),
     }
 
     captured.clear()
@@ -489,8 +546,8 @@ def test_default_sweep_and_conservative_override_per_checkout_upgrade_flags(
     )
     assert rc == 0
     assert captured == {
-        repo_a: (False, False, False, False, False, False, False, False),
-        repo_b: (False, False, False, False, False, False, False, False),
+        repo_a: tuple(False for _ in config_keys),
+        repo_b: tuple(False for _ in config_keys),
     }
 
 
@@ -569,130 +626,6 @@ def test_default_sweep_respects_checkout_config_over_global(
     assert captured == {"resolved": False, "ambient_has_cli_key": False}
 
 
-def test_fleet_run_resolves_timeouts_per_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Fleet workers use each checkout's timeout settings."""
-    launcher = tmp_path / "launcher"
-    repo_a = tmp_path / "repo-a"
-    repo_b = tmp_path / "repo-b"
-    _write_repo_configs(
-        {
-            launcher: "[tool.repo-ops]\ntimeout_check = 99\n",
-            repo_a: "[tool.repo-ops]\n"
-            "timeout_check = 11\n"
-            "timeout_apply = 12\n"
-            "timeout_verify = 13\n"
-            "find_timeout = 14\n"
-            "git_timeout = 15\n",
-            repo_b: "[tool.repo-ops]\n"
-            "timeout_check = 21\n"
-            "timeout_apply = 22\n"
-            "timeout_verify = 23\n"
-            "find_timeout = 24\n"
-            "git_timeout = 25\n",
-        }
-    )
-    workspaces, bundles = _fleet_bundles((repo_a, repo_b), "actions", "actions")
-    captured: dict[Path, tuple[int, int, int, float, float]] = {}
-
-    monkeypatch.chdir(launcher)
-    for env_var in (
-        "REPO_OPS_TIMEOUT_CHECK",
-        "REPO_OPS_TIMEOUT_APPLY",
-        "REPO_OPS_TIMEOUT_VERIFY",
-        "REPO_OPS_FIND_TIMEOUT",
-        "REPO_OPS_GIT_TIMEOUT",
-    ):
-        monkeypatch.delenv(env_var, raising=False)
-    _patch_fleet_discovery(monkeypatch, workspaces, bundles)
-
-    def capture_timeouts(workspace_result: WorkspaceResult, **kwargs: object):
-        workspace = workspace_result.workspace
-        captured[workspace.git_repo] = (
-            resolve_timeout_check(),
-            resolve_timeout_apply(),
-            resolve_timeout_verify(),
-            resolve_find_timeout(),
-            resolve_git_timeout(),
-        )
-        return workspace_result
-
-    monkeypatch.setattr(
-        run_mod.orchestration,
-        "process_workspace",
-        capture_timeouts,
-    )
-
-    rc = run_mod.run_upgrade(
-        apply=False,
-        argv=["--flat", "--json", "--skip-actions", str(repo_a), str(repo_b)],
-    )
-
-    assert rc == 0
-    assert captured == {
-        repo_a: (11, 12, 13, 14.0, 15.0),
-        repo_b: (21, 22, 23, 24.0, 25.0),
-    }
-
-
-def test_fleet_run_resolves_node_verify_script_per_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
-) -> None:
-    """Fleet workers use each checkout's node verify script."""
-    launcher = tmp_path / "launcher"
-    repo_a = tmp_path / "repo-a"
-    repo_b = tmp_path / "repo-b"
-    _write_repo_configs(
-        {launcher: '[tool.repo-ops]\nnode_verify_script = "launcher-script"\n'}
-    )
-    for path, script in (
-        (repo_a, "repo-a-script"),
-        (repo_b, "repo-b-script"),
-    ):
-        _write_repo_configs(
-            {path: f'[tool.repo-ops]\nnode_verify_script = "{script}"\n'}
-        )
-        (path / "package.json").write_text(
-            json.dumps({"scripts": {script: f"echo {script}"}}),
-            encoding="utf-8",
-        )
-
-    workspaces, bundles = _fleet_bundles((repo_a, repo_b), "node", "npm")
-    captured: dict[Path, str] = {}
-
-    monkeypatch.chdir(launcher)
-    monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
-    _patch_fleet_discovery(monkeypatch, workspaces, bundles)
-
-    def fake_run(cmd: list[str], cwd: Path, timeout: int = 0):
-        if cmd[:2] == ["npm", "run"]:
-            captured[cwd] = cmd[2]
-        return make_proc()
-
-    def process_workspace(workspace_result: WorkspaceResult, **kwargs: object):
-        assert verify_mod.verify_node(workspace_result.workspace) is None
-        return workspace_result
-
-    monkeypatch.setattr(verify_mod, "run", fake_run)
-    monkeypatch.setattr(
-        run_mod.orchestration,
-        "process_workspace",
-        process_workspace,
-    )
-
-    rc = run_mod.run_upgrade(
-        apply=False,
-        argv=["--flat", "--json", "--skip-actions", str(repo_a), str(repo_b)],
-    )
-
-    assert rc == 0
-    assert captured == {
-        repo_a: "repo-a-script",
-        repo_b: "repo-b-script",
-    }
-
-
 def test_timeout_resolver_uses_global_config_outside_checkout_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -743,202 +676,6 @@ def test_node_verify_script_uses_ambient_environment(
         set_ambient_env(None)
 
     assert commands == [["npm", "ci"], ["npm", "run", "caller"]]
-
-
-def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
-) -> None:
-    """Fleet runs use each checkout's Go upgrade mode."""
-    launcher = tmp_path / "launcher"
-    repo_a = tmp_path / "repo-a"
-    repo_b = tmp_path / "repo-b"
-    for path in (launcher, repo_a, repo_b):
-        path.mkdir()
-    (launcher / "pyproject.toml").write_text(
-        '[tool.repo-ops]\ngo_upgrade_mode = "mvs"\n',
-        encoding="utf-8",
-    )
-    (repo_a / "pyproject.toml").write_text(
-        "[tool.repo-ops]\n"
-        'go_upgrade_mode = "explicit"\n'
-        'go_directive = "1.25"\n'
-        'go_toolchain = "go1.25.3"\n',
-        encoding="utf-8",
-    )
-    (repo_b / "pyproject.toml").write_text(
-        "[tool.repo-ops]\n"
-        'go_upgrade_mode = "patch"\n'
-        'go_directive = "1.26"\n'
-        'go_toolchain = "1.26.4"\n',
-        encoding="utf-8",
-    )
-    global_config_dir = tmp_path / "config" / "repo-ops"
-    global_config_dir.mkdir(parents=True)
-    (global_config_dir / "config.toml").write_text(
-        'go_upgrade_mode = "mvs"\ngo_directive = "1.90"\ngo_toolchain = "go1.90.1"\n',
-        encoding="utf-8",
-    )
-    for path in (repo_a, repo_b):
-        (path / "go.mod").write_text(
-            "module example.com/main\n\ngo 1.24\n\n"
-            "require (\n"
-            "\texample.com/patch v1.2.3\n"
-            "\texample.com/minor v1.2.3\n"
-            ")\n",
-            encoding="utf-8",
-        )
-        subprocess.run(["git", "init", "--quiet", str(path)], check=True)
-        subprocess.run(
-            ["git", "-C", str(path), "add", "go.mod", "pyproject.toml"],
-            check=True,
-        )
-        subprocess.run(
-            [
-                "git",
-                "-C",
-                str(path),
-                "-c",
-                "user.name=repo-ops-test",
-                "-c",
-                "user.email=repo-ops-test@example.invalid",
-                "commit",
-                "--quiet",
-                "-m",
-                "fixture",
-            ],
-            check=True,
-        )
-
-    workspaces = [
-        Workspace(
-            path=repo_a,
-            ecosystem="go",
-            manager="go",
-            git_repo=repo_a,
-            label="repo-a",
-        ),
-        Workspace(
-            path=repo_b,
-            ecosystem="go",
-            manager="go",
-            git_repo=repo_b,
-            label="repo-b",
-        ),
-    ]
-    bundles = {
-        workspace.git_repo: RepoBundle(
-            git_repo=workspace.git_repo,
-            label=workspace.label,
-            workspaces=[WorkspaceResult(workspace, status="pending")],
-        )
-        for workspace in workspaces
-    }
-    captured: dict[Path, list[tuple[str, str]]] = {}
-    go_list_stdout = "\n".join(
-        json.dumps(module)
-        for module in (
-            {
-                "Path": "example.com/patch",
-                "Version": "v1.2.3",
-                "Update": {
-                    "Path": "example.com/patch",
-                    "Version": "v1.2.4",
-                },
-            },
-            {
-                "Path": "example.com/minor",
-                "Version": "v1.2.3",
-                "Update": {
-                    "Path": "example.com/minor",
-                    "Version": "v1.3.0",
-                },
-            },
-        )
-    )
-    go_mod_stdout = json.dumps(
-        {
-            "Require": [
-                {"Path": "example.com/patch", "Version": "v1.2.3"},
-                {"Path": "example.com/minor", "Version": "v1.2.3"},
-            ]
-        }
-    )
-    monkeypatch.chdir(launcher)
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
-    monkeypatch.delenv("REPO_OPS_GO_DIRECTIVE", raising=False)
-    monkeypatch.delenv("REPO_OPS_GO_TOOLCHAIN", raising=False)
-    monkeypatch.setattr(
-        run_mod.workspace_discovery,
-        "discover_all",
-        lambda *args, **kwargs: workspaces,
-    )
-    monkeypatch.setattr(
-        run_mod.workspace_discovery,
-        "group_by_repo",
-        lambda found, roots: bundles.copy(),
-    )
-
-    def fake_go_run(cmd: list[str], cwd: Path, timeout: int = 0):
-        if cmd == ["go", "mod", "edit", "-json"]:
-            stdout = go_mod_stdout
-        elif cmd == ["go", "list", "-m", "-u", "-json", "all"]:
-            stdout = go_list_stdout
-        else:
-            raise AssertionError(f"unexpected command: {cmd}")
-        return make_proc(stdout=stdout)
-
-    monkeypatch.setattr(go_mod, "run", fake_go_run)
-    register_all()
-
-    original_check_workspace = run_mod.orchestration.ecosystems.check_workspace
-
-    def capture_check_workspace(workspace: Workspace, **kwargs: object):
-        result = original_check_workspace(workspace, **kwargs)
-        captured[workspace.git_repo] = [
-            (change.name, change.to) for change in result.changes
-        ]
-        return result
-
-    monkeypatch.setattr(
-        run_mod.orchestration.ecosystems,
-        "check_workspace",
-        capture_check_workspace,
-    )
-    monkeypatch.setattr(
-        run_mod.report, "print_json_report", lambda *args, **kwargs: None
-    )
-
-    # --conservative: REPO_OPS_GO_UPGRADE_MODE's forced-explicit default is
-    # gated by `if latest:` (unlike _SWEEP_ENV_VARS, which run.py now writes
-    # unconditionally), so this is the one flag that still lets each
-    # checkout's own go_upgrade_mode config decide.
-    rc = run_mod.run_upgrade(
-        apply=False,
-        argv=[
-            "--flat",
-            "--json",
-            "--skip-actions",
-            "--conservative",
-            str(repo_a),
-            str(repo_b),
-        ],
-    )
-
-    assert rc == 1
-    assert captured == {
-        repo_a: [
-            ("example.com/patch", "v1.2.4"),
-            ("example.com/minor", "v1.3.0"),
-            ("go directive", "1.25"),
-            ("go toolchain", "1.25.3"),
-        ],
-        repo_b: [
-            ("example.com/patch", "v1.2.4"),
-            ("go directive", "1.26"),
-            ("go toolchain", "1.26.4"),
-        ],
-    }
 
 
 def test_fleet_cli_go_upgrade_mode_overrides_checkout_config(
