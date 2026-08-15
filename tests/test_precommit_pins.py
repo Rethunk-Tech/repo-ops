@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -106,23 +106,19 @@ def _make_ws(path: Path) -> Workspace:
     )
 
 
-def _fake_ls_remote(tags: list[str]):
+def _fake_ls_remote(tags: list[str]) -> subprocess.CompletedProcess[str]:
     """Return a side-effect for subprocess.run that simulates git ls-remote."""
     fake_sha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
     stdout = "\n".join(f"{fake_sha}\trefs/tags/{t}" for t in tags) + "\n"
-    proc = MagicMock(spec=subprocess.CompletedProcess)
-    proc.returncode = 0
-    proc.stdout = stdout
-    return proc
+    return subprocess.CompletedProcess([], 0, stdout=stdout, stderr="")
 
 
-def _fake_ls_remote_refs(refs: list[tuple[str, str]]):
+def _fake_ls_remote_refs(
+    refs: list[tuple[str, str]],
+) -> subprocess.CompletedProcess[str]:
     """Return a fake ``git ls-remote`` result with tag commit SHAs."""
     stdout = "\n".join(f"{sha}\trefs/tags/{tag}" for sha, tag in refs) + "\n"
-    proc = MagicMock(spec=subprocess.CompletedProcess)
-    proc.returncode = 0
-    proc.stdout = stdout
-    return proc
+    return subprocess.CompletedProcess([], 0, stdout=stdout, stderr="")
 
 
 @pytest.fixture(autouse=True)
@@ -229,53 +225,31 @@ def test_is_sha_rev_tag_not_sha() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_resolve_latest_same_major() -> None:
-    tags = ["v4.5.0", "v4.6.0", "v4.6.1", "v5.0.0"]
-    assert _resolve_latest_precommit_rev("v4.5.0", tags) == "v4.6.1"
-
-
-def test_resolve_latest_cross_major_off_by_default() -> None:
-    tags = ["v4.5.0", "v4.6.1", "v5.0.0"]
-    # Without allow_cross_major, v5 should not be picked
-    result = _resolve_latest_precommit_rev("v4.5.0", tags)
-    assert result == "v4.6.1"
-    assert result != "v5.0.0"
-
-
-def test_resolve_latest_cross_major_opt_in() -> None:
-    tags = ["v4.5.0", "v4.6.1", "v5.0.0"]
-    result = _resolve_latest_precommit_rev("v4.5.0", tags, allow_cross_major=True)
-    assert result == "v5.0.0"
-
-
-def test_resolve_latest_bare_semver() -> None:
-    """Bare (non-v-prefixed) revs match bare tags only."""
-    tags = ["23.3.0", "23.4.0", "v24.0.0"]
-    result = _resolve_latest_precommit_rev("23.3.0", tags)
-    assert result == "23.4.0"
-
-
-def test_resolve_latest_already_at_latest() -> None:
-    tags = ["v4.5.0", "v4.6.1"]
-    assert _resolve_latest_precommit_rev("v4.6.1", tags) is None
-
-
-def test_resolve_latest_non_semver_returns_none() -> None:
-    """SHA or branch rev → None (non-actionable)."""
-    tags = ["v4.5.0"]
-    assert _resolve_latest_precommit_rev("abc1234", tags) is None
-    assert _resolve_latest_precommit_rev("main", tags) is None
-
-
-def test_resolve_latest_no_candidates() -> None:
-    assert _resolve_latest_precommit_rev("v4.5.0", []) is None
-
-
-def test_resolve_latest_prefix_mismatch_excluded() -> None:
-    """v-prefixed rev must not match bare tags."""
-    tags = ["4.5.0", "4.6.0"]
-    # current is v-prefixed but tags are bare → no match
-    assert _resolve_latest_precommit_rev("v4.5.0", tags) is None
+@pytest.mark.parametrize(
+    ("current", "tags", "allow_cross_major", "expected"),
+    [
+        ("v4.5.0", ["v4.5.0", "v4.6.0", "v4.6.1", "v5.0.0"], False, "v4.6.1"),
+        # Without allow_cross_major, v5 should not be picked.
+        ("v4.5.0", ["v4.5.0", "v4.6.1", "v5.0.0"], False, "v4.6.1"),
+        ("v4.5.0", ["v4.5.0", "v4.6.1", "v5.0.0"], True, "v5.0.0"),
+        # Bare (non-v-prefixed) revs match bare tags only.
+        ("23.3.0", ["23.3.0", "23.4.0", "v24.0.0"], False, "23.4.0"),
+        ("v4.6.1", ["v4.5.0", "v4.6.1"], False, None),
+        # SHA or branch rev → None (non-actionable).
+        ("abc1234", ["v4.5.0"], False, None),
+        ("main", ["v4.5.0"], False, None),
+        ("v4.5.0", [], False, None),
+        # current is v-prefixed but tags are bare → no match.
+        ("v4.5.0", ["4.5.0", "4.6.0"], False, None),
+    ],
+)
+def test_resolve_latest_precommit_rev(
+    current: str, tags: list[str], allow_cross_major: bool, expected: str | None
+) -> None:
+    result = _resolve_latest_precommit_rev(
+        current, tags, allow_cross_major=allow_cross_major
+    )
+    assert result == expected
 
 
 # ---------------------------------------------------------------------------
@@ -304,9 +278,7 @@ def test_fetch_tags_timeout() -> None:
 
 
 def test_fetch_tags_nonzero_exit() -> None:
-    proc = MagicMock(spec=subprocess.CompletedProcess)
-    proc.returncode = 128
-    proc.stdout = ""
+    proc = subprocess.CompletedProcess([], 128, stdout="", stderr="")
     with patch("subprocess.run", return_value=proc):
         assert _fetch_tags_for_repo("https://github.com/org/repo") is None
 

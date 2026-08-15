@@ -37,13 +37,6 @@ def test_rel_dir_subdir(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_detect_ecosystems_npm(tmp_path: Path) -> None:
-    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
-    entries = detect_ecosystems(tmp_path)
-    ecos = [e["package-ecosystem"] for e in entries]
-    assert "npm" in ecos
-
-
 def test_detect_ecosystems_pnpm(tmp_path: Path) -> None:
     (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
     entries = detect_ecosystems(tmp_path)
@@ -58,12 +51,29 @@ def test_detect_ecosystems_npm_lockfile(tmp_path: Path) -> None:
     assert ecos == ["npm"]
 
 
-@pytest.mark.parametrize("indicator", ["bun.lock", "bun.lockb"])
-def test_detect_ecosystems_bun(tmp_path: Path, indicator: str) -> None:
-    (tmp_path / indicator).write_text("", encoding="utf-8")
+@pytest.mark.parametrize(
+    ("indicator", "content", "target"),
+    [
+        ("package.json", "{}", "npm"),
+        ("bun.lock", "", "bun"),
+        ("bun.lockb", "", "bun"),
+        ("deno.json", "{}", "deno"),
+        ("deno.jsonc", "{}", "deno"),
+        ("deno.lock", "{}", "deno"),
+        (".pre-commit-config.yaml", "repos: []\n", "pre-commit"),
+        ("requirements.txt", "requests==2.31.0\n", "pip"),
+        ("go.mod", "module example.com/app\ngo 1.21\n", "gomod"),
+        ("Cargo.toml", '[package]\nname = "app"\n', "cargo"),
+        ("Dockerfile", "FROM alpine\n", "docker"),
+    ],
+)
+def test_detect_ecosystems_single_indicator(
+    tmp_path: Path, indicator: str, content: str, target: str
+) -> None:
+    (tmp_path / indicator).write_text(content, encoding="utf-8")
     entries = detect_ecosystems(tmp_path)
     ecos = [e["package-ecosystem"] for e in entries]
-    assert "bun" in ecos
+    assert target in ecos
 
 
 def test_detect_ecosystems_bun_and_npm_manifests(tmp_path: Path) -> None:
@@ -73,44 +83,6 @@ def test_detect_ecosystems_bun_and_npm_manifests(tmp_path: Path) -> None:
     ecos = [e["package-ecosystem"] for e in entries]
     assert "npm" in ecos
     assert "bun" in ecos
-
-
-@pytest.mark.parametrize("indicator", ["deno.json", "deno.jsonc", "deno.lock"])
-def test_detect_ecosystems_deno(tmp_path: Path, indicator: str) -> None:
-    (tmp_path / indicator).write_text("{}", encoding="utf-8")
-    entries = detect_ecosystems(tmp_path)
-    ecos = [e["package-ecosystem"] for e in entries]
-    assert "deno" in ecos
-
-
-def test_detect_ecosystems_pre_commit(tmp_path: Path) -> None:
-    (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
-    entries = detect_ecosystems(tmp_path)
-    ecos = [e["package-ecosystem"] for e in entries]
-    assert "pre-commit" in ecos
-
-
-def test_detect_ecosystems_pip(tmp_path: Path) -> None:
-    (tmp_path / "requirements.txt").write_text("requests==2.31.0\n", encoding="utf-8")
-    entries = detect_ecosystems(tmp_path)
-    ecos = [e["package-ecosystem"] for e in entries]
-    assert "pip" in ecos
-
-
-def test_detect_ecosystems_gomod(tmp_path: Path) -> None:
-    (tmp_path / "go.mod").write_text(
-        "module example.com/app\ngo 1.21\n", encoding="utf-8"
-    )
-    entries = detect_ecosystems(tmp_path)
-    ecos = [e["package-ecosystem"] for e in entries]
-    assert "gomod" in ecos
-
-
-def test_detect_ecosystems_cargo(tmp_path: Path) -> None:
-    (tmp_path / "Cargo.toml").write_text('[package]\nname = "app"\n', encoding="utf-8")
-    entries = detect_ecosystems(tmp_path)
-    ecos = [e["package-ecosystem"] for e in entries]
-    assert "cargo" in ecos
 
 
 def test_detect_ecosystems_github_actions(tmp_path: Path) -> None:
@@ -130,13 +102,6 @@ def test_detect_ecosystems_github_actions_no_yml(tmp_path: Path) -> None:
     entries = detect_ecosystems(tmp_path)
     ecos = [e["package-ecosystem"] for e in entries]
     assert "github-actions" not in ecos
-
-
-def test_detect_ecosystems_docker(tmp_path: Path) -> None:
-    (tmp_path / "Dockerfile").write_text("FROM alpine\n", encoding="utf-8")
-    entries = detect_ecosystems(tmp_path)
-    ecos = [e["package-ecosystem"] for e in entries]
-    assert "docker" in ecos
 
 
 @pytest.mark.parametrize(

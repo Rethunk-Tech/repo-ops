@@ -10,8 +10,9 @@ The ``off`` level skips actionlint entirely.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -54,13 +55,17 @@ def _tag_info_checkout(action: str, **_: object) -> dict | None:
     return None
 
 
-def _actionlint_fail(*_args: object, **_kwargs: object) -> MagicMock:
+def _actionlint_fail(
+    *_args: object, **_kwargs: object
+) -> subprocess.CompletedProcess[str]:
     """Simulate actionlint returning a non-zero exit code (e.g. SC2034 hit)."""
-    return MagicMock(returncode=1, stdout="", stderr="SC2034: var unused")
+    return subprocess.CompletedProcess([], 1, stdout="", stderr="SC2034: var unused")
 
 
-def _actionlint_pass(*_args: object, **_kwargs: object) -> MagicMock:
-    return MagicMock(returncode=0, stdout="", stderr="")
+def _actionlint_pass(
+    *_args: object, **_kwargs: object
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess([], 0, stdout="", stderr="")
 
 
 # ---------------------------------------------------------------------------
@@ -73,10 +78,12 @@ def test_lint_level_block_skips_pin_bumps(tmp_path: Path) -> None:
     repo, wf = _wf_dir(tmp_path)
     original = wf.read_text(encoding="utf-8")
 
-    def fake_run(cmd: list[str], *a: object, **kw: object) -> MagicMock:
+    def fake_run(
+        cmd: list[str], *a: object, **kw: object
+    ) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
             return _actionlint_fail()
-        return MagicMock(returncode=0, stdout="", stderr="")
+        return _actionlint_pass()
 
     with (
         patch(
@@ -111,10 +118,12 @@ def test_lint_level_warn_proceeds_with_bumps(tmp_path: Path) -> None:
     """warn: actionlint failure records fail row but pin bumps still run."""
     repo, _wf = _wf_dir(tmp_path)
 
-    def fake_run(cmd: list[str], *a: object, **kw: object) -> MagicMock:
+    def fake_run(
+        cmd: list[str], *a: object, **kw: object
+    ) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
             return _actionlint_fail()
-        return MagicMock(returncode=0, stdout="", stderr="")
+        return _actionlint_pass()
 
     with (
         patch(
@@ -142,10 +151,12 @@ def test_lint_level_warn_applies_rewrite(tmp_path: Path) -> None:
     """warn: actionlint failure + apply=True still rewrites the workflow."""
     repo, wf = _wf_dir(tmp_path)
 
-    def fake_run(cmd: list[str], *a: object, **kw: object) -> MagicMock:
+    def fake_run(
+        cmd: list[str], *a: object, **kw: object
+    ) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
             return _actionlint_fail()
-        return MagicMock(returncode=0, stdout="", stderr="")
+        return _actionlint_pass()
 
     with (
         patch(
@@ -171,10 +182,12 @@ def test_lint_level_warn_prints_warn_message(
     """warn: a WARN message is printed to stderr when lint fails but bumps proceed."""
     repo, _ = _wf_dir(tmp_path)
 
-    def fake_run(cmd: list[str], *a: object, **kw: object) -> MagicMock:
+    def fake_run(
+        cmd: list[str], *a: object, **kw: object
+    ) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
             return _actionlint_fail()
-        return MagicMock(returncode=0, stdout="", stderr="")
+        return _actionlint_pass()
 
     with (
         patch(
@@ -203,11 +216,13 @@ def test_lint_level_off_skips_actionlint(tmp_path: Path) -> None:
     repo, _wf = _wf_dir(tmp_path)
     actionlint_called = []
 
-    def fake_run(cmd: list[str], *a: object, **kw: object) -> MagicMock:
+    def fake_run(
+        cmd: list[str], *a: object, **kw: object
+    ) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
             actionlint_called.append(True)
             return _actionlint_fail()
-        return MagicMock(returncode=0, stdout="", stderr="")
+        return _actionlint_pass()
 
     with (
         patch(
@@ -268,6 +283,12 @@ _NATIVE_ERROR_STDERR = (
     'property "foo" is not defined in object type {} [expression]'
 )
 
+# A shellcheck finding with severity:error (not :warning:).
+_SC_ERROR_STDERR = (
+    "f.yml:1:1: shellcheck reported issue in this script: "
+    "SC1009:error:1:1: parse error [shellcheck]"
+)
+
 
 def test_lint_level_block_shellcheck_warning_is_nonfatal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -276,10 +297,14 @@ def test_lint_level_block_shellcheck_warning_is_nonfatal(
     monkeypatch.setenv("REPO_OPS_NO_LINT_CACHE", "1")
     repo, wf = _wf_dir(tmp_path)
 
-    def fake_run(cmd: list[str], *a: object, **kw: object) -> MagicMock:
+    def fake_run(
+        cmd: list[str], *a: object, **kw: object
+    ) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
-            return MagicMock(returncode=1, stdout="", stderr=_SC_WARNING_STDERR)
-        return MagicMock(returncode=0, stdout="", stderr="")
+            return subprocess.CompletedProcess(
+                [], 1, stdout="", stderr=_SC_WARNING_STDERR
+            )
+        return _actionlint_pass()
 
     with (
         patch(
@@ -317,10 +342,14 @@ def test_lint_level_block_native_actionlint_error_is_fatal(
     repo, wf = _wf_dir(tmp_path)
     original = wf.read_text(encoding="utf-8")
 
-    def fake_run(cmd: list[str], *a: object, **kw: object) -> MagicMock:
+    def fake_run(
+        cmd: list[str], *a: object, **kw: object
+    ) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
-            return MagicMock(returncode=1, stdout="", stderr=_NATIVE_ERROR_STDERR)
-        return MagicMock(returncode=0, stdout="", stderr="")
+            return subprocess.CompletedProcess(
+                [], 1, stdout="", stderr=_NATIVE_ERROR_STDERR
+            )
+        return _actionlint_pass()
 
     with (
         patch(
@@ -353,29 +382,19 @@ def test_lint_level_block_native_actionlint_error_is_fatal(
 # ---------------------------------------------------------------------------
 
 
-def test_classify_empty_is_error() -> None:
-    assert _classify_actionlint_severity("") == "error"
-    assert _classify_actionlint_severity("   ") == "error"
-
-
-def test_classify_sc_warning_is_warning() -> None:
-    assert _classify_actionlint_severity(_SC_WARNING_STDERR) == "warning"
-
-
-def test_classify_native_actionlint_is_error() -> None:
-    assert _classify_actionlint_severity(_NATIVE_ERROR_STDERR) == "error"
-
-
-def test_classify_shellcheck_error_severity_is_error() -> None:
-    line = (
-        "f.yml:1:1: shellcheck reported issue in this script: "
-        "SC1009:error:1:1: parse error [shellcheck]"
-    )
-    assert _classify_actionlint_severity(line) == "error"
-
-
-def test_classify_timeout_message_is_error() -> None:
-    assert _classify_actionlint_severity("actionlint timed out") == "error"
+@pytest.mark.parametrize(
+    ("stderr_text", "expected"),
+    [
+        ("", "error"),
+        ("   ", "error"),
+        (_SC_WARNING_STDERR, "warning"),
+        (_NATIVE_ERROR_STDERR, "error"),
+        (_SC_ERROR_STDERR, "error"),
+        ("actionlint timed out", "error"),
+    ],
+)
+def test_classify_actionlint_severity(stderr_text: str, expected: str) -> None:
+    assert _classify_actionlint_severity(stderr_text) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -383,20 +402,22 @@ def test_classify_timeout_message_is_error() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_read_lint_level_env_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Absent env var → 'block'."""
-    monkeypatch.delenv("REPO_OPS_ACTIONS_LINT_LEVEL", raising=False)
-    assert _read_lint_level_env() == "block"
-
-
-def test_read_lint_level_env_warn(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("REPO_OPS_ACTIONS_LINT_LEVEL", "warn")
-    assert _read_lint_level_env() == "warn"
-
-
-def test_read_lint_level_env_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("REPO_OPS_ACTIONS_LINT_LEVEL", "off")
-    assert _read_lint_level_env() == "off"
+@pytest.mark.parametrize(
+    ("env_value", "expected"),
+    [
+        (None, "block"),  # absent env var → default
+        ("warn", "warn"),
+        ("off", "off"),
+    ],
+)
+def test_read_lint_level_env(
+    monkeypatch: pytest.MonkeyPatch, env_value: str | None, expected: str
+) -> None:
+    if env_value is None:
+        monkeypatch.delenv("REPO_OPS_ACTIONS_LINT_LEVEL", raising=False)
+    else:
+        monkeypatch.setenv("REPO_OPS_ACTIONS_LINT_LEVEL", env_value)
+    assert _read_lint_level_env() == expected
 
 
 def test_read_lint_level_env_unknown_defaults_to_block(
@@ -421,10 +442,12 @@ def test_lint_level_env_used_when_param_absent(
     repo, _wf = _wf_dir(tmp_path)
     actionlint_called = []
 
-    def fake_run(cmd: list[str], *a: object, **kw: object) -> MagicMock:
+    def fake_run(
+        cmd: list[str], *a: object, **kw: object
+    ) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
             actionlint_called.append(True)
-        return MagicMock(returncode=0, stdout="", stderr="")
+        return _actionlint_pass()
 
     with (
         patch(

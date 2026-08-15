@@ -8,7 +8,6 @@ import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -781,7 +780,7 @@ def test_main_exclude_prints_zero_when_nothing_matches(
 
 
 def test_pushed_source_gh_collects_push_event_commits(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
     sha = "a" * 40
     commands: list[list[str]] = []
@@ -803,11 +802,7 @@ def test_pushed_source_gh_collects_push_event_commits(
 
     def fake_run(command, **kwargs):
         commands.append(command)
-        return SimpleNamespace(
-            returncode=0,
-            stdout=json.dumps([event]),
-            stderr="",
-        )
+        return make_proc(stdout=json.dumps([event]))
 
     monkeypatch.setattr(audit.subprocess, "run", fake_run)
     filters = Filters(
@@ -822,7 +817,7 @@ def test_pushed_source_gh_collects_push_event_commits(
 
 
 def test_pushed_source_gh_compare_fallback_for_empty_event_commits(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
     sha = "a" * 40
     before = "b" * 40
@@ -857,7 +852,7 @@ def test_pushed_source_gh_compare_fallback_for_empty_event_commits(
         else:
             assert command[-1] == f"repos/acme/project/compare/{before}...{head}"
             response = comparison
-        return SimpleNamespace(returncode=0, stdout=json.dumps(response), stderr="")
+        return make_proc(stdout=json.dumps(response))
 
     monkeypatch.setattr(audit.subprocess, "run", fake_run)
     filters = Filters(

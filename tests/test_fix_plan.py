@@ -6,6 +6,7 @@ All subprocess calls are mocked — no network traffic, no real tool invocations
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from unittest.mock import patch
 
 import pytest
@@ -153,8 +154,18 @@ def test_extract_remediations_pip_audit_multiple_packages() -> None:
     assert "requests" in names
 
 
-def test_extract_remediations_pip_audit_empty_data() -> None:
-    assert _extract_remediations_pip_audit([], "/ws") == []
+@pytest.mark.parametrize(
+    ("extract_fn", "empty_data"),
+    [
+        (_extract_remediations_pip_audit, []),
+        (_extract_remediations_npm_json, {}),
+        (_extract_remediations_cargo_json, {}),
+    ],
+)
+def test_extract_remediations_empty_input_returns_empty(
+    extract_fn: Callable[[object, str], list[RemediationItem]], empty_data: object
+) -> None:
+    assert extract_fn(empty_data, "/ws") == []
 
 
 def test_extract_remediations_pip_audit_no_vulns() -> None:
@@ -250,10 +261,6 @@ def test_extract_remediations_npm_v6_no_patched_versions_skipped() -> None:
     assert items == []
 
 
-def test_extract_remediations_npm_empty() -> None:
-    assert _extract_remediations_npm_json({}, "/ws") == []
-
-
 # ---------------------------------------------------------------------------
 # cargo-audit remediation extraction
 # ---------------------------------------------------------------------------
@@ -320,10 +327,6 @@ def test_extract_remediations_cargo_no_patched_skipped() -> None:
     }
     items = _extract_remediations_cargo_json(data, "/ws")
     assert items == []
-
-
-def test_extract_remediations_cargo_empty() -> None:
-    assert _extract_remediations_cargo_json({}, "/ws") == []
 
 
 def test_extract_remediations_cargo_empty_list() -> None:
@@ -550,16 +553,10 @@ def test_print_fix_plan_points_at_audit_fix(
 # ---------------------------------------------------------------------------
 
 
-def test_audit_parser_fix_plan_default_off() -> None:
-    parser = build_audit_parser()
-    args = parser.parse_args([])
-    assert args.fix_plan is False
-
-
-def test_audit_parser_fix_plan_flag() -> None:
-    parser = build_audit_parser()
-    args = parser.parse_args(["--fix-plan"])
-    assert args.fix_plan is True
+@pytest.mark.parametrize(("argv", "expected"), [([], False), (["--fix-plan"], True)])
+def test_audit_parser_fix_plan(argv: list[str], expected: bool) -> None:
+    args = build_audit_parser().parse_args(argv)
+    assert args.fix_plan is expected
 
 
 def test_audit_fix_plan_not_active_by_default(tmp_path: pytest.TempPathFactory) -> None:

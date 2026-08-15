@@ -10,8 +10,9 @@ Opt-in: REPO_OPS_ACTIONS_ORG_POLICY=1  (default off — costs extra gh api calls
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -71,12 +72,26 @@ jobs:
 """
 
 
-def _gh_proc(payload: object, returncode: int = 0) -> MagicMock:
-    return MagicMock(
-        returncode=returncode,
+def _gh_proc(payload: object, returncode: int = 0) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(
+        [],
+        returncode,
         stdout=json.dumps(payload) if returncode == 0 else "",
         stderr="",
     )
+
+
+def _remote_url_run(url: str):
+    """Return a ``subprocess.run`` side-effect that always reports *url* as the remote.
+
+    Several tests only care that ``_derive_owner`` sees a fixed GitHub remote —
+    factored out since the closure was copy-pasted at every call site.
+    """
+
+    def _fake_run(cmd: list, **kw: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess([], 0, stdout=f"{url}\n", stderr="")
+
+    return _fake_run
 
 
 # ---------------------------------------------------------------------------
@@ -84,40 +99,23 @@ def _gh_proc(payload: object, returncode: int = 0) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-def test_derive_owner_https(tmp_path: Path) -> None:
-    """HTTPS github.com remote → owner extracted."""
-    proc = MagicMock(
-        returncode=0, stdout="https://github.com/myorg/myrepo.git\n", stderr=""
-    )
+@pytest.mark.parametrize(
+    ("remote_url", "expected_owner"),
+    [
+        ("https://github.com/myorg/myrepo.git", "myorg"),  # HTTPS
+        ("git@github.com:myorg/myrepo.git", "myorg"),  # SSH
+        ("https://gitlab.com/myorg/myrepo.git", None),  # non-github → skip silently
+    ],
+)
+def test_derive_owner_from_remote(
+    tmp_path: Path, remote_url: str, expected_owner: str | None
+) -> None:
+    proc = subprocess.CompletedProcess([], 0, stdout=f"{remote_url}\n", stderr="")
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
         patch("repo_ops_upgrade.actions.subprocess.run", return_value=proc),
     ):
-        assert _derive_owner(tmp_path) == "myorg"
-
-
-def test_derive_owner_ssh(tmp_path: Path) -> None:
-    """SSH github.com remote → owner extracted."""
-    proc = MagicMock(
-        returncode=0, stdout="git@github.com:myorg/myrepo.git\n", stderr=""
-    )
-    with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
-        patch("repo_ops_upgrade.actions.subprocess.run", return_value=proc),
-    ):
-        assert _derive_owner(tmp_path) == "myorg"
-
-
-def test_derive_owner_non_github_returns_none(tmp_path: Path) -> None:
-    """Non-github remote → None (skip silently)."""
-    proc = MagicMock(
-        returncode=0, stdout="https://gitlab.com/myorg/myrepo.git\n", stderr=""
-    )
-    with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
-        patch("repo_ops_upgrade.actions.subprocess.run", return_value=proc),
-    ):
-        assert _derive_owner(tmp_path) is None
+        assert _derive_owner(tmp_path) == expected_owner
 
 
 def test_derive_owner_git_absent_returns_none(tmp_path: Path) -> None:
@@ -128,7 +126,7 @@ def test_derive_owner_git_absent_returns_none(tmp_path: Path) -> None:
 
 def test_derive_owner_git_failure_returns_none(tmp_path: Path) -> None:
     """git config exits non-zero → None."""
-    proc = MagicMock(returncode=1, stdout="", stderr="error")
+    proc = subprocess.CompletedProcess([], 1, stdout="", stderr="error")
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
         patch("repo_ops_upgrade.actions.subprocess.run", return_value=proc),
@@ -147,10 +145,10 @@ def test_fetch_policy_cached_caches_result(tmp_path: Path) -> None:
     permissions_payload = {"enabled": True, "allowed_actions": "all"}
     call_count = [0]
 
-    def fake_run(cmd: list, **kw: object) -> MagicMock:
+    def fake_run(cmd: list, **kw: object) -> subprocess.CompletedProcess[str]:
         call_count[0] += 1
         if "selected-actions" in cmd[-1]:
-            return MagicMock(returncode=404, stdout="", stderr="")
+            return subprocess.CompletedProcess([], 404, stdout="", stderr="")
         return _gh_proc(permissions_payload)
 
     with (
@@ -171,9 +169,9 @@ def test_fetch_policy_404_returns_none_and_caches() -> None:
     store: dict = {}
     call_count = [0]
 
-    def fake_run(cmd: list, **kw: object) -> MagicMock:
+    def fake_run(cmd: list, **kw: object) -> subprocess.CompletedProcess[str]:
         call_count[0] += 1
-        return MagicMock(returncode=1, stdout="", stderr="Not Found")
+        return subprocess.CompletedProcess([], 1, stdout="", stderr="Not Found")
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
@@ -210,7 +208,7 @@ def test_fetch_policy_selected_fetches_detail() -> None:
         "patterns_allowed": ["myorg/*"],
     }
 
-    def fake_run(cmd: list, **kw: object) -> MagicMock:
+    def fake_run(cmd: list, **kw: object) -> subprocess.CompletedProcess[str]:
         if "selected-actions" in cmd[-1]:
             return _gh_proc(selected_payload)
         return _gh_proc(permissions_payload)
@@ -325,10 +323,12 @@ def test_scan_no_gh_calls_when_env_off(
     policy_store: dict = {}
     gh_calls: list[list] = []
 
-    def fake_subprocess_run(cmd: list, **kw: object) -> MagicMock:
+    def fake_subprocess_run(
+        cmd: list, **kw: object
+    ) -> subprocess.CompletedProcess[str]:
         if "gh" in cmd[0]:
             gh_calls.append(cmd)
-        return MagicMock(returncode=0, stdout="", stderr="")
+        return subprocess.CompletedProcess([], 0, stdout="", stderr="")
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
@@ -368,10 +368,7 @@ def test_scan_policy_enabled_false(
         }
     }
 
-    def fake_git_run(cmd: list, **kw: object) -> MagicMock:
-        return MagicMock(
-            returncode=0, stdout="https://github.com/myorg/myrepo.git\n", stderr=""
-        )
+    fake_git_run = _remote_url_run("https://github.com/myorg/myrepo.git")
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
@@ -412,10 +409,7 @@ def test_scan_policy_local_only(
         }
     }
 
-    def fake_git_run(cmd: list, **kw: object) -> MagicMock:
-        return MagicMock(
-            returncode=0, stdout="https://github.com/myorg/myrepo.git\n", stderr=""
-        )
+    fake_git_run = _remote_url_run("https://github.com/myorg/myrepo.git")
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
@@ -459,10 +453,7 @@ def test_scan_policy_selected_mixed(
         }
     }
 
-    def fake_git_run(cmd: list, **kw: object) -> MagicMock:
-        return MagicMock(
-            returncode=0, stdout="https://github.com/myorg/myrepo.git\n", stderr=""
-        )
+    fake_git_run = _remote_url_run("https://github.com/myorg/myrepo.git")
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
@@ -497,10 +488,7 @@ def test_scan_policy_selected_pattern_match(
         }
     }
 
-    def fake_git_run(cmd: list, **kw: object) -> MagicMock:
-        return MagicMock(
-            returncode=0, stdout="https://github.com/myorg/myrepo.git\n", stderr=""
-        )
+    fake_git_run = _remote_url_run("https://github.com/myorg/myrepo.git")
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
@@ -536,10 +524,7 @@ def test_scan_policy_all_flags_nothing(
         }
     }
 
-    def fake_git_run(cmd: list, **kw: object) -> MagicMock:
-        return MagicMock(
-            returncode=0, stdout="https://github.com/myorg/myrepo.git\n", stderr=""
-        )
+    fake_git_run = _remote_url_run("https://github.com/myorg/myrepo.git")
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
@@ -569,16 +554,18 @@ def test_scan_policy_user_account_404_skip(
 
     gh_calls: list = []
 
-    def fake_subprocess_run(cmd: list, **kw: object) -> MagicMock:
+    def fake_subprocess_run(
+        cmd: list, **kw: object
+    ) -> subprocess.CompletedProcess[str]:
         if "git" in cmd[0]:
-            return MagicMock(
-                returncode=0, stdout="https://github.com/personal/repo.git\n", stderr=""
+            return subprocess.CompletedProcess(
+                [], 0, stdout="https://github.com/personal/repo.git\n", stderr=""
             )
         if "gh" in cmd[0]:
             gh_calls.append(cmd)
             # Simulate 404 for user account
-            return MagicMock(returncode=1, stdout="", stderr="Not Found")
-        return MagicMock(returncode=0, stdout="", stderr="")
+            return subprocess.CompletedProcess([], 1, stdout="", stderr="Not Found")
+        return subprocess.CompletedProcess([], 0, stdout="", stderr="")
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
@@ -615,10 +602,7 @@ def test_scan_policy_gh_missing_skip(
             return None
         return f"/usr/bin/{name}"
 
-    def fake_git_run(cmd: list, **kw: object) -> MagicMock:
-        return MagicMock(
-            returncode=0, stdout="https://github.com/myorg/repo.git\n", stderr=""
-        )
+    fake_git_run = _remote_url_run("https://github.com/myorg/repo.git")
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", side_effect=fake_which),
@@ -655,10 +639,7 @@ def test_scan_policy_rows_report_only_and_pin_bumps_still_run(
         }
     }
 
-    def fake_git_run(cmd: list, **kw: object) -> MagicMock:
-        return MagicMock(
-            returncode=0, stdout="https://github.com/myorg/myrepo.git\n", stderr=""
-        )
+    fake_git_run = _remote_url_run("https://github.com/myorg/myrepo.git")
 
     def fake_tag_info(action: str, **kw: object) -> dict | None:
         if action == "actions/checkout":
@@ -715,10 +696,7 @@ def test_scan_policy_blocked_skips_pin_rewrite(
     }
     before = wf.read_text(encoding="utf-8")
 
-    def fake_git_run(cmd: list, **kw: object) -> MagicMock:
-        return MagicMock(
-            returncode=0, stdout="https://github.com/myorg/myrepo.git\n", stderr=""
-        )
+    fake_git_run = _remote_url_run("https://github.com/myorg/myrepo.git")
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
@@ -764,10 +742,7 @@ def test_scan_policy_warn_applies_pin_rewrite(
         }
     }
 
-    def fake_git_run(cmd: list, **kw: object) -> MagicMock:
-        return MagicMock(
-            returncode=0, stdout="https://github.com/myorg/myrepo.git\n", stderr=""
-        )
+    fake_git_run = _remote_url_run("https://github.com/myorg/myrepo.git")
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),

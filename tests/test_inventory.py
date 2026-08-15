@@ -257,10 +257,11 @@ def test_count_node_lockfile_precedence(tmp_path: Path) -> None:
     assert "b@2.0.1" in versions
 
 
-def test_count_node_bun_lockb_dump_success(tmp_path: Path, monkeypatch) -> None:
+def test_count_node_bun_lockb_dump_success(
+    tmp_path: Path, monkeypatch, make_proc
+) -> None:
     """bun.lockb: successful bun dump → versions via yarn-compatible stdout."""
     import json
-    from types import SimpleNamespace
 
     from repo_ops_inventory import counting
 
@@ -273,7 +274,7 @@ def test_count_node_bun_lockb_dump_success(tmp_path: Path, monkeypatch) -> None:
 
     def fake_run(cmd, cwd, timeout=300, env=None):
         assert cmd[0] == "bun"
-        return SimpleNamespace(returncode=0, stdout=yarn_dump, stderr="")
+        return make_proc(stdout=yarn_dump)
 
     monkeypatch.setattr(counting, "run", fake_run)
     direct, versions, lock = counting.count_node(tmp_path)
@@ -306,10 +307,9 @@ def test_count_node_bun_lockb_unsupported_when_bun_missing(
 
 
 def test_count_node_bun_lockb_unsupported_on_invalid_dump(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_proc
 ) -> None:
     import json
-    from types import SimpleNamespace
 
     from repo_ops_inventory import counting
 
@@ -319,9 +319,7 @@ def test_count_node_bun_lockb_unsupported_on_invalid_dump(
     monkeypatch.setattr(
         counting,
         "run",
-        lambda *a, **k: SimpleNamespace(
-            returncode=0, stdout="", stderr="error parsing lockfile: InvalidLockfile"
-        ),
+        lambda *a, **k: make_proc(stderr="error parsing lockfile: InvalidLockfile"),
     )
     _d, versions, lock = counting.count_node(tmp_path)
     assert versions == set()

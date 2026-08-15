@@ -26,12 +26,15 @@ from repo_ops_lockfiles.sbom import (
 # ---------------------------------------------------------------------------
 
 
-def test_purl_npm_regular() -> None:
-    assert _purl_npm("lodash", "4.17.21") == "pkg:npm/lodash@4.17.21"
-
-
-def test_purl_npm_scoped() -> None:
-    assert _purl_npm("@babel/core", "7.22.0") == "pkg:npm/@babel/core@7.22.0"
+@pytest.mark.parametrize(
+    ("name", "version", "expected"),
+    [
+        ("lodash", "4.17.21", "pkg:npm/lodash@4.17.21"),
+        ("@babel/core", "7.22.0", "pkg:npm/@babel/core@7.22.0"),
+    ],
+)
+def test_purl_npm(name: str, version: str, expected: str) -> None:
+    assert _purl_npm(name, version) == expected
 
 
 def test_purl_pypi_normalises_name() -> None:
@@ -40,18 +43,16 @@ def test_purl_pypi_normalises_name() -> None:
     assert _purl_pypi("Flask-Cors", "4.0.0") == "pkg:pypi/flask-cors@4.0.0"
 
 
-def test_split_nv_regular() -> None:
-    assert _split_nv("lodash@4.17.21") == ("lodash", "4.17.21")
-
-
-def test_split_nv_scoped() -> None:
-    assert _split_nv("@babel/core@7.22.0") == ("@babel/core", "7.22.0")
-
-
-def test_split_nv_no_at() -> None:
-    name, ver = _split_nv("nover")
-    assert name == "nover"
-    assert ver == ""
+@pytest.mark.parametrize(
+    ("nv", "expected"),
+    [
+        ("lodash@4.17.21", ("lodash", "4.17.21")),
+        ("@babel/core@7.22.0", ("@babel/core", "7.22.0")),
+        ("nover", ("nover", "")),
+    ],
+)
+def test_split_nv(nv: str, expected: tuple[str, str]) -> None:
+    assert _split_nv(nv) == expected
 
 
 # ---------------------------------------------------------------------------

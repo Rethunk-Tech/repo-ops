@@ -33,22 +33,19 @@ from repo_ops_lockfiles.sbom import main as sbom_main
 # ---------------------------------------------------------------------------
 
 
-def test_matches_any_exact() -> None:
-    assert _matches_any("MIT", ["MIT", "Apache-2.0"]) is True
-
-
-def test_matches_any_case_insensitive() -> None:
-    assert _matches_any("mit", ["MIT"]) is True
-    assert _matches_any("MIT", ["mit"]) is True
-
-
-def test_matches_any_punctuation_stripped() -> None:
-    # "Apache-2.0" vs "Apache 2.0" — both normalise to APACHE20
-    assert _matches_any("Apache-2.0", ["Apache 2.0"]) is True
-
-
-def test_matches_any_no_match() -> None:
-    assert _matches_any("GPL-3.0", ["MIT", "Apache-2.0"]) is False
+@pytest.mark.parametrize(
+    ("license_id", "candidates", "expected"),
+    [
+        ("MIT", ["MIT", "Apache-2.0"], True),
+        ("mit", ["MIT"], True),
+        ("MIT", ["mit"], True),
+        # "Apache-2.0" vs "Apache 2.0" — both normalise to APACHE20
+        ("Apache-2.0", ["Apache 2.0"], True),
+        ("GPL-3.0", ["MIT", "Apache-2.0"], False),
+    ],
+)
+def test_matches_any(license_id: str, candidates: list[str], expected: bool) -> None:
+    assert _matches_any(license_id, candidates) is expected
 
 
 # ---------------------------------------------------------------------------
@@ -56,34 +53,30 @@ def test_matches_any_no_match() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_extract_pyproject_license_string() -> None:
-    data = {"project": {"name": "foo", "license": "MIT"}}
-    assert _extract_pyproject_license(data) == "MIT"
-
-
-def test_extract_pyproject_license_dict_text() -> None:
-    data = {"project": {"name": "foo", "license": {"text": "Apache-2.0"}}}
-    assert _extract_pyproject_license(data) == "Apache-2.0"
-
-
-def test_extract_pyproject_license_classifiers() -> None:
-    data = {
-        "project": {
-            "name": "foo",
-            "classifiers": ["License :: OSI Approved :: MIT License"],
-        }
-    }
-    assert _extract_pyproject_license(data) == "MIT License"
-
-
-def test_extract_pyproject_license_poetry_tool() -> None:
-    data = {"tool": {"poetry": {"license": "BSD-3-Clause"}}}
-    assert _extract_pyproject_license(data) == "BSD-3-Clause"
-
-
-def test_extract_pyproject_license_missing() -> None:
-    assert _extract_pyproject_license({}) is None
-    assert _extract_pyproject_license({"project": {}}) is None
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        ({"project": {"name": "foo", "license": "MIT"}}, "MIT"),
+        (
+            {"project": {"name": "foo", "license": {"text": "Apache-2.0"}}},
+            "Apache-2.0",
+        ),
+        (
+            {
+                "project": {
+                    "name": "foo",
+                    "classifiers": ["License :: OSI Approved :: MIT License"],
+                }
+            },
+            "MIT License",
+        ),
+        ({"tool": {"poetry": {"license": "BSD-3-Clause"}}}, "BSD-3-Clause"),
+        ({}, None),
+        ({"project": {}}, None),
+    ],
+)
+def test_extract_pyproject_license(data: dict, expected: str | None) -> None:
+    assert _extract_pyproject_license(data) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -430,27 +423,37 @@ def test_apply_policy_unknown_always_in_unknown() -> None:
     assert result.violations == []
 
 
-def test_apply_policy_allow_list_violation() -> None:
-    pkgs = [_pkg("lodash", "MIT"), _pkg("gpl-lib", "GPL-3.0")]
-    result = apply_policy(pkgs, allow=["MIT", "Apache-2.0"])
+@pytest.mark.parametrize(
+    ("policy_kwarg", "policy_value", "flagged_name", "flagged_lic"),
+    [
+        ("allow", ["MIT", "Apache-2.0"], "gpl-lib", "GPL-3.0"),
+        ("deny", ["GPL-3.0", "AGPL-3.0"], "copyleft", "GPL-3.0"),
+    ],
+)
+def test_apply_policy_list_violation(
+    policy_kwarg: str, policy_value: list[str], flagged_name: str, flagged_lic: str
+) -> None:
+    pkgs = [_pkg("lodash", "MIT"), _pkg(flagged_name, flagged_lic)]
+    result = apply_policy(pkgs, **{policy_kwarg: policy_value})
     violation_names = {p.name for p in result.violations}
-    assert "gpl-lib" in violation_names
+    assert flagged_name in violation_names
     assert "lodash" not in violation_names
 
 
-def test_apply_policy_deny_list_violation() -> None:
-    pkgs = [_pkg("lodash", "MIT"), _pkg("copyleft", "GPL-3.0")]
-    result = apply_policy(pkgs, deny=["GPL-3.0", "AGPL-3.0"])
-    violation_names = {p.name for p in result.violations}
-    assert "copyleft" in violation_names
-    assert "lodash" not in violation_names
-
-
-def test_apply_policy_deny_overrides_allow() -> None:
-    """When both allow and deny are set, deny takes precedence."""
-    pkgs = [_pkg("dual", "MIT")]
-    # Allow MIT but also deny MIT → MIT is flagged as violation
-    result = apply_policy(pkgs, allow=["MIT", "Apache-2.0"], deny=["MIT"])
+@pytest.mark.parametrize(
+    ("name", "lic", "allow", "deny"),
+    [
+        # Both allow and deny set on the same license → deny takes precedence.
+        ("dual", "MIT", ["MIT", "Apache-2.0"], ["MIT"]),
+        # "GPL-2.0-only AND MIT" requires both parts, so the GPL part still violates.
+        ("dual-required", "GPL-2.0-only AND MIT", None, ["GPL"]),
+    ],
+)
+def test_apply_policy_single_violation(
+    name: str, lic: str, allow: list[str] | None, deny: list[str] | None
+) -> None:
+    pkgs = [_pkg(name, lic)]
+    result = apply_policy(pkgs, allow=allow, deny=deny)
     assert len(result.violations) == 1
 
 
@@ -469,53 +472,48 @@ def test_apply_policy_spdx_or_expression_not_flagged_when_one_branch_clean() -> 
     assert len(result.allowed) == 1
 
 
-def test_apply_policy_spdx_and_expression_flagged_when_any_part_violates() -> None:
-    """ "GPL-2.0-only AND MIT" requires both parts, so the GPL part still violates."""
-    pkgs = [_pkg("dual-required", "GPL-2.0-only AND MIT")]
-    result = apply_policy(pkgs, deny=["GPL"])
-    assert len(result.violations) == 1
-
-
 # ---------------------------------------------------------------------------
 # Integration: happy / violation paths end-to-end
 # ---------------------------------------------------------------------------
 
 
-def test_license_happy_path(tmp_path: Path) -> None:
-    """All MIT packages with MIT allow-list → exit 0."""
-    _write_nm_pkg(tmp_path, "lodash", "4.17.21", "MIT")
-    _write_nm_pkg(tmp_path, "express", "4.18.2", "MIT")
-    rc = main(["--allow", "MIT", "--no-fail-unknown", str(tmp_path)])
-    assert rc == 0
-
-
-def test_license_violation_exit_1(tmp_path: Path) -> None:
-    """GPL package with MIT allow-list → exit 1."""
-    _write_nm_pkg(tmp_path, "gpl-lib", "1.0.0", "GPL-3.0")
-    rc = main(["--allow", "MIT", "--no-fail-unknown", str(tmp_path)])
-    assert rc == 1
-
-
-def test_license_deny_list_exit_1(tmp_path: Path) -> None:
-    """Denied license found → exit 1."""
-    _write_nm_pkg(tmp_path, "copyleft", "1.0.0", "GPL-3.0")
-    rc = main(["--deny", "GPL-3.0", "--no-fail-unknown", str(tmp_path)])
-    assert rc == 1
-
-
-def test_license_unknown_exit_2_without_flag(tmp_path: Path) -> None:
-    """Unknown licenses → exit 2 by default."""
-    _write_nm_pkg(tmp_path, "mystery", "1.0.0", "")
-    rc = main([str(tmp_path)])
-    # unknown license → exit 2
-    assert rc == 2
-
-
-def test_license_unknown_exit_0_with_flag(tmp_path: Path) -> None:
-    """--no-fail-unknown: exit 0 even with unknown licenses."""
-    _write_nm_pkg(tmp_path, "mystery", "1.0.0", "")
-    rc = main(["--no-fail-unknown", str(tmp_path)])
-    assert rc == 0
+@pytest.mark.parametrize(
+    ("packages", "args", "expected_rc"),
+    [
+        # All MIT packages with MIT allow-list → exit 0.
+        (
+            [("lodash", "4.17.21", "MIT"), ("express", "4.18.2", "MIT")],
+            ["--allow", "MIT", "--no-fail-unknown"],
+            0,
+        ),
+        # GPL package with MIT allow-list → exit 1.
+        (
+            [("gpl-lib", "1.0.0", "GPL-3.0")],
+            ["--allow", "MIT", "--no-fail-unknown"],
+            1,
+        ),
+        # Denied license found → exit 1.
+        (
+            [("copyleft", "1.0.0", "GPL-3.0")],
+            ["--deny", "GPL-3.0", "--no-fail-unknown"],
+            1,
+        ),
+        # Unknown licenses → exit 2 by default.
+        ([("mystery", "1.0.0", "")], [], 2),
+        # --no-fail-unknown: exit 0 even with unknown licenses.
+        ([("mystery", "1.0.0", "")], ["--no-fail-unknown"], 0),
+    ],
+)
+def test_license_exit_code(
+    tmp_path: Path,
+    packages: list[tuple[str, str, str]],
+    args: list[str],
+    expected_rc: int,
+) -> None:
+    for name, version, lic in packages:
+        _write_nm_pkg(tmp_path, name, version, lic)
+    rc = main([*args, str(tmp_path)])
+    assert rc == expected_rc
 
 
 # ---------------------------------------------------------------------------
