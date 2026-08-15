@@ -936,9 +936,8 @@ def _extract_min_version_from_constraint(constraint: str) -> str | None:
     - Lower-bound constraint: ``">= 1.5.5"`` or ``">=1.5.5, <2.0"`` → ``"1.5.5"``
 
     Returns ``None`` when the constraint cannot be resolved to a concrete version.
-    This function is used by ``_apply_cargo_targeted`` to convert cargo-audit
-    ``patched.requirements`` constraints to the exact version accepted by
-    ``cargo update --precise``.
+    Used to convert cargo-audit ``patched.requirements`` constraints to the
+    exact version accepted by ``cargo update --precise``.
     """
     constraint = constraint.strip()
     # Already an exact version — starts with a digit.
@@ -983,40 +982,6 @@ def _apply_py_uv_targeted(ws_path: str, items: list[RemediationItem]) -> ApplyOu
             )
         added.append(item.package)
     return ApplyOutcome(workspace=ws_path, status="ok", changes_count=len(added))
-
-
-def _apply_cargo_targeted(ws_path: str, items: list[RemediationItem]) -> ApplyOutcome:
-    """Pin advisory-vulnerable Rust crates to their safe versions via ``cargo update``.
-
-    Parses each item's ``safe_version`` constraint (e.g. ``">= 1.5.5"``) to an
-    exact version and runs ``cargo update -p <crate> --precise <version>``.
-
-    Unlike a broad ``cargo update`` that bumps every dependency, this targets
-    only the specific vulnerable crates identified by ``cargo audit``.
-
-    Items whose constraint cannot be resolved to a concrete version are skipped
-    (non-fatal); if no items can be resolved the outcome is ``"ok"`` with zero
-    changes rather than an error.
-    """
-    updated: list[str] = []
-    for item in items:
-        ver = _extract_min_version_from_constraint(item.safe_version)
-        if not ver:
-            continue  # constraint cannot be resolved to an exact version; skip
-        rc, _stdout, stderr = _run(
-            ["cargo", "update", "-p", item.package, "--precise", ver], ws_path
-        )
-        if rc != 0:
-            return ApplyOutcome(
-                workspace=ws_path,
-                status="fail",
-                error=(
-                    f"cargo update -p {item.package} --precise {ver}: "
-                    f"{(stderr or _stdout or 'failed')[:200]}"
-                ),
-            )
-        updated.append(item.package)
-    return ApplyOutcome(workspace=ws_path, status="ok", changes_count=len(updated))
 
 
 def _apply_go_targeted(ws_path: str, items: list[RemediationItem]) -> ApplyOutcome:

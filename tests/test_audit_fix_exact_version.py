@@ -7,8 +7,8 @@ Verifies:
 - Normal (non-audit) targeted-bump still uses ``@latest`` when no override is set.
 - apply_remediations sets the npm/pnpm/yarn version overrides before delegating
   to orchestration.process_workspace so the targeted bump lands the exact version.
-- _apply_py_uv_targeted issues ``uv add <pkg>==<version>`` for Python workspaces.
-- _apply_cargo_targeted issues ``cargo update -p <pkg> --precise <version>`` for Rust.
+- _apply_py_uv_targeted issues ``uv add <pkg>==<version>`` for Python workspaces,
+  and apply_remediations dispatches py-uv items to it directly.
 - _extract_min_version_from_constraint correctly parses version strings and
   cargo-audit constraint expressions.
 """
@@ -26,7 +26,6 @@ import pytest
 
 from repo_ops_audit.audit import (
     RemediationItem,
-    _apply_cargo_targeted,
     _apply_py_uv_targeted,
     _extract_min_version_from_constraint,
     apply_remediations,
@@ -620,6 +619,7 @@ def test_apply_py_uv_targeted_skips_empty_safe_version() -> None:
     assert outcome.changes_count == 0
     assert not captured_cmds, "no uv add should be issued for empty safe_version"
 
+
 def test_apply_remediations_dispatches_py_uv_to_targeted_apply(
     tmp_path: Path,
 ) -> None:
@@ -654,92 +654,3 @@ def test_apply_remediations_dispatches_py_uv_to_targeted_apply(
     assert not any("sync" in s or "--upgrade" in s for s in cmd_strs), (
         f"must not fall through to the broad uv sync --upgrade path; got {cmd_strs}"
     )
-
-# ---------------------------------------------------------------------------
-# _apply_cargo_targeted: pins Rust crates via cargo update --precise
-# ---------------------------------------------------------------------------
-
-
-def test_apply_cargo_targeted_calls_cargo_update_precise() -> None:
-    """_apply_cargo_targeted issues 'cargo update -p crate --precise version'."""
-    items = [
-        RemediationItem("regex", ">= 1.5.5", "rust", "/ws"),
-    ]
-    captured_cmds: list[list[str]] = []
-
-    def _fake_run(cmd, cwd):
-        captured_cmds.append(list(cmd))
-        return 0, "", ""
-
-    with patch("repo_ops_audit.audit._run", side_effect=_fake_run):
-        outcome = _apply_cargo_targeted("/ws", items)
-
-    assert outcome.status == "ok"
-    assert outcome.changes_count == 1
-
-    cmd_strs = [" ".join(c) for c in captured_cmds]
-    # Expect: cargo update -p regex --precise 1.5.5
-    assert any("cargo update -p regex --precise 1.5.5" in s for s in cmd_strs), (
-        f"expected precise cargo update; got {cmd_strs}"
-    )
-
-
-def test_apply_cargo_targeted_exact_version_string() -> None:
-    """Exact version in safe_version (no operator) → used directly as --precise arg."""
-    items = [RemediationItem("serde", "1.0.160", "rust", "/ws")]
-    captured_cmds: list[list[str]] = []
-
-    def _fake_run(cmd, cwd):
-        captured_cmds.append(list(cmd))
-        return 0, "", ""
-
-    with patch("repo_ops_audit.audit._run", side_effect=_fake_run):
-        outcome = _apply_cargo_targeted("/ws", items)
-
-    assert outcome.status == "ok"
-    cmd_strs = [" ".join(c) for c in captured_cmds]
-    assert any("--precise 1.0.160" in s for s in cmd_strs), (
-        f"expected --precise 1.0.160; got {cmd_strs}"
-    )
-
-
-def test_apply_cargo_targeted_skips_unresolvable_constraint() -> None:
-    """Items whose constraint cannot resolve to an exact version are skipped (non-fatal)."""
-    items = [RemediationItem("obscure-crate", "unknown-constraint", "rust", "/ws")]
-
-    with patch("repo_ops_audit.audit._run", return_value=(0, "", "")) as mock_run:
-        outcome = _apply_cargo_targeted("/ws", items)
-
-    assert outcome.status == "ok"
-    assert outcome.changes_count == 0
-    mock_run.assert_not_called()
-
-
-def test_apply_cargo_targeted_not_cargo_update_all() -> None:
-    """_apply_cargo_targeted must NOT run a broad 'cargo update' without -p flag."""
-    items = [RemediationItem("regex", ">= 1.5.5", "rust", "/ws")]
-    captured_cmds: list[list[str]] = []
-
-    def _fake_run(cmd, cwd):
-        captured_cmds.append(list(cmd))
-        return 0, "", ""
-
-    with patch("repo_ops_audit.audit._run", side_effect=_fake_run):
-        _apply_cargo_targeted("/ws", items)
-
-    for cmd in captured_cmds:
-        # Must have -p flag (targeted, not blanket update)
-        assert "-p" in cmd, f"cargo update must be targeted (-p flag); got: {cmd}"
-
-
-def test_apply_cargo_targeted_returns_fail_on_nonzero_exit() -> None:
-    """Non-zero cargo exit → ApplyOutcome with status 'fail'."""
-    items = [RemediationItem("regex", ">= 1.5.5", "rust", "/ws")]
-
-    with patch(
-        "repo_ops_audit.audit._run", return_value=(1, "", "no Cargo.lock found")
-    ):
-        outcome = _apply_cargo_targeted("/ws", items)
-
-    assert outcome.status == "fail"
-    assert "regex" in outcome.error
