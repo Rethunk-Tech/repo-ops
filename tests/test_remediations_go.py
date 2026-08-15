@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from repo_ops_models import WorkspaceResult
 from repo_ops_upgrade_remediations_go import remediations as go_rem
 
@@ -21,65 +23,45 @@ def _result(tmp_path: Path, make_workspace, ecosystem: str = "go") -> WorkspaceR
 # ── detect_gofmt ─────────────────────────────────────────────────────────────
 
 
-def test_detect_gofmt_false_for_node_ecosystem(
-    tmp_path: Path, make_workspace, make_change
+@pytest.mark.parametrize(
+    "ecosystem,write_go_mod,has_change,apply,expected",
+    [
+        ("node", False, True, True, False),
+        ("rust", True, True, True, False),
+        ("py", False, True, True, False),
+        ("go", False, True, True, False),
+        ("go", True, True, True, True),
+        # No changes AND apply=True → don't trigger (nothing changed to reformat).
+        ("go", True, False, True, False),
+        # Plan mode (apply=False) with empty changes still triggers for report.
+        ("go", True, False, False, True),
+    ],
+    ids=[
+        "wrong-ecosystem-node",
+        "wrong-ecosystem-rust-with-go-mod",
+        "wrong-ecosystem-py",
+        "go-no-go-mod",
+        "go-with-go-mod-and-changes",
+        "no-changes-apply-mode",
+        "plan-mode-no-changes",
+    ],
+)
+def test_detect_gofmt(
+    tmp_path: Path,
+    make_workspace,
+    make_change,
+    ecosystem: str,
+    write_go_mod: bool,
+    has_change: bool,
+    apply: bool,
+    expected: bool,
 ) -> None:
-    ws = make_workspace(tmp_path, ecosystem="node", manager="go", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("react")], "apply": True}
-    assert go_rem.detect_gofmt(ws, ctx) is False
-
-
-def test_detect_gofmt_false_for_rust_ecosystem(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    ws = make_workspace(tmp_path, ecosystem="rust", manager="go", label="test")
-    (tmp_path / "go.mod").write_text("module example.com/m\n")
-    ctx: dict[str, Any] = {"changes": [make_change("crate")], "apply": True}
-    assert go_rem.detect_gofmt(ws, ctx) is False
-
-
-def test_detect_gofmt_false_for_py_ecosystem(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    ws = make_workspace(tmp_path, ecosystem="py", manager="go", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("httpx")], "apply": True}
-    assert go_rem.detect_gofmt(ws, ctx) is False
-
-
-def test_detect_gofmt_false_go_no_go_mod(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    # go ecosystem but no go.mod present
-    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("golang.org/x/net")], "apply": True}
-    assert go_rem.detect_gofmt(ws, ctx) is False
-
-
-def test_detect_gofmt_true_go_with_go_mod_and_changes(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    (tmp_path / "go.mod").write_text("module example.com/m\n\ngo 1.21\n")
-    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("golang.org/x/net")], "apply": True}
-    assert go_rem.detect_gofmt(ws, ctx) is True
-
-
-def test_detect_gofmt_false_when_no_changes_apply_mode(
-    tmp_path: Path, make_workspace
-) -> None:
-    """No changes AND apply=True → don't trigger (nothing changed to reformat)."""
-    (tmp_path / "go.mod").write_text("module example.com/m\n")
-    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="test")
-    ctx: dict[str, Any] = {"changes": [], "apply": True}
-    assert go_rem.detect_gofmt(ws, ctx) is False
-
-
-def test_detect_gofmt_true_plan_mode_no_changes(tmp_path: Path, make_workspace) -> None:
-    """Plan mode (apply=False) with empty changes still triggers for report."""
-    (tmp_path / "go.mod").write_text("module example.com/m\n")
-    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="test")
-    ctx: dict[str, Any] = {"changes": [], "apply": False}
-    assert go_rem.detect_gofmt(ws, ctx) is True
+    if write_go_mod:
+        (tmp_path / "go.mod").write_text("module example.com/m\n")
+    ws = make_workspace(tmp_path, ecosystem=ecosystem, manager="go", label="test")
+    changes = [make_change("golang.org/x/net")] if has_change else []
+    ctx: dict[str, Any] = {"changes": changes, "apply": apply}
+    assert go_rem.detect_gofmt(ws, ctx) is expected
 
 
 # ── report_gofmt ─────────────────────────────────────────────────────────────

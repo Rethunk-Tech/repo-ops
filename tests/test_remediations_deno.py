@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from repo_ops_models import WorkspaceResult
 from repo_ops_upgrade_remediations_deno import remediations as deno_rem
 
@@ -21,91 +23,53 @@ def _result(tmp_path: Path, make_workspace, ecosystem: str = "deno") -> Workspac
 # ── detect_deno_fix ──────────────────────────────────────────────────────────
 
 
-def test_detect_deno_fix_false_for_node_ecosystem(
-    tmp_path: Path, make_workspace, make_change
+@pytest.mark.parametrize(
+    "ecosystem,config_file,has_change,apply,which_available,expected",
+    [
+        ("node", None, True, True, True, False),
+        ("go", "deno.json", True, True, True, False),
+        ("py", None, True, True, True, False),
+        ("deno", None, True, True, True, False),
+        ("deno", "deno.json", True, True, True, True),
+        ("deno", "deno.jsonc", True, True, True, True),
+        # No changes AND apply=True → don't trigger (nothing changed to reformat).
+        ("deno", "deno.json", False, True, True, False),
+        # Plan mode (apply=False) with empty changes still triggers for report.
+        ("deno", "deno.json", False, False, True, True),
+        # Gracefully skip (not fail) detection when the deno binary is absent.
+        ("deno", "deno.json", True, True, False, False),
+    ],
+    ids=[
+        "wrong-ecosystem-node",
+        "wrong-ecosystem-go-with-config",
+        "wrong-ecosystem-py",
+        "deno-no-config",
+        "deno-json-config",
+        "deno-jsonc-config",
+        "no-changes-apply-mode",
+        "plan-mode-no-changes",
+        "deno-absent",
+    ],
+)
+def test_detect_deno_fix(
+    tmp_path: Path,
+    make_workspace,
+    make_change,
+    ecosystem: str,
+    config_file: str | None,
+    has_change: bool,
+    apply: bool,
+    which_available: bool,
+    expected: bool,
 ) -> None:
-    ws = make_workspace(tmp_path, ecosystem="node", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("react")], "apply": True}
-    assert deno_rem.detect_deno_fix(ws, ctx) is False
-
-
-def test_detect_deno_fix_false_for_go_ecosystem(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    ws = make_workspace(tmp_path, ecosystem="go", manager="deno", label="test")
-    (tmp_path / "deno.json").write_text("{}\n")
-    ctx: dict[str, Any] = {"changes": [make_change("pkg")], "apply": True}
-    assert deno_rem.detect_deno_fix(ws, ctx) is False
-
-
-def test_detect_deno_fix_false_for_py_ecosystem(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    ws = make_workspace(tmp_path, ecosystem="py", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("httpx")], "apply": True}
-    assert deno_rem.detect_deno_fix(ws, ctx) is False
-
-
-def test_detect_deno_fix_false_deno_no_config(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    # deno ecosystem but no deno.json/deno.jsonc/deno.lock present
-    ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("std")], "apply": True}
-    assert deno_rem.detect_deno_fix(ws, ctx) is False
-
-
-def test_detect_deno_fix_true_deno_with_config_and_changes(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    (tmp_path / "deno.json").write_text("{}\n")
-    ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("std")], "apply": True}
-    with patch.object(deno_rem.shutil, "which", return_value="/usr/bin/deno"):
-        assert deno_rem.detect_deno_fix(ws, ctx) is True
-
-
-def test_detect_deno_fix_true_with_jsonc_config(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    (tmp_path / "deno.jsonc").write_text("{}\n")
-    ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("std")], "apply": True}
-    with patch.object(deno_rem.shutil, "which", return_value="/usr/bin/deno"):
-        assert deno_rem.detect_deno_fix(ws, ctx) is True
-
-
-def test_detect_deno_fix_false_when_no_changes_apply_mode(
-    tmp_path: Path, make_workspace
-) -> None:
-    """No changes AND apply=True → don't trigger (nothing changed to reformat)."""
-    (tmp_path / "deno.json").write_text("{}\n")
-    ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [], "apply": True}
-    with patch.object(deno_rem.shutil, "which", return_value="/usr/bin/deno"):
-        assert deno_rem.detect_deno_fix(ws, ctx) is False
-
-
-def test_detect_deno_fix_true_plan_mode_no_changes(
-    tmp_path: Path, make_workspace
-) -> None:
-    """Plan mode (apply=False) with empty changes still triggers for report."""
-    (tmp_path / "deno.json").write_text("{}\n")
-    ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [], "apply": False}
-    with patch.object(deno_rem.shutil, "which", return_value="/usr/bin/deno"):
-        assert deno_rem.detect_deno_fix(ws, ctx) is True
-
-
-def test_detect_deno_fix_false_when_deno_absent(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    """Gracefully skip (not fail) detection when the deno binary is not installed."""
-    (tmp_path / "deno.json").write_text("{}\n")
-    ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("std")], "apply": True}
-    with patch.object(deno_rem.shutil, "which", return_value=None):
-        assert deno_rem.detect_deno_fix(ws, ctx) is False
+    if config_file is not None:
+        (tmp_path / config_file).write_text("{}\n")
+    ws = make_workspace(tmp_path, ecosystem=ecosystem, manager="deno", label="test")
+    changes = [make_change("std")] if has_change else []
+    ctx: dict[str, Any] = {"changes": changes, "apply": apply}
+    which_return = "/usr/bin/deno" if which_available else None
+    with patch.object(deno_rem.shutil, "which", return_value=which_return):
+        assert deno_rem.detect_deno_fix(ws, ctx) is expected
 
 
 # ── report_deno_fix ──────────────────────────────────────────────────────────

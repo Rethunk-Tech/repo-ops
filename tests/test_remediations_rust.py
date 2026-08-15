@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from repo_ops_models import WorkspaceResult
 from repo_ops_upgrade_remediations_rust import remediations as rust_rem
 
@@ -21,67 +23,45 @@ def _result(tmp_path: Path, make_workspace, ecosystem: str = "rust") -> Workspac
 # ── detect_cargo_fix ─────────────────────────────────────────────────────────
 
 
-def test_detect_cargo_fix_false_for_node_ecosystem(
-    tmp_path: Path, make_workspace, make_change
+@pytest.mark.parametrize(
+    "ecosystem,write_cargo_toml,has_change,apply,expected",
+    [
+        ("node", False, True, True, False),
+        ("go", True, True, True, False),
+        ("py", False, True, True, False),
+        ("rust", False, True, True, False),
+        ("rust", True, True, True, True),
+        # No changes AND apply=True → don't trigger (nothing changed to reformat).
+        ("rust", True, False, True, False),
+        # Plan mode (apply=False) with empty changes still triggers for report.
+        ("rust", True, False, False, True),
+    ],
+    ids=[
+        "wrong-ecosystem-node",
+        "wrong-ecosystem-go-with-cargo-toml",
+        "wrong-ecosystem-py",
+        "rust-no-cargo-toml",
+        "rust-with-cargo-toml-and-changes",
+        "no-changes-apply-mode",
+        "plan-mode-no-changes",
+    ],
+)
+def test_detect_cargo_fix(
+    tmp_path: Path,
+    make_workspace,
+    make_change,
+    ecosystem: str,
+    write_cargo_toml: bool,
+    has_change: bool,
+    apply: bool,
+    expected: bool,
 ) -> None:
-    ws = make_workspace(tmp_path, ecosystem="node", manager="cargo", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("react")], "apply": True}
-    assert rust_rem.detect_cargo_fix(ws, ctx) is False
-
-
-def test_detect_cargo_fix_false_for_go_ecosystem(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    ws = make_workspace(tmp_path, ecosystem="go", manager="cargo", label="test")
-    (tmp_path / "Cargo.toml").write_text("[package]\nname = 'foo'\n")
-    ctx: dict[str, Any] = {"changes": [make_change("pkg")], "apply": True}
-    assert rust_rem.detect_cargo_fix(ws, ctx) is False
-
-
-def test_detect_cargo_fix_false_for_py_ecosystem(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    ws = make_workspace(tmp_path, ecosystem="py", manager="cargo", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("httpx")], "apply": True}
-    assert rust_rem.detect_cargo_fix(ws, ctx) is False
-
-
-def test_detect_cargo_fix_false_rust_no_cargo_toml(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    # rust ecosystem but no Cargo.toml present
-    ws = make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("serde")], "apply": True}
-    assert rust_rem.detect_cargo_fix(ws, ctx) is False
-
-
-def test_detect_cargo_fix_true_rust_with_cargo_toml_and_changes(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
-    (tmp_path / "Cargo.toml").write_text("[package]\nname = 'foo'\nversion = '0.1.0'\n")
-    ws = make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="test")
-    ctx: dict[str, Any] = {"changes": [make_change("serde")], "apply": True}
-    assert rust_rem.detect_cargo_fix(ws, ctx) is True
-
-
-def test_detect_cargo_fix_false_when_no_changes_apply_mode(
-    tmp_path: Path, make_workspace
-) -> None:
-    """No changes AND apply=True → don't trigger (nothing changed to reformat)."""
-    (tmp_path / "Cargo.toml").write_text("[package]\nname = 'foo'\n")
-    ws = make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="test")
-    ctx: dict[str, Any] = {"changes": [], "apply": True}
-    assert rust_rem.detect_cargo_fix(ws, ctx) is False
-
-
-def test_detect_cargo_fix_true_plan_mode_no_changes(
-    tmp_path: Path, make_workspace
-) -> None:
-    """Plan mode (apply=False) with empty changes still triggers for report."""
-    (tmp_path / "Cargo.toml").write_text("[package]\nname = 'foo'\n")
-    ws = make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="test")
-    ctx: dict[str, Any] = {"changes": [], "apply": False}
-    assert rust_rem.detect_cargo_fix(ws, ctx) is True
+    if write_cargo_toml:
+        (tmp_path / "Cargo.toml").write_text("[package]\nname = 'foo'\n")
+    ws = make_workspace(tmp_path, ecosystem=ecosystem, manager="cargo", label="test")
+    changes = [make_change("serde")] if has_change else []
+    ctx: dict[str, Any] = {"changes": changes, "apply": apply}
+    assert rust_rem.detect_cargo_fix(ws, ctx) is expected
 
 
 # ── report_cargo_fix ─────────────────────────────────────────────────────────
