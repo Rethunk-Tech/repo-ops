@@ -195,7 +195,6 @@ class PinReplacement:
     pin: str
     latest: str
     line: int | None = None
-    drop_comment: bool = False  # Unused since byte-preserving rewrite path (issue #117)
     # Optional comment rewrite for cross-major SHA refresh (#138): when set,
     # the first element is the old comment text and the second is the new comment
     # text.  Applied on the same line as the pin replacement (e.g. ``"# v6"``
