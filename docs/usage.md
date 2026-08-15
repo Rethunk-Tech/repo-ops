@@ -21,7 +21,14 @@ Subcommands (entry point in `src/repo_ops`):
 
 Default scan roots: [`DEFAULT_ROOTS`](../src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. Discovery flags (`--flat`, `--follow-symlinks`, actions-only repos): [Security and discovery](#security-and-discovery).
 
-`--json` is available on every subcommand except `sbom` (which emits its report via `--format`/`--output` instead). `--json-out PATH` (writes the report atomically to `PATH`; stdout prints only that path) is available on `inventory`, `plan`, `apply`, `pushed`, and `doctor` — for `plan`/`apply`, stdout is otherwise one JSON object. JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno`. `--log-level {debug,info,warning,error}` sets the stdlib root logger level; `--verbose` / `-v` enables subprocess echo and implies `debug` when `--log-level` is absent. `--submodules` (default on, detection only) adds `submodules[]` to plan/apply JSON; `--no-submodules` skips the scan. `apply` processes child git repos before parent umbrellas whenever `.gitmodules` is present, via the default `--submodule-order=children-first`; `--submodule-order=discovery` restores plain scan order.
+`--json` is available on every subcommand except `sbom` (which emits its report via `--format`/`--output` instead). `--json-out PATH` (writes the report atomically to `PATH`; stdout prints only that path) is available on `inventory`, `plan`, `apply`, `pushed`, and `doctor` — for `plan`/`apply`, stdout is otherwise one JSON object. JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno`. `--manager MANAGER` narrows `plan`/`apply` to one package manager (`bun`, `npm`, `pnpm`, `yarn`, `uv`, `poetry`, `pip-tools`, `hatch`, `pdm`, `pipenv`, `deno`, `go`, `rust`, `container`, `precommit`). `--log-level {debug,info,warning,error}` sets the stdlib root logger level; `--verbose` / `-v` enables subprocess echo and implies `debug` when `--log-level` is absent. `--log-file PATH` writes `plan`/`apply`'s combined stdout/stderr transcript to `PATH` (no shell pipe needed). `--submodules` (default on, detection only) adds `submodules[]` to plan/apply JSON; `--no-submodules` skips the scan. `apply` processes child git repos before parent umbrellas whenever `.gitmodules` is present, via the default `--submodule-order=children-first`; `--submodule-order=discovery` restores plain scan order.
+
+### `inventory` — dependency footprint
+
+`repo-ops inventory [root_dir ...]` reports read-only dependency counts per workspace.
+
+- `--sort {name,direct,versions,on-disk,edges}` — sort column; `name` sorts ascending, every other column sorts descending (default: `name`).
+- `--no-cache` — bypass the XDG Go module result cache.
 
 ### `pushed` — local reflog or GitHub PushEvent
 
@@ -37,6 +44,15 @@ large pushes), collection falls back to the authenticated compare API between
 and are called out in the human summary rather than looking like a true empty
 window. GitHub API or auth failures exit non-zero rather than reporting zero
 pushes.
+
+**Flags** (see `repo-ops pushed --help` for the full list):
+
+- `--hours HOURS` — rolling window length in hours; must be `> 0` (default: `24`).
+- `--since ISO8601` — window start (timezone required, e.g. `2026-05-26T00:00Z`).
+- `--until ISO8601` — window end (timezone required; defaults to now).
+- `--show-shas` — after the table, print each commit SHA (8 chars) grouped by repo.
+- `--show-messages` — implies `--show-shas`; also print each commit subject (max 100 chars).
+- `--count-only` — print only the total commit count.
 
 ### Plan vs apply
 
@@ -340,6 +356,11 @@ Run `repo-ops <subcommand> --help` for all flags.
 ### `install-skill` — bundled agent skill
 
 `repo-ops install-skill --check` verifies installed Cursor/Claude skill copies without writing: exit `0` when absent or matching, `1` on drift; use `--force` to overwrite.
+
+- `--target {cursor,claude,both}` — where to install (default: `both`).
+- `--home DIR` — override home directory (also `REPO_OPS_HOME` env).
+- `--dest DIR` — install directly to this skill directory (testing; ignores `--target` layout).
+- `--dry-run` — print planned installs without writing files.
 
 ## Settings reference
 

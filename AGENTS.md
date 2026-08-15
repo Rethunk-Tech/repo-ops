@@ -75,26 +75,7 @@ repo-ops apply /path/to/umbrella
 
 ### Flags cheat sheet
 
-Full flag reference: `repo-ops <subcommand> --help` (authoritative). [docs/usage.md](docs/usage.md) covers most flags in depth; the ones below are agent-critical and not documented in either place, so they stay here:
-
-| Flag | Applies to | Purpose |
-| ------ | ------------ | --------- |
-| `--manager MANAGER` | plan, apply | Limit to one package manager |
-| `--log-file PATH` | plan, apply | Combined stdout/stderr transcript |
-| `--hours HOURS` | pushed | Rolling window in hours (default: 24) |
-| `--since ISO8601` | pushed | Window start (timezone required, e.g. `2026-05-26T00:00Z`) |
-| `--until ISO8601` | pushed | Window end (timezone required; defaults to now) |
-| `--show-shas` | pushed | Print commit SHAs (8 chars) grouped by repo after the table |
-| `--show-messages` | pushed | Implies `--show-shas`; also print each commit subject (max 100 chars) |
-| `--count-only` | pushed | Print only the total commit count |
-| `--sort {name,direct,versions,on-disk,edges}` | inventory | Sort column (default: `name` asc; others descending) |
-| `--no-cache` | inventory | Bypass XDG Go module result cache |
-| `--target {cursor,claude,both}` | install-skill | Where to install (default: `both`) |
-| `--home DIR` | install-skill | Override home directory (also `REPO_OPS_HOME` env) |
-| `--dest DIR` | install-skill | Install directly to this path (testing; ignores `--target` layout) |
-| `--dry-run` | install-skill | Print planned installs without writing files |
-
-Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md#security-and-discovery).
+Full flag reference: `repo-ops <subcommand> --help` (authoritative); flags in depth: [docs/usage.md](docs/usage.md). Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md#security-and-discovery).
 
 ### What NOT to do
 
