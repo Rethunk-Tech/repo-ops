@@ -11,6 +11,7 @@ from pathlib import Path
 
 from repo_ops_core.config import (
     ambient_env,
+    coerce_bool_setting,
     load_global_config,
     load_repo_config,
     resolve_setting,
@@ -19,7 +20,7 @@ from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
-from repo_ops_js.audit_overrides import clear_audit_overrides, set_audit_overrides
+from repo_ops_js.audit_overrides import make_audit_override_api
 from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 from repo_ops_lockfiles.parsers import versions_deno_lock
 from repo_ops_lockfiles.snapshots import snapshot_workspace_files
@@ -27,7 +28,6 @@ from repo_ops_models import Change, Workspace
 
 _DENO_UPDATE_LATEST_ENV = "REPO_OPS_DENO_UPDATE_LATEST"
 _DENO_TARGETED_BUMP_ENV = "REPO_OPS_DENO_TARGETED_BUMP"
-_TRUE_VALUES = ("1", "true", "yes", "on")
 _DENO_CONFIG_FILENAMES = ("deno.json", "deno.jsonc")
 _DENO_IMPORT_MAP_FILENAMES = (
     "import_map.json",
@@ -73,9 +73,7 @@ def _deno_setting(name: str, env_var: str, ws: Workspace | None = None) -> bool:
         repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
         global_cfg=load_global_config(),
     )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw).strip().lower() in _TRUE_VALUES
+    return coerce_bool_setting(raw)
 
 
 def _deno_update_latest_enabled(ws: Workspace | None = None) -> bool:
@@ -292,12 +290,9 @@ def _restore_deno_workspace(ws: Workspace, before: dict[Path, bytes]) -> None:
             path.unlink()
 
 
-def set_deno_audit_version_overrides(overrides: dict[str, str]) -> None:
-    set_audit_overrides(_AUDIT_VERSION_OVERRIDES, overrides)
-
-
-def clear_deno_audit_version_overrides() -> None:
-    clear_audit_overrides(_AUDIT_VERSION_OVERRIDES)
+set_deno_audit_version_overrides, clear_deno_audit_version_overrides = (
+    make_audit_override_api(_AUDIT_VERSION_OVERRIDES)
+)
 
 
 def apply_deno_audit_version_overrides(ws: Workspace) -> None:
