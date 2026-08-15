@@ -855,46 +855,40 @@ class TestVerifyHatchFast:
 
 
 # ---------------------------------------------------------------------------
-# Task 5 — Env-overridable timeouts
+# Env-overridable timeouts
 # ---------------------------------------------------------------------------
+
+_TIMEOUTS = [
+    (_TIMEOUT_CHECK_ENV, resolve_timeout_check, TIMEOUT_CHECK, 42),
+    (_TIMEOUT_APPLY_ENV, resolve_timeout_apply, TIMEOUT_APPLY, 123),
+    (_TIMEOUT_VERIFY_ENV, resolve_timeout_verify, TIMEOUT_VERIFY, 300),
+]
 
 
 class TestTimeoutEnvOverride:
-    def test_resolve_timeout_check_default(
-        self, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(("env_var", "resolve", "default", "override"), _TIMEOUTS)
+    def test_resolve_timeout_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        env_var: str,
+        resolve,
+        default: int,
+        override: int,
     ) -> None:
-        monkeypatch.delenv(_TIMEOUT_CHECK_ENV, raising=False)
-        assert resolve_timeout_check() == TIMEOUT_CHECK
+        monkeypatch.delenv(env_var, raising=False)
+        assert resolve() == default
 
-    def test_resolve_timeout_apply_default(
-        self, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(("env_var", "resolve", "default", "override"), _TIMEOUTS)
+    def test_resolve_timeout_override(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        env_var: str,
+        resolve,
+        default: int,
+        override: int,
     ) -> None:
-        monkeypatch.delenv(_TIMEOUT_APPLY_ENV, raising=False)
-        assert resolve_timeout_apply() == TIMEOUT_APPLY
-
-    def test_resolve_timeout_verify_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.delenv(_TIMEOUT_VERIFY_ENV, raising=False)
-        assert resolve_timeout_verify() == TIMEOUT_VERIFY
-
-    def test_resolve_timeout_check_override(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv(_TIMEOUT_CHECK_ENV, "42")
-        assert resolve_timeout_check() == 42
-
-    def test_resolve_timeout_apply_override(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv(_TIMEOUT_APPLY_ENV, "123")
-        assert resolve_timeout_apply() == 123
-
-    def test_resolve_timeout_verify_override(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv(_TIMEOUT_VERIFY_ENV, "300")
-        assert resolve_timeout_verify() == 300
+        monkeypatch.setenv(env_var, str(override))
+        assert resolve() == override
 
     def test_invalid_env_falls_back_to_default(
         self, monkeypatch: pytest.MonkeyPatch

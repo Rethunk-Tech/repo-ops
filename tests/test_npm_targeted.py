@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from repo_ops_js_npm.npm import (
     _save_flag_for,
     apply_npm,
@@ -37,39 +39,23 @@ def _seed(d: Path, *, pkg_content: str | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_save_flag_for_peer_dep() -> None:
-    pkg: dict[str, object] = {"peerDependencies": {"react": "^18.0.0"}}
-    assert _save_flag_for("react", pkg) == ["--save-peer"]
-
-
-def test_save_flag_for_regular_dep() -> None:
-    pkg: dict[str, object] = {"dependencies": {"react": "^18.0.0"}}
-    assert _save_flag_for("react", pkg) == ["--save"]
-
-
-def test_save_flag_for_dev_dep() -> None:
-    pkg: dict[str, object] = {"devDependencies": {"typescript": "^5.0.0"}}
-    assert _save_flag_for("typescript", pkg) == ["--save-dev"]
-
-
-def test_save_flag_for_optional_dep() -> None:
-    pkg: dict[str, object] = {"optionalDependencies": {"fsevents": "^2.0.0"}}
-    assert _save_flag_for("fsevents", pkg) == ["--save-optional"]
-
-
-def test_save_flag_for_exact_pin_adds_save_exact() -> None:
-    """Exact pin (no ^/~) → adds --save-exact to preserve the range style."""
-    pkg: dict[str, object] = {"dependencies": {"lodash": "4.17.20"}}
-    flags = _save_flag_for("lodash", pkg)
-    assert "--save" in flags
-    assert "--save-exact" in flags
-
-
-def test_save_flag_for_tilde_range_no_exact() -> None:
-    pkg: dict[str, object] = {"dependencies": {"axios": "~1.6.0"}}
-    flags = _save_flag_for("axios", pkg)
-    assert "--save" in flags
-    assert "--save-exact" not in flags
+@pytest.mark.parametrize(
+    ("section", "name", "spec", "expected"),
+    [
+        ("peerDependencies", "react", "^18.0.0", ["--save-peer"]),
+        ("dependencies", "react", "^18.0.0", ["--save"]),
+        ("devDependencies", "typescript", "^5.0.0", ["--save-dev"]),
+        ("optionalDependencies", "fsevents", "^2.0.0", ["--save-optional"]),
+        # Exact pin (no ^/~) keeps the range style via --save-exact.
+        ("dependencies", "lodash", "4.17.20", ["--save", "--save-exact"]),
+        ("dependencies", "axios", "~1.6.0", ["--save"]),
+    ],
+)
+def test_save_flag_for_dep_section(
+    section: str, name: str, spec: str, expected: list[str]
+) -> None:
+    pkg: dict[str, object] = {section: {name: spec}}
+    assert sorted(_save_flag_for(name, pkg)) == sorted(expected)
 
 
 def test_save_flag_for_unknown_package_defaults_to_save() -> None:

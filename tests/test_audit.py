@@ -284,53 +284,24 @@ def test_exit_code_fail_on_unknown_never_overrides_fail_on_never() -> None:
     assert _exit_code_for(results, "never", fail_on_unknown=True) == 1
 
 
-def test_exit_code_never_is_always_zero() -> None:
-    results = [
-        WorkspaceResult(
-            label="a",
-            path="/a",
-            ecosystem="go",
-            manager="go",
-            status="vulns",
-            counts=VulnCount(critical=5),
-        )
-    ]
-    assert _exit_code_for(results, "never") == 0
-
-
-def test_exit_code_high_triggers_on_critical() -> None:
-    results = [
-        WorkspaceResult(
-            label="a",
-            path="/a",
-            ecosystem="go",
-            manager="go",
-            status="vulns",
-            counts=VulnCount(critical=1),
-        )
-    ]
-    assert _exit_code_for(results, "high") == 1
-
-
-def test_exit_code_critical_ignores_high() -> None:
-    results = [
-        WorkspaceResult(
-            label="a",
-            path="/a",
-            ecosystem="go",
-            manager="go",
-            status="vulns",
-            counts=VulnCount(high=5),
-        )
-    ]
-    assert _exit_code_for(results, "critical") == 0
-
-
-def test_exit_code_ok_results_are_always_zero() -> None:
-    results = [
-        WorkspaceResult(label="a", path="/a", ecosystem="go", manager="go", status="ok")
-    ]
-    assert _exit_code_for(results, "high") == 0
+@pytest.mark.parametrize(
+    ("status", "counts", "fail_on", "expected"),
+    [
+        ("vulns", VulnCount(critical=5), "never", 0),
+        ("vulns", VulnCount(critical=1), "high", 1),
+        ("vulns", VulnCount(high=5), "critical", 0),
+        ("ok", None, "high", 0),
+    ],
+)
+def test_exit_code_for_threshold(
+    status: str, counts: VulnCount | None, fail_on: str, expected: int
+) -> None:
+    result = WorkspaceResult(
+        label="a", path="/a", ecosystem="go", manager="go", status=status
+    )
+    if counts is not None:
+        result.counts = counts
+    assert _exit_code_for([result], fail_on) == expected
 
 
 # ---------------------------------------------------------------------------
