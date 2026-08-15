@@ -5,15 +5,11 @@ from __future__ import annotations
 import concurrent.futures
 import logging
 from collections.abc import Callable
-from typing import TypeVar
-
-T = TypeVar("T")
-R = TypeVar("R")
 
 _LOG = logging.getLogger(__name__)
 
 
-def run_bounded_pool(
+def run_bounded_pool[T, R](
     pool: concurrent.futures.Executor,
     items: list[T],
     fn: Callable[[T], R],
