@@ -26,11 +26,15 @@ from repo_ops_core.constants import resolve_timeout_apply
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
-from repo_ops_js.audit_overrides import clear_audit_overrides, set_audit_overrides
-from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
+from repo_ops_js.audit_overrides import apply_audit_overrides, make_audit_override_api
+from repo_ops_js.guards import (
+    assert_targets_resolved,
+    fold_blocked_into_behind,
+    unresolved_targets,
+)
 from repo_ops_js.holds import (
     enforce_holds,
-    hold_version_spec,
+    fold_held_into_behind,
     is_within_ceiling,
     resolve_package_hold,
 )
@@ -39,11 +43,11 @@ from repo_ops_js.overrides import (
     package_json_paths,
     release_unheld_pin,
 )
+from repo_ops_js.targeted_bump import run_targeted_bump
 from repo_ops_js.workspaces import corepack_prepare
 from repo_ops_lockfiles.parsers import versions_yarn_lock
 from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
-    restore_workspace_snapshot,
     snapshot_workspace_files,
 )
 from repo_ops_models import Change, Workspace
@@ -59,20 +63,9 @@ FILE_PROTOCOL_RE = re.compile(r"^file:(\.\./.+?)(?:#.*)?$")
 # call and cleared in a finally block after.  Empty outside of audit --fix runs.
 _AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 
-
-def set_yarn_audit_version_overrides(overrides: dict[str, str]) -> None:
-    """Inject per-package advisory-safe versions for the next targeted-bump call.
-
-    Called by ``repo_ops_audit.audit.apply_remediations`` so that
-    ``targeted_bump_behind`` uses the advisory-safe version (e.g. ``yarn up pkg@1.5.5``)
-    rather than always running ``yarn up pkg@latest``.
-    """
-    set_audit_overrides(_AUDIT_VERSION_OVERRIDES, overrides)
-
-
-def clear_yarn_audit_version_overrides() -> None:
-    """Reset audit version overrides after each workspace apply."""
-    clear_audit_overrides(_AUDIT_VERSION_OVERRIDES)
+set_yarn_audit_version_overrides, clear_yarn_audit_version_overrides = (
+    make_audit_override_api(_AUDIT_VERSION_OVERRIDES)
+)
 
 
 _STDERR_TAIL_LINES = 12
@@ -319,16 +312,10 @@ def _layout_root(source_root: Path, extras: list[Path]) -> Path:
     if not extras:
         return source_root.parent
     candidates = [source_root, *extras]
-    common_parts: list[str] = []
-    split_paths = [p.parts for p in candidates]
-    for parts in zip(*split_paths, strict=False):
-        if len(set(parts)) == 1:
-            common_parts.append(parts[0])
-        else:
-            break
-    if not common_parts:
+    try:
+        common = Path(os.path.commonpath([str(p) for p in candidates]))
+    except ValueError:
         return source_root.parent
-    common = Path(*common_parts)
     if common in candidates:
         return common.parent
     return common
@@ -491,56 +478,37 @@ def targeted_bump_behind(
     lock = mdir / "yarn.lock"
     if not lock.is_file():
         return [], behind
+
+    def run_bump(name: str, version: str) -> bool:
+        up = run(
+            ["yarn", "up", f"{name}@{version}"], mdir, timeout=resolve_timeout_apply()
+        )
+        if up.returncode != 0:
+            return False
+        install = run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
+        return install.returncode == 0
+
+    def resolve_landed(name: str) -> str | None:
+        return _resolved_versions(lock).get(name)
+
     applied: list[Change] = []
     still_behind: list[Change] = []
     for change in behind:
-        snap = snapshot_workspace_files(mdir, "yarn")
-        # The advisory-safe version wins when set (audit --fix path) — a
-        # security remediation must not be silently blocked by a routine
-        # hold policy; else a hold ceiling when an active rule matches this
-        # package; else @latest.
-        audit_override = _AUDIT_VERSION_OVERRIDES.get(change.name)
-        held_rule = (
-            None
-            if audit_override or ws is None
-            else resolve_package_hold(ws, change.name)
-        )
-        if audit_override:
-            target_ver = audit_override
-        elif held_rule is not None:
-            target_ver = hold_version_spec(held_rule)
-        else:
-            target_ver = "latest"
-        if held_rule is None:
-            # No active hold covers this package — a resolutions/overrides
-            # pin here is legacy debt (predates the hold feature, or was a
-            # one-off never promoted to a tracked hold), not an intentional
-            # ceiling. Release it so the retry below has a real chance;
-            # the snapshot restore on no-advance/failure below reverts this
-            # edit too if the retry doesn't actually pan out.
-            release_unheld_pin(mdir, change.name)
-        up = run(
-            ["yarn", "up", f"{change.name}@{target_ver}"],
+        resolved = run_targeted_bump(
+            ws,
             mdir,
-            timeout=resolve_timeout_apply(),
+            change,
+            manager="yarn",
+            audit_overrides=_AUDIT_VERSION_OVERRIDES,
+            run_bump=run_bump,
+            resolve_landed=resolve_landed,
+            release_pin=release_unheld_pin,
+            verify=None,
         )
-        install = (
-            run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
-            if up.returncode == 0
-            else None
-        )
-        landed = _resolved_versions(lock).get(change.name) if install else None
-        advanced = False
-        if landed:
-            try:
-                advanced = semver_tuple(landed) > semver_tuple(change.from_ver)
-            except (TypeError, ValueError):
-                advanced = landed != change.from_ver
-        if landed and advanced and install and install.returncode == 0:
-            applied.append(Change(change.name, change.from_ver, landed))
-        else:
-            restore_workspace_snapshot(mdir, snap, "yarn")
+        if resolved is None:
             still_behind.append(change)
+        else:
+            applied.append(resolved)
     return applied, still_behind
 
 
@@ -743,11 +711,7 @@ def apply_yarn(ws: Workspace) -> list[Change]:
         behind = [c for c in behind if c.name not in audit_handled]
     if guardable and targeted_bump and not _is_pnp_workspace(ws.path):
         blocked = unresolved_targets(ws, guardable)
-        behind_names = {c.name for c in behind}
-        for ch, _resolved in blocked:
-            if ch.name not in behind_names:
-                behind.append(ch)
-                behind_names.add(ch.name)
+        behind = fold_blocked_into_behind(blocked, behind)
     applied, behind = targeted_bump_behind(ws.path, behind, ws=ws)
     # End-of-apply hold safety net (#holds): clamp anything resolved above an
     # active ceiling, including a package already sitting above a *newly
@@ -760,9 +724,7 @@ def apply_yarn(ws: Workspace) -> list[Change]:
         manager="yarn",
         run_install=lambda name, spec: _yarn_hold_install(ws.path, name, spec),
     )
-    if held:
-        behind = [c for c in behind if c.name not in {h.name for h in held}] + held
-    return behind
+    return fold_held_into_behind(held, behind)
 
 
 def _yarn_hold_install(
@@ -787,33 +749,28 @@ def _apply_yarn_audit_overrides(ws: Workspace) -> set[str]:
     not silently skipped when the user did not also opt into targeted bump.
     Returns the set of package names that were targeted.
     """
-    handled: set[str] = set()
-    if not _AUDIT_VERSION_OVERRIDES:
-        return handled
     mdir = ws.path
-    requested: list[Change] = []
-    for name, safe_version in list(_AUDIT_VERSION_OVERRIDES.items()):
-        name = (name or "").strip()
-        safe_version = (safe_version or "").strip()
-        if not name or not safe_version:
-            continue
+
+    def install(name: str, version: str) -> None:
         up = run(
-            ["yarn", "up", f"{name}@{safe_version}"],
+            ["yarn", "up", f"{name}@{version}"],
             mdir,
             timeout=resolve_timeout_apply(),
         )
         if up.returncode != 0:
             raise _command_failure(
-                f"yarn up {name}@{safe_version} failed (audit override)", up
+                f"yarn up {name}@{version} failed (audit override)", up
             )
-        install = run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
-        if install.returncode != 0:
+        proc = run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
+        if proc.returncode != 0:
             raise _command_failure(
-                f"yarn install after audit override {name}@{safe_version} failed",
-                install,
+                f"yarn install after audit override {name}@{version} failed", proc
             )
-        requested.append(Change(name, "", safe_version))
-        handled.add(name)
-    if requested and not _is_pnp_workspace(mdir):
-        assert_targets_resolved(ws, requested, manager="yarn")
-    return handled
+
+    return apply_audit_overrides(
+        ws,
+        _AUDIT_VERSION_OVERRIDES,
+        manager="yarn",
+        install=install,
+        guard=not _is_pnp_workspace(mdir),
+    )
