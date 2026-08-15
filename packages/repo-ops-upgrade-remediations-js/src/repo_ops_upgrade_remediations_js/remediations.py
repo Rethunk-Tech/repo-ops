@@ -31,9 +31,6 @@ from repo_ops_upgrade_remediations_core.remediations import (
     stderr_tail,
 )
 
-# compat: intentional alias — tests/test_remediations_apply.py constructs Remediation(...).
-Remediation = RemediationHook
-
 
 def _find_biome_configs(mdir: Path) -> list[Path]:
     configs: list[Path] = []
