@@ -24,6 +24,7 @@ from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version, semver_tuple
+from repo_ops_js.audit_overrides import clear_audit_overrides, set_audit_overrides
 from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 from repo_ops_js.holds import (
     direct_dependency_names,
@@ -73,14 +74,12 @@ def set_pnpm_audit_version_overrides(overrides: dict[str, str]) -> None:
     (e.g. ``pnpm add pkg@1.5.5``) rather than always running
     ``pnpm update --latest pkg``.
     """
-    global _AUDIT_VERSION_OVERRIDES
-    _AUDIT_VERSION_OVERRIDES = dict(overrides)
+    set_audit_overrides(_AUDIT_VERSION_OVERRIDES, overrides)
 
 
 def clear_pnpm_audit_version_overrides() -> None:
     """Reset audit version overrides after each workspace apply."""
-    global _AUDIT_VERSION_OVERRIDES
-    _AUDIT_VERSION_OVERRIDES = {}
+    clear_audit_overrides(_AUDIT_VERSION_OVERRIDES)
 
 
 def _pnpm_update_latest_enabled(ws: Workspace | None = None) -> bool:

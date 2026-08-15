@@ -17,6 +17,7 @@ from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
+from repo_ops_js.audit_overrides import clear_audit_overrides, set_audit_overrides
 from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 from repo_ops_js.holds import (
     direct_dependency_names,
@@ -70,14 +71,12 @@ def set_bun_audit_version_overrides(overrides: dict[str, str]) -> None:
     dropping it when ``bun outdated`` doesn't report the package as changed
     (#140).
     """
-    global _AUDIT_VERSION_OVERRIDES
-    _AUDIT_VERSION_OVERRIDES = dict(overrides)
+    set_audit_overrides(_AUDIT_VERSION_OVERRIDES, overrides)
 
 
 def clear_bun_audit_version_overrides() -> None:
     """Reset audit version overrides after each workspace apply."""
-    global _AUDIT_VERSION_OVERRIDES
-    _AUDIT_VERSION_OVERRIDES = {}
+    clear_audit_overrides(_AUDIT_VERSION_OVERRIDES)
 
 
 def _bun_update_latest_enabled(ws: Workspace | None = None) -> bool:

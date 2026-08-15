@@ -26,6 +26,7 @@ from repo_ops_core.constants import resolve_timeout_apply
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
+from repo_ops_js.audit_overrides import clear_audit_overrides, set_audit_overrides
 from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 from repo_ops_js.holds import (
     enforce_holds,
@@ -66,14 +67,12 @@ def set_yarn_audit_version_overrides(overrides: dict[str, str]) -> None:
     ``targeted_bump_behind`` uses the advisory-safe version (e.g. ``yarn up pkg@1.5.5``)
     rather than always running ``yarn up pkg@latest``.
     """
-    global _AUDIT_VERSION_OVERRIDES
-    _AUDIT_VERSION_OVERRIDES = dict(overrides)
+    set_audit_overrides(_AUDIT_VERSION_OVERRIDES, overrides)
 
 
 def clear_yarn_audit_version_overrides() -> None:
     """Reset audit version overrides after each workspace apply."""
-    global _AUDIT_VERSION_OVERRIDES
-    _AUDIT_VERSION_OVERRIDES = {}
+    clear_audit_overrides(_AUDIT_VERSION_OVERRIDES)
 
 
 _STDERR_TAIL_LINES = 12
