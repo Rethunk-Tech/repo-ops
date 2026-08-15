@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import os
-import sys
 
 import pytest
 
 from repo_ops_core.config import (
     SETTINGS_TABLE,
+    apply_config_to_env,
     load_global_config,
     load_repo_config,
     resolve_setting,
@@ -74,7 +74,6 @@ def test_load_repo_config_no_tool_repo_ops(tmp_path):
     assert load_repo_config(tmp_path) == {}
 
 
-@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 def test_load_global_config(tmp_path, monkeypatch):
     cfg_dir = tmp_path / "repo-ops"
     cfg_dir.mkdir()
@@ -114,72 +113,6 @@ def test_settings_table_has_new_v014_entries() -> None:
         assert key in names, f"Missing SETTINGS_TABLE entry: {key}"
 
 
-def test_settings_table_npm_targeted_bump_env_var() -> None:
-    """npm_targeted_bump maps to REPO_OPS_NPM_TARGETED_BUMP."""
-    row = next(r for r in SETTINGS_TABLE if r[0] == "npm_targeted_bump")
-    assert row[2] == "REPO_OPS_NPM_TARGETED_BUMP"
-
-
-def test_settings_table_pnpm_targeted_bump_env_var() -> None:
-    """pnpm_targeted_bump maps to REPO_OPS_PNPM_TARGETED_BUMP."""
-    row = next(r for r in SETTINGS_TABLE if r[0] == "pnpm_targeted_bump")
-    assert row[2] == "REPO_OPS_PNPM_TARGETED_BUMP"
-
-
-def test_resolve_setting_npm_targeted_bump(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
-    result = resolve_setting("npm_targeted_bump")
-    assert result == "1"
-
-
-def test_resolve_setting_pnpm_targeted_bump(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
-    result = resolve_setting("pnpm_targeted_bump")
-    assert result == "1"
-
-
-def test_resolve_setting_go_directive(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_GO_DIRECTIVE", "1.22")
-    result = resolve_setting("go_directive")
-    assert result == "1.22"
-
-
-def test_resolve_setting_go_toolchain(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_GO_TOOLCHAIN", "go1.22.0")
-    result = resolve_setting("go_toolchain")
-    assert result == "go1.22.0"
-
-
-def test_resolve_setting_no_state(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_NO_STATE", "1")
-    result = resolve_setting("no_state")
-    assert result == "1"
-
-
-def test_resolve_setting_no_lint_cache(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_NO_LINT_CACHE", "1")
-    result = resolve_setting("no_lint_cache")
-    assert result == "1"
-
-
-def test_resolve_setting_actions_policy_level(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_ACTIONS_POLICY_LEVEL", "warn")
-    result = resolve_setting("actions_policy_level")
-    assert result == "warn"
-
-
-def test_resolve_setting_precommit_refresh_sha(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "1")
-    result = resolve_setting("precommit_refresh_sha")
-    assert result == "1"
-
-
-def test_resolve_setting_submodule_refresh_sha(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_SUBMODULE_REFRESH_SHA", "1")
-    result = resolve_setting("submodule_refresh_sha")
-    assert result == "1"
-
-
 def test_resolve_setting_precommit_refresh_sha_repo_config_wins_over_unset_env(
     monkeypatch,
 ) -> None:
@@ -191,52 +124,46 @@ def test_resolve_setting_precommit_refresh_sha_repo_config_wins_over_unset_env(
     assert result is True
 
 
-def test_resolve_setting_commit_agent_provider(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_COMMIT_AGENT_PROVIDER", "cursor")
-    result = resolve_setting("commit_agent_provider")
-    assert result == "cursor"
+# Every setting reachable from an env var: the SETTINGS_TABLE row maps the key
+# to that env var, and resolve_setting reads it back.
+ENV_SETTINGS = [
+    ("npm_targeted_bump", "REPO_OPS_NPM_TARGETED_BUMP", "1"),
+    ("pnpm_targeted_bump", "REPO_OPS_PNPM_TARGETED_BUMP", "1"),
+    ("go_directive", "REPO_OPS_GO_DIRECTIVE", "1.22"),
+    ("go_toolchain", "REPO_OPS_GO_TOOLCHAIN", "go1.22.0"),
+    ("no_state", "REPO_OPS_NO_STATE", "1"),
+    ("no_lint_cache", "REPO_OPS_NO_LINT_CACHE", "1"),
+    ("actions_policy_level", "REPO_OPS_ACTIONS_POLICY_LEVEL", "warn"),
+    ("precommit_refresh_sha", "REPO_OPS_PRECOMMIT_REFRESH_SHA", "1"),
+    ("submodule_refresh_sha", "REPO_OPS_SUBMODULE_REFRESH_SHA", "1"),
+    ("commit_agent_provider", "REPO_OPS_COMMIT_AGENT_PROVIDER", "cursor"),
+    ("bun_update_latest", "REPO_OPS_BUN_UPDATE_LATEST", "1"),
+    ("pnpm_update_latest", "REPO_OPS_PNPM_UPDATE_LATEST", "1"),
+    ("yarn_update_latest", "REPO_OPS_YARN_UPDATE_LATEST", "1"),
+    ("deno_update_latest", "REPO_OPS_DENO_UPDATE_LATEST", "1"),
+    ("bun_targeted_bump", "REPO_OPS_BUN_TARGETED_BUMP", "1"),
+    ("deno_targeted_bump", "REPO_OPS_DENO_TARGETED_BUMP", "1"),
+    ("rust_targeted_bump", "REPO_OPS_RUST_TARGETED_BUMP", "1"),
+    ("resume", "REPO_OPS_RESUME", "1"),
+    ("submodule_update_latest", "REPO_OPS_SUBMODULE_UPDATE_LATEST", "1"),
+    ("precommit_update_latest", "REPO_OPS_PRECOMMIT_UPDATE_LATEST", "1"),
+    ("container_refresh_sha", "REPO_OPS_CONTAINER_REFRESH_SHA", "1"),
+    ("hatch_migrate_uv_lock", "REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1"),
+]
 
 
-def test_resolve_setting_bun_update_latest(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
-    result = resolve_setting("bun_update_latest")
-    assert result == "1"
+@pytest.mark.parametrize(("key", "env_var", "value"), ENV_SETTINGS)
+def test_resolve_setting_reads_env_var(
+    monkeypatch, key: str, env_var: str, value: str
+) -> None:
+    monkeypatch.setenv(env_var, value)
+    assert resolve_setting(key) == value
 
 
-def test_resolve_setting_pnpm_update_latest(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_PNPM_UPDATE_LATEST", "1")
-    result = resolve_setting("pnpm_update_latest")
-    assert result == "1"
-
-
-def test_resolve_setting_yarn_update_latest(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_YARN_UPDATE_LATEST", "1")
-    result = resolve_setting("yarn_update_latest")
-    assert result == "1"
-
-
-def test_resolve_setting_deno_update_latest(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "1")
-    result = resolve_setting("deno_update_latest")
-    assert result == "1"
-
-
-def test_resolve_setting_bun_targeted_bump(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
-    result = resolve_setting("bun_targeted_bump")
-    assert result == "1"
-
-
-def test_resolve_setting_deno_targeted_bump(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
-    result = resolve_setting("deno_targeted_bump")
-    assert result == "1"
-
-
-def test_resolve_setting_rust_targeted_bump(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
-    result = resolve_setting("rust_targeted_bump")
-    assert result == "1"
+@pytest.mark.parametrize(("key", "env_var", "value"), ENV_SETTINGS)
+def test_settings_table_maps_key_to_env_var(key: str, env_var: str, value: str) -> None:
+    row = next(r for r in SETTINGS_TABLE if r[0] == key)
+    assert row[2] == env_var
 
 
 # --- New env-gate settings (#138) ---
@@ -257,31 +184,6 @@ def test_settings_table_has_new_env_gate_entries() -> None:
         assert key in names, f"Missing SETTINGS_TABLE entry: {key}"
 
 
-def test_settings_table_resume_env_var() -> None:
-    row = next(r for r in SETTINGS_TABLE if r[0] == "resume")
-    assert row[2] == "REPO_OPS_RESUME"
-
-
-def test_settings_table_submodule_update_latest_env_var() -> None:
-    row = next(r for r in SETTINGS_TABLE if r[0] == "submodule_update_latest")
-    assert row[2] == "REPO_OPS_SUBMODULE_UPDATE_LATEST"
-
-
-def test_settings_table_precommit_update_latest_env_var() -> None:
-    row = next(r for r in SETTINGS_TABLE if r[0] == "precommit_update_latest")
-    assert row[2] == "REPO_OPS_PRECOMMIT_UPDATE_LATEST"
-
-
-def test_settings_table_container_refresh_sha_env_var() -> None:
-    row = next(r for r in SETTINGS_TABLE if r[0] == "container_refresh_sha")
-    assert row[2] == "REPO_OPS_CONTAINER_REFRESH_SHA"
-
-
-def test_settings_table_hatch_migrate_uv_lock_env_var() -> None:
-    row = next(r for r in SETTINGS_TABLE if r[0] == "hatch_migrate_uv_lock")
-    assert row[2] == "REPO_OPS_HATCH_MIGRATE_UV_LOCK"
-
-
 def test_settings_table_audit_fail_on_columns() -> None:
     row = next(r for r in SETTINGS_TABLE if r[0] == "audit_fail_on")
     assert row[1] == "--fail-on"
@@ -298,186 +200,35 @@ def test_settings_table_audit_fail_on_unknown_columns() -> None:
     assert row[4] == "0"
 
 
-def test_resolve_setting_resume(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_RESUME", "1")
-    result = resolve_setting("resume")
-    assert result == "1"
-
-
-def test_resolve_setting_submodule_update_latest(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_SUBMODULE_UPDATE_LATEST", "1")
-    result = resolve_setting("submodule_update_latest")
-    assert result == "1"
-
-
-def test_resolve_setting_precommit_update_latest(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", "1")
-    result = resolve_setting("precommit_update_latest")
-    assert result == "1"
-
-
-def test_resolve_setting_container_refresh_sha(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
-    result = resolve_setting("container_refresh_sha")
-    assert result == "1"
-
-
-def test_resolve_setting_hatch_migrate_uv_lock(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
-    result = resolve_setting("hatch_migrate_uv_lock")
-    assert result == "1"
-
-
-@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
-def test_resume_from_config_file(tmp_path) -> None:
-    """REPO_OPS_RESUME can be set via config file."""
-    from repo_ops_core.config import apply_config_to_env
-
+@pytest.mark.parametrize(
+    ("toml_line", "env_var", "expected"),
+    [
+        ("resume = true", "REPO_OPS_RESUME", "1"),
+        ('audit_fail_on = "critical"', "REPO_OPS_AUDIT_FAIL_ON", "critical"),
+        ("audit_fail_on_unknown = true", "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", "1"),
+        ("hatch_migrate_uv_lock = true", "REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1"),
+        ("container_refresh_sha = true", "REPO_OPS_CONTAINER_REFRESH_SHA", "1"),
+        ("precommit_refresh_sha = true", "REPO_OPS_PRECOMMIT_REFRESH_SHA", "1"),
+        ("submodule_refresh_sha = true", "REPO_OPS_SUBMODULE_REFRESH_SHA", "1"),
+    ],
+)
+def test_setting_from_config_file(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    toml_line: str,
+    env_var: str,
+    expected: str,
+) -> None:
+    """A global config key lands in its env var via apply_config_to_env."""
     cfg_dir = tmp_path / "repo-ops"
     cfg_dir.mkdir()
-    (cfg_dir / "config.toml").write_text("resume = true\n", encoding="utf-8")
-    monkeypatch = pytest.MonkeyPatch()
+    (cfg_dir / "config.toml").write_text(f"{toml_line}\n", encoding="utf-8")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.delenv("REPO_OPS_RESUME", raising=False)
+    monkeypatch.delenv(env_var, raising=False)
     try:
         apply_config_to_env(global_cfg=load_global_config())
-        assert os.environ.get("REPO_OPS_RESUME") == "1"
+        assert os.environ.get(env_var) == expected
     finally:
         # apply_config_to_env writes os.environ directly; monkeypatch.undo()
         # does not revert that, so pop it to avoid leaking into later tests.
-        os.environ.pop("REPO_OPS_RESUME", None)
-        monkeypatch.undo()
-
-
-@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
-def test_audit_fail_on_from_config_file(tmp_path) -> None:
-    """REPO_OPS_AUDIT_FAIL_ON can be set via config file."""
-    from repo_ops_core.config import apply_config_to_env
-
-    cfg_dir = tmp_path / "repo-ops"
-    cfg_dir.mkdir()
-    (cfg_dir / "config.toml").write_text(
-        'audit_fail_on = "critical"\n', encoding="utf-8"
-    )
-    monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON", raising=False)
-    try:
-        apply_config_to_env(global_cfg=load_global_config())
-        assert os.environ.get("REPO_OPS_AUDIT_FAIL_ON") == "critical"
-    finally:
-        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON", None)
-        monkeypatch.undo()
-
-
-@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
-def test_audit_fail_on_unknown_from_config_file(tmp_path) -> None:
-    """REPO_OPS_AUDIT_FAIL_ON_UNKNOWN can be set via config file."""
-    from repo_ops_core.config import apply_config_to_env
-
-    cfg_dir = tmp_path / "repo-ops"
-    cfg_dir.mkdir()
-    (cfg_dir / "config.toml").write_text(
-        "audit_fail_on_unknown = true\n", encoding="utf-8"
-    )
-    monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", raising=False)
-    try:
-        apply_config_to_env(global_cfg=load_global_config())
-        assert os.environ.get("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN") == "1"
-    finally:
-        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", None)
-        monkeypatch.undo()
-
-
-@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
-def test_hatch_migrate_uv_lock_from_config_file(tmp_path) -> None:
-    """REPO_OPS_HATCH_MIGRATE_UV_LOCK can be set via config file."""
-    from repo_ops_core.config import apply_config_to_env
-
-    cfg_dir = tmp_path / "repo-ops"
-    cfg_dir.mkdir()
-    (cfg_dir / "config.toml").write_text(
-        "hatch_migrate_uv_lock = true\n", encoding="utf-8"
-    )
-    monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.delenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", raising=False)
-    try:
-        apply_config_to_env(global_cfg=load_global_config())
-        assert os.environ.get("REPO_OPS_HATCH_MIGRATE_UV_LOCK") == "1"
-    finally:
-        # apply_config_to_env writes os.environ directly; monkeypatch.undo()
-        # does not revert that, so pop it to avoid leaking into later tests.
-        os.environ.pop("REPO_OPS_HATCH_MIGRATE_UV_LOCK", None)
-        monkeypatch.undo()
-
-
-@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
-def test_container_refresh_sha_from_config_file(tmp_path) -> None:
-    """REPO_OPS_CONTAINER_REFRESH_SHA can be set via config file."""
-    from repo_ops_core.config import apply_config_to_env
-
-    cfg_dir = tmp_path / "repo-ops"
-    cfg_dir.mkdir()
-    (cfg_dir / "config.toml").write_text(
-        "container_refresh_sha = true\n", encoding="utf-8"
-    )
-    monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.delenv("REPO_OPS_CONTAINER_REFRESH_SHA", raising=False)
-    try:
-        apply_config_to_env(global_cfg=load_global_config())
-        assert os.environ.get("REPO_OPS_CONTAINER_REFRESH_SHA") == "1"
-    finally:
-        # apply_config_to_env writes os.environ directly; monkeypatch.undo()
-        # does not revert that, so pop it to avoid leaking into later tests
-        os.environ.pop("REPO_OPS_CONTAINER_REFRESH_SHA", None)
-        monkeypatch.undo()
-
-
-@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
-def test_precommit_refresh_sha_from_config_file(tmp_path) -> None:
-    """REPO_OPS_PRECOMMIT_REFRESH_SHA can be set via config file."""
-    from repo_ops_core.config import apply_config_to_env
-
-    cfg_dir = tmp_path / "repo-ops"
-    cfg_dir.mkdir()
-    (cfg_dir / "config.toml").write_text(
-        "precommit_refresh_sha = true\n", encoding="utf-8"
-    )
-    monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.delenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", raising=False)
-    try:
-        apply_config_to_env(global_cfg=load_global_config())
-        assert os.environ.get("REPO_OPS_PRECOMMIT_REFRESH_SHA") == "1"
-    finally:
-        # apply_config_to_env writes os.environ directly; monkeypatch.undo()
-        # does not revert that, so pop it to avoid leaking into later tests.
-        os.environ.pop("REPO_OPS_PRECOMMIT_REFRESH_SHA", None)
-        monkeypatch.undo()
-
-
-@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
-def test_submodule_refresh_sha_from_config_file(tmp_path) -> None:
-    """REPO_OPS_SUBMODULE_REFRESH_SHA can be set via config file."""
-    from repo_ops_core.config import apply_config_to_env
-
-    cfg_dir = tmp_path / "repo-ops"
-    cfg_dir.mkdir()
-    (cfg_dir / "config.toml").write_text(
-        "submodule_refresh_sha = true\n", encoding="utf-8"
-    )
-    monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.delenv("REPO_OPS_SUBMODULE_REFRESH_SHA", raising=False)
-    try:
-        apply_config_to_env(global_cfg=load_global_config())
-        assert os.environ.get("REPO_OPS_SUBMODULE_REFRESH_SHA") == "1"
-    finally:
-        # apply_config_to_env writes os.environ directly; monkeypatch.undo()
-        # does not revert that, so pop it to avoid leaking into later tests.
-        os.environ.pop("REPO_OPS_SUBMODULE_REFRESH_SHA", None)
-        monkeypatch.undo()
+        os.environ.pop(env_var, None)

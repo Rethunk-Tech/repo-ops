@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -96,7 +97,7 @@ def test_discover_repos_finds_dot_git(tmp_path: Path):
     assert found[common] == str(repo_dir.resolve())
 
 
-def test_reflog_pre_sha_uses_rev_parse_parent(monkeypatch):
+def test_reflog_pre_sha_uses_rev_parse_parent(monkeypatch, make_proc):
     new_sha = "b" * 40
     old_sha = "a" * 40
     ref = "refs/remotes/origin/main"
@@ -105,19 +106,15 @@ def test_reflog_pre_sha_uses_rev_parse_parent(monkeypatch):
     reflog_lines = [f"{new_sha} {ref}@{{0}}: update by push"]
 
     def fake_run_git(repo, *args, **kwargs):
-        class Fake:
-            returncode = 0
-            stdout = ""
-
         if args[0] == "rev-parse":
-            Fake.stdout = f"{old_sha}\n"
-        return Fake()
+            return make_proc(stdout=f"{old_sha}\n")
+        return make_proc()
 
     monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
     assert _reflog_pre_sha("/fake", ref, new_sha, reflog_lines) == old_sha
 
 
-def test_reflog_pre_sha_first_push_returns_none(monkeypatch):
+def test_reflog_pre_sha_first_push_returns_none(monkeypatch, make_proc):
     new_sha = "b" * 40
     ref = "refs/remotes/origin/main"
 
@@ -125,17 +122,13 @@ def test_reflog_pre_sha_first_push_returns_none(monkeypatch):
     reflog_lines = [f"{new_sha} {ref}@{{0}}: update by push"]
 
     def fake_run_git(repo, *args, **kwargs):
-        class Fake:
-            returncode = 1
-            stdout = ""
-
-        return Fake()
+        return make_proc(returncode=1)
 
     monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
     assert _reflog_pre_sha("/fake", ref, new_sha, reflog_lines) is None
 
 
-def test_reflog_pre_sha_abbreviated_sha_match(monkeypatch):
+def test_reflog_pre_sha_abbreviated_sha_match(monkeypatch, make_proc):
     """_reflog_pre_sha matches when reflog has an abbreviated (7-char) tip SHA."""
     new_sha = "b" * 40
     old_sha = "a" * 40
@@ -145,18 +138,14 @@ def test_reflog_pre_sha_abbreviated_sha_match(monkeypatch):
     reflog_lines = [f"{new_sha[:7]} {ref}@{{3}}: update by push"]
 
     def fake_run_git(repo, *args, **kwargs):
-        class Fake:
-            returncode = 0
-            stdout = f"{old_sha}\n"
-
-        return Fake()
+        return make_proc(stdout=f"{old_sha}\n")
 
     monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
     result = _reflog_pre_sha("/fake", ref, new_sha, reflog_lines)
     assert result == old_sha
 
 
-def test_pushed_commits_for_repo_first_push_uses_root(monkeypatch):
+def test_pushed_commits_for_repo_first_push_uses_root(monkeypatch, make_proc):
     """Oldest push entry with no reflog parent lists all commits on the branch."""
     now = 1_700_000_000
     filters = Filters(since_unix=now - 3600, until_unix=now + 3600)
@@ -165,30 +154,28 @@ def test_pushed_commits_for_repo_first_push_uses_root(monkeypatch):
     commit_sha = "c" * 40
 
     def fake_run_git(repo, *args, **kwargs):
-        class Fake:
-            returncode = 0
-            stdout = ""
-
-        if cmd := args:
-            if cmd[:2] == ("for-each-ref", "--format=%(refname)"):
-                Fake.stdout = f"{ref}\n"
-            elif cmd[:2] == ("reflog", "show") and "--date=unix" in cmd:
-                Fake.stdout = f"{new_sha} {ref}@{{{now}}}: update by push\n"
-            elif cmd[:2] == ("reflog", "show"):
-                # Plain reflog (no --date=unix) passed to _reflog_pre_sha
-                Fake.stdout = f"{new_sha} {ref}@{{0}}: update by push\n"
-            elif cmd[0] == "rev-parse":
-                Fake.returncode = 1
-            elif cmd[0] == "rev-list" and new_sha in cmd:
-                Fake.stdout = f"{commit_sha}\n"
-        return Fake()
+        cmd = args
+        if not cmd:
+            return make_proc()
+        if cmd[:2] == ("for-each-ref", "--format=%(refname)"):
+            return make_proc(stdout=f"{ref}\n")
+        if cmd[:2] == ("reflog", "show") and "--date=unix" in cmd:
+            return make_proc(stdout=f"{new_sha} {ref}@{{{now}}}: update by push\n")
+        if cmd[:2] == ("reflog", "show"):
+            # Plain reflog (no --date=unix) passed to _reflog_pre_sha
+            return make_proc(stdout=f"{new_sha} {ref}@{{0}}: update by push\n")
+        if cmd[0] == "rev-parse":
+            return make_proc(returncode=1)
+        if cmd[0] == "rev-list" and new_sha in cmd:
+            return make_proc(stdout=f"{commit_sha}\n")
+        return make_proc()
 
     monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
     commits = pushed_commits_for_repo("/fake/repo", filters)
     assert commit_sha in commits
 
 
-def test_pushed_commits_for_repo_from_push_reflog(monkeypatch):
+def test_pushed_commits_for_repo_from_push_reflog(monkeypatch, make_proc):
     """Regression: remote-tracking reflog 'update by push' yields commit SHAs."""
     now = 1_700_000_000
     filters = Filters(since_unix=now - 3600, until_unix=now + 3600)
@@ -199,35 +186,34 @@ def test_pushed_commits_for_repo_from_push_reflog(monkeypatch):
 
     def fake_run_git(repo, *args, **kwargs):
         cmd = args
-
-        class Fake:
-            returncode = 0
-            stdout = ""
-
         if cmd[:2] == ("for-each-ref", "--format=%(refname)"):
-            Fake.stdout = f"{ref}\n"
-        elif cmd[:2] == ("reflog", "show") and "--date=unix" in cmd:
+            return make_proc(stdout=f"{ref}\n")
+        if cmd[:2] == ("reflog", "show") and "--date=unix" in cmd:
             # Timestamp-format reflog for push-entry filtering
-            Fake.stdout = (
-                f"{new_sha[:7]} {ref}@{{{now}}}: update by push\n"
-                f"{old_sha[:7]} {ref}@{{{now - 100}}}: update by push\n"
+            return make_proc(
+                stdout=(
+                    f"{new_sha[:7]} {ref}@{{{now}}}: update by push\n"
+                    f"{old_sha[:7]} {ref}@{{{now - 100}}}: update by push\n"
+                )
             )
-        elif cmd[:2] == ("reflog", "show"):
+        if cmd[:2] == ("reflog", "show"):
             # Plain (sequential-index) reflog passed to _reflog_pre_sha
-            Fake.stdout = (
-                f"{new_sha[:7]} {ref}@{{0}}: update by push\n"
-                f"{old_sha[:7]} {ref}@{{1}}: update by push\n"
+            return make_proc(
+                stdout=(
+                    f"{new_sha[:7]} {ref}@{{0}}: update by push\n"
+                    f"{old_sha[:7]} {ref}@{{1}}: update by push\n"
+                )
             )
-        elif cmd[0] == "rev-list":
-            Fake.stdout = f"{commit_sha}\n"
-        return Fake()
+        if cmd[0] == "rev-list":
+            return make_proc(stdout=f"{commit_sha}\n")
+        return make_proc()
 
     monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
     commits = pushed_commits_for_repo("/fake/repo", filters)
     assert commit_sha in commits
 
 
-def test_timeout_in_reflog_pre_sha_does_not_abort_scan(monkeypatch):
+def test_timeout_in_reflog_pre_sha_does_not_abort_scan(monkeypatch, make_proc):
     """Regression #41: TimeoutExpired in _reflog_pre_sha must not propagate through
     future.result() and abort the whole scan; pushed_commits_for_repo returns gracefully.
 
@@ -245,25 +231,21 @@ def test_timeout_in_reflog_pre_sha_does_not_abort_scan(monkeypatch):
     commit_sha = "c" * 40
 
     def fake_run_git(repo, *args, **kwargs):
-        class Fake:
-            returncode = 0
-            stdout = ""
-
         cmd = args
         if cmd[:2] == ("for-each-ref", "--format=%(refname)"):
-            Fake.stdout = f"{ref}\n"
-        elif cmd[:2] == ("reflog", "show") and "--date=unix" in cmd:
+            return make_proc(stdout=f"{ref}\n")
+        if cmd[:2] == ("reflog", "show") and "--date=unix" in cmd:
             # Fetched first in pushed_commits_for_repo for timestamp filtering
-            Fake.stdout = f"{new_sha} {ref}@{{{now}}}: update by push\n"
-        elif cmd[:2] == ("reflog", "show"):
+            return make_proc(stdout=f"{new_sha} {ref}@{{{now}}}: update by push\n")
+        if cmd[:2] == ("reflog", "show"):
             # Fetched second in pushed_commits_for_repo (plain) for _reflog_pre_sha
-            Fake.stdout = f"{new_sha} {ref}@{{0}}: update by push\n"
-        elif cmd[0] == "rev-parse":
+            return make_proc(stdout=f"{new_sha} {ref}@{{0}}: update by push\n")
+        if cmd[0] == "rev-parse":
             # Simulate timeout — _reflog_pre_sha still guards this site
             raise subprocess.TimeoutExpired(cmd=["git", "rev-parse"], timeout=10)
-        elif cmd[0] == "rev-list":
-            Fake.stdout = f"{commit_sha}\n"
-        return Fake()
+        if cmd[0] == "rev-list":
+            return make_proc(stdout=f"{commit_sha}\n")
+        return make_proc()
 
     monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
     # Must not raise; scan degrades gracefully (old_sha falls back to "--root")
@@ -294,7 +276,9 @@ def test_collect_results_uses_discovery(tmp_path: Path, monkeypatch):
     assert len(per_repo) == 1
 
 
-def test_pushed_commits_non_oldest_uses_reflog_pre_sha_not_prev_push_tip(monkeypatch):
+def test_pushed_commits_non_oldest_uses_reflog_pre_sha_not_prev_push_tip(
+    monkeypatch, make_proc
+):
     """Regression #92: non-oldest push entry uses _reflog_pre_sha, not previous push tip.
 
     Simulates two pushes with a fetch in between:
@@ -332,44 +316,36 @@ def test_pushed_commits_non_oldest_uses_reflog_pre_sha_not_prev_push_tip(monkeyp
     )
 
     def fake_run_git(repo, *args, **kwargs):
-        class Fake:
-            returncode = 0
-            stdout = ""
-
         cmd = args
         if cmd[:2] == ("for-each-ref", "--format=%(refname)"):
-            Fake.stdout = f"{ref}\n"
-        elif cmd[:2] == ("reflog", "show") and "--date=unix" in cmd:
+            return make_proc(stdout=f"{ref}\n")
+        if cmd[:2] == ("reflog", "show") and "--date=unix" in cmd:
             # Called from pushed_commits_for_repo to build push-only entries list
-            Fake.stdout = push_reflog
-        elif cmd[:2] == ("reflog", "show"):
+            return make_proc(stdout=push_reflog)
+        if cmd[:2] == ("reflog", "show"):
             # Called from _reflog_pre_sha to walk the full reflog (no --date=unix)
-            Fake.stdout = full_reflog
-        elif cmd[0] == "rev-parse":
+            return make_proc(stdout=full_reflog)
+        if cmd[0] == "rev-parse":
             # _reflog_pre_sha resolves ref@{n+1} for the entry matching new_sha:
             #   push2 is at @{0}  → resolves @{1} → fetch_sha  (correct pre-push2 base)
             #   push1 is at @{2}  → resolves @{3} → not found (returncode=1, oldest)
             spec = cmd[1]  # e.g. "refs/remotes/origin/main@{1}"
-            import re
-
             m = re.search(r"@\{(\d+)\}", spec)
             n = int(m.group(1)) if m else -1
             if n == 1:
-                Fake.stdout = f"{fetch_sha}\n"
-            else:
-                Fake.returncode = 1
-        elif cmd[0] == "rev-list":
+                return make_proc(stdout=f"{fetch_sha}\n")
+            return make_proc(returncode=1)
+        if cmd[0] == "rev-list":
             range_arg = next((a for a in cmd if ".." in a), None)
             if range_arg == f"{fetch_sha}..{push2_sha}":
                 # Correct range for push2 — excludes fetched colleague commit
-                Fake.stdout = f"{commit_from_push2}\n"
-            elif range_arg == f"{push1_sha}..{push2_sha}":
+                return make_proc(stdout=f"{commit_from_push2}\n")
+            if range_arg == f"{push1_sha}..{push2_sha}":
                 # Wrong range (bug path) — would include colleague's fetched commit
-                Fake.stdout = f"{commit_from_push2}\n{commit_from_fetch}\n"
-            else:
-                # push1 uses --root; return only push1's own commits
-                Fake.stdout = f"{commit_from_push1}\n"
-        return Fake()
+                return make_proc(stdout=f"{commit_from_push2}\n{commit_from_fetch}\n")
+            # push1 uses --root; return only push1's own commits
+            return make_proc(stdout=f"{commit_from_push1}\n")
+        return make_proc()
 
     monkeypatch.setattr("repo_ops_pushed.audit.run_git", fake_run_git)
     commits = pushed_commits_for_repo("/fake/repo", filters)
@@ -380,17 +356,12 @@ def test_pushed_commits_non_oldest_uses_reflog_pre_sha_not_prev_push_tip(monkeyp
     assert commit_from_fetch not in commits
 
 
-def test_git_common_dir_monkeypatch(monkeypatch):
+def test_git_common_dir_monkeypatch(monkeypatch, make_proc):
     calls = []
 
     def fake_run_git(repo, *args, **kwargs):
         calls.append((repo, args))
-
-        class Fake:
-            returncode = 0
-            stdout = "/real/common\n"
-
-        return Fake()
+        return make_proc(stdout="/real/common\n")
 
     monkeypatch.setattr("repo_ops_core.git.run_git", fake_run_git)
     result = git_common_dir("/some/repo")
@@ -402,7 +373,9 @@ def test_git_common_dir_monkeypatch(monkeypatch):
 
 
 def test_resolve_subjects_truncates_and_handles_timeout(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    make_proc,
 ) -> None:
     """Covers the happy path, the >100-char truncation, and the
     subprocess.TimeoutExpired catch (~232-236) in one pass."""
@@ -417,18 +390,14 @@ def test_resolve_subjects_truncates_and_handles_timeout(
     long_subject = "x" * 150
 
     def fake_run_git(repo_path, *args, **kwargs):
-        class Fake:
-            returncode = 0
-            stdout = ""
-
         sha = args[-1]
         if sha == sha_ok:
-            Fake.stdout = "short subject\n"
-        elif sha == sha_long:
-            Fake.stdout = long_subject + "\n"
-        elif sha == sha_timeout:
+            return make_proc(stdout="short subject\n")
+        if sha == sha_long:
+            return make_proc(stdout=long_subject + "\n")
+        if sha == sha_timeout:
             raise subprocess.TimeoutExpired(cmd=["git", "log"], timeout=10)
-        return Fake()
+        return make_proc()
 
     monkeypatch.setattr(audit, "run_git", fake_run_git)
     result = resolve_subjects([repo])
