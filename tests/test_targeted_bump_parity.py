@@ -20,6 +20,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from repo_ops._register import register_all
 from repo_ops_core.config import coerce_bool_setting, resolve_setting
 from repo_ops_js_bun.bun import targeted_bump_behind as bun_targeted_bump_behind
@@ -193,120 +195,102 @@ def test_bun_targeted_bump_conservative_flag_disables_it(
 # Contract 3 — _behind_latest_hint parity for npm/pnpm/bun
 # ---------------------------------------------------------------------------
 
+# Managers whose targeted bump has no separate --<manager>-targeted-bump CLI
+# flag (only npm, per #136) name "no latest mode" in the not-requested hint;
+# py managers with no latest-mode concept at all still say so but skip the
+# generic "bump manually" close since it duplicates that sentence for them.
+_TRIED_FRAGMENT = "the targeted bump was attempted but could not move them"
 
-def test_npm_hint_names_flag_when_not_requested(monkeypatch) -> None:
-    # npm has no per-manager flag to name any more (#136 deleted it) — the
-    # hint points at --conservative / the env var instead.
-    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "0")
-    hint = _behind_latest_hint("npm")
-    assert "no latest mode" in hint
-    assert "not attempted this run" in hint
-    assert "bump manually" in hint
-
-
-def test_npm_hint_reports_tried_when_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
-    hint = _behind_latest_hint("npm")
-    assert "the targeted bump was attempted but could not move them" in hint
-    assert "bump manually" in hint
-
-
-def test_pnpm_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "0")
-    hint = _behind_latest_hint("pnpm")
-    assert "not attempted this run" in hint
-    assert "bump manually" in hint
-
-
-def test_pnpm_hint_reports_tried_when_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
-    hint = _behind_latest_hint("pnpm")
-    assert "the targeted bump was attempted but could not move them" in hint
-    assert "bump manually" in hint
-
-
-def test_bun_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "0")
-    hint = _behind_latest_hint("bun")
-    assert "not attempted this run" in hint
-    assert "bump manually" in hint
-
-
-def test_bun_hint_reports_tried_when_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
-    hint = _behind_latest_hint("bun")
-    assert "the targeted bump was attempted but could not move them" in hint
-    assert "bump manually" in hint
-
-
-def test_deno_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "0")
-    hint = _behind_latest_hint("deno")
-    assert "not attempted this run" in hint
-    assert "bump manually" in hint
-
-
-def test_deno_hint_reports_tried_when_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
-    hint = _behind_latest_hint("deno")
-    assert "the targeted bump was attempted but could not move them" in hint
-    assert "bump manually" in hint
-
-
-def test_poetry_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_POETRY_TARGETED_BUMP", "0")
-    hint = _behind_latest_hint("poetry")
-    assert "not attempted this run" in hint
-    assert "no latest mode" in hint
-
-
-def test_poetry_hint_reports_tried_when_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_POETRY_TARGETED_BUMP", "1")
-    hint = _behind_latest_hint("poetry")
-    assert "the targeted bump was attempted but could not move them" in hint
-    assert "bump manually" in hint
-
-
-def test_pdm_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_PDM_TARGETED_BUMP", "0")
-    hint = _behind_latest_hint("pdm")
-    assert "not attempted this run" in hint
-    assert "no latest mode" in hint
-
-
-def test_pdm_hint_reports_tried_when_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_PDM_TARGETED_BUMP", "1")
-    hint = _behind_latest_hint("pdm")
-    assert "the targeted bump was attempted but could not move them" in hint
-    assert "bump manually" in hint
+_BEHIND_LATEST_HINT_CASES = [
+    (
+        "npm",
+        "REPO_OPS_NPM_TARGETED_BUMP",
+        False,
+        ("no latest mode", "not attempted this run", "bump manually"),
+    ),
+    ("npm", "REPO_OPS_NPM_TARGETED_BUMP", True, (_TRIED_FRAGMENT, "bump manually")),
+    (
+        "pnpm",
+        "REPO_OPS_PNPM_TARGETED_BUMP",
+        False,
+        ("not attempted this run", "bump manually"),
+    ),
+    ("pnpm", "REPO_OPS_PNPM_TARGETED_BUMP", True, (_TRIED_FRAGMENT, "bump manually")),
+    (
+        "bun",
+        "REPO_OPS_BUN_TARGETED_BUMP",
+        False,
+        ("not attempted this run", "bump manually"),
+    ),
+    ("bun", "REPO_OPS_BUN_TARGETED_BUMP", True, (_TRIED_FRAGMENT, "bump manually")),
+    (
+        "deno",
+        "REPO_OPS_DENO_TARGETED_BUMP",
+        False,
+        ("not attempted this run", "bump manually"),
+    ),
+    ("deno", "REPO_OPS_DENO_TARGETED_BUMP", True, (_TRIED_FRAGMENT, "bump manually")),
+    (
+        "poetry",
+        "REPO_OPS_POETRY_TARGETED_BUMP",
+        False,
+        ("not attempted this run", "no latest mode"),
+    ),
+    (
+        "poetry",
+        "REPO_OPS_POETRY_TARGETED_BUMP",
+        True,
+        (_TRIED_FRAGMENT, "bump manually"),
+    ),
+    (
+        "pdm",
+        "REPO_OPS_PDM_TARGETED_BUMP",
+        False,
+        ("not attempted this run", "no latest mode"),
+    ),
+    ("pdm", "REPO_OPS_PDM_TARGETED_BUMP", True, (_TRIED_FRAGMENT, "bump manually")),
+    (
+        "pipenv",
+        "REPO_OPS_PIPENV_TARGETED_BUMP",
+        False,
+        ("not attempted this run", "no latest mode"),
+    ),
+    (
+        "pipenv",
+        "REPO_OPS_PIPENV_TARGETED_BUMP",
+        True,
+        (_TRIED_FRAGMENT, "bump manually"),
+    ),
+    (
+        "pip-tools",
+        "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
+        False,
+        ("not attempted this run", "no latest mode"),
+    ),
+    (
+        "pip-tools",
+        "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
+        True,
+        (_TRIED_FRAGMENT, "bump manually"),
+    ),
+]
 
 
-def test_pipenv_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_PIPENV_TARGETED_BUMP", "0")
-    hint = _behind_latest_hint("pipenv")
-    assert "not attempted this run" in hint
-    assert "no latest mode" in hint
-
-
-def test_pipenv_hint_reports_tried_when_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_PIPENV_TARGETED_BUMP", "1")
-    hint = _behind_latest_hint("pipenv")
-    assert "the targeted bump was attempted but could not move them" in hint
-    assert "bump manually" in hint
-
-
-def test_pip_tools_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_PIP_TOOLS_TARGETED_BUMP", "0")
-    hint = _behind_latest_hint("pip-tools")
-    assert "not attempted this run" in hint
-    assert "no latest mode" in hint
-
-
-def test_pip_tools_hint_reports_tried_when_requested(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_PIP_TOOLS_TARGETED_BUMP", "1")
-    hint = _behind_latest_hint("pip-tools")
-    assert "the targeted bump was attempted but could not move them" in hint
-    assert "bump manually" in hint
+@pytest.mark.parametrize(
+    "manager,env_var,requested,expected_fragments",
+    _BEHIND_LATEST_HINT_CASES,
+    ids=[
+        f"{manager}-{'requested' if requested else 'default'}"
+        for manager, _, requested, _ in _BEHIND_LATEST_HINT_CASES
+    ],
+)
+def test_behind_latest_hint(
+    monkeypatch, manager, env_var, requested, expected_fragments
+) -> None:
+    monkeypatch.setenv(env_var, "1" if requested else "0")
+    hint = _behind_latest_hint(manager)
+    for fragment in expected_fragments:
+        assert fragment in hint
 
 
 # ---------------------------------------------------------------------------
