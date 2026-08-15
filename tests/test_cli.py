@@ -90,9 +90,8 @@ def test_parse_iso8601_rejects_naive():
         parse_iso8601("2026-05-29T14:00:00")
 
 
-def test_parse_iso8601_invalid_raises_argparse_error():
-    with pytest.raises(argparse.ArgumentTypeError):
-        parse_iso8601("not-a-date")
+# test_parse_iso8601_rejects_invalid in tests/test_pushed.py already covers the
+# invalid-string case for this same parse_iso8601.
 
 
 @pytest.mark.parametrize("module_name,func_name,prefix", _MAIN_HELP_TARGETS)

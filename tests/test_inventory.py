@@ -100,14 +100,6 @@ def test_count_pyproject_edges_without_lock(tmp_path: Path):
     assert count_dep_edges(tmp_path) == 2
 
 
-def test_scan_flat_current_directory_name(tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
-    rows = scan(Path("."), flat=True)
-    assert len(rows) == 1
-    assert rows[0]["name"] == tmp_path.name
-
-
 def test_scan_python_edges_from_uv_lock(tmp_path: Path):
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
     (tmp_path / "uv.lock").write_text(

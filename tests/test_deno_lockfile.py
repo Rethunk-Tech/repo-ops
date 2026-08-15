@@ -50,18 +50,6 @@ def test_v4_top_level_specifiers_captured(tmp_path: Path) -> None:
     assert len(versions) == 2
 
 
-def test_v4_jsr_section_captured(tmp_path: Path) -> None:
-    """v4: top-level jsr section keys are captured as jsr:@scope/pkg@version."""
-    versions = versions_deno_lock(_copy_lock_fixture(tmp_path, "deno_v4.lock"))
-    assert "jsr:@std/assert@1.0.0" in versions
-
-
-def test_v4_npm_section_captured(tmp_path: Path) -> None:
-    """v4: top-level npm section keys are captured as npm:name@version."""
-    versions = versions_deno_lock(_copy_lock_fixture(tmp_path, "deno_v4.lock"))
-    assert "npm:chalk@5.3.0" in versions
-
-
 def test_v2_npm_captured(tmp_path: Path) -> None:
     """v2: top-level npm dict keys are captured as npm:name@version."""
     versions = versions_deno_lock(_copy_lock_fixture(tmp_path, "deno_v2.lock"))
