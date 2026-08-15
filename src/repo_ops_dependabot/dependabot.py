@@ -215,6 +215,7 @@ def _owner_repo(remote_url: str) -> str | None:
 
 _GH_TIMEOUT = 30
 
+
 def _gh(args: list[str]) -> tuple[subprocess.CompletedProcess[str] | None, str]:
     """Run ``gh *args``; return (completed_process, error).
 
@@ -236,6 +237,7 @@ def _gh(args: list[str]) -> tuple[subprocess.CompletedProcess[str] | None, str]:
     except FileNotFoundError:
         return None, "gh not found"
     return proc, ""
+
 
 def _gh_list_dependabot_prs(
     owner_repo: str,
