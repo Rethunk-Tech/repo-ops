@@ -275,247 +275,68 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
     ),
 }
 
-# Public table for documentation generation.
+# Per-setting doc metadata not present in _SETTINGS_MAP: the CLI flag name and
+# the default value as a doc string. env_var/config_key are pulled from
+# _SETTINGS_MAP itself so the two tables can't drift apart.
+_SETTINGS_DOC: dict[str, tuple[str, str]] = {
+    "jobs": ("--jobs", "min(16, cpu_count)"),
+    "yarn_max_concurrency": ("(none)", "4"),
+    "go_upgrade_mode": ("--go-upgrade-mode", "patch"),
+    "actions_lint_level": ("--actions-lint-level", "block"),
+    "timeout_check": ("(none)", str(TIMEOUT_CHECK)),
+    "timeout_apply": ("(none)", str(TIMEOUT_APPLY)),
+    "timeout_verify": ("(none)", str(TIMEOUT_VERIFY)),
+    "find_timeout": ("(none)", str(FIND_TIMEOUT)),
+    "git_timeout": ("(none)", str(GIT_TIMEOUT)),
+    "bun_update_latest": ("--conservative", "0"),
+    "pnpm_update_latest": ("--conservative", "0"),
+    "yarn_update_latest": ("--conservative", "0"),
+    "yarn_targeted_bump": ("--conservative", "0"),
+    "npm_targeted_bump": ("--conservative", "0"),
+    "pnpm_targeted_bump": ("--conservative", "0"),
+    "bun_targeted_bump": ("--conservative", "0"),
+    "deno_update_latest": ("--conservative", "0"),
+    "deno_targeted_bump": ("--conservative", "0"),
+    "rust_targeted_bump": ("--conservative", "0"),
+    "poetry_targeted_bump": ("--conservative", "0"),
+    "pdm_targeted_bump": ("--conservative", "0"),
+    "pipenv_targeted_bump": ("--conservative", "0"),
+    "pip_tools_targeted_bump": ("--conservative", "0"),
+    "go_work_sync": ("(none)", "0"),
+    "no_progress": ("(none)", "0"),
+    "no_state": ("(none)", "0"),
+    "no_lint_cache": ("(none)", "0"),
+    "go_directive": ("(none)", "(none)"),
+    "go_toolchain": ("(none)", "(none)"),
+    "node_verify_script": ("(none)", "(none)"),
+    "commit_agent_provider": ("(none)", "cursor"),
+    "commit_agent_model": ("(none)", "composer-2.5"),
+    "exclude_patterns": ("--exclude", "[]"),
+    "commit_umbrella": ("--commit-umbrella", "0"),
+    "actions_org_policy": ("--actions-org-policy", "0"),
+    "actions_policy_level": ("--actions-policy-level", "report"),
+    "container_update_latest": ("--conservative", "0"),
+    "resume": ("(none)", "0"),
+    "submodule_update_latest": ("(none)", "0"),
+    "precommit_update_latest": ("(none)", "0"),
+    "precommit_refresh_sha": ("--conservative", "0"),
+    "submodule_refresh_sha": ("--conservative", "0"),
+    "container_refresh_sha": ("--conservative", "0"),
+    "hatch_migrate_uv_lock": ("--migrate-to-uv-lock", "1"),
+    "audit_fail_on": ("--fail-on", "high"),
+    "audit_fail_on_unknown": ("--fail-on-unknown", "0"),
+}
+
+# Public table for documentation generation: (setting, flag, env_var, config_key, default).
 SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
-    # (setting, flag, env_var, config_key, default)
-    ("jobs", "--jobs", "(none)", "jobs", "min(16, cpu_count)"),
     (
-        "yarn_max_concurrency",
-        "--yarn-jobs",
-        "REPO_OPS_YARN_MAX_CONCURRENCY",
-        "yarn_max_concurrency",
-        "2",
-    ),
-    (
-        "go_upgrade_mode",
-        "--go-upgrade-mode",
-        "REPO_OPS_GO_UPGRADE_MODE",
-        "go_upgrade_mode",
-        "patch",
-    ),
-    (
-        "actions_lint_level",
-        "--actions-lint-level",
-        "REPO_OPS_ACTIONS_LINT_LEVEL",
-        "actions_lint_level",
-        "block",
-    ),
-    ("timeout_check", "(none)", "REPO_OPS_TIMEOUT_CHECK", "timeout_check", "60"),
-    ("timeout_apply", "(none)", "REPO_OPS_TIMEOUT_APPLY", "timeout_apply", "60"),
-    ("timeout_verify", "(none)", "REPO_OPS_TIMEOUT_VERIFY", "timeout_verify", "60"),
-    ("find_timeout", "(none)", "REPO_OPS_FIND_TIMEOUT", "find_timeout", "60"),
-    ("git_timeout", "(none)", "REPO_OPS_GIT_TIMEOUT", "git_timeout", "10"),
-    (
-        "bun_update_latest",
-        "--conservative",
-        "REPO_OPS_BUN_UPDATE_LATEST",
-        "bun_update_latest",
-        "0",
-    ),
-    (
-        "pnpm_update_latest",
-        "--conservative",
-        "REPO_OPS_PNPM_UPDATE_LATEST",
-        "pnpm_update_latest",
-        "0",
-    ),
-    (
-        "yarn_update_latest",
-        "--conservative",
-        "REPO_OPS_YARN_UPDATE_LATEST",
-        "yarn_update_latest",
-        "0",
-    ),
-    (
-        "deno_update_latest",
-        "--conservative",
-        "REPO_OPS_DENO_UPDATE_LATEST",
-        "deno_update_latest",
-        "0",
-    ),
-    (
-        "yarn_targeted_bump",
-        "--conservative",
-        "REPO_OPS_YARN_TARGETED_BUMP",
-        "yarn_targeted_bump",
-        "0",
-    ),
-    (
-        "npm_targeted_bump",
-        "--conservative",
-        "REPO_OPS_NPM_TARGETED_BUMP",
-        "npm_targeted_bump",
-        "0",
-    ),
-    (
-        "pnpm_targeted_bump",
-        "--conservative",
-        "REPO_OPS_PNPM_TARGETED_BUMP",
-        "pnpm_targeted_bump",
-        "0",
-    ),
-    (
-        "bun_targeted_bump",
-        "--conservative",
-        "REPO_OPS_BUN_TARGETED_BUMP",
-        "bun_targeted_bump",
-        "0",
-    ),
-    (
-        "deno_targeted_bump",
-        "--conservative",
-        "REPO_OPS_DENO_TARGETED_BUMP",
-        "deno_targeted_bump",
-        "0",
-    ),
-    (
-        "rust_targeted_bump",
-        "--conservative",
-        "REPO_OPS_RUST_TARGETED_BUMP",
-        "rust_targeted_bump",
-        "0",
-    ),
-    (
-        "poetry_targeted_bump",
-        "--conservative",
-        "REPO_OPS_POETRY_TARGETED_BUMP",
-        "poetry_targeted_bump",
-        "0",
-    ),
-    (
-        "pdm_targeted_bump",
-        "--conservative",
-        "REPO_OPS_PDM_TARGETED_BUMP",
-        "pdm_targeted_bump",
-        "0",
-    ),
-    (
-        "pipenv_targeted_bump",
-        "--conservative",
-        "REPO_OPS_PIPENV_TARGETED_BUMP",
-        "pipenv_targeted_bump",
-        "0",
-    ),
-    (
-        "pip_tools_targeted_bump",
-        "--conservative",
-        "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
-        "pip_tools_targeted_bump",
-        "0",
-    ),
-    ("go_work_sync", "(none)", "REPO_OPS_GO_WORK_SYNC", "go_work_sync", "0"),
-    ("no_progress", "(none)", "REPO_OPS_NO_PROGRESS", "no_progress", "0"),
-    ("no_state", "(none)", "REPO_OPS_NO_STATE", "no_state", "0"),
-    ("no_lint_cache", "(none)", "REPO_OPS_NO_LINT_CACHE", "no_lint_cache", "0"),
-    ("go_directive", "(none)", "REPO_OPS_GO_DIRECTIVE", "go_directive", "(none)"),
-    ("go_toolchain", "(none)", "REPO_OPS_GO_TOOLCHAIN", "go_toolchain", "(none)"),
-    (
-        "node_verify_script",
-        "(none)",
-        "REPO_OPS_NODE_VERIFY_SCRIPT",
-        "node_verify_script",
-        "(none)",
-    ),
-    (
-        "commit_agent_provider",
-        "(none)",
-        "REPO_OPS_COMMIT_AGENT_PROVIDER",
-        "commit_agent_provider",
-        "cursor",
-    ),
-    (
-        "commit_agent_model",
-        "(none)",
-        "REPO_OPS_COMMIT_AGENT_MODEL",
-        "commit_agent_model",
-        "composer-2.5",
-    ),
-    ("exclude_patterns", "--exclude", "(none)", "exclude", "[]"),
-    (
-        "commit_umbrella",
-        "--commit-umbrella",
-        "REPO_OPS_COMMIT_UMBRELLA",
-        "commit_umbrella",
-        "0",
-    ),
-    (
-        "actions_org_policy",
-        "--actions-org-policy",
-        "REPO_OPS_ACTIONS_ORG_POLICY",
-        "actions_org_policy",
-        "0",
-    ),
-    (
-        "actions_policy_level",
-        "--actions-policy-level",
-        "REPO_OPS_ACTIONS_POLICY_LEVEL",
-        "actions_policy_level",
-        "report",
-    ),
-    (
-        "container_update_latest",
-        "--conservative",
-        "REPO_OPS_CONTAINER_UPDATE_LATEST",
-        "container_update_latest",
-        "0",
-    ),
-    ("resume", "(none)", "REPO_OPS_RESUME", "resume", "0"),
-    (
-        "submodule_update_latest",
-        "(none)",
-        "REPO_OPS_SUBMODULE_UPDATE_LATEST",
-        "submodule_update_latest",
-        "0",
-    ),
-    (
-        "precommit_update_latest",
-        "(none)",
-        "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
-        "precommit_update_latest",
-        "0",
-    ),
-    (
-        "precommit_refresh_sha",
-        "--conservative",
-        "REPO_OPS_PRECOMMIT_REFRESH_SHA",
-        "precommit_refresh_sha",
-        "0",
-    ),
-    (
-        "submodule_refresh_sha",
-        "--conservative",
-        "REPO_OPS_SUBMODULE_REFRESH_SHA",
-        "submodule_refresh_sha",
-        "0",
-    ),
-    (
-        "container_refresh_sha",
-        "--conservative",
-        "REPO_OPS_CONTAINER_REFRESH_SHA",
-        "container_refresh_sha",
-        "0",
-    ),
-    (
-        "hatch_migrate_uv_lock",
-        "--migrate-to-uv-lock",
-        "REPO_OPS_HATCH_MIGRATE_UV_LOCK",
-        "hatch_migrate_uv_lock",
-        "0",
-    ),
-    (
-        "audit_fail_on",
-        "--fail-on",
-        "REPO_OPS_AUDIT_FAIL_ON",
-        "audit_fail_on",
-        "high",
-    ),
-    (
-        "audit_fail_on_unknown",
-        "--fail-on-unknown",
-        "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
-        "audit_fail_on_unknown",
-        "0",
-    ),
+        name,
+        _SETTINGS_DOC[name][0],
+        env_var or "(none)",
+        config_key,
+        _SETTINGS_DOC[name][1],
+    )
+    for name, (env_var, config_key, _default) in _SETTINGS_MAP.items()
 ]
 
 
@@ -644,13 +465,16 @@ def resolve_setting(
         return global_cfg[config_key]
     return default
 
+
 _BOOL_TRUE_VALUES = ("1", "true", "yes", "on")
+
 
 def coerce_bool_setting(raw: Any) -> bool:
     """Normalize a resolved setting value (bool, ``"1"``/``"true"``/etc, or None) to bool."""
     if isinstance(raw, bool):
         return raw
     return str(raw or "").strip().lower() in _BOOL_TRUE_VALUES
+
 
 def resolve_bool_setting(name: str, env_var: str, ws: Any = None) -> bool:
     """Resolve a boolean feature-flag setting: CLI > env > config > default.
