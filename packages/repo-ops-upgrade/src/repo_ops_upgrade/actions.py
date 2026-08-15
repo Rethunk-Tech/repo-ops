@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from repo_ops_core.holds import HoldRule, resolve_hold
 from repo_ops_core.process import run
@@ -179,13 +179,15 @@ def _action_policy_violation(action: str, policy: dict) -> str | None:
     Rules:
     - ``enabled=False`` → every action is blocked.
     - ``allowed_actions=all`` → nothing blocked.
-    - ``allowed_actions=local_only`` → only same-owner or path-local actions
-      (``./`` prefix) are allowed.
     - ``allowed_actions=selected`` → allowed when:
         - ``github_owned_allowed`` and the action owner is ``actions`` or
           ``github``, OR
         - the action matches any glob in ``patterns_allowed`` (fnmatch semantics
           per GitHub docs: ``owner/*`` matches ``owner/any-repo``).
+
+    ``allowed_actions=local_only`` is handled by
+    :func:`_action_policy_violation_local_only`, which needs the org owner to
+    tell same-owner refs from cross-org ones; callers route local_only there.
     """
     allowed_actions = policy.get("allowed_actions", "all")
 
@@ -198,15 +200,6 @@ def _action_policy_violation(action: str, policy: dict) -> str | None:
     # Path-local actions (``./``) are always allowed regardless of policy mode.
     if action.startswith("./"):
         return None
-
-    if allowed_actions == "local_only":
-        # Only same-owner (owner/*) refs are local; we don't know the owner of
-        # the calling repo here — the caller must pass the owner for comparison.
-        # Instead, we key off the ``_owner_of_action`` helper below.
-        return (
-            f"org policy (local_only): {action} not allowed"
-            " — workflows using it will fail at startup"
-        )
 
     if allowed_actions == "selected":
         action_owner = action.split("/")[0] if "/" in action else ""
@@ -403,42 +396,41 @@ def _get_actionlint_version() -> str:
     return ver
 
 
-def _read_lint_level_env() -> ActionsLintLevel:
-    """Read ``REPO_OPS_ACTIONS_LINT_LEVEL`` from the environment.
-
-    Returns ``"block"`` when the variable is absent or holds an unrecognised
-    value (with a warning printed to stderr in the latter case).
-    """
-    raw = os.environ.get("REPO_OPS_ACTIONS_LINT_LEVEL", "").strip().lower()
+def _read_level_env(var: str, valid: tuple[str, ...], default: str) -> str:
+    """Read an env var restricted to *valid* values, warning and falling back to
+    *default* when absent or unrecognised."""
+    raw = os.environ.get(var, "").strip().lower()
     if not raw:
-        return _DEFAULT_LINT_LEVEL
-    if raw in ("block", "warn", "off"):
-        return raw  # type: ignore[return-value]
+        return default
+    if raw in valid:
+        return raw
     print(
-        f"WARN: REPO_OPS_ACTIONS_LINT_LEVEL={raw!r} unrecognised; "
-        "defaulting to 'block'",
+        f"WARN: {var}={raw!r} unrecognised; defaulting to {default!r}",
         file=sys.stderr,
     )
-    return _DEFAULT_LINT_LEVEL
+    return default
+
+
+def _read_lint_level_env() -> ActionsLintLevel:
+    """Read ``REPO_OPS_ACTIONS_LINT_LEVEL`` from the environment."""
+    return cast(
+        "ActionsLintLevel",
+        _read_level_env(
+            "REPO_OPS_ACTIONS_LINT_LEVEL", ("block", "warn", "off"), _DEFAULT_LINT_LEVEL
+        ),
+    )
 
 
 def _read_policy_level_env() -> ActionsPolicyLevel:
-    """Read ``REPO_OPS_ACTIONS_POLICY_LEVEL`` from the environment.
-
-    Returns ``"report"`` when the variable is absent or holds an unrecognised
-    value (with a warning printed to stderr in the latter case).
-    """
-    raw = os.environ.get("REPO_OPS_ACTIONS_POLICY_LEVEL", "").strip().lower()
-    if not raw:
-        return _DEFAULT_POLICY_LEVEL
-    if raw in ("block", "warn", "report"):
-        return raw  # type: ignore[return-value]
-    print(
-        f"WARN: REPO_OPS_ACTIONS_POLICY_LEVEL={raw!r} unrecognised; "
-        "defaulting to 'report'",
-        file=sys.stderr,
+    """Read ``REPO_OPS_ACTIONS_POLICY_LEVEL`` from the environment."""
+    return cast(
+        "ActionsPolicyLevel",
+        _read_level_env(
+            "REPO_OPS_ACTIONS_POLICY_LEVEL",
+            ("block", "warn", "report"),
+            _DEFAULT_POLICY_LEVEL,
+        ),
     )
-    return _DEFAULT_POLICY_LEVEL
 
 
 def discover_workflow_files(repo: Path) -> list[Path]:
@@ -744,10 +736,18 @@ def _resolve_latest_target(info: dict, tag_style: TagStyle) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def _global_holds_cached() -> tuple[HoldRule, ...]:
+    return holds.global_holds_cached()
+
+
+def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
+    return holds.repo_holds_cached(repo_root)
+
+
 def _resolve_actions_hold(repo: Path, package: str) -> HoldRule | None:
     """Return the active Actions hold for *package*, if any."""
     repo_root = str(repo.resolve())
-    rules = [*holds.global_holds_cached(), *holds.repo_holds_cached(repo_root)]
+    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
     if not rules:
         return None
     return resolve_hold(
@@ -912,7 +912,6 @@ def _enforce_version_ceilings(
                     pin=pin,
                     latest=target_sha,
                     line=uses.line or None,
-                    drop_comment=False,
                     comment_rewrite=comment_rewrite,
                 )
             )
@@ -1298,7 +1297,6 @@ def scan_actions(
                                             pin=pin,
                                             latest=new_sha,
                                             line=uses.line or None,
-                                            drop_comment=False,
                                             comment_rewrite=comment_rewrite,
                                         )
                                     )
@@ -1381,7 +1379,6 @@ def scan_actions(
                             pin=pin,
                             latest=target_tag,
                             line=uses.line or None,
-                            drop_comment=False,  # preserve the # vN audit hint
                         )
                     )
                 continue

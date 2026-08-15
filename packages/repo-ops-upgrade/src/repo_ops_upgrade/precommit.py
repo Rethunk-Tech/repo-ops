@@ -225,10 +225,18 @@ def _workspace_rel(ws: Workspace) -> str:
     return rel or "."
 
 
+def _global_holds_cached() -> tuple[HoldRule, ...]:
+    return holds.global_holds_cached()
+
+
+def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
+    return holds.repo_holds_cached(repo_root)
+
+
 def _resolve_precommit_hold(ws: Workspace, package: str) -> HoldRule | None:
     """Return the active pre-commit hold for *package*, if any."""
     repo_root = str(ws.git_repo.resolve())
-    rules = [*holds.global_holds_cached(), *holds.repo_holds_cached(repo_root)]
+    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
     if not rules:
         return None
     return resolve_hold(

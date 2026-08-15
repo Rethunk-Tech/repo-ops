@@ -27,8 +27,6 @@ from repo_ops_upgrade import holds
 
 logger = logging.getLogger(__name__)
 
-SubmoduleOrder = str  # "discovery" | "children-first"
-
 
 @dataclass(frozen=True)
 class SubmoduleLink:
@@ -550,10 +548,18 @@ def _resolve_sha_refresh(
 # ---------------------------------------------------------------------------
 
 
+def _global_holds_cached() -> tuple[HoldRule, ...]:
+    return holds.global_holds_cached()
+
+
+def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
+    return holds.repo_holds_cached(repo_root)
+
+
 def _resolve_submodule_hold(link: SubmoduleLink) -> HoldRule | None:
     """Return the active submodule hold for *link*, if any."""
     repo_root = str(link.parent.resolve())
-    rules = [*holds.global_holds_cached(), *holds.repo_holds_cached(repo_root)]
+    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
     if not rules:
         return None
     return resolve_hold(
