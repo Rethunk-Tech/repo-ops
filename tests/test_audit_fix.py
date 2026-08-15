@@ -88,6 +88,7 @@ def test_try_register_manager_unknown_returns_false() -> None:
         registry.APPLIERS.clear()
         registry.APPLIERS.update(original)
 
+
 def test_try_register_manager_real_registration_path() -> None:
     """Exercises the real import + registry.register path for two managers.
 
@@ -119,6 +120,7 @@ def test_try_register_manager_real_registration_path() -> None:
         registry.APPLIERS.clear()
         registry.APPLIERS.update(original_appliers)
 
+
 def test_try_register_manager_missing_package_logs_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -138,6 +140,7 @@ def test_try_register_manager_missing_package_logs_warning(
     finally:
         registry.APPLIERS.clear()
         registry.APPLIERS.update(original_appliers)
+
 
 # ---------------------------------------------------------------------------
 # apply_remediations adaptor

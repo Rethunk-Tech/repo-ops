@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
 logger = logging.getLogger(__name__)
+
 
 def register_precommit() -> None:
     """Register the pre-commit rev-pin checker and applier with the upgrade registry."""
@@ -51,6 +54,7 @@ def register_all() -> None:
     for name, (checker, applier) in plugins.items():
         registry.register(name, checker, applier)
     register_precommit()
+
 
 def register_one(manager: str) -> bool:
     """Lazily import and register a single ecosystem manager's checker/applier.
@@ -107,5 +111,3 @@ def register_one(manager: str) -> bool:
         )
         return False
     return True
-
-import logging
