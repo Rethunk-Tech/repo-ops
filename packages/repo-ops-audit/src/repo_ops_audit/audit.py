@@ -58,7 +58,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -132,13 +133,7 @@ class VulnCount:
         return None
 
     def as_dict(self) -> dict[str, int]:
-        return {
-            "critical": self.critical,
-            "high": self.high,
-            "moderate": self.moderate,
-            "low": self.low,
-            "unknown": self.unknown,
-        }
+        return asdict(self)
 
 
 @dataclass
@@ -156,12 +151,7 @@ class RemediationItem:
     workspace: str
 
     def as_dict(self) -> dict[str, str]:
-        return {
-            "package": self.package,
-            "safe_version": self.safe_version,
-            "ecosystem": self.ecosystem,
-            "workspace": self.workspace,
-        }
+        return asdict(self)
 
 
 @dataclass
@@ -177,15 +167,7 @@ class FindingItem:
     safe_version: str | None = None
 
     def as_dict(self) -> dict[str, str | bool | None]:
-        return {
-            "id": self.id,
-            "severity": self.severity,
-            "package": self.package,
-            "ecosystem": self.ecosystem,
-            "workspace": self.workspace,
-            "fixed": self.fixed,
-            "safe_version": self.safe_version,
-        }
+        return asdict(self)
 
 
 @dataclass
@@ -198,12 +180,7 @@ class ApplyOutcome:
     changes_count: int = 0
 
     def as_dict(self) -> dict[str, str | int]:
-        return {
-            "workspace": self.workspace,
-            "status": self.status,
-            "error": self.error,
-            "changes_count": self.changes_count,
-        }
+        return asdict(self)
 
 
 @dataclass
@@ -913,15 +890,8 @@ def _parse_npm_audit_json(data: dict[str, Any]) -> VulnCount:
                     if adv_id and adv_id in seen:
                         continue
                     seen.add(adv_id)
-                    sev = str(entry.get("severity", "moderate")).lower()
-                    if sev == "critical":
-                        counts.critical += 1
-                    elif sev == "high":
-                        counts.high += 1
-                    elif sev in ("moderate", "medium"):
-                        counts.moderate += 1
-                    else:
-                        counts.low += 1
+                    sev = _normalize_finding_severity(entry.get("severity"))
+                    setattr(counts, sev, getattr(counts, sev) + 1)
         if counts.total > 0:
             return counts
 
@@ -929,15 +899,8 @@ def _parse_npm_audit_json(data: dict[str, Any]) -> VulnCount:
     advisories = data.get("advisories", {})
     if isinstance(advisories, dict):
         for _adv_id, adv in advisories.items():
-            sev = str(adv.get("severity", "moderate")).lower()
-            if sev == "critical":
-                counts.critical += 1
-            elif sev == "high":
-                counts.high += 1
-            elif sev in ("moderate", "medium"):
-                counts.moderate += 1
-            else:
-                counts.low += 1
+            sev = _normalize_finding_severity(adv.get("severity"))
+            setattr(counts, sev, getattr(counts, sev) + 1)
 
     return counts
 
@@ -949,15 +912,8 @@ def _parse_bun_audit_text(text: str) -> VulnCount:
     counts = VulnCount()
     for m in _BUN_AUDIT_RE.finditer(text):
         n = int(m.group(1))
-        sev = m.group(2).lower()
-        if sev == "critical":
-            counts.critical += n
-        elif sev == "high":
-            counts.high += n
-        elif sev == "moderate":
-            counts.moderate += n
-        else:
-            counts.low += n
+        sev = _normalize_finding_severity(m.group(2))
+        setattr(counts, sev, getattr(counts, sev) + n)
     return counts
 
 
@@ -1796,24 +1752,13 @@ def _audit_py_exported(ws: str, ecosystem: str, manager: str) -> WorkspaceResult
             temp_dir.cleanup()
 
 
-def _audit_py_poetry(ws: str) -> WorkspaceResult:
-    return _audit_py_exported(ws, "py-poetry", "poetry")
-
-
-def _audit_py_pdm(ws: str) -> WorkspaceResult:
-    return _audit_py_exported(ws, "py-pdm", "pdm")
-
-
-def _audit_py_pipenv(ws: str) -> WorkspaceResult:
-    return _audit_py_exported(ws, "py-pipenv", "pipenv")
-
-
-def _audit_py_hatch(ws: str) -> WorkspaceResult:
-    return _audit_py_exported(ws, "py-hatch", "hatch")
-
-
-def _audit_py_pip_tools(ws: str) -> WorkspaceResult:
-    return _audit_py_exported(ws, "py-pip-tools", "pip-tools")
+_PY_EXPORTED_MANAGERS = {
+    "py-poetry": "poetry",
+    "py-pdm": "pdm",
+    "py-pipenv": "pipenv",
+    "py-hatch": "hatch",
+    "py-pip-tools": "pip-tools",
+}
 
 
 def _audit_rust(ws: str) -> WorkspaceResult:
@@ -1978,16 +1923,8 @@ def audit_workspace(ws: str, ecosystem: str, manager: str) -> WorkspaceResult:
         return _audit_node(ws, manager)
     if ecosystem == "py-uv":
         return _audit_py_uv(ws)
-    if ecosystem == "py-poetry":
-        return _audit_py_poetry(ws)
-    if ecosystem == "py-pdm":
-        return _audit_py_pdm(ws)
-    if ecosystem == "py-pipenv":
-        return _audit_py_pipenv(ws)
-    if ecosystem == "py-hatch":
-        return _audit_py_hatch(ws)
-    if ecosystem == "py-pip-tools":
-        return _audit_py_pip_tools(ws)
+    if ecosystem in _PY_EXPORTED_MANAGERS:
+        return _audit_py_exported(ws, ecosystem, _PY_EXPORTED_MANAGERS[ecosystem])
     if ecosystem == "rust":
         return _audit_rust(ws)
     if ecosystem == "deno":
@@ -2259,6 +2196,14 @@ def print_fix_plan(remediations: list[RemediationItem]) -> None:
     print("Note: --fix-plan is read-only. Apply fixes with: repo-ops audit --fix")
 
 
+_JS_OVERRIDE_MODULES = {
+    "npm": "repo_ops_js_npm.npm",
+    "pnpm": "repo_ops_js_pnpm.pnpm",
+    "yarn": "repo_ops_js_yarn.yarn",
+    "bun": "repo_ops_js_bun.bun",
+}
+
+
 def apply_remediations(
     remediations: list[RemediationItem],
     *,
@@ -2386,39 +2331,10 @@ def apply_remediations(
         _rust_clear = None
         if ecosystem == "node":
             ws_overrides = _js_ws_overrides.get(ws_path, {})
-            if ws_overrides:
-                if manager == "npm":
-                    from repo_ops_js_npm.npm import (
-                        clear_npm_audit_version_overrides,
-                        set_npm_audit_version_overrides,
-                    )
-
-                    set_npm_audit_version_overrides(ws_overrides)
-                    _js_clear = clear_npm_audit_version_overrides
-                elif manager == "pnpm":
-                    from repo_ops_js_pnpm.pnpm import (
-                        clear_pnpm_audit_version_overrides,
-                        set_pnpm_audit_version_overrides,
-                    )
-
-                    set_pnpm_audit_version_overrides(ws_overrides)
-                    _js_clear = clear_pnpm_audit_version_overrides
-                elif manager == "yarn":
-                    from repo_ops_js_yarn.yarn import (
-                        clear_yarn_audit_version_overrides,
-                        set_yarn_audit_version_overrides,
-                    )
-
-                    set_yarn_audit_version_overrides(ws_overrides)
-                    _js_clear = clear_yarn_audit_version_overrides
-                elif manager == "bun":
-                    from repo_ops_js_bun.bun import (
-                        clear_bun_audit_version_overrides,
-                        set_bun_audit_version_overrides,
-                    )
-
-                    set_bun_audit_version_overrides(ws_overrides)
-                    _js_clear = clear_bun_audit_version_overrides
+            if ws_overrides and manager in _JS_OVERRIDE_MODULES:
+                js_mod = import_module(_JS_OVERRIDE_MODULES[manager])
+                getattr(js_mod, f"set_{manager}_audit_version_overrides")(ws_overrides)
+                _js_clear = getattr(js_mod, f"clear_{manager}_audit_version_overrides")
         elif ecosystem == "rust":
             ws_overrides = _rust_ws_overrides.get(ws_path, {})
             if ws_overrides:
