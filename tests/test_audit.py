@@ -517,6 +517,54 @@ def test_audit_node_npm_vulns() -> None:
     assert result.counts.high == 2
 
 
+def test_audit_node_yarn_ndjson_vulns() -> None:
+    """Real ``yarn npm audit --json`` (yarn berry v4) emits newline-delimited
+    JSON, one advisory object per line — a single ``json.loads`` over the
+    whole output raises JSONDecodeError, which previously fell straight to
+    "error" (rc != 0) instead of parsing the real findings."""
+    yarn_output = "\n".join(
+        [
+            json.dumps(
+                {
+                    "value": "shell-quote",
+                    "children": {
+                        "ID": 1120422,
+                        "Issue": "shell-quote quote() does not escape newlines",
+                        "URL": "https://github.com/advisories/GHSA-w7jw-789q-3m8p",
+                        "Severity": "critical",
+                        "Vulnerable Versions": ">=1.1.0 <=1.8.3",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "value": "shell-quote",
+                    "children": {
+                        "ID": 1123944,
+                        "Issue": "shell-quote: Quadratic-complexity DoS",
+                        "URL": "https://github.com/advisories/GHSA-395f-4hp3-45gv",
+                        "Severity": "high",
+                        "Vulnerable Versions": "<=1.8.4",
+                    },
+                }
+            ),
+        ]
+    )
+    with (
+        patch("shutil.which", return_value="/usr/bin/yarn"),
+        patch("repo_ops_audit.audit._run", return_value=(1, yarn_output, "")),
+    ):
+        result = _audit_node("/some/repo", "yarn")
+    assert result.status == "vulns"
+    assert result.error == ""
+    assert result.counts.critical == 1
+    assert result.counts.high == 1
+    assert len(result.findings) == 2
+    assert {f.package for f in result.findings} == {"shell-quote"}
+    # Yarn's audit JSON has no fix-version field.
+    assert result.remediations == []
+
+
 def test_audit_node_bun_text_parse() -> None:
     bun_output = "2 vulnerabilities (1 high, 1 moderate)"
     with (
@@ -533,9 +581,11 @@ def test_audit_node_bun_text_parse() -> None:
 
 
 def test_audit_node_bun_json_extracts_remediations() -> None:
-    """#140: bun audit --json is npm-advisory-shaped; a known-safe fix version
-    must surface as a RemediationItem the same way npm/pnpm/yarn do, otherwise
-    apply_remediations never sees a bun workspace to apply overrides to."""
+    """If bun ever emits npm-advisory-shaped JSON (it did not as of 1.3.14,
+    see test_audit_node_bun_native_json_real_shape below), a known-safe fix
+    version must still surface as a RemediationItem the same way npm/pnpm/yarn
+    do, otherwise apply_remediations never sees a bun workspace to apply
+    overrides to."""
     bun_output = json.dumps(
         {
             "vulnerabilities": {
@@ -559,6 +609,40 @@ def test_audit_node_bun_json_extracts_remediations() -> None:
     assert rem.package == "lodash"
     assert rem.safe_version == "4.17.21"
     assert rem.ecosystem == "node"
+
+
+def test_audit_node_bun_native_json_real_shape() -> None:
+    """Real ``bun audit --json`` (bun 1.3.14) is package-name -> list[advisory]
+    with a flat "severity" field, NOT npm's "vulnerabilities"/"via" schema.
+    Feeding that shape into _parse_npm_audit_json silently returns all-zero
+    counts, which previously made a real 5-vuln finding masquerade as an
+    "error" carrying only the "bun audit vX.Y.Z (hash)" stderr banner."""
+    bun_output = json.dumps(
+        {
+            "adm-zip": [{"id": 1, "severity": "high", "url": "https://x/1"}],
+            "shell-quote": [
+                {"id": 2, "severity": "critical", "url": "https://x/2"},
+                {"id": 3, "severity": "high", "url": "https://x/3"},
+            ],
+            "tmp": [{"id": 4, "severity": "high", "url": "https://x/4"}],
+            "uuid": [{"id": 5, "severity": "moderate", "url": "https://x/5"}],
+        }
+    )
+    bun_banner = "\x1b[0m\x1b[1mbun audit \x1b[0m\x1b[2mv1.3.14 (0d9b296a)\x1b[0m"
+    with (
+        patch("shutil.which", return_value="/usr/bin/bun"),
+        patch("repo_ops_audit.audit._probe_bun_audit", return_value=True),
+        patch("repo_ops_audit.audit._run", return_value=(1, bun_output, bun_banner)),
+    ):
+        result = _audit_node("/some/repo", "bun")
+    assert result.status == "vulns"
+    assert result.error == ""
+    assert result.counts.critical == 1
+    assert result.counts.high == 3
+    assert result.counts.moderate == 1
+    assert len(result.findings) == 5
+    # Bun's native JSON has no fix-version field.
+    assert result.remediations == []
 
 
 # ---------------------------------------------------------------------------

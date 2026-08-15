@@ -40,7 +40,15 @@ Each ecosystem maps its own severity vocabulary to the canonical four buckets:
     no CVE alias                → moderate
 
   bun audit
-    Text output extracted by regex ("N critical/high/moderate/low").
+    ``--json`` output preferred: bun's own flat schema (package name → list of
+    advisory objects with a ``severity`` field), NOT npm's schema despite
+    superficially similar advisory fields. Falls back to regex-extracted
+    text ("N critical/high/moderate/low") only when JSON is absent/unparseable.
+
+  yarn npm audit
+    ``--json`` emits newline-delimited JSON (one advisory per line, distinct
+    from npm/pnpm's single JSON object) — parsed line-by-line as a fallback
+    when a single ``json.loads`` over the full output fails.
 
   deno audit
     JSON output when supported, otherwise the native severity summary is parsed.
@@ -458,9 +466,9 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
         "npm": ["npm", "audit", "--json"],
         "yarn": ["yarn", "npm", "audit", "--json"],
         "pnpm": ["pnpm", "audit", "--json"],
-        # bun audit --json supported since ~1.2.x: prints raw npm-advisory JSON.
-        # Older bun versions that lack --json emit ANSI text; JSON parse failure
-        # triggers the _parse_bun_audit_text fallback below.
+        # bun audit --json supported since ~1.2.x: prints bun's own JSON shape
+        # (see _is_bun_native_audit_json). Older bun versions that lack --json
+        # emit ANSI text; JSON parse failure triggers _parse_bun_audit_text.
         "bun": ["bun", "audit", "--json"],
     }
     tool = manager
@@ -481,20 +489,27 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
     counts = VulnCount()
 
     if manager == "bun":
-        # bun audit --json emits npm-advisory JSON (same schema as npm audit --json).
-        # Older bun versions that predate --json emit ANSI text; json.loads failure
-        # triggers the _parse_bun_audit_text fallback so both paths are handled.
-        # The text fallback has no per-package fix-version data, so remediations
-        # stay empty in that path (only the JSON path is actionable for --fix).
+        # bun audit --json emits bun's own flat JSON shape (verified against
+        # real output, not npm's schema despite a since-corrected comment
+        # claiming otherwise — see _is_bun_native_audit_json). A future bun
+        # release matching npm's schema still parses via _parse_npm_audit_json.
+        # Older bun versions that predate --json emit ANSI text; json.loads
+        # failure triggers the _parse_bun_audit_text fallback so both paths
+        # are handled. Neither bun JSON shape carries per-package fix-version
+        # data, so remediations stay empty for native-shape JSON and text.
         _json_ok = False
         bun_remediations: list[RemediationItem] = []
         bun_findings: list[FindingItem] = []
         if stdout.strip():
             try:
                 _bun_data = json.loads(stdout)
-                counts = _parse_npm_audit_json(_bun_data)
-                bun_remediations = _extract_remediations_npm_json(_bun_data, ws)
-                bun_findings = _extract_findings_npm_json(_bun_data, ws)
+                if _is_bun_native_audit_json(_bun_data):
+                    counts = _parse_bun_audit_json(_bun_data)
+                    bun_findings = _extract_findings_bun_audit_json(_bun_data, ws)
+                else:
+                    counts = _parse_npm_audit_json(_bun_data)
+                    bun_remediations = _extract_remediations_npm_json(_bun_data, ws)
+                    bun_findings = _extract_findings_npm_json(_bun_data, ws)
                 _json_ok = True
             except (json.JSONDecodeError, ValueError, KeyError, TypeError):
                 pass
@@ -521,7 +536,10 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
             findings=bun_findings,
         )
 
-    # npm / pnpm / yarn all emit JSON
+    # npm / pnpm emit a single JSON object; yarn (berry) emits newline-
+    # delimited JSON (one advisory per line) that fails a whole-output
+    # json.loads, so that failure falls back to the NDJSON parser rather than
+    # being treated as a generic parse error.
     remediations: list[RemediationItem] = []
     findings: list[FindingItem] = []
     try:
@@ -530,16 +548,18 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
         remediations = _extract_remediations_npm_json(data, ws)
         findings = _extract_findings_npm_json(data, ws)
     except (json.JSONDecodeError, ValueError, KeyError):
-        if rc != 0:
-            return _error(
-                ws,
-                "node",
-                manager,
-                (stderr or stdout or "audit parse error").strip()[:200],
+        counts, findings = _parse_yarn_audit_ndjson(stdout, ws)
+        if counts.total == 0 and not findings:
+            if rc != 0:
+                return _error(
+                    ws,
+                    "node",
+                    manager,
+                    (stderr or stdout or "audit parse error").strip()[:200],
+                )
+            return WorkspaceResult(
+                label=label, path=ws, ecosystem="node", manager=manager, status="ok"
             )
-        return WorkspaceResult(
-            label=label, path=ws, ecosystem="node", manager=manager, status="ok"
-        )
 
     status = "vulns" if counts.total > 0 else "ok"
     return WorkspaceResult(
@@ -894,6 +914,107 @@ def _extract_findings_bun_audit_text(text: str, ws: str) -> list[FindingItem]:
                 )
             )
     return findings
+
+
+def _is_bun_native_audit_json(data: Any) -> bool:
+    """True when *data* matches bun's own ``bun audit --json`` shape.
+
+    Verified against real ``bun audit --json`` output (bun 1.3.14): top-level
+    keys are package names, values are lists of advisory objects with a flat
+    ``severity`` field, e.g. ``{"tmp": [{"id":..., "severity": "high", ...}]}``.
+    This has no ``metadata``/``vulnerabilities``/``advisories`` wrapper, unlike
+    npm/pnpm's audit JSON — despite a since-corrected code comment claiming bun
+    emits npm-advisory-shaped JSON, it does not. Kept distinct from the
+    npm-shaped dispatch so a future bun release that switches to npm's schema
+    still parses via ``_parse_npm_audit_json``.
+    """
+    if not isinstance(data, dict) or not data:
+        return False
+    if any(key in data for key in ("metadata", "vulnerabilities", "advisories")):
+        return False
+    return all(isinstance(v, list) for v in data.values())
+
+
+def _parse_bun_audit_json(data: dict[str, Any]) -> VulnCount:
+    """Parse bun's native ``bun audit --json`` shape into a VulnCount."""
+    counts = VulnCount()
+    for advisories in data.values():
+        if not isinstance(advisories, list):
+            continue
+        for adv in advisories:
+            if not isinstance(adv, dict):
+                continue
+            sev = _normalize_finding_severity(adv.get("severity"))
+            setattr(counts, sev, getattr(counts, sev) + 1)
+    return counts
+
+
+def _extract_findings_bun_audit_json(
+    data: dict[str, Any], ws: str
+) -> list[FindingItem]:
+    """Extract per-advisory findings from bun's native ``bun audit --json`` shape.
+
+    Bun's native JSON carries no fix/patched-version field (unlike npm/pnpm's),
+    so every finding here is unfixed — matching the text-fallback path's
+    already-documented no-remediation behavior.
+    """
+    findings: list[FindingItem] = []
+    for package, advisories in data.items():
+        if not isinstance(advisories, list):
+            continue
+        for adv in advisories:
+            if not isinstance(adv, dict):
+                continue
+            findings.append(
+                FindingItem(
+                    id=str(adv.get("id") or adv.get("url") or package),
+                    severity=_normalize_finding_severity(adv.get("severity")),
+                    package=str(package),
+                    ecosystem="node",
+                    workspace=ws,
+                )
+            )
+    return findings
+
+
+def _parse_yarn_audit_ndjson(text: str, ws: str) -> tuple[VulnCount, list[FindingItem]]:
+    """Parse ``yarn npm audit --json`` newline-delimited output.
+
+    Verified against real yarn (berry v4) output: one JSON object per line,
+    shaped ``{"value": <pkg>, "children": {"Severity":..., "ID":...,
+    "URL":..., ...}}`` — distinct from npm/pnpm's single JSON object, so a
+    plain ``json.loads`` over the full text raises ``JSONDecodeError`` before
+    this ever runs. No fix/patched-version field is present, so (matching
+    bun's native-JSON path) findings here are always unfixed.
+    """
+    counts = VulnCount()
+    findings: list[FindingItem] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        children = obj.get("children")
+        if not isinstance(children, dict):
+            continue
+        package = str(obj.get("value") or "").strip()
+        sev = _normalize_finding_severity(children.get("Severity"))
+        setattr(counts, sev, getattr(counts, sev) + 1)
+        findings.append(
+            FindingItem(
+                id=str(children.get("ID") or children.get("URL") or package),
+                severity=sev,
+                package=package,
+                ecosystem="node",
+                workspace=ws,
+            )
+        )
+    return counts, findings
 
 
 # ---------------------------------------------------------------------------
