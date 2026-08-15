@@ -135,376 +135,113 @@ class _Setting:
     default_doc: str
 
 
+class _Derive:
+    """Sentinel: derive this field from ``name`` in :func:`_s` unless overridden."""
+
+
+_DERIVE = _Derive()
+
+
+def _s(
+    name: str,
+    default: Any,
+    flag: str,
+    default_doc: str,
+    *,
+    env_var: str | _Derive | None = _DERIVE,
+    config_key: str | _Derive = _DERIVE,
+) -> _Setting:
+    """Build one settings-table row.
+
+    ``env_var`` defaults to ``REPO_OPS_<NAME>`` and ``config_key`` defaults to
+    ``name`` — true for all but two settings — so a row is one line instead of
+    hand-typing the same string three times; pass either explicitly to
+    override (e.g. no env channel, or a config key that differs from name).
+    """
+    resolved_env: str | None = (
+        f"REPO_OPS_{name.upper()}" if isinstance(env_var, _Derive) else env_var
+    )
+    resolved_key: str = name if isinstance(config_key, _Derive) else config_key
+    return _Setting(name, resolved_env, resolved_key, default, flag, default_doc)
+
+
 # Single source of truth for settings resolution and documentation — env_var,
 # config_key, default (used by resolve_setting) and flag, default_doc (used
 # by SETTINGS_TABLE) all live on one row per setting so they can't drift.
 # Timeout defaults match repo_ops_core.constants (single source of truth).
 _SETTINGS: tuple[_Setting, ...] = (
     # Execution
-    _Setting(
-        "jobs", None, "jobs", None, "--jobs", "min(16, cpu_count)"
-    ),  # resolved to min(16, cpu_count) when None
+    _s("jobs", None, "--jobs", "min(16, cpu_count)", env_var=None),
     # Upgrade policy
-    _Setting(
-        "go_upgrade_mode",
-        "REPO_OPS_GO_UPGRADE_MODE",
-        "go_upgrade_mode",
-        None,
-        "--go-upgrade-mode",
-        "patch",
-    ),
-    _Setting(
-        "actions_lint_level",
-        "REPO_OPS_ACTIONS_LINT_LEVEL",
-        "actions_lint_level",
-        None,
-        "--actions-lint-level",
-        "block",
-    ),
+    _s("go_upgrade_mode", None, "--go-upgrade-mode", "patch"),
+    _s("actions_lint_level", None, "--actions-lint-level", "block"),
     # Timeouts (defaults from constants — same values resolve_timeout_* use)
-    _Setting(
-        "timeout_check",
-        "REPO_OPS_TIMEOUT_CHECK",
-        "timeout_check",
-        TIMEOUT_CHECK,
-        "(none)",
-        str(TIMEOUT_CHECK),
-    ),
-    _Setting(
-        "timeout_apply",
-        "REPO_OPS_TIMEOUT_APPLY",
-        "timeout_apply",
-        TIMEOUT_APPLY,
-        "(none)",
-        str(TIMEOUT_APPLY),
-    ),
-    _Setting(
-        "timeout_verify",
-        "REPO_OPS_TIMEOUT_VERIFY",
-        "timeout_verify",
-        TIMEOUT_VERIFY,
-        "(none)",
-        str(TIMEOUT_VERIFY),
-    ),
-    _Setting(
-        "find_timeout",
-        "REPO_OPS_FIND_TIMEOUT",
-        "find_timeout",
-        FIND_TIMEOUT,
-        "(none)",
-        str(FIND_TIMEOUT),
-    ),
-    _Setting(
-        "git_timeout",
-        "REPO_OPS_GIT_TIMEOUT",
-        "git_timeout",
-        GIT_TIMEOUT,
-        "(none)",
-        str(GIT_TIMEOUT),
-    ),
+    _s("timeout_check", TIMEOUT_CHECK, "(none)", str(TIMEOUT_CHECK)),
+    _s("timeout_apply", TIMEOUT_APPLY, "(none)", str(TIMEOUT_APPLY)),
+    _s("timeout_verify", TIMEOUT_VERIFY, "(none)", str(TIMEOUT_VERIFY)),
+    _s("find_timeout", FIND_TIMEOUT, "(none)", str(FIND_TIMEOUT)),
+    _s("git_timeout", GIT_TIMEOUT, "(none)", str(GIT_TIMEOUT)),
     # Feature flags
     # Sweep-default settings (#136): these 20 keys back off/on the default full
     # sweep and default to "1" (on). --conservative is the only way to flip
     # them all to "0" at once; each is still individually overridable via its
     # own env var or [tool.repo-ops] config key, which is the entire point of
     # routing them through this table instead of an unconditional env write.
-    _Setting(
-        "bun_update_latest",
-        "REPO_OPS_BUN_UPDATE_LATEST",
-        "bun_update_latest",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "pnpm_update_latest",
-        "REPO_OPS_PNPM_UPDATE_LATEST",
-        "pnpm_update_latest",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "yarn_update_latest",
-        "REPO_OPS_YARN_UPDATE_LATEST",
-        "yarn_update_latest",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "yarn_targeted_bump",
-        "REPO_OPS_YARN_TARGETED_BUMP",
-        "yarn_targeted_bump",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "yarn_max_concurrency",
-        "REPO_OPS_YARN_MAX_CONCURRENCY",
-        "yarn_max_concurrency",
-        None,
-        "(none)",
-        "4",
-    ),
-    _Setting(
-        "npm_targeted_bump",
-        "REPO_OPS_NPM_TARGETED_BUMP",
-        "npm_targeted_bump",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "pnpm_targeted_bump",
-        "REPO_OPS_PNPM_TARGETED_BUMP",
-        "pnpm_targeted_bump",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "bun_targeted_bump",
-        "REPO_OPS_BUN_TARGETED_BUMP",
-        "bun_targeted_bump",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "deno_update_latest",
-        "REPO_OPS_DENO_UPDATE_LATEST",
-        "deno_update_latest",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "deno_targeted_bump",
-        "REPO_OPS_DENO_TARGETED_BUMP",
-        "deno_targeted_bump",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "rust_targeted_bump",
-        "REPO_OPS_RUST_TARGETED_BUMP",
-        "rust_targeted_bump",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "poetry_targeted_bump",
-        "REPO_OPS_POETRY_TARGETED_BUMP",
-        "poetry_targeted_bump",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "pdm_targeted_bump",
-        "REPO_OPS_PDM_TARGETED_BUMP",
-        "pdm_targeted_bump",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "pipenv_targeted_bump",
-        "REPO_OPS_PIPENV_TARGETED_BUMP",
-        "pipenv_targeted_bump",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "pip_tools_targeted_bump",
-        "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
-        "pip_tools_targeted_bump",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "go_work_sync", "REPO_OPS_GO_WORK_SYNC", "go_work_sync", None, "(none)", "0"
-    ),
-    _Setting("no_progress", "REPO_OPS_NO_PROGRESS", "no_progress", None, "(none)", "0"),
-    _Setting("no_state", "REPO_OPS_NO_STATE", "no_state", None, "(none)", "0"),
-    _Setting(
-        "no_lint_cache", "REPO_OPS_NO_LINT_CACHE", "no_lint_cache", None, "(none)", "0"
-    ),
-    _Setting(
-        "go_directive",
-        "REPO_OPS_GO_DIRECTIVE",
-        "go_directive",
-        None,
-        "(none)",
-        "(none)",
-    ),
-    _Setting(
-        "go_toolchain",
-        "REPO_OPS_GO_TOOLCHAIN",
-        "go_toolchain",
-        None,
-        "(none)",
-        "(none)",
-    ),
-    _Setting(
-        "node_verify_script",
-        "REPO_OPS_NODE_VERIFY_SCRIPT",
-        "node_verify_script",
-        None,
-        "(none)",
-        "(none)",
-    ),
-    _Setting(
-        "commit_agent_provider",
-        "REPO_OPS_COMMIT_AGENT_PROVIDER",
-        "commit_agent_provider",
-        None,
-        "(none)",
-        "cursor",
-    ),
-    _Setting(
-        "commit_agent_model",
-        "REPO_OPS_COMMIT_AGENT_MODEL",
-        "commit_agent_model",
-        "composer-2.5",
-        "(none)",
-        "composer-2.5",
-    ),
-    _Setting(
-        "commit_umbrella",
-        "REPO_OPS_COMMIT_UMBRELLA",
-        "commit_umbrella",
-        None,
-        "--commit-umbrella",
-        "0",
-    ),
-    _Setting(
-        "actions_org_policy",
-        "REPO_OPS_ACTIONS_ORG_POLICY",
-        "actions_org_policy",
-        None,
-        "--actions-org-policy",
-        "0",
-    ),
-    _Setting(
-        "actions_policy_level",
-        "REPO_OPS_ACTIONS_POLICY_LEVEL",
-        "actions_policy_level",
-        None,
-        "--actions-policy-level",
-        "report",
-    ),
+    _s("bun_update_latest", "1", "--conservative", "1"),
+    _s("pnpm_update_latest", "1", "--conservative", "1"),
+    _s("yarn_update_latest", "1", "--conservative", "1"),
+    _s("yarn_targeted_bump", "1", "--conservative", "1"),
+    _s("yarn_max_concurrency", None, "(none)", "4"),
+    _s("npm_targeted_bump", "1", "--conservative", "1"),
+    _s("pnpm_targeted_bump", "1", "--conservative", "1"),
+    _s("bun_targeted_bump", "1", "--conservative", "1"),
+    _s("deno_update_latest", "1", "--conservative", "1"),
+    _s("deno_targeted_bump", "1", "--conservative", "1"),
+    _s("rust_targeted_bump", "1", "--conservative", "1"),
+    _s("poetry_targeted_bump", "1", "--conservative", "1"),
+    _s("pdm_targeted_bump", "1", "--conservative", "1"),
+    _s("pipenv_targeted_bump", "1", "--conservative", "1"),
+    _s("pip_tools_targeted_bump", "1", "--conservative", "1"),
+    _s("go_work_sync", None, "(none)", "0"),
+    _s("no_progress", None, "(none)", "0"),
+    _s("no_state", None, "(none)", "0"),
+    _s("no_lint_cache", None, "(none)", "0"),
+    _s("go_directive", None, "(none)", "(none)"),
+    _s("go_toolchain", None, "(none)", "(none)"),
+    _s("node_verify_script", None, "(none)", "(none)"),
+    _s("commit_agent_provider", None, "(none)", "cursor"),
+    _s("commit_agent_model", "composer-2.5", "(none)", "composer-2.5"),
+    _s("commit_umbrella", None, "--commit-umbrella", "0"),
+    _s("actions_org_policy", None, "--actions-org-policy", "0"),
+    _s("actions_policy_level", None, "--actions-policy-level", "report"),
     # Actions digest refresh (SHA-pinned Actions get their pin's commit
     # advanced within the resolved major) and pin-to-SHA (a floating-tag
     # Action gets hardened to a SHA pin). Both are opt-in-by-sweep-default,
     # AND-ed with keep_sha (never fires when --actions-unpin-sha is passed).
-    _Setting(
-        "actions_refresh_sha",
-        "REPO_OPS_ACTIONS_REFRESH_SHA",
-        "actions_refresh_sha",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "actions_pin_sha",
-        "REPO_OPS_ACTIONS_PIN_SHA",
-        "actions_pin_sha",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "container_update_latest",
-        "REPO_OPS_CONTAINER_UPDATE_LATEST",
-        "container_update_latest",
-        "1",
-        "--conservative",
-        "1",
-    ),
+    _s("actions_refresh_sha", "1", "--conservative", "1"),
+    _s("actions_pin_sha", "1", "--conservative", "1"),
+    _s("container_update_latest", "1", "--conservative", "1"),
     # Apply resume checkpoint (apply-only): skip repos already applied in a prior run.
-    _Setting("resume", "REPO_OPS_RESUME", "resume", None, "(none)", "0"),
+    _s("resume", None, "(none)", "0"),
     # Submodule tag-advance: allow cross-major semver tag bumps on submodule pointers.
-    _Setting(
-        "submodule_update_latest",
-        "REPO_OPS_SUBMODULE_UPDATE_LATEST",
-        "submodule_update_latest",
-        "1",
-        "--conservative",
-        "1",
-    ),
+    _s("submodule_update_latest", "1", "--conservative", "1"),
     # Pre-commit hook upgrades: allow cross-major rev bumps.
-    _Setting(
-        "precommit_update_latest",
-        "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
-        "precommit_update_latest",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "precommit_refresh_sha",
-        "REPO_OPS_PRECOMMIT_REFRESH_SHA",
-        "precommit_refresh_sha",
-        "1",
-        "--conservative",
-        "1",
-    ),
-    _Setting(
-        "submodule_refresh_sha",
-        "REPO_OPS_SUBMODULE_REFRESH_SHA",
-        "submodule_refresh_sha",
-        "1",
-        "--conservative",
-        "1",
-    ),
+    _s("precommit_update_latest", "1", "--conservative", "1"),
+    _s("precommit_refresh_sha", "1", "--conservative", "1"),
+    _s("submodule_refresh_sha", "1", "--conservative", "1"),
     # Container ecosystem: refresh image digest for SHA-pinned references.
-    _Setting(
-        "container_refresh_sha",
-        "REPO_OPS_CONTAINER_REFRESH_SHA",
-        "container_refresh_sha",
-        "1",
-        "--conservative",
-        "1",
-    ),
+    _s("container_refresh_sha", "1", "--conservative", "1"),
     # Hatch: opt in to creating uv.lock (also settable via --migrate-to-uv-lock flag).
-    _Setting(
-        "hatch_migrate_uv_lock",
-        "REPO_OPS_HATCH_MIGRATE_UV_LOCK",
-        "hatch_migrate_uv_lock",
-        None,
-        "--migrate-to-uv-lock",
-        "1",
-    ),
+    _s("hatch_migrate_uv_lock", None, "--migrate-to-uv-lock", "1"),
     # Exclude patterns: CLI --exclude / config key ``exclude`` (list). No env
     # channel — lists do not serialize cleanly; run.py also special-cases merge.
-    _Setting("exclude_patterns", None, "exclude", None, "--exclude", "[]"),
+    _s("exclude_patterns", None, "--exclude", "[]", env_var=None, config_key="exclude"),
     # Audit fail-on gates: readable from [tool.repo-ops] so CI can pin the
     # severity threshold without repeating --fail-on / --fail-on-unknown on
     # every invocation. Consumed by repo_ops_audit's main() (CLI flag > env >
     # config > default); repo_ops_core only owns the settings-table rows.
-    _Setting(
-        "audit_fail_on",
-        "REPO_OPS_AUDIT_FAIL_ON",
-        "audit_fail_on",
-        None,
-        "--fail-on",
-        "high",
-    ),
-    _Setting(
-        "audit_fail_on_unknown",
-        "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
-        "audit_fail_on_unknown",
-        None,
-        "--fail-on-unknown",
-        "0",
-    ),
+    _s("audit_fail_on", None, "--fail-on", "high"),
+    _s("audit_fail_on_unknown", None, "--fail-on-unknown", "0"),
 )
 
 # Maps setting name → (env_var, config_key, default); consumed directly by
