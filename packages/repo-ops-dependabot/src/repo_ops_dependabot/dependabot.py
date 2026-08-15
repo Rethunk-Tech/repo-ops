@@ -76,7 +76,9 @@ from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
 from repo_ops_core.git import repo_label, run_git
+from repo_ops_core.version_utils import semver_tuple
 from repo_ops_lockfiles.parsers import (
+    split_name_version,
     versions_bun_lock,
     versions_bun_lockb,
     versions_deno_lock,
@@ -323,6 +325,39 @@ def _gh_close_pr(owner_repo: str, pr_number: int, comment: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _lockfile_entry_parsers():
+    """(filename, parser) pairs shared by the highest-version resolver and the
+    raw-entry scanner below; bun.lockb and deno.lock are resolver-only (see
+    _lockfile_resolved) so they're walked separately.
+
+    Built fresh on each call (rather than a module-level constant) so tests
+    that monkeypatch e.g. ``dependabot.versions_poetry_lock`` see it applied.
+    """
+    return (
+        ("package-lock.json", versions_npm_lock),
+        ("yarn.lock", versions_yarn_lock),
+        ("pnpm-lock.yaml", versions_pnpm_lock),
+        ("bun.lock", versions_bun_lock),
+        ("uv.lock", versions_uv_lock),
+        ("poetry.lock", versions_poetry_lock),
+        ("pdm.lock", versions_pdm_lock),
+        ("Pipfile.lock", versions_pipenv_lock),
+    )
+
+
+def _iter_lockfile_entries(root: Path, filename: str, parser):
+    """Yield raw ``name@version`` entries from every *filename* under *root*.
+
+    Parse failures on an individual lockfile are swallowed so one malformed
+    file doesn't block the rest of a monorepo scan.
+    """
+    for lockfile in root.rglob(filename):
+        if any(part in SKIP_DIRS for part in lockfile.parts):
+            continue
+        with contextlib.suppress(Exception):
+            yield from parser(lockfile)
+
+
 def _lockfile_resolved(repo: str) -> dict[str, str]:
     """Return {name: version} of all packages resolved in lockfiles under *repo*.
 
@@ -340,46 +375,15 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
         if key not in resolved or _version_gte(ver, resolved[key]):
             resolved[key] = ver
 
-    for lockfile in root.rglob("package-lock.json"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            for entry in versions_npm_lock(lockfile):
-                if "@" in entry:
-                    pkg, ver = _split_name_ver(entry)
-                    if pkg:
-                        _update(pkg, ver)
+    for filename, parser in _lockfile_entry_parsers():
+        for entry in _iter_lockfile_entries(root, filename, parser):
+            if "@" in entry:
+                pkg, ver = _split_name_ver(entry)
+                if pkg:
+                    _update(pkg, ver)
 
-    for lockfile in root.rglob("yarn.lock"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            for entry in versions_yarn_lock(lockfile):
-                if "@" in entry:
-                    pkg, ver = _split_name_ver(entry)
-                    if pkg:
-                        _update(pkg, ver)
-
-    for lockfile in root.rglob("pnpm-lock.yaml"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            for entry in versions_pnpm_lock(lockfile):
-                if "@" in entry:
-                    pkg, ver = _split_name_ver(entry)
-                    if pkg:
-                        _update(pkg, ver)
-
-    for lockfile in root.rglob("bun.lock"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            for entry in versions_bun_lock(lockfile):
-                if "@" in entry:
-                    pkg, ver = _split_name_ver(entry)
-                    if pkg:
-                        _update(pkg, ver)
-
+    # bun.lockb is bun's binary lockfile; skip when a bun.lock (text) sibling
+    # already covers the same directory to avoid double-counting.
     for lockfile in root.rglob("bun.lockb"):
         if any(part in SKIP_DIRS for part in lockfile.parts):
             continue
@@ -392,6 +396,8 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
                     if pkg:
                         _update(pkg, ver)
 
+    # deno.lock entries carry an npm:/jsr: prefix; a jsr-scoped package also
+    # registers under its unscoped name since Dependabot's PR title uses it.
     for lockfile in root.rglob("deno.lock"):
         if any(part in SKIP_DIRS for part in lockfile.parts):
             continue
@@ -407,64 +413,12 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
                         if prefix == "jsr" and pkg.startswith("@"):
                             _update(pkg[1:], ver)
 
-    for lockfile in root.rglob("uv.lock"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            for entry in versions_uv_lock(lockfile):
-                if "@" in entry:
-                    pkg, ver = _split_name_ver(entry)
-                    if pkg:
-                        _update(pkg, ver)
-
-    for lockfile in root.rglob("poetry.lock"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            for entry in versions_poetry_lock(lockfile):
-                if "@" in entry:
-                    pkg, ver = _split_name_ver(entry)
-                    if pkg:
-                        _update(pkg, ver)
-
-    for lockfile in root.rglob("pdm.lock"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            for entry in versions_pdm_lock(lockfile):
-                if "@" in entry:
-                    pkg, ver = _split_name_ver(entry)
-                    if pkg:
-                        _update(pkg, ver)
-
-    for lockfile in root.rglob("Pipfile.lock"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            for entry in versions_pipenv_lock(lockfile):
-                if "@" in entry:
-                    pkg, ver = _split_name_ver(entry)
-                    if pkg:
-                        _update(pkg, ver)
-
     return resolved
 
 
-def _split_name_ver(entry: str) -> tuple[str, str]:
-    """Split a ``name@version`` string into (name, version).
-
-    Handles scoped packages like ``@babel/core@7.22.0``.
-    """
-    if entry.startswith("@"):
-        # @scope/pkg@version
-        second_at = entry.find("@", 1)
-        if second_at == -1:
-            return entry, ""
-        return entry[:second_at], entry[second_at + 1 :]
-    at = entry.find("@")
-    if at == -1:
-        return entry, ""
-    return entry[:at], entry[at + 1 :]
+# Kept as a module-level name (rather than calling split_name_version
+# directly) since tests import it from here.
+_split_name_ver = split_name_version
 
 
 def _lockfile_versions(repo: str) -> set[str]:
@@ -475,55 +429,8 @@ def _lockfile_versions(repo: str) -> set[str]:
     """
     root = Path(repo)
     versions: set[str] = set()
-
-    for lockfile in root.rglob("package-lock.json"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            versions |= versions_npm_lock(lockfile)
-
-    for lockfile in root.rglob("yarn.lock"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            versions |= versions_yarn_lock(lockfile)
-
-    for lockfile in root.rglob("pnpm-lock.yaml"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            versions |= versions_pnpm_lock(lockfile)
-
-    for lockfile in root.rglob("bun.lock"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            versions |= versions_bun_lock(lockfile)
-
-    for lockfile in root.rglob("uv.lock"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            versions |= versions_uv_lock(lockfile)
-
-    for lockfile in root.rglob("poetry.lock"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            versions |= versions_poetry_lock(lockfile)
-
-    for lockfile in root.rglob("pdm.lock"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            versions |= versions_pdm_lock(lockfile)
-
-    for lockfile in root.rglob("Pipfile.lock"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
-            continue
-        with contextlib.suppress(Exception):
-            versions |= versions_pipenv_lock(lockfile)
-
+    for filename, parser in _lockfile_entry_parsers():
+        versions.update(_iter_lockfile_entries(root, filename, parser))
     return versions
 
 
@@ -559,18 +466,7 @@ def _manifest_versions(repo: str) -> dict[str, str]:
 
 def _version_gte(current: str, target: str) -> bool:
     """Return True when *current* >= *target* using tuple comparison."""
-
-    def _to_tuple(v: str) -> tuple[int, ...]:
-        parts = _strip_v(v).split(".")
-        nums: list[int] = []
-        for p in parts[:4]:  # cap at 4 segments
-            try:
-                nums.append(int(re.sub(r"[^0-9].*", "", p)))
-            except ValueError:
-                break
-        return tuple(nums) if nums else (0,)
-
-    return _to_tuple(current) >= _to_tuple(target)
+    return semver_tuple(current) >= semver_tuple(target)
 
 
 def _resolve_package_version(
