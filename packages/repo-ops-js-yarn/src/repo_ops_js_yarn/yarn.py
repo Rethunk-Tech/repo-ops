@@ -81,14 +81,31 @@ _TIMEOUT_NPM_INFO = 60
 _TRUE_VALUES = ("1", "true", "yes", "on")
 
 # Cap on concurrent yarn isolated-copy extractions. Each check/guard run copies
-# the workspace to /tmp and lets Yarn Berry extract its cache there; running one
-# per --jobs worker can exhaust /tmp (ENOSPC) on large monorepos. This semaphore
-# bounds the disk-heavy extraction phase independently of the workspace-level
-# --jobs pool, so non-yarn ecosystems keep full parallelism.
+# the workspace to scratch and lets Yarn Berry extract its cache there, which is
+# large enough that one extraction per --jobs worker fills the volume even when
+# it is disk-backed. This semaphore bounds the disk-heavy extraction phase
+# independently of the workspace-level --jobs pool, so non-yarn ecosystems keep
+# full parallelism.
 _YARN_MAX_CONCURRENCY_ENV = "REPO_OPS_YARN_MAX_CONCURRENCY"
-_DEFAULT_YARN_MAX_CONCURRENCY = 2
+_DEFAULT_YARN_MAX_CONCURRENCY = 4
 _extraction_sem: threading.BoundedSemaphore | None = None
 _extraction_sem_lock = threading.Lock()
+
+
+def _extraction_root() -> str | None:
+    """Directory to hold isolated yarn copies, or None for the system default.
+
+    A full-fleet sweep extracts well over 100 GB of Yarn Berry cache across the
+    run, so the destination has to be disk-backed: the usual /tmp is a tmpfs
+    sized from RAM on many hosts, and filling it takes the whole machine down
+    with it rather than just failing the run. An explicit TMPDIR is honored as
+    the operator's stated choice; otherwise prefer /var/tmp, which is
+    disk-backed by convention, and fall back to the default when it is absent.
+    """
+    if os.environ.get("TMPDIR", "").strip():
+        return None  # tempfile already honors TMPDIR
+    var_tmp = Path("/var/tmp")
+    return str(var_tmp) if var_tmp.is_dir() else None
 
 
 def _resolve_yarn_max_concurrency() -> int:
@@ -542,7 +559,9 @@ def check_yarn_snapshot(
     snapshot_overrides: list[dict[str, str]] = []
     with (
         _yarn_extraction_slot(),
-        tempfile.TemporaryDirectory(prefix="dep-refresh-yarn-") as td,
+        tempfile.TemporaryDirectory(
+            prefix="dep-refresh-yarn-", dir=_extraction_root()
+        ) as td,
     ):
         mdir = _copy_yarn_workspace_to_temp(ws, Path(td))
         before_snap = snapshot_workspace_files(mdir, "yarn")
@@ -604,7 +623,9 @@ def _plan_without_resolutions(ws: Workspace) -> list[Change]:
     """
     with (
         _yarn_extraction_slot(),
-        tempfile.TemporaryDirectory(prefix="dep-refresh-yarn-guard-") as td,
+        tempfile.TemporaryDirectory(
+            prefix="dep-refresh-yarn-guard-", dir=_extraction_root()
+        ) as td,
     ):
         mdir = _copy_yarn_workspace_to_temp(ws, Path(td))
         lock = mdir / "yarn.lock"

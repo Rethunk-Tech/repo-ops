@@ -139,6 +139,15 @@ select = ["E", "F", "I", "UP", "B", "C4", "SIM", "RUF", "S"]
 # …) by name off PATH is repo-ops's entire purpose, not a vulnerability.
 ignore = ["E501", "S603", "S607"]
 
+[tool.ruff.lint.flake8-bandit]
+# Drop /var/tmp from the flagged set. A fleet sweep extracts >100 GB of Yarn
+# Berry cache, so it deliberately targets disk-backed scratch rather than the
+# RAM-backed tmpfs /tmp is on many hosts; filling that takes the host down.
+# The destination is always a 0700 random subdir via TemporaryDirectory(dir=...),
+# so S108's predictable-path premise does not apply. /tmp and /dev/shm stay
+# flagged — steering away from them is the entire point.
+hardcoded-tmp-directory = ["/tmp", "/dev/shm"]
+
 [tool.ruff.lint.per-file-ignores]
 # Tests use bare `assert` (S101) and hardcoded /tmp fixture paths (S108).
 "**/tests/**" = ["S101", "S108"]
