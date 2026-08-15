@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+logger = logging.getLogger(__name__)
 
 def register_precommit() -> None:
     """Register the pre-commit rev-pin checker and applier with the upgrade registry."""
@@ -59,8 +60,10 @@ def register_one(manager: str) -> bool:
     only the one package required instead of every ecosystem plugin.
 
     Returns True if the manager is (or was already) registered. Returns False
-    for an unrecognized manager name, or when the manager's package is not
-    installed.
+    for an unrecognized manager name, or when the manager's package is a
+    legitimately absent optional dependency (logged at warning level so a
+    missing manager stays visible instead of silently disabling audit --fix
+    for it).
     """
     from repo_ops_upgrade import registry
 
@@ -99,5 +102,10 @@ def register_one(manager: str) -> bool:
         else:
             return False
     except ImportError:
+        logger.warning(
+            "manager %r package is not installed; audit --fix will skip it", manager
+        )
         return False
     return True
+
+import logging

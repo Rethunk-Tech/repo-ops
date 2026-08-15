@@ -6,6 +6,7 @@ All subprocess/apply calls are mocked; no real network or file mutations.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -87,6 +88,56 @@ def test_try_register_manager_unknown_returns_false() -> None:
         registry.APPLIERS.clear()
         registry.APPLIERS.update(original)
 
+def test_try_register_manager_real_registration_path() -> None:
+    """Exercises the real import + registry.register path for two managers.
+
+    Unlike the tests above, ``_try_register_manager`` itself is not patched
+    here — this fails if a manager's module path can no longer be resolved,
+    the exact gap that let the per-manager shims be deleted unnoticed.
+    """
+    from repo_ops_go.go import apply_go, check_go
+    from repo_ops_js_npm.npm import apply_npm, check_npm
+    from repo_ops_upgrade import registry
+
+    original_checkers = dict(registry.CHECKERS)
+    original_appliers = dict(registry.APPLIERS)
+    try:
+        for manager in ("npm", "go"):
+            registry.CHECKERS.pop(manager, None)
+            registry.APPLIERS.pop(manager, None)
+
+        assert _try_register_manager("npm") is True
+        assert registry.CHECKERS["npm"] is check_npm
+        assert registry.APPLIERS["npm"] is apply_npm
+
+        assert _try_register_manager("go") is True
+        assert registry.CHECKERS["go"] is check_go
+        assert registry.APPLIERS["go"] is apply_go
+    finally:
+        registry.CHECKERS.clear()
+        registry.CHECKERS.update(original_checkers)
+        registry.APPLIERS.clear()
+        registry.APPLIERS.update(original_appliers)
+
+def test_try_register_manager_missing_package_logs_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A genuinely missing manager package logs a warning instead of vanishing silently."""
+    from repo_ops_upgrade import registry
+
+    original_appliers = dict(registry.APPLIERS)
+    registry.APPLIERS.pop("npm", None)
+    try:
+        with (
+            patch.dict("sys.modules", {"repo_ops_js_npm.npm": None}),
+            caplog.at_level(logging.WARNING),
+        ):
+            result = _try_register_manager("npm")
+        assert result is False
+        assert "npm" in caplog.text
+    finally:
+        registry.APPLIERS.clear()
+        registry.APPLIERS.update(original_appliers)
 
 # ---------------------------------------------------------------------------
 # apply_remediations adaptor
