@@ -319,14 +319,7 @@ def _detect_workspaces(repo: str) -> list[tuple[str, str, str]]:
                 results.append((str(mdir), "rust", "cargo"))
             elif kind == "py":
                 manager = _detect_python_manager(mdir, names)
-                ecosystem = {
-                    "uv": "py-uv",
-                    "poetry": "py-poetry",
-                    "pdm": "py-pdm",
-                    "pipenv": "py-pipenv",
-                    "hatch": "py-hatch",
-                    "pip-tools": "py-pip-tools",
-                }.get(manager)
+                ecosystem = _PY_MANAGER_TO_ECOSYSTEM.get(manager)
                 if ecosystem is None:
                     continue
                 results.append((str(mdir), ecosystem, manager))
@@ -338,12 +331,7 @@ def _detect_workspaces(repo: str) -> list[tuple[str, str, str]]:
             and "py" not in kinds
         ):
             manager = _detect_python_manager(mdir, names)
-            ecosystem = {
-                "uv": "py-uv",
-                "poetry": "py-poetry",
-                "pdm": "py-pdm",
-                "pipenv": "py-pipenv",
-            }.get(manager)
+            ecosystem = _PY_MANAGER_TO_ECOSYSTEM.get(manager)
             if ecosystem is None:
                 continue
             results.append((str(mdir), ecosystem, manager))
