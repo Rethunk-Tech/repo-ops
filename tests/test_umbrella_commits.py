@@ -171,7 +171,7 @@ def test_stages_only_committed_child_gitlinks(
 
     # Simulate porcelain output: child-a and child-b are dirty gitlinks,
     # child-c is dirty too (but not committed), plus an unrelated file.
-    fake_porcelain = " M child-a\n M child-b\n M child-c\n M README.md\n"
+    fake_porcelain = " M child-a\0 M child-b\0 M child-c\0 M README.md\0"
 
     staged: list[str] = []
 
@@ -241,7 +241,7 @@ def test_umbrella_commit_message_shape(
     ]
     child_outcomes = [_make_child_outcome(child_x.resolve())]
 
-    fake_porcelain = " M libx\n"
+    fake_porcelain = " M libx\0"
 
     from subprocess import CompletedProcess
 
@@ -309,7 +309,7 @@ def test_dry_run_produces_no_git_add(
     ]
     child_outcomes = [_make_child_outcome(child_y.resolve())]
 
-    fake_porcelain = " M child-y\n"
+    fake_porcelain = " M child-y\0"
     git_calls: list[tuple[str, ...]] = []
 
     from subprocess import CompletedProcess

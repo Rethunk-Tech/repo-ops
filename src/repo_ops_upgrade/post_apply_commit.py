@@ -245,79 +245,36 @@ def upgrade_scoped_paths(
     return scoped
 
 
-def _git_unquote(s: str) -> str:
-    """Decode a git-quoted path string.
-
-    Git wraps paths containing spaces, non-ASCII bytes, or special characters
-    in double quotes with C-style escape sequences (``\\n``, ``\\t``, ``\\\\``,
-    ``\\"``, ``\\NNN`` octal).  When the input is not quoted it is returned
-    unchanged.  Octal escapes encode raw UTF-8 bytes, so they are accumulated
-    into a ``bytearray`` and decoded as UTF-8 at the end — handling multi-byte
-    sequences such as ``\\303\\251`` (``é``) correctly.
-    """
-    if not (s.startswith('"') and s.endswith('"')):
-        return s
-    inner = s[1:-1]
-    buf = bytearray()
-    i = 0
-    while i < len(inner):
-        ch = inner[i]
-        if ch != "\\":
-            buf.extend(ch.encode("utf-8"))
-            i += 1
-        else:
-            i += 1
-            esc = inner[i]
-            if esc == "n":
-                buf.append(ord("\n"))
-            elif esc == "t":
-                buf.append(ord("\t"))
-            elif esc == "r":
-                buf.append(ord("\r"))
-            elif esc == "\\":
-                buf.append(ord("\\"))
-            elif esc == '"':
-                buf.append(ord('"'))
-            elif esc.isdigit():
-                buf.append(int(inner[i : i + 3], 8))
-                i += 2  # two extra digits consumed; loop adds one
-            else:
-                buf.append(ord("\\"))
-                buf.extend(esc.encode("utf-8"))
-            i += 1
-    return buf.decode("utf-8")
-
-
 def _parse_porcelain(stdout: str) -> list[str]:
-    """Extract changed paths from ``git status --porcelain`` (v1) output.
+    """Extract changed paths from ``git status --porcelain -z`` output.
 
-    The porcelain-v1 short format is ``XY <path>`` where ``XY`` is a two-char
-    status code followed by a single space (3 leading chars). The path begins at
-    index 3 and must be sliced *without* stripping the line first: for unstaged
-    entries the X column is a space (e.g. ``" M go.mod"``), and stripping it would
-    shift the slice and drop the first character of the filename (``"o.mod"``).
-
-    Paths containing spaces or non-ASCII characters are wrapped in double quotes
-    by git with C-style escapes; ``_git_unquote`` decodes them before the path
-    is returned so callers can use them directly as ``git add --`` arguments.
-
-    Rename entries (``R  old -> new``) are returned as the *new* path only.
+    With ``-z`` each record is NUL-terminated and paths are emitted verbatim
+    (no quoting/escaping), so no unquoting step is needed. A rename/copy
+    record (status code ``R`` or ``C`` in either column) is followed by a
+    second, separate NUL-terminated field carrying the origin path — that
+    field is consumed but discarded so only the new path is returned.
     """
+    fields = stdout.split("\0")
+    if fields and fields[-1] == "":
+        fields.pop()
     paths: list[str] = []
-    for line in stdout.splitlines():
-        if len(line) < 4:
+    i = 0
+    while i < len(fields):
+        entry = fields[i]
+        i += 1
+        if len(entry) < 4:
             continue
-        entry = line[3:].strip()
-        if " -> " in entry:
-            entry = entry.split(" -> ", 1)[1].strip()
-        entry = _git_unquote(entry)
-        if entry:
-            paths.append(entry)
+        code = entry[:2]
+        path = entry[3:]
+        if "R" in code or "C" in code:
+            i += 1  # origin path field; consumed but discarded
+        if path:
+            paths.append(path)
     return paths
 
 
 def porcelain_changed_paths(repo: Path) -> list[str]:
-    proc = run_git(repo, "status", "--porcelain", timeout=60)
+    proc = run_git(repo, "status", "--porcelain", "-z", timeout=60)
     if proc.returncode != 0:
         return []
     return _parse_porcelain(proc.stdout)
@@ -671,18 +628,6 @@ def _print_outcome(outcome: CommitOutcome) -> None:
 _COMMIT_UMBRELLA_ENV = "REPO_OPS_COMMIT_UMBRELLA"
 
 
-def _is_gitlink_line(line: str) -> bool:
-    """True when a ``git status --porcelain`` line describes a submodule gitlink.
-
-    Gitlink entries appear as ``XY <path>`` where the two-letter status code
-    contains 'M' or '?' in either column, and the entry resolves to a directory
-    (not a regular file).  We accept any dirty status code — the caller already
-    filtered to paths that are registered submodule paths, so any dirty entry for
-    those paths is a pointer change.
-    """
-    return len(line) >= 4
-
-
 def _dirty_gitlink_paths_for_children(
     umbrella: Path,
     submodule_paths: list[str],
@@ -710,20 +655,16 @@ def _dirty_gitlink_paths_for_children(
     if not eligible:
         return []
 
-    proc = run_git(umbrella, "status", "--porcelain", timeout=60)
+    proc = run_git(umbrella, "status", "--porcelain", "-z", timeout=60)
     if proc.returncode != 0:
         return []
 
-    dirty: list[str] = []
-    for line in proc.stdout.splitlines():
-        if not _is_gitlink_line(line):
-            continue
-        entry = line[3:].strip()
-        entry = _git_unquote(entry)
-        norm = entry.replace("\\", "/")
-        if norm in eligible:
-            dirty.append(norm)
-    return sorted(set(dirty))
+    dirty = {
+        norm
+        for path in _parse_porcelain(proc.stdout)
+        if (norm := path.replace("\\", "/")) in eligible
+    }
+    return sorted(dirty)
 
 
 def commit_umbrella_submodule_pointers(
