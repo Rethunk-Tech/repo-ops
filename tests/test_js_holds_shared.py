@@ -20,11 +20,6 @@ _REPO_HOLDS_CACHE = "repo_ops_js.holds._repo_holds_cached"
 _RESOLVER_PATH = "repo_ops_lockfiles.snapshots.resolved_version_from_node_modules"
 
 
-@pytest.fixture(autouse=True)
-def _no_repo_holds():
-    with patch(_REPO_HOLDS_CACHE, return_value=()):
-        yield
-
 
 def test_workspace_rel_falls_back_when_path_outside_git_repo(tmp_path: Path) -> None:
     """A workspace path that isn't under git_repo (e.g. discovery edge case)

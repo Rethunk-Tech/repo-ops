@@ -3,7 +3,6 @@
 import json
 from unittest.mock import patch
 
-import pytest
 from repo_ops_core.holds import HoldRule
 from repo_ops_rust.rust import (
     _cargo_registry_versions,
@@ -25,11 +24,6 @@ def _held_rule(**overrides) -> HoldRule:
     defaults.update(overrides)
     return HoldRule(**defaults)
 
-
-@pytest.fixture(autouse=True)
-def _no_repo_holds():
-    with patch(_REPO_HOLDS_CACHE, return_value=()):
-        yield
 
 
 def _proc(stdout: str = "", returncode: int = 0, stderr: str = ""):

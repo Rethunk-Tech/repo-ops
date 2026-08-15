@@ -38,11 +38,6 @@ def _held_rule(**overrides):
     return HoldRule(**defaults)
 
 
-@pytest.fixture(autouse=True)
-def _no_repo_holds():
-    with patch(_REPO_HOLDS_CACHE, return_value=()):
-        yield
-
 
 def test_targeted_bump_uses_hold_ceiling_instead_of_latest(
     tmp_path: Path, monkeypatch, make_workspace

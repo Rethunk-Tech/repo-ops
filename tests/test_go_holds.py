@@ -29,11 +29,6 @@ def _held_rule(**overrides) -> HoldRule:
     return HoldRule(**defaults)
 
 
-@pytest.fixture(autouse=True)
-def _no_repo_holds():
-    with patch(_REPO_HOLDS_CACHE, return_value=()):
-        yield
-
 
 def _proc(stdout: str = "", returncode: int = 0, stderr: str = ""):
     return type(

@@ -21,8 +21,10 @@ import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
+from repo_ops_core.holds import HoldRule
 from repo_ops_models.models import Change, Workspace
 
 _ENV_PREFIX = "REPO_OPS_"
@@ -142,6 +144,42 @@ def make_workspace() -> Any:
         return Workspace(**fields)
 
     return _factory
+
+
+@pytest.fixture
+def make_hold_rule() -> Any:
+    """Factory fixture: build a ``HoldRule`` by keyword.
+
+    Same conftest/fixture-not-import rationale as ``make_workspace`` above.
+    ``package``/``max_version`` are required by ``HoldRule`` itself — this
+    just centralizes the construction call; per-ecosystem default values
+    stay in each test file's own thin ``_held_rule`` wrapper since they're
+    real per-ecosystem data, not duplicated logic.
+    """
+
+    def _factory(**overrides: Any) -> HoldRule:
+        return HoldRule(**overrides)
+
+    return _factory
+
+
+@pytest.fixture(autouse=True)
+def _no_repo_holds(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Patch away repo-level hold overrides for any module defining ``_REPO_HOLDS_CACHE``.
+
+    Each ecosystem's holds tests patch a different ``<pkg>._repo_holds_cached``
+    target (already a module-level constant in every such file, reused
+    elsewhere in the same module); this fixture reads that constant off the
+    test module itself so one shared autouse fixture covers all of them
+    instead of an identical 3-line copy per file. A module with no such
+    constant is unaffected (no-op) — most test modules don't define one.
+    """
+    target = getattr(request.module, "_REPO_HOLDS_CACHE", None)
+    if target is None:
+        yield
+        return
+    with patch(target, return_value=()):
+        yield
 
 
 @pytest.fixture(autouse=True)

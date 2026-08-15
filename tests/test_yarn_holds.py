@@ -54,11 +54,6 @@ def _seed(
     (d / "yarn.lock").write_text(_lock_with_typescript(lock_version), encoding="utf-8")
 
 
-@pytest.fixture(autouse=True)
-def _no_repo_holds():
-    with patch(_REPO_HOLDS_CACHE, return_value=()):
-        yield
-
 
 # ---------------------------------------------------------------------------
 # (a) targeted bump uses the ceiling spec instead of latest
