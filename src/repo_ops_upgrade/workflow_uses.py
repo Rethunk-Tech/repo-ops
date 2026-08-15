@@ -125,26 +125,6 @@ def _walk_collect(node: Any, workflow: str, out: list[UsesPin]) -> None:
     elif isinstance(node, CommentedSeq):
         for item in node:
             _walk_collect(item, workflow, out)
-    elif isinstance(node, dict):
-        uses_val = node.get("uses")
-        if isinstance(uses_val, str):
-            parsed = parse_uses_ref(uses_val)
-            if parsed:
-                action, pin = parsed
-                out.append(
-                    UsesPin(
-                        workflow=workflow,
-                        line=0,
-                        col=0,
-                        action=action,
-                        pin=pin,
-                    )
-                )
-        for child in node.values():
-            _walk_collect(child, workflow, out)
-    elif isinstance(node, list):
-        for item in node:
-            _walk_collect(item, workflow, out)
 
 
 def _yaml_loader() -> YAML:
