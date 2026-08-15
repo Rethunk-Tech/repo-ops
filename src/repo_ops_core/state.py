@@ -34,11 +34,12 @@ from __future__ import annotations
 import atexit
 import json
 import os
-import tempfile
 import threading
 from datetime import date
 from pathlib import Path
 from typing import Any
+
+from repo_ops_core.filesystem import write_json_atomic
 
 # Module-level lazy state cache.  None = not yet loaded.
 _CACHE: dict[str, Any] | None = None
@@ -104,23 +105,8 @@ atexit.register(_flush_cache)
 
 def _write_to_disk(state: dict[str, Any]) -> None:
     """Atomic tmp+rename write.  Silently swallows all errors."""
-    path = _state_path()
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        text = json.dumps(_stamp_version(state), indent=2) + "\n"
-        fd, tmp_name = tempfile.mkstemp(
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-        )
-        tmp_path = Path(tmp_name)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-                handle.write(text)
-            os.replace(tmp_path, path)
-        except BaseException:
-            tmp_path.unlink(missing_ok=True)
-            raise
+        write_json_atomic(_state_path(), _stamp_version(state))
     except Exception:
         return  # best-effort; disk write failure must not crash the run
 
@@ -434,22 +420,7 @@ def save_checkpoint(data: dict[str, str]) -> None:
     """
     if _no_state():
         return
-    path = _checkpoint_path()
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        text = json.dumps(data, indent=2) + "\n"
-        fd, tmp_name = tempfile.mkstemp(
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-        )
-        tmp_path = Path(tmp_name)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-                handle.write(text)
-            os.replace(tmp_path, path)
-        except BaseException:
-            tmp_path.unlink(missing_ok=True)
-            raise
+        write_json_atomic(_checkpoint_path(), data)
     except Exception:
         return  # best-effort; disk write failure must not crash the run
