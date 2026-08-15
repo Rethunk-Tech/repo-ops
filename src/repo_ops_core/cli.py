@@ -3,28 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 
 from repo_ops_core.constants import DEFAULT_ROOTS
 from repo_ops_core.process import LOG_LEVEL_NAMES, configure_logging, set_verbose
-
-
-class _StoreTrueSetEnv(argparse.Action):
-    """``store_true`` that also sets ``os.environ[const] = "1`` when the flag is used."""
-
-    def __call__(
-        self,
-        parser: argparse.ArgumentParser,
-        namespace: argparse.Namespace,
-        values: object,
-        option_string: str | None = None,
-    ) -> None:
-        setattr(namespace, self.dest, True)
-        if isinstance(self.const, str) and self.const:
-            os.environ[self.const] = "1"
-
 
 _FIND_PREDICATE_TOKENS = frozenset(
     {
