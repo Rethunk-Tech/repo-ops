@@ -117,6 +117,23 @@ def count_installed_node(mdir: Path) -> int:
     return n
 
 
+def _python_edges(mdir: Path, names: set[str]) -> int:
+    """Dependency-edge count for a Python manifest dir, given its file names.
+
+    Lockfiles take priority (exact resolved edge count); falls back to
+    declared-manifest counting when no lockfile is present.
+    """
+    if "uv.lock" in names:
+        return _count_uv_lock_edges(mdir / "uv.lock")
+    if "poetry.lock" in names:
+        return _count_poetry_lock_edges(mdir / "poetry.lock")
+    if "pdm.lock" in names:
+        return len(versions_pdm_lock(mdir / "pdm.lock"))
+    if "Pipfile.lock" in names:
+        return len(versions_pipenv_lock(mdir / "Pipfile.lock"))
+    return _count_python_manifest_edges(mdir, names)
+
+
 def count_dep_edges(proj: Path) -> int:
     """Sum dependency edges under proj (Node package.json + Python lock/manifests)."""
     total = 0
@@ -126,23 +143,7 @@ def count_dep_edges(proj: Path) -> int:
         mdir = Path(dirpath)
         if "package.json" in names:
             total += parse_package_json_direct(mdir / "package.json")
-        if "uv.lock" in names:
-            total += _count_uv_lock_edges(mdir / "uv.lock")
-        elif "poetry.lock" in names:
-            total += _count_poetry_lock_edges(mdir / "poetry.lock")
-        elif "pdm.lock" in names:
-            total += len(versions_pdm_lock(mdir / "pdm.lock"))
-        elif "Pipfile.lock" in names:
-            total += len(versions_pipenv_lock(mdir / "Pipfile.lock"))
-        elif names & {
-            "Pipfile",
-            "pyproject.toml",
-            "requirements.in",
-            "requirements.txt",
-            "requirements-dev.txt",
-            "requirements-test.txt",
-        }:
-            total += _count_python_manifest_edges(mdir, names)
+        total += _python_edges(mdir, names)
     return total
 
 
@@ -771,28 +772,23 @@ def _credit_eco(
 
 def _python_edges_for_mdir(mdir: Path) -> int:
     """Dependency-edge count for a single Python manifest directory."""
-    if (mdir / "uv.lock").exists():
-        return _count_uv_lock_edges(mdir / "uv.lock")
-    if (mdir / "poetry.lock").exists():
-        return _count_poetry_lock_edges(mdir / "poetry.lock")
-    if (mdir / "pdm.lock").exists():
-        return len(versions_pdm_lock(mdir / "pdm.lock"))
-    if (mdir / "Pipfile.lock").exists():
-        return len(versions_pipenv_lock(mdir / "Pipfile.lock"))
-    names: set[str] = set()
-    if (mdir / "pyproject.toml").exists():
-        names.add("pyproject.toml")
-    if (mdir / "Pipfile").exists():
-        names.add("Pipfile")
-    for reqname in (
-        "requirements.in",
-        "requirements.txt",
-        "requirements-dev.txt",
-        "requirements-test.txt",
-    ):
-        if (mdir / reqname).exists():
-            names.add(reqname)
-    return _count_python_manifest_edges(mdir, names)
+    names = {
+        candidate
+        for candidate in (
+            "uv.lock",
+            "poetry.lock",
+            "pdm.lock",
+            "Pipfile.lock",
+            "pyproject.toml",
+            "Pipfile",
+            "requirements.in",
+            "requirements.txt",
+            "requirements-dev.txt",
+            "requirements-test.txt",
+        )
+        if (mdir / candidate).exists()
+    }
+    return _python_edges(mdir, names)
 
 
 def restrict_row_to_eco(row: dict[str, Any], eco: str) -> None:
@@ -889,33 +885,18 @@ def _make_row(
 
     # --- New-ecosystem pin counts (container / actions / pre-commit / submodule) ---
     # These scan the project root rather than individual manifest dirs.
-    d_c, v_c = count_container(proj)
-    if d_c or v_c:
-        row["direct"] += d_c
-        row["versions"] |= v_c
-        row["kinds"].add("container")
-        _credit_eco(row, "container", direct=d_c, versions=v_c)
-
-    d_a, v_a = count_actions(proj)
-    if d_a or v_a:
-        row["direct"] += d_a
-        row["versions"] |= v_a
-        row["kinds"].add("actions")
-        _credit_eco(row, "actions", direct=d_a, versions=v_a)
-
-    d_p, v_p = count_precommit(proj)
-    if d_p or v_p:
-        row["direct"] += d_p
-        row["versions"] |= v_p
-        row["kinds"].add("precommit")
-        _credit_eco(row, "precommit", direct=d_p, versions=v_p)
-
-    d_s, v_s = count_submodule(proj)
-    if d_s or v_s:
-        row["direct"] += d_s
-        row["versions"] |= v_s
-        row["kinds"].add("submodule")
-        _credit_eco(row, "submodule", direct=d_s, versions=v_s)
+    for eco_name, count_fn in (
+        ("container", count_container),
+        ("actions", count_actions),
+        ("precommit", count_precommit),
+        ("submodule", count_submodule),
+    ):
+        d, v = count_fn(proj)
+        if d or v:
+            row["direct"] += d
+            row["versions"] |= v
+            row["kinds"].add(eco_name)
+            _credit_eco(row, eco_name, direct=d, versions=v)
 
     if not row["kinds"]:
         row["kinds"] = {"-"}
