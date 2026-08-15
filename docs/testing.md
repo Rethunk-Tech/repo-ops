@@ -34,7 +34,7 @@ The `integration` marker flags tests that require real external tools (bun, yarn
 | Job | Marker | Blocking? | Toolchain setup |
 | ----- | -------- | ----------- | ----------------- |
 | `ci` | `-m "not integration"` | Yes (PR gate) | Python matrix only |
-| `integration` | `-m integration` | No (`continue-on-error: true`) | Node 22 + Corepack (yarn), bun, Go stable, govulncheck |
+| `integration` | `-m integration` | No (`continue-on-error: true`) | Node 24 + Corepack (yarn), bun, Go stable, govulncheck |
 
 The advisory `integration` job installs govulncheck (`go install golang.org/x/vuln/cmd/govulncheck@latest`), enables Corepack for yarn, and runs only `pytest -m integration` — it does not run the blocking lint, pyrefly, or coverage gates.
 

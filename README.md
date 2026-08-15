@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/Rethunk-Tech/repo-ops/actions/workflows/ci.yml/badge.svg)](https://github.com/Rethunk-Tech/repo-ops/actions/workflows/ci.yml)
 
@@ -12,7 +12,7 @@ Local repository operations and dependency maintenance tools for Rethunk-Tech
 
 ---
 
-repo-ops is a **uv workspace** of Python packages for scanning local git checkouts: dependency footprint, read-only upgrade planning, apply-with-verify upgrades (including GitHub Actions pins), and push-reflog audits. See [releases](https://github.com/Rethunk-Tech/repo-ops/releases) for the latest version ([changelog](CHANGELOG.md)).
+repo-ops is a Python CLI for scanning local git checkouts: dependency footprint, read-only upgrade planning, apply-with-verify upgrades (including GitHub Actions pins), and push-reflog audits. See [releases](https://github.com/Rethunk-Tech/repo-ops/releases) for the latest version ([changelog](CHANGELOG.md)).
 
 ## Quick start
 
@@ -29,7 +29,7 @@ Full install, requirements, and operator runbook: [HUMANS.md](HUMANS.md).
 - Plan is read-only; apply runs ecosystem updates, optional Corepack for Node, and verify gates
 - GitHub Actions pin drift in plan/apply by default (`--skip-actions` to omit); actions-only repos (workflows, no manifests) included
 - Discovery: validated scan roots, optional `--follow-symlinks`, `--flat` and actions-only repos; full-coverage cross-range sweep by default, `--conservative` to stay in-range (see [usage](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply))
-- uv-locked workspace (`uv_build`); Python >= 3.10; ecosystem plugins (Node, Go, Rust, Python) with remediations
+- uv-locked, single package (`uv_build`); Python >= 3.11; ecosystem plugins (Node, Go, Rust, Python) with remediations
 - Built for Rethunk-Tech monorepo and sibling checkout trees under shared roots
 
 ## Documentation

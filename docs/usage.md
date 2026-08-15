@@ -4,7 +4,7 @@ Subcommands, JSON output, plan vs apply, security/discovery, ecosystem upgrade m
 
 ## Subcommands
 
-Subcommands (entry point in `packages/repo-ops`):
+Subcommands (entry point in `src/repo_ops`):
 
 | Subcommand | Purpose |
 | ------------ | --------- |
@@ -19,7 +19,7 @@ Subcommands (entry point in `packages/repo-ops`):
 | `doctor` | Toolchain/auth preflight: probe known binaries and `gh` auth (read-only) |
 | `install-skill` | Copy bundled agent skill into Cursor/Claude skill dirs |
 
-Default scan roots: [`DEFAULT_ROOTS`](../packages/repo-ops-core/src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. Discovery flags (`--flat`, `--follow-symlinks`, actions-only repos): [Security and discovery](#security-and-discovery).
+Default scan roots: [`DEFAULT_ROOTS`](../src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. Discovery flags (`--flat`, `--follow-symlinks`, actions-only repos): [Security and discovery](#security-and-discovery).
 
 `--json` is available on every subcommand except `sbom` (which emits its report via `--format`/`--output` instead). `--json-out PATH` (writes the report atomically to `PATH`; stdout prints only that path) is available on `inventory`, `plan`, `apply`, `pushed`, and `doctor` — for `plan`/`apply`, stdout is otherwise one JSON object. JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno`. `--log-level {debug,info,warning,error}` sets the stdlib root logger level; `--verbose` / `-v` enables subprocess echo and implies `debug` when `--log-level` is absent. `--submodules` (default on, detection only) adds `submodules[]` to plan/apply JSON; `--no-submodules` skips the scan. `apply` processes child git repos before parent umbrellas whenever `.gitmodules` is present, via the default `--submodule-order=children-first`; `--submodule-order=discovery` restores plain scan order.
 

@@ -29,7 +29,7 @@ When using `--commit=agent`, set `REPO_OPS_COMMIT_AGENT_MODEL` or the
 
 ## Requirements
 
-- [uv](https://docs.astral.sh/uv/) and Python >= 3.10
+- [uv](https://docs.astral.sh/uv/) and Python >= 3.11
 - Git on `PATH`
 - Optional: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, `hatch`, `pyrefly`, `ruff`, `pre-commit`, …) and `gh` / `actionlint` for Actions pin audits — run `repo-ops doctor` to see which are found and whether `gh` is authenticated
 
@@ -39,7 +39,7 @@ When using `--commit=agent`, set `REPO_OPS_COMMIT_AGENT_MODEL` or the
 | ---------- | --------- |
 | [Installation](docs/installation.md) | Runtime install, development setup, agent skill, verify install, environment |
 | [Usage](docs/usage.md) | Subcommands, JSON output, plan vs apply, security/discovery, ecosystem upgrade modes |
-| [Architecture](docs/architecture.md) | Package layout and filesystem map for the uv workspace |
+| [Architecture](docs/architecture.md) | Module layout and filesystem map |
 | [Bulk maintenance](docs/bulk-maintenance.md) | Submodule umbrellas and multi-repo apply playbook |
 | [Programmatic imports](docs/programmatic-imports.md) | Python module paths for programmatic use |
 | [Testing](docs/testing.md) | Verification and CI commands |
