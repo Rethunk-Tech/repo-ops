@@ -1,14 +1,14 @@
 """Tests for audit's config/env-driven --fail-on / --fail-on-unknown gates.
 
 Precedence is CLI flag > env var (REPO_OPS_AUDIT_FAIL_ON /
-REPO_OPS_AUDIT_FAIL_ON_UNKNOWN) > TOML config via XDG_CONFIG_HOME > default.
-The tests cover both env and TOML config-file layers; CLI overrides remain
-covered separately.
+REPO_OPS_AUDIT_FAIL_ON_UNKNOWN) > TOML config via XDG_CONFIG_HOME > default,
+resolved via the shared settings table (repo_ops_core.config.resolve_setting).
+Both settings are exercised identically since they share that resolver; only
+the value shape (severity string vs boolean) differs.
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,179 +36,163 @@ def _results(**counts: int) -> list[WorkspaceResult]:
     ]
 
 
-def test_fail_on_env_applies_when_flag_absent(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """REPO_OPS_AUDIT_FAIL_ON=critical + no --fail-on flag → env sets the gate.
-
-    A 'high' finding does not meet the 'critical' threshold, so exit stays 0 —
-    proving the env var (not the "high" argparse default) drove the gate.
-    """
-    monkeypatch.setenv("REPO_OPS_AUDIT_FAIL_ON", "critical")
+def _run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cli_args, counts: dict
+) -> int:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    try:
-        with (
-            patch("repo_ops_audit.audit.discover_repos", return_value={}),
-            patch("repo_ops_audit.audit.run_audit", return_value=_results(high=1)),
-        ):
-            rc = main([str(tmp_path)])
-    finally:
-        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON", None)
-    assert rc == 0
+    with (
+        patch("repo_ops_audit.audit.discover_repos", return_value={}),
+        patch("repo_ops_audit.audit.run_audit", return_value=_results(**counts)),
+    ):
+        return main([*cli_args, str(tmp_path)])
 
 
-def test_fail_on_from_config_file(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+# (env_var, env_value, cli_args, counts, expected_rc)
+_ENV_CASES = [
+    pytest.param(
+        "REPO_OPS_AUDIT_FAIL_ON",
+        "critical",
+        (),
+        {"high": 1},
+        0,
+        id="fail_on",
+    ),
+    pytest.param(
+        "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
+        "1",
+        ("--fail-on", "never"),
+        {"unknown": 1},
+        1,
+        id="fail_on_unknown",
+    ),
+]
+
+# (config_key, toml_value, cli_args, counts, expected_rc)
+_CONFIG_CASES = [
+    pytest.param(
+        "audit_fail_on",
+        '"critical"',
+        (),
+        {"high": 1},
+        0,
+        id="fail_on",
+    ),
+    pytest.param(
+        "audit_fail_on_unknown",
+        "true",
+        ("--fail-on", "never"),
+        {"unknown": 1},
+        1,
+        id="fail_on_unknown",
+    ),
+]
+
+# (env_var, env_value, cli_args, counts) — CLI always wins, expected_rc is 1.
+_CLI_OVERRIDES_ENV_CASES = [
+    pytest.param(
+        "REPO_OPS_AUDIT_FAIL_ON",
+        "never",
+        ("--fail-on", "high"),
+        {"high": 1},
+        id="fail_on",
+    ),
+    pytest.param(
+        "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
+        "0",
+        ("--fail-on", "never", "--fail-on-unknown"),
+        {"unknown": 1},
+        id="fail_on_unknown",
+    ),
+]
+
+# (config_key, toml_value, cli_args, counts) — CLI always wins, expected_rc is 1.
+_CLI_OVERRIDES_CONFIG_CASES = [
+    pytest.param(
+        "audit_fail_on",
+        '"never"',
+        ("--fail-on", "high"),
+        {"high": 1},
+        id="fail_on",
+    ),
+    pytest.param(
+        "audit_fail_on_unknown",
+        "false",
+        ("--fail-on", "never", "--fail-on-unknown"),
+        {"unknown": 1},
+        id="fail_on_unknown",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("env_var", "env_value", "cli_args", "counts", "expected_rc"), _ENV_CASES
+)
+def test_env_applies_when_flag_absent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    env_var: str,
+    env_value: str,
+    cli_args: tuple[str, ...],
+    counts: dict,
+    expected_rc: int,
 ) -> None:
-    """audit_fail_on=critical in config.toml sets the gate when no flag is passed."""
+    """An env var sets the gate when the matching CLI flag is not passed."""
+    monkeypatch.setenv(env_var, env_value)
+    assert _run(monkeypatch, tmp_path, cli_args, counts) == expected_rc
+
+
+@pytest.mark.parametrize(
+    ("config_key", "toml_value", "cli_args", "counts", "expected_rc"), _CONFIG_CASES
+)
+def test_config_file_applies_when_flag_absent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    config_key: str,
+    toml_value: str,
+    cli_args: tuple[str, ...],
+    counts: dict,
+    expected_rc: int,
+) -> None:
+    """A [tool.repo-ops]/config.toml value sets the gate when no flag or env wins first."""
     config_dir = tmp_path / "repo-ops"
     config_dir.mkdir()
     (config_dir / "config.toml").write_text(
-        'audit_fail_on = "critical"\n', encoding="utf-8"
+        f"{config_key} = {toml_value}\n", encoding="utf-8"
     )
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON", raising=False)
-    try:
-        with (
-            patch("repo_ops_audit.audit.discover_repos", return_value={}),
-            patch("repo_ops_audit.audit.run_audit", return_value=_results(high=1)),
-        ):
-            rc = main([str(tmp_path)])
-    finally:
-        for env_name in (
-            "REPO_OPS_AUDIT_FAIL_ON",
-            "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
-        ):
-            os.environ.pop(env_name, None)
-    assert rc == 0
+    assert _run(monkeypatch, tmp_path, cli_args, counts) == expected_rc
 
 
-def test_fail_on_cli_flag_overrides_env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize(
+    ("env_var", "env_value", "cli_args", "counts"), _CLI_OVERRIDES_ENV_CASES
+)
+def test_cli_flag_overrides_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    env_var: str,
+    env_value: str,
+    cli_args: tuple[str, ...],
+    counts: dict,
 ) -> None:
-    """Explicit --fail-on high wins over REPO_OPS_AUDIT_FAIL_ON=never in the env."""
-    monkeypatch.setenv("REPO_OPS_AUDIT_FAIL_ON", "never")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    try:
-        with (
-            patch("repo_ops_audit.audit.discover_repos", return_value={}),
-            patch("repo_ops_audit.audit.run_audit", return_value=_results(high=1)),
-        ):
-            rc = main(["--fail-on", "high", str(tmp_path)])
-    finally:
-        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON", None)
-    assert rc == 1
+    """An explicit CLI flag wins over a lenient env-var value."""
+    monkeypatch.setenv(env_var, env_value)
+    assert _run(monkeypatch, tmp_path, cli_args, counts) == 1
 
 
-def test_fail_on_cli_flag_overrides_config_file(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize(
+    ("config_key", "toml_value", "cli_args", "counts"), _CLI_OVERRIDES_CONFIG_CASES
+)
+def test_cli_flag_overrides_config_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    config_key: str,
+    toml_value: str,
+    cli_args: tuple[str, ...],
+    counts: dict,
 ) -> None:
-    """Explicit --fail-on high wins over audit_fail_on=never in config.toml."""
+    """An explicit CLI flag wins over a lenient config.toml value."""
     config_dir = tmp_path / "repo-ops"
     config_dir.mkdir()
     (config_dir / "config.toml").write_text(
-        'audit_fail_on = "never"\n', encoding="utf-8"
+        f"{config_key} = {toml_value}\n", encoding="utf-8"
     )
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON", raising=False)
-    try:
-        with (
-            patch("repo_ops_audit.audit.discover_repos", return_value={}),
-            patch("repo_ops_audit.audit.run_audit", return_value=_results(high=1)),
-        ):
-            rc = main(["--fail-on", "high", str(tmp_path)])
-    finally:
-        for env_name in (
-            "REPO_OPS_AUDIT_FAIL_ON",
-            "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
-        ):
-            os.environ.pop(env_name, None)
-    assert rc == 1
-
-
-def test_fail_on_unknown_env_applies_when_flag_absent(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """REPO_OPS_AUDIT_FAIL_ON_UNKNOWN=1 + no flag → unknown findings trigger exit 1."""
-    monkeypatch.setenv("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", "1")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    try:
-        with (
-            patch("repo_ops_audit.audit.discover_repos", return_value={}),
-            patch("repo_ops_audit.audit.run_audit", return_value=_results(unknown=1)),
-        ):
-            rc = main(["--fail-on", "never", str(tmp_path)])
-    finally:
-        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", None)
-    assert rc == 1
-
-
-def test_fail_on_unknown_from_config_file(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """audit_fail_on_unknown=true in config.toml enables the unknown gate."""
-    config_dir = tmp_path / "repo-ops"
-    config_dir.mkdir()
-    (config_dir / "config.toml").write_text(
-        "audit_fail_on_unknown = true\n", encoding="utf-8"
-    )
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON", raising=False)
-    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", raising=False)
-    try:
-        with (
-            patch("repo_ops_audit.audit.discover_repos", return_value={}),
-            patch("repo_ops_audit.audit.run_audit", return_value=_results(unknown=1)),
-        ):
-            rc = main(["--fail-on", "never", str(tmp_path)])
-    finally:
-        for env_name in (
-            "REPO_OPS_AUDIT_FAIL_ON",
-            "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
-        ):
-            os.environ.pop(env_name, None)
-    assert rc == 1
-
-
-def test_fail_on_unknown_cli_flag_overrides_env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Explicit --fail-on-unknown wins even when the env var says '0' (off)."""
-    monkeypatch.setenv("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", "0")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    try:
-        with (
-            patch("repo_ops_audit.audit.discover_repos", return_value={}),
-            patch("repo_ops_audit.audit.run_audit", return_value=_results(unknown=1)),
-        ):
-            rc = main(["--fail-on", "never", "--fail-on-unknown", str(tmp_path)])
-    finally:
-        os.environ.pop("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", None)
-    assert rc == 1
-
-
-def test_fail_on_unknown_cli_flag_overrides_config_file(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Explicit --fail-on-unknown wins over audit_fail_on_unknown=false in config.toml."""
-    config_dir = tmp_path / "repo-ops"
-    config_dir.mkdir()
-    (config_dir / "config.toml").write_text(
-        "audit_fail_on_unknown = false\n", encoding="utf-8"
-    )
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON", raising=False)
-    monkeypatch.delenv("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", raising=False)
-    try:
-        with (
-            patch("repo_ops_audit.audit.discover_repos", return_value={}),
-            patch("repo_ops_audit.audit.run_audit", return_value=_results(unknown=1)),
-        ):
-            rc = main(["--fail-on", "never", "--fail-on-unknown", str(tmp_path)])
-    finally:
-        for env_name in (
-            "REPO_OPS_AUDIT_FAIL_ON",
-            "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN",
-        ):
-            os.environ.pop(env_name, None)
-    assert rc == 1
+    assert _run(monkeypatch, tmp_path, cli_args, counts) == 1
