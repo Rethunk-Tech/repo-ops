@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
         include:
           - python-version: "3.14"
             continue-on-error: true
@@ -28,14 +28,11 @@ jobs:
           enable-cache: true
       - name: Sync locked dependencies
         run: uv sync --locked --group dev
-      - name: Import boundaries (workspace packages)
-        run: uv run python scripts/check_import_boundaries.py
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - name: Pyrefly (workspace packages)
-        run: uv run pyrefly check . --project-excludes 'tests/**' 'scripts/**'
-      - run: uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=68 tests packages/repo-ops-audit/tests packages/repo-ops-lockfiles/tests packages/repo-ops-py-pdm/tests packages/repo-ops-py-pipenv/tests
-      - run: uv build packages/repo-ops
+      - run: uv run pyrefly check . --project-excludes 'tests/**' 'scripts/**'
+      - run: uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=68
+      - run: uv build
       - run: ls -l dist/
 
   integration:
@@ -76,6 +73,6 @@ jobs:
       - name: Sync locked dependencies
         run: uv sync --locked --group dev
       - name: Audit third-party dependencies for known CVEs
-        # --skip-editable drops the local workspace packages (not on PyPI);
+        # --skip-editable drops the editable local install of repo-ops itself;
         # only the resolved third-party dependency tree is audited.
         run: uv run --with pip-audit pip-audit --skip-editable
