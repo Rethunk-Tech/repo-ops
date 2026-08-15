@@ -23,7 +23,7 @@ Config: root `pyproject.toml` `[tool.pytest.ini_options]`. CI runs the same chec
 
 ## Coverage floor
 
-Current ratchet: **68 %** (raised from 63 % in v0.17.2; floor = floor(actual) − 5 at time of raise). Update `[tool.coverage.report] fail_under` in `pyproject.toml` and `--cov-fail-under` in `.github/workflows/ci.yml` together whenever the floor is raised.
+Current ratchet: **78 %** (raised from 68 % when the package collapse and duplicate removal took actual coverage to ~84 %; floor = floor(actual) − 5 at time of raise). Update `[tool.coverage.report] fail_under` in `pyproject.toml` and `--cov-fail-under` in both `.github/workflows/ci.yml` and `.github/workflows/release.yml` together whenever the floor is raised.
 
 Coverage source (`[tool.coverage.run] source` in root `pyproject.toml`) is `src`, which covers every module in the package.
 
