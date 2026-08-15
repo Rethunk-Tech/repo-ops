@@ -104,6 +104,7 @@ Per-ecosystem overrides: explicit `--go-upgrade-mode` or `--actions-upgrade-mode
 | Flag | Catches | Why it's easy to forget |
 | ------ | --------- | -------------------------- |
 | `--actions-refresh-sha` | Digest bumps for SHA-pinned GitHub Actions | Not implied by `--latest`; silently report-only without it |
+| `--actions-pin-sha` | Converts a **floating tag** Action (`@vN`, `@vN.M.P`) to a SHA pin | Not implied by `--latest` *or* `--full` — `--actions-refresh-sha`/`--actions-unpin-sha` only govern Actions that are already SHA-pinned; a never-pinned floating tag is invisible to both |
 | `--container-refresh-sha` | Digest bumps for SHA-pinned container base images (`FROM image@sha256:...`) | No mention in the default flag set at all; easy to never discover without reading `apply --help` end to end |
 | `--precommit-refresh-sha` | Digest bumps for resolvable SHA-pinned pre-commit hook revisions | Not implied by `--latest`; SHA pins stay report-only without it |
 | `--submodule-refresh-sha` | Digest bumps for resolvable SHA-only submodule HEADs | Not implied by `--latest`; SHA pins stay report-only without it |
@@ -153,6 +154,7 @@ A `plan`/`apply` summary's `behind_latest` count and any `[report-only] sha-pinn
 | `--actions-tag-style STYLE` | plan, apply | Tag style when unpinning SHA pins: `major` (default) or `exact` |
 | `--actions-unpin-sha` | plan, apply | Resolve SHA-pinned Actions to version tags on apply |
 | `--actions-refresh-sha` | plan, apply | Bump digest pins within major; with `--latest` crosses major |
+| `--actions-pin-sha` | plan, apply | Convert a floating tag Action to a SHA pin — **not** implied by `--latest` or `--full`; independent of `--actions-unpin-sha`/`--actions-refresh-sha`, which only govern already-SHA-pinned Actions |
 | `--precommit-refresh-sha` | plan, apply | Refresh resolvable SHA-pinned pre-commit revisions within their tagged major; report-only by default |
 | `--submodule-refresh-sha` | plan, apply | Refresh resolvable SHA-only submodule HEADs within their tagged major; report-only by default |
 | `--actions-org-policy` | plan, apply | Fetch org allowed-actions policy and flag violations |
@@ -284,6 +286,7 @@ When changing behavior, keep these aligned with code and docs:
 
 - **Plan vs apply:** plan/check is read-only for lockfiles and workflows; plan may run `corepack prepare` (network) for Yarn checks; Node Corepack runs on apply (`repo_ops_upgrade.registry.apply_workspace`) for npm/pnpm/yarn only — Corepack has no bun shim, so bun workspaces skip it and use the `bun` on PATH.
 - **SHA-pinned Actions:** preserved by default (report only); unpin to tags only with `--actions-unpin-sha`. Digest bumps within major: `--actions-refresh-sha`. Cross-major digest re-pin (supersedes Dependabot major-bump PRs): `--actions-refresh-sha --latest` (or `--actions-upgrade-mode=latest`); updates SHA and `# vN` comment to the new major.
+- **Floating (never-SHA-pinned) Actions:** invisible to both flags above — `--actions-unpin-sha`/`--actions-refresh-sha` only rewrite an Action that is already SHA-pinned. `--actions-pin-sha` converts a tag pin (`@vN`, `@vN.M.P`) to the commit SHA of the highest `vN.M.P` release in its resolved major, adding/replacing a `# vN.M.P` comment; crosses major under `--latest` the same way `--actions-refresh-sha` does. Pure opt-in — not bundled into `--full`.
 - **SHA-pinned pre-commit and submodule refs:** preserved by default (report only); `--precommit-refresh-sha` and `--submodule-refresh-sha` opt into resolvable same-major SHA refreshes without changing their upstream repository or URL intent.
 - **Discovery:** `resolve_scan_roots`, optional `--follow-symlinks`, `--flat`, actions-only repos — [docs/usage.md — Security and discovery](docs/usage.md#security-and-discovery).
 - **Docs tiers:** README (orientation + Documentation table), HUMANS (quickstart + doc links), docs/ (deep reference), this file (agent quick reference + coordination), CONTRIBUTING (commits/style).
