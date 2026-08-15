@@ -63,7 +63,10 @@ def discover_repos(
                 file=sys.stderr,
             )
             continue
-        # Build find: prune SKIP_DIRS (not .git), match .git dirs, then prune .git
+        # Build find: prune SKIP_DIRS (not .git), match .git as either a directory
+        # (normal repo) or a regular file (submodule gitlink — `.git` there holds
+        # `gitdir: ../.git/modules/<name>` rather than being the repo's own git
+        # dir), then prune so find does not descend into it.
         cmd = ["find"]
         if follow_symlinks:
             cmd.append("-L")
@@ -76,10 +79,15 @@ def discover_repos(
                 "-prune",
                 "-o",
                 "(",
-                "-type",
-                "d",
                 "-name",
                 ".git",
+                "(",
+                "-type",
+                "d",
+                "-o",
+                "-type",
+                "f",
+                ")",
                 "-print",
                 ")",
                 "-prune",
