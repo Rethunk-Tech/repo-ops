@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.2] - 2026-08-15
+
 ### Added
 
+- **`--actions-pin-sha`:** converts a floating tag-pinned GitHub Action (`@vN`, `@vN.M.P`) to a commit-SHA pin, resolved to the highest `vN.M.P` release in the pin's current major (crossing majors under `--latest`, mirroring `--actions-refresh-sha`'s cross-major behavior), adding a `# vN.M.P` audit-hint comment or replacing any existing trailing comment. Neither `--actions-refresh-sha` nor `--actions-unpin-sha` touches an Action that was never SHA-pinned in the first place — both only govern already-SHA-pinned refs. Pure opt-in, not bundled into `--full`.
 - **`--rust-targeted-bump`:** opt-in Cargo.toml constraint bumps for direct crates.io dependencies (including `[workspace.dependencies]`) whose latest non-yanked release is outside the current req. Snapshot/restore on `cargo update -p --precise` failure; holds stay in `behind_latest`. Not implied by `--latest` or `--full`.
 - **`--poetry-targeted-bump` / `--pdm-targeted-bump`:** opt-in pyproject constraint bumps when a direct dep's lock is behind a published version that the current range cannot take. Reversible per-package `poetry add` / `pdm add`; holds stay in `behind_latest`. Not implied by `--latest` or `--full`.
 - **`--pipenv-targeted-bump` / `--pip-tools-targeted-bump`:** opt-in Pipfile / `requirements.in` constraint bumps when a direct dep's lock is behind a published version that the current range cannot take. Reversible per-package `pipenv install` (existing venv only; never creates one) / `requirements.in` rewrite then compile; holds stay in `behind_latest`. Not implied by `--latest` or `--full`.
