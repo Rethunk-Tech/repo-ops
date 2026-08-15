@@ -13,14 +13,10 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal, cast
 
-from repo_ops_core.holds import (
-    HoldRule,
-    _global_holds_cached,
-    _repo_holds_cached,
-    resolve_hold,
-)
+from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import ActionBump
@@ -723,18 +719,16 @@ def _resolve_latest_target(info: dict, tag_style: TagStyle) -> str | None:
 
 
 def _resolve_actions_hold(repo: Path, package: str) -> HoldRule | None:
-    """Return the active Actions hold for *package*, if any."""
-    repo_root = str(repo.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
-    if not rules:
-        return None
-    return resolve_hold(
-        rules,
-        package=package,
-        ecosystem="actions",
-        manager="actions",
-        workspace_rel=".",
+    """Return the active Actions hold for *package*, if any.
+
+    Actions pins are resolved at the repo root, not per-directory workspace,
+    so ``path`` and ``git_repo`` are the same resolved repo root.
+    """
+    repo_root = repo.resolve()
+    ws = SimpleNamespace(
+        path=repo_root, git_repo=repo_root, ecosystem="actions", manager="actions"
     )
+    return resolve_package_hold(ws, package)
 
 
 def _target_within_hold(repo: Path, package: str, target_version: str) -> bool:

@@ -27,13 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core.config import resolve_bool_setting
-from repo_ops_core.holds import (
-    HoldRule,
-    _global_holds_cached,
-    _repo_holds_cached,
-    resolve_hold,
-)
-from repo_ops_core.holds import workspace_rel as _workspace_rel
+from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade import holds
@@ -176,17 +170,7 @@ def _repo_short_name(repo_url: str) -> str:
 
 def _resolve_precommit_hold(ws: Workspace, package: str) -> HoldRule | None:
     """Return the active pre-commit hold for *package*, if any."""
-    repo_root = str(ws.git_repo.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
-    if not rules:
-        return None
-    return resolve_hold(
-        rules,
-        package=package,
-        ecosystem="precommit",
-        manager=ws.manager,
-        workspace_rel=_workspace_rel(ws),
-    )
+    return resolve_package_hold(ws, package)
 
 
 def _target_within_hold(ws: Workspace, package: str, target_version: str) -> bool:

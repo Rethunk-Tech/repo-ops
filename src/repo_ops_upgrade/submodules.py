@@ -13,12 +13,7 @@ from types import SimpleNamespace
 from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
-from repo_ops_core.holds import (
-    HoldRule,
-    _global_holds_cached,
-    _repo_holds_cached,
-    resolve_hold,
-)
+from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_upgrade import holds, tags
 from repo_ops_upgrade.tags import is_semver_tag
@@ -410,17 +405,14 @@ def _resolve_sha_refresh(
 
 def _resolve_submodule_hold(link: SubmoduleLink) -> HoldRule | None:
     """Return the active submodule hold for *link*, if any."""
-    repo_root = str(link.parent.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
-    if not rules:
-        return None
-    return resolve_hold(
-        rules,
-        package=link.path,
+    parent = link.parent.resolve()
+    ws = SimpleNamespace(
+        path=parent / link.path,
+        git_repo=parent,
         ecosystem="submodule",
         manager="submodule",
-        workspace_rel=link.path,
     )
+    return resolve_package_hold(ws, link.path)
 
 
 def _target_within_hold(link: SubmoduleLink, target_tag: str) -> bool:
