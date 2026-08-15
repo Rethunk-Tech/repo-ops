@@ -60,58 +60,48 @@ _LATEST_HINT_DEFAULT = "run with --latest to include"
 # fallback could not move, so pointing the operator back at the flag they
 # already passed would be misleading (#131, extended to npm/pnpm/bun once
 # they gained the same fallback).
-_YARN_HINT_TARGETED_TRIED = (
-    "peer/group-constrained; --yarn-targeted-bump was attempted but could not "
-    "move them (verify failed or still constrained) — bump manually"
-)
-_NPM_HINT_TARGETED_TRIED = (
-    "no latest mode; --npm-targeted-bump was attempted but could not move "
-    "them (install failed or version did not advance) — bump manually"
-)
-_PNPM_HINT_TARGETED_TRIED = (
-    "--pnpm-targeted-bump was attempted but could not move them "
-    "(install failed or still constrained) — bump manually"
-)
-_BUN_HINT_TARGETED_TRIED = (
-    "--bun-targeted-bump was attempted but could not move them "
-    "(install failed or still constrained) — bump manually"
-)
-_DENO_HINT_TARGETED_TRIED = (
-    "--deno-targeted-bump was attempted but could not move them "
-    "(install failed or version did not advance) — bump manually"
-)
-_RUST_HINT_TARGETED_TRIED = (
-    "--rust-targeted-bump was attempted but could not move them "
-    "(cargo failed or the lockfile did not advance) — bump manually"
-)
-_POETRY_HINT_TARGETED_TRIED = (
-    "--poetry-targeted-bump was attempted but could not move them "
-    "(poetry add failed or the lockfile did not land the target) — bump manually"
-)
-_PDM_HINT_TARGETED_TRIED = (
-    "--pdm-targeted-bump was attempted but could not move them "
-    "(pdm add failed or the lockfile did not land the target) — bump manually"
-)
-_PIPENV_HINT_TARGETED_TRIED = (
-    "--pipenv-targeted-bump was attempted but could not move them "
-    "(pipenv install failed or the lockfile did not land the target) — bump manually"
-)
-_PIP_TOOLS_HINT_TARGETED_TRIED = (
-    "--pip-tools-targeted-bump was attempted but could not move them "
-    "(compile failed or the requirements.in constraint still blocked the target) — "
-    "bump manually"
-)
 _TARGETED_TRIED_HINT: dict[str, str] = {
-    "yarn": _YARN_HINT_TARGETED_TRIED,
-    "npm": _NPM_HINT_TARGETED_TRIED,
-    "pnpm": _PNPM_HINT_TARGETED_TRIED,
-    "bun": _BUN_HINT_TARGETED_TRIED,
-    "deno": _DENO_HINT_TARGETED_TRIED,
-    "rust": _RUST_HINT_TARGETED_TRIED,
-    "poetry": _POETRY_HINT_TARGETED_TRIED,
-    "pdm": _PDM_HINT_TARGETED_TRIED,
-    "pipenv": _PIPENV_HINT_TARGETED_TRIED,
-    "pip-tools": _PIP_TOOLS_HINT_TARGETED_TRIED,
+    "yarn": (
+        "peer/group-constrained; --yarn-targeted-bump was attempted but could not "
+        "move them (verify failed or still constrained) — bump manually"
+    ),
+    "npm": (
+        "no latest mode; --npm-targeted-bump was attempted but could not move "
+        "them (install failed or version did not advance) — bump manually"
+    ),
+    "pnpm": (
+        "--pnpm-targeted-bump was attempted but could not move them "
+        "(install failed or still constrained) — bump manually"
+    ),
+    "bun": (
+        "--bun-targeted-bump was attempted but could not move them "
+        "(install failed or still constrained) — bump manually"
+    ),
+    "deno": (
+        "--deno-targeted-bump was attempted but could not move them "
+        "(install failed or version did not advance) — bump manually"
+    ),
+    "rust": (
+        "--rust-targeted-bump was attempted but could not move them "
+        "(cargo failed or the lockfile did not advance) — bump manually"
+    ),
+    "poetry": (
+        "--poetry-targeted-bump was attempted but could not move them "
+        "(poetry add failed or the lockfile did not land the target) — bump manually"
+    ),
+    "pdm": (
+        "--pdm-targeted-bump was attempted but could not move them "
+        "(pdm add failed or the lockfile did not land the target) — bump manually"
+    ),
+    "pipenv": (
+        "--pipenv-targeted-bump was attempted but could not move them "
+        "(pipenv install failed or the lockfile did not land the target) — bump manually"
+    ),
+    "pip-tools": (
+        "--pip-tools-targeted-bump was attempted but could not move them "
+        "(compile failed or the requirements.in constraint still blocked the target) — "
+        "bump manually"
+    ),
 }
 
 # Env vars that signal a per-package targeted bump was requested this run. Read
@@ -513,6 +503,7 @@ def print_human_report(
             and len(wr.changes) == 0
             and not wr.behind_latest
             and wr.status == "ok"
+            and not wr.remediations
         )
 
     for repo in ordered:
