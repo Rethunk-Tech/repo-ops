@@ -13,6 +13,8 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import patch
 
+import pytest
+
 from repo_ops_lockfiles.snapshots import snapshot_workspace_files
 from repo_ops_models import Workspace
 from repo_ops_upgrade.post_apply import revert_workspace_after_verify_fail
@@ -314,19 +316,17 @@ def test_revert_preserves_preexisting_dirty_artifact_not_in_snapshot(
 # ---------------------------------------------------------------------------
 
 
-def test_snapshot_captures_pdm_lock(tmp_path: Path) -> None:
-    (tmp_path / "pdm.lock").write_text('[[package]]\nname = "x"\nversion = "1"\n')
-    snap = snapshot_workspace_files(tmp_path, "pdm")
-    assert any(p.name == "pdm.lock" for p in snap)
-
-
-def test_snapshot_captures_pipfile_lock(tmp_path: Path) -> None:
-    (tmp_path / "Pipfile.lock").write_text("{}")
-    snap = snapshot_workspace_files(tmp_path, "pipenv")
-    assert any(p.name == "Pipfile.lock" for p in snap)
-
-
-def test_snapshot_captures_deno_lock(tmp_path: Path) -> None:
-    (tmp_path / "deno.lock").write_text("{}")
-    snap = snapshot_workspace_files(tmp_path, "deno")
-    assert any(p.name == "deno.lock" for p in snap)
+@pytest.mark.parametrize(
+    "lockfile_name,manager",
+    [
+        ("pdm.lock", "pdm"),
+        ("Pipfile.lock", "pipenv"),
+        ("deno.lock", "deno"),
+    ],
+)
+def test_snapshot_captures_manager_lock(
+    tmp_path: Path, lockfile_name: str, manager: str
+) -> None:
+    (tmp_path / lockfile_name).write_text("{}")
+    snap = snapshot_workspace_files(tmp_path, manager)
+    assert any(p.name == lockfile_name for p in snap)

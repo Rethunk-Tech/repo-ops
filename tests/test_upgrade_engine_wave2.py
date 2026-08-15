@@ -239,34 +239,39 @@ class TestVerifyExtraManagers:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def test_filter_workspaces_eco_only(tmp_path: Path, make_workspace) -> None:
+@pytest.mark.parametrize(
+    "workspace_specs,eco,manager,expected",
+    [
+        (
+            [("npm", "node"), ("go", "go"), ("pdm", "py")],
+            "node",
+            None,
+            ["npm"],
+        ),
+        (
+            [("npm", "node"), ("pnpm", "node"), ("go", "go")],
+            None,
+            "pnpm",
+            ["pnpm"],
+        ),
+        (
+            [("npm", "node"), ("poetry", "py"), ("pdm", "py")],
+            "py",
+            "pdm",
+            ["pdm"],
+        ),
+    ],
+    ids=["eco-only", "manager-only", "eco-and-manager"],
+)
+def test_filter_workspaces(
+    tmp_path: Path, make_workspace, workspace_specs, eco, manager, expected
+) -> None:
     workspaces = [
-        make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo"),
-        make_workspace(tmp_path, manager="go", ecosystem="go", label="demo"),
-        make_workspace(tmp_path, manager="pdm", ecosystem="py", label="demo"),
+        make_workspace(tmp_path, manager=m, ecosystem=e, label="demo")
+        for m, e in workspace_specs
     ]
-    out = orchestration.filter_workspaces(workspaces, "node", None)
-    assert [w.manager for w in out] == ["npm"]
-
-
-def test_filter_workspaces_manager_only(tmp_path: Path, make_workspace) -> None:
-    workspaces = [
-        make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo"),
-        make_workspace(tmp_path, manager="pnpm", ecosystem="node", label="demo"),
-        make_workspace(tmp_path, manager="go", ecosystem="go", label="demo"),
-    ]
-    out = orchestration.filter_workspaces(workspaces, None, "pnpm")
-    assert [w.manager for w in out] == ["pnpm"]
-
-
-def test_filter_workspaces_eco_and_manager(tmp_path: Path, make_workspace) -> None:
-    workspaces = [
-        make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo"),
-        make_workspace(tmp_path, manager="poetry", ecosystem="py", label="demo"),
-        make_workspace(tmp_path, manager="pdm", ecosystem="py", label="demo"),
-    ]
-    out = orchestration.filter_workspaces(workspaces, "py", "pdm")
-    assert [w.manager for w in out] == ["pdm"]
+    out = orchestration.filter_workspaces(workspaces, eco, manager)
+    assert [w.manager for w in out] == expected
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -380,24 +380,19 @@ def test_settings_table_container_update_latest_env_var() -> None:
     assert row[2] == "REPO_OPS_CONTAINER_UPDATE_LATEST"
 
 
-def test_resolve_setting_commit_umbrella(monkeypatch: pytest.MonkeyPatch) -> None:
-    from repo_ops_core.config import resolve_setting
-
-    monkeypatch.setenv("REPO_OPS_COMMIT_UMBRELLA", "1")
-    assert resolve_setting("commit_umbrella") == "1"
-
-
-def test_resolve_setting_actions_org_policy(monkeypatch: pytest.MonkeyPatch) -> None:
-    from repo_ops_core.config import resolve_setting
-
-    monkeypatch.setenv("REPO_OPS_ACTIONS_ORG_POLICY", "1")
-    assert resolve_setting("actions_org_policy") == "1"
-
-
-def test_resolve_setting_container_update_latest(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    "env_var,setting_name",
+    [
+        ("REPO_OPS_COMMIT_UMBRELLA", "commit_umbrella"),
+        ("REPO_OPS_ACTIONS_ORG_POLICY", "actions_org_policy"),
+        ("REPO_OPS_CONTAINER_UPDATE_LATEST", "container_update_latest"),
+    ],
+    ids=["commit-umbrella", "actions-org-policy", "container-update-latest"],
+)
+def test_resolve_setting(
+    monkeypatch: pytest.MonkeyPatch, env_var: str, setting_name: str
 ) -> None:
     from repo_ops_core.config import resolve_setting
 
-    monkeypatch.setenv("REPO_OPS_CONTAINER_UPDATE_LATEST", "1")
-    assert resolve_setting("container_update_latest") == "1"
+    monkeypatch.setenv(env_var, "1")
+    assert resolve_setting(setting_name) == "1"
