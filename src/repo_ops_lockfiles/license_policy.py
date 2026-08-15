@@ -767,15 +767,6 @@ def scan_deno_licenses(
 # ---------------------------------------------------------------------------
 
 
-def _fail_gate_unknown(unknown: list[PackageLicense]) -> list[PackageLicense]:
-    """Subset of *unknown* that should count toward --fail-unknown's exit 2.
-
-    All ecosystems scanned by this module have a local extractor path, so
-    every UNKNOWN entry participates in the gate.
-    """
-    return list(unknown)
-
-
 # Normalise SPDX-ish identifiers for comparison
 _SPDX_NORM = re.compile(r"[^A-Za-z0-9]")
 
@@ -1101,11 +1092,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if result.violations:
         return 1
-    if (
-        result.unknown
-        and not args.no_fail_unknown
-        and _fail_gate_unknown(result.unknown)
-    ):
+    if result.unknown and not args.no_fail_unknown:
         return 2
     return 0
 

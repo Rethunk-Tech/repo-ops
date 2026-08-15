@@ -22,9 +22,7 @@ from repo_ops_lockfiles.license_enrich import (
 )
 from repo_ops_lockfiles.license_policy import (
     UNKNOWN_LICENSE,
-    PackageLicense,
     _classify_license_text,
-    _fail_gate_unknown,
     _go_escape,
     resolve_deno_npm_license,
     resolve_go_license,
@@ -486,34 +484,3 @@ def test_normalize_spdx_rejects_ambiguous_values() -> None:
     assert normalize_spdx("MIT License") == "MIT"
     assert normalize_spdx("MIT OR Apache-2.0") == "MIT OR Apache-2.0"
     assert normalize_spdx("BSD") is None
-
-
-# ---------------------------------------------------------------------------
-# Unknown-exclusion gate: all scanned ecosystems participate in --fail-unknown
-# ---------------------------------------------------------------------------
-
-
-def test_fail_gate_unknown_passes_through_all_ecosystems() -> None:
-    unknown = [
-        PackageLicense(
-            name="mystery-lib",
-            version="1.0.0",
-            license_id=UNKNOWN_LICENSE,
-            ecosystem="npm",
-            source="node_modules",
-        ),
-        PackageLicense(
-            name="mystery-py",
-            version="2.0.0",
-            license_id=UNKNOWN_LICENSE,
-            ecosystem="python",
-            source="uv.lock",
-        ),
-    ]
-    gated = _fail_gate_unknown(unknown)
-    assert len(gated) == 2
-    assert {p.name for p in gated} == {"mystery-lib", "mystery-py"}
-
-
-def test_fail_gate_unknown_empty_when_no_unknown() -> None:
-    assert _fail_gate_unknown([]) == []
