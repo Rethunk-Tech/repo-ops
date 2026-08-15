@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-08-15
+
+### Fixed
+
+- **`audit --fix` could not pin an exact advisory-safe version for uv projects.** `apply_remediations` had dedicated branches for node, rust, deno and go, but `py-uv` fell through to the generic path — `uv lock --upgrade` followed by `uv sync`, a broad resolver-driven bump that may leave the vulnerable transitive dependency under-fixed while dragging every other dependency along with it. The targeted applier existed but was never wired to a call site; it now issues `uv add <package>==<version>` like the other ecosystems.
+- **A broken per-manager registration silently disabled `audit --fix` for that manager.** The `ImportError` was swallowed into a `skip` outcome, so a remediation simply did not happen and nothing said so. The swallow remains (a legitimately absent optional dependency must not crash the run) but now logs a warning naming the manager.
+- **Hold resolution could read the developer's own `~/.config/repo-ops/config.toml` during tests**, validating behaviour against real machine state rather than the fixture.
+
 ### Changed
+
+- **BREAKING: Python 3.11 is no longer supported.** Minimum is now 3.12. Coverage only measures branches through `sys.monitoring` on 3.14 — below that it silently falls back to the C tracer, roughly doubling test execution — so 3.14 is the pinned interpreter and CI runs 3.12/3.13/3.14 with every version blocking (3.14 was previously advisory-only).
 
 - **BREAKING: the 31 workspace distributions are now one `repo-ops` package.** The split shipped exactly one artifact and that artifact could not be installed: release built only `packages/repo-ops`, producing a 509-line wheel whose metadata required 24 sibling distributions that were never built or published, so `pip install repo-ops` failed to resolve `repo-ops-core`. The boundary was not real in the other direction either — `repo-ops-upgrade` and `repo-ops-upgrade-remediations-js` depended on each other at both the manifest and import level, which only worked because uv flattened the workspace into one environment. Every module keeps its name and import path (`repo_ops_core`, `repo_ops_upgrade`, …); they now live under `src/` and ship from a single manifest. Installing from a clone is `uv tool install .` and from git is the plain repository URL — the `#subdirectory=packages/repo-ops` suffix is gone.
 - **BREAKING: Python 3.10 is no longer supported.** It reaches end of life in October, and it was the only reason for the `tomli` dependency and the config-loading fallbacks around it. Minimum is now 3.11, and `tomllib` is used directly.
