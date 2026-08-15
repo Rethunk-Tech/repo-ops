@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,11 +12,23 @@ import pytest
 from repo_ops_upgrade.actions import scan_actions
 from repo_ops_upgrade.workflow_uses import (
     PinReplacement,
+    _yaml_loader,
     parse_uses_ref,
     parse_workflow_uses,
     update_workflow_pins,
-    workflow_roundtrip_text,
 )
+
+
+def _workflow_roundtrip_text(path: Path) -> str:
+    """Load and dump a workflow file — a no-op should reproduce the source
+    byte-for-byte; drift here means ``_yaml_loader``'s formatting settings
+    no longer match this repo's workflow YAML conventions."""
+    yaml = _yaml_loader()
+    data = yaml.load(path)
+    buf = StringIO()
+    yaml.dump(data, buf)
+    return buf.getvalue()
+
 
 _CI_SNIPPET = """\
 name: CI
@@ -177,13 +190,11 @@ def test_parse_real_ci_workflow(repo_ops_workflows: Path) -> None:
 def test_workflow_roundtrip_preserves_ci_yaml(repo_ops_workflows: Path) -> None:
     ci = repo_ops_workflows / "ci.yml"
     original = ci.read_text(encoding="utf-8")
-    roundtripped = workflow_roundtrip_text(ci)
+    roundtripped = _workflow_roundtrip_text(ci)
     assert roundtripped == original
 
 
 def test_workflow_roundtrip_preserves_on_trigger(repo_ops_workflows: Path) -> None:
-    from repo_ops_upgrade.workflow_uses import _yaml_loader
-
     data = _yaml_loader().load(repo_ops_workflows / "ci.yml")
     assert "on" in data
     on = data["on"]

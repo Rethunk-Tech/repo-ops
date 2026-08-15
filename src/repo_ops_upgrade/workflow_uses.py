@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -135,20 +134,11 @@ def _yaml_loader() -> YAML:
     # two spaces past their parent mapping key (e.g. `steps:` at 4 spaces,
     # `- uses:` at 6). ruamel's round-trip mode preserves most formatting on
     # a no-op load+dump, but sequence indent is a dump-time setting, not
-    # inferred from the loaded document — without this, workflow_roundtrip_text
-    # silently reformats every block sequence to ruamel's own default
+    # inferred from the loaded document — without this, a load+dump round
+    # trip silently reformats every block sequence to ruamel's own default
     # (offset=0) instead of leaving it untouched.
     yaml.indent(mapping=2, sequence=4, offset=2)
     return yaml
-
-
-def workflow_roundtrip_text(path: Path) -> str:
-    """Load and dump a workflow file (for tests and no-op drift checks)."""
-    yaml = _yaml_loader()
-    data = yaml.load(path)
-    buf = StringIO()
-    yaml.dump(data, buf)
-    return buf.getvalue()
 
 
 def parse_workflow_uses(
