@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from repo_ops_core.cli import (
@@ -47,6 +48,17 @@ from repo_ops_inventory.counting import (
 )
 
 
+def _totals(rows: list[dict]) -> dict[str, int]:
+    """Sum manifests/direct/versions/on-disk/edges across rows."""
+    return {
+        "manifests": sum(r["manifests"] for r in rows),
+        "direct": sum(r["direct"] for r in rows),
+        "versions": sum(r["versions_n"] for r in rows),
+        "on_disk": sum(r["installed"] for r in rows),
+        "edges": sum(r["edges"] for r in rows),
+    }
+
+
 def _print_inventory_table(all_rows: list[dict], top: int | None = None) -> None:
     """Emit the human-readable inventory table.
 
@@ -54,13 +66,14 @@ def _print_inventory_table(all_rows: list[dict], top: int | None = None) -> None
     full row set and a "… and N more" line is appended when rows are truncated.
     """
     # Totals over the FULL set first, so truncating the display never undercounts.
-    td = tv = ti = te = tm = 0
-    for r in all_rows:
-        td += r["direct"]
-        tv += r["versions_n"]
-        ti += r["installed"]
-        te += r["edges"]
-        tm += r["manifests"]
+    totals = _totals(all_rows)
+    tm, td, tv, ti, te = (
+        totals["manifests"],
+        totals["direct"],
+        totals["versions"],
+        totals["on_disk"],
+        totals["edges"],
+    )
 
     shown = all_rows[:top] if top is not None else all_rows
     names = [r["name"] for r in shown]
@@ -114,6 +127,15 @@ def _print_inventory_table(all_rows: list[dict], top: int | None = None) -> None
             ]
         )
     )
+
+
+_SORT_KEYS: dict[str, tuple[Callable[[dict], str | int], bool]] = {
+    "name": (lambda x: x["name"], False),
+    "direct": (lambda x: x["direct"], True),
+    "versions": (lambda x: x["versions_n"], True),
+    "on-disk": (lambda x: x["installed"], True),
+    "edges": (lambda x: x["edges"], True),
+}
 
 
 def build_inventory_parser() -> argparse.ArgumentParser:
@@ -191,46 +213,24 @@ def main(argv: list[str] | None = None) -> int:
         r["kinds_s"] = ",".join(sorted(r["kinds"]))
         r["versions_n"] = len(r["versions"])
 
-    sort_key = args.sort
-    if sort_key == "name":
-        all_rows.sort(key=lambda x: x["name"])
-    elif sort_key == "direct":
-        all_rows.sort(key=lambda x: x["direct"], reverse=True)
-    elif sort_key == "versions":
-        all_rows.sort(key=lambda x: x["versions_n"], reverse=True)
-    elif sort_key == "on-disk":
-        all_rows.sort(key=lambda x: x["installed"], reverse=True)
-    elif sort_key == "edges":
-        all_rows.sort(key=lambda x: x["edges"], reverse=True)
+    sort_key_fn, sort_reverse = _SORT_KEYS[args.sort]
+    all_rows.sort(key=sort_key_fn, reverse=sort_reverse)
 
     if args.json_out:
         # --json always emits ALL rows (--top only caps human output).
-        td = tv = ti = te = tm = 0
-        json_rows = []
-        for r in all_rows:
-            json_rows.append(
-                {
-                    "name": r["name"],
-                    "kinds": sorted(r["kinds"]),
-                    "manifests": r["manifests"],
-                    "direct": r["direct"],
-                    "versions": r["versions_n"],
-                    "on_disk": r["installed"],
-                    "edges": r["edges"],
-                }
-            )
-            td += r["direct"]
-            tv += r["versions_n"]
-            ti += r["installed"]
-            te += r["edges"]
-            tm += r["manifests"]
-        totals = {
-            "manifests": tm,
-            "direct": td,
-            "versions": tv,
-            "on_disk": ti,
-            "edges": te,
-        }
+        json_rows = [
+            {
+                "name": r["name"],
+                "kinds": sorted(r["kinds"]),
+                "manifests": r["manifests"],
+                "direct": r["direct"],
+                "versions": r["versions_n"],
+                "on_disk": r["installed"],
+                "edges": r["edges"],
+            }
+            for r in all_rows
+        ]
+        totals = _totals(all_rows)
         # Build the payload once so the stdout and --json-out paths can never
         # diverge on schema_version/roots/totals (#101 + #104).
         # ``summary`` mirrors the human footer roll-up (docs/usage.md JSON contract).
