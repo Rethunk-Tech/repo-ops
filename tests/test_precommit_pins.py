@@ -20,6 +20,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from repo_ops_core.cli import build_upgrade_parser
 from repo_ops_models import Workspace
 from repo_ops_upgrade.precommit import (

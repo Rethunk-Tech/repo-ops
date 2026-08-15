@@ -31,6 +31,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+
 from repo_ops_audit.audit import _audit_go
 
 pytestmark = pytest.mark.integration

@@ -354,7 +354,7 @@ Config files (TOML):
 - **Per-repo:** `[tool.repo-ops]` table in `pyproject.toml` at the repo root, or
   flat keys in `.repo-ops.toml` for repositories without a suitable pyproject
 
-On Python 3.10, `repo-ops-core` depends on `tomli`. If neither stdlib `tomllib` nor `tomli` is available, config files are skipped with a warning.
+TOML parsing uses the stdlib `tomllib` (Python 3.11+).
 
 For multi-root `plan` and `apply` runs, repository exclusions, Actions
 lint/policy levels, Go upgrade mode, `go_work_sync`, `go_directive`, and

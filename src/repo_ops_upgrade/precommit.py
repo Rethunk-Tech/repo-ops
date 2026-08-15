@@ -37,7 +37,6 @@ from repo_ops_core.config import (
 from repo_ops_core.holds import HoldRule, resolve_hold
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
-
 from repo_ops_upgrade import holds
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,9 @@ from repo_ops_upgrade.report import build_json_payload
 from repo_ops_upgrade.run import main_apply, main_plan
 
 
-def test_plan_json_out_writes_file_and_prints_path_only(tmp_path: Path, capsys, init_git_repo) -> None:
+def test_plan_json_out_writes_file_and_prints_path_only(
+    tmp_path: Path, capsys, init_git_repo
+) -> None:
     init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"npm@10.0.0"}',
@@ -67,7 +69,9 @@ def test_json_out_requires_json(tmp_path: Path) -> None:
             raise AssertionError("expected SystemExit")
 
 
-def test_apply_json_out_keeps_colocated_npm_and_container(tmp_path: Path, init_git_repo) -> None:
+def test_apply_json_out_keeps_colocated_npm_and_container(
+    tmp_path: Path, init_git_repo
+) -> None:
     """Co-located ecosystems must both survive result reconciliation (#146).
 
     A directory with package.json + Dockerfile yields two WorkspaceResults that

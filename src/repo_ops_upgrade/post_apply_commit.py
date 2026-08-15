@@ -18,7 +18,6 @@ from repo_ops_lockfiles.constants import (
     RUST_LOCKFILES,
 )
 from repo_ops_models import RepoBundle
-
 from repo_ops_upgrade.submodules import SubmoduleLink
 
 CommitMode = Literal["none", "conventional", "agent"]

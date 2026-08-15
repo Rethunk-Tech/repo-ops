@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from repo_ops import install_skill
 from repo_ops.install_skill import (
     bundled_skill_dir,
@@ -231,17 +232,19 @@ _ROOT_AGENTS_MD = _REPO_ROOT / "AGENTS.md"
 
 
 def test_bundled_agents_md_is_byte_identical_to_root() -> None:
-    """Bundled AGENTS.md must stay in sync with the root copy.
+    """Bundled AGENTS.md must resolve to the root copy.
 
-    Edit root AGENTS.md → copy to packages/repo-ops/src/repo_ops/skills/repo-ops/AGENTS.md.
-    This test fails when one is edited without updating the other.
+    src/repo_ops/skills/repo-ops/AGENTS.md is a symlink to the root file, so
+    this holds by construction; the test fails if someone replaces it with a
+    copy, which is how the two drifted apart before.
     """
     skill = bundled_skill_dir()
     bundled = skill / "AGENTS.md"
     assert bundled.is_file(), f"bundled AGENTS.md missing at {bundled}"
     assert bundled.read_bytes() == _ROOT_AGENTS_MD.read_bytes(), (
         "Bundled AGENTS.md has drifted from root AGENTS.md. "
-        "Run: cp AGENTS.md packages/repo-ops/src/repo_ops/skills/repo-ops/AGENTS.md"
+        "It should be a symlink: ln -sf ../../../../AGENTS.md "
+        "src/repo_ops/skills/repo-ops/AGENTS.md"
     )
 
 
@@ -257,15 +260,13 @@ def test_rewrite_install_links_rewrites_relative_doc_paths() -> None:
     sample = (
         "[HUMANS.md](HUMANS.md) "
         "[usage](docs/usage.md#anchor) "
-        "[core](packages/repo-ops-core/src/repo_ops_core/constants.py) "
+        "[core](src/repo_ops_core/constants.py) "
         "[keep](CONTRIBUTING.md)"
     )
     out = rewrite_install_links(sample)
     assert f"]({_GITHUB_BLOB}HUMANS.md)" in out
     assert f"]({_GITHUB_BLOB}docs/usage.md#anchor)" in out
-    assert (
-        f"]({_GITHUB_BLOB}packages/repo-ops-core/src/repo_ops_core/constants.py)" in out
-    )
+    assert f"]({_GITHUB_BLOB}src/repo_ops_core/constants.py)" in out
     assert "[keep](CONTRIBUTING.md)" in out
 
 
@@ -276,8 +277,5 @@ def test_install_skill_rewrites_agents_links_on_install(tmp_path: Path) -> None:
     agents = (dest / "AGENTS.md").read_text(encoding="utf-8")
     assert f"]({_GITHUB_BLOB}HUMANS.md)" in agents
     assert f"]({_GITHUB_BLOB}docs/usage.md" in agents
-    assert (
-        f"]({_GITHUB_BLOB}packages/repo-ops-core/src/repo_ops_core/constants.py)"
-        in agents
-    )
+    assert f"]({_GITHUB_BLOB}src/repo_ops_core/constants.py)" in agents
     assert "[CONTRIBUTING.md](CONTRIBUTING.md)" in agents

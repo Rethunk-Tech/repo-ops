@@ -10,6 +10,7 @@ skips on network-style errors embedded in report-only changes.
 from __future__ import annotations
 
 import pytest
+
 from repo_ops_container.container import check_container
 from repo_ops_models import Workspace
 

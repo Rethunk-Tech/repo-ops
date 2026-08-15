@@ -23,6 +23,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from repo_ops_audit.audit import (
     RemediationItem,
     _apply_cargo_targeted,

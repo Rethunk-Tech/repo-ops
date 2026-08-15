@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_py_pip_tools.pip_tools import (
     _compile_requirements,
     apply_pip_tools,

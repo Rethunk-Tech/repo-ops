@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_go.go import (
     GO_WORK_SYNC_ENV,
     _go_work_dirs,

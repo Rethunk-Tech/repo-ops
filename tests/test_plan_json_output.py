@@ -11,7 +11,9 @@ from repo_ops_upgrade.discovery import DiscoveryDiagnostics, discover_all
 from repo_ops_upgrade.run import main_plan
 
 
-def test_discover_all_json_diagnostics_no_stderr(tmp_path: Path, capsys, init_git_repo) -> None:
+def test_discover_all_json_diagnostics_no_stderr(
+    tmp_path: Path, capsys, init_git_repo
+) -> None:
     init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"npm@10.0.0"}',
@@ -97,7 +99,9 @@ def test_plan_json_stdout_parses_without_skip_warn_lines(
     assert rc in (0, 1)
 
 
-def test_plan_json_v1_schema_compact_and_null_omission(tmp_path: Path, capsys, init_git_repo) -> None:
+def test_plan_json_v1_schema_compact_and_null_omission(
+    tmp_path: Path, capsys, init_git_repo
+) -> None:
     """#101: schema_version first, --compact single-line, null error keys omitted."""
     init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(

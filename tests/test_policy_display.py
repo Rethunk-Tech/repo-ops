@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_models import ActionBump, RepoBundle
 from repo_ops_upgrade.report import (
     build_run_summary,

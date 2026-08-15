@@ -22,7 +22,6 @@ from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
 from repo_ops_core.holds import HoldRule, resolve_hold
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
-
 from repo_ops_upgrade import holds
 
 logger = logging.getLogger(__name__)

@@ -13,6 +13,7 @@ import shutil
 import textwrap
 
 import pytest
+
 from repo_ops_models import Workspace
 from repo_ops_upgrade.precommit import _clear_tag_cache, check_precommit
 

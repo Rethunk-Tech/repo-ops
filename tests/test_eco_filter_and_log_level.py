@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 
 import pytest
+
 from repo_ops_core.cli import (
     ECO_FILTER_CHOICES,
     build_upgrade_parser,

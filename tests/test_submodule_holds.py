@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_core.holds import HoldRule
 from repo_ops_upgrade import submodules
 from repo_ops_upgrade.submodules import (
@@ -133,7 +134,8 @@ def test_apply_raises_when_hold_cannot_be_clamped(tmp_path: Path) -> None:
 
 
 def test_expired_hold_is_ignored_without_config_rewrite(
-    tmp_path: Path, make_proc,
+    tmp_path: Path,
+    make_proc,
 ) -> None:
     link = _make_link(tmp_path)
     hold_config = tmp_path / ".repo-ops.toml"

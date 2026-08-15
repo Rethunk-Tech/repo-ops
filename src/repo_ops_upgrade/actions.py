@@ -19,7 +19,6 @@ from repo_ops_core.holds import HoldRule, resolve_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import ActionBump
-
 from repo_ops_upgrade import holds
 from repo_ops_upgrade.workflow_uses import (
     PinReplacement,

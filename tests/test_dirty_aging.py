@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_core import state as state_mod
 from repo_ops_core.state import (
     clear_dirty_skip,

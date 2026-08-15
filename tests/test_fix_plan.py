@@ -9,6 +9,7 @@ import json
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_audit.audit import (
     ApplyOutcome,
     RemediationItem,

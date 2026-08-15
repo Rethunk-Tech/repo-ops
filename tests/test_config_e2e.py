@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+
 import repo_ops_go
 import repo_ops_go.go as go_mod
 import repo_ops_upgrade.run as run_mod

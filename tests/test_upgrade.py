@@ -174,6 +174,7 @@ def test_apply_rust_invokes_cargo_update(monkeypatch):
     """apply_rust runs cargo update and surfaces stderr on failure."""
     monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     import pytest
+
     from repo_ops_models import Workspace
     from repo_ops_rust.rust import apply_rust
 
@@ -219,6 +220,7 @@ def test_is_git_dirty_clean_repo(tmp_path):
 def test_apply_poetry_raises_clear_error_when_poetry_absent(tmp_path):
     """apply_poetry must raise RuntimeError with 'poetry not on PATH', not bare FileNotFoundError."""
     import pytest
+
     from repo_ops_models import Workspace
     from repo_ops_py_poetry.poetry import apply_poetry
 

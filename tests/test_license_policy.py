@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+
 from repo_ops_lockfiles.license_enrich import _cache_path, enrich_license
 from repo_ops_lockfiles.license_policy import (
     UNKNOWN_LICENSE,

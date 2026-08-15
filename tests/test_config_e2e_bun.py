@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 import repo_ops_upgrade.run as run_mod
 from repo_ops_js_bun import bun as bun_mod
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult

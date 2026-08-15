@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from repo_ops_upgrade.actions import (
     _LINT_CACHE_MAX_AGE_S,
     _actionlint_cache_path,

@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from repo_ops_audit.audit import (
     ApplyOutcome,
     RemediationItem,

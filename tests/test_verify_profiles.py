@@ -18,6 +18,7 @@ from subprocess import CompletedProcess
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_core.config import load_dot_repo_ops_config, load_repo_config
 from repo_ops_upgrade.verify import verify_node, verify_workspace
 

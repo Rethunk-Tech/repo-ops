@@ -18,7 +18,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -727,7 +727,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--author value must not be empty")
 
     # Resolve time window
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     effective_hours = args.hours if args.hours is not None else 24.0
 
     if args.since is not None and args.until is not None:

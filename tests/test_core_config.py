@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from repo_ops_core import config as config_mod
 from repo_ops_core.config import (
     SETTINGS_TABLE,
@@ -97,24 +98,13 @@ def test_commit_agent_model_setting_default_and_override(
     )
 
 
-def test_load_repo_config_keeps_sidecar_when_tomllib_unavailable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    (tmp_path / ".repo-ops.toml").write_text("jobs = 3\n", encoding="utf-8")
+def test_load_repo_config_pyproject_wins_over_sidecar(tmp_path: Path) -> None:
+    (tmp_path / ".repo-ops.toml").write_text("jobs = 3\nverbose = true\n", "utf-8")
     (tmp_path / "pyproject.toml").write_text(
         "[tool.repo-ops]\njobs = 9\n", encoding="utf-8"
     )
-    monkeypatch.setattr(config_mod, "TOML_AVAILABLE", False)
-    monkeypatch.setattr(config_mod, "_warned", False)
-    monkeypatch.setattr(
-        config_mod,
-        "load_dot_repo_ops_config",
-        lambda _root: {"jobs": 3},
-    )
-    with pytest.warns(UserWarning, match="config files will be ignored") as records:
-        assert load_repo_config(tmp_path) == {"jobs": 3}
-        assert load_repo_config(tmp_path) == {"jobs": 3}
-    assert len(records) == 1
+    # pyproject wins per-key; sidecar-only keys still apply.
+    assert load_repo_config(tmp_path) == {"jobs": 9, "verbose": True}
 
 
 def test_load_repo_config_reads_toml_with_shared_loader(tmp_path: Path) -> None:

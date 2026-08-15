@@ -5,12 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from repo_ops_models import WorkspaceResult
 from repo_ops_upgrade_remediations_core import remediations as core
 
 
 def _result(tmp_path: Path, make_workspace, ecosystem: str = "node") -> WorkspaceResult:
-    return WorkspaceResult(workspace=make_workspace(tmp_path, ecosystem=ecosystem, manager="npm", label="test"))
+    return WorkspaceResult(
+        workspace=make_workspace(
+            tmp_path, ecosystem=ecosystem, manager="npm", label="test"
+        )
+    )
 
 
 # ── RemediationHook dataclass ──────────────────────────────────────────────
@@ -36,7 +41,9 @@ def test_hook_with_files_callable(tmp_path: Path, make_workspace) -> None:
         files=lambda ws: ["some/file.json"],
     )
     assert hook.files is not None
-    assert hook.files(make_workspace(tmp_path, ecosystem="node", manager="npm", label="test")) == ["some/file.json"]
+    assert hook.files(
+        make_workspace(tmp_path, ecosystem="node", manager="npm", label="test")
+    ) == ["some/file.json"]
 
 
 # ── run_hooks: plan mode ───────────────────────────────────────────────────

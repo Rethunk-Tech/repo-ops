@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from repo_ops_upgrade.actions import (
     _classify_actionlint_severity,
     _read_lint_level_env,

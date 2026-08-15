@@ -47,7 +47,9 @@ def _make_workspace(tmp_path: Path, init_git_repo) -> Workspace:
 # ---------------------------------------------------------------------------
 
 
-def test_checkout_failure_returns_reverted_ok_false(tmp_path: Path, init_git_repo) -> None:
+def test_checkout_failure_returns_reverted_ok_false(
+    tmp_path: Path, init_git_repo
+) -> None:
     """A non-zero git checkout during revert must return False."""
     ws = _make_workspace(tmp_path, init_git_repo=init_git_repo)
     before_snap: dict[Path, bytes] = {}
@@ -133,7 +135,9 @@ def test_revert_removes_untracked_apply_files(tmp_path: Path, init_git_repo) -> 
     )
 
 
-def test_revert_ok_succeeds_when_nothing_to_revert(tmp_path: Path, init_git_repo) -> None:
+def test_revert_ok_succeeds_when_nothing_to_revert(
+    tmp_path: Path, init_git_repo
+) -> None:
     """When no tracked or untracked changes exist, revert returns True (trap A)."""
     ws = _make_workspace(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"

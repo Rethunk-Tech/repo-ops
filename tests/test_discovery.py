@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from repo_ops_core.discovery import FIND_TIMEOUT_ENV, discover_repos
 from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
 from repo_ops_upgrade.discovery import (
@@ -61,7 +62,9 @@ def test_discover_all_finds_repo_below_org_proj_depth(tmp_path: Path, init_git_r
     assert repo.resolve() in paths, f"deep repo not discovered; found={paths}"
 
 
-def test_discover_all_enumerates_multiple_and_subdir_workspaces(tmp_path: Path, init_git_repo):
+def test_discover_all_enumerates_multiple_and_subdir_workspaces(
+    tmp_path: Path, init_git_repo
+):
     """Regression for #24 (points 3 + subdir-only): a single repo with a Go
     module at its root AND a node app in ``web/`` yields BOTH workspaces, and a
     repo whose only manifest sits in a subdir is still discovered."""
@@ -110,7 +113,9 @@ def test_discover_all_suppresses_uv_workspace_members(tmp_path: Path, init_git_r
     assert py[0].path == repo.resolve()
 
 
-def test_discover_all_records_skip_for_unactionable_manifest(tmp_path: Path, init_git_repo):
+def test_discover_all_records_skip_for_unactionable_manifest(
+    tmp_path: Path, init_git_repo
+):
     """Regression for #24 (point 2): a manifest found but not actionable is
     recorded as a counted skip with a reason, never silently dropped."""
     repo = tmp_path / "com.github" / "Acme" / "nolock"
@@ -128,7 +133,9 @@ def test_discover_all_records_skip_for_unactionable_manifest(tmp_path: Path, ini
     ), f"unactionable manifest not recorded as skip; skipped={diags.skipped}"
 
 
-def test_discover_all_records_skip_for_requirements_txt_only(tmp_path: Path, init_git_repo):
+def test_discover_all_records_skip_for_requirements_txt_only(
+    tmp_path: Path, init_git_repo
+):
     """Regression for #133: a repo with requirements.txt but no requirements.in
     must be recorded as a discovery skip (unactionable), NOT silently ok.
 
@@ -203,7 +210,9 @@ def test_iter_scanned_dirs_skips_wailsjs(tmp_path: Path) -> None:
     )
 
 
-def test_discover_node_workspace_member_not_recorded_as_skip(tmp_path: Path, init_git_repo):
+def test_discover_node_workspace_member_not_recorded_as_skip(
+    tmp_path: Path, init_git_repo
+):
     """Regression for #49: a yarn/npm workspace member (no own lockfile, no
     packageManager field) must be silently suppressed, NOT recorded as a skip."""
     repo = tmp_path / "com.github" / "Acme" / "frontend"
@@ -267,7 +276,9 @@ def test_discover_skip_only_dir_not_double_printed_in_nested_repo(
     )
 
 
-def test_discover_cargo_workspace_members_not_enumerated_standalone(tmp_path: Path, init_git_repo):
+def test_discover_cargo_workspace_members_not_enumerated_standalone(
+    tmp_path: Path, init_git_repo
+):
     """Regression for #52: Cargo workspace members must NOT surface as separate
     rust workspaces; only the root (which owns Cargo.lock) should be returned."""
     repo = tmp_path / "com.github" / "Acme" / "crates"
@@ -292,7 +303,8 @@ def test_discover_cargo_workspace_members_not_enumerated_standalone(tmp_path: Pa
 
 
 def test_discover_cargo_collapses_excluded_and_implicit_path_members(
-    tmp_path: Path, init_git_repo,
+    tmp_path: Path,
+    init_git_repo,
 ):
     """Cargo metadata must collapse path-dependency members and exclusions."""
     repo = tmp_path / "com.github" / "Acme" / "cargo-layout"
@@ -332,7 +344,8 @@ def test_discover_cargo_collapses_excluded_and_implicit_path_members(
 
 def test_discover_cargo_missing_binary_falls_back_to_member_globs(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, init_git_repo,
+    monkeypatch: pytest.MonkeyPatch,
+    init_git_repo,
 ):
     """Manifest member globs remain usable when Cargo is unavailable."""
     repo = tmp_path / "com.github" / "Acme" / "cargo-fallback"
@@ -352,7 +365,8 @@ def test_discover_cargo_missing_binary_falls_back_to_member_globs(
 
 def test_discover_cargo_missing_binary_expands_path_dependencies(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, init_git_repo,
+    monkeypatch: pytest.MonkeyPatch,
+    init_git_repo,
 ):
     """Fallback discovery recursively collapses path dependencies."""
     repo = tmp_path / "com.github" / "Acme" / "cargo-path-fallback"

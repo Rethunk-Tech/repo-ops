@@ -79,7 +79,9 @@ def test_revert_restores_modified_lockfile(tmp_path: Path, init_git_repo) -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_revert_preserves_preexisting_untracked_file(tmp_path: Path, init_git_repo) -> None:
+def test_revert_preserves_preexisting_untracked_file(
+    tmp_path: Path, init_git_repo
+) -> None:
     """An operator's pre-existing untracked file is not deleted by revert.
 
     Real-git test: notes.txt is untracked before apply runs.
@@ -104,7 +106,9 @@ def test_revert_preserves_preexisting_untracked_file(tmp_path: Path, init_git_re
     )
 
 
-def test_revert_clean_skips_non_artifact_via_mock(tmp_path: Path, init_git_repo) -> None:
+def test_revert_clean_skips_non_artifact_via_mock(
+    tmp_path: Path, init_git_repo
+) -> None:
     """git clean is called with only apply-created lockfile names, not notes.txt.
 
     Mock test: ls-files returns [notes.txt, yarn.lock].
@@ -152,7 +156,9 @@ def test_revert_clean_skips_non_artifact_via_mock(tmp_path: Path, init_git_repo)
 # ---------------------------------------------------------------------------
 
 
-def test_revert_preserves_preexisting_dirty_tracked_edit(tmp_path: Path, init_git_repo) -> None:
+def test_revert_preserves_preexisting_dirty_tracked_edit(
+    tmp_path: Path, init_git_repo
+) -> None:
     """A dirty tracked edit unrelated to apply is not reverted.
 
     Real-git test: app.py is modified by the operator BEFORE apply runs.
@@ -190,7 +196,9 @@ def test_revert_preserves_preexisting_dirty_tracked_edit(tmp_path: Path, init_gi
     )
 
 
-def test_revert_checkout_skips_non_artifact_via_mock(tmp_path: Path, init_git_repo) -> None:
+def test_revert_checkout_skips_non_artifact_via_mock(
+    tmp_path: Path, init_git_repo
+) -> None:
     """git checkout is called with only artifact paths, not app.py.
 
     Mock test: git diff returns [package-lock.json, app.py].
@@ -239,7 +247,8 @@ def test_revert_checkout_skips_non_artifact_via_mock(tmp_path: Path, init_git_re
 
 
 def test_revert_preserves_preexisting_dirty_artifact_not_in_snapshot(
-    tmp_path: Path, init_git_repo,
+    tmp_path: Path,
+    init_git_repo,
 ) -> None:
     """A dirty tracked file with artifact basename that apply never touched survives revert.
 

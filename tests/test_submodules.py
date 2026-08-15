@@ -192,7 +192,9 @@ def test_find_gitmodules_prunes_skip_dirs(tmp_path: Path, init_git_repo) -> None
     )
 
 
-def test_discover_rejects_self_referential_dot_path(tmp_path: Path, init_git_repo) -> None:
+def test_discover_rejects_self_referential_dot_path(
+    tmp_path: Path, init_git_repo
+) -> None:
     """Regression for #47: a .gitmodules entry with path='.' produces
     child_dir == parent; the existing guard (child_repo.resolve() != child_dir)
     passes because git_repo_for('.') == the repo itself, so an explicit check

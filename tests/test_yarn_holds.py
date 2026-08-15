@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from repo_ops_js_yarn.yarn import (
     apply_yarn,
     check_yarn_snapshot,
@@ -52,7 +53,6 @@ def _seed(
         pkg_content = json.dumps({"dependencies": {"typescript": "^6.0.0"}})
     (d / "package.json").write_text(pkg_content, encoding="utf-8")
     (d / "yarn.lock").write_text(_lock_with_typescript(lock_version), encoding="utf-8")
-
 
 
 # ---------------------------------------------------------------------------
@@ -326,7 +326,9 @@ def test_targeted_bump_releases_unheld_resolutions_pin(
     assert "is-odd" not in pkg_after.get("resolutions", {})
 
 
-def test_targeted_bump_keeps_held_resolutions_pin(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_keeps_held_resolutions_pin(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     """An active hold on the package leaves its resolutions pin untouched —
     the pin-release path only fires for packages with no tracked hold."""
     _seed_is_odd_pin(tmp_path)

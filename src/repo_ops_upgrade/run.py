@@ -36,7 +36,6 @@ from repo_ops_core.git import is_git_dirty
 from repo_ops_core.parallel import run_bounded_pool
 from repo_ops_core.tee import tee_stdout_stderr
 from repo_ops_models import ActionBump, RepoBundle, Workspace, WorkspaceResult
-
 from repo_ops_upgrade import (
     actions,
     orchestration,

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from repo_ops_upgrade import registry
-
 from repo_ops_js_pnpm.pnpm import apply_pnpm, check_pnpm
+from repo_ops_upgrade import registry
 
 
 def register() -> None:

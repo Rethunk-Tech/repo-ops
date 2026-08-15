@@ -15,7 +15,7 @@ import repo_ops
 _SKILL_DIR_NAME = "repo-ops"
 _TARGETS = ("cursor", "claude", "both")
 _GITHUB_BLOB_BASE = "https://github.com/Rethunk-Tech/repo-ops/blob/main/"
-_INSTALL_LINK_RE = re.compile(r"\]\(((?:HUMANS\.md|docs/|packages/)[^)]*)\)")
+_INSTALL_LINK_RE = re.compile(r"\]\(((?:HUMANS\.md|docs/|src/)[^)]*)\)")
 
 
 def bundled_skill_dir() -> Path:
@@ -55,7 +55,7 @@ def destinations_for(target: str, home: Path) -> list[tuple[str, Path]]:
 
 
 def rewrite_install_links(text: str) -> str:
-    """Rewrite relative HUMANS/docs/packages links to canonical GitHub blob URLs."""
+    """Rewrite relative HUMANS/docs/src links to canonical GitHub blob URLs."""
 
     def _replace(match: re.Match[str]) -> str:
         rel = match.group(1)

@@ -16,6 +16,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_go.go import (
     GO_DIRECTIVE_ENV,
     GO_TOOLCHAIN_ENV,
@@ -293,7 +294,9 @@ def test_plan_fleet_directive_no_env_vars(tmp_path: Path, make_workspace) -> Non
     assert changes == []
 
 
-def test_plan_fleet_directive_go_upgrade_needed(tmp_path: Path, make_workspace, make_proc) -> None:
+def test_plan_fleet_directive_go_upgrade_needed(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """REPO_OPS_GO_DIRECTIVE=1.25 with module at 1.22 → one Change."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
@@ -312,7 +315,9 @@ def test_plan_fleet_directive_go_upgrade_needed(tmp_path: Path, make_workspace, 
     assert changes[0].to == "1.25"
 
 
-def test_plan_fleet_directive_already_current(tmp_path: Path, make_workspace, make_proc) -> None:
+def test_plan_fleet_directive_already_current(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """Module already at target → no change emitted."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
@@ -389,7 +394,9 @@ def test_plan_fleet_toolchain_no_existing_directive(
     assert changes[0].from_ver == "(none)"
 
 
-def test_plan_fleet_directive_both_vars(tmp_path: Path, make_workspace, make_proc) -> None:
+def test_plan_fleet_directive_both_vars(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """Both REPO_OPS_GO_DIRECTIVE and REPO_OPS_GO_TOOLCHAIN set → two changes."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
@@ -414,7 +421,9 @@ def test_plan_fleet_directive_both_vars(tmp_path: Path, make_workspace, make_pro
 # ---------------------------------------------------------------------------
 
 
-def test_apply_fleet_directive_runs_mod_edit_go(tmp_path: Path, make_workspace, make_proc) -> None:
+def test_apply_fleet_directive_runs_mod_edit_go(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """REPO_OPS_GO_DIRECTIVE triggers go mod edit -go=<ver> + go mod tidy."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     calls_recorded: list[list[str]] = []
@@ -601,7 +610,8 @@ def test_apply_go_fleet_directive_runs_before_dep_upgrade(
 
 def test_issue_118_timeout_resolvers_used_in_gomod_require_paths(
     tmp_path: Path,
-    make_workspace, make_proc,
+    make_workspace,
+    make_proc,
 ) -> None:
     """_gomod_require_paths uses resolve_timeout_check(), honoring env override."""
     from repo_ops_core.constants import TIMEOUT_CHECK

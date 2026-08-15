@@ -22,6 +22,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from repo_ops_container.container import (
     _basic_auth_for_host,
     _compose_build_dockerfiles,

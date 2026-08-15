@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_upgrade.workflow_uses import (
     PinReplacement,
     WorkflowParseError,

@@ -7,6 +7,13 @@ import importlib.metadata
 import sys
 from collections.abc import Callable
 
+from repo_ops._register import register_all
+from repo_ops.install_skill import (
+    build_parser as build_install_skill_parser,
+)
+from repo_ops.install_skill import (
+    main as install_skill_main,
+)
 from repo_ops_audit.audit import build_audit_parser
 from repo_ops_audit.audit import main as audit_main
 from repo_ops_core.cli import build_upgrade_parser
@@ -23,14 +30,6 @@ from repo_ops_lockfiles.sbom import main as sbom_main
 from repo_ops_pushed.audit import build_pushed_parser
 from repo_ops_pushed.audit import main as pushed_main
 from repo_ops_upgrade.run import main_apply, main_plan
-
-from repo_ops._register import register_all
-from repo_ops.install_skill import (
-    build_parser as build_install_skill_parser,
-)
-from repo_ops.install_skill import (
-    main as install_skill_main,
-)
 
 _HANDLERS: dict[str, Callable[[list[str] | None], int | None]] = {
     "inventory": inventory_main,

@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from repo_ops_core.config import _SETTINGS_MAP, coerce_bool_setting, resolve_setting
 from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import discovery as disc_mod

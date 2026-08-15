@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from repo_ops_lockfiles.sbom import (
     _purl_npm,
     _purl_pypi,

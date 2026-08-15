@@ -24,6 +24,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_models.models import Change, Workspace
 
 _ENV_PREFIX = "REPO_OPS_"

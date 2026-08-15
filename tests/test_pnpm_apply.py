@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_js_pnpm.pnpm import (
     _bucket_pnpm_pkg,
     apply_pnpm,

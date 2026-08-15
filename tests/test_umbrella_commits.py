@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_upgrade.post_apply_commit import (
     CommitOutcome,
     commit_umbrella_submodule_pointers,
@@ -40,7 +41,8 @@ def _make_child_outcome(
 
 def test_env_off_produces_no_umbrella_commit(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, init_git_repo,
+    monkeypatch: pytest.MonkeyPatch,
+    init_git_repo,
 ) -> None:
     """When REPO_OPS_COMMIT_UMBRELLA is absent, no umbrella commit is attempted."""
     monkeypatch.delenv("REPO_OPS_COMMIT_UMBRELLA", raising=False)
@@ -78,7 +80,8 @@ def test_env_off_produces_no_umbrella_commit(
 
 def test_no_child_commits_produces_no_umbrella_commit(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, init_git_repo,
+    monkeypatch: pytest.MonkeyPatch,
+    init_git_repo,
 ) -> None:
     """When no child received a commit (all skipped), no umbrella commit runs."""
     monkeypatch.setenv("REPO_OPS_COMMIT_UMBRELLA", "1")
@@ -124,7 +127,8 @@ def test_no_child_commits_produces_no_umbrella_commit(
 
 def test_stages_only_committed_child_gitlinks(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, init_git_repo,
+    monkeypatch: pytest.MonkeyPatch,
+    init_git_repo,
 ) -> None:
     """Stages exactly the 2 gitlink paths for committed children; unrelated dirty
     files and uncommitted-child gitlinks are never touched."""
@@ -218,7 +222,8 @@ def test_stages_only_committed_child_gitlinks(
 
 def test_umbrella_commit_message_shape(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, init_git_repo,
+    monkeypatch: pytest.MonkeyPatch,
+    init_git_repo,
 ) -> None:
     """Commit subject is 'chore(submodules): bump N child pin(s)'; body names children."""
     monkeypatch.setenv("REPO_OPS_COMMIT_UMBRELLA", "1")
@@ -285,7 +290,8 @@ def test_umbrella_commit_message_shape(
 
 def test_dry_run_produces_no_git_add(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, init_git_repo,
+    monkeypatch: pytest.MonkeyPatch,
+    init_git_repo,
 ) -> None:
     """In dry-run mode, outcome is 'dry_run' and no git add/commit is executed."""
     monkeypatch.setenv("REPO_OPS_COMMIT_UMBRELLA", "1")

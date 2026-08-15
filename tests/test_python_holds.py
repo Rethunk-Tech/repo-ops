@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_core.holds import HoldRule
 from repo_ops_models import Workspace
 
@@ -35,7 +36,9 @@ def _uv_ws(tmp_path: Path) -> Workspace:
     )
 
 
-def test_check_uv_lock_filters_held_package_past_ceiling(tmp_path: Path, make_proc) -> None:
+def test_check_uv_lock_filters_held_package_past_ceiling(
+    tmp_path: Path, make_proc
+) -> None:
     from repo_ops_py import uv_lock
 
     stdout = "Resolved 10 packages\nwould upgrade typescript-stub 6.5 -> 7.0\n"
@@ -117,7 +120,8 @@ def test_apply_uv_lock_raises_when_clamp_fails(tmp_path: Path, make_proc) -> Non
 
 
 def test_apply_uv_lock_raises_when_corrective_install_command_fails(
-    tmp_path: Path, make_proc,
+    tmp_path: Path,
+    make_proc,
 ) -> None:
     """Distinct failure mode from 'landed but still over ceiling': the
     corrective lock command itself errors out (e.g. resolver conflict)."""
@@ -371,7 +375,9 @@ def _pip_tools_ws(tmp_path: Path) -> Workspace:
     )
 
 
-def test_apply_pip_tools_passes_hold_constraints_file(tmp_path: Path, make_proc) -> None:
+def test_apply_pip_tools_passes_hold_constraints_file(
+    tmp_path: Path, make_proc
+) -> None:
     from repo_ops_py_pip_tools import pip_tools
 
     (tmp_path / "requirements.in").write_text(

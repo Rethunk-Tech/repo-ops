@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from repo_ops_models import Change, Workspace
 
 IS_ODD_PIN = "0.1.2"

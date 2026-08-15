@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from repo_ops_upgrade.actions import (
     _action_policy_violation,
     _action_policy_violation_local_only,

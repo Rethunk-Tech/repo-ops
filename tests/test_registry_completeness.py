@@ -18,6 +18,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops._register import register_all
 from repo_ops_core.cli import ECO_FILTER_CHOICES, MANAGER_FILTER_CHOICES
 from repo_ops_core.walk import manifest_kinds
@@ -103,7 +104,9 @@ class TestCheckWorkspaceReachability:
     def setup_method(self) -> None:
         register_all()
 
-    def test_check_workspace_pdm_reachable(self, tmp_path: Path, make_workspace) -> None:
+    def test_check_workspace_pdm_reachable(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """check_workspace routes correctly to check_pdm after register_all()."""
         from repo_ops_upgrade.registry import check_workspace
 
@@ -114,7 +117,11 @@ class TestCheckWorkspaceReachability:
             patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
             patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
         ):
-            result = check_workspace(make_workspace(tmp_path, manager="pdm", ecosystem="py", label="test-pdm"))
+            result = check_workspace(
+                make_workspace(
+                    tmp_path, manager="pdm", ecosystem="py", label="test-pdm"
+                )
+            )
 
         assert result.status != "skip", (
             f"pdm workspace was skipped — manager not registered: {result.error}"
@@ -123,7 +130,9 @@ class TestCheckWorkspaceReachability:
             f"pdm checker not found in registry: {result.error}"
         )
 
-    def test_check_workspace_pipenv_reachable(self, tmp_path: Path, make_workspace) -> None:
+    def test_check_workspace_pipenv_reachable(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """check_workspace routes correctly to check_pipenv after register_all()."""
         from repo_ops_upgrade.registry import check_workspace
 
@@ -146,7 +155,11 @@ class TestCheckWorkspaceReachability:
             ),
             patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
         ):
-            result = check_workspace(make_workspace(tmp_path, manager="pipenv", ecosystem="py", label="test-pipenv"))
+            result = check_workspace(
+                make_workspace(
+                    tmp_path, manager="pipenv", ecosystem="py", label="test-pipenv"
+                )
+            )
 
         assert result.status != "skip", (
             f"pipenv workspace was skipped — manager not registered: {result.error}"
@@ -155,7 +168,9 @@ class TestCheckWorkspaceReachability:
             f"pipenv checker not found in registry: {result.error}"
         )
 
-    def test_check_workspace_deno_reachable(self, tmp_path: Path, make_workspace) -> None:
+    def test_check_workspace_deno_reachable(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """check_workspace routes correctly to check_deno after register_all()."""
         from repo_ops_upgrade.registry import check_workspace
 
@@ -166,7 +181,11 @@ class TestCheckWorkspaceReachability:
             patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
             patch("repo_ops_js.deno.run", side_effect=fake_run),
         ):
-            result = check_workspace(make_workspace(tmp_path, manager="deno", ecosystem="deno", label="test-deno"))
+            result = check_workspace(
+                make_workspace(
+                    tmp_path, manager="deno", ecosystem="deno", label="test-deno"
+                )
+            )
 
         assert result.status != "skip", (
             f"deno workspace was skipped — manager not registered: {result.error}"

@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from repo_ops_dependabot.dependabot import (
     DependabotPR,
     _check_superseded,

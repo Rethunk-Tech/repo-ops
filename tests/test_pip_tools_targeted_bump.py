@@ -28,7 +28,9 @@ def test_pip_tools_requirement_preserves_exact_pin_semantics() -> None:
     assert _pip_tools_requirement_satisfied("3.0.0", ">=2.31.0") is True
 
 
-def test_check_pip_tools_reports_direct_constraint_bump(tmp_path: Path, make_workspace) -> None:
+def test_check_pip_tools_reports_direct_constraint_bump(
+    tmp_path: Path, make_workspace
+) -> None:
     _seed_workspace(tmp_path)
 
     def fake_run(cmd, cwd, timeout=None):
@@ -53,7 +55,11 @@ def test_check_pip_tools_reports_direct_constraint_bump(tmp_path: Path, make_wor
             return_value="3.0.0",
         ),
     ):
-        result = check_pip_tools(make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"))
+        result = check_pip_tools(
+            make_workspace(
+                tmp_path, ecosystem="python", manager="pip-tools", label="demo"
+            )
+        )
 
     in_range, behind = result
     assert in_range == []
@@ -61,7 +67,8 @@ def test_check_pip_tools_reports_direct_constraint_bump(tmp_path: Path, make_wor
 
 
 def test_apply_pip_tools_restores_files_when_targeted_compile_fails(
-    tmp_path: Path, make_workspace,
+    tmp_path: Path,
+    make_workspace,
 ) -> None:
     _seed_workspace(tmp_path)
     req_in = tmp_path / "requirements.in"
@@ -95,7 +102,11 @@ def test_apply_pip_tools_restores_files_when_targeted_compile_fails(
         ),
     ):
         try:
-            apply_pip_tools(make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"))
+            apply_pip_tools(
+                make_workspace(
+                    tmp_path, ecosystem="python", manager="pip-tools", label="demo"
+                )
+            )
         except RuntimeError as exc:
             assert "failed" in str(exc)
         else:
@@ -105,7 +116,9 @@ def test_apply_pip_tools_restores_files_when_targeted_compile_fails(
     assert req_txt.read_bytes() == txt_before
 
 
-def test_apply_pip_tools_uses_targeted_upgrade_package(tmp_path: Path, make_workspace) -> None:
+def test_apply_pip_tools_uses_targeted_upgrade_package(
+    tmp_path: Path, make_workspace
+) -> None:
     _seed_workspace(tmp_path)
     candidate = Change("requests", "2.31.0", "3.0.0")
     calls: list[list[str]] = []
@@ -134,7 +147,11 @@ def test_apply_pip_tools_uses_targeted_upgrade_package(tmp_path: Path, make_work
             return_value=[candidate],
         ),
     ):
-        remaining = apply_pip_tools(make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"))
+        remaining = apply_pip_tools(
+            make_workspace(
+                tmp_path, ecosystem="python", manager="pip-tools", label="demo"
+            )
+        )
 
     assert remaining == []
     assert calls[1][0:4] == [

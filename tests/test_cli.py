@@ -8,6 +8,7 @@ from collections.abc import Callable
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops._register import register_all
 from repo_ops_core.cli import (
     ECO_FILTER_HELP,

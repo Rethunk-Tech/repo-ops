@@ -113,7 +113,9 @@ def test_zero_behind_run_resets_aging_and_prunes(tmp_path, monkeypatch):
     _reset_module_cache()
 
 
-def test_process_workspace_records_plan_behind_latest(tmp_path, monkeypatch, make_workspace):
+def test_process_workspace_records_plan_behind_latest(
+    tmp_path, monkeypatch, make_workspace
+):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("REPO_OPS_NO_PROGRESS", "1")
     _reset_module_cache()
@@ -147,7 +149,9 @@ def test_process_workspace_records_plan_behind_latest(tmp_path, monkeypatch, mak
     _reset_module_cache()
 
 
-def test_report_surfaces_score_delta_and_footer_top3(tmp_path, monkeypatch, make_workspace):
+def test_report_surfaces_score_delta_and_footer_top3(
+    tmp_path, monkeypatch, make_workspace
+):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     _reset_module_cache()
     repo = tmp_path / "repo"
@@ -184,7 +188,9 @@ def test_report_surfaces_score_delta_and_footer_top3(tmp_path, monkeypatch, make
     _reset_module_cache()
 
 
-def test_empty_store_keeps_report_output_unchanged(tmp_path, monkeypatch, make_workspace):
+def test_empty_store_keeps_report_output_unchanged(
+    tmp_path, monkeypatch, make_workspace
+):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     _reset_module_cache()
     repo = tmp_path / "repo"
@@ -193,7 +199,9 @@ def test_empty_store_keeps_report_output_unchanged(tmp_path, monkeypatch, make_w
         label="test-repo",
         workspaces=[
             WorkspaceResult(
-                workspace=make_workspace(repo, ecosystem="node", manager="npm", label="test-repo"),
+                workspace=make_workspace(
+                    repo, ecosystem="node", manager="npm", label="test-repo"
+                ),
                 behind_latest=[Change(name="pkg", from_ver="1.0.0", to="2.0.0")],
             )
         ],

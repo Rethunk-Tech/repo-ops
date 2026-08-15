@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from repo_ops_lockfiles.license_policy import main
 
 

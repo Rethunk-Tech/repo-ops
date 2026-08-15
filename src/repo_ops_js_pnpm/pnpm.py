@@ -9,6 +9,9 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
+from ruamel.yaml import YAML
+from ruamel.yaml.error import YAMLError
+
 from repo_ops_core.config import (
     ambient_env,
     coerce_bool_setting,
@@ -38,8 +41,6 @@ from repo_ops_lockfiles.snapshots import (
     snapshot_workspace_files,
 )
 from repo_ops_models import Change, Workspace
-from ruamel.yaml import YAML
-from ruamel.yaml.error import YAMLError
 
 _PNPM_UPDATE_LATEST_ENV = "REPO_OPS_PNPM_UPDATE_LATEST"
 _PNPM_TARGETED_BUMP_ENV = "REPO_OPS_PNPM_TARGETED_BUMP"

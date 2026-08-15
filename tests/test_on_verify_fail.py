@@ -109,7 +109,9 @@ def test_verify_fail_keep_leaves_changes(tmp_path: Path, init_git_repo) -> None:
     assert b"mutated" in lock.read_bytes()
 
 
-def test_apply_json_includes_verify_fail_disposition(tmp_path: Path, capsys, init_git_repo) -> None:
+def test_apply_json_includes_verify_fail_disposition(
+    tmp_path: Path, capsys, init_git_repo
+) -> None:
     _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
     out_file = tmp_path / "apply.json"

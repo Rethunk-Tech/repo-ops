@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_core.discovery import (
     _resolve_common_dirs,
     _resolve_one,

@@ -27,7 +27,7 @@ import re
 import sys
 import uuid
 from collections.abc import Callable, Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -40,7 +40,6 @@ from repo_ops_core.cli import (
 )
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.filesystem import should_exclude, write_json_atomic
-
 from repo_ops_lockfiles.license_enrich import enrich_component
 from repo_ops_lockfiles.parsers import (
     split_name_version,
@@ -361,7 +360,7 @@ def emit_cyclonedx(
 ) -> dict[str, object]:
     """Return a CycloneDX 1.5 BOM dict suitable for JSON serialisation."""
     tv = tool_version or _resolve_tool_version()
-    ts = timestamp or datetime.now(tz=timezone.utc).isoformat()
+    ts = timestamp or datetime.now(tz=UTC).isoformat()
     sn = serial or str(uuid.uuid4())
     return {
         "bomFormat": "CycloneDX",
@@ -418,7 +417,7 @@ def emit_spdx(
 ) -> dict[str, object]:
     """Return an SPDX 2.3 document dict suitable for JSON serialisation."""
     tv = tool_version or _resolve_tool_version()
-    ts = timestamp or datetime.now(tz=timezone.utc).isoformat()
+    ts = timestamp or datetime.now(tz=UTC).isoformat()
     sn = serial or str(uuid.uuid4())
 
     packages: list[dict[str, object]] = []
@@ -598,7 +597,7 @@ def main(argv: list[str] | None = None) -> int:
 
     root_name = Path(roots[0]).name if roots else "unknown"
     tool_version = _resolve_tool_version()
-    timestamp = datetime.now(tz=timezone.utc).isoformat()
+    timestamp = datetime.now(tz=UTC).isoformat()
     serial = str(uuid.uuid4())
 
     kwargs: dict[str, str] = {

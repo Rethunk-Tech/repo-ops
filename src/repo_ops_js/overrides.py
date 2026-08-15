@@ -8,9 +8,8 @@ from pathlib import Path
 
 from repo_ops_core.filesystem import read_json_file, write_json_atomic
 from repo_ops_core.version_utils import normalize_version
-from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
-
 from repo_ops_js.guards import _semver_lt_pre
+from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 
 
 def _override_package_name(name: str) -> str:

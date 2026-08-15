@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+
 from repo_ops_inventory.counting import (
     _python_edges_for_mdir,
     count_dep_edges,
@@ -402,6 +403,7 @@ def test_inventory_json_includes_manifests_and_summary(tmp_path: Path, capsys) -
 def test_inventory_json_out_requires_json(tmp_path: Path) -> None:
     """F083: --json-out without --json is a parser error."""
     import pytest
+
     from repo_ops_inventory.scan import main as inventory_main
 
     with pytest.raises(SystemExit):

@@ -22,6 +22,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from repo_ops_container.container import (
     _cred_helper_name_for_host,
     _ecr_get_login_password,

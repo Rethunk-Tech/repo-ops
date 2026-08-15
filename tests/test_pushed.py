@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
 from repo_ops_core.cli import parse_iso8601
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.git import git_common_dir, repo_label
@@ -38,7 +39,7 @@ def test_parse_iso8601_valid_z_suffix():
 
 def test_parse_iso8601_valid_offset():
     dt = parse_iso8601("2026-05-26T12:00:00+00:00")
-    assert dt == datetime(2026, 5, 26, 12, 0, tzinfo=timezone.utc)
+    assert dt == datetime(2026, 5, 26, 12, 0, tzinfo=UTC)
 
 
 def test_parse_iso8601_rejects_naive():
@@ -841,8 +842,8 @@ def test_pushed_source_gh_collects_push_event_commits(
 
     monkeypatch.setattr(audit.subprocess, "run", fake_run)
     filters = Filters(
-        since_unix=int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()),
-        until_unix=int(datetime(2026, 1, 2, tzinfo=timezone.utc).timestamp()),
+        since_unix=int(datetime(2026, 1, 1, tzinfo=UTC).timestamp()),
+        until_unix=int(datetime(2026, 1, 2, tzinfo=UTC).timestamp()),
     )
 
     assert audit.pushed_commits_for_repo_gh("/fake/repo", filters) == {sha: None}
@@ -891,8 +892,8 @@ def test_pushed_source_gh_compare_fallback_for_empty_event_commits(
 
     monkeypatch.setattr(audit.subprocess, "run", fake_run)
     filters = Filters(
-        since_unix=int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp()),
-        until_unix=int(datetime(2026, 1, 2, tzinfo=timezone.utc).timestamp()),
+        since_unix=int(datetime(2026, 1, 1, tzinfo=UTC).timestamp()),
+        until_unix=int(datetime(2026, 1, 2, tzinfo=UTC).timestamp()),
     )
 
     assert audit.pushed_commits_for_repo_gh("/fake/repo", filters) == {sha: None}

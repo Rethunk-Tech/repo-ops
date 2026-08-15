@@ -6,7 +6,7 @@ Conventions and quick reference for AI coding agents (Cursor, Claude Code, etc.)
 
 ## Quick reference
 
-**When a user requests `repo-ops apply` (or `plan`, `inventory`, etc.), run it directly** — default roots apply when paths are omitted. Do not run `which repo-ops`, read `packages/` source, or open HUMANS.md to discover flags; this file and `repo-ops <subcommand> --help` are enough.
+**When a user requests `repo-ops apply` (or `plan`, `inventory`, etc.), run it directly** — default roots apply when paths are omitted. Do not run `which repo-ops`, read `src/` source, or open HUMANS.md to discover flags; this file and `repo-ops <subcommand> --help` are enough.
 
 | User request | Run immediately |
 | -------------- | ----------------- |
@@ -33,7 +33,7 @@ Conventions and quick reference for AI coding agents (Cursor, Claude Code, etc.)
 
 ### DEFAULT_ROOTS
 
-When no trailing `root_dir` arguments are passed, every subcommand except `install-skill` and `doctor` (`inventory`, `plan`, `apply`, `pushed`, `audit`, `dependabot`, `sbom`, `license`) scans [`DEFAULT_ROOTS`](packages/repo-ops-core/src/repo_ops_core/constants.py):
+When no trailing `root_dir` arguments are passed, every subcommand except `install-skill` and `doctor` (`inventory`, `plan`, `apply`, `pushed`, `audit`, `dependabot`, `sbom`, `license`) scans [`DEFAULT_ROOTS`](src/repo_ops_core/constants.py):
 
 - `/usr/local/src`
 - `~/Projects`
@@ -218,14 +218,14 @@ Discovery and security: [docs/usage.md — Security and discovery](docs/usage.md
 
 - Multiple agents often work concurrently on refactors and extractions.
 - Before editing, run MCP `git_status` to see files others are changing.
-- Avoid broad edits across `packages/repo-ops-upgrade*` and `tests/*` during active refactor passes unless hygiene-critical and coordinated.
+- Avoid broad edits across `src/repo_ops_upgrade*` and `tests/*` during active refactor passes unless hygiene-critical and coordinated.
 - Prefer small, reviewable changes. Batch related edits where safe.
 
 ## Layout and files
 
-Full package map and plugin registration: [docs/architecture.md](docs/architecture.md).
+Full module map and plugin registration: [docs/architecture.md](docs/architecture.md).
 
-**uv workspace** (`packages/*`): installable meta package `packages/repo-ops` (`repo-ops` on PyPI); repo root is not installable (`package = false`). Console script **`repo-ops`** dispatches to `inventory`, `plan`, `apply`, `pushed`, `install-skill`, `audit`, `dependabot`, `sbom`, `license`, `doctor`.
+**One distribution** (`repo-ops`, built from `src/`). The top-level `repo_ops_*` modules are a code-layout choice, not separate installables — they all ship in the same wheel via the `module-name` list in `pyproject.toml`. Console script **`repo-ops`** dispatches to `inventory`, `plan`, `apply`, `pushed`, `install-skill`, `audit`, `dependabot`, `sbom`, `license`, `doctor`.
 
 ## Agent invariants (behavior)
 
@@ -254,15 +254,15 @@ When changing behavior, keep these aligned with code and docs:
 
 Releases cut on `v*` tag push — `release.yml`'s `build` job creates the GitHub Release and uploads `dist/*`.
 
-1. `uv run python scripts/set_version.py bump patch` — bumps all 28 workspace manifests in lockstep (no args = verify no drift).
+1. `uv version --bump patch` — there is one manifest, so there is no drift to check.
 2. Update `CHANGELOG.md`: `## [Unreleased]` → `## [Unreleased]` + `## [X.Y.Z] - <date>`. **Audit the section against `git log vPREV..HEAD`** — the prior batch's consolidation often misses late-landing commits.
-3. Commit `chore(release): vX.Y.Z` naming exactly `pyproject.toml packages/*/pyproject.toml CHANGELOG.md uv.lock`. `uv sync --locked --group dev` must pass (CI gate).
+3. Commit `chore(release): vX.Y.Z` naming exactly `pyproject.toml CHANGELOG.md uv.lock`. `uv sync --locked --group dev` must pass (CI gate).
 4. Full gate firsthand: `uv run pytest -p no:cacheprovider -q` + `uv run ruff check .`.
 5. Annotated tag `git tag -a vX.Y.Z`; push commit, then tag (FF-only).
 6. `release.yml` extracts the Keep-a-Changelog `## [X.Y.Z]` section for
    `vX.Y.Z` and publishes it as the release notes; the build uploads `dist/*`
    only. When those are the only automated notes and assets, no manual
    `gh release edit` or `gh release delete-asset` cleanup is needed.
-7. Reinstall: `uv tool install --force ./packages/repo-ops` (uv tool, not pipx). Verify `repo-ops --version` and smoke any new subcommands.
+7. Reinstall: `uv tool install --force .` (uv tool, not pipx). Verify `repo-ops --version` and smoke any new subcommands.
 
 **PyPI publish is intentionally deferred** (issue #124, open). OIDC trusted-publisher exchange fails with "valid token, but no corresponding publisher" for claims `sub: repo:Rethunk-Tech/repo-ops:environment:pypi`, `workflow_ref: .../release.yml`, `environment: pypi`. Fix is an operator action on PyPI's publishing settings — **do not re-diagnose as a CI defect.**

@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+
 from repo_ops_core.holds import (
     HoldRule,
     load_global_holds,

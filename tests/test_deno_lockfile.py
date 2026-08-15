@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from repo_ops_lockfiles.parsers import versions_deno_lock
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"

@@ -47,7 +47,6 @@ from repo_ops_core.cli import (
 )
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.filesystem import read_json_file, read_toml_file
-
 from repo_ops_lockfiles.license_enrich import classify_license_text, enrich_license
 from repo_ops_lockfiles.parsers import (
     split_name_version,

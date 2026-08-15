@@ -30,16 +30,15 @@ from repo_ops_lockfiles.snapshots import (
     snapshot_workspace_files,
 )
 from repo_ops_models import DIRTY_SKIP_MARKER, Workspace, WorkspaceResult
-from repo_ops_upgrade_remediations_core.remediations import (
-    dispatch as _dispatch_remediations,
-)
-
 from repo_ops_upgrade import registry as ecosystems
 from repo_ops_upgrade import verify as verify_mod
 from repo_ops_upgrade.post_apply import (
     classify_verify_fail_disposition,
     collect_changes_after_apply,
     revert_workspace_after_verify_fail,
+)
+from repo_ops_upgrade_remediations_core.remediations import (
+    dispatch as _dispatch_remediations,
 )
 
 logger = logging.getLogger(__name__)

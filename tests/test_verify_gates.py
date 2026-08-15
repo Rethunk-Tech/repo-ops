@@ -15,6 +15,7 @@ from subprocess import CompletedProcess
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_core.constants import (
     _TIMEOUT_APPLY_ENV,
     _TIMEOUT_CHECK_ENV,
@@ -48,7 +49,9 @@ def _fail(stdout: str = "", stderr: str = "err") -> CompletedProcess[str]:
 
 
 class TestGoVerifyGates:
-    def test_go_build_runs_after_mod_verify(self, tmp_path: Path, make_workspace) -> None:
+    def test_go_build_runs_after_mod_verify(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """go build ./... must be called after go mod verify when both pass."""
         calls: list[list[str]] = []
 
@@ -66,7 +69,9 @@ class TestGoVerifyGates:
         assert calls[0] == ["go", "mod", "verify"]
         assert calls[1] == ["go", "build", "./..."]
 
-    def test_go_mod_verify_failure_short_circuits(self, tmp_path: Path, make_workspace) -> None:
+    def test_go_mod_verify_failure_short_circuits(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """go build must NOT run if go mod verify fails."""
         calls: list[list[str]] = []
 
@@ -86,7 +91,9 @@ class TestGoVerifyGates:
         assert "checksum" in result
         assert not any(c == ["go", "build", "./..."] for c in calls)
 
-    def test_go_build_failure_returns_error(self, tmp_path: Path, make_workspace) -> None:
+    def test_go_build_failure_returns_error(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """go build failure must surface as an error string."""
 
         def fake_run(
@@ -105,7 +112,9 @@ class TestGoVerifyGates:
         assert result is not None
         assert "undefined" in result
 
-    def test_go_test_runs_after_build_when_verify_test(self, tmp_path: Path, make_workspace) -> None:
+    def test_go_test_runs_after_build_when_verify_test(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """go test ./... must run after go build when verify_test=True."""
         calls: list[list[str]] = []
 
@@ -128,7 +137,9 @@ class TestGoVerifyGates:
         assert cmd_strs.index("go mod verify") < cmd_strs.index("go build ./...")
         assert cmd_strs.index("go build ./...") < cmd_strs.index("go test ./...")
 
-    def test_go_build_skipped_when_mod_verify_fails(self, tmp_path: Path, make_workspace) -> None:
+    def test_go_build_skipped_when_mod_verify_fails(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """go test must NOT run if go build fails."""
         called_test = False
 
@@ -150,7 +161,9 @@ class TestGoVerifyGates:
 
 
 class TestRustVerifyGates:
-    def test_rust_test_runs_after_check_when_verify_test(self, tmp_path: Path, make_workspace) -> None:
+    def test_rust_test_runs_after_check_when_verify_test(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """cargo test must run after cargo check when verify_test=True."""
         calls: list[list[str]] = []
 
@@ -180,7 +193,9 @@ class TestUvRuffGate:
     def _write_pyproject(self, path: Path, content: str) -> None:
         (path / "pyproject.toml").write_text(content, encoding="utf-8")
 
-    def test_hatch_fast_replaces_tool_ruff_only_gate(self, tmp_path: Path, make_workspace) -> None:
+    def test_hatch_fast_replaces_tool_ruff_only_gate(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """uv uses the shared fast stack instead of a uv-only ruff branch."""
         self._write_pyproject(
             tmp_path,
@@ -203,7 +218,9 @@ class TestUvRuffGate:
         assert ["uv", "run", "check"] in calls
         assert not any(cmd[:4] == ["uv", "run", "ruff", "check"] for cmd in calls)
 
-    def test_ruff_runs_when_ruff_in_dev_deps(self, tmp_path: Path, make_workspace) -> None:
+    def test_ruff_runs_when_ruff_in_dev_deps(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """ruff check must run when ruff appears in uv dev-dependencies."""
         self._write_pyproject(
             tmp_path,
@@ -224,7 +241,9 @@ class TestUvRuffGate:
         assert result is None
         assert any(cmd[:4] == ["uv", "run", "ruff", "check"] for cmd in calls)
 
-    def test_ruff_skipped_when_not_configured(self, tmp_path: Path, make_workspace) -> None:
+    def test_ruff_skipped_when_not_configured(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """ruff check must NOT run when ruff is absent from pyproject.toml."""
         self._write_pyproject(tmp_path, '[project]\nname = "myapp"\n')
         calls: list[list[str]] = []
@@ -263,7 +282,9 @@ class TestUvRuffGate:
         assert result is not None
         assert "error" in result.lower() or "ruff" in result.lower()
 
-    def test_uv_sync_failure_short_circuits_ruff(self, tmp_path: Path, make_workspace) -> None:
+    def test_uv_sync_failure_short_circuits_ruff(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """ruff check must NOT run when uv sync --locked fails."""
         self._write_pyproject(tmp_path, "[tool.ruff]\n")
         called_ruff = False
@@ -304,7 +325,8 @@ class TestPythonManagerFastGates:
         tmp_path: Path,
         manager: str,
         lock_cmd: list[str],
-        fast_cmd: list[str], make_workspace,
+        fast_cmd: list[str],
+        make_workspace,
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
@@ -346,7 +368,8 @@ class TestPythonManagerFastGates:
         tmp_path: Path,
         manager: str,
         lock_cmd: list[str],
-        fast_cmd: list[str], make_workspace,
+        fast_cmd: list[str],
+        make_workspace,
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
@@ -384,7 +407,8 @@ class TestPythonManagerFastGates:
         self,
         tmp_path: Path,
         manager: str,
-        binary: str, make_workspace,
+        binary: str,
+        make_workspace,
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
@@ -418,7 +442,8 @@ class TestPythonManagerFastGates:
         tmp_path: Path,
         manager: str,
         lock_cmd: list[str],
-        fast_cmd: list[str], make_workspace,
+        fast_cmd: list[str],
+        make_workspace,
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
@@ -583,7 +608,9 @@ class TestVerifyHatchFast:
         (path / "pyproject.toml").write_text(content, encoding="utf-8")
 
     def _hatch_ws(self, tmp_path: Path, make_workspace) -> Workspace:
-        return make_workspace(tmp_path, manager="hatch", ecosystem="python", label="demo")
+        return make_workspace(
+            tmp_path, manager="hatch", ecosystem="python", label="demo"
+        )
 
     def test_check_script_invoked(self, tmp_path: Path, make_workspace) -> None:
         """'check' script in [project.scripts] must be invoked."""
@@ -648,7 +675,9 @@ class TestVerifyHatchFast:
         assert result is None
         assert any(c == ["uv", "run", "mypy", "."] for c in calls)
 
-    def test_mypy_skipped_when_test_script_present(self, tmp_path: Path, make_workspace) -> None:
+    def test_mypy_skipped_when_test_script_present(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """'test' script takes priority over mypy heuristic."""
         self._write_pyproject(
             tmp_path,
@@ -671,7 +700,9 @@ class TestVerifyHatchFast:
         assert any(c == ["uv", "run", "test"] for c in calls)
         assert not any(c == ["uv", "run", "mypy", "."] for c in calls)
 
-    def test_check_script_failure_returns_error(self, tmp_path: Path, make_workspace) -> None:
+    def test_check_script_failure_returns_error(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """check script failure must surface an error string."""
         self._write_pyproject(
             tmp_path,
@@ -692,7 +723,9 @@ class TestVerifyHatchFast:
         assert result is not None
         assert "check" in result or "type" in result
 
-    def test_hatch_env_deps_mypy_recognised(self, tmp_path: Path, make_workspace) -> None:
+    def test_hatch_env_deps_mypy_recognised(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """mypy in hatch env dependencies is still recognised as a dev dep."""
         self._write_pyproject(
             tmp_path,
@@ -748,7 +781,9 @@ class TestVerifyHatchFast:
             for c in calls
         )
 
-    def test_hatch_env_deps_pyrefly_recognised(self, tmp_path: Path, make_workspace) -> None:
+    def test_hatch_env_deps_pyrefly_recognised(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """pyrefly in hatch env dependencies is still recognised as a dev dep."""
         self._write_pyproject(
             tmp_path,
@@ -769,7 +804,9 @@ class TestVerifyHatchFast:
         assert result is None
         assert any(c == ["uv", "run", "pyrefly", "check", "."] for c in calls)
 
-    def test_pyrefly_skipped_when_test_script_present(self, tmp_path: Path, make_workspace) -> None:
+    def test_pyrefly_skipped_when_test_script_present(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """'test' script takes priority over pyrefly heuristic."""
         self._write_pyproject(
             tmp_path,
@@ -792,7 +829,9 @@ class TestVerifyHatchFast:
         assert any(c == ["uv", "run", "test"] for c in calls)
         assert not any(c == ["uv", "run", "pyrefly", "check", "."] for c in calls)
 
-    def test_mypy_takes_priority_over_pyrefly(self, tmp_path: Path, make_workspace) -> None:
+    def test_mypy_takes_priority_over_pyrefly(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
         """When both mypy and pyrefly are present in dev deps, the mypy branch wins (checked first)."""
         self._write_pyproject(
             tmp_path,

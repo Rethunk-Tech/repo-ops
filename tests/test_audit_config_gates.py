@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_audit.audit import VulnCount, WorkspaceResult, main
 
 

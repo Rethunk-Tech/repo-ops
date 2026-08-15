@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_container.container import _replace_tag_in_line, apply_container
 from repo_ops_models import Workspace
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_js_pnpm.pnpm import (
     apply_pnpm,
     check_pnpm,
@@ -36,7 +37,6 @@ def _held_rule(**overrides):
     defaults = {"package": "typescript", "max_version": "6"}
     defaults.update(overrides)
     return HoldRule(**defaults)
-
 
 
 def test_targeted_bump_uses_hold_ceiling_instead_of_latest(
@@ -103,7 +103,9 @@ def test_check_pnpm_does_not_promote_held_package_past_ceiling(
             return_value=([], [Change("typescript", "6.5.0", "7.0.0")]),
         ),
     ):
-        changes, behind = check_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
+        changes, behind = check_pnpm(
+            make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
+        )
     assert "typescript" not in {c.name for c in changes}
     assert behind == [Change("typescript", "6.5.0", "7.0.0")]
 
@@ -120,7 +122,9 @@ def test_check_pnpm_promotes_held_package_within_ceiling(
             return_value=([], [Change("typescript", "6.5.0", "6.9.0")]),
         ),
     ):
-        changes, behind = check_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
+        changes, behind = check_pnpm(
+            make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
+        )
     assert "typescript" in {c.name for c in changes}
     assert behind == []
 
@@ -239,7 +243,9 @@ def test_targeted_bump_releases_unheld_overrides_pin(
     assert "is-odd" not in pkg_after.get("pnpm", {}).get("overrides", {})
 
 
-def test_targeted_bump_keeps_held_overrides_pin(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_keeps_held_overrides_pin(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     """An active hold leaves the package's pnpm overrides pin in place."""
     _seed_is_odd_pin(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")

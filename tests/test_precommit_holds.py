@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_core.holds import HoldRule
 from repo_ops_upgrade import precommit
 
@@ -29,9 +30,13 @@ def _held_rule(**overrides) -> HoldRule:
     return HoldRule(**defaults)
 
 
-def test_check_precommit_filters_tag_rev_above_ceiling(tmp_path, make_workspace) -> None:
+def test_check_precommit_filters_tag_rev_above_ceiling(
+    tmp_path, make_workspace
+) -> None:
     _precommit_config(tmp_path)
-    ws = make_workspace(tmp_path, ecosystem="precommit", manager="precommit", label="repo")
+    ws = make_workspace(
+        tmp_path, ecosystem="precommit", manager="precommit", label="repo"
+    )
 
     with (
         patch.object(precommit, "_global_holds_cached", return_value=(_held_rule(),)),
@@ -45,9 +50,13 @@ def test_check_precommit_filters_tag_rev_above_ceiling(tmp_path, make_workspace)
         assert precommit.check_precommit(ws) == []
 
 
-def test_check_precommit_surfaces_tag_clamp_at_upstream_latest(tmp_path, make_workspace) -> None:
+def test_check_precommit_surfaces_tag_clamp_at_upstream_latest(
+    tmp_path, make_workspace
+) -> None:
     _precommit_config(tmp_path, rev="v1.5.0")
-    ws = make_workspace(tmp_path, ecosystem="precommit", manager="precommit", label="repo")
+    ws = make_workspace(
+        tmp_path, ecosystem="precommit", manager="precommit", label="repo"
+    )
 
     with (
         patch.object(precommit, "_global_holds_cached", return_value=(_held_rule(),)),
@@ -69,7 +78,9 @@ def test_check_precommit_filters_sha_refresh_above_ceiling(
     tmp_path, monkeypatch, make_workspace
 ) -> None:
     _precommit_config(tmp_path, rev="a" * 40)
-    ws = make_workspace(tmp_path, ecosystem="precommit", manager="precommit", label="repo")
+    ws = make_workspace(
+        tmp_path, ecosystem="precommit", manager="precommit", label="repo"
+    )
     refs = [
         ("a" * 40, "v1.0.0"),
         ("b" * 40, "v1.5.0"),
@@ -91,7 +102,9 @@ def test_check_precommit_surfaces_sha_clamp_at_upstream_latest(
     current_sha = "a" * 40
     target_sha = "b" * 40
     _precommit_config(tmp_path, rev=current_sha)
-    ws = make_workspace(tmp_path, ecosystem="precommit", manager="precommit", label="repo")
+    ws = make_workspace(
+        tmp_path, ecosystem="precommit", manager="precommit", label="repo"
+    )
     monkeypatch.delenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", raising=False)
     refs = [
         (target_sha, "v1.4.0"),
@@ -110,9 +123,13 @@ def test_check_precommit_surfaces_sha_clamp_at_upstream_latest(
     assert changes[0].to == target_sha
 
 
-def test_apply_precommit_clamps_tag_rev_above_ceiling(tmp_path, monkeypatch, make_workspace) -> None:
+def test_apply_precommit_clamps_tag_rev_above_ceiling(
+    tmp_path, monkeypatch, make_workspace
+) -> None:
     config = _precommit_config(tmp_path, rev="v1.5.0")
-    ws = make_workspace(tmp_path, ecosystem="precommit", manager="precommit", label="repo")
+    ws = make_workspace(
+        tmp_path, ecosystem="precommit", manager="precommit", label="repo"
+    )
     monkeypatch.delenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", raising=False)
 
     with (
@@ -133,7 +150,9 @@ def test_apply_precommit_raises_when_no_tag_satisfies_ceiling(
     tmp_path, monkeypatch, make_workspace
 ) -> None:
     _precommit_config(tmp_path, rev="v1.5.0")
-    ws = make_workspace(tmp_path, ecosystem="precommit", manager="precommit", label="repo")
+    ws = make_workspace(
+        tmp_path, ecosystem="precommit", manager="precommit", label="repo"
+    )
     monkeypatch.delenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", raising=False)
 
     with (
@@ -156,7 +175,9 @@ def test_apply_precommit_raises_when_hold_tag_fetch_fails(
     tmp_path, monkeypatch, make_workspace
 ) -> None:
     _precommit_config(tmp_path, rev="v1.5.0")
-    ws = make_workspace(tmp_path, ecosystem="precommit", manager="precommit", label="repo")
+    ws = make_workspace(
+        tmp_path, ecosystem="precommit", manager="precommit", label="repo"
+    )
     monkeypatch.delenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", raising=False)
 
     with (
@@ -175,7 +196,9 @@ def test_apply_precommit_clamps_resolvable_sha_above_ceiling(
     tmp_path, monkeypatch, make_workspace
 ) -> None:
     config = _precommit_config(tmp_path, rev="a" * 40)
-    ws = make_workspace(tmp_path, ecosystem="precommit", manager="precommit", label="repo")
+    ws = make_workspace(
+        tmp_path, ecosystem="precommit", manager="precommit", label="repo"
+    )
     refs = [
         ("a" * 40, "v1.5.0"),
         ("b" * 40, "v1.4.0"),
@@ -193,7 +216,9 @@ def test_apply_precommit_clamps_resolvable_sha_above_ceiling(
     assert f"rev: {'b' * 40}" in config.read_text(encoding="utf-8")
 
 
-def test_apply_precommit_does_not_clamp_expired_hold(tmp_path, monkeypatch, make_workspace) -> None:
+def test_apply_precommit_does_not_clamp_expired_hold(
+    tmp_path, monkeypatch, make_workspace
+) -> None:
     config = _precommit_config(tmp_path, rev="v1.5.0")
     hold_config = tmp_path / ".repo-ops.toml"
     hold_config.write_text(
@@ -201,7 +226,9 @@ def test_apply_precommit_does_not_clamp_expired_hold(tmp_path, monkeypatch, make
         'until = "2020-01-01"\necosystem = "precommit"\n',
         encoding="utf-8",
     )
-    ws = make_workspace(tmp_path, ecosystem="precommit", manager="precommit", label="repo")
+    ws = make_workspace(
+        tmp_path, ecosystem="precommit", manager="precommit", label="repo"
+    )
     monkeypatch.delenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", raising=False)
 
     with (
@@ -228,7 +255,9 @@ def test_expired_precommit_hold_is_ignored_without_rewriting_hold_config(
         encoding="utf-8",
     )
     original_hold_config = hold_config.read_bytes()
-    ws = make_workspace(tmp_path, ecosystem="precommit", manager="precommit", label="repo")
+    ws = make_workspace(
+        tmp_path, ecosystem="precommit", manager="precommit", label="repo"
+    )
     monkeypatch.delenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", raising=False)
 
     with (

@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+
 from repo_ops_doctor import doctor
 from repo_ops_doctor.doctor import (
     BinarySpec,

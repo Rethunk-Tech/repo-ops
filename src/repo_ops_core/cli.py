@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from repo_ops_core.constants import DEFAULT_ROOTS
@@ -168,7 +168,7 @@ def parse_iso8601(value: str) -> datetime:
         raise argparse.ArgumentTypeError(
             f"Datetime {value!r} has no timezone; use e.g. 2026-05-26T00:00Z or +00:00 suffix"
         )
-    return dt.astimezone(timezone.utc)
+    return dt.astimezone(UTC)
 
 
 def looks_like_find_predicate(value: str) -> bool:

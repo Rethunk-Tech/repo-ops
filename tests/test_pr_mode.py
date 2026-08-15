@@ -10,6 +10,7 @@ from subprocess import CompletedProcess
 from unittest.mock import call, patch
 
 import pytest
+
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade.pr import (
     PROutcome,

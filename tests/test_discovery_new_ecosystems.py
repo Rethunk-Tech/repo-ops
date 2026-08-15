@@ -57,7 +57,9 @@ def test_discover_pdm_with_pdm_lock(tmp_path: Path, init_git_repo) -> None:
     assert pdm_found[0].path == repo.resolve()
 
 
-def test_discover_pdm_lock_without_pyproject_triggers_py(tmp_path: Path, init_git_repo) -> None:
+def test_discover_pdm_lock_without_pyproject_triggers_py(
+    tmp_path: Path, init_git_repo
+) -> None:
     """pdm.lock alone (no pyproject.toml) also triggers consider_py and yields pdm."""
     repo = tmp_path / "org" / "pdm-lock-only"
     init_git_repo(repo)
@@ -73,7 +75,8 @@ def test_discover_pdm_lock_without_pyproject_triggers_py(tmp_path: Path, init_gi
 
 
 def test_discover_pdm_tool_section_without_lock_skips_accurately(
-    tmp_path: Path, init_git_repo,
+    tmp_path: Path,
+    init_git_repo,
 ) -> None:
     """pyproject.toml with [tool.pdm] but no pdm.lock → skip with accurate message."""
     repo = tmp_path / "org" / "pdm-no-lock"
@@ -119,7 +122,9 @@ def test_discover_pipenv_with_lock(tmp_path: Path, init_git_repo) -> None:
     assert pipenv_found[0].path == repo.resolve()
 
 
-def test_discover_pipenv_no_lock_skips_with_pipenv_reason(tmp_path: Path, init_git_repo) -> None:
+def test_discover_pipenv_no_lock_skips_with_pipenv_reason(
+    tmp_path: Path, init_git_repo
+) -> None:
     """Pipfile without Pipfile.lock → skip with Pipfile/pipenv reason (not pyproject msg)."""
     repo = tmp_path / "org" / "pipenv-no-lock"
     init_git_repo(repo)

@@ -15,6 +15,7 @@ import subprocess
 import textwrap
 
 import pytest
+
 from repo_ops_models import Workspace
 from repo_ops_rust.rust import check_rust
 

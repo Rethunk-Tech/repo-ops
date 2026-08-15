@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_js.workspaces import corepack_prepare
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade import registry

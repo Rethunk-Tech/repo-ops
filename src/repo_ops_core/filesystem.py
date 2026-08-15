@@ -5,27 +5,11 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from collections.abc import Callable
+import tomllib
 from pathlib import Path
 from typing import Any
 
 from repo_ops_core.constants import EXCLUDE_PATH_FRAGMENTS
-
-
-def load_toml_parser(importer: Callable[[str], Any] | None = None) -> Any | None:
-    if importer is None:
-        importer = __import__
-    try:
-        return importer("tomllib")
-    except ModuleNotFoundError:
-        try:
-            return importer("tomli")
-        except ImportError:
-            return None
-
-
-_tomllib: Any | None = load_toml_parser()
-TOML_AVAILABLE = _tomllib is not None
 
 
 def write_json_atomic(path: Path, payload: Any, *, compact: bool = False) -> Path:
@@ -67,10 +51,8 @@ def read_json_file(path: Path) -> dict[str, Any] | None:
 
 
 def read_toml_file(path: Path) -> dict[str, Any] | None:
-    if _tomllib is None:
-        return None
     try:
-        data = _tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
+        data = tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
     except Exception:
         return None
     return data if isinstance(data, dict) else None

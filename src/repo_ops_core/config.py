@@ -10,11 +10,6 @@ When both files exist, ``pyproject.toml``'s ``[tool.repo-ops]`` table takes prec
 over ``.repo-ops.toml`` on a per-key basis (pyproject value wins for any key present
 in both files).
 
-TOML parsing uses the stdlib ``tomllib`` on Python 3.11+, or the third-party
-``tomli`` package on 3.10. When neither is available, config files are skipped
-with a one-time warning (sidecar keys already loaded before a pyproject probe
-are still returned — see ``load_repo_config``).
-
 Package version-ceiling ("hold") rules use the same global/repo files via a
 ``[[hold]]`` array-of-tables key, resolved by ``repo_ops_core.holds`` — see
 that module's docstring for the rule schema and precedence.
@@ -23,7 +18,6 @@ that module's docstring for the rule schema and precedence.
 from __future__ import annotations
 
 import os
-import warnings
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -37,7 +31,7 @@ from repo_ops_core.constants import (
     TIMEOUT_CHECK,
     TIMEOUT_VERIFY,
 )
-from repo_ops_core.filesystem import TOML_AVAILABLE, read_toml_file
+from repo_ops_core.filesystem import read_toml_file
 
 # ---------------------------------------------------------------------------
 # TOML loading helpers
@@ -46,25 +40,7 @@ from repo_ops_core.filesystem import TOML_AVAILABLE, read_toml_file
 
 def _load_toml(path: Path) -> dict[str, Any]:
     """Load a TOML file; return empty dict on any error."""
-    if not TOML_AVAILABLE:
-        return {}
     return read_toml_file(path) or {}
-
-
-_warned: bool = False
-
-
-def _warn_no_tomllib_once() -> None:
-    """Emit a one-time warning when tomllib is unavailable (Python < 3.11 + no tomli)."""
-    global _warned
-    if _warned:
-        return
-    _warned = True
-    warnings.warn(
-        "repo-ops config file support requires Python 3.11+ (or the 'tomli' package on 3.10); "
-        "config files will be ignored for this run.",
-        stacklevel=3,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -83,9 +59,6 @@ def load_global_config() -> dict[str, Any]:
     path = _global_config_path()
     if not path.is_file():
         return {}
-    if not TOML_AVAILABLE:
-        _warn_no_tomllib_once()
-        return {}
     return _load_toml(path)
 
 
@@ -98,9 +71,6 @@ def load_dot_repo_ops_config(repo_root: Path) -> dict[str, Any]:
     """
     sidecar = repo_root / ".repo-ops.toml"
     if not sidecar.is_file():
-        return {}
-    if not TOML_AVAILABLE:
-        _warn_no_tomllib_once()
         return {}
     return _load_toml(sidecar)
 
@@ -116,11 +86,6 @@ def load_repo_config(repo_root: Path) -> dict[str, Any]:
 
     pyproject = repo_root / "pyproject.toml"
     if not pyproject.is_file():
-        return sidecar_cfg
-    if not TOML_AVAILABLE:
-        # pyproject cannot be parsed, but a sidecar already loaded above must
-        # still apply (non-Python repos often use only .repo-ops.toml).
-        _warn_no_tomllib_once()
         return sidecar_cfg
     raw = _load_toml(pyproject)
     tool_section: dict[str, Any] = cast(dict[str, Any], raw.get("tool", {}))

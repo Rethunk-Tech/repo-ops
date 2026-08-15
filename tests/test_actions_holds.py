@@ -4,6 +4,7 @@ import re
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_core.holds import HoldRule
 from repo_ops_upgrade import actions
 

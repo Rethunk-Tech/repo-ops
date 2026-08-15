@@ -8,7 +8,9 @@ from unittest.mock import patch
 from repo_ops_upgrade.verify import verify_workspace
 
 
-def test_pip_tools_verify_detects_drift(tmp_path: Path, make_workspace, make_proc) -> None:
+def test_pip_tools_verify_detects_drift(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """verify_workspace must return an error string when requirements.txt drifts from compiled output."""
     req_in = tmp_path / "requirements.in"
     req_in.write_text("requests\n", encoding="utf-8")
@@ -37,7 +39,9 @@ def test_pip_tools_verify_detects_drift(tmp_path: Path, make_workspace, make_pro
     assert "requests" in result
 
 
-def test_pip_tools_verify_passes_when_in_sync(tmp_path: Path, make_workspace, make_proc) -> None:
+def test_pip_tools_verify_passes_when_in_sync(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """verify_workspace must return None when requirements.txt matches compiled output."""
     req_in = tmp_path / "requirements.in"
     req_in.write_text("requests\n", encoding="utf-8")

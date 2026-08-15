@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 
 
@@ -30,7 +31,8 @@ def _fake_run(captured: list[dict]):
 
 def test_timeout_check_env_override_uv(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, make_workspace,
+    monkeypatch: pytest.MonkeyPatch,
+    make_workspace,
 ) -> None:
     """REPO_OPS_TIMEOUT_CHECK overrides the timeout passed to run() in check_uv."""
     monkeypatch.setenv("REPO_OPS_TIMEOUT_CHECK", "42")
@@ -49,7 +51,8 @@ def test_timeout_check_env_override_uv(
 
 def test_timeout_check_env_override_rust(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, make_workspace,
+    monkeypatch: pytest.MonkeyPatch,
+    make_workspace,
 ) -> None:
     """REPO_OPS_TIMEOUT_CHECK overrides the timeout passed to run() in check_rust."""
     monkeypatch.setenv("REPO_OPS_TIMEOUT_CHECK", "77")
@@ -59,7 +62,9 @@ def test_timeout_check_env_override_rust(
     from repo_ops_rust.rust import check_rust
 
     with patch("repo_ops_rust.rust.run", side_effect=_fake_run(captured)):
-        check_rust(make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="demo"))
+        check_rust(
+            make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="demo")
+        )
 
     assert captured, "run() was never called"
     assert captured[0]["timeout"] == 77, (
@@ -69,7 +74,8 @@ def test_timeout_check_env_override_rust(
 
 def test_timeout_check_env_override_poetry(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, make_workspace,
+    monkeypatch: pytest.MonkeyPatch,
+    make_workspace,
 ) -> None:
     """REPO_OPS_TIMEOUT_CHECK overrides the timeout passed to run() in check_poetry."""
     monkeypatch.setenv("REPO_OPS_TIMEOUT_CHECK", "55")
@@ -81,7 +87,9 @@ def test_timeout_check_env_override_poetry(
         patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry"),
         patch("repo_ops_py_poetry.poetry.run", side_effect=_fake_run(captured)),
     ):
-        check_poetry(make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo"))
+        check_poetry(
+            make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo")
+        )
 
     assert captured, "run() was never called"
     assert captured[0]["timeout"] == 55
@@ -89,7 +97,8 @@ def test_timeout_check_env_override_poetry(
 
 def test_timeout_check_env_override_bun(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, make_workspace,
+    monkeypatch: pytest.MonkeyPatch,
+    make_workspace,
 ) -> None:
     """REPO_OPS_TIMEOUT_CHECK overrides the timeout passed to run() in check_bun."""
     monkeypatch.setenv("REPO_OPS_TIMEOUT_CHECK", "33")
@@ -111,7 +120,8 @@ def test_timeout_check_env_override_bun(
 
 def test_timeout_apply_env_override_uv(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, make_workspace,
+    monkeypatch: pytest.MonkeyPatch,
+    make_workspace,
 ) -> None:
     """REPO_OPS_TIMEOUT_APPLY overrides the timeout passed to run() in apply_uv."""
     monkeypatch.setenv("REPO_OPS_TIMEOUT_APPLY", "99")
@@ -130,7 +140,8 @@ def test_timeout_apply_env_override_uv(
 
 def test_timeout_apply_env_override_rust(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, make_workspace,
+    monkeypatch: pytest.MonkeyPatch,
+    make_workspace,
 ) -> None:
     """REPO_OPS_TIMEOUT_APPLY overrides the timeout passed to run() in apply_rust."""
     monkeypatch.setenv("REPO_OPS_TIMEOUT_APPLY", "88")
@@ -140,7 +151,9 @@ def test_timeout_apply_env_override_rust(
     from repo_ops_rust.rust import apply_rust
 
     with patch("repo_ops_rust.rust.run", side_effect=_fake_run(captured)):
-        apply_rust(make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="demo"))
+        apply_rust(
+            make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="demo")
+        )
 
     assert captured, "run() was never called"
     assert all(c["timeout"] == 88 for c in captured)
@@ -148,7 +161,8 @@ def test_timeout_apply_env_override_rust(
 
 def test_timeout_apply_env_override_poetry(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, make_workspace,
+    monkeypatch: pytest.MonkeyPatch,
+    make_workspace,
 ) -> None:
     """REPO_OPS_TIMEOUT_APPLY overrides the timeout passed to run() in apply_poetry."""
     monkeypatch.setenv("REPO_OPS_TIMEOUT_APPLY", "66")
@@ -160,7 +174,9 @@ def test_timeout_apply_env_override_poetry(
         patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry"),
         patch("repo_ops_py_poetry.poetry.run", side_effect=_fake_run(captured)),
     ):
-        apply_poetry(make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo"))
+        apply_poetry(
+            make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo")
+        )
 
     assert captured, "run() was never called"
     assert all(c["timeout"] == 66 for c in captured)
@@ -173,7 +189,8 @@ def test_timeout_apply_env_override_poetry(
 
 def test_timeout_check_default_unchanged(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, make_workspace,
+    monkeypatch: pytest.MonkeyPatch,
+    make_workspace,
 ) -> None:
     """Without env override, check functions use TIMEOUT_CHECK."""
     monkeypatch.delenv("REPO_OPS_TIMEOUT_CHECK", raising=False)
@@ -189,7 +206,8 @@ def test_timeout_check_default_unchanged(
 
 def test_timeout_apply_default_unchanged(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch, make_workspace,
+    monkeypatch: pytest.MonkeyPatch,
+    make_workspace,
 ) -> None:
     """Without env override, apply functions use TIMEOUT_APPLY."""
     monkeypatch.delenv("REPO_OPS_TIMEOUT_APPLY", raising=False)
@@ -199,6 +217,8 @@ def test_timeout_apply_default_unchanged(
     from repo_ops_rust.rust import apply_rust
 
     with patch("repo_ops_rust.rust.run", side_effect=_fake_run(captured)):
-        apply_rust(make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="demo"))
+        apply_rust(
+            make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="demo")
+        )
 
     assert captured[0]["timeout"] == TIMEOUT_APPLY

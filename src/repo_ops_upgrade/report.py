@@ -6,7 +6,7 @@ import contextlib
 import json
 import os
 import tempfile
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from functools import cache
 from pathlib import Path
 from typing import Any, Literal
@@ -21,7 +21,6 @@ from repo_ops_core.holds import (
 from repo_ops_core.state import cache_get_dirty_skip, cache_get_staleness
 from repo_ops_core.table import column_width, format_cell
 from repo_ops_models import DIRTY_SKIP_MARKER, RepoBundle, Workspace, WorkspaceResult
-
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 
 UpgradeMode = Literal["plan", "apply"]
@@ -389,7 +388,7 @@ def build_json_payload(
     ]
     payload: dict[str, Any] = {
         "schema_version": 1,
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "roots": roots,
         "mode": mode,
         "summary": build_run_summary(

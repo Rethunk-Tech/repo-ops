@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_js_npm.npm import (
     apply_npm,
     clear_npm_audit_version_overrides,

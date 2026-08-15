@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_js_bun.bun import (
     apply_bun,
     check_bun,
@@ -33,7 +34,6 @@ def _held_rule(**overrides):
     defaults = {"package": "typescript", "max_version": "6"}
     defaults.update(overrides)
     return HoldRule(**defaults)
-
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +291,9 @@ def test_targeted_bump_releases_unheld_overrides_pin(
     assert "is-odd" not in pkg_after.get("overrides", {})
 
 
-def test_targeted_bump_keeps_held_overrides_pin(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_keeps_held_overrides_pin(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     """An active hold leaves its overrides pin untouched during retry."""
     _seed_is_odd_pin(tmp_path)
     monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")

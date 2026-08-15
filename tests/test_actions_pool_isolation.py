@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+
 from repo_ops_models import RepoBundle
 from repo_ops_upgrade import actions as actions_mod
 from repo_ops_upgrade import discovery as disc_mod

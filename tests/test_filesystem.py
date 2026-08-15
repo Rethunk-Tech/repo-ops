@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import builtins
 import json
 from pathlib import Path
 
 import pytest
-from repo_ops_core import filesystem as filesystem_mod
+
 from repo_ops_core.filesystem import (
-    load_toml_parser,
     read_json_file,
     read_toml_file,
     should_exclude,
@@ -76,32 +74,3 @@ def test_read_toml_file_happy_and_invalid(tmp_path: Path) -> None:
     bad = tmp_path / "bad.toml"
     bad.write_text("[[[broken", encoding="utf-8")
     assert read_toml_file(bad) is None
-
-
-def test_read_toml_file_skips_when_parser_unavailable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    path = tmp_path / "config.toml"
-    path.write_text("jobs = 3\n", encoding="utf-8")
-    monkeypatch.setattr(filesystem_mod, "_tomllib", None)
-
-    assert read_toml_file(path) is None
-
-
-def test_tomli_import_error_marks_parser_unavailable() -> None:
-    original_import = builtins.__import__
-
-    def broken_import(
-        name: str,
-        globals: dict[str, object] | None = None,
-        locals: dict[str, object] | None = None,
-        fromlist: tuple[object, ...] = (),
-        level: int = 0,
-    ) -> object:
-        if name == "tomllib":
-            raise ModuleNotFoundError("tomllib unavailable")
-        if name == "tomli":
-            raise ImportError("tomli is broken")
-        return original_import(name, globals, locals, fromlist, level)
-
-    assert load_toml_parser(importer=broken_import) is None

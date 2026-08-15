@@ -37,7 +37,6 @@ from repo_ops_core.cli import (
 )
 from repo_ops_core.filesystem import write_json_atomic
 from repo_ops_core.table import column_width, format_cell, join_row
-
 from repo_ops_inventory.counting import (
     _go_cache_path,
     _kind_matches,

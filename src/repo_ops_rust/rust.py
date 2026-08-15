@@ -10,15 +10,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import tomllib
 from functools import cache
 from http.client import HTTPSConnection
 from pathlib import Path
 from urllib.parse import quote
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
-    import tomli as tomllib
 
 from repo_ops_core.config import (
     ambient_env,

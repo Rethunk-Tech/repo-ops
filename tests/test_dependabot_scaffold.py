@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from repo_ops_dependabot.dependabot import (
     _rel_dir,
     build_dependabot_parser,

@@ -20,6 +20,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import post_apply_commit
 from repo_ops_upgrade.post_apply_commit import (
@@ -299,7 +300,9 @@ def test_dirty_guard_prevents_checkout_when_dirty(tmp_path: Path, make_proc) -> 
     mock_git.assert_not_called()
 
 
-def test_dirty_guard_allows_checkout_when_allow_dirty(tmp_path: Path, make_proc) -> None:
+def test_dirty_guard_allows_checkout_when_allow_dirty(
+    tmp_path: Path, make_proc
+) -> None:
     """allow_dirty=True bypasses the dirty guard and proceeds with checkout."""
     link = SubmoduleLink(
         path="sub",

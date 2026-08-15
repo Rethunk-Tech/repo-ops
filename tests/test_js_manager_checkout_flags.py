@@ -3,6 +3,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_js_bun.bun import (
     _bun_targeted_bump_enabled,
     _bun_update_latest_enabled,

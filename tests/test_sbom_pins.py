@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from repo_ops_lockfiles.sbom import (
     collect_components,
     emit_cyclonedx,

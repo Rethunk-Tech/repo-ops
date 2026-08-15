@@ -6,6 +6,7 @@ import json
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_core.holds import HoldRule
 from repo_ops_go.go import (
     _changes_from_go_list_json,
@@ -199,7 +200,8 @@ def test_workspace_rel_falls_back_when_path_outside_git_repo(tmp_path) -> None:
 
 def test_enforce_version_ceilings_skips_unheld_and_already_compliant(
     tmp_path,
-    make_workspace, make_proc,
+    make_workspace,
+    make_proc,
 ) -> None:
     """Mixed candidates: no matching rule, and held-but-already-compliant —
     neither triggers a corrective `go get`."""
@@ -243,7 +245,8 @@ def test_enforce_version_ceilings_skips_unheld_and_already_compliant(
 
 def test_enforce_version_ceilings_raises_when_corrective_get_command_fails(
     tmp_path,
-    make_workspace, make_proc,
+    make_workspace,
+    make_proc,
 ) -> None:
     """Distinct failure mode from 'still above ceiling after get': the
     corrective `go get` command itself errors out (e.g. network failure)."""

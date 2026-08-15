@@ -19,6 +19,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_models import WorkspaceResult
 from repo_ops_upgrade_remediations_core import remediations as core
 from repo_ops_upgrade_remediations_deno import remediations as deno_rem
@@ -336,7 +337,8 @@ def test_fmt_targets_only_changed_source_files(
     make_workspace: Any,
     make_change: Any,
     make_proc: Any,
-    case: _FmtCase, init_git_repo,
+    case: _FmtCase,
+    init_git_repo,
 ) -> None:
     """<tool> fmt targets only the files git diff reports as changed, not the whole tree."""
     init_git_repo(tmp_path)

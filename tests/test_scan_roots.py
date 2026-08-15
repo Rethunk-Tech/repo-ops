@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
 from repo_ops_core.cli import looks_like_find_predicate, resolve_scan_roots
 from repo_ops_core.discovery import discover_repos
 

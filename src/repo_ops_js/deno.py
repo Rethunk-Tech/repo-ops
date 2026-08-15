@@ -25,11 +25,10 @@ from repo_ops_core.holds import (
 )
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
+from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 from repo_ops_lockfiles.parsers import versions_deno_lock
 from repo_ops_lockfiles.snapshots import snapshot_workspace_files
 from repo_ops_models import Change, Workspace
-
-from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 
 _DENO_UPDATE_LATEST_ENV = "REPO_OPS_DENO_UPDATE_LATEST"
 _DENO_TARGETED_BUMP_ENV = "REPO_OPS_DENO_TARGETED_BUMP"

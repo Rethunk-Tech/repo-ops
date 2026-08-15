@@ -65,6 +65,7 @@ def test_exclude_flag_accepted():
 def test_skip_remediations_flag_accepted():
     """--skip-remediations is apply-only and parses a CSV list."""
     import pytest
+
     from repo_ops_core.cli import build_upgrade_parser
 
     parser = build_upgrade_parser(apply=True)

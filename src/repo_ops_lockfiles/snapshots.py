@@ -7,8 +7,6 @@ from pathlib import Path
 
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.version_utils import normalize_version
-from repo_ops_models import Change
-
 from repo_ops_lockfiles.constants import (
     DENO_LOCKFILES,
     GO_LOCKFILES,
@@ -16,6 +14,7 @@ from repo_ops_lockfiles.constants import (
     PY_LOCKFILES,
     RUST_LOCKFILES,
 )
+from repo_ops_models import Change
 
 # Coarse Change entries for lockfiles that lack structured per-package diffs.
 # package.json and yarn.lock are handled with dedicated parsers above.

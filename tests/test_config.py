@@ -6,6 +6,7 @@ import os
 import sys
 
 import pytest
+
 from repo_ops_core.config import (
     SETTINGS_TABLE,
     load_global_config,
