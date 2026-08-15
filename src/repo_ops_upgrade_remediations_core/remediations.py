@@ -93,6 +93,86 @@ def changed_files_since_head(
     return changed
 
 
+def make_fmt_hook(
+    *,
+    hook_id: str,
+    ecosystem: str,
+    ecosystem_label: str,
+    config_names: tuple[str, ...],
+    extensions: tuple[str, ...],
+    tool: str,
+    which_fn: Callable[[str], str | None],
+    run_fn: Callable[[list[str], Path, float], Any],
+    build_argv: Callable[[list[str] | None], list[str]],
+    fail_label: str,
+    no_changes_apply_detail: str,
+    detailed_report: bool = False,
+    plan_message: str = "",
+    success_label: str = "",
+    no_changes_plan_detail: str = "",
+) -> RemediationHook:
+    """Build a "run the formatter on files changed since HEAD" remediation hook.
+
+    Shared by gofmt / deno fmt / cargo fmt, which differ only in tool name,
+    config-file gate, formattable extensions, and invocation argv.
+
+    *which_fn* and *run_fn* must be small wrappers defined in the calling
+    ecosystem module (not passed as ``shutil.which``/``run`` directly) so
+    that ``unittest.mock.patch`` targeting that module's own ``shutil`` or
+    ``run`` name — as the test suite does per ecosystem — still takes
+    effect; a reference captured here at hook-build time would not observe
+    a patch applied to the ecosystem module afterwards.
+
+    *detailed_report* reproduces gofmt's behaviour of describing the actual
+    scoped invocation (and a distinct no-op message) in both plan-mode
+    reporting and the applied-success detail. The other formatters instead
+    report a fixed *plan_message* / *success_label* regardless of which
+    files were scoped — an intentional asymmetry, not an oversight.
+    """
+
+    def _has_config(path: Path) -> bool:
+        return any((path / name).exists() for name in config_names)
+
+    def _changed(ws: Workspace) -> list[str] | None:
+        return changed_files_since_head(ws, extensions, exclude_names=config_names)
+
+    def detect(ws: Workspace, ctx: dict[str, Any]) -> bool:
+        if ws.ecosystem != ecosystem:
+            return False
+        if not _has_config(ws.path):
+            return False
+        if which_fn(tool) is None:
+            return False  # tool not available — skip, do not fail
+        changes = ctx.get("changes", [])
+        return bool(changes) or not ctx.get("apply", True)
+
+    def report(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
+        if not detailed_report:
+            return [plan_message]
+        files = _changed(ws)
+        if files is not None and not files:
+            return [no_changes_plan_detail]
+        argv = " ".join(build_argv(files))
+        return [
+            f"REMEDIATE {hook_id}: would run {argv} "
+            f"(normalize {ecosystem_label} formatting)"
+        ]
+
+    def apply(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
+        files = _changed(ws)
+        if files is not None and not files:
+            return True, no_changes_apply_detail
+        cmd = build_argv(files)
+        proc = run_fn(cmd, ws.path, 120)
+        if proc.returncode == 0:
+            detail = f"{' '.join(cmd)} (ok)" if detailed_report else success_label
+            return True, detail
+        err = stderr_tail(proc.stderr or proc.stdout or "")
+        return False, f"{fail_label} (failed: {err})"
+
+    return RemediationHook(hook_id, detect, report, apply)
+
+
 # Global registry — populated by ecosystem packages on import.
 _GLOBAL_REGISTRY: list[RemediationHook] = []
 

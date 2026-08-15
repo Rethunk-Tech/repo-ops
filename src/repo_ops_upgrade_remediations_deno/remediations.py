@@ -26,14 +26,11 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core.process import run
-from repo_ops_models import Workspace
 from repo_ops_upgrade_remediations_core.remediations import (
-    ApplyResult,
     RemediationHook,
-    changed_files_since_head,
+    make_fmt_hook,
     make_run_remediations,
     register,
-    stderr_tail,
 )
 
 DENO_CONFIG_NAMES = ("deno.json", "deno.jsonc", "deno.lock")
@@ -52,75 +49,49 @@ DENO_FMT_EXTENSIONS = (
 )
 
 
-def _has_deno_config(path: Path) -> bool:
-    """True when *path* contains a Deno config file."""
-    return any((path / name).exists() for name in DENO_CONFIG_NAMES)
-
-
-def _changed_deno_files(ws: Workspace) -> list[str] | None:
-    """Return absolute paths of Deno-formattable files changed since HEAD in *ws*.
-
-    Config/lock bumps are not "source" reformats — excluded so pure dep
-    updates that only touch deno.json / deno.lock become a no-op.
-    """
-    return changed_files_since_head(
-        ws, DENO_FMT_EXTENSIONS, exclude_names=DENO_CONFIG_NAMES
-    )
-
-
 # ── deno_fix hook ────────────────────────────────────────────────────────────
 
 
-def detect_deno_fix(ws: Workspace, ctx: dict[str, Any]) -> bool:
-    """Detect when deno_fix remediation should run.
-
-    Applies only to Deno (``ecosystem == "deno"``) workspaces that have a
-    Deno config file at the workspace root.  Triggered when at least one
-    dependency changed (apply) or in plan mode with any candidate.  Skipped
-    when ``deno`` is not installed.
-    """
-    if ws.ecosystem != "deno":
-        return False
-    if not _has_deno_config(ws.path):
-        return False
-    if shutil.which("deno") is None:
-        return False  # tool not available — skip, do not fail
-    changes = ctx.get("changes", [])
-    return bool(changes) or not ctx.get("apply", True)
+def _deno_fix_which(tool: str) -> str | None:
+    # Thin wrapper (rather than passing shutil.which directly) so that
+    # patching this module's `shutil` name still reaches the check made
+    # from inside the shared factory.
+    return shutil.which(tool)
 
 
-def report_deno_fix(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
-    return ["REMEDIATE deno_fix: would run deno fmt (normalize Deno formatting)"]
+def _deno_fix_run(cmd: list[str], cwd: Path, timeout: float) -> Any:
+    # Thin wrapper so that patching this module's `run` name still reaches
+    # the subprocess call made from inside the shared factory.
+    return run(cmd, cwd, timeout=timeout)
 
 
-def apply_deno_fix(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
-    """Run deno fmt on Deno source files changed by the dependency bump.
+def _deno_fix_argv(files: list[str] | None) -> list[str]:
+    return ["deno", "fmt"] if files is None else ["deno", "fmt", *files]
 
-    Scopes formatting to the files reported by ``git diff HEAD`` so that
-    unrelated files in a workspace are not reformatted and swept into the
-    ``chore(deps)`` commit.  Falls back to ``deno fmt`` (whole workspace)
-    when git is unavailable or this workspace is not in a git repository.
-    """
-    changed_files = _changed_deno_files(ws)
-    if changed_files is None:
-        # git unavailable — fall back to whole-workspace formatting (original behaviour).
-        proc = run(["deno", "fmt"], ws.path, timeout=120)
-    elif not changed_files:
-        # No formattable source files changed — formatting is a no-op.
-        return True, "deno fmt: no changed source files (ok)"
-    else:
-        proc = run(["deno", "fmt", *changed_files], ws.path, timeout=120)
-    if proc.returncode == 0:
-        return True, "deno fmt (ok)"
-    err = stderr_tail(proc.stderr or proc.stdout or "")
-    return False, f"deno fmt (failed: {err})"
+
+_deno_fix_hook = make_fmt_hook(
+    hook_id="deno_fix",
+    ecosystem="deno",
+    ecosystem_label="Deno",
+    config_names=DENO_CONFIG_NAMES,
+    extensions=DENO_FMT_EXTENSIONS,
+    tool="deno",
+    which_fn=_deno_fix_which,
+    run_fn=_deno_fix_run,
+    build_argv=_deno_fix_argv,
+    fail_label="deno fmt",
+    no_changes_apply_detail="deno fmt: no changed source files (ok)",
+    plan_message="REMEDIATE deno_fix: would run deno fmt (normalize Deno formatting)",
+    success_label="deno fmt (ok)",
+)
+detect_deno_fix = _deno_fix_hook.detect
+report_deno_fix = _deno_fix_hook.report
+apply_deno_fix = _deno_fix_hook.apply
 
 
 # ── registry ─────────────────────────────────────────────────────────────────
 
-REMEDIATIONS: list[RemediationHook] = [
-    RemediationHook("deno_fix", detect_deno_fix, report_deno_fix, apply_deno_fix),
-]
+REMEDIATIONS: list[RemediationHook] = [_deno_fix_hook]
 
 # Register all Deno hooks in the global cross-ecosystem registry on import.
 for _hook in REMEDIATIONS:

@@ -32,7 +32,7 @@ from repo_ops_models import Workspace
 from repo_ops_upgrade_remediations_core.remediations import (
     ApplyResult,
     RemediationHook,
-    changed_files_since_head,
+    make_fmt_hook,
     register,
     run_hooks,
     stderr_tail,
@@ -70,66 +70,46 @@ def _has_go_generate(path: Path) -> bool:
     return False
 
 
-def _changed_go_files(ws: Workspace) -> list[str] | None:
-    """Return absolute paths of .go files changed since the last commit in *ws*."""
-    return changed_files_since_head(ws, (".go",))
-
-
 # ── gofmt hook ───────────────────────────────────────────────────────────────
 
 
-def detect_gofmt(ws: Workspace, ctx: dict[str, Any]) -> bool:
-    """Detect when gofmt remediation should run.
-
-    Applies only to Go (``ecosystem == "go"``) workspaces that have a
-    ``go.mod`` at the workspace root.  Triggered when at least one dependency
-    changed (apply) or in plan mode with any candidate.  Skipped when
-    ``gofmt`` is not installed.
-    """
-    if ws.ecosystem != "go":
-        return False
-    if not _has_go_mod(ws.path):
-        return False
-    if shutil.which("gofmt") is None:
-        return False  # tool not available — skip, do not fail
-    changes = ctx.get("changes", [])
-    return bool(changes) or not ctx.get("apply", True)
+def _gofmt_which(tool: str) -> str | None:
+    # Thin wrapper (rather than passing shutil.which directly) so that
+    # patching this module's `shutil` name still reaches the check made
+    # from inside the shared factory.
+    return shutil.which(tool)
 
 
-def report_gofmt(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
-    go_files = _changed_go_files(ws)
-    if go_files is None:
-        argv = "gofmt -w ."
-    elif not go_files:
-        return ["REMEDIATE gofmt: no changed .go source files (would skip formatting)"]
-    else:
-        argv = "gofmt -w " + " ".join(go_files)
-    return [f"REMEDIATE gofmt: would run {argv} (normalize Go formatting)"]
+def _gofmt_run(cmd: list[str], cwd: Path, timeout: float) -> Any:
+    # Thin wrapper so that patching this module's `run` name still reaches
+    # the subprocess call made from inside the shared factory.
+    return run(cmd, cwd, timeout=timeout)
 
 
-def apply_gofmt(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
-    """Run gofmt only on Go source files changed by the dependency bump.
+def _gofmt_argv(files: list[str] | None) -> list[str]:
+    return ["gofmt", "-w", "."] if files is None else ["gofmt", "-w", *files]
 
-    Scopes formatting to the ``.go`` files reported by ``git diff HEAD`` so
-    that unrelated source files are never swept into the ``chore(deps)``
-    commit.  Falls back to ``gofmt -w .`` when git is unavailable or this
-    workspace is not in a git repository.
-    """
-    go_files = _changed_go_files(ws)
-    if go_files is None:
-        # git unavailable — fall back to whole-workspace formatting (original behaviour).
-        cmd: list[str] = ["gofmt", "-w", "."]
-    elif not go_files:
-        # No .go source files changed — formatting is a no-op.
-        return True, "gofmt: no changed .go source files (ok)"
-    else:
-        cmd = ["gofmt", "-w", *go_files]
-    proc = run(cmd, ws.path, timeout=120)
-    argv = " ".join(cmd)
-    if proc.returncode == 0:
-        return True, f"{argv} (ok)"
-    err = stderr_tail(proc.stderr or proc.stdout or "")
-    return False, f"gofmt (failed: {err})"
+
+_gofmt_hook = make_fmt_hook(
+    hook_id="gofmt",
+    ecosystem="go",
+    ecosystem_label="Go",
+    config_names=("go.mod",),
+    extensions=(".go",),
+    tool="gofmt",
+    which_fn=_gofmt_which,
+    run_fn=_gofmt_run,
+    build_argv=_gofmt_argv,
+    fail_label="gofmt",
+    no_changes_apply_detail="gofmt: no changed .go source files (ok)",
+    detailed_report=True,
+    no_changes_plan_detail=(
+        "REMEDIATE gofmt: no changed .go source files (would skip formatting)"
+    ),
+)
+detect_gofmt = _gofmt_hook.detect
+report_gofmt = _gofmt_hook.report
+apply_gofmt = _gofmt_hook.apply
 
 
 # ── go_generate hook ─────────────────────────────────────────────────────────
@@ -177,7 +157,7 @@ def apply_go_generate(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
 # ── registry ─────────────────────────────────────────────────────────────────
 
 REMEDIATIONS: list[RemediationHook] = [
-    RemediationHook("gofmt", detect_gofmt, report_gofmt, apply_gofmt),
+    _gofmt_hook,
     RemediationHook(
         "go_generate", detect_go_generate, report_go_generate, apply_go_generate
     ),

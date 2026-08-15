@@ -24,82 +24,56 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core.process import run
-from repo_ops_models import Workspace
 from repo_ops_upgrade_remediations_core.remediations import (
-    ApplyResult,
     RemediationHook,
-    changed_files_since_head,
+    make_fmt_hook,
     make_run_remediations,
     register,
-    stderr_tail,
 )
-
-
-def _has_cargo_toml(path: Path) -> bool:
-    """True when *path* contains a Cargo.toml file."""
-    return (path / "Cargo.toml").exists()
-
-
-def _changed_rust_files(ws: Workspace) -> list[str] | None:
-    """Return absolute paths of .rs files changed since the last commit in *ws*."""
-    return changed_files_since_head(ws, (".rs",))
-
 
 # ── cargo_fix hook ───────────────────────────────────────────────────────────
 
 
-def detect_cargo_fix(ws: Workspace, ctx: dict[str, Any]) -> bool:
-    """Detect when cargo_fix remediation should run.
-
-    Applies only to Rust (``ecosystem == "rust"``) workspaces that have a
-    ``Cargo.toml`` at the workspace root.  Triggered when at least one
-    dependency changed (apply) or in plan mode with any candidate.  Skipped
-    when ``cargo`` is not installed.
-    """
-    if ws.ecosystem != "rust":
-        return False
-    if not _has_cargo_toml(ws.path):
-        return False
-    if shutil.which("cargo") is None:
-        return False  # tool not available — skip, do not fail
-    changes = ctx.get("changes", [])
-    return bool(changes) or not ctx.get("apply", True)
+def _cargo_fix_which(tool: str) -> str | None:
+    # Thin wrapper (rather than passing shutil.which directly) so that
+    # patching this module's `shutil` name still reaches the check made
+    # from inside the shared factory.
+    return shutil.which(tool)
 
 
-def report_cargo_fix(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
-    return ["REMEDIATE cargo_fix: would run cargo fmt (normalize Rust formatting)"]
+def _cargo_fix_run(cmd: list[str], cwd: Path, timeout: float) -> Any:
+    # Thin wrapper so that patching this module's `run` name still reaches
+    # the subprocess call made from inside the shared factory.
+    return run(cmd, cwd, timeout=timeout)
 
 
-def apply_cargo_fix(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
-    """Run cargo fmt on Rust source files changed by the dependency bump.
+def _cargo_fix_argv(files: list[str] | None) -> list[str]:
+    return ["cargo", "fmt"] if files is None else ["cargo", "fmt", "--", *files]
 
-    Scopes formatting to the ``.rs`` files reported by ``git diff HEAD`` so
-    that unrelated crates in a Cargo workspace are not reformatted and swept
-    into the ``chore(deps)`` commit.  Falls back to ``cargo fmt`` (whole
-    workspace) when git is unavailable or this workspace is not in a git
-    repository.
-    """
-    rs_files = _changed_rust_files(ws)
-    if rs_files is None:
-        # git unavailable — fall back to whole-workspace formatting (original behaviour).
-        proc = run(["cargo", "fmt"], ws.path, timeout=120)
-    elif not rs_files:
-        # No .rs source files changed — formatting is a no-op.
-        return True, "cargo fmt: no changed .rs source files (ok)"
-    else:
-        # Pass specific files to rustfmt via cargo fmt's -- passthrough.
-        proc = run(["cargo", "fmt", "--", *rs_files], ws.path, timeout=120)
-    if proc.returncode == 0:
-        return True, "cargo fmt (ok)"
-    err = stderr_tail(proc.stderr or proc.stdout or "")
-    return False, f"cargo fmt (failed: {err})"
+
+_cargo_fix_hook = make_fmt_hook(
+    hook_id="cargo_fix",
+    ecosystem="rust",
+    ecosystem_label="Rust",
+    config_names=("Cargo.toml",),
+    extensions=(".rs",),
+    tool="cargo",
+    which_fn=_cargo_fix_which,
+    run_fn=_cargo_fix_run,
+    build_argv=_cargo_fix_argv,
+    fail_label="cargo fmt",
+    no_changes_apply_detail="cargo fmt: no changed .rs source files (ok)",
+    plan_message="REMEDIATE cargo_fix: would run cargo fmt (normalize Rust formatting)",
+    success_label="cargo fmt (ok)",
+)
+detect_cargo_fix = _cargo_fix_hook.detect
+report_cargo_fix = _cargo_fix_hook.report
+apply_cargo_fix = _cargo_fix_hook.apply
 
 
 # ── registry ─────────────────────────────────────────────────────────────────
 
-REMEDIATIONS: list[RemediationHook] = [
-    RemediationHook("cargo_fix", detect_cargo_fix, report_cargo_fix, apply_cargo_fix),
-]
+REMEDIATIONS: list[RemediationHook] = [_cargo_fix_hook]
 
 # Register all Rust hooks in the global cross-ecosystem registry on import.
 for _hook in REMEDIATIONS:
