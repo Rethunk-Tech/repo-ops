@@ -148,12 +148,15 @@ def _ghost_ws() -> Workspace:
     )
 
 
-def test_apply_bun_raises_on_ghost_bump_resolved_behind_target() -> None:
+def test_apply_bun_raises_on_ghost_bump_resolved_behind_target(monkeypatch) -> None:
     """#112: bun.lock churns but an override/pin keeps the old version installed.
 
     Resolved version stays behind requested target → fail loudly so workspace
-    is reported blocked, never a false-green successful upgrade.
+    is reported blocked, never a false-green successful upgrade. Targeted bump
+    is disabled here so the hard-fail guard runs instead of deferring to the
+    retry fallback (the sweep default).
     """
+    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "0")
 
     def fake_run(cmd, cwd, timeout=600, env=None):
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
@@ -339,7 +342,7 @@ def test_apply_bun_fallback_guard_called_for_known_versions() -> None:
     assert guard_calls == []
 
 
-def test_apply_bun_fallback_guard_fires_when_guardable_nonempty() -> None:
+def test_apply_bun_fallback_guard_fires_when_guardable_nonempty(monkeypatch) -> None:
     """Task #3: guard IS called in fallback when a change has a real known version.
 
     We force the fallback by providing only changes that skip target-building
@@ -356,7 +359,11 @@ def test_apply_bun_fallback_guard_fires_when_guardable_nonempty() -> None:
     bun update + guardable) is an additive safety net that activates for future
     cases where target building is refused for reasons other than name/version
     validity (e.g. registry spec changes).
+
+    Targeted bump is disabled here: with it on (the sweep default), a blocked
+    target defers to the retry fallback instead of calling this guard at all.
     """
+    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "0")
     guard_calls: list[list] = []
 
     def fake_run(cmd, cwd, timeout=600, env=None):
@@ -387,12 +394,17 @@ def test_apply_bun_fallback_guard_fires_when_guardable_nonempty() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_apply_bun_prerelease_installed_does_not_satisfy_stable_target() -> None:
+def test_apply_bun_prerelease_installed_does_not_satisfy_stable_target(
+    monkeypatch,
+) -> None:
     """Task #4: 4.0.0-rc.1 installed against target 4.0.0 is a ghost bump.
 
     Before the fix, normalize_version stripped the pre-release suffix so
-    4.0.0-rc.1 became '4.0.0' == '4.0.0' → no error (false-green).
+    4.0.0-rc.1 became '4.0.0' == '4.0.0' → no error (false-green). Targeted
+    bump is disabled here so the hard-fail guard runs instead of deferring to
+    the retry fallback (the sweep default).
     """
+    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "0")
 
     def fake_run(cmd, cwd, timeout=600, env=None):
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")

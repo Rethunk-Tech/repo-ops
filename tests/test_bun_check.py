@@ -24,7 +24,9 @@ def test_check_bun_prefers_json(tmp_path: Path, make_workspace) -> None:
         raise AssertionError("text outdated should not run when JSON succeeds")
 
     with patch("repo_ops_js_bun.bun.run", fake_run):
-        changes, behind_latest = check_bun(make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo"))
+        changes, behind_latest = check_bun(
+            make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
+        )
 
     assert calls == [["bun", "outdated", "--json"]]
     assert len(changes) == 1
@@ -59,10 +61,18 @@ def _patched_check(table_stdout: str, tmp_path: Path, make_workspace):
         return subprocess.CompletedProcess(cmd, 0, stdout=table_stdout, stderr="")
 
     with patch("repo_ops_js_bun.bun.run", fake_run):
-        return check_bun(make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo"))
+        return check_bun(
+            make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
+        )
 
 
-def test_check_bun_parses_real_ansi_table_in_range(tmp_path: Path, make_workspace) -> None:
+def test_check_bun_parses_real_ansi_table_in_range(
+    monkeypatch, tmp_path: Path, make_workspace
+) -> None:
+    """Range-respecting (Update column) parsing — pin latest-mode off, since the
+    sweep now defaults it on and this test is specifically about the
+    non-latest bucketing branch."""
+    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
     changes, behind_latest = _patched_check(_REAL_BUN_TABLE, tmp_path, make_workspace)
 
     # Default: range-respecting (Update column). @hono is skipped — its in-range
@@ -80,7 +90,9 @@ def test_check_bun_parses_real_ansi_table_in_range(tmp_path: Path, make_workspac
     ]
 
 
-def test_check_bun_latest_column_when_opted_in(monkeypatch, tmp_path: Path, make_workspace) -> None:
+def test_check_bun_latest_column_when_opted_in(
+    monkeypatch, tmp_path: Path, make_workspace
+) -> None:
     monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
     changes, behind_latest = _patched_check(_REAL_BUN_TABLE, tmp_path, make_workspace)
 
@@ -103,9 +115,14 @@ _TABLE_CURRENT_LT_UPDATE_LT_LATEST = (
 )
 
 
-def test_text_parser_no_double_count_when_current_lt_update_lt_latest(tmp_path: Path, make_workspace) -> None:
+def test_text_parser_no_double_count_when_current_lt_update_lt_latest(
+    monkeypatch, tmp_path: Path, make_workspace
+) -> None:
     """Regression #45: current < update < latest → changes only, not both buckets."""
-    changes, behind_latest = _patched_check(_TABLE_CURRENT_LT_UPDATE_LT_LATEST, tmp_path, make_workspace)
+    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
+    changes, behind_latest = _patched_check(
+        _TABLE_CURRENT_LT_UPDATE_LT_LATEST, tmp_path, make_workspace
+    )
 
     # The in-range bump (18.0.0 → 18.3.0) lands in changes.
     assert len(changes) == 1
@@ -130,9 +147,13 @@ _TABLE_WITH_REAL_BUN_DEP = (
 )
 
 
-def test_check_bun_detects_real_bun_dep_but_not_banner(tmp_path: Path, make_workspace) -> None:
+def test_check_bun_detects_real_bun_dep_but_not_banner(
+    tmp_path: Path, make_workspace
+) -> None:
     """Regression #67: real `bun` dep detected; `(hash)` banner still filtered."""
-    changes, _behind = _patched_check(_TABLE_WITH_REAL_BUN_DEP, tmp_path, make_workspace)
+    changes, _behind = _patched_check(
+        _TABLE_WITH_REAL_BUN_DEP, tmp_path, make_workspace
+    )
 
     # (a) The real `bun` dependency is detected as an in-range upgrade.
     assert ("bun", "1.0.0", "1.1.0") in [(c.name, c.from_ver, c.to) for c in changes]
@@ -156,8 +177,11 @@ _ASCII_PIPE_TABLE = (
 )
 
 
-def test_check_bun_parses_ascii_pipe_table(tmp_path: Path, make_workspace) -> None:
+def test_check_bun_parses_ascii_pipe_table(
+    monkeypatch, tmp_path: Path, make_workspace
+) -> None:
     """Regression #145: ASCII-pipe table (CI/non-UTF-8 terminal) must parse."""
+    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
     changes, behind_latest = _patched_check(_ASCII_PIPE_TABLE, tmp_path, make_workspace)
 
     # The single data row parses; update column (1.0.0) is the in-range target.
@@ -180,7 +204,9 @@ def test_check_bun_passes_timeout_check(tmp_path: Path, make_workspace) -> None:
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with patch("repo_ops_js_bun.bun.run", fake_run):
-        check_bun(make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo"))
+        check_bun(
+            make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
+        )
 
     assert len(captured) == 2, f"expected 2 run() calls, got {len(captured)}"
     assert captured[0]["cmd"] == ["bun", "outdated", "--json"]

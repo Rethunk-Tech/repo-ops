@@ -320,12 +320,13 @@ def test_fleet_run_resolves_actions_config_per_checkout(
 def test_default_sweep_and_conservative_override_per_checkout_upgrade_flags(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The sweep-vs-conservative choice is process-global (#136): run.py writes
-    every _SWEEP_ENV_VARS key as an explicit CLI override once per invocation,
-    before any repo is processed, so per-checkout [tool.repo-ops] settings for
-    these keys are superseded regardless of which checkout is active. The
-    differing repo_a/repo_b config below is kept to prove the override, not to
-    prove per-checkout differentiation (there is none left for these keys)."""
+    """#136: the default sweep no longer force-writes _SWEEP_ENV_VARS to "1" —
+    each key's settings-table default is already "1", so per-checkout
+    [tool.repo-ops] settings for these keys are genuinely respected (repo_a's
+    explicit ``true``s and repo_b's explicit ``false``s both resolve as
+    configured). ``--conservative`` still writes an explicit CLI-tier "0" for
+    every key, which outranks per-checkout config unconditionally — both repos
+    resolve to all-False under it regardless of their own config."""
     from repo_ops_container import container as container_mod
     from repo_ops_js_npm import npm as npm_mod
     from repo_ops_js_pnpm import pnpm as pnpm_mod
@@ -462,7 +463,7 @@ def test_default_sweep_and_conservative_override_per_checkout_upgrade_flags(
     assert rc == 0
     assert captured == {
         repo_a: (True, True, True, True, True, True, True, True),
-        repo_b: (True, True, True, True, True, True, True, True),
+        repo_b: (False, False, False, False, False, False, False, False),
     }
 
     captured.clear()
@@ -485,11 +486,13 @@ def test_default_sweep_and_conservative_override_per_checkout_upgrade_flags(
     }
 
 
-def test_default_sweep_overrides_global_and_checkout_config(
+def test_default_sweep_respects_checkout_config_over_global(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The default full sweep remains authoritative when global config has the
-    same value (#136: no flag needed anymore — the sweep is unconditional)."""
+    """#136: the default sweep force-writes nothing, so normal CLI > env >
+    repo config > global config > default layering applies — a per-checkout
+    ``false`` wins over a global ``true`` (and over the settings-table
+    default), exactly as it would for any other setting."""
     from repo_ops_core.config import ambient_env
     from repo_ops_js_pnpm import pnpm as pnpm_mod
 
@@ -555,7 +558,7 @@ def test_default_sweep_overrides_global_and_checkout_config(
     )
 
     assert rc == 0
-    assert captured == {"resolved": True, "ambient_has_cli_key": False}
+    assert captured == {"resolved": False, "ambient_has_cli_key": False}
 
 
 def test_fleet_run_resolves_timeouts_per_checkout(

@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from repo_ops_core.config import _SETTINGS_MAP, coerce_bool_setting, resolve_setting
 from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import discovery as disc_mod
 from repo_ops_upgrade import orchestration as orch_mod
@@ -58,6 +59,12 @@ def _fake_args(**overrides) -> MagicMock:
         "branch_prefix": "repo-ops/deps",
         "resume": False,
         "follow_symlinks": False,
+        # Real run_upgrade() always sets these before _run_upgrade_body runs;
+        # a bare MagicMock auto-vivifies a missing attribute into a truthy
+        # non-dict mock, which corrupts settings resolution (e.g. `in` on it
+        # is always True) rather than falling through to the {} default.
+        "_repo_ops_global_config": {},
+        "_repo_ops_ambient_env": {},
     }
     defaults.update(overrides)
     return MagicMock(**defaults)
@@ -103,10 +110,17 @@ def test_default_sweep_sets_policy_env_and_refreshes_actions(
     )
 
     assert rc == 0
-    for name in env_names:
-        assert os.environ[name] == (
-            "patch" if name == "REPO_OPS_GO_UPGRADE_MODE" else "1"
-        )
+    assert os.environ["REPO_OPS_GO_UPGRADE_MODE"] == "patch"
+    # #136: the default sweep no longer force-writes _SWEEP_ENV_VARS to "1" —
+    # each key's settings-table default is already "1", so an unset var must
+    # still resolve enabled (and stays unset, so a user's own env/config can
+    # still override it on a real run).
+    env_var_to_setting = {
+        env_var: name for name, (env_var, _cfg_key, _default) in _SETTINGS_MAP.items()
+    }
+    for name in run_mod._SWEEP_ENV_VARS:
+        assert os.environ.get(name) is None
+        assert coerce_bool_setting(resolve_setting(env_var_to_setting[name])) is True
     assert action_kwargs
     assert action_kwargs[0]["refresh_sha"] is True
     assert action_kwargs[0]["upgrade_mode"] == "normalize"

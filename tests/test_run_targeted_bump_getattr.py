@@ -3,10 +3,17 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from repo_ops._register import register_all
+from repo_ops_core.config import _SETTINGS_MAP, coerce_bool_setting, resolve_setting
 from repo_ops_js_yarn.yarn import _yarn_targeted_bump_enabled
 from repo_ops_models import WorkspaceResult
 from repo_ops_upgrade import run
 from repo_ops_upgrade.run import main_plan
+
+# env var -> settings-table key, derived from _SETTINGS_MAP so this can't
+# drift from the real name mapping.
+_ENV_VAR_TO_SETTING = {
+    env_var: name for name, (env_var, _cfg_key, _default) in _SETTINGS_MAP.items()
+}
 
 
 def _fake_body_args() -> MagicMock:
@@ -37,7 +44,15 @@ def test_magicmock_args_default_to_full_sweep(monkeypatch):
 
     run._run_upgrade_body(apply=False, args=args, roots=[])
 
-    assert all(os.environ[name] == "1" for name in run._SWEEP_ENV_VARS)
+    # #136: the default sweep no longer force-writes these to "1" — each
+    # key's settings-table default is already "1", so an unset var must still
+    # resolve enabled (and stays unset, so a user's own env/config can still
+    # override it on a real run).
+    assert all(os.environ.get(name) is None for name in run._SWEEP_ENV_VARS)
+    assert all(
+        coerce_bool_setting(resolve_setting(_ENV_VAR_TO_SETTING[name])) is True
+        for name in run._SWEEP_ENV_VARS
+    )
 
 
 def test_conservative_flag_writes_sweep_vars_to_zero(monkeypatch):

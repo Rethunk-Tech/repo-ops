@@ -79,10 +79,38 @@ def test_cargo_latest_changes_cache_keys_on_manifest_digest(
     assert [(change.name, change.to) for change in second] == [("regex", "2.0.0")]
 
 
-def test_check_rust_targeted_bump_defaults_off_without_config(
+def test_check_rust_targeted_bump_defaults_on_without_config(
     tmp_path: Path, monkeypatch, make_workspace, make_proc
 ) -> None:
+    """#136: the sweep default is on, so no env var/config needed to attempt it."""
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\n\n'
+        '[dependencies]\nserde = "1.0"\n',
+        encoding="utf-8",
+    )
     monkeypatch.delenv("REPO_OPS_RUST_TARGETED_BUMP", raising=False)
+    with (
+        patch(
+            "repo_ops_rust.rust.run",
+            return_value=make_proc(),
+        ),
+        patch(
+            "repo_ops_rust.rust._cargo_registry_versions",
+            return_value=("1.0.0",),
+        ),
+        patch("repo_ops_rust.rust.load_global_config", return_value={}),
+    ):
+        result = check_rust(
+            make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
+        )
+
+    assert isinstance(result, tuple)
+
+
+def test_check_rust_targeted_bump_env_zero_disables_it(
+    tmp_path: Path, monkeypatch, make_workspace, make_proc
+) -> None:
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     with (
         patch(
             "repo_ops_rust.rust.run",

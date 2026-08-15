@@ -19,8 +19,18 @@ from repo_ops_rust.rust import check_rust
     ],
 )
 def test_dry_run_check_uses_timeout_check(
-    tmp_path: Path, target: str, check, ecosystem: str, manager: str, make_workspace
+    tmp_path: Path,
+    target: str,
+    check,
+    ecosystem: str,
+    manager: str,
+    make_workspace,
+    monkeypatch,
 ) -> None:
+    # Targeted bump defaults on (#136) and, for rust, would read a Cargo.toml
+    # this fixture never creates — irrelevant to what this test checks
+    # (the timeout passed through to run()), so pin it off here.
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     captured: list[dict] = []
 
     def fake_run(cmd, cwd, timeout=None):
@@ -28,7 +38,9 @@ def test_dry_run_check_uses_timeout_check(
         return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     with patch(target, side_effect=fake_run):
-        check(make_workspace(tmp_path, ecosystem=ecosystem, manager=manager, label="demo"))
+        check(
+            make_workspace(tmp_path, ecosystem=ecosystem, manager=manager, label="demo")
+        )
 
     assert len(captured) == 1
     assert captured[0]["timeout"] == resolve_timeout_check()

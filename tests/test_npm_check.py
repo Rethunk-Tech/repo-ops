@@ -19,14 +19,17 @@ def test_check_npm_passes_timeout_check(tmp_path: Path, make_workspace) -> None:
         return type("Proc", (), {"returncode": 0, "stdout": "{}", "stderr": ""})()
 
     with patch("repo_ops_js_npm.npm.run", side_effect=fake_run):
-        check_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))
+        check_npm(
+            make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo")
+        )
 
     assert len(captured) == 1
     assert captured[0]["timeout"] == TIMEOUT_CHECK
 
 
-def test_check_npm_bucketing(tmp_path: Path, make_workspace) -> None:
+def test_check_npm_bucketing(tmp_path: Path, monkeypatch, make_workspace) -> None:
     """#76 — in-range pkg → changes; out-of-range only → behind_latest."""
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "0")
     # react: wanted == current (no in-range bump), latest > current → behind_latest.
     # lodash: wanted > current (in-range bump) → changes.
     payload = {
@@ -42,7 +45,9 @@ def test_check_npm_bucketing(tmp_path: Path, make_workspace) -> None:
         )()
 
     with patch("repo_ops_js_npm.npm.run", side_effect=fake_run):
-        changes, behind_latest = check_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))
+        changes, behind_latest = check_npm(
+            make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo")
+        )
 
     assert len(changes) == 1
     assert changes[0].name == "lodash"

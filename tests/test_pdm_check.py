@@ -9,8 +9,9 @@ from unittest.mock import patch
 from repo_ops_py_pdm.pdm import apply_pdm, check_pdm
 
 
-def test_check_pdm_returns_changes_from_dry_run(tmp_path: Path, make_workspace) -> None:
+def test_check_pdm_returns_changes_from_dry_run(tmp_path: Path, monkeypatch, make_workspace) -> None:
     """check_pdm parses '- name old -> new' lines from pdm update --dry-run."""
+    monkeypatch.setenv("REPO_OPS_PDM_TARGETED_BUMP", "0")
     output = (
         "Dry run: updating packages\n"
         "  - requests 2.28.0 -> 2.31.0\n"
@@ -35,7 +36,8 @@ def test_check_pdm_returns_changes_from_dry_run(tmp_path: Path, make_workspace) 
     assert requests_change.to == "2.31.0"
 
 
-def test_check_pdm_returns_empty_when_up_to_date(tmp_path: Path, make_workspace) -> None:
+def test_check_pdm_returns_empty_when_up_to_date(tmp_path: Path, monkeypatch, make_workspace) -> None:
+    monkeypatch.setenv("REPO_OPS_PDM_TARGETED_BUMP", "0")
     def fake_run(cmd, cwd, timeout=None):
         return subprocess.CompletedProcess(
             cmd, 0, stdout="All packages are up-to-date.\n", stderr=""
@@ -50,8 +52,9 @@ def test_check_pdm_returns_empty_when_up_to_date(tmp_path: Path, make_workspace)
     assert changes == []
 
 
-def test_check_pdm_warns_when_pdm_not_on_path(tmp_path: Path, capsys, make_workspace) -> None:
+def test_check_pdm_warns_when_pdm_not_on_path(tmp_path: Path, capsys, monkeypatch, make_workspace) -> None:
     """check_pdm must not raise when pdm is absent — returns [] + WARN."""
+    monkeypatch.setenv("REPO_OPS_PDM_TARGETED_BUMP", "0")
     with patch("repo_ops_py_pdm.pdm.shutil.which", return_value=None):
         result = check_pdm(make_workspace(tmp_path, ecosystem="py", manager="pdm", label="demo"))
 

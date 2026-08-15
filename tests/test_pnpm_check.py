@@ -21,12 +21,16 @@ def _make_run(stdout: str, returncode: int = 1):
     return fake_run
 
 
-def test_check_pnpm_malformed_json_warns_and_returns_empty(capsys, tmp_path: Path, make_workspace) -> None:
+def test_check_pnpm_malformed_json_warns_and_returns_empty(
+    capsys, tmp_path: Path, make_workspace
+) -> None:
     """Malformed JSON output must produce a WARN on stderr and return ([], [])."""
     bad_output = "not valid json { at all }"
 
     with patch("repo_ops_js_pnpm.pnpm.run", _make_run(bad_output)):
-        changes, behind_latest = check_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
+        changes, behind_latest = check_pnpm(
+            make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
+        )
 
     assert changes == []
     assert behind_latest == []
@@ -36,12 +40,16 @@ def test_check_pnpm_malformed_json_warns_and_returns_empty(capsys, tmp_path: Pat
     assert "not valid json" in captured.err
 
 
-def test_check_pnpm_malformed_json_snippet_truncated(capsys, tmp_path: Path, make_workspace) -> None:
+def test_check_pnpm_malformed_json_snippet_truncated(
+    capsys, tmp_path: Path, make_workspace
+) -> None:
     """The raw-output snippet in the warning is capped at ~200 chars."""
     long_bad_output = "x" * 500
 
     with patch("repo_ops_js_pnpm.pnpm.run", _make_run(long_bad_output)):
-        changes, behind_latest = check_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
+        changes, behind_latest = check_pnpm(
+            make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
+        )
 
     assert changes == []
     assert behind_latest == []
@@ -51,7 +59,9 @@ def test_check_pnpm_malformed_json_snippet_truncated(capsys, tmp_path: Path, mak
     assert "x" * 500 not in captured.err
 
 
-def test_check_pnpm_valid_json_no_warning(capsys, tmp_path: Path, make_workspace) -> None:
+def test_check_pnpm_valid_json_no_warning(
+    capsys, tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     """Valid JSON output must parse correctly and emit no warning.
 
     Real ``pnpm outdated --format json`` always emits ``wanted``; this fixture
@@ -60,10 +70,14 @@ def test_check_pnpm_valid_json_no_warning(capsys, tmp_path: Path, make_workspace
     — the package is reported as ``behind_latest`` instead, symmetric with the
     npm checker.
     """
+    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "0")
+    monkeypatch.setenv("REPO_OPS_PNPM_UPDATE_LATEST", "0")
     payload = {"react": {"current": "18.0.0", "latest": "19.0.0"}}
 
     with patch("repo_ops_js_pnpm.pnpm.run", _make_run(json.dumps(payload))):
-        changes, behind_latest = check_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
+        changes, behind_latest = check_pnpm(
+            make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
+        )
 
     # No ``wanted`` field → wanted == "?" → not an in-range change; latest
     # (19.0.0) > current (18.0.0) → behind_latest (never a phantom change).
@@ -76,9 +90,13 @@ def test_check_pnpm_valid_json_no_warning(capsys, tmp_path: Path, make_workspace
     assert captured.err == ""
 
 
-def test_check_pnpm_bucketing_and_timeout(tmp_path: Path, make_workspace) -> None:
+def test_check_pnpm_bucketing_and_timeout(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     """#76 + #70 — in-range pkg → changes; out-of-range only → behind_latest;
     ``run`` called with ``timeout=TIMEOUT_CHECK``."""
+    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "0")
+    monkeypatch.setenv("REPO_OPS_PNPM_UPDATE_LATEST", "0")
     # vue: wanted == current (no in-range bump), latest > current → behind_latest.
     # axios: wanted > current (in-range bump) → changes.
     payload = {
@@ -94,7 +112,9 @@ def test_check_pnpm_bucketing_and_timeout(tmp_path: Path, make_workspace) -> Non
         )
 
     with patch("repo_ops_js_pnpm.pnpm.run", fake_run):
-        changes, behind_latest = check_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
+        changes, behind_latest = check_pnpm(
+            make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
+        )
 
     assert captured_timeout == [TIMEOUT_CHECK]
 
@@ -117,7 +137,11 @@ def test_check_pnpm_bucketing_and_timeout(tmp_path: Path, make_workspace) -> Non
     ],
 )
 def test_check_pnpm_update_latest_env(
-    monkeypatch: pytest.MonkeyPatch, env_value: str, expect_in_changes: bool, tmp_path: Path, make_workspace
+    monkeypatch: pytest.MonkeyPatch,
+    env_value: str,
+    expect_in_changes: bool,
+    tmp_path: Path,
+    make_workspace,
 ) -> None:
     """#91 — with REPO_OPS_PNPM_UPDATE_LATEST set, a package at current==wanted
     but latest>current lands in *changes*; without it, stays in *behind_latest*."""
@@ -126,13 +150,19 @@ def test_check_pnpm_update_latest_env(
         "lodash": {"current": "4.17.20", "wanted": "4.17.20", "latest": "4.17.21"}
     }
 
+    # Targeted bump also promotes behind_latest into changes (#122) and
+    # defaults on with the sweep (#136); pin it off so this test isolates
+    # REPO_OPS_PNPM_UPDATE_LATEST specifically.
+    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "0")
     if env_value:
         monkeypatch.setenv("REPO_OPS_PNPM_UPDATE_LATEST", env_value)
     else:
-        monkeypatch.delenv("REPO_OPS_PNPM_UPDATE_LATEST", raising=False)
+        monkeypatch.setenv("REPO_OPS_PNPM_UPDATE_LATEST", "0")
 
     with patch("repo_ops_js_pnpm.pnpm.run", _make_run(json.dumps(payload))):
-        changes, behind_latest = check_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
+        changes, behind_latest = check_pnpm(
+            make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
+        )
 
     if expect_in_changes:
         assert len(changes) == 1

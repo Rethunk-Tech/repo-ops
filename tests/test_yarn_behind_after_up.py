@@ -70,7 +70,7 @@ def test_behind_after_up_disabled_in_conservative_mode(
     tmp_path: Path, monkeypatch
 ) -> None:
     _seed(tmp_path)
-    monkeypatch.delenv("REPO_OPS_YARN_UPDATE_LATEST", raising=False)
+    monkeypatch.setenv("REPO_OPS_YARN_UPDATE_LATEST", "0")
     run_mock = MagicMock()
     with patch("repo_ops_js_yarn.yarn.run", run_mock):
         behind = behind_after_up(tmp_path)
@@ -139,15 +139,15 @@ def _targeted_run(
     return _run
 
 
-def test_targeted_bump_disabled_by_default(tmp_path: Path, monkeypatch) -> None:
+def test_targeted_bump_env_zero_disables_it(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path)
-    monkeypatch.delenv("REPO_OPS_YARN_TARGETED_BUMP", raising=False)
+    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "0")
     run_mock = MagicMock()
     with patch("repo_ops_js_yarn.yarn.run", run_mock):
         applied, behind = targeted_bump_behind(tmp_path, _SENTRY_BEHIND)
     assert applied == []
     assert behind == _SENTRY_BEHIND
-    run_mock.assert_not_called()  # opt-in: no yarn invocations when disabled
+    run_mock.assert_not_called()  # explicit opt-out: no yarn invocations
 
 
 def test_targeted_bump_moves_the_gap(tmp_path: Path, monkeypatch) -> None:

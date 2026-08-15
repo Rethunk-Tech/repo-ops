@@ -474,8 +474,13 @@ def test_check_container_compose_file(tmp_path: Path) -> None:
     assert postgres_c.to == "15.5"
 
 
-def test_check_container_tag_and_sha_report_only(tmp_path: Path) -> None:
-    """tag@sha256:... is treated as sha-pinned → report only."""
+def test_check_container_tag_and_sha_report_only(tmp_path: Path, monkeypatch) -> None:
+    """tag@sha256:... is treated as sha-pinned → report only.
+
+    Digest refresh defaults on with the sweep (#136); pin it off so this test
+    exercises the plain report-only path rather than an actual digest fetch.
+    """
+    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "0")
     (tmp_path / "Dockerfile").write_text(
         "FROM nginx:1.25@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456ab12\n"
     )

@@ -11,10 +11,12 @@ from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 def test_default_sweep_and_conservative_override_per_checkout_yarn_flags(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """run.py forces every _SWEEP_ENV_VARS key process-wide before any repo runs
-    (#136), so per-checkout yarn_update_latest/yarn_targeted_bump config below
-    is superseded by whichever of default-sweep/--conservative was passed —
-    kept to prove the override, not per-checkout differentiation."""
+    """#136: the default sweep force-writes nothing, so per-checkout
+    yarn_update_latest/yarn_targeted_bump config is genuinely respected
+    (repo_a's ``true`` and repo_b's ``false`` both resolve as configured).
+    ``--conservative`` still writes an explicit CLI-tier "0", which outranks
+    per-checkout config unconditionally — both repos resolve to all-False
+    under it regardless of their own config."""
     launcher = tmp_path / "launcher"
     repo_a = tmp_path / "repo-a"
     repo_b = tmp_path / "repo-b"
@@ -106,7 +108,7 @@ def test_default_sweep_and_conservative_override_per_checkout_yarn_flags(
     assert rc == 0
     assert captured == {
         repo_a: (True, True),
-        repo_b: (True, True),
+        repo_b: (False, False),
     }
 
     captured.clear()

@@ -121,8 +121,15 @@ def _resolutions_pkg(tmp_path: Path) -> None:
     )
 
 
-def test_apply_yarn_guard_raises_on_blocked_target(tmp_path: Path, make_workspace) -> None:
-    """Guard fires: probe planned is-odd→1.0.0, node_modules still at 0.1.2 → error."""
+def test_apply_yarn_guard_raises_on_blocked_target(
+    tmp_path: Path, make_workspace, monkeypatch
+) -> None:
+    """Guard fires: probe planned is-odd→1.0.0, node_modules still at 0.1.2 → error.
+
+    Targeted bump is disabled here so the hard-fail guard runs instead of
+    deferring to the retry fallback (the sweep default).
+    """
+    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "0")
     _node_modules_yarnrc(tmp_path)
     _resolutions_pkg(tmp_path)
     planned = [Change("is-odd", "0.1.2", "1.0.0")]
@@ -137,7 +144,9 @@ def test_apply_yarn_guard_raises_on_blocked_target(tmp_path: Path, make_workspac
         patch(_RESOLVER_PATH, return_value="0.1.2"),  # still behind
     ):
         try:
-            apply_yarn(make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test"))
+            apply_yarn(
+                make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test")
+            )
         except RuntimeError as exc:
             assert "ghost bump" in str(exc)
             assert "is-odd" in str(exc)
@@ -145,7 +154,9 @@ def test_apply_yarn_guard_raises_on_blocked_target(tmp_path: Path, make_workspac
             raise AssertionError("expected ghost-bump RuntimeError")
 
 
-def test_apply_yarn_guard_ok_when_target_resolved(tmp_path: Path, make_workspace) -> None:
+def test_apply_yarn_guard_ok_when_target_resolved(
+    tmp_path: Path, make_workspace
+) -> None:
     """No error when node_modules has the requested version (real upgrade)."""
     _node_modules_yarnrc(tmp_path)
     _resolutions_pkg(tmp_path)
@@ -160,7 +171,9 @@ def test_apply_yarn_guard_ok_when_target_resolved(tmp_path: Path, make_workspace
         patch(_PLAN_PATH, return_value=planned),
         patch(_RESOLVER_PATH, return_value="1.0.0"),  # upgraded
     ):
-        apply_yarn(make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test"))  # must not raise
+        apply_yarn(
+            make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test")
+        )  # must not raise
 
 
 def test_apply_yarn_guard_skipped_for_pnp_workspace(
@@ -185,14 +198,18 @@ def test_apply_yarn_guard_skipped_for_pnp_workspace(
         patch(_PLAN_PATH, return_value=planned),
         patch("repo_ops_js_yarn.yarn.assert_targets_resolved", fake_guard),
     ):
-        apply_yarn(make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test"))
+        apply_yarn(
+            make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test")
+        )
 
     assert guard_calls == [], "guard must not be called for PnP workspaces"
     captured = capsys.readouterr()
     assert "Plug'n'Play" in captured.err
 
 
-def test_apply_yarn_guard_not_called_when_no_targets(tmp_path: Path, make_workspace) -> None:
+def test_apply_yarn_guard_not_called_when_no_targets(
+    tmp_path: Path, make_workspace
+) -> None:
     """No guardable changes (empty probe output) → assert_targets_resolved not called."""
     _node_modules_yarnrc(tmp_path)
     _resolutions_pkg(tmp_path)
@@ -210,7 +227,9 @@ def test_apply_yarn_guard_not_called_when_no_targets(tmp_path: Path, make_worksp
         patch(_PLAN_PATH, return_value=[]),
         patch("repo_ops_js_yarn.yarn.assert_targets_resolved", fake_guard),
     ):
-        apply_yarn(make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test"))
+        apply_yarn(
+            make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test")
+        )
 
     assert guard_calls == []
 
@@ -238,7 +257,9 @@ def _enter_check_patches(stack: contextlib.ExitStack, ws_path: Path) -> None:
     stack.enter_context(patch(_OVERRIDES_PATH, return_value=[]))
 
 
-def test_probe_cache_populated_by_check_skip_in_apply(tmp_path: Path, make_workspace) -> None:
+def test_probe_cache_populated_by_check_skip_in_apply(
+    tmp_path: Path, make_workspace
+) -> None:
     """check_yarn_snapshot populates the cache; apply_yarn reuses it (probe not invoked)."""
     clear_probe_cache()
     _node_modules_yarnrc(tmp_path)
@@ -272,7 +293,9 @@ def test_probe_cache_populated_by_check_skip_in_apply(tmp_path: Path, make_works
     assert len(probe_calls) == 1, "apply should reuse cache — probe must not run again"
 
 
-def test_probe_cache_fallback_when_check_not_run(tmp_path: Path, make_workspace) -> None:
+def test_probe_cache_fallback_when_check_not_run(
+    tmp_path: Path, make_workspace
+) -> None:
     """apply_yarn without a prior check falls back to _plan_without_resolutions."""
     clear_probe_cache()
     _node_modules_yarnrc(tmp_path)

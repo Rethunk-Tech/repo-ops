@@ -70,8 +70,9 @@ def _no_repo_holds():
 
 
 def test_check_deno_filters_past_ceiling_from_planned_and_behind(
-    tmp_path, make_workspace, make_proc
+    tmp_path, monkeypatch, make_workspace, make_proc
 ) -> None:
+    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     stdout = "\n".join(
         [
@@ -108,6 +109,7 @@ def test_targeted_bump_skips_held_target_above_ceiling(
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change(_PACKAGE, "1.0.0", "2.0.0")
     monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
         patch("repo_ops_js.deno.run") as run_mock,
@@ -125,6 +127,7 @@ def test_targeted_bump_restores_landing_above_ceiling(
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change(_PACKAGE, "1.0.0", "1.4.0")
     monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
     monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "1")
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
@@ -155,6 +158,7 @@ def test_targeted_bump_releases_unheld_import_map_pin(
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change("npm:is-odd", "0.1.2", "1.0.0")
     monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=()),
         patch(
@@ -189,6 +193,7 @@ def test_targeted_bump_keeps_held_import_map_pin(
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change("npm:is-odd", "0.1.0", "0.1.2")
     monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
     with (
         patch(
             _GLOBAL_HOLDS_CACHE,
@@ -226,6 +231,7 @@ def test_targeted_bump_releases_unheld_jsr_import_map_pin(
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change("jsr:@std/assert", "1.0.0", "1.1.0")
     monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=()),
         patch(
@@ -260,6 +266,7 @@ def test_targeted_bump_keeps_held_jsr_import_map_pin(
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change("jsr:@std/assert", "1.0.0", "1.1.0")
     monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
     with (
         patch(
             _GLOBAL_HOLDS_CACHE,
@@ -390,6 +397,7 @@ def test_targeted_bump_audit_override_wins_over_hold_ceiling(
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change(_PACKAGE, "1.0.0", "2.0.0")
     monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
+    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
     set_deno_audit_version_overrides({_PACKAGE: "1.4.0"})
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),

@@ -575,7 +575,12 @@ def test_apply_precommit_no_change_when_at_latest(tmp_path: Path) -> None:
     assert cfg.read_text(encoding="utf-8") == original
 
 
-def test_apply_precommit_sha_pin_not_modified(tmp_path: Path) -> None:
+def test_apply_precommit_sha_pin_not_modified(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Digest refresh defaults on with the sweep (#136); pin it off so this
+    # test exercises the plain SHA-pin-untouched path.
+    monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "0")
     sha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
     original = (
         f"repos:\n"

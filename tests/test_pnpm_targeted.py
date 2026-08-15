@@ -33,15 +33,38 @@ def _seed(d: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_targeted_bump_disabled_by_default(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_enabled_by_default(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
+    """#136: the sweep default is on, so no env var needed to attempt it."""
     _seed(tmp_path)
     monkeypatch.delenv("REPO_OPS_PNPM_TARGETED_BUMP", raising=False)
-    run_mock = patch("repo_ops_js_pnpm.pnpm.run")
-    with run_mock as mock_run:
-        applied, still_behind = targeted_bump_behind(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"), _VUE_BEHIND)
+    run_mock = patch("repo_ops_js_pnpm.pnpm.run", _fake_run_ok)
+    with run_mock:
+        applied, still_behind = targeted_bump_behind(
+            make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"),
+            _VUE_BEHIND,
+        )
+    # No landed version recorded by the fake run, so the bump is attempted but
+    # can't confirm an advance — same shape as a ghost-bump revert.
     assert applied == []
     assert still_behind == _VUE_BEHIND
-    mock_run.assert_not_called()  # opt-in: no pnpm invocations when disabled
+
+
+def test_targeted_bump_env_zero_disables_it(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
+    _seed(tmp_path)
+    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "0")
+    run_mock = patch("repo_ops_js_pnpm.pnpm.run")
+    with run_mock as mock_run:
+        applied, still_behind = targeted_bump_behind(
+            make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"),
+            _VUE_BEHIND,
+        )
+    assert applied == []
+    assert still_behind == _VUE_BEHIND
+    mock_run.assert_not_called()  # explicit opt-out: no pnpm invocations
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +89,9 @@ def _pnpm_update_run(tmp_path: Path, *, landed: str = "4.0.0", update_rc: int = 
     return _run
 
 
-def test_targeted_bump_moves_the_gap(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_moves_the_gap(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
@@ -84,7 +109,9 @@ def test_targeted_bump_moves_the_gap(tmp_path: Path, monkeypatch, make_workspace
 # ---------------------------------------------------------------------------
 
 
-def test_targeted_bump_reverts_when_update_fails(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_reverts_when_update_fails(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     original_lock = (tmp_path / "pnpm-lock.yaml").read_bytes()
@@ -103,7 +130,9 @@ def test_targeted_bump_reverts_when_update_fails(tmp_path: Path, monkeypatch, ma
     assert (tmp_path / "pnpm-lock.yaml").read_bytes() == original_lock
 
 
-def test_targeted_bump_reverts_ghost_bump(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_reverts_ghost_bump(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     """pnpm update exits 0 but node_modules still has the old version → revert."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
@@ -143,7 +172,9 @@ def test_targeted_bump_reverts_when_resolver_returns_none(
 # ---------------------------------------------------------------------------
 
 
-def test_targeted_bump_uses_update_latest_command(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_uses_update_latest_command(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     """Verifies the exact pnpm command issued: pnpm update --latest <pkg>."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
@@ -179,8 +210,8 @@ def test_apply_pnpm_returns_empty_behind_when_targeted_disabled(
     monkeypatch,
 ) -> None:
     """With targeted bump disabled, apply_pnpm returns the full behind_latest list."""
-    monkeypatch.delenv("REPO_OPS_PNPM_TARGETED_BUMP", raising=False)
-    monkeypatch.delenv("REPO_OPS_PNPM_UPDATE_LATEST", raising=False)
+    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "0")
+    monkeypatch.setenv("REPO_OPS_PNPM_UPDATE_LATEST", "0")
     ws = Workspace(
         path=Path("/tmp/proj"),
         ecosystem="node",
@@ -197,7 +228,9 @@ def test_apply_pnpm_returns_empty_behind_when_targeted_disabled(
     assert behind == [Change("vue", "3.0.0", "4.0.0")]
 
 
-def test_apply_pnpm_targeted_clears_behind(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_apply_pnpm_targeted_clears_behind(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     """Targeted bump enabled + successful → apply_pnpm returns empty behind."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")

@@ -514,8 +514,11 @@ def test_digest_refresh_check_already_current(
     assert changes == []
 
 
-def test_digest_refresh_check_off_by_default(tmp_path: Path) -> None:
-    """Without REFRESH_SHA env var, tag+sha pins are report-only."""
+def test_digest_refresh_check_env_zero_disables_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """REPO_OPS_CONTAINER_REFRESH_SHA=0 keeps tag+sha pins report-only."""
+    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "0")
     (tmp_path / "Dockerfile").write_text(f"FROM nginx:1.25@{_OLD_DIGEST}\n")
 
     with patch(
@@ -606,8 +609,11 @@ def test_digest_refresh_apply_crlf_preserved(
     assert b"EXPOSE 80\r\n" in result
 
 
-def test_digest_refresh_apply_off_by_default_untouched(tmp_path: Path) -> None:
-    """Without REFRESH_SHA, tag+sha pins must not be modified."""
+def test_digest_refresh_apply_env_zero_disables_it_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """REPO_OPS_CONTAINER_REFRESH_SHA=0 keeps tag+sha pins unmodified."""
+    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "0")
     dockerfile = tmp_path / "Dockerfile"
     original = f"FROM nginx:1.25@{_OLD_DIGEST}\n"
     dockerfile.write_text(original, encoding="utf-8")

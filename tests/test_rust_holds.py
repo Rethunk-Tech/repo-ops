@@ -99,7 +99,10 @@ def test_cargo_registry_versions_follows_seek_pagination() -> None:
     assert set(versions) == {"1.5.7", "1.5.5"}
 
 
-def test_check_rust_filters_change_past_ceiling(tmp_path, make_workspace, make_proc) -> None:
+def test_check_rust_filters_change_past_ceiling(
+    tmp_path, monkeypatch, make_workspace, make_proc
+) -> None:
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
 
     with (
@@ -112,7 +115,10 @@ def test_check_rust_filters_change_past_ceiling(tmp_path, make_workspace, make_p
         assert check_rust(ws) == []
 
 
-def test_check_rust_matches_rust_ecosystem_hold(tmp_path, make_workspace, make_proc) -> None:
+def test_check_rust_matches_rust_ecosystem_hold(
+    tmp_path, monkeypatch, make_workspace, make_proc
+) -> None:
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
 
     with (
@@ -128,7 +134,10 @@ def test_check_rust_matches_rust_ecosystem_hold(tmp_path, make_workspace, make_p
         assert check_rust(ws) == []
 
 
-def test_check_rust_keeps_change_within_ceiling(tmp_path, make_workspace, make_proc) -> None:
+def test_check_rust_keeps_change_within_ceiling(
+    tmp_path, monkeypatch, make_workspace, make_proc
+) -> None:
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     expected = "    Updating serde v1.2.0 -> v1.4.0\n"
 
@@ -145,8 +154,9 @@ def test_check_rust_keeps_change_within_ceiling(tmp_path, make_workspace, make_p
 
 
 def test_apply_rust_clamps_resolved_crate_above_ceiling(
-    tmp_path, make_workspace, make_proc
+    tmp_path, monkeypatch, make_workspace, make_proc
 ) -> None:
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["1.8.0", "1.5.7"]
     clamp_calls: list[list[str]] = []
@@ -185,8 +195,9 @@ def test_apply_rust_clamps_resolved_crate_above_ceiling(
 
 
 def test_apply_rust_audit_override_wins_over_hold_ceiling(
-    tmp_path, make_workspace, make_proc
+    tmp_path, monkeypatch, make_workspace, make_proc
 ) -> None:
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["2.1.0"]
     override_calls: list[list[str]] = []
@@ -226,8 +237,9 @@ def test_apply_rust_audit_override_wins_over_hold_ceiling(
 
 
 def test_apply_rust_uses_highest_published_prefix_version(
-    tmp_path, make_workspace, make_proc
+    tmp_path, monkeypatch, make_workspace, make_proc
 ) -> None:
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["1.8.0"]
     clamp_calls: list[list[str]] = []
@@ -266,7 +278,10 @@ def test_apply_rust_uses_highest_published_prefix_version(
     assert versions[0] == "1.5.7"
 
 
-def test_apply_rust_audit_override_without_hold(tmp_path, make_workspace, make_proc) -> None:
+def test_apply_rust_audit_override_without_hold(
+    tmp_path, monkeypatch, make_workspace, make_proc
+) -> None:
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["2.1.0"]
     override_calls: list[list[str]] = []
@@ -306,8 +321,9 @@ def test_apply_rust_audit_override_without_hold(tmp_path, make_workspace, make_p
 
 
 def test_apply_rust_skips_unheld_crate_without_audit_override(
-    tmp_path, make_workspace, make_proc
+    tmp_path, monkeypatch, make_workspace, make_proc
 ) -> None:
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["2.1.0"]
     calls: list[list[str]] = []

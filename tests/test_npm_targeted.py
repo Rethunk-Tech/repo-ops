@@ -83,15 +83,38 @@ def test_save_flag_for_unknown_package_defaults_to_save() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_targeted_bump_disabled_by_default(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_enabled_by_default(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
+    """#136: the sweep default is on, so no env var needed to attempt it."""
     _seed(tmp_path)
     monkeypatch.delenv("REPO_OPS_NPM_TARGETED_BUMP", raising=False)
-    run_mock = patch("repo_ops_js_npm.npm.run")
-    with run_mock as mock_run:
-        applied, still_behind = targeted_bump_behind(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"), _REACT_BEHIND)
+    run_mock = patch("repo_ops_js_npm.npm.run", _fake_run_ok)
+    with run_mock:
+        applied, still_behind = targeted_bump_behind(
+            make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"),
+            _REACT_BEHIND,
+        )
+    # No landed version recorded by the fake run, so the bump is attempted but
+    # can't confirm an advance — same shape as a ghost-bump revert.
     assert applied == []
     assert still_behind == _REACT_BEHIND
-    mock_run.assert_not_called()  # opt-in: no npm invocations when disabled
+
+
+def test_targeted_bump_env_zero_disables_it(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
+    _seed(tmp_path)
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "0")
+    run_mock = patch("repo_ops_js_npm.npm.run")
+    with run_mock as mock_run:
+        applied, still_behind = targeted_bump_behind(
+            make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"),
+            _REACT_BEHIND,
+        )
+    assert applied == []
+    assert still_behind == _REACT_BEHIND
+    mock_run.assert_not_called()  # explicit opt-out: no npm invocations
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +139,9 @@ def _npm_install_run(tmp_path: Path, *, landed: str = "19.0.0", install_rc: int 
     return _run
 
 
-def test_targeted_bump_moves_the_gap(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_moves_the_gap(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
     ws = make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo")
@@ -134,7 +159,9 @@ def test_targeted_bump_moves_the_gap(tmp_path: Path, monkeypatch, make_workspace
 # ---------------------------------------------------------------------------
 
 
-def test_targeted_bump_reverts_when_install_fails(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_reverts_when_install_fails(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
     original_lock = (tmp_path / "package-lock.json").read_bytes()
@@ -153,7 +180,9 @@ def test_targeted_bump_reverts_when_install_fails(tmp_path: Path, monkeypatch, m
     assert (tmp_path / "package-lock.json").read_bytes() == original_lock
 
 
-def test_targeted_bump_reverts_ghost_bump(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_reverts_ghost_bump(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     """npm install exits 0 but node_modules still has the old version → revert."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
@@ -228,7 +257,7 @@ def test_apply_npm_returns_empty_behind_when_targeted_disabled(
     monkeypatch,
 ) -> None:
     """With targeted bump disabled, apply_npm returns the full behind_latest list."""
-    monkeypatch.delenv("REPO_OPS_NPM_TARGETED_BUMP", raising=False)
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "0")
     ws = Workspace(
         path=Path("/tmp/proj"),
         ecosystem="node",
@@ -245,7 +274,9 @@ def test_apply_npm_returns_empty_behind_when_targeted_disabled(
     assert behind == [Change("react", "18.0.0", "19.0.0")]
 
 
-def test_apply_npm_targeted_clears_behind(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_apply_npm_targeted_clears_behind(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     """Targeted bump enabled + successful → apply_npm returns empty behind."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
@@ -273,14 +304,18 @@ def test_check_npm_promotes_behind_when_targeted_enabled(
             [Change("react", "18.0.0", "19.0.0")],
         ),
     ):
-        changes, behind = check_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))
+        changes, behind = check_npm(
+            make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo")
+        )
     assert behind == []
     names = {c.name for c in changes}
     assert "lodash" in names
     assert "react" in names
 
 
-def test_targeted_bump_accepts_on_env_value(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_accepts_on_env_value(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     """REPO_OPS_NPM_TARGETED_BUMP=on must enable the gate (parity with pnpm/bun/yarn)."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "on")
@@ -294,7 +329,9 @@ def test_targeted_bump_accepts_on_env_value(tmp_path: Path, monkeypatch, make_wo
     assert still_behind == []
 
 
-def test_targeted_bump_uses_save_dev_for_dev_dep(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_uses_save_dev_for_dev_dep(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     """Dev dep → npm install --save-dev <pkg>@latest."""
     pkg_content = json.dumps({"devDependencies": {"typescript": "^5.0.0"}})
     _seed(tmp_path, pkg_content=pkg_content)
@@ -324,7 +361,9 @@ def test_targeted_bump_uses_save_dev_for_dev_dep(tmp_path: Path, monkeypatch, ma
     assert "typescript@latest" in install_cmds[0]
 
 
-def test_targeted_bump_uses_save_peer_for_peer_dep(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_uses_save_peer_for_peer_dep(
+    tmp_path: Path, monkeypatch, make_workspace
+) -> None:
     """Peer dep → npm install --save-peer <pkg>@latest."""
     pkg_content = json.dumps({"peerDependencies": {"react": "^18.0.0"}})
     _seed(tmp_path, pkg_content=pkg_content)

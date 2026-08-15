@@ -21,6 +21,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops._register import register_all
+from repo_ops_core.config import coerce_bool_setting, resolve_setting
 from repo_ops_js_bun.bun import targeted_bump_behind as bun_targeted_bump_behind
 from repo_ops_models import Change, Workspace, WorkspaceResult
 from repo_ops_upgrade.report import _behind_latest_hint
@@ -73,13 +74,10 @@ def test_default_sweep_sets_container_precommit_submodule_env_vars(
     _bun_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
 
-    seen: dict[str, str | None] = {}
+    ran: list[bool] = []
 
     def _capture(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
-        seen["container"] = os.environ.get("REPO_OPS_CONTAINER_UPDATE_LATEST")
-        seen["precommit"] = os.environ.get("REPO_OPS_PRECOMMIT_UPDATE_LATEST")
-        seen["submodule"] = os.environ.get("REPO_OPS_SUBMODULE_UPDATE_LATEST")
-        seen["deno"] = os.environ.get("REPO_OPS_DENO_UPDATE_LATEST")
+        ran.append(True)
         return wr
 
     with patch(
@@ -88,12 +86,17 @@ def test_default_sweep_sets_container_precommit_submodule_env_vars(
     ):
         main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
 
-    assert seen == {
-        "container": "1",
-        "precommit": "1",
-        "submodule": "1",
-        "deno": "1",
-    }
+    assert ran, "the run never reached a workspace"
+    # #136: run.py no longer force-writes these to "1" — each key's
+    # settings-table default is already "1", so with nothing overriding it
+    # (env cleared above, no config file) every gate must still resolve on.
+    for name in (
+        "container_update_latest",
+        "precommit_update_latest",
+        "submodule_update_latest",
+        "deno_update_latest",
+    ):
+        assert coerce_bool_setting(resolve_setting(name)) is True
 
 
 def test_conservative_flag_zeroes_container_precommit_submodule_env_vars(
@@ -135,7 +138,9 @@ def test_conservative_flag_zeroes_container_precommit_submodule_env_vars(
 # ---------------------------------------------------------------------------
 
 
-def test_bun_targeted_bump_defaults_on(tmp_path: Path, monkeypatch, init_git_repo) -> None:
+def test_bun_targeted_bump_defaults_on(
+    tmp_path: Path, monkeypatch, init_git_repo
+) -> None:
     _clear_env(
         monkeypatch,
         ("REPO_OPS_BUN_TARGETED_BUMP", "REPO_OPS_BUN_UPDATE_LATEST"),
@@ -143,10 +148,10 @@ def test_bun_targeted_bump_defaults_on(tmp_path: Path, monkeypatch, init_git_rep
     _bun_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
 
-    seen: dict[str, str | None] = {}
+    ran: list[bool] = []
 
     def _capture(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
-        seen["bun_targeted_bump"] = os.environ.get("REPO_OPS_BUN_TARGETED_BUMP")
+        ran.append(True)
         return wr
 
     with patch(
@@ -155,7 +160,9 @@ def test_bun_targeted_bump_defaults_on(tmp_path: Path, monkeypatch, init_git_rep
     ):
         main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
 
-    assert seen == {"bun_targeted_bump": "1"}
+    assert ran, "the run never reached a workspace"
+    # #136: no force-write — the settings-table default ("1") must resolve on.
+    assert coerce_bool_setting(resolve_setting("bun_targeted_bump")) is True
 
 
 def test_bun_targeted_bump_conservative_flag_disables_it(

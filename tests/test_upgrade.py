@@ -143,6 +143,7 @@ def test_resolved_version_from_node_modules_scoped(tmp_path):
 
 def test_check_rust_parses_stderr_updates(monkeypatch):
     """cargo update --dry-run writes to stderr; check_rust must not miss it."""
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     from repo_ops_models import Workspace
     from repo_ops_rust.rust import check_rust
 
@@ -171,6 +172,7 @@ def test_check_rust_parses_stderr_updates(monkeypatch):
 
 def test_apply_rust_invokes_cargo_update(monkeypatch):
     """apply_rust runs cargo update and surfaces stderr on failure."""
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     import pytest
     from repo_ops_models import Workspace
     from repo_ops_rust.rust import apply_rust

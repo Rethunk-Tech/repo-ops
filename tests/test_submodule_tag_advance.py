@@ -318,7 +318,10 @@ def test_check_actionable_bump_detected(tmp_path: Path) -> None:
     assert b.url == "https://example.com/sub.git"
 
 
-def test_check_cross_major_blocked_by_default(tmp_path: Path) -> None:
+def test_check_cross_major_blocked_when_env_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("REPO_OPS_SUBMODULE_UPDATE_LATEST", "0")
     link = _make_link(tmp_path)
     with (
         patch(
@@ -330,7 +333,7 @@ def test_check_cross_major_blocked_by_default(tmp_path: Path) -> None:
         ),
     ):
         bumps = check_submodule_tag_advances([link])
-    # v2.0.0 is cross-major; default conservative mode → no bump
+    # v2.0.0 is cross-major; env explicitly off → no bump
     assert bumps == []
 
 
@@ -438,8 +441,15 @@ def test_apply_calls_fetch_checkout_add_for_actionable(
     assert calls[2][0][2] == "sub"
 
 
-def test_apply_skips_git_ops_for_report_only(tmp_path: Path, make_proc) -> None:
-    """No fetch/checkout/add calls for non-actionable (SHA-only) bumps."""
+def test_apply_skips_git_ops_for_report_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
+) -> None:
+    """No fetch/checkout/add calls for non-actionable (SHA-only) bumps.
+
+    Digest refresh defaults on with the sweep (#136); pin it off so this test
+    exercises the plain report-only path rather than an actual refresh.
+    """
+    monkeypatch.setenv("REPO_OPS_SUBMODULE_REFRESH_SHA", "0")
     link = _make_link(tmp_path)
 
     with (

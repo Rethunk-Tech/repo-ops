@@ -53,6 +53,7 @@ def test_timeout_check_env_override_rust(
 ) -> None:
     """REPO_OPS_TIMEOUT_CHECK overrides the timeout passed to run() in check_rust."""
     monkeypatch.setenv("REPO_OPS_TIMEOUT_CHECK", "77")
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     captured: list[dict] = []
 
     from repo_ops_rust.rust import check_rust
@@ -133,6 +134,7 @@ def test_timeout_apply_env_override_rust(
 ) -> None:
     """REPO_OPS_TIMEOUT_APPLY overrides the timeout passed to run() in apply_rust."""
     monkeypatch.setenv("REPO_OPS_TIMEOUT_APPLY", "88")
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     captured: list[dict] = []
 
     from repo_ops_rust.rust import apply_rust
@@ -191,6 +193,7 @@ def test_timeout_apply_default_unchanged(
 ) -> None:
     """Without env override, apply functions use TIMEOUT_APPLY."""
     monkeypatch.delenv("REPO_OPS_TIMEOUT_APPLY", raising=False)
+    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
     captured: list[dict] = []
 
     from repo_ops_rust.rust import apply_rust

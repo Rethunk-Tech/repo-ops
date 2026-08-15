@@ -56,7 +56,9 @@ def test_workspace_result_behind_latest_field(tmp_path: Path, make_workspace) ->
     assert wr.status == "ok"
 
 
-def test_workspace_result_to_json_includes_behind_latest(tmp_path: Path, make_workspace) -> None:
+def test_workspace_result_to_json_includes_behind_latest(
+    tmp_path: Path, make_workspace
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     wr = WorkspaceResult(
         workspace=ws,
@@ -96,7 +98,9 @@ def test_build_run_summary_counts_behind_latest(tmp_path: Path, make_workspace) 
     assert summary["workspaces_fail"] == 0
 
 
-def test_behind_latest_does_not_affect_failure_count(tmp_path: Path, make_workspace) -> None:
+def test_behind_latest_does_not_affect_failure_count(
+    tmp_path: Path, make_workspace
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     wr = WorkspaceResult(
         workspace=ws,
@@ -371,13 +375,26 @@ def test_yarn_behind_latest_note_when_targeted_bump_already_requested(
 def test_sweep_env_vars_default_on_and_conservative_off(
     tmp_path: Path, monkeypatch, init_git_repo
 ) -> None:
-    """#136: every _SWEEP_ENV_VARS gate defaults on with no flag needed; run.py
-    writes each one explicitly ("1" or "0") rather than leaving it unset, so an
-    ambient REPO_OPS_*=1 in the caller's shell can't outrank --conservative.
+    """#136: every _SWEEP_ENV_VARS gate defaults on with no flag needed.
+
+    run.py writes "0" for each on --conservative (an explicit CLI instruction
+    outranks env/config), but leaves the default "on" case unwritten — each
+    key's settings-table default is already "1", so a user's own env var or
+    [tool.repo-ops] entry can still override it instead of being clobbered by
+    a forced "1" here.
     """
     import os
 
+    from repo_ops_core.config import (
+        _SETTINGS_MAP,
+        coerce_bool_setting,
+        resolve_setting,
+    )
     from repo_ops_upgrade.run import _SWEEP_ENV_VARS
+
+    env_var_to_setting = {
+        env_var: name for name, (env_var, _cfg_key, _default) in _SETTINGS_MAP.items()
+    }
 
     for var in _SWEEP_ENV_VARS:
         monkeypatch.setenv(var, "__sentinel__")
@@ -386,11 +403,18 @@ def test_sweep_env_vars_default_on_and_conservative_off(
     register_all()
 
     seen: dict[str, dict[str, str | None]] = {"default": {}, "conservative": {}}
+    resolved_default: dict[str, bool] = {}
 
     def _capture(mode: str):
         def _inner(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
             for var in _SWEEP_ENV_VARS:
                 seen[mode][var] = os.environ.get(var)
+                if mode == "default":
+                    # Captured here (mid-run), before the --conservative run
+                    # below writes "0" into these same os.environ keys.
+                    resolved_default[var] = coerce_bool_setting(
+                        resolve_setting(env_var_to_setting[var])
+                    )
             return wr
 
         return _inner
@@ -409,7 +433,8 @@ def test_sweep_env_vars_default_on_and_conservative_off(
             [str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"]
         )
 
-    assert all(v == "1" for v in seen["default"].values())
+    assert all(v is None for v in seen["default"].values())
+    assert all(resolved_default.values())
     assert all(v == "0" for v in seen["conservative"].values())
 
 
@@ -452,7 +477,9 @@ def test_default_sweep_sets_go_upgrade_mode_explicit(
     assert seen == {"default": "explicit", "conservative": None}
 
 
-def test_latest_umbrella_flips_actions_mode(tmp_path: Path, monkeypatch, init_git_repo) -> None:
+def test_latest_umbrella_flips_actions_mode(
+    tmp_path: Path, monkeypatch, init_git_repo
+) -> None:
     """#106: the default sweep opts Actions into latest mode; --conservative
     reverts to normalize; an explicit --actions-upgrade-mode always wins."""
     for var in (
@@ -544,7 +571,8 @@ def _bun_workspace(tmp_path: Path, init_git_repo) -> None:
 
 
 def test_behind_latest_workspace_does_not_change_plan_exit_code(
-    tmp_path: Path, init_git_repo,
+    tmp_path: Path,
+    init_git_repo,
 ) -> None:
     """A workspace with only behind_latest entries must yield exit_code == 0."""
     _bun_workspace(tmp_path, init_git_repo=init_git_repo)

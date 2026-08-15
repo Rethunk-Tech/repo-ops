@@ -24,6 +24,7 @@ from repo_ops_core.config import (
     ambient_env,
     apply_config_to_env,
     checkout_config_scope,
+    coerce_bool_setting,
     load_global_config,
     load_repo_config,
     resolve_setting,
@@ -129,9 +130,11 @@ def _resolve_exit_code(
     return 0
 
 
-# Every gate the default full sweep opens. Each ecosystem module already reads
-# its own var, so enabling the sweep is just setting them all; --conservative
-# writes "0" to each, which is what makes the opt-out beat an ambient value.
+# Every gate the default full sweep opens. Each one's settings-table default
+# is already "1" (see repo_ops_core.config._SETTINGS_MAP), so the sweep needs
+# no write here to turn on — only --conservative writes "0" to each, an
+# explicit CLI override that outranks the user's own env var or config entry
+# by design (an unset default here would leave those free to win instead).
 _SWEEP_ENV_VARS = (
     # Cross-range upgrades per ecosystem.
     "REPO_OPS_BUN_UPDATE_LATEST",
@@ -217,9 +220,6 @@ def _run_upgrade_body(
     roots: list[str],
     follow_symlinks: bool = False,
 ) -> int:
-    # Populate the per-ecosystem env vars the checker modules already read,
-    # BEFORE any worker pool starts. Additive: the env-var reads stay; this
-    # just fills them in for the current process.
     # Full sweep is the default (#136): every ecosystem crosses ranges and every
     # package manager gets its per-package targeted fallback. --conservative is
     # the single opt-out for a run that must stay inside declared constraints.
@@ -228,12 +228,17 @@ def _run_upgrade_body(
     # version actually advances (see e.g. yarn.targeted_bump_behind).
     conservative = _cli_flag(args, "conservative")
     latest = not conservative
-    # Written explicitly in both directions rather than left unset: an ambient
-    # REPO_OPS_*=1 in the caller's environment outranks an unset process value,
-    # so a merely-absent var would let the environment silently override
-    # --conservative and run the very sweep it was passed to prevent.
-    for _var in _SWEEP_ENV_VARS:
-        _set_cli_env(_var, "1" if latest else "0")
+    # --conservative is an explicit CLI instruction, so it is written
+    # unconditionally (beats env/config, same as any other CLI override).
+    # The non-conservative "on" case is NOT written here: each of these keys'
+    # settings-table default is already "1" (#136 sweep-on-by-default), so
+    # leaving the var unset lets the user's own REPO_OPS_*=0 env var or
+    # [tool.repo-ops] config entry override the default through the normal
+    # CLI > env > config > default layering instead of being silently
+    # clobbered by a forced "1" written here.
+    if conservative:
+        for _var in _SWEEP_ENV_VARS:
+            _set_cli_env(_var, "0")
     if latest:
         os.environ.setdefault("REPO_OPS_GO_UPGRADE_MODE", "explicit")
     # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects (#132).
@@ -551,11 +556,30 @@ def _run_upgrade_body(
         # Only unpin when the user explicitly opts in via --actions-unpin-sha.
         keep_sha = not _cli_flag(args, "actions_unpin_sha")
         # Digest refresh (#109): only meaningful while staying SHA-pinned.
-        refresh_sha = keep_sha and latest
+        # No CLI flag of its own (#136 follow-up) — --conservative is passed
+        # through as an explicit CLI override (cli_value wins ahead of
+        # env/config) rather than a real flag, so REPO_OPS_ACTIONS_REFRESH_SHA
+        # / [tool.repo-ops] actions_refresh_sha still take effect whenever the
+        # run is not conservative.
+        refresh_sha = keep_sha and coerce_bool_setting(
+            resolve_setting(
+                "actions_refresh_sha",
+                cli_value="0" if conservative else None,
+                global_cfg=_global_cfg,
+                env=_ambient_env,
+            )
+        )
         # Pin-to-SHA (#136): a floating tag pin is invisible to refresh_sha,
         # so leaving it opt-in meant the common case — an Action that was
         # never SHA-pinned at all — was silently never hardened.
-        pin_sha = keep_sha and latest
+        pin_sha = keep_sha and coerce_bool_setting(
+            resolve_setting(
+                "actions_pin_sha",
+                cli_value="0" if conservative else None,
+                global_cfg=_global_cfg,
+                env=_ambient_env,
+            )
+        )
         _raw_tag_style = getattr(args, "actions_tag_style", "major")
         tag_style: actions.TagStyle = "exact" if _raw_tag_style == "exact" else "major"
         # Cross-major apply (#106): explicit --actions-upgrade-mode wins; otherwise
