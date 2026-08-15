@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -243,6 +244,35 @@ class DiscoveryDiagnostics:
         self.warnings.append({"path": str(root), "message": "root not found"})
 
 
+def _register_workspace(
+    mdir: Path,
+    ecosystem: str,
+    manager: str,
+    *,
+    record_skip: Callable[[Path, str, str], None],
+    found: list[Workspace],
+) -> None:
+    """Resolve *mdir*'s git repo and append a Workspace, or record a skip.
+
+    Shared tail for every ``consider_*`` closure in
+    :func:`discover_workspaces_in_root`: each does its own ecosystem-specific
+    existence/manager check first, then calls this once *mdir* is actionable.
+    """
+    git = git_repo_for(mdir)
+    if not git:
+        record_skip(mdir, ecosystem, "not inside a git repo")
+        return
+    found.append(
+        Workspace(
+            path=mdir.resolve(),
+            ecosystem=ecosystem,
+            manager=manager,
+            git_repo=git.resolve(),
+            label="",
+        )
+    )
+
+
 def discover_workspaces_in_root(
     root: Path,
     flat: bool,
@@ -295,19 +325,7 @@ def discover_workspaces_in_root(
         members = yarn_workspace_members(mdir)
         if members:
             node_workspace_roots[mdir] = members
-        git = git_repo_for(mdir)
-        if not git:
-            record_skip(mdir, "node", "not inside a git repo")
-            return
-        found.append(
-            Workspace(
-                path=mdir.resolve(),
-                ecosystem="node",
-                manager=mgr,
-                git_repo=git.resolve(),
-                label="",
-            )
-        )
+        _register_workspace(mdir, "node", mgr, record_skip=record_skip, found=found)
 
     def _find_go_work(mdir: Path, git_root: Path) -> Path | None:
         """Return the directory containing go.work nearest to *mdir*, up to *git_root*.
@@ -337,21 +355,12 @@ def discover_workspaces_in_root(
         if not git:
             record_skip(mdir, "go", "not inside a git repo")
             return
-        ws_path = mdir.resolve()
         # Detect a go.work file between the module dir and the git root so that
         # classification hints in go.py can name the actionable directory.
         go_work_dir = _find_go_work(mdir, git)
         if go_work_dir is not None:
-            register_go_work_dir(ws_path, go_work_dir)
-        found.append(
-            Workspace(
-                path=ws_path,
-                ecosystem="go",
-                manager="go",
-                git_repo=git.resolve(),
-                label="",
-            )
-        )
+            register_go_work_dir(mdir.resolve(), go_work_dir)
+        _register_workspace(mdir, "go", "go", record_skip=record_skip, found=found)
 
     def consider_rust(mdir: Path) -> None:
         cargo = mdir / "Cargo.toml"
@@ -379,52 +388,20 @@ def discover_workspaces_in_root(
         ws_excludes = cargo_workspace_excludes(mdir)
         if ws_members or ws_excludes:
             cargo_roots[mdir] = ws_members | ws_excludes
-        git = git_repo_for(mdir)
-        if not git:
-            record_skip(mdir, "rust", "not inside a git repo")
-            return
-        found.append(
-            Workspace(
-                path=mdir.resolve(),
-                ecosystem="rust",
-                manager="rust",
-                git_repo=git.resolve(),
-                label="",
-            )
-        )
+        _register_workspace(mdir, "rust", "rust", record_skip=record_skip, found=found)
 
     def consider_container(mdir: Path) -> None:
         if not is_container_workspace(mdir):
             return
-        git = git_repo_for(mdir)
-        if not git:
-            record_skip(mdir, "container", "not inside a git repo")
-            return
-        found.append(
-            Workspace(
-                path=mdir.resolve(),
-                ecosystem="container",
-                manager="container",
-                git_repo=git.resolve(),
-                label="",
-            )
+        _register_workspace(
+            mdir, "container", "container", record_skip=record_skip, found=found
         )
 
     def consider_precommit(mdir: Path) -> None:
         if not is_precommit_workspace(mdir):
             return
-        git = git_repo_for(mdir)
-        if not git:
-            record_skip(mdir, "precommit", "not inside a git repo")
-            return
-        found.append(
-            Workspace(
-                path=mdir.resolve(),
-                ecosystem="precommit",
-                manager="precommit",
-                git_repo=git.resolve(),
-                label="",
-            )
+        _register_workspace(
+            mdir, "precommit", "precommit", record_skip=record_skip, found=found
         )
 
     def consider_py(mdir: Path) -> None:
@@ -493,19 +470,7 @@ def discover_workspaces_in_root(
                 "(uv/poetry/pdm/pip-tools/hatch/pipenv)",
             )
             return
-        git = git_repo_for(mdir)
-        if not git:
-            record_skip(mdir, "py", "not inside a git repo")
-            return
-        found.append(
-            Workspace(
-                path=mdir.resolve(),
-                ecosystem="py",
-                manager=mgr,
-                git_repo=git.resolve(),
-                label="",
-            )
-        )
+        _register_workspace(mdir, "py", mgr, record_skip=record_skip, found=found)
 
     def consider_deno(mdir: Path) -> None:
         if not (
@@ -514,19 +479,7 @@ def discover_workspaces_in_root(
             or (mdir / "deno.lock").exists()
         ):
             return
-        git = git_repo_for(mdir)
-        if not git:
-            record_skip(mdir, "deno", "not inside a git repo")
-            return
-        found.append(
-            Workspace(
-                path=mdir.resolve(),
-                ecosystem="deno",
-                manager="deno",
-                git_repo=git.resolve(),
-                label="",
-            )
-        )
+        _register_workspace(mdir, "deno", "deno", record_skip=record_skip, found=found)
 
     seen_paths: set[Path] = set()
     if flat:
