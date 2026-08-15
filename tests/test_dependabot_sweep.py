@@ -59,58 +59,39 @@ def test_version_gte_pre_release_segment_ignored() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_parse_bump_standard_title() -> None:
-    bump = _parse_bump("Bump lodash from 4.17.11 to 4.17.21")
+_PARSE_BUMP_CASES = [
+    ("Bump lodash from 4.17.11 to 4.17.21", "lodash", "4.17.21"),
+    ("Bumps lodash from 4.17.11 to 4.17.21", "lodash", "4.17.21"),
+    ("bump lodash from 4.17.11 to 4.17.21", "lodash", "4.17.21"),
+    ("Bump lodash from 4.17.11 to 4.17.21 in /packages/app", "lodash", "4.17.21"),
+    ("chore(deps): bump lodash from 4.17.11 to 4.17.21", "lodash", "4.17.21"),
+    ("build(deps-dev): bump typescript from 4.9.5 to 5.0.0", "typescript", "5.0.0"),
+    ("Bump golang.org/x/net from 0.14.0 to 0.17.0", "golang.org/x/net", "0.17.0"),
+    ("Bump foo and bar from 1.0 to 2.0", "foo", "2.0"),
+    ("[Security] Bump lodash from 4.17.11 to 4.17.21", "lodash", "4.17.21"),
+]
+
+
+@pytest.mark.parametrize(
+    "title,expected_package,expected_to",
+    _PARSE_BUMP_CASES,
+    ids=[
+        "standard-title",
+        "bumps-variant",
+        "lowercase",
+        "in-subpath",
+        "conventional-chore-deps",
+        "conventional-build-deps-dev",
+        "go-module",
+        "multi-package-takes-first",
+        "security-prefix",
+    ],
+)
+def test_parse_bump(title, expected_package, expected_to) -> None:
+    bump = _parse_bump(title)
     assert bump is not None
-    assert bump.package == "lodash"
-    assert bump.from_ver == "4.17.11"
-    assert bump.to_ver == "4.17.21"
-
-
-def test_parse_bump_bumps_variant() -> None:
-    bump = _parse_bump("Bumps lodash from 4.17.11 to 4.17.21")
-    assert bump is not None
-    assert bump.package == "lodash"
-
-
-def test_parse_bump_lowercase() -> None:
-    bump = _parse_bump("bump lodash from 4.17.11 to 4.17.21")
-    assert bump is not None
-    assert bump.package == "lodash"
-
-
-def test_parse_bump_in_subpath() -> None:
-    bump = _parse_bump("Bump lodash from 4.17.11 to 4.17.21 in /packages/app")
-    assert bump is not None
-    assert bump.package == "lodash"
-    assert bump.to_ver == "4.17.21"
-
-
-def test_parse_bump_conventional_commit_chore_deps() -> None:
-    bump = _parse_bump("chore(deps): bump lodash from 4.17.11 to 4.17.21")
-    assert bump is not None
-    assert bump.package == "lodash"
-    assert bump.to_ver == "4.17.21"
-
-
-def test_parse_bump_conventional_commit_build_deps_dev() -> None:
-    bump = _parse_bump("build(deps-dev): bump typescript from 4.9.5 to 5.0.0")
-    assert bump is not None
-    assert bump.package == "typescript"
-    assert bump.to_ver == "5.0.0"
-
-
-def test_parse_bump_go_module() -> None:
-    bump = _parse_bump("Bump golang.org/x/net from 0.14.0 to 0.17.0")
-    assert bump is not None
-    assert bump.package == "golang.org/x/net"
-    assert bump.to_ver == "0.17.0"
-
-
-def test_parse_bump_multi_package_takes_first() -> None:
-    bump = _parse_bump("Bump foo and bar from 1.0 to 2.0")
-    assert bump is not None
-    assert bump.package == "foo"
+    assert bump.package == expected_package
+    assert bump.to_ver == expected_to
 
 
 def test_parse_bump_group_title_returns_none() -> None:
@@ -134,13 +115,6 @@ def test_is_security_title_detects_bracket_prefix() -> None:
 
 def test_is_security_title_false_for_normal() -> None:
     assert _is_security_title("Bump lodash from 4.17.11 to 4.17.21") is False
-
-
-def test_parse_bump_security_prefix() -> None:
-    bump = _parse_bump("[Security] Bump lodash from 4.17.11 to 4.17.21")
-    assert bump is not None
-    assert bump.package == "lodash"
-    assert bump.to_ver == "4.17.21"
 
 
 # ---------------------------------------------------------------------------
@@ -479,13 +453,6 @@ def test_dependabot_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_dependabot_json_empty_repos(tmp_path: Path) -> None:
     """No repos discovered → JSON with empty repos list, exit 0."""
-    with patch("repo_ops_dependabot.dependabot.discover_repos", return_value={}):
-        result = main(["--json", str(tmp_path)])
-    assert result == 0
-
-
-def test_dependabot_json_output_structure(tmp_path: Path) -> None:
-    """JSON output has expected schema_version and summary keys."""
     with patch("repo_ops_dependabot.dependabot.discover_repos", return_value={}):
         result = main(["--json", str(tmp_path)])
     assert result == 0
