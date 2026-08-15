@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from repo_ops_models import WorkspaceResult
 from repo_ops_upgrade_remediations_deno import remediations as deno_rem
@@ -14,61 +14,47 @@ def _result(tmp_path: Path, make_workspace, ecosystem: str = "deno") -> Workspac
     return WorkspaceResult(workspace=make_workspace(tmp_path, ecosystem=ecosystem, manager="deno", label="test"))
 
 
-def _fake_change(name: str) -> Any:
-    obj = MagicMock()
-    obj.name = name
-    return obj
-
-
-def _make_proc(returncode: int, stdout: str = "", stderr: str = "") -> MagicMock:
-    p = MagicMock()
-    p.returncode = returncode
-    p.stdout = stdout
-    p.stderr = stderr
-    return p
-
-
 # ── detect_deno_fix ──────────────────────────────────────────────────────────
 
 
-def test_detect_deno_fix_false_for_node_ecosystem(tmp_path: Path, make_workspace) -> None:
+def test_detect_deno_fix_false_for_node_ecosystem(tmp_path: Path, make_workspace, make_change) -> None:
     ws = make_workspace(tmp_path, ecosystem="node", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [_fake_change("react")], "apply": True}
+    ctx: dict[str, Any] = {"changes": [make_change("react")], "apply": True}
     assert deno_rem.detect_deno_fix(ws, ctx) is False
 
 
-def test_detect_deno_fix_false_for_go_ecosystem(tmp_path: Path, make_workspace) -> None:
+def test_detect_deno_fix_false_for_go_ecosystem(tmp_path: Path, make_workspace, make_change) -> None:
     ws = make_workspace(tmp_path, ecosystem="go", manager="deno", label="test")
     (tmp_path / "deno.json").write_text("{}\n")
-    ctx: dict[str, Any] = {"changes": [_fake_change("pkg")], "apply": True}
+    ctx: dict[str, Any] = {"changes": [make_change("pkg")], "apply": True}
     assert deno_rem.detect_deno_fix(ws, ctx) is False
 
 
-def test_detect_deno_fix_false_for_py_ecosystem(tmp_path: Path, make_workspace) -> None:
+def test_detect_deno_fix_false_for_py_ecosystem(tmp_path: Path, make_workspace, make_change) -> None:
     ws = make_workspace(tmp_path, ecosystem="py", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [_fake_change("httpx")], "apply": True}
+    ctx: dict[str, Any] = {"changes": [make_change("httpx")], "apply": True}
     assert deno_rem.detect_deno_fix(ws, ctx) is False
 
 
-def test_detect_deno_fix_false_deno_no_config(tmp_path: Path, make_workspace) -> None:
+def test_detect_deno_fix_false_deno_no_config(tmp_path: Path, make_workspace, make_change) -> None:
     # deno ecosystem but no deno.json/deno.jsonc/deno.lock present
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [_fake_change("std")], "apply": True}
+    ctx: dict[str, Any] = {"changes": [make_change("std")], "apply": True}
     assert deno_rem.detect_deno_fix(ws, ctx) is False
 
 
-def test_detect_deno_fix_true_deno_with_config_and_changes(tmp_path: Path, make_workspace) -> None:
+def test_detect_deno_fix_true_deno_with_config_and_changes(tmp_path: Path, make_workspace, make_change) -> None:
     (tmp_path / "deno.json").write_text("{}\n")
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [_fake_change("std")], "apply": True}
+    ctx: dict[str, Any] = {"changes": [make_change("std")], "apply": True}
     with patch.object(deno_rem.shutil, "which", return_value="/usr/bin/deno"):
         assert deno_rem.detect_deno_fix(ws, ctx) is True
 
 
-def test_detect_deno_fix_true_with_jsonc_config(tmp_path: Path, make_workspace) -> None:
+def test_detect_deno_fix_true_with_jsonc_config(tmp_path: Path, make_workspace, make_change) -> None:
     (tmp_path / "deno.jsonc").write_text("{}\n")
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [_fake_change("std")], "apply": True}
+    ctx: dict[str, Any] = {"changes": [make_change("std")], "apply": True}
     with patch.object(deno_rem.shutil, "which", return_value="/usr/bin/deno"):
         assert deno_rem.detect_deno_fix(ws, ctx) is True
 
@@ -91,11 +77,11 @@ def test_detect_deno_fix_true_plan_mode_no_changes(tmp_path: Path, make_workspac
         assert deno_rem.detect_deno_fix(ws, ctx) is True
 
 
-def test_detect_deno_fix_false_when_deno_absent(tmp_path: Path, make_workspace) -> None:
+def test_detect_deno_fix_false_when_deno_absent(tmp_path: Path, make_workspace, make_change) -> None:
     """Gracefully skip (not fail) detection when the deno binary is not installed."""
     (tmp_path / "deno.json").write_text("{}\n")
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
-    ctx: dict[str, Any] = {"changes": [_fake_change("std")], "apply": True}
+    ctx: dict[str, Any] = {"changes": [make_change("std")], "apply": True}
     with patch.object(deno_rem.shutil, "which", return_value=None):
         assert deno_rem.detect_deno_fix(ws, ctx) is False
 
@@ -115,10 +101,10 @@ def test_report_deno_fix_returns_useful_message(tmp_path: Path, make_workspace) 
 # ── apply_deno_fix ───────────────────────────────────────────────────────────
 
 
-def test_apply_deno_fix_success(tmp_path: Path, make_workspace) -> None:
+def test_apply_deno_fix_success(tmp_path: Path, make_workspace, make_proc) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
     ctx: dict[str, Any] = {"changes": [], "apply": True}
-    ok_proc = _make_proc(0)
+    ok_proc = make_proc(0)
 
     with patch("repo_ops_upgrade_remediations_deno.remediations.run") as mock_run:
         mock_run.return_value = ok_proc
@@ -130,10 +116,10 @@ def test_apply_deno_fix_success(tmp_path: Path, make_workspace) -> None:
     assert cmd == ["deno", "fmt"]
 
 
-def test_apply_deno_fix_failure_captures_stderr(tmp_path: Path, make_workspace) -> None:
+def test_apply_deno_fix_failure_captures_stderr(tmp_path: Path, make_workspace, make_proc) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
     ctx: dict[str, Any] = {}
-    fail_proc = _make_proc(1, stderr="error: could not find config file")
+    fail_proc = make_proc(1, stderr="error: could not find config file")
 
     with patch("repo_ops_upgrade_remediations_deno.remediations.run") as mock_run:
         mock_run.return_value = fail_proc
@@ -144,10 +130,10 @@ def test_apply_deno_fix_failure_captures_stderr(tmp_path: Path, make_workspace) 
     assert "could not find config file" in detail
 
 
-def test_apply_deno_fix_uses_stdout_when_stderr_empty(tmp_path: Path, make_workspace) -> None:
+def test_apply_deno_fix_uses_stdout_when_stderr_empty(tmp_path: Path, make_workspace, make_proc) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
     ctx: dict[str, Any] = {}
-    fail_proc = _make_proc(1, stdout="some stdout error", stderr="")
+    fail_proc = make_proc(1, stdout="some stdout error", stderr="")
 
     with patch("repo_ops_upgrade_remediations_deno.remediations.run") as mock_run:
         mock_run.return_value = fail_proc
@@ -160,10 +146,10 @@ def test_apply_deno_fix_uses_stdout_when_stderr_empty(tmp_path: Path, make_works
 # ── run_remediations integration ─────────────────────────────────────────────
 
 
-def test_run_remediations_plan_mode(tmp_path: Path, make_workspace) -> None:
+def test_run_remediations_plan_mode(tmp_path: Path, make_workspace, make_change) -> None:
     (tmp_path / "deno.json").write_text("{}\n")
     result = _result(tmp_path, make_workspace=make_workspace)
-    result.changes = [_fake_change("std")]
+    result.changes = [make_change("std")]
 
     fake = deno_rem.RemediationHook(
         "deno_fix",
@@ -182,12 +168,12 @@ def test_run_remediations_plan_mode(tmp_path: Path, make_workspace) -> None:
     assert "REMEDIATE deno_fix" in result.remediations[0]["detail"]
 
 
-def test_run_remediations_apply_mode(tmp_path: Path, make_workspace) -> None:
+def test_run_remediations_apply_mode(tmp_path: Path, make_workspace, make_change, make_proc) -> None:
     (tmp_path / "deno.json").write_text("{}\n")
     result = _result(tmp_path, make_workspace=make_workspace)
-    result.changes = [_fake_change("std")]
+    result.changes = [make_change("std")]
 
-    ok_proc = _make_proc(0)
+    ok_proc = make_proc(0)
     fake = deno_rem.RemediationHook(
         "deno_fix",
         deno_rem.detect_deno_fix,
@@ -206,10 +192,10 @@ def test_run_remediations_apply_mode(tmp_path: Path, make_workspace) -> None:
     assert result.status == "ok"
 
 
-def test_deno_fix_skipped_in_skip_set(tmp_path: Path, make_workspace) -> None:
+def test_deno_fix_skipped_in_skip_set(tmp_path: Path, make_workspace, make_change) -> None:
     (tmp_path / "deno.json").write_text("{}\n")
     result = _result(tmp_path, make_workspace=make_workspace)
-    result.changes = [_fake_change("std")]
+    result.changes = [make_change("std")]
 
     fake = deno_rem.RemediationHook(
         "deno_fix",

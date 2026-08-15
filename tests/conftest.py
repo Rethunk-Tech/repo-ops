@@ -17,14 +17,46 @@ any test driving it would pollute the developer's real state file.
 from __future__ import annotations
 
 import os
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
-from repo_ops_models.models import Workspace
+from repo_ops_models.models import Change, Workspace
 
 _ENV_PREFIX = "REPO_OPS_"
+
+
+@pytest.fixture
+def make_change() -> Any:
+    """Factory fixture: build a ``Change`` for tests that only care about ``.name``.
+
+    Same conftest/fixture-not-import rationale as ``make_workspace`` above.
+    """
+
+    def _factory(name: str, from_ver: str = "1.0.0", to: str = "2.0.0") -> Change:
+        return Change(name=name, from_ver=from_ver, to=to)
+
+    return _factory
+
+
+@pytest.fixture
+def make_proc() -> Any:
+    """Factory fixture: a real ``subprocess.CompletedProcess`` for ``run()`` patches.
+
+    Stands in for what ``run()`` actually returns — a hand-rolled
+    ``MagicMock``/``type()`` shim only coincidentally has the right shape
+    and drifts silently if the code under test starts reading another
+    ``CompletedProcess`` attribute.
+    """
+
+    def _factory(
+        returncode: int = 0, stdout: str = "", stderr: str = ""
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess([], returncode, stdout=stdout, stderr=stderr)
+
+    return _factory
 
 
 @pytest.fixture
