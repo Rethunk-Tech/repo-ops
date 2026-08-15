@@ -55,7 +55,7 @@ jobs:
       - uses: Rethunk-Tech/gh-actions/setup-bun@29b10bda2eaf82d59230f550b919bfa3bca59771 # v1.2
         with:
           skip-install: "true"
-      - uses: actions/setup-go@v7
+      - uses: Rethunk-Tech/gh-actions/setup-go@0ddfe1fe8e7555566134593a3e291a47b412d75f # v1.3
         with:
           go-version: "stable"
       - name: Install govulncheck
