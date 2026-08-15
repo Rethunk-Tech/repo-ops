@@ -16,21 +16,22 @@ from repo_ops_core.config import (
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
-from repo_ops_js.audit_overrides import clear_audit_overrides, set_audit_overrides
-from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
+from repo_ops_core.version_utils import version_satisfies_ceiling
+from repo_ops_js.audit_overrides import apply_audit_overrides, make_audit_override_api
+from repo_ops_js.guards import (
+    assert_targets_resolved,
+    fold_blocked_into_behind,
+    unresolved_targets,
+)
 from repo_ops_js.holds import (
     direct_dependency_names,
     enforce_holds,
-    hold_version_spec,
+    fold_held_into_behind,
     resolve_package_hold,
 )
 from repo_ops_js.overrides import release_unheld_pin
-from repo_ops_lockfiles.snapshots import (
-    resolved_version_from_node_modules,
-    restore_workspace_snapshot,
-    snapshot_workspace_files,
-)
+from repo_ops_js.targeted_bump import run_targeted_bump
+from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
 
 _NPM_TARGETED_BUMP_ENV = "REPO_OPS_NPM_TARGETED_BUMP"
@@ -41,20 +42,9 @@ _NPM_TARGETED_BUMP_ENV = "REPO_OPS_NPM_TARGETED_BUMP"
 # Not thread-safe, but apply_remediations processes workspaces sequentially.
 _AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 
-
-def set_npm_audit_version_overrides(overrides: dict[str, str]) -> None:
-    """Inject per-package advisory-safe versions for the next apply / targeted-bump.
-
-    Called by ``repo_ops_audit.audit.apply_remediations`` so that
-    ``apply_npm`` / ``targeted_bump_behind`` uses the advisory-safe version
-    (e.g. ``pkg@1.5.5``) rather than always falling back to ``pkg@latest``.
-    """
-    set_audit_overrides(_AUDIT_VERSION_OVERRIDES, overrides)
-
-
-def clear_npm_audit_version_overrides() -> None:
-    """Reset audit version overrides after each workspace apply."""
-    clear_audit_overrides(_AUDIT_VERSION_OVERRIDES)
+set_npm_audit_version_overrides, clear_npm_audit_version_overrides = (
+    make_audit_override_api(_AUDIT_VERSION_OVERRIDES)
+)
 
 
 def _npm_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
@@ -122,57 +112,36 @@ def targeted_bump_behind(
     if not behind or not _npm_targeted_bump_enabled(ws):
         return [], behind
     pkg_data = read_json_file(ws.path / "package.json") or {}
-    applied: list[Change] = []
-    still_behind: list[Change] = []
-    for change in behind:
-        snap = snapshot_workspace_files(ws.path, "npm")
-        save_flags = _save_flag_for(change.name, pkg_data)
-        # Use the advisory-safe version when set (audit --fix path) — a
-        # security remediation must not be silently blocked by a routine
-        # hold policy; else a hold ceiling when one is active for this
-        # package/workspace; else @latest.
-        audit_override = _AUDIT_VERSION_OVERRIDES.get(change.name)
-        held_rule = None if audit_override else resolve_package_hold(ws, change.name)
-        if audit_override:
-            target_ver = audit_override
-        elif held_rule is not None:
-            target_ver = hold_version_spec(held_rule)
-        else:
-            target_ver = "latest"
-        if held_rule is None:
-            # No active hold covers this package — release a legacy
-            # overrides pin so the retry has a real chance; the snapshot
-            # restore below reverts this edit too on no-advance.
-            release_unheld_pin(ws.path, change.name)
+
+    def run_bump(name: str, version: str) -> bool:
         install = run(
-            ["npm", "install", *save_flags, f"{change.name}@{target_ver}"],
+            ["npm", "install", *_save_flag_for(name, pkg_data), f"{name}@{version}"],
             ws.path,
             timeout=TIMEOUT_APPLY,
         )
-        landed: str | None = None
-        if install.returncode == 0:
-            landed = resolved_version_from_node_modules(ws.path, change.name)
-        advanced = False
-        if landed:
-            try:
-                advanced = semver_tuple(landed) > semver_tuple(change.from_ver)
-            except (TypeError, ValueError):
-                advanced = landed != change.from_ver
-        if landed and advanced and install.returncode == 0:
-            resolved_change = Change(change.name, change.from_ver, landed)
-            try:
-                assert_targets_resolved(ws, [resolved_change], manager="npm")
-            except RuntimeError:
-                # Ghost bump: the guard itself found the target unresolved
-                # (e.g. a second read disagrees with the first). Restore the
-                # snapshot instead of leaving a corrupted lockfile on disk.
-                restore_workspace_snapshot(ws.path, snap, "npm")
-                still_behind.append(change)
-            else:
-                applied.append(resolved_change)
-        else:
-            restore_workspace_snapshot(ws.path, snap, "npm")
+        return install.returncode == 0
+
+    def resolve_landed(name: str) -> str | None:
+        return resolved_version_from_node_modules(ws.path, name)
+
+    applied: list[Change] = []
+    still_behind: list[Change] = []
+    for change in behind:
+        resolved = run_targeted_bump(
+            ws,
+            ws.path,
+            change,
+            manager="npm",
+            audit_overrides=_AUDIT_VERSION_OVERRIDES,
+            run_bump=run_bump,
+            resolve_landed=resolve_landed,
+            release_pin=release_unheld_pin,
+            verify=assert_targets_resolved,
+        )
+        if resolved is None:
             still_behind.append(change)
+        else:
+            applied.append(resolved)
     return applied, still_behind
 
 
@@ -257,32 +226,23 @@ def _apply_npm_audit_overrides(ws: Workspace) -> set[str]:
     Independent of ``REPO_OPS_NPM_TARGETED_BUMP`` so ``audit --fix`` pins are not
     silently skipped when the user did not also opt into targeted bump.
     """
-    handled: set[str] = set()
-    if not _AUDIT_VERSION_OVERRIDES:
-        return handled
     pkg_data = read_json_file(ws.path / "package.json") or {}
-    requested: list[Change] = []
-    for name, safe_version in list(_AUDIT_VERSION_OVERRIDES.items()):
-        name = (name or "").strip()
-        safe_version = (safe_version or "").strip()
-        if not name or not safe_version:
-            continue
-        save_flags = _save_flag_for(name, pkg_data)
-        install = run(
-            ["npm", "install", *save_flags, f"{name}@{safe_version}"],
+
+    def install(name: str, version: str) -> None:
+        proc = run(
+            ["npm", "install", *_save_flag_for(name, pkg_data), f"{name}@{version}"],
             ws.path,
             timeout=TIMEOUT_APPLY,
         )
-        if install.returncode != 0:
+        if proc.returncode != 0:
             raise RuntimeError(
-                install.stderr.strip()
-                or f"npm install {name}@{safe_version} failed (audit override)"
+                proc.stderr.strip()
+                or f"npm install {name}@{version} failed (audit override)"
             )
-        requested.append(Change(name, "", safe_version))
-        handled.add(name)
-    if requested:
-        assert_targets_resolved(ws, requested, manager="npm")
-    return handled
+
+    return apply_audit_overrides(
+        ws, _AUDIT_VERSION_OVERRIDES, manager="npm", install=install
+    )
 
 
 def apply_npm(ws: Workspace) -> list[Change]:
@@ -318,11 +278,7 @@ def apply_npm(ws: Workspace) -> list[Change]:
         if changes:
             if _npm_targeted_bump_enabled(ws):
                 blocked = unresolved_targets(ws, changes)
-                behind_names = {c.name for c in behind}
-                for change, _resolved in blocked:
-                    if change.name not in behind_names:
-                        behind.append(change)
-                        behind_names.add(change.name)
+                behind = fold_blocked_into_behind(blocked, behind)
             else:
                 assert_targets_resolved(ws, changes, manager="npm")
     applied, behind = targeted_bump_behind(ws, behind)
@@ -337,6 +293,4 @@ def apply_npm(ws: Workspace) -> list[Change]:
             ["npm", "install", f"{name}@{spec}"], ws.path, timeout=TIMEOUT_APPLY
         ),
     )
-    if held:
-        behind = [c for c in behind if c.name not in {h.name for h in held}] + held
-    return behind
+    return fold_held_into_behind(held, behind)
