@@ -12,10 +12,11 @@ from pathlib import Path
 
 from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
-from repo_ops_core.holds import HoldRule, resolve_package_hold
+from repo_ops_core.filesystem import restore_file, snapshot_file
+from repo_ops_core.holds import resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
-from repo_ops_core.version_utils import hold_ceiling_spec
+from repo_ops_core.version_utils import hold_ceiling_spec, version_parts
 from repo_ops_models import Change, Workspace
 from repo_ops_py.pypi import pypi_latest as _pypi_latest
 from repo_ops_py.requirements import parse_requirements_lines
@@ -35,10 +36,6 @@ from repo_ops_py.requirements import parse_requirements_lines
 
 _REQ_NAME_RE = re.compile(r"^([A-Za-z0-9_.-]+)")
 _PIP_TOOLS_TARGETED_BUMP_ENV = "REPO_OPS_PIP_TOOLS_TARGETED_BUMP"
-
-
-def _resolve_pkg_hold(ws: Workspace, package: str) -> HoldRule | None:
-    return resolve_package_hold(ws, package)
 
 
 def _requirements_in_names(req_in: Path) -> set[str]:
@@ -89,15 +86,6 @@ def _pip_tools_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
     )
 
 
-def _pip_tools_version_parts(version: str) -> tuple[int, int, int]:
-    match = re.search(r"\d+(?:\.\d+){0,2}", version.strip().lstrip("vV"))
-    if match is None:
-        return (0, 0, 0)
-    parts = [int(part) for part in match.group(0).split(".")]
-    padded = [*parts, 0, 0, 0][:3]
-    return padded[0], padded[1], padded[2]
-
-
 def _pip_tools_requirement_satisfied(version: str, requirement: str) -> bool:
     return requirement_satisfied(version, requirement, default_operator="==")
 
@@ -117,7 +105,7 @@ def _pip_tools_latest_direct_changes(ws: Workspace) -> list[Change]:
         if (
             locked is None
             or latest is None
-            or _pip_tools_version_parts(latest) <= _pip_tools_version_parts(locked)
+            or version_parts(latest) <= version_parts(locked)
             or _pip_tools_requirement_satisfied(latest, requirement)
         ):
             continue
@@ -134,7 +122,7 @@ def _hold_constraints_file(ws: Workspace, req_in: Path):
     """
     lines: list[str] = []
     for name in sorted(_requirements_in_names(req_in)):
-        rule = _resolve_pkg_hold(ws, name)
+        rule = resolve_package_hold(ws, name)
         if rule is not None:
             lines.append(f"{name}{hold_ceiling_spec(rule.max_version)}")
     if not lines:
@@ -348,17 +336,6 @@ def _rewrite_requirements_in(req_in: Path, name: str, latest: str) -> bool:
     return rewritten
 
 
-def _pip_tools_snapshot(path: Path) -> bytes | None:
-    return path.read_bytes() if path.is_file() else None
-
-
-def _pip_tools_restore(path: Path, snapshot: bytes | None) -> None:
-    if snapshot is None:
-        path.unlink(missing_ok=True)
-    else:
-        path.write_bytes(snapshot)
-
-
 def _apply_pip_tools_targeted_bumps(
     ws: Workspace,
     candidates: list[Change],
@@ -367,8 +344,8 @@ def _apply_pip_tools_targeted_bumps(
     req_txt = ws.path / "requirements.txt"
     remaining: list[Change] = []
     for candidate in candidates:
-        in_snapshot = _pip_tools_snapshot(req_in)
-        txt_snapshot = _pip_tools_snapshot(req_txt)
+        in_snapshot = snapshot_file(req_in)
+        txt_snapshot = snapshot_file(req_txt)
         if not _rewrite_requirements_in(req_in, candidate.name, candidate.to):
             remaining.append(candidate)
             continue
@@ -383,16 +360,16 @@ def _apply_pip_tools_targeted_bumps(
                     upgrade_package=f"{candidate.name}=={candidate.to}",
                 )
         except Exception:
-            _pip_tools_restore(req_in, in_snapshot)
-            _pip_tools_restore(req_txt, txt_snapshot)
+            restore_file(req_in, in_snapshot)
+            restore_file(req_txt, txt_snapshot)
             raise
         landed = parse_requirements_lines(
             out.read_text(encoding="utf-8", errors="replace")
         ).get(candidate.name)
         if landed == candidate.to:
             continue
-        _pip_tools_restore(req_in, in_snapshot)
-        _pip_tools_restore(req_txt, txt_snapshot)
+        restore_file(req_in, in_snapshot)
+        restore_file(req_txt, txt_snapshot)
         remaining.append(candidate)
     return remaining
 
