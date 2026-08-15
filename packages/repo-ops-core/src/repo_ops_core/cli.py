@@ -186,7 +186,14 @@ def resolve_scan_roots(
     roots: list[str],
     parser: argparse.ArgumentParser,
 ) -> list[str]:
-    """Resolve roots to absolute paths; reject missing dirs and find-like tokens."""
+    """Resolve roots to absolute paths; reject missing dirs and find-like tokens.
+
+    A root the caller named explicitly must exist — a path that isn't there is a
+    typo worth failing on. The built-in defaults are a different case: they
+    describe a layout this machine may simply not use, so a missing one is
+    skipped rather than fatal, and only an empty result is an error.
+    """
+    using_defaults = roots == DEFAULT_ROOTS
     resolved: list[str] = []
     for raw in roots:
         text = raw.strip()
@@ -198,11 +205,19 @@ def resolve_scan_roots(
                 "pass an existing directory path only"
             )
         path = Path(text).expanduser().resolve()
-        if not path.exists():
-            parser.error(f"root does not exist: {path}")
         if not path.is_dir():
+            if using_defaults:
+                continue
+            if not path.exists():
+                parser.error(f"root does not exist: {path}")
             parser.error(f"root is not a directory: {path}")
         resolved.append(str(path))
+    if not resolved and using_defaults:
+        parser.error(
+            "none of the default roots exist on this machine ("
+            + ", ".join(DEFAULT_ROOTS)
+            + "); pass a directory to scan, e.g. `--flat .` for the current checkout"
+        )
     return resolved
 
 
