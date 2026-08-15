@@ -6,6 +6,7 @@ import argparse
 import importlib.metadata
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from repo_ops._register import register_all
 from repo_ops.install_skill import (
@@ -31,45 +32,76 @@ from repo_ops_pushed.audit import build_pushed_parser
 from repo_ops_pushed.audit import main as pushed_main
 from repo_ops_upgrade.run import main_apply, main_plan
 
+
+@dataclass(frozen=True)
+class _Subcommand:
+    """One dispatcher row: handler + parser-builder + help text, co-located
+    so adding a subcommand can't add a handler without its help builder."""
+
+    handler: Callable[[list[str] | None], int | None]
+    help_builder: Callable[[], argparse.ArgumentParser]
+    help_text: str
+
+
+_SUBCOMMANDS: dict[str, _Subcommand] = {
+    "inventory": _Subcommand(
+        inventory_main, build_inventory_parser, "Dependency footprint report"
+    ),
+    "plan": _Subcommand(
+        main_plan,
+        lambda: build_upgrade_parser(apply=False),
+        "Upgrade plan: deps + Actions + remediations (read-only)",
+    ),
+    "apply": _Subcommand(
+        main_apply,
+        lambda: build_upgrade_parser(apply=True),
+        "Apply upgrades with verify gates",
+    ),
+    "pushed": _Subcommand(pushed_main, build_pushed_parser, "Pushed commits audit"),
+    "install-skill": _Subcommand(
+        install_skill_main,
+        build_install_skill_parser,
+        "Install Cursor/Claude agent skill for repo-ops",
+    ),
+    "audit": _Subcommand(
+        audit_main,
+        build_audit_parser,
+        "Fleet vulnerability sweep (read-only unless --fix)",
+    ),
+    "dependabot": _Subcommand(
+        dependabot_main,
+        build_dependabot_parser,
+        "List/close superseded Dependabot PRs (or --scaffold dependabot.yml)",
+    ),
+    "sbom": _Subcommand(
+        sbom_main,
+        build_sbom_parser,
+        "Emit CycloneDX/SPDX SBOM from lockfile dependencies (read-only)",
+    ),
+    "license": _Subcommand(
+        license_main,
+        build_license_parser,
+        "Scan dependency licenses and flag policy violations (read-only)",
+    ),
+    "doctor": _Subcommand(
+        doctor_main,
+        build_doctor_parser,
+        "Toolchain/auth preflight: probe known binaries and gh auth (read-only)",
+    ),
+}
+
 _HANDLERS: dict[str, Callable[[list[str] | None], int | None]] = {
-    "inventory": inventory_main,
-    "plan": main_plan,
-    "apply": main_apply,
-    "pushed": pushed_main,
-    "install-skill": install_skill_main,
-    "audit": audit_main,
-    "dependabot": dependabot_main,
-    "sbom": sbom_main,
-    "license": license_main,
-    "doctor": doctor_main,
+    name: sc.handler for name, sc in _SUBCOMMANDS.items()
 }
 
 _HELP_BUILDERS: dict[str, Callable[[], argparse.ArgumentParser]] = {
-    "inventory": build_inventory_parser,
-    "plan": lambda: build_upgrade_parser(apply=False),
-    "apply": lambda: build_upgrade_parser(apply=True),
-    "pushed": build_pushed_parser,
-    "install-skill": build_install_skill_parser,
-    "audit": build_audit_parser,
-    "dependabot": build_dependabot_parser,
-    "sbom": build_sbom_parser,
-    "license": build_license_parser,
-    "doctor": build_doctor_parser,
+    name: sc.help_builder for name, sc in _SUBCOMMANDS.items()
 }
 
 _REGISTER_COMMANDS = frozenset({"inventory", "plan", "apply", "audit"})
 
-_SUBCOMMAND_HELP = {
-    "inventory": "Dependency footprint report",
-    "plan": "Upgrade plan: deps + Actions + remediations (read-only)",
-    "apply": "Apply upgrades with verify gates",
-    "pushed": "Pushed commits audit",
-    "install-skill": "Install Cursor/Claude agent skill for repo-ops",
-    "audit": "Fleet vulnerability sweep (read-only unless --fix)",
-    "dependabot": "List/close superseded Dependabot PRs (or --scaffold dependabot.yml)",
-    "sbom": "Emit CycloneDX/SPDX SBOM from lockfile dependencies (read-only)",
-    "license": "Scan dependency licenses and flag policy violations (read-only)",
-    "doctor": "Toolchain/auth preflight: probe known binaries and gh auth (read-only)",
+_SUBCOMMAND_HELP: dict[str, str] = {
+    name: sc.help_text for name, sc in _SUBCOMMANDS.items()
 }
 
 
