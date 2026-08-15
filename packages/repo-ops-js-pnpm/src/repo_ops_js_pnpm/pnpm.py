@@ -11,12 +11,14 @@ from typing import Any
 
 from repo_ops_core.config import (
     ambient_env,
+    coerce_bool_setting,
     load_global_config,
     load_repo_config,
     process_env_cli_override,
     resolve_setting,
 )
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
+from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version, semver_tuple
 from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
@@ -41,7 +43,6 @@ from ruamel.yaml.error import YAMLError
 
 _PNPM_UPDATE_LATEST_ENV = "REPO_OPS_PNPM_UPDATE_LATEST"
 _PNPM_TARGETED_BUMP_ENV = "REPO_OPS_PNPM_TARGETED_BUMP"
-_TRUE_VALUES = ("1", "true", "yes", "on")
 
 
 def _yaml_loader() -> YAML:
@@ -89,9 +90,7 @@ def _pnpm_update_latest_enabled(ws: Workspace | None = None) -> bool:
         repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
         global_cfg=load_global_config(),
     )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in _TRUE_VALUES
+    return coerce_bool_setting(raw)
 
 
 def _pnpm_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
@@ -102,9 +101,7 @@ def _pnpm_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
         repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
         global_cfg=load_global_config(),
     )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in _TRUE_VALUES
+    return coerce_bool_setting(raw)
 
 
 def _catalog_workspace_path(ws: Workspace) -> Path:
@@ -574,16 +571,6 @@ def _apply_pnpm_audit_overrides(ws: Workspace) -> set[str]:
     return handled
 
 
-def _read_pkg_json(mdir: Path) -> dict[str, object]:
-    """Parse package.json; return empty dict on any error."""
-    p = mdir / "package.json"
-    try:
-        data: dict[str, object] = json.loads(p.read_text(encoding="utf-8"))
-        return data
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-
 def _fold_blocked_into_behind(
     ws: Workspace, guardable: list[Change], behind: list[Change]
 ) -> list[Change]:
@@ -643,9 +630,9 @@ def apply_pnpm(ws: Workspace) -> list[Change]:
     # it is for npm/yarn/bun, which are already per-package for the
     # major-crossing case. Also catches a package already sitting above a
     # *newly added* hold ceiling from before the hold existed.
-    candidate_names = direct_dependency_names(_read_pkg_json(ws.path)) | {
-        c.name for c in (*changes, *applied, *behind)
-    }
+    candidate_names = direct_dependency_names(
+        read_json_file(ws.path / "package.json") or {}
+    ) | {c.name for c in (*changes, *applied, *behind)}
     held = enforce_holds(
         ws,
         candidate_names,

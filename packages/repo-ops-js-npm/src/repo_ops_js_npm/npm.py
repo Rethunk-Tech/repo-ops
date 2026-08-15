@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 
 from repo_ops_core.config import (
     ambient_env,
+    coerce_bool_setting,
     load_global_config,
     load_repo_config,
     process_env_cli_override,
     resolve_setting,
 )
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
+from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
@@ -32,7 +33,6 @@ from repo_ops_lockfiles.snapshots import (
 from repo_ops_models import Change, Workspace
 
 _NPM_TARGETED_BUMP_ENV = "REPO_OPS_NPM_TARGETED_BUMP"
-_TRUE_VALUES = ("1", "true", "yes", "on")
 
 # Audit version overrides: package → advisory-safe version to use instead of @latest.
 # Populated by repo_ops_audit.audit.apply_remediations before the orchestration apply
@@ -66,19 +66,7 @@ def _npm_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
         repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
         global_cfg=load_global_config(),
     )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in _TRUE_VALUES
-
-
-def _read_pkg_json(mdir: Path) -> dict[str, object]:
-    """Parse package.json; return empty dict on any error."""
-    p = mdir / "package.json"
-    try:
-        data: dict[str, object] = json.loads(p.read_text(encoding="utf-8"))
-        return data
-    except (OSError, json.JSONDecodeError):
-        return {}
+    return coerce_bool_setting(raw)
 
 
 def _save_flag_for(name: str, pkg_data: dict[str, object]) -> list[str]:
@@ -134,7 +122,7 @@ def targeted_bump_behind(
     """
     if not behind or not _npm_targeted_bump_enabled(ws):
         return [], behind
-    pkg_data = _read_pkg_json(ws.path)
+    pkg_data = read_json_file(ws.path / "package.json") or {}
     applied: list[Change] = []
     still_behind: list[Change] = []
     for change in behind:
@@ -273,7 +261,7 @@ def _apply_npm_audit_overrides(ws: Workspace) -> set[str]:
     handled: set[str] = set()
     if not _AUDIT_VERSION_OVERRIDES:
         return handled
-    pkg_data = _read_pkg_json(ws.path)
+    pkg_data = read_json_file(ws.path / "package.json") or {}
     requested: list[Change] = []
     for name, safe_version in list(_AUDIT_VERSION_OVERRIDES.items()):
         name = (name or "").strip()
@@ -339,9 +327,9 @@ def apply_npm(ws: Workspace) -> list[Change]:
             else:
                 assert_targets_resolved(ws, changes, manager="npm")
     applied, behind = targeted_bump_behind(ws, behind)
-    candidate_names = direct_dependency_names(_read_pkg_json(ws.path)) | {
-        c.name for c in (*changes, *applied, *behind)
-    }
+    candidate_names = direct_dependency_names(
+        read_json_file(ws.path / "package.json") or {}
+    ) | {c.name for c in (*changes, *applied, *behind)}
     held = enforce_holds(
         ws,
         candidate_names,

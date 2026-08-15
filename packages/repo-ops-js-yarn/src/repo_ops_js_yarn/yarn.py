@@ -16,12 +16,14 @@ from pathlib import Path
 
 from repo_ops_core.config import (
     ambient_env,
+    coerce_bool_setting,
     load_global_config,
     load_repo_config,
     process_env_cli_override,
     resolve_setting,
 )
 from repo_ops_core.constants import resolve_timeout_apply
+from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
@@ -78,7 +80,6 @@ _STDERR_TAIL_LINES = 12
 _YARN_UPDATE_LATEST_ENV = "REPO_OPS_YARN_UPDATE_LATEST"
 _YARN_TARGETED_BUMP_ENV = "REPO_OPS_YARN_TARGETED_BUMP"
 _TIMEOUT_NPM_INFO = 60
-_TRUE_VALUES = ("1", "true", "yes", "on")
 
 # Cap on concurrent yarn isolated-copy extractions. Each check/guard run copies
 # the workspace to scratch and lets Yarn Berry extract its cache there, which is
@@ -227,9 +228,7 @@ def _yarn_update_latest_enabled(ws: Workspace | None = None) -> bool:
         repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
         global_cfg=load_global_config(),
     )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in _TRUE_VALUES
+    return coerce_bool_setting(raw)
 
 
 def _yarn_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
@@ -240,9 +239,7 @@ def _yarn_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
         repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
         global_cfg=load_global_config(),
     )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in _TRUE_VALUES
+    return coerce_bool_setting(raw)
 
 
 def _yarn_up_cmd() -> list[str]:
@@ -374,13 +371,16 @@ def _copy_yarn_workspace_to_temp(ws: Workspace, temp_root: Path) -> Path:
 
 
 def _direct_dep_names(ws_path: Path) -> set[str]:
-    """Direct dependency names declared across the workspace's package.json files."""
+    """Direct dependency names declared across the workspace's package.json files.
+
+    Deliberately narrower than ``repo_ops_js.holds.direct_dependency_names``:
+    aggregates across every monorepo member manifest (not just the root) and
+    excludes ``peerDependencies``, which yarn's candidate set has never
+    included.
+    """
     names: set[str] = set()
     for pkg_json in package_json_paths(ws_path):
-        try:
-            data = json.loads(pkg_json.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
+        data = read_json_file(pkg_json) or {}
         for section in (
             "dependencies",
             "devDependencies",
