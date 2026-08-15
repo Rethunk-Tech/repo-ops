@@ -2194,39 +2194,33 @@ def apply_remediations(
                     mgr = detected
             seen[item.workspace] = (eco, mgr)
 
-    # Build a per-workspace dict of advisory-safe version overrides for JS managers.
-    # These are injected into the targeted-bump module before calling process_workspace
-    # so that targeted_bump_behind uses pkg@safe_version instead of pkg@latest.
+    # Build per-workspace, per-ecosystem override maps in one pass. JS/deno/rust
+    # overrides are injected into their targeted-bump modules before calling
+    # process_workspace so targeted_bump_behind uses pkg@safe_version instead of
+    # pkg@latest. Go workspaces bypass the registry/orchestration path entirely:
+    # applied directly via `go get`/`go mod tidy` (mirrors the standalone
+    # `_apply_cargo_targeted` pattern) rather than going through
+    # `repo_ops_go`'s registered applier, which has no targeted-bump concept.
     _js_ws_overrides: dict[str, dict[str, str]] = {}
+    _rust_ws_overrides: dict[str, dict[str, str]] = {}
+    _deno_ws_overrides: dict[str, dict[str, str]] = {}
+    _go_ws_items: dict[str, list[RemediationItem]] = {}
     for item in remediations:
         if item.ecosystem == "node":
             _js_ws_overrides.setdefault(item.workspace, {})[item.package] = (
                 item.safe_version
             )
-
-    _rust_ws_overrides: dict[str, dict[str, str]] = {}
-    for item in remediations:
-        if item.ecosystem == "rust":
+        elif item.ecosystem == "rust":
             safe_version = _extract_min_version_from_constraint(item.safe_version)
             if safe_version:
                 _rust_ws_overrides.setdefault(item.workspace, {})[item.package] = (
                     safe_version
                 )
-
-    _deno_ws_overrides: dict[str, dict[str, str]] = {}
-    for item in remediations:
-        if item.ecosystem == "deno":
+        elif item.ecosystem == "deno":
             _deno_ws_overrides.setdefault(item.workspace, {})[item.package] = (
                 item.safe_version
             )
-
-    # Go workspaces bypass the registry/orchestration path entirely: apply
-    # directly via `go get`/`go mod tidy` (mirrors the standalone
-    # `_apply_cargo_targeted` pattern) rather than going through
-    # `repo_ops_go`'s registered applier, which has no targeted-bump concept.
-    _go_ws_items: dict[str, list[RemediationItem]] = {}
-    for item in remediations:
-        if item.ecosystem == "go":
+        elif item.ecosystem == "go":
             _go_ws_items.setdefault(item.workspace, []).append(item)
 
     outcomes: list[ApplyOutcome] = []
