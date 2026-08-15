@@ -209,9 +209,8 @@ def cache_clear_dirty_skip(repo_path: str | Path) -> None:
     state = _ensure_loaded()
     key = str(repo_path)
     with _LOCK:
-        dirty_skips = state.get("dirty_skips", {})
-        if key in dirty_skips:
-            dirty_skips.pop(key)
+        if key in state.get("dirty_skips", {}):
+            clear_dirty_skip(state, repo_path)
             _DIRTY = True
 
 
