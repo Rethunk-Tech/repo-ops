@@ -6,20 +6,13 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from repo_ops._register import register_all
-from repo_ops_core.version_utils import normalize_version, semver_tuple
 from repo_ops_py.requirements import parse_requirements_lines
 
-
-def test_normalize_version_strips_prefixes():
-    assert normalize_version("^1.2.3") == "1.2.3"
-    assert normalize_version("~>2.0") == "2.0"
-    assert normalize_version(">=1.0.0-beta") == "1.0.0"
-
-
-def test_semver_tuple_parses():
-    assert semver_tuple("1.2.3") == (1, 2, 3)
-    assert semver_tuple("^4.5") == (4, 5)
+# normalize_version / semver_tuple are covered exhaustively in
+# tests/test_version_utils.py; no need to duplicate that coverage here.
 
 
 def test_parse_requirements_lines_basic():
@@ -106,28 +99,19 @@ def test_actions_discover_workflow_files_empty_without_github_dir(tmp_path):
     assert discover_workflow_files(tmp_path) == []
 
 
-def test_remediations_pm_exec_prefix_yarn():
+@pytest.mark.parametrize(
+    "manager,expected",
+    [
+        ("yarn", ["yarn"]),
+        ("bun", ["bunx"]),
+        ("npm", ["npx", "--yes"]),
+        ("pnpm", ["pnpm", "exec"]),
+    ],
+)
+def test_remediations_pm_exec_prefix(manager, expected):
     from repo_ops_js.workspaces import pm_exec_prefix
 
-    assert pm_exec_prefix("yarn") == ["yarn"]
-
-
-def test_remediations_pm_exec_prefix_bun():
-    from repo_ops_js.workspaces import pm_exec_prefix
-
-    assert pm_exec_prefix("bun") == ["bunx"]
-
-
-def test_remediations_pm_exec_prefix_npm():
-    from repo_ops_js.workspaces import pm_exec_prefix
-
-    assert pm_exec_prefix("npm") == ["npx", "--yes"]
-
-
-def test_remediations_pm_exec_prefix_pnpm():
-    from repo_ops_js.workspaces import pm_exec_prefix
-
-    assert pm_exec_prefix("pnpm") == ["pnpm", "exec"]
+    assert pm_exec_prefix(manager) == expected
 
 
 def test_resolved_version_from_node_modules_scoped(tmp_path):

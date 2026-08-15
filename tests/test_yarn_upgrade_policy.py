@@ -68,32 +68,31 @@ def test_apply_yarn_uses_in_range_refresh_cmd(tmp_path: Path, monkeypatch) -> No
 # ---------------------------------------------------------------------------
 
 
-def test_is_pnp_workspace_detects_pnp_sentinel(tmp_path: Path) -> None:
-    (tmp_path / ".pnp.cjs").write_text("", encoding="utf-8")
-    assert _is_pnp_workspace(tmp_path) is True
-
-
-def test_is_pnp_workspace_detects_loader_sentinel(tmp_path: Path) -> None:
-    (tmp_path / ".pnp.loader.mjs").write_text("", encoding="utf-8")
-    assert _is_pnp_workspace(tmp_path) is True
-
-
-def test_is_pnp_workspace_node_modules_linker_is_not_pnp(tmp_path: Path) -> None:
-    (tmp_path / ".yarnrc.yml").write_text(
-        "nodeLinker: node-modules\n", encoding="utf-8"
-    )
-    assert _is_pnp_workspace(tmp_path) is False
-
-
-def test_is_pnp_workspace_no_yarnrc_is_not_pnp(tmp_path: Path) -> None:
-    """No .yarnrc.yml implies Yarn Classic (always node-modules) — guard should run."""
-    assert _is_pnp_workspace(tmp_path) is False
-
-
-def test_is_pnp_workspace_missing_nodelinker_defaults_pnp(tmp_path: Path) -> None:
-    """Yarn 4 default (no nodeLinker in .yarnrc.yml) is PnP — guard skipped."""
-    (tmp_path / ".yarnrc.yml").write_text("enableGlobalCache: true\n", encoding="utf-8")
-    assert _is_pnp_workspace(tmp_path) is True
+@pytest.mark.parametrize(
+    "filename,content,expected",
+    [
+        (".pnp.cjs", "", True),
+        (".pnp.loader.mjs", "", True),
+        (".yarnrc.yml", "nodeLinker: node-modules\n", False),
+        # No .yarnrc.yml implies Yarn Classic (always node-modules) — guard should run.
+        (None, None, False),
+        # Yarn 4 default (no nodeLinker in .yarnrc.yml) is PnP — guard skipped.
+        (".yarnrc.yml", "enableGlobalCache: true\n", True),
+    ],
+    ids=[
+        "pnp-sentinel",
+        "loader-sentinel",
+        "node-modules-linker",
+        "no-yarnrc",
+        "missing-nodelinker-defaults-pnp",
+    ],
+)
+def test_is_pnp_workspace(
+    tmp_path: Path, filename: str | None, content: str | None, expected: bool
+) -> None:
+    if filename is not None:
+        (tmp_path / filename).write_text(content, encoding="utf-8")
+    assert _is_pnp_workspace(tmp_path) is expected
 
 
 # ---------------------------------------------------------------------------
