@@ -203,12 +203,8 @@ def versions_bun_lockb(path_or_mdir: Path) -> set[str]:
             tmp_path.unlink(missing_ok=True)
 
 
-def versions_pdm_lock(p: Path) -> set[str]:
-    """pdm.lock (TOML) → set of name@version.
-
-    PDM lock files are TOML with a list of ``[[package]]`` entries, each
-    containing ``name`` and ``version`` keys.
-    """
+def _versions_toml_lock(p: Path) -> set[str]:
+    """Shared body for TOML lockfiles with ``[[package]]`` name/version entries."""
     d = read_toml_file(p) or {}
     out: set[str] = set()
     for pkg in d.get("package", []):
@@ -219,43 +215,21 @@ def versions_pdm_lock(p: Path) -> set[str]:
         if name and ver:
             out.add(f"{name}@{ver}")
     return out
+
+
+def versions_pdm_lock(p: Path) -> set[str]:
+    """pdm.lock (TOML) → set of name@version."""
+    return _versions_toml_lock(p)
 
 
 def versions_poetry_lock(p: Path) -> set[str]:
-    """poetry.lock (TOML) → set of name@version.
-
-    Poetry lock files are TOML with a list of ``[[package]]`` entries, each
-    containing ``name`` and ``version`` keys.
-    """
-    d = read_toml_file(p) or {}
-    out: set[str] = set()
-    for pkg in d.get("package", []):
-        if not isinstance(pkg, dict):
-            continue
-        name = pkg.get("name")
-        ver = pkg.get("version")
-        if name and ver:
-            out.add(f"{name}@{ver}")
-    return out
+    """poetry.lock (TOML) → set of name@version."""
+    return _versions_toml_lock(p)
 
 
 def versions_uv_lock(p: Path) -> set[str]:
-    """uv.lock (TOML) → set of name@version.
-
-    uv lock files are TOML with a list of ``[[package]]`` entries, each
-    containing ``name`` (PEP 503-normalized: lowercase, hyphens) and the
-    resolved ``version``.
-    """
-    d = read_toml_file(p) or {}
-    out: set[str] = set()
-    for pkg in d.get("package", []):
-        if not isinstance(pkg, dict):
-            continue
-        name = pkg.get("name")
-        ver = pkg.get("version")
-        if name and ver:
-            out.add(f"{name}@{ver}")
-    return out
+    """uv.lock (TOML) → set of name@version (PEP 503-normalized names)."""
+    return _versions_toml_lock(p)
 
 
 def versions_go_sum(p: Path) -> set[str]:
@@ -272,16 +246,7 @@ def versions_go_sum(p: Path) -> set[str]:
 
 def versions_cargo_lock(p: Path) -> set[str]:
     """Cargo.lock (TOML) → set of name@version."""
-    d = read_toml_file(p) or {}
-    out: set[str] = set()
-    for pkg in d.get("package", []):
-        if not isinstance(pkg, dict):
-            continue
-        name = pkg.get("name")
-        version = pkg.get("version")
-        if name and version:
-            out.add(f"{name}@{version}")
-    return out
+    return _versions_toml_lock(p)
 
 
 _REQ_PIN_RE = re.compile(
