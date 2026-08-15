@@ -96,7 +96,7 @@ def test_try_register_manager_unknown_returns_false() -> None:
 def _make_item(
     package: str = "requests",
     safe_version: str = "2.31.0",
-    ecosystem: str = "py-uv",
+    ecosystem: str = "py-poetry",
     workspace: str = "/ws",
 ) -> RemediationItem:
     return RemediationItem(
