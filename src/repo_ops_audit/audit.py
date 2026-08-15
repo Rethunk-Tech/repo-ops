@@ -296,6 +296,16 @@ def _detect_python_manager(ws: Path, names: set[str]) -> str:
     return "unknown"
 
 
+_PY_MANAGER_TO_ECOSYSTEM: dict[str, str] = {
+    "uv": "py-uv",
+    "poetry": "py-poetry",
+    "pdm": "py-pdm",
+    "pipenv": "py-pipenv",
+    "hatch": "py-hatch",
+    "pip-tools": "py-pip-tools",
+}
+
+
 def _detect_workspaces(repo: str) -> list[tuple[str, str, str]]:
     """Return list of (workspace_path, ecosystem, manager) for a repo.
 
@@ -345,6 +355,7 @@ def _detect_workspaces(repo: str) -> list[tuple[str, str, str]]:
 _SUBPROCESS_TIMEOUT = 120
 _GOVULNCHECK_TIMEOUT = 60
 
+
 def _skip(ws: str, ecosystem: str, manager: str, reason: str) -> WorkspaceResult:
     return WorkspaceResult(
         label=ws,
@@ -355,6 +366,7 @@ def _skip(ws: str, ecosystem: str, manager: str, reason: str) -> WorkspaceResult
         skip_reason=reason,
     )
 
+
 def _error(ws: str, ecosystem: str, manager: str, error: str) -> WorkspaceResult:
     return WorkspaceResult(
         label=ws,
@@ -364,6 +376,7 @@ def _error(ws: str, ecosystem: str, manager: str, error: str) -> WorkspaceResult
         status="error",
         error=error,
     )
+
 
 def _run(
     cmd: list[str], cwd: str, *, timeout: float | None = None
@@ -2320,10 +2333,6 @@ def apply_remediations(
 
     return outcomes
 
-
-# ---------------------------------------------------------------------------
-# SARIF 2.1.0 report builder
-# ---------------------------------------------------------------------------
 
 def build_audit_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
