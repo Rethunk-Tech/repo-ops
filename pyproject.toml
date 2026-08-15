@@ -7,7 +7,7 @@ name = "repo-ops"
 version = "0.22.3"
 description = "Repository operations and dependency maintenance tools for Rethunk-Tech."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Rethunk Tech" }]
@@ -17,9 +17,9 @@ classifiers = [
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Software Development :: Version Control",
   "Topic :: Utilities",
 ]
@@ -89,7 +89,7 @@ markers = [
 ]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 88
 # First-party roots for isort. Without this the repo_ops_* modules classify as
 # third-party and every import block reorders.
