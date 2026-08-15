@@ -16,7 +16,7 @@ Covers:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from repo_ops_core.git import run_git
@@ -40,13 +40,6 @@ def _clear_cache():
     _clear_submodule_tag_cache()
 
 
-def _ok_proc(stdout: str = "") -> MagicMock:
-    p = MagicMock()
-    p.returncode = 0
-    p.stdout = stdout
-    return p
-
-
 def _make_link(
     tmp_path: Path,
     *,
@@ -66,9 +59,9 @@ def _make_link(
 
 
 @pytest.mark.parametrize("malicious_url", [_EXT_TRANSPORT_URL, _LEADING_DASH_URL])
-def test_fetch_remote_tags_isolates_malicious_url(malicious_url: str) -> None:
+def test_fetch_remote_tags_isolates_malicious_url(malicious_url: str, make_proc) -> None:
     """ls-remote argv must carry a `--` separator and GIT_ALLOW_PROTOCOL guard."""
-    with patch("subprocess.run", return_value=_ok_proc()) as mock_run:
+    with patch("subprocess.run", return_value=make_proc()) as mock_run:
         _fetch_remote_tags(malicious_url)
 
     mock_run.assert_called_once()
@@ -90,7 +83,7 @@ def test_fetch_remote_tags_isolates_malicious_url(malicious_url: str) -> None:
 
 
 @pytest.mark.parametrize("malicious_url", [_EXT_TRANSPORT_URL, _LEADING_DASH_URL])
-def test_apply_fetch_isolates_malicious_url(tmp_path: Path, malicious_url: str) -> None:
+def test_apply_fetch_isolates_malicious_url(tmp_path: Path, malicious_url: str, make_proc) -> None:
     """apply_submodule_tag_advances' fetch call must carry the same guards."""
     link = _make_link(tmp_path, url=malicious_url)
 
@@ -103,7 +96,7 @@ def test_apply_fetch_isolates_malicious_url(tmp_path: Path, malicious_url: str) 
             return_value=["v1.0.0", "v1.1.0"],
         ),
         patch(
-            "repo_ops_upgrade.submodules.run_git", return_value=_ok_proc()
+            "repo_ops_upgrade.submodules.run_git", return_value=make_proc()
         ) as mock_git,
     ):
         bumps = apply_submodule_tag_advances([link])
@@ -129,9 +122,9 @@ def test_apply_fetch_isolates_malicious_url(tmp_path: Path, malicious_url: str) 
 # ---------------------------------------------------------------------------
 
 
-def test_run_git_forwards_env_and_separator(tmp_path: Path) -> None:
+def test_run_git_forwards_env_and_separator(tmp_path: Path, make_proc) -> None:
     """run_git must forward an explicit `env` through to subprocess.run."""
-    with patch("repo_ops_core.git.subprocess.run", return_value=_ok_proc()) as mock_run:
+    with patch("repo_ops_core.git.subprocess.run", return_value=make_proc()) as mock_run:
         run_git(
             tmp_path,
             "fetch",
@@ -153,9 +146,9 @@ def test_run_git_forwards_env_and_separator(tmp_path: Path) -> None:
     assert env.get("GIT_ALLOW_PROTOCOL") == "https:ssh"
 
 
-def test_run_git_default_env_is_none(tmp_path: Path) -> None:
+def test_run_git_default_env_is_none(tmp_path: Path, make_proc) -> None:
     """Existing call sites that don't pass env keep prior subprocess.run behavior."""
-    with patch("repo_ops_core.git.subprocess.run", return_value=_ok_proc()) as mock_run:
+    with patch("repo_ops_core.git.subprocess.run", return_value=make_proc()) as mock_run:
         run_git(tmp_path, "status", "--porcelain", timeout=5)
 
     kwargs = mock_run.call_args[1]

@@ -34,12 +34,6 @@ def _held_rule(**overrides) -> HoldRule:
     return HoldRule(**defaults)
 
 
-def _proc(stdout: str = "", returncode: int = 0, stderr: str = ""):
-    return type(
-        "Proc", (), {"returncode": returncode, "stdout": stdout, "stderr": stderr}
-    )()
-
-
 def _seed_is_odd_pin(d) -> None:
     (d / "import_map.json").write_text(
         json.dumps({"imports": {"npm:is-odd": "npm:is-odd@0.1.2"}}),
@@ -75,7 +69,9 @@ def _no_repo_holds():
     clear_deno_audit_version_overrides()
 
 
-def test_check_deno_filters_past_ceiling_from_planned_and_behind(tmp_path, make_workspace) -> None:
+def test_check_deno_filters_past_ceiling_from_planned_and_behind(
+    tmp_path, make_workspace, make_proc
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     stdout = "\n".join(
         [
@@ -87,7 +83,7 @@ def test_check_deno_filters_past_ceiling_from_planned_and_behind(tmp_path, make_
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
         patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
-        patch("repo_ops_js.deno.run", return_value=_proc(stdout=stdout)),
+        patch("repo_ops_js.deno.run", return_value=make_proc(stdout=stdout)),
     ):
         changes, behind = check_deno(ws)
 
@@ -97,14 +93,18 @@ def test_check_deno_filters_past_ceiling_from_planned_and_behind(tmp_path, make_
     ]
 
 
-def test_filter_held_deno_changes_keeps_target_within_ceiling(tmp_path, make_workspace) -> None:
+def test_filter_held_deno_changes_keeps_target_within_ceiling(
+    tmp_path, make_workspace
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change(_PACKAGE, "1.0.0", "1.5.0")
     with patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)):
         assert _filter_held_deno_changes(ws, [change]) == [change]
 
 
-def test_targeted_bump_skips_held_target_above_ceiling(tmp_path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_skips_held_target_above_ceiling(
+    tmp_path, monkeypatch, make_workspace
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change(_PACKAGE, "1.0.0", "2.0.0")
     monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
@@ -119,7 +119,9 @@ def test_targeted_bump_skips_held_target_above_ceiling(tmp_path, monkeypatch, ma
     run_mock.assert_not_called()
 
 
-def test_targeted_bump_restores_landing_above_ceiling(tmp_path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_restores_landing_above_ceiling(
+    tmp_path, monkeypatch, make_workspace, make_proc
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change(_PACKAGE, "1.0.0", "1.4.0")
     monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
@@ -132,7 +134,7 @@ def test_targeted_bump_restores_landing_above_ceiling(tmp_path, monkeypatch, mak
         ),
         patch("repo_ops_js.deno._restore_deno_workspace") as restore_mock,
         patch("repo_ops_js.deno._landed_deno_version", return_value="2.0.0"),
-        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+        patch("repo_ops_js.deno.run", return_value=make_proc()) as run_mock,
     ):
         applied, still_behind = targeted_bump_behind(ws, [change])
 
@@ -146,7 +148,9 @@ def test_targeted_bump_restores_landing_above_ceiling(tmp_path, monkeypatch, mak
     restore_mock.assert_called_once()
 
 
-def test_targeted_bump_releases_unheld_import_map_pin(tmp_path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_releases_unheld_import_map_pin(
+    tmp_path, monkeypatch, make_workspace, make_proc
+) -> None:
     _seed_is_odd_pin(tmp_path)
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change("npm:is-odd", "0.1.2", "1.0.0")
@@ -159,7 +163,7 @@ def test_targeted_bump_releases_unheld_import_map_pin(tmp_path, monkeypatch, mak
         ),
         patch("repo_ops_js.deno._landed_deno_version", return_value="1.0.0"),
         patch("repo_ops_js.deno.assert_targets_resolved"),
-        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+        patch("repo_ops_js.deno.run", return_value=make_proc()) as run_mock,
     ):
         applied, still_behind = targeted_bump_behind(ws, [change])
 
@@ -178,7 +182,9 @@ def test_targeted_bump_releases_unheld_import_map_pin(tmp_path, monkeypatch, mak
     assert imports["npm:is-odd"] == "npm:is-odd"
 
 
-def test_targeted_bump_keeps_held_import_map_pin(tmp_path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_keeps_held_import_map_pin(
+    tmp_path, monkeypatch, make_workspace, make_proc
+) -> None:
     _seed_is_odd_pin(tmp_path)
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change("npm:is-odd", "0.1.0", "0.1.2")
@@ -194,7 +200,7 @@ def test_targeted_bump_keeps_held_import_map_pin(tmp_path, monkeypatch, make_wor
         ),
         patch("repo_ops_js.deno._landed_deno_version", return_value="0.1.2"),
         patch("repo_ops_js.deno.assert_targets_resolved"),
-        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+        patch("repo_ops_js.deno.run", return_value=make_proc()) as run_mock,
     ):
         applied, still_behind = targeted_bump_behind(ws, [change])
 
@@ -214,7 +220,7 @@ def test_targeted_bump_keeps_held_import_map_pin(tmp_path, monkeypatch, make_wor
 
 
 def test_targeted_bump_releases_unheld_jsr_import_map_pin(
-    tmp_path, monkeypatch, make_workspace
+    tmp_path, monkeypatch, make_workspace, make_proc
 ) -> None:
     _seed_assert_pin(tmp_path)
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
@@ -228,7 +234,7 @@ def test_targeted_bump_releases_unheld_jsr_import_map_pin(
         ),
         patch("repo_ops_js.deno._landed_deno_version", return_value="1.1.0"),
         patch("repo_ops_js.deno.assert_targets_resolved"),
-        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+        patch("repo_ops_js.deno.run", return_value=make_proc()) as run_mock,
     ):
         applied, still_behind = targeted_bump_behind(ws, [change])
 
@@ -247,7 +253,9 @@ def test_targeted_bump_releases_unheld_jsr_import_map_pin(
     assert imports["jsr:@std/assert"] == "jsr:@std/assert"
 
 
-def test_targeted_bump_keeps_held_jsr_import_map_pin(tmp_path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_keeps_held_jsr_import_map_pin(
+    tmp_path, monkeypatch, make_workspace, make_proc
+) -> None:
     _seed_assert_pin(tmp_path)
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change("jsr:@std/assert", "1.0.0", "1.1.0")
@@ -263,7 +271,7 @@ def test_targeted_bump_keeps_held_jsr_import_map_pin(tmp_path, monkeypatch, make
         ),
         patch("repo_ops_js.deno._landed_deno_version", return_value="1.1.0"),
         patch("repo_ops_js.deno.assert_targets_resolved"),
-        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+        patch("repo_ops_js.deno.run", return_value=make_proc()) as run_mock,
     ):
         applied, still_behind = targeted_bump_behind(ws, [change])
 
@@ -283,7 +291,7 @@ def test_targeted_bump_keeps_held_jsr_import_map_pin(tmp_path, monkeypatch, make
 
 
 def test_apply_deno_audit_version_overrides_runs_without_targeted_bump(
-    tmp_path, monkeypatch, make_workspace
+    tmp_path, monkeypatch, make_workspace, make_proc
 ) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     monkeypatch.delenv("REPO_OPS_DENO_TARGETED_BUMP", raising=False)
@@ -291,7 +299,7 @@ def test_apply_deno_audit_version_overrides_runs_without_targeted_bump(
     with (
         patch("repo_ops_js.deno._snapshot_deno_workspace", return_value={}),
         patch("repo_ops_js.deno._landed_deno_version", return_value="1.4.0"),
-        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+        patch("repo_ops_js.deno.run", return_value=make_proc()) as run_mock,
     ):
         apply_deno_audit_version_overrides(ws)
 
@@ -302,7 +310,9 @@ def test_apply_deno_audit_version_overrides_runs_without_targeted_bump(
     ]
 
 
-def test_snapshot_deno_workspace_includes_maps_and_configs(tmp_path, make_workspace) -> None:
+def test_snapshot_deno_workspace_includes_maps_and_configs(
+    tmp_path, make_workspace
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     import_map = tmp_path / "custom-map.json"
     import_map.write_bytes(b"{}")
@@ -336,7 +346,9 @@ def test_deno_import_map_default_selection_is_stable(tmp_path, make_workspace) -
     assert _deno_import_map_paths(ws)[0] == first.resolve()
 
 
-def test_deno_import_map_rejects_parent_and_symlink_escape(tmp_path, make_workspace) -> None:
+def test_deno_import_map_rejects_parent_and_symlink_escape(
+    tmp_path, make_workspace
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     outside = tmp_path.parent / "outside-import-map.json"
     outside.write_bytes(b"{}")
@@ -351,7 +363,9 @@ def test_deno_import_map_rejects_parent_and_symlink_escape(tmp_path, make_worksp
 
 
 @pytest.mark.parametrize("filename", ["deno.jsonc", "import_map.jsonc"])
-def test_release_unheld_deno_pin_handles_jsonc(tmp_path, filename, make_workspace) -> None:
+def test_release_unheld_deno_pin_handles_jsonc(
+    tmp_path, filename, make_workspace
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     (tmp_path / filename).write_text(
         """
@@ -371,7 +385,7 @@ def test_release_unheld_deno_pin_handles_jsonc(tmp_path, filename, make_workspac
 
 
 def test_targeted_bump_audit_override_wins_over_hold_ceiling(
-    tmp_path, monkeypatch, make_workspace
+    tmp_path, monkeypatch, make_workspace, make_proc
 ) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change(_PACKAGE, "1.0.0", "2.0.0")
@@ -385,7 +399,7 @@ def test_targeted_bump_audit_override_wins_over_hold_ceiling(
         ),
         patch("repo_ops_js.deno._landed_deno_version", return_value="1.4.0"),
         patch("repo_ops_js.deno.assert_targets_resolved"),
-        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+        patch("repo_ops_js.deno.run", return_value=make_proc()) as run_mock,
     ):
         applied, still_behind = targeted_bump_behind(ws, [change])
 
@@ -398,7 +412,9 @@ def test_targeted_bump_audit_override_wins_over_hold_ceiling(
     ]
 
 
-def test_enforce_deno_version_ceilings_clamps_resolved_above_ceiling(tmp_path, make_workspace) -> None:
+def test_enforce_deno_version_ceilings_clamps_resolved_above_ceiling(
+    tmp_path, make_workspace, make_proc
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
@@ -409,7 +425,7 @@ def test_enforce_deno_version_ceilings_clamps_resolved_above_ceiling(tmp_path, m
         patch("repo_ops_js.deno._deno_lock_package_names", return_value={_PACKAGE}),
         patch("repo_ops_js.deno._snapshot_deno_workspace", return_value=object()),
         patch("repo_ops_js.deno._restore_deno_workspace") as restore_mock,
-        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+        patch("repo_ops_js.deno.run", return_value=make_proc()) as run_mock,
     ):
         _enforce_deno_version_ceilings(ws)
 
@@ -421,7 +437,9 @@ def test_enforce_deno_version_ceilings_clamps_resolved_above_ceiling(tmp_path, m
     restore_mock.assert_not_called()
 
 
-def test_enforce_deno_version_ceilings_passes_default_import_map(tmp_path, make_workspace) -> None:
+def test_enforce_deno_version_ceilings_passes_default_import_map(
+    tmp_path, make_workspace, make_proc
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     import_map = tmp_path / "import_map.json"
     import_map.write_text("{}", encoding="utf-8")
@@ -434,7 +452,7 @@ def test_enforce_deno_version_ceilings_passes_default_import_map(tmp_path, make_
         patch("repo_ops_js.deno._deno_lock_package_names", return_value={_PACKAGE}),
         patch("repo_ops_js.deno._snapshot_deno_workspace", return_value=object()),
         patch("repo_ops_js.deno._restore_deno_workspace") as restore_mock,
-        patch("repo_ops_js.deno.run", return_value=_proc()) as run_mock,
+        patch("repo_ops_js.deno.run", return_value=make_proc()) as run_mock,
     ):
         _enforce_deno_version_ceilings(ws)
 
@@ -449,8 +467,12 @@ def test_enforce_deno_version_ceilings_passes_default_import_map(tmp_path, make_
 
 
 def test_deno_flags_resolve_per_checkout_config(tmp_path, make_workspace) -> None:
-    latest_ws = make_workspace(tmp_path / "latest", ecosystem="deno", manager="deno", label="deno")
-    targeted_ws = make_workspace(tmp_path / "targeted", ecosystem="deno", manager="deno", label="deno")
+    latest_ws = make_workspace(
+        tmp_path / "latest", ecosystem="deno", manager="deno", label="deno"
+    )
+    targeted_ws = make_workspace(
+        tmp_path / "targeted", ecosystem="deno", manager="deno", label="deno"
+    )
 
     def repo_config(repo_root):
         return {
@@ -471,7 +493,7 @@ def test_deno_flags_resolve_per_checkout_config(tmp_path, make_workspace) -> Non
 
 @pytest.mark.parametrize("package", [_PACKAGE, "jsr:@std/held"])
 def test_enforce_deno_version_ceilings_falls_back_to_published_patch(
-    tmp_path, package, make_workspace
+    tmp_path, package, make_workspace, make_proc
 ) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     outdated = json.dumps(
@@ -498,9 +520,9 @@ def test_enforce_deno_version_ceilings_falls_back_to_published_patch(
         patch(
             "repo_ops_js.deno.run",
             side_effect=[
-                _proc(returncode=1, stderr="unsupported range"),
-                _proc(stdout=outdated),
-                _proc(),
+                make_proc(returncode=1, stderr="unsupported range"),
+                make_proc(stdout=outdated),
+                make_proc(),
             ],
         ) as run_mock,
     ):

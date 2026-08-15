@@ -10,7 +10,6 @@ mechanism, not a safety net.
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,12 +24,6 @@ def _held_rule(package: str, **overrides) -> HoldRule:
     return HoldRule(**defaults)
 
 
-def _proc(stdout: str = "", returncode: int = 0, stderr: str = ""):
-    return subprocess.CompletedProcess(
-        ["cmd"], returncode, stdout=stdout, stderr=stderr
-    )
-
-
 # ---------------------------------------------------------------------------
 # uv / hatch (repo_ops_py.uv_lock)
 # ---------------------------------------------------------------------------
@@ -42,7 +35,7 @@ def _uv_ws(tmp_path: Path) -> Workspace:
     )
 
 
-def test_check_uv_lock_filters_held_package_past_ceiling(tmp_path: Path) -> None:
+def test_check_uv_lock_filters_held_package_past_ceiling(tmp_path: Path, make_proc) -> None:
     from repo_ops_py import uv_lock
 
     stdout = "Resolved 10 packages\nwould upgrade typescript-stub 6.5 -> 7.0\n"
@@ -53,13 +46,13 @@ def test_check_uv_lock_filters_held_package_past_ceiling(tmp_path: Path) -> None
             return_value=(_held_rule("typescript-stub"),),
         ),
         patch.object(uv_lock, "_repo_holds_cached", return_value=()),
-        patch.object(uv_lock, "run", return_value=_proc(stdout=stdout)),
+        patch.object(uv_lock, "run", return_value=make_proc(stdout=stdout)),
     ):
         changes = uv_lock.check_uv_lock(_uv_ws(tmp_path))
     assert changes == []
 
 
-def test_apply_uv_lock_clamps_package_above_ceiling(tmp_path: Path) -> None:
+def test_apply_uv_lock_clamps_package_above_ceiling(tmp_path: Path, make_proc) -> None:
     from repo_ops_py import uv_lock
 
     lock_path = tmp_path / "uv.lock"
@@ -82,8 +75,8 @@ def test_apply_uv_lock_clamps_package_above_ceiling(tmp_path: Path) -> None:
             clamp_commands.append(cmd)
             versions["typescript-stub"] = "6.9.0"
             _write_lock()
-            return _proc()
-        return _proc()
+            return make_proc()
+        return make_proc()
 
     with (
         patch.object(
@@ -102,7 +95,7 @@ def test_apply_uv_lock_clamps_package_above_ceiling(tmp_path: Path) -> None:
     assert "typescript-stub@7" not in lock_path.read_text(encoding="utf-8")
 
 
-def test_apply_uv_lock_raises_when_clamp_fails(tmp_path: Path) -> None:
+def test_apply_uv_lock_raises_when_clamp_fails(tmp_path: Path, make_proc) -> None:
     from repo_ops_py import uv_lock
 
     lock_path = tmp_path / "uv.lock"
@@ -117,14 +110,14 @@ def test_apply_uv_lock_raises_when_clamp_fails(tmp_path: Path) -> None:
             return_value=(_held_rule("typescript-stub"),),
         ),
         patch.object(uv_lock, "_repo_holds_cached", return_value=()),
-        patch.object(uv_lock, "run", return_value=_proc()),  # lock never changes
+        patch.object(uv_lock, "run", return_value=make_proc()),  # lock never changes
         pytest.raises(RuntimeError, match="hold"),
     ):
         uv_lock.apply_uv_lock(_uv_ws(tmp_path))
 
 
 def test_apply_uv_lock_raises_when_corrective_install_command_fails(
-    tmp_path: Path,
+    tmp_path: Path, make_proc,
 ) -> None:
     """Distinct failure mode from 'landed but still over ceiling': the
     corrective lock command itself errors out (e.g. resolver conflict)."""
@@ -136,8 +129,8 @@ def test_apply_uv_lock_raises_when_corrective_install_command_fails(
 
     def fake_run(cmd, cwd, timeout=None, env=None):
         if cmd[:3] == ["uv", "lock", "--upgrade-package"]:
-            return _proc(returncode=1, stderr="resolver conflict")
-        return _proc()
+            return make_proc(returncode=1, stderr="resolver conflict")
+        return make_proc()
 
     with (
         patch.object(
@@ -163,7 +156,7 @@ def _pdm_ws(tmp_path: Path) -> Workspace:
     )
 
 
-def test_apply_pdm_clamps_package_above_ceiling(tmp_path: Path) -> None:
+def test_apply_pdm_clamps_package_above_ceiling(tmp_path: Path, make_proc) -> None:
     from repo_ops_py_pdm import pdm
 
     lock_path = tmp_path / "pdm.lock"
@@ -181,7 +174,7 @@ def test_apply_pdm_clamps_package_above_ceiling(tmp_path: Path) -> None:
                 '[[package]]\nname = "typescript-stub"\nversion = "6.9.0"\n',
                 encoding="utf-8",
             )
-        return _proc()
+        return make_proc()
 
     with (
         patch.object(
@@ -197,7 +190,7 @@ def test_apply_pdm_clamps_package_above_ceiling(tmp_path: Path) -> None:
     assert manifest_path.read_bytes() == manifest_before
 
 
-def test_apply_pdm_raises_when_clamp_fails(tmp_path: Path) -> None:
+def test_apply_pdm_raises_when_clamp_fails(tmp_path: Path, make_proc) -> None:
     from repo_ops_py_pdm import pdm
 
     (tmp_path / "pdm.lock").write_text(
@@ -210,7 +203,7 @@ def test_apply_pdm_raises_when_clamp_fails(tmp_path: Path) -> None:
         ),
         patch.object(pdm, "_repo_holds_cached", return_value=()),
         patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
-        patch.object(pdm, "run", return_value=_proc()),
+        patch.object(pdm, "run", return_value=make_proc()),
         pytest.raises(RuntimeError, match="hold"),
     ):
         pdm.apply_pdm(_pdm_ws(tmp_path))
@@ -231,7 +224,7 @@ def _pipenv_ws(tmp_path: Path) -> Workspace:
     )
 
 
-def test_apply_pipenv_clamps_package_above_ceiling(tmp_path: Path) -> None:
+def test_apply_pipenv_clamps_package_above_ceiling(tmp_path: Path, make_proc) -> None:
     from repo_ops_py_pipenv import pipenv
 
     lock_path = tmp_path / "Pipfile.lock"
@@ -251,7 +244,7 @@ def test_apply_pipenv_clamps_package_above_ceiling(tmp_path: Path) -> None:
         if cmd[:2] == ["pipenv", "install"]:
             manifest_path.write_bytes(b"[packages]\ntypescript-stub = 'changed'\n")
             _write_lock("6.9.0")
-        return _proc()
+        return make_proc()
 
     with (
         patch.object(
@@ -269,7 +262,7 @@ def test_apply_pipenv_clamps_package_above_ceiling(tmp_path: Path) -> None:
     assert manifest_path.read_bytes() == manifest_before
 
 
-def test_apply_pipenv_raises_when_clamp_fails(tmp_path: Path) -> None:
+def test_apply_pipenv_raises_when_clamp_fails(tmp_path: Path, make_proc) -> None:
     from repo_ops_py_pipenv import pipenv
 
     (tmp_path / "Pipfile.lock").write_text(
@@ -285,7 +278,7 @@ def test_apply_pipenv_raises_when_clamp_fails(tmp_path: Path) -> None:
         ),
         patch.object(pipenv, "_repo_holds_cached", return_value=()),
         patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch.object(pipenv, "run", return_value=_proc()),
+        patch.object(pipenv, "run", return_value=make_proc()),
         pytest.raises(RuntimeError, match="hold"),
     ):
         pipenv.apply_pipenv(_pipenv_ws(tmp_path))
@@ -306,7 +299,7 @@ def _poetry_ws(tmp_path: Path) -> Workspace:
     )
 
 
-def test_apply_poetry_clamps_package_above_ceiling(tmp_path: Path) -> None:
+def test_apply_poetry_clamps_package_above_ceiling(tmp_path: Path, make_proc) -> None:
     from repo_ops_py_poetry import poetry
 
     lock_path = tmp_path / "poetry.lock"
@@ -324,7 +317,7 @@ def test_apply_poetry_clamps_package_above_ceiling(tmp_path: Path) -> None:
                 '[[package]]\nname = "typescript-stub"\nversion = "6.9.0"\n',
                 encoding="utf-8",
             )
-        return _proc()
+        return make_proc()
 
     with (
         patch.object(
@@ -342,7 +335,7 @@ def test_apply_poetry_clamps_package_above_ceiling(tmp_path: Path) -> None:
     assert manifest_path.read_bytes() == manifest_before
 
 
-def test_apply_poetry_raises_when_clamp_fails(tmp_path: Path) -> None:
+def test_apply_poetry_raises_when_clamp_fails(tmp_path: Path, make_proc) -> None:
     from repo_ops_py_poetry import poetry
 
     (tmp_path / "poetry.lock").write_text(
@@ -357,7 +350,7 @@ def test_apply_poetry_raises_when_clamp_fails(tmp_path: Path) -> None:
         ),
         patch.object(poetry, "_repo_holds_cached", return_value=()),
         patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry"),
-        patch.object(poetry, "run", return_value=_proc()),
+        patch.object(poetry, "run", return_value=make_proc()),
         pytest.raises(RuntimeError, match="hold"),
     ):
         poetry.apply_poetry(_poetry_ws(tmp_path))
@@ -378,7 +371,7 @@ def _pip_tools_ws(tmp_path: Path) -> Workspace:
     )
 
 
-def test_apply_pip_tools_passes_hold_constraints_file(tmp_path: Path) -> None:
+def test_apply_pip_tools_passes_hold_constraints_file(tmp_path: Path, make_proc) -> None:
     from repo_ops_py_pip_tools import pip_tools
 
     (tmp_path / "requirements.in").write_text(
@@ -388,7 +381,7 @@ def test_apply_pip_tools_passes_hold_constraints_file(tmp_path: Path) -> None:
 
     def fake_run(cmd, cwd, timeout=None):
         captured_cmds.append(cmd)
-        return _proc(returncode=0)
+        return make_proc(returncode=0)
 
     with (
         patch.object(

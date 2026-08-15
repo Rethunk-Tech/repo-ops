@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from repo_ops_core.holds import HoldRule
@@ -34,13 +34,6 @@ def _held_rule(**overrides) -> HoldRule:
     }
     defaults.update(overrides)
     return HoldRule(**defaults)
-
-
-def _ok_proc() -> MagicMock:
-    proc = MagicMock()
-    proc.returncode = 0
-    proc.stdout = ""
-    return proc
 
 
 def test_check_surfaces_tag_hold_clamp_at_upstream_latest(tmp_path: Path) -> None:
@@ -91,7 +84,7 @@ def test_check_surfaces_sha_hold_clamp_without_refresh(
     assert bumps[0].is_actionable
 
 
-def test_apply_clamps_tag_above_ceiling(tmp_path: Path) -> None:
+def test_apply_clamps_tag_above_ceiling(tmp_path: Path, make_proc) -> None:
     link = _make_link(tmp_path)
 
     with (
@@ -107,7 +100,7 @@ def test_apply_clamps_tag_above_ceiling(tmp_path: Path) -> None:
             "_fetch_remote_tags",
             return_value=["v1.0.0", "v1.4.0", "v1.5.0"],
         ),
-        patch.object(submodules, "run_git", return_value=_ok_proc()) as mock_git,
+        patch.object(submodules, "run_git", return_value=make_proc()) as mock_git,
     ):
         apply_submodule_tag_advances([link], allow_dirty=True)
 
@@ -140,7 +133,7 @@ def test_apply_raises_when_hold_cannot_be_clamped(tmp_path: Path) -> None:
 
 
 def test_expired_hold_is_ignored_without_config_rewrite(
-    tmp_path: Path,
+    tmp_path: Path, make_proc,
 ) -> None:
     link = _make_link(tmp_path)
     hold_config = tmp_path / ".repo-ops.toml"
@@ -159,7 +152,7 @@ def test_expired_hold_is_ignored_without_config_rewrite(
             "_fetch_remote_tags",
             return_value=["v1.0.0", "v1.5.0"],
         ),
-        patch.object(submodules, "run_git", return_value=_ok_proc()),
+        patch.object(submodules, "run_git", return_value=make_proc()),
     ):
         bumps = apply_submodule_tag_advances([link], allow_dirty=True)
 

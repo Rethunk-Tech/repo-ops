@@ -182,23 +182,13 @@ def test_js_detect_requires_node_ecosystem(tmp_path: Path) -> None:
     assert remediations.detect_pm_pin(go_ws, ctx) is False
 
 
-def _make_proc(returncode: int, stdout: str = "", stderr: str = ""):
-    from unittest.mock import MagicMock
-
-    p = MagicMock()
-    p.returncode = returncode
-    p.stdout = stdout
-    p.stderr = stderr
-    return p
-
-
-def test_apply_biome_success(tmp_path: Path) -> None:
+def test_apply_biome_success(tmp_path: Path, make_proc) -> None:
     (tmp_path / "package.json").write_text(json.dumps({}))
     (tmp_path / "biome.json").write_text("{}")
     ws = _sample_workspace(tmp_path)
     with patch(
         "repo_ops_upgrade_remediations_js.remediations.run",
-        return_value=_make_proc(0),
+        return_value=make_proc(0),
     ) as mock_run:
         ok, detail = remediations.apply_biome(ws, {})
     assert ok is True
@@ -208,11 +198,11 @@ def test_apply_biome_success(tmp_path: Path) -> None:
     assert "biome" in cmd and "migrate" in cmd and "--write" in cmd
 
 
-def test_apply_playwright_success(tmp_path: Path) -> None:
+def test_apply_playwright_success(tmp_path: Path, make_proc) -> None:
     ws = _sample_workspace(tmp_path)
     with patch(
         "repo_ops_upgrade_remediations_js.remediations.run",
-        return_value=_make_proc(0),
+        return_value=make_proc(0),
     ) as mock_run:
         ok, detail = remediations.apply_playwright(ws, {})
     assert ok is True
@@ -223,14 +213,14 @@ def test_apply_playwright_success(tmp_path: Path) -> None:
     assert "playwright" in cmd and "install" in cmd
 
 
-def test_apply_codegen_success(tmp_path: Path) -> None:
+def test_apply_codegen_success(tmp_path: Path, make_proc) -> None:
     (tmp_path / "package.json").write_text(
         json.dumps({"scripts": {"generate:proto": "buf generate"}})
     )
     ws = _sample_workspace(tmp_path)
     with patch(
         "repo_ops_upgrade_remediations_js.remediations.run",
-        return_value=_make_proc(0),
+        return_value=make_proc(0),
     ) as mock_run:
         ok, detail = remediations.apply_codegen(ws, {})
     assert ok is True

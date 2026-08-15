@@ -25,13 +25,6 @@ def _held_rule(**overrides) -> HoldRule:
     return HoldRule(**defaults)
 
 
-
-def _proc(stdout: str = "", returncode: int = 0, stderr: str = ""):
-    return type(
-        "Proc", (), {"returncode": returncode, "stdout": stdout, "stderr": stderr}
-    )()
-
-
 def _metadata(crate_versions: str | tuple[str, ...]) -> str:
     if isinstance(crate_versions, str):
         crate_versions = (crate_versions,)
@@ -106,20 +99,20 @@ def test_cargo_registry_versions_follows_seek_pagination() -> None:
     assert set(versions) == {"1.5.7", "1.5.5"}
 
 
-def test_check_rust_filters_change_past_ceiling(tmp_path, make_workspace) -> None:
+def test_check_rust_filters_change_past_ceiling(tmp_path, make_workspace, make_proc) -> None:
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
 
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
         patch(
             "repo_ops_rust.rust.run",
-            return_value=_proc("    Updating serde v1.2.0 -> v2.0.0\n"),
+            return_value=make_proc(stdout="    Updating serde v1.2.0 -> v2.0.0\n"),
         ),
     ):
         assert check_rust(ws) == []
 
 
-def test_check_rust_matches_rust_ecosystem_hold(tmp_path, make_workspace) -> None:
+def test_check_rust_matches_rust_ecosystem_hold(tmp_path, make_workspace, make_proc) -> None:
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
 
     with (
@@ -129,19 +122,19 @@ def test_check_rust_matches_rust_ecosystem_hold(tmp_path, make_workspace) -> Non
         ),
         patch(
             "repo_ops_rust.rust.run",
-            return_value=_proc("    Updating serde v1.2.0 -> v2.0.0\n"),
+            return_value=make_proc(stdout="    Updating serde v1.2.0 -> v2.0.0\n"),
         ),
     ):
         assert check_rust(ws) == []
 
 
-def test_check_rust_keeps_change_within_ceiling(tmp_path, make_workspace) -> None:
+def test_check_rust_keeps_change_within_ceiling(tmp_path, make_workspace, make_proc) -> None:
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     expected = "    Updating serde v1.2.0 -> v1.4.0\n"
 
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
-        patch("repo_ops_rust.rust.run", return_value=_proc(expected)),
+        patch("repo_ops_rust.rust.run", return_value=make_proc(stdout=expected)),
     ):
         changes = check_rust(ws)
 
@@ -151,16 +144,18 @@ def test_check_rust_keeps_change_within_ceiling(tmp_path, make_workspace) -> Non
     assert changes[0].to == "1.4.0"
 
 
-def test_apply_rust_clamps_resolved_crate_above_ceiling(tmp_path, make_workspace) -> None:
+def test_apply_rust_clamps_resolved_crate_above_ceiling(
+    tmp_path, make_workspace, make_proc
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["1.8.0", "1.5.7"]
     clamp_calls: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0):
         if cmd == ["cargo", "update"]:
-            return _proc()
+            return make_proc()
         if cmd == ["cargo", "metadata", "--format-version", "1"]:
-            return _proc(_metadata(tuple(versions)))
+            return make_proc(stdout=_metadata(tuple(versions)))
         if cmd == [
             "cargo",
             "update",
@@ -171,7 +166,7 @@ def test_apply_rust_clamps_resolved_crate_above_ceiling(tmp_path, make_workspace
         ]:
             clamp_calls.append(cmd)
             versions[:] = ["1.5.7"]
-            return _proc()
+            return make_proc()
         raise AssertionError(f"unexpected command: {cmd}")
 
     with (
@@ -189,16 +184,18 @@ def test_apply_rust_clamps_resolved_crate_above_ceiling(tmp_path, make_workspace
     assert versions[0] == "1.5.7"
 
 
-def test_apply_rust_audit_override_wins_over_hold_ceiling(tmp_path, make_workspace) -> None:
+def test_apply_rust_audit_override_wins_over_hold_ceiling(
+    tmp_path, make_workspace, make_proc
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["2.1.0"]
     override_calls: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0):
         if cmd == ["cargo", "update"]:
-            return _proc()
+            return make_proc()
         if cmd == ["cargo", "metadata", "--format-version", "1"]:
-            return _proc(_metadata(tuple(versions)))
+            return make_proc(stdout=_metadata(tuple(versions)))
         if cmd == [
             "cargo",
             "update",
@@ -209,7 +206,7 @@ def test_apply_rust_audit_override_wins_over_hold_ceiling(tmp_path, make_workspa
         ]:
             override_calls.append(cmd)
             versions[:] = ["2.0.0"]
-            return _proc()
+            return make_proc()
         raise AssertionError(f"unexpected command: {cmd}")
 
     set_rust_audit_version_overrides({_CRATE: "2.0.0"})
@@ -228,16 +225,18 @@ def test_apply_rust_audit_override_wins_over_hold_ceiling(tmp_path, make_workspa
     assert versions == ["2.0.0"]
 
 
-def test_apply_rust_uses_highest_published_prefix_version(tmp_path, make_workspace) -> None:
+def test_apply_rust_uses_highest_published_prefix_version(
+    tmp_path, make_workspace, make_proc
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["1.8.0"]
     clamp_calls: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0):
         if cmd == ["cargo", "update"]:
-            return _proc()
+            return make_proc()
         if cmd == ["cargo", "metadata", "--format-version", "1"]:
-            return _proc(_metadata(tuple(versions)))
+            return make_proc(stdout=_metadata(tuple(versions)))
         if cmd == [
             "cargo",
             "update",
@@ -248,7 +247,7 @@ def test_apply_rust_uses_highest_published_prefix_version(tmp_path, make_workspa
         ]:
             clamp_calls.append(cmd)
             versions[:] = ["1.5.7"]
-            return _proc()
+            return make_proc()
         raise AssertionError(f"unexpected command: {cmd}")
 
     with (
@@ -267,16 +266,16 @@ def test_apply_rust_uses_highest_published_prefix_version(tmp_path, make_workspa
     assert versions[0] == "1.5.7"
 
 
-def test_apply_rust_audit_override_without_hold(tmp_path, make_workspace) -> None:
+def test_apply_rust_audit_override_without_hold(tmp_path, make_workspace, make_proc) -> None:
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["2.1.0"]
     override_calls: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0):
         if cmd == ["cargo", "update"]:
-            return _proc()
+            return make_proc()
         if cmd == ["cargo", "metadata", "--format-version", "1"]:
-            return _proc(_metadata(tuple(versions)))
+            return make_proc(stdout=_metadata(tuple(versions)))
         if cmd == [
             "cargo",
             "update",
@@ -287,7 +286,7 @@ def test_apply_rust_audit_override_without_hold(tmp_path, make_workspace) -> Non
         ]:
             override_calls.append(cmd)
             versions[:] = ["2.0.0"]
-            return _proc()
+            return make_proc()
         raise AssertionError(f"unexpected command: {cmd}")
 
     set_rust_audit_version_overrides({_CRATE: "2.0.0"})
@@ -306,7 +305,9 @@ def test_apply_rust_audit_override_without_hold(tmp_path, make_workspace) -> Non
     assert versions == ["2.0.0"]
 
 
-def test_apply_rust_skips_unheld_crate_without_audit_override(tmp_path, make_workspace) -> None:
+def test_apply_rust_skips_unheld_crate_without_audit_override(
+    tmp_path, make_workspace, make_proc
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["2.1.0"]
     calls: list[list[str]] = []
@@ -314,9 +315,9 @@ def test_apply_rust_skips_unheld_crate_without_audit_override(tmp_path, make_wor
     def fake_run(cmd, cwd, timeout=0):
         calls.append(cmd)
         if cmd == ["cargo", "update"]:
-            return _proc()
+            return make_proc()
         if cmd == ["cargo", "metadata", "--format-version", "1"]:
-            return _proc(_metadata(tuple(versions)))
+            return make_proc(stdout=_metadata(tuple(versions)))
         raise AssertionError(f"unexpected command: {cmd}")
 
     with (

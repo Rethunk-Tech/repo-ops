@@ -29,14 +29,7 @@ def _held_rule(**overrides) -> HoldRule:
     return HoldRule(**defaults)
 
 
-
-def _proc(stdout: str = "", returncode: int = 0, stderr: str = ""):
-    return type(
-        "Proc", (), {"returncode": returncode, "stdout": stdout, "stderr": stderr}
-    )()
-
-
-def _fake_run_with_gomod(list_stdout: str, require_paths: list[str]):
+def _fake_run_with_gomod(list_stdout: str, require_paths: list[str], make_proc):
     gomod = json.dumps(
         {
             "Module": {"Path": "example.com/main"},
@@ -46,7 +39,7 @@ def _fake_run_with_gomod(list_stdout: str, require_paths: list[str]):
 
     def fake_run(cmd, cwd, timeout=0):
         stdout = gomod if cmd[:3] == ["go", "mod", "edit"] else list_stdout
-        return _proc(stdout)
+        return make_proc(stdout=stdout)
 
     return fake_run
 
@@ -65,7 +58,9 @@ def test_go_ceiling_query_uses_shared_hold_padding(
     assert _go_ceiling_query(max_version) == expected
 
 
-def test_changes_from_go_list_json_then_filter_held_past_ceiling(tmp_path, make_workspace) -> None:
+def test_changes_from_go_list_json_then_filter_held_past_ceiling(
+    tmp_path, make_workspace, make_proc
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     line = json.dumps(
         {
@@ -74,7 +69,7 @@ def test_changes_from_go_list_json_then_filter_held_past_ceiling(tmp_path, make_
             "Update": {"Path": _MODULE, "Version": "v2.0.0"},
         }
     )
-    fake_run = _fake_run_with_gomod(line, [_MODULE])
+    fake_run = _fake_run_with_gomod(line, [_MODULE], make_proc)
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
         patch("repo_ops_go.go.run", side_effect=fake_run),
@@ -85,7 +80,9 @@ def test_changes_from_go_list_json_then_filter_held_past_ceiling(tmp_path, make_
     assert filtered == []
 
 
-def test_filter_held_go_changes_keeps_within_ceiling(tmp_path, make_workspace) -> None:
+def test_filter_held_go_changes_keeps_within_ceiling(
+    tmp_path, make_workspace, make_proc
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     line = json.dumps(
         {
@@ -94,7 +91,7 @@ def test_filter_held_go_changes_keeps_within_ceiling(tmp_path, make_workspace) -
             "Update": {"Path": _MODULE, "Version": "v1.4.0"},
         }
     )
-    fake_run = _fake_run_with_gomod(line, [_MODULE])
+    fake_run = _fake_run_with_gomod(line, [_MODULE], make_proc)
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
         patch("repo_ops_go.go.run", side_effect=fake_run),
@@ -104,7 +101,9 @@ def test_filter_held_go_changes_keeps_within_ceiling(tmp_path, make_workspace) -
     assert filtered == changes
 
 
-def test_explicit_go_get_targets_skips_held_target_past_ceiling(tmp_path, make_workspace) -> None:
+def test_explicit_go_get_targets_skips_held_target_past_ceiling(
+    tmp_path, make_workspace, make_proc
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     line = json.dumps(
         {
@@ -113,7 +112,7 @@ def test_explicit_go_get_targets_skips_held_target_past_ceiling(tmp_path, make_w
             "Update": {"Path": _MODULE, "Version": "v2.0.0"},
         }
     )
-    fake_run = _fake_run_with_gomod(line, [_MODULE])
+    fake_run = _fake_run_with_gomod(line, [_MODULE], make_proc)
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
         patch("repo_ops_go.go.run", side_effect=fake_run),
@@ -121,14 +120,16 @@ def test_explicit_go_get_targets_skips_held_target_past_ceiling(tmp_path, make_w
         assert _explicit_go_get_targets(ws) == []
 
 
-def test_enforce_version_ceilings_clamps_resolved_above_ceiling(tmp_path, make_workspace) -> None:
+def test_enforce_version_ceilings_clamps_resolved_above_ceiling(
+    tmp_path, make_workspace, make_proc
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     versions = {_MODULE: "v1.8.0"}
 
     def fake_run(cmd, cwd, timeout=0):
         if cmd[:3] == ["go", "mod", "edit"]:
-            return _proc(
-                json.dumps(
+            return make_proc(
+                stdout=json.dumps(
                     {
                         "Module": {"Path": "example.com/main"},
                         "Require": [{"Path": _MODULE, "Version": "v0.0.0"}],
@@ -136,12 +137,14 @@ def test_enforce_version_ceilings_clamps_resolved_above_ceiling(tmp_path, make_w
                 )
             )
         if cmd[:3] == ["go", "list", "-m"]:
-            return _proc(json.dumps({"Path": _MODULE, "Version": versions[_MODULE]}))
+            return make_proc(
+                stdout=json.dumps({"Path": _MODULE, "Version": versions[_MODULE]})
+            )
         if cmd[:2] == ["go", "get"]:
             versions[_MODULE] = "v1.5.0"
-            return _proc()
+            return make_proc()
         if cmd == ["go", "mod", "tidy"]:
-            return _proc()
+            return make_proc()
         raise AssertionError(f"unexpected command: {cmd}")
 
     with (
@@ -152,13 +155,15 @@ def test_enforce_version_ceilings_clamps_resolved_above_ceiling(tmp_path, make_w
     assert versions[_MODULE] == "v1.5.0"
 
 
-def test_enforce_version_ceilings_raises_when_still_above_ceiling(tmp_path, make_workspace) -> None:
+def test_enforce_version_ceilings_raises_when_still_above_ceiling(
+    tmp_path, make_workspace, make_proc
+) -> None:
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
         if cmd[:3] == ["go", "mod", "edit"]:
-            return _proc(
-                json.dumps(
+            return make_proc(
+                stdout=json.dumps(
                     {
                         "Module": {"Path": "example.com/main"},
                         "Require": [{"Path": _MODULE, "Version": "v0.0.0"}],
@@ -166,9 +171,9 @@ def test_enforce_version_ceilings_raises_when_still_above_ceiling(tmp_path, make
                 )
             )
         if cmd[:3] == ["go", "list", "-m"]:
-            return _proc(json.dumps({"Path": _MODULE, "Version": "v1.8.0"}))
+            return make_proc(stdout=json.dumps({"Path": _MODULE, "Version": "v1.8.0"}))
         if cmd[:2] == ["go", "get"]:
-            return _proc()  # succeeds but resolved version never actually moves
+            return make_proc()  # succeeds but resolved version never actually moves
         raise AssertionError(f"unexpected command: {cmd}")
 
     with (
@@ -193,7 +198,8 @@ def test_workspace_rel_falls_back_when_path_outside_git_repo(tmp_path) -> None:
 
 
 def test_enforce_version_ceilings_skips_unheld_and_already_compliant(
-    tmp_path, make_workspace,
+    tmp_path,
+    make_workspace, make_proc,
 ) -> None:
     """Mixed candidates: no matching rule, and held-but-already-compliant —
     neither triggers a corrective `go get`."""
@@ -204,8 +210,8 @@ def test_enforce_version_ceilings_skips_unheld_and_already_compliant(
 
     def fake_run(cmd, cwd, timeout=0):
         if cmd[:3] == ["go", "mod", "edit"]:
-            return _proc(
-                json.dumps(
+            return make_proc(
+                stdout=json.dumps(
                     {
                         "Module": {"Path": "example.com/main"},
                         "Require": [
@@ -218,10 +224,10 @@ def test_enforce_version_ceilings_skips_unheld_and_already_compliant(
         if cmd[:3] == ["go", "list", "-m"]:
             module = cmd[4]
             version = "v9.0.0" if module == unheld else "v1.2.0"
-            return _proc(json.dumps({"Path": module, "Version": version}))
+            return make_proc(stdout=json.dumps({"Path": module, "Version": version}))
         if cmd[:2] == ["go", "get"]:
             get_calls.append(cmd)
-            return _proc()
+            return make_proc()
         raise AssertionError(f"unexpected command: {cmd}")
 
     # Rule only matches `compliant`, and its resolved version (v1.2.0)
@@ -236,7 +242,8 @@ def test_enforce_version_ceilings_skips_unheld_and_already_compliant(
 
 
 def test_enforce_version_ceilings_raises_when_corrective_get_command_fails(
-    tmp_path, make_workspace,
+    tmp_path,
+    make_workspace, make_proc,
 ) -> None:
     """Distinct failure mode from 'still above ceiling after get': the
     corrective `go get` command itself errors out (e.g. network failure)."""
@@ -244,8 +251,8 @@ def test_enforce_version_ceilings_raises_when_corrective_get_command_fails(
 
     def fake_run(cmd, cwd, timeout=0):
         if cmd[:3] == ["go", "mod", "edit"]:
-            return _proc(
-                json.dumps(
+            return make_proc(
+                stdout=json.dumps(
                     {
                         "Module": {"Path": "example.com/main"},
                         "Require": [{"Path": _MODULE, "Version": "v0.0.0"}],
@@ -253,9 +260,9 @@ def test_enforce_version_ceilings_raises_when_corrective_get_command_fails(
                 )
             )
         if cmd[:3] == ["go", "list", "-m"]:
-            return _proc(json.dumps({"Path": _MODULE, "Version": "v1.8.0"}))
+            return make_proc(stdout=json.dumps({"Path": _MODULE, "Version": "v1.8.0"}))
         if cmd[:2] == ["go", "get"]:
-            return _proc(returncode=1, stderr="network error")
+            return make_proc(returncode=1, stderr="network error")
         raise AssertionError(f"unexpected command: {cmd}")
 
     with (
@@ -266,7 +273,9 @@ def test_enforce_version_ceilings_raises_when_corrective_get_command_fails(
         _enforce_version_ceilings(ws)
 
 
-def test_apply_go_patch_mode_invokes_enforce_ceilings(tmp_path, monkeypatch, make_workspace) -> None:
+def test_apply_go_patch_mode_invokes_enforce_ceilings(
+    tmp_path, monkeypatch, make_workspace, make_proc
+) -> None:
     """apply_go's default (patch) mode calls the clamp-down safety net."""
     monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
@@ -275,8 +284,10 @@ def test_apply_go_patch_mode_invokes_enforce_ceilings(tmp_path, monkeypatch, mak
     def fake_run(cmd, cwd, timeout=0, env=None):
         calls.append(cmd)
         if cmd[:3] == ["go", "mod", "edit"]:
-            return _proc(json.dumps({"Module": {"Path": "example.com/main"}}))
-        return _proc()
+            return make_proc(
+                stdout=json.dumps({"Module": {"Path": "example.com/main"}})
+            )
+        return make_proc()
 
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=()),

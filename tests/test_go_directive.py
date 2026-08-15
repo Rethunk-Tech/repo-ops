@@ -34,14 +34,6 @@ from repo_ops_go.go import (
 # ---------------------------------------------------------------------------
 
 
-def _ok_proc(stdout: str = "", stderr: str = ""):
-    return type("Proc", (), {"returncode": 0, "stdout": stdout, "stderr": stderr})()
-
-
-def _fail_proc(stderr: str = "boom"):
-    return type("Proc", (), {"returncode": 1, "stdout": "", "stderr": stderr})()
-
-
 def _gomod_json(go_ver: str = "1.22", toolchain: str | None = None) -> str:
     doc: dict = {
         "Module": {"Path": "example.com/main"},
@@ -157,7 +149,9 @@ def test_plan_go_work_no_go_directive_in_work(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_check_go_includes_work_directive_change(tmp_path: Path, make_workspace) -> None:
+def test_check_go_includes_work_directive_change(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """check_go prepends go.work directive change when go.work is stale."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     # Register a go.work dir and write fixture files.
@@ -171,7 +165,7 @@ def test_check_go_includes_work_directive_change(tmp_path: Path, make_workspace)
 
     # go list returns no dep updates; we only care about the directive change.
     def fake_run(cmd, cwd, timeout=0):
-        return _ok_proc(stdout="")
+        return make_proc(stdout="")
 
     with (
         patch.dict("os.environ", {"REPO_OPS_GO_UPGRADE_MODE": "patch"}),
@@ -189,7 +183,9 @@ def test_check_go_includes_work_directive_change(tmp_path: Path, make_workspace)
 # ---------------------------------------------------------------------------
 
 
-def test_apply_go_work_directive_runs_when_stale(tmp_path: Path, make_workspace) -> None:
+def test_apply_go_work_directive_runs_when_stale(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """_apply_go_work_directive calls go work use when go.work is behind a member."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     go_work_dir = tmp_path / "workspace"
@@ -204,7 +200,7 @@ def test_apply_go_work_directive_runs_when_stale(tmp_path: Path, make_workspace)
 
     def fake_run(cmd, cwd, timeout=0):
         calls_recorded.append(list(cmd))
-        return _ok_proc()
+        return make_proc()
 
     with patch("repo_ops_go.go.run", side_effect=fake_run):
         _apply_go_work_directive(ws)
@@ -214,7 +210,9 @@ def test_apply_go_work_directive_runs_when_stale(tmp_path: Path, make_workspace)
     )
 
 
-def test_apply_go_work_directive_skips_when_current(tmp_path: Path, make_workspace) -> None:
+def test_apply_go_work_directive_skips_when_current(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """_apply_go_work_directive does NOT call go work use when directive is current."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     go_work_dir = tmp_path / "workspace"
@@ -229,7 +227,7 @@ def test_apply_go_work_directive_skips_when_current(tmp_path: Path, make_workspa
 
     def fake_run(cmd, cwd, timeout=0):
         calls_recorded.append(list(cmd))
-        return _ok_proc()
+        return make_proc()
 
     with patch("repo_ops_go.go.run", side_effect=fake_run):
         _apply_go_work_directive(ws)
@@ -237,14 +235,16 @@ def test_apply_go_work_directive_skips_when_current(tmp_path: Path, make_workspa
     assert ["go", "work", "use"] not in calls_recorded
 
 
-def test_apply_go_work_directive_no_go_work_dir_registered(tmp_path: Path, make_workspace) -> None:
+def test_apply_go_work_directive_no_go_work_dir_registered(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """_apply_go_work_directive is a no-op when no go.work dir is registered."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     calls_recorded: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0):
         calls_recorded.append(list(cmd))
-        return _ok_proc()
+        return make_proc()
 
     with patch("repo_ops_go.go.run", side_effect=fake_run):
         _apply_go_work_directive(ws)
@@ -252,7 +252,9 @@ def test_apply_go_work_directive_no_go_work_dir_registered(tmp_path: Path, make_
     assert calls_recorded == []
 
 
-def test_apply_go_work_directive_raises_on_failure(tmp_path: Path, make_workspace) -> None:
+def test_apply_go_work_directive_raises_on_failure(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """When go work use fails, RuntimeError is raised."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     go_work_dir = tmp_path / "workspace"
@@ -264,7 +266,10 @@ def test_apply_go_work_directive_raises_on_failure(tmp_path: Path, make_workspac
     register_go_work_dir(tmp_path, go_work_dir)
 
     with (
-        patch("repo_ops_go.go.run", return_value=_fail_proc("go work use exploded")),
+        patch(
+            "repo_ops_go.go.run",
+            return_value=make_proc(1, stderr="go work use exploded"),
+        ),
         pytest.raises(RuntimeError),
     ):
         _apply_go_work_directive(ws)
@@ -288,12 +293,12 @@ def test_plan_fleet_directive_no_env_vars(tmp_path: Path, make_workspace) -> Non
     assert changes == []
 
 
-def test_plan_fleet_directive_go_upgrade_needed(tmp_path: Path, make_workspace) -> None:
+def test_plan_fleet_directive_go_upgrade_needed(tmp_path: Path, make_workspace, make_proc) -> None:
     """REPO_OPS_GO_DIRECTIVE=1.25 with module at 1.22 → one Change."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
-        return _ok_proc(stdout=_gomod_json("1.22"))
+        return make_proc(stdout=_gomod_json("1.22"))
 
     with (
         patch.dict("os.environ", {GO_DIRECTIVE_ENV: "1.25", GO_TOOLCHAIN_ENV: ""}),
@@ -307,12 +312,12 @@ def test_plan_fleet_directive_go_upgrade_needed(tmp_path: Path, make_workspace) 
     assert changes[0].to == "1.25"
 
 
-def test_plan_fleet_directive_already_current(tmp_path: Path, make_workspace) -> None:
+def test_plan_fleet_directive_already_current(tmp_path: Path, make_workspace, make_proc) -> None:
     """Module already at target → no change emitted."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
-        return _ok_proc(stdout=_gomod_json("1.25"))
+        return make_proc(stdout=_gomod_json("1.25"))
 
     with (
         patch.dict("os.environ", {GO_DIRECTIVE_ENV: "1.25", GO_TOOLCHAIN_ENV: ""}),
@@ -323,12 +328,14 @@ def test_plan_fleet_directive_already_current(tmp_path: Path, make_workspace) ->
     assert changes == []
 
 
-def test_plan_fleet_directive_toolchain_upgrade_needed(tmp_path: Path, make_workspace) -> None:
+def test_plan_fleet_directive_toolchain_upgrade_needed(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """REPO_OPS_GO_TOOLCHAIN=1.25.10 with module at 1.25.3 → one Change."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
-        return _ok_proc(stdout=_gomod_json("1.25", toolchain="1.25.3"))
+        return make_proc(stdout=_gomod_json("1.25", toolchain="1.25.3"))
 
     with (
         patch.dict("os.environ", {GO_TOOLCHAIN_ENV: "1.25.10", GO_DIRECTIVE_ENV: ""}),
@@ -342,12 +349,14 @@ def test_plan_fleet_directive_toolchain_upgrade_needed(tmp_path: Path, make_work
     assert changes[0].to == "1.25.10"
 
 
-def test_plan_fleet_toolchain_normalises_go_prefix(tmp_path: Path, make_workspace) -> None:
+def test_plan_fleet_toolchain_normalises_go_prefix(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """REPO_OPS_GO_TOOLCHAIN=go1.25.10 (with go prefix) is treated identically."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
-        return _ok_proc(stdout=_gomod_json("1.25", toolchain="1.25.3"))
+        return make_proc(stdout=_gomod_json("1.25", toolchain="1.25.3"))
 
     with (
         patch.dict("os.environ", {GO_TOOLCHAIN_ENV: "go1.25.10", GO_DIRECTIVE_ENV: ""}),
@@ -359,13 +368,15 @@ def test_plan_fleet_toolchain_normalises_go_prefix(tmp_path: Path, make_workspac
     assert changes[0].to == "1.25.10"
 
 
-def test_plan_fleet_toolchain_no_existing_directive(tmp_path: Path, make_workspace) -> None:
+def test_plan_fleet_toolchain_no_existing_directive(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """No current toolchain directive in go.mod → treated as needing the bump."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
         # Toolchain key absent from JSON.
-        return _ok_proc(stdout=_gomod_json("1.25"))
+        return make_proc(stdout=_gomod_json("1.25"))
 
     with (
         patch.dict("os.environ", {GO_TOOLCHAIN_ENV: "1.25.10", GO_DIRECTIVE_ENV: ""}),
@@ -378,12 +389,12 @@ def test_plan_fleet_toolchain_no_existing_directive(tmp_path: Path, make_workspa
     assert changes[0].from_ver == "(none)"
 
 
-def test_plan_fleet_directive_both_vars(tmp_path: Path, make_workspace) -> None:
+def test_plan_fleet_directive_both_vars(tmp_path: Path, make_workspace, make_proc) -> None:
     """Both REPO_OPS_GO_DIRECTIVE and REPO_OPS_GO_TOOLCHAIN set → two changes."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
-        return _ok_proc(stdout=_gomod_json("1.22", toolchain="1.22.0"))
+        return make_proc(stdout=_gomod_json("1.22", toolchain="1.22.0"))
 
     with (
         patch.dict(
@@ -403,14 +414,14 @@ def test_plan_fleet_directive_both_vars(tmp_path: Path, make_workspace) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_apply_fleet_directive_runs_mod_edit_go(tmp_path: Path, make_workspace) -> None:
+def test_apply_fleet_directive_runs_mod_edit_go(tmp_path: Path, make_workspace, make_proc) -> None:
     """REPO_OPS_GO_DIRECTIVE triggers go mod edit -go=<ver> + go mod tidy."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     calls_recorded: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0):
         calls_recorded.append(list(cmd))
-        return _ok_proc(stdout=_gomod_json("1.22"))
+        return make_proc(stdout=_gomod_json("1.22"))
 
     with (
         patch.dict("os.environ", {GO_DIRECTIVE_ENV: "1.25", GO_TOOLCHAIN_ENV: ""}),
@@ -422,14 +433,16 @@ def test_apply_fleet_directive_runs_mod_edit_go(tmp_path: Path, make_workspace) 
     assert ["go", "mod", "tidy"] in calls_recorded
 
 
-def test_apply_fleet_directive_runs_mod_edit_toolchain(tmp_path: Path, make_workspace) -> None:
+def test_apply_fleet_directive_runs_mod_edit_toolchain(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """REPO_OPS_GO_TOOLCHAIN triggers go mod edit -toolchain=go<ver> + go mod tidy."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     calls_recorded: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0):
         calls_recorded.append(list(cmd))
-        return _ok_proc(stdout=_gomod_json("1.25"))
+        return make_proc(stdout=_gomod_json("1.25"))
 
     with (
         patch.dict("os.environ", {GO_TOOLCHAIN_ENV: "1.25.10", GO_DIRECTIVE_ENV: ""}),
@@ -441,7 +454,9 @@ def test_apply_fleet_directive_runs_mod_edit_toolchain(tmp_path: Path, make_work
     assert ["go", "mod", "tidy"] in calls_recorded
 
 
-def test_apply_fleet_directive_no_op_when_env_unset(tmp_path: Path, make_workspace) -> None:
+def test_apply_fleet_directive_no_op_when_env_unset(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """No env vars set → no subprocess calls at all."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     import os
@@ -450,7 +465,7 @@ def test_apply_fleet_directive_no_op_when_env_unset(tmp_path: Path, make_workspa
 
     def fake_run(cmd, cwd, timeout=0):
         calls_recorded.append(list(cmd))
-        return _ok_proc()
+        return make_proc()
 
     os.environ.pop(GO_DIRECTIVE_ENV, None)
     os.environ.pop(GO_TOOLCHAIN_ENV, None)
@@ -461,14 +476,16 @@ def test_apply_fleet_directive_no_op_when_env_unset(tmp_path: Path, make_workspa
     assert calls_recorded == []
 
 
-def test_apply_fleet_directive_no_op_when_already_current(tmp_path: Path, make_workspace) -> None:
+def test_apply_fleet_directive_no_op_when_already_current(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """Target matches current directive → no edit/tidy calls."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     calls_recorded: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0):
         calls_recorded.append(list(cmd))
-        return _ok_proc(stdout=_gomod_json("1.25"))
+        return make_proc(stdout=_gomod_json("1.25"))
 
     with (
         patch.dict("os.environ", {GO_DIRECTIVE_ENV: "1.25", GO_TOOLCHAIN_ENV: ""}),
@@ -479,7 +496,9 @@ def test_apply_fleet_directive_no_op_when_already_current(tmp_path: Path, make_w
     assert ["go", "mod", "edit", "-go=1.25"] not in calls_recorded
 
 
-def test_apply_fleet_directive_raises_on_mod_edit_failure(tmp_path: Path, make_workspace) -> None:
+def test_apply_fleet_directive_raises_on_mod_edit_failure(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """go mod edit failure raises RuntimeError."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     call_n = [0]
@@ -488,8 +507,8 @@ def test_apply_fleet_directive_raises_on_mod_edit_failure(tmp_path: Path, make_w
         call_n[0] += 1
         if cmd[:3] == ["go", "mod", "edit"] and call_n[0] > 1:
             # First call is go mod edit -json (probe); second is -go= (edit).
-            return _fail_proc("go mod edit failed")
-        return _ok_proc(stdout=_gomod_json("1.22"))
+            return make_proc(1, stderr="go mod edit failed")
+        return make_proc(stdout=_gomod_json("1.22"))
 
     with (
         patch.dict("os.environ", {GO_DIRECTIVE_ENV: "1.25", GO_TOOLCHAIN_ENV: ""}),
@@ -504,7 +523,9 @@ def test_apply_fleet_directive_raises_on_mod_edit_failure(tmp_path: Path, make_w
 # ---------------------------------------------------------------------------
 
 
-def test_apply_go_calls_work_directive_before_dep_upgrade(tmp_path: Path, make_workspace) -> None:
+def test_apply_go_calls_work_directive_before_dep_upgrade(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """apply_go: _apply_go_work_directive is called before go get."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     go_work_dir = tmp_path / "workspace"
@@ -522,7 +543,7 @@ def test_apply_go_calls_work_directive_before_dep_upgrade(tmp_path: Path, make_w
             call_order.append("go_work_use")
         elif cmd[:2] == ["go", "get"]:
             call_order.append("go_get")
-        return _ok_proc()
+        return make_proc()
 
     with (
         patch.dict(
@@ -541,7 +562,9 @@ def test_apply_go_calls_work_directive_before_dep_upgrade(tmp_path: Path, make_w
     assert call_order.index("go_work_use") < call_order.index("go_get")
 
 
-def test_apply_go_fleet_directive_runs_before_dep_upgrade(tmp_path: Path, make_workspace) -> None:
+def test_apply_go_fleet_directive_runs_before_dep_upgrade(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """apply_go: fleet directive mod edit runs before go get."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     call_order: list[str] = []
@@ -552,7 +575,7 @@ def test_apply_go_fleet_directive_runs_before_dep_upgrade(tmp_path: Path, make_w
         elif cmd[:2] == ["go", "get"]:
             call_order.append("go_get")
         # Return valid JSON for go mod edit -json probes.
-        return _ok_proc(stdout=_gomod_json("1.22"))
+        return make_proc(stdout=_gomod_json("1.22"))
 
     with (
         patch.dict(
@@ -577,7 +600,8 @@ def test_apply_go_fleet_directive_runs_before_dep_upgrade(tmp_path: Path, make_w
 
 
 def test_issue_118_timeout_resolvers_used_in_gomod_require_paths(
-    tmp_path: Path, make_workspace,
+    tmp_path: Path,
+    make_workspace, make_proc,
 ) -> None:
     """_gomod_require_paths uses resolve_timeout_check(), honoring env override."""
     from repo_ops_core.constants import TIMEOUT_CHECK
@@ -589,7 +613,7 @@ def test_issue_118_timeout_resolvers_used_in_gomod_require_paths(
     def fake_run(cmd, cwd, timeout=0):
         if cmd[:3] == ["go", "mod", "edit"]:
             captured.append(timeout)
-        return _ok_proc(stdout=json.dumps({"Module": {"Path": "x"}, "Require": []}))
+        return make_proc(stdout=json.dumps({"Module": {"Path": "x"}, "Require": []}))
 
     custom = TIMEOUT_CHECK + 100
 
@@ -603,7 +627,9 @@ def test_issue_118_timeout_resolvers_used_in_gomod_require_paths(
     assert captured[0] == custom, f"expected {custom}, got {captured[0]}"
 
 
-def test_issue_118_timeout_resolvers_used_in_apply_go_tidy(tmp_path: Path, make_workspace) -> None:
+def test_issue_118_timeout_resolvers_used_in_apply_go_tidy(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
     """apply_go uses resolve_timeout_apply() for go mod tidy, honoring env override."""
     from repo_ops_core.constants import TIMEOUT_APPLY
 
@@ -613,7 +639,7 @@ def test_issue_118_timeout_resolvers_used_in_apply_go_tidy(tmp_path: Path, make_
     def fake_run(cmd, cwd, timeout=0):
         if cmd == ["go", "mod", "tidy"]:
             tidy_timeouts.append(timeout)
-        return _ok_proc()
+        return make_proc()
 
     custom = TIMEOUT_APPLY + 200
 

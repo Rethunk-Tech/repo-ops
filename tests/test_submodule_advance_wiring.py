@@ -17,7 +17,7 @@ Key invariants:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
@@ -43,20 +43,6 @@ def _clear_cache():
     _clear_submodule_tag_cache()
     yield
     _clear_submodule_tag_cache()
-
-
-def _ok_proc(stdout: str = "") -> MagicMock:
-    p = MagicMock()
-    p.returncode = 0
-    p.stdout = stdout
-    return p
-
-
-def _fail_proc() -> MagicMock:
-    p = MagicMock()
-    p.returncode = 1
-    p.stdout = ""
-    return p
 
 
 def _make_actionable_bump(
@@ -219,7 +205,9 @@ def test_upgrade_scoped_paths_includes_gitlink(tmp_path: Path) -> None:
     assert "go.sum" in scoped_with
 
 
-def test_plan_repo_commit_includes_gitlink_via_extra_paths(tmp_path: Path, init_git_repo) -> None:
+def test_plan_repo_commit_includes_gitlink_via_extra_paths(
+    tmp_path: Path, init_git_repo
+) -> None:
     """plan_repo_commit stages gitlink paths passed via extra_gitlink_paths.
 
     Integration path: gitlink appears in the commit plan's files list so
@@ -273,7 +261,7 @@ def test_plan_repo_commit_includes_gitlink_via_extra_paths(tmp_path: Path, init_
 # ---------------------------------------------------------------------------
 
 
-def test_dirty_guard_prevents_checkout_when_dirty(tmp_path: Path) -> None:
+def test_dirty_guard_prevents_checkout_when_dirty(tmp_path: Path, make_proc) -> None:
     """apply_submodule_tag_advances skips a bump when the submodule is dirty.
 
     A dirty submodule checkout (uncommitted changes) must not be overwritten
@@ -300,7 +288,7 @@ def test_dirty_guard_prevents_checkout_when_dirty(tmp_path: Path) -> None:
         # Repo is dirty
         patch("repo_ops_upgrade.submodules.is_git_dirty", return_value=True),
         patch(
-            "repo_ops_upgrade.submodules.run_git", return_value=_ok_proc()
+            "repo_ops_upgrade.submodules.run_git", return_value=make_proc()
         ) as mock_git,
     ):
         bumps = apply_submodule_tag_advances([link], allow_dirty=False)
@@ -311,7 +299,7 @@ def test_dirty_guard_prevents_checkout_when_dirty(tmp_path: Path) -> None:
     mock_git.assert_not_called()
 
 
-def test_dirty_guard_allows_checkout_when_allow_dirty(tmp_path: Path) -> None:
+def test_dirty_guard_allows_checkout_when_allow_dirty(tmp_path: Path, make_proc) -> None:
     """allow_dirty=True bypasses the dirty guard and proceeds with checkout."""
     link = SubmoduleLink(
         path="sub",
@@ -332,7 +320,7 @@ def test_dirty_guard_allows_checkout_when_allow_dirty(tmp_path: Path) -> None:
         ),
         patch("repo_ops_upgrade.submodules.is_git_dirty", return_value=True),
         patch(
-            "repo_ops_upgrade.submodules.run_git", return_value=_ok_proc()
+            "repo_ops_upgrade.submodules.run_git", return_value=make_proc()
         ) as mock_git,
     ):
         bumps = apply_submodule_tag_advances([link], allow_dirty=True)
@@ -348,7 +336,7 @@ def test_dirty_guard_allows_checkout_when_allow_dirty(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_checkout_uses_detach_with_full_tag_ref(tmp_path: Path) -> None:
+def test_checkout_uses_detach_with_full_tag_ref(tmp_path: Path, make_proc) -> None:
     """apply_submodule_tag_advances checkouts with --detach refs/tags/<tag>.
 
     Bare `git checkout <tag>` is ambiguous when a branch shadows the tag name.
@@ -373,7 +361,7 @@ def test_checkout_uses_detach_with_full_tag_ref(tmp_path: Path) -> None:
         ),
         patch("repo_ops_upgrade.submodules.is_git_dirty", return_value=False),
         patch(
-            "repo_ops_upgrade.submodules.run_git", return_value=_ok_proc()
+            "repo_ops_upgrade.submodules.run_git", return_value=make_proc()
         ) as mock_git,
     ):
         apply_submodule_tag_advances([link], allow_dirty=False)
