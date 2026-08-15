@@ -2198,14 +2198,15 @@ def apply_remediations(
     # Build per-workspace, per-ecosystem override maps in one pass. JS/deno/rust
     # overrides are injected into their targeted-bump modules before calling
     # process_workspace so targeted_bump_behind uses pkg@safe_version instead of
-    # pkg@latest. Go workspaces bypass the registry/orchestration path entirely:
-    # applied directly via `go get`/`go mod tidy` (mirrors the standalone
-    # `_apply_cargo_targeted` pattern) rather than going through
-    # `repo_ops_go`'s registered applier, which has no targeted-bump concept.
+    # pkg@latest. Go and py-uv workspaces bypass the registry/orchestration path
+    # entirely: applied directly via `go get`/`go mod tidy` and `uv add pkg==ver`
+    # respectively, since neither `repo_ops_go` nor `repo_ops_py_uv`'s registered
+    # applier has a targeted-bump concept to inject an override into.
     _js_ws_overrides: dict[str, dict[str, str]] = {}
     _rust_ws_overrides: dict[str, dict[str, str]] = {}
     _deno_ws_overrides: dict[str, dict[str, str]] = {}
     _go_ws_items: dict[str, list[RemediationItem]] = {}
+    _py_uv_ws_items: dict[str, list[RemediationItem]] = {}
     for item in remediations:
         if item.ecosystem == "node":
             _js_ws_overrides.setdefault(item.workspace, {})[item.package] = (
@@ -2223,6 +2224,8 @@ def apply_remediations(
             )
         elif item.ecosystem == "go":
             _go_ws_items.setdefault(item.workspace, []).append(item)
+        elif item.ecosystem == "py-uv":
+            _py_uv_ws_items.setdefault(item.workspace, []).append(item)
 
     outcomes: list[ApplyOutcome] = []
     for ws_path, (ecosystem, manager) in seen.items():
@@ -2232,6 +2235,15 @@ def apply_remediations(
             else:
                 outcomes.append(
                     _apply_go_targeted(ws_path, _go_ws_items.get(ws_path, []))
+                )
+            continue
+
+        if ecosystem == "py-uv":
+            if shutil.which("uv") is None:
+                outcomes.append(ApplyOutcome(ws_path, "skip", "uv not on PATH"))
+            else:
+                outcomes.append(
+                    _apply_py_uv_targeted(ws_path, _py_uv_ws_items.get(ws_path, []))
                 )
             continue
 

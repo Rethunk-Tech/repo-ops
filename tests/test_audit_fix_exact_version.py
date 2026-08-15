@@ -620,6 +620,40 @@ def test_apply_py_uv_targeted_skips_empty_safe_version() -> None:
     assert outcome.changes_count == 0
     assert not captured_cmds, "no uv add should be issued for empty safe_version"
 
+def test_apply_remediations_dispatches_py_uv_to_targeted_apply(
+    tmp_path: Path,
+) -> None:
+    """apply_remediations routes py-uv items straight to _apply_py_uv_targeted,
+    bypassing the generic uv sync --upgrade orchestration path."""
+    items = [
+        RemediationItem(
+            package="requests",
+            safe_version="2.31.0",
+            ecosystem="py-uv",
+            workspace=str(tmp_path),
+        )
+    ]
+    captured_cmds: list[list[str]] = []
+
+    def _fake_run(cmd, cwd):
+        captured_cmds.append(list(cmd))
+        return 0, "", ""
+
+    with (
+        patch("repo_ops_audit.audit.shutil.which", return_value="/usr/bin/uv"),
+        patch("repo_ops_audit.audit._run", side_effect=_fake_run),
+    ):
+        outcomes = apply_remediations(items)
+
+    assert len(outcomes) == 1
+    assert outcomes[0].status == "ok"
+    cmd_strs = [" ".join(c) for c in captured_cmds]
+    assert any("uv add requests==2.31.0" in s for s in cmd_strs), (
+        f"expected 'uv add requests==2.31.0'; got {cmd_strs}"
+    )
+    assert not any("sync" in s or "--upgrade" in s for s in cmd_strs), (
+        f"must not fall through to the broad uv sync --upgrade path; got {cmd_strs}"
+    )
 
 # ---------------------------------------------------------------------------
 # _apply_cargo_targeted: pins Rust crates via cargo update --precise
