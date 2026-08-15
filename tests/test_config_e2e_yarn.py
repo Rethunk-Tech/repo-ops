@@ -8,9 +8,13 @@ from repo_ops_js_yarn import yarn as yarn_mod
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 
 
-def test_fleet_run_resolves_yarn_upgrade_flags_per_checkout(
+def test_default_sweep_and_conservative_override_per_checkout_yarn_flags(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """run.py forces every _SWEEP_ENV_VARS key process-wide before any repo runs
+    (#136), so per-checkout yarn_update_latest/yarn_targeted_bump config below
+    is superseded by whichever of default-sweep/--conservative was passed —
+    kept to prove the override, not per-checkout differentiation."""
     launcher = tmp_path / "launcher"
     repo_a = tmp_path / "repo-a"
     repo_b = tmp_path / "repo-b"
@@ -84,13 +88,42 @@ def test_fleet_run_resolves_yarn_upgrade_flags_per_checkout(
         run_mod.report, "print_json_report", lambda *args, **kwargs: None
     )
 
+    # --no-only-outdated: the default filter drops the clean ("ok", no
+    # changes) mock WorkspaceResults our capture_flags returns; since
+    # group_by_repo hands back the same RepoBundle objects on both calls, an
+    # in-place filter on the first call would silently starve the second.
     rc = run_mod.run_upgrade(
         apply=False,
-        argv=["--flat", "--json", "--skip-actions", str(repo_a), str(repo_b)],
+        argv=[
+            "--flat",
+            "--json",
+            "--skip-actions",
+            "--no-only-outdated",
+            str(repo_a),
+            str(repo_b),
+        ],
     )
-
     assert rc == 0
     assert captured == {
         repo_a: (True, True),
+        repo_b: (True, True),
+    }
+
+    captured.clear()
+    rc = run_mod.run_upgrade(
+        apply=False,
+        argv=[
+            "--flat",
+            "--json",
+            "--skip-actions",
+            "--no-only-outdated",
+            "--conservative",
+            str(repo_a),
+            str(repo_b),
+        ],
+    )
+    assert rc == 0
+    assert captured == {
+        repo_a: (False, False),
         repo_b: (False, False),
     }

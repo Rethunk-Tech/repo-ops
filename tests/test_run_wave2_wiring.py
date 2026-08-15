@@ -25,28 +25,13 @@ def _fake_args(**overrides) -> MagicMock:
         "exclude_patterns": None,
         "submodules": False,
         "submodule_order": "discovery",
-        "latest": False,
-        "full": False,
-        "yarn_targeted_bump": False,
-        "npm_targeted_bump": False,
-        "pnpm_targeted_bump": False,
-        "bun_targeted_bump": False,
-        "deno_targeted_bump": False,
-        "rust_targeted_bump": False,
-        "poetry_targeted_bump": False,
-        "pdm_targeted_bump": False,
-        "pipenv_targeted_bump": False,
-        "pip_tools_targeted_bump": False,
+        "conservative": False,
         "migrate_to_uv_lock": False,
-        "yarn_jobs": None,
         "commit_umbrella": False,
         "actions_org_policy": False,
         "actions_policy_level": None,
         "go_upgrade_mode": None,
         "actions_unpin_sha": False,
-        "actions_refresh_sha": False,
-        "precommit_refresh_sha": False,
-        "submodule_refresh_sha": False,
         "actions_tag_style": "major",
         "actions_upgrade_mode": None,
         "actions_lint_level": None,
@@ -78,28 +63,12 @@ def _fake_args(**overrides) -> MagicMock:
     return MagicMock(**defaults)
 
 
-def test_full_sweep_sets_policy_env_and_refreshes_actions(
+def test_default_sweep_sets_policy_env_and_refreshes_actions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """--full composes latest, digest refresh, and targeted bump policy."""
-    env_names = [
-        "REPO_OPS_BUN_UPDATE_LATEST",
-        "REPO_OPS_PNPM_UPDATE_LATEST",
-        "REPO_OPS_YARN_UPDATE_LATEST",
-        "REPO_OPS_DENO_UPDATE_LATEST",
-        "REPO_OPS_CONTAINER_UPDATE_LATEST",
-        "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
-        "REPO_OPS_SUBMODULE_UPDATE_LATEST",
-        "REPO_OPS_GO_UPGRADE_MODE",
-        "REPO_OPS_CONTAINER_REFRESH_SHA",
-        "REPO_OPS_PRECOMMIT_REFRESH_SHA",
-        "REPO_OPS_SUBMODULE_REFRESH_SHA",
-        "REPO_OPS_YARN_TARGETED_BUMP",
-        "REPO_OPS_NPM_TARGETED_BUMP",
-        "REPO_OPS_PNPM_TARGETED_BUMP",
-        "REPO_OPS_BUN_TARGETED_BUMP",
-        "REPO_OPS_DENO_TARGETED_BUMP",
-    ]
+    """The default full sweep composes latest, digest refresh, and targeted
+    bump policy across every _SWEEP_ENV_VARS gate — no flag needed (#136)."""
+    env_names = [*run_mod._SWEEP_ENV_VARS, "REPO_OPS_GO_UPGRADE_MODE"]
     for name in env_names:
         monkeypatch.delenv(name, raising=False)
 
@@ -126,7 +95,6 @@ def test_full_sweep_sets_policy_env_and_refreshes_actions(
     rc = run_mod._run_upgrade_body(
         apply=False,
         args=_fake_args(
-            full=True,
             skip_actions=False,
             go_upgrade_mode="patch",
             actions_upgrade_mode="normalize",
@@ -139,8 +107,6 @@ def test_full_sweep_sets_policy_env_and_refreshes_actions(
         assert os.environ[name] == (
             "patch" if name == "REPO_OPS_GO_UPGRADE_MODE" else "1"
         )
-    assert "REPO_OPS_PIPENV_TARGETED_BUMP" not in os.environ
-    assert "REPO_OPS_PIP_TOOLS_TARGETED_BUMP" not in os.environ
     assert action_kwargs
     assert action_kwargs[0]["refresh_sha"] is True
     assert action_kwargs[0]["upgrade_mode"] == "normalize"

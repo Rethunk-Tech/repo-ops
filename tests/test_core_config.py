@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -127,16 +126,16 @@ def test_load_repo_config_reads_toml_with_shared_loader(tmp_path: Path) -> None:
     assert load_repo_config(tmp_path) == {"jobs": 9}
 
 
-def test_container_cli_flags_set_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_container_cli_flags_removed_in_favor_of_conservative() -> None:
+    """#136: --container-update-latest/--container-refresh-sha no longer exist
+    as parse-time argparse flags — container sweep behavior is now part of the
+    default full sweep in run.py, opt-out via --conservative (env-var wiring
+    covered by tests/test_run_targeted_bump_getattr.py)."""
     from repo_ops_core.cli import build_upgrade_parser
 
-    monkeypatch.delenv("REPO_OPS_CONTAINER_UPDATE_LATEST", raising=False)
-    monkeypatch.delenv("REPO_OPS_CONTAINER_REFRESH_SHA", raising=False)
     parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(
-        ["--flat", "--container-update-latest", "--container-refresh-sha", "/tmp"]
-    )
-    assert args.container_update_latest is True
-    assert args.container_refresh_sha is True
-    assert os.environ["REPO_OPS_CONTAINER_UPDATE_LATEST"] == "1"
-    assert os.environ["REPO_OPS_CONTAINER_REFRESH_SHA"] == "1"
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--flat", "--container-update-latest", "/tmp"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--flat", "--container-refresh-sha", "/tmp"])
+    assert parser.parse_args(["--conservative"]).conservative is True

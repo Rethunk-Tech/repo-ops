@@ -317,10 +317,15 @@ def test_fleet_run_resolves_actions_config_per_checkout(
     }
 
 
-def test_fleet_run_resolves_upgrade_flags_per_checkout(
+def test_default_sweep_and_conservative_override_per_checkout_upgrade_flags(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Fleet workers use each checkout's latest, targeted, and refresh flags."""
+    """The sweep-vs-conservative choice is process-global (#136): run.py writes
+    every _SWEEP_ENV_VARS key as an explicit CLI override once per invocation,
+    before any repo is processed, so per-checkout [tool.repo-ops] settings for
+    these keys are superseded regardless of which checkout is active. The
+    differing repo_a/repo_b config below is kept to prove the override, not to
+    prove per-checkout differentiation (there is none left for these keys)."""
     from repo_ops_container import container as container_mod
     from repo_ops_js_npm import npm as npm_mod
     from repo_ops_js_pnpm import pnpm as pnpm_mod
@@ -439,22 +444,52 @@ def test_fleet_run_resolves_upgrade_flags_per_checkout(
         run_mod.report, "print_json_report", lambda *args, **kwargs: None
     )
 
+    # --no-only-outdated: the default filter drops the clean ("ok", no
+    # changes) mock WorkspaceResults our capture_flags returns; since
+    # group_by_repo hands back the same RepoBundle objects on both calls, an
+    # in-place filter on the first call would silently starve the second.
     rc = run_mod.run_upgrade(
         apply=False,
-        argv=["--flat", "--json", "--skip-actions", str(repo_a), str(repo_b)],
+        argv=[
+            "--flat",
+            "--json",
+            "--skip-actions",
+            "--no-only-outdated",
+            str(repo_a),
+            str(repo_b),
+        ],
     )
-
     assert rc == 0
     assert captured == {
         repo_a: (True, True, True, True, True, True, True, True),
+        repo_b: (True, True, True, True, True, True, True, True),
+    }
+
+    captured.clear()
+    rc = run_mod.run_upgrade(
+        apply=False,
+        argv=[
+            "--flat",
+            "--json",
+            "--skip-actions",
+            "--no-only-outdated",
+            "--conservative",
+            str(repo_a),
+            str(repo_b),
+        ],
+    )
+    assert rc == 0
+    assert captured == {
+        repo_a: (False, False, False, False, False, False, False, False),
         repo_b: (False, False, False, False, False, False, False, False),
     }
 
 
-def test_cli_latest_overrides_global_and_checkout_config(
+def test_default_sweep_overrides_global_and_checkout_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """CLI latest remains authoritative when global config has the same value."""
+    """The default full sweep remains authoritative when global config has the
+    same value (#136: no flag needed anymore — the sweep is unconditional)."""
     from repo_ops_core.config import ambient_env
     from repo_ops_js_pnpm import pnpm as pnpm_mod
 
@@ -516,7 +551,7 @@ def test_cli_latest_overrides_global_and_checkout_config(
 
     rc = run_mod.run_upgrade(
         apply=False,
-        argv=["--flat", "--json", "--skip-actions", "--latest", str(repo)],
+        argv=["--flat", "--json", "--skip-actions", str(repo)],
     )
 
     assert rc == 0
@@ -932,12 +967,17 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
         run_mod.report, "print_json_report", lambda *args, **kwargs: None
     )
 
+    # --conservative: REPO_OPS_GO_UPGRADE_MODE's forced-explicit default is
+    # gated by `if latest:` (unlike _SWEEP_ENV_VARS, which run.py now writes
+    # unconditionally), so this is the one flag that still lets each
+    # checkout's own go_upgrade_mode config decide.
     rc = run_mod.run_upgrade(
         apply=False,
         argv=[
             "--flat",
             "--json",
             "--skip-actions",
+            "--conservative",
             str(repo_a),
             str(repo_b),
         ],

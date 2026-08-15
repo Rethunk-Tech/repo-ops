@@ -15,7 +15,6 @@ No real subprocesses or network calls are made.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -466,20 +465,16 @@ def test_check_precommit_cross_major_opt_in(
     assert changes[0].to == "v2.0.0"
 
 
-def test_precommit_refresh_sha_cli_sets_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", raising=False)
+def test_precommit_and_submodule_refresh_sha_flags_removed() -> None:
+    """#136: --precommit-refresh-sha/--submodule-refresh-sha no longer exist as
+    parse-time argparse flags — refresh-sha behavior is now part of the default
+    full sweep in run.py, opt-out via --conservative (env-var wiring covered by
+    tests/test_run_targeted_bump_getattr.py)."""
     parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(["--precommit-refresh-sha"])
-    assert args.precommit_refresh_sha is True
-    assert os.environ["REPO_OPS_PRECOMMIT_REFRESH_SHA"] == "1"
-
-
-def test_submodule_refresh_sha_cli_sets_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("REPO_OPS_SUBMODULE_REFRESH_SHA", raising=False)
-    parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(["--submodule-refresh-sha"])
-    assert args.submodule_refresh_sha is True
-    assert os.environ["REPO_OPS_SUBMODULE_REFRESH_SHA"] == "1"
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--precommit-refresh-sha"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--submodule-refresh-sha"])
 
 
 def test_check_precommit_deduplicates_same_repo(tmp_path: Path) -> None:

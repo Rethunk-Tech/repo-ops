@@ -123,15 +123,16 @@ def test_repo_ops_dispatcher_subcommands_help(capsys) -> None:
         assert sub in out
 
 
-def test_dispatcher_apply_help_lists_latest_flag(capsys) -> None:
+def test_dispatcher_apply_help_lists_conservative_flag(capsys) -> None:
     """Regression: dispatcher --help must expose full flags, not only -h."""
     from repo_ops import cli
 
     assert cli.main(["apply", "--help"]) == 0
     out = capsys.readouterr().out
-    assert "--latest" in out
-    assert "--full" in out
-    assert "REPO_OPS_PNPM_UPDATE_LATEST" in out
+    # #136: the 16 --latest/--full/per-manager-targeted-bump/refresh-sha flags
+    # collapsed into one opt-out; the sweep itself is on by default.
+    assert "--conservative" in out
+    assert "full sweep" in out
     assert "cargo test" in out
     assert "REPO_OPS_COMMIT_AGENT_MODEL" in out
     assert "composer-2.5" in out
@@ -202,15 +203,13 @@ def test_upgrade_parser_accepts_104_and_102_flags() -> None:
         [
             "--manager",
             "npm",
-            "--latest",
-            "--full",
+            "--conservative",
             "--go-upgrade-mode",
             "explicit",
         ]
     )
     assert args.manager_filter == "npm"
-    assert args.latest is True
-    assert args.full is True
+    assert args.conservative is True
     assert args.go_upgrade_mode == "explicit"
 
 
@@ -241,34 +240,32 @@ def test_upgrade_parser_exclude_repeatable():
     assert args_none.exclude_patterns is None
 
 
-def test_upgrade_parser_accepts_npm_pnpm_targeted_bump_flags() -> None:
-    """--npm-targeted-bump and --pnpm-targeted-bump flags are registered."""
+def test_upgrade_parser_conservative_replaces_targeted_bump_flags() -> None:
+    """#136: the 16 --latest/--full/per-manager-targeted-bump/refresh-sha flags
+    collapsed into one --conservative opt-out; the sweep is on by default and
+    none of those argparse options exist anymore."""
     parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(["--npm-targeted-bump", "--pnpm-targeted-bump"])
-    assert args.npm_targeted_bump is True
-    assert args.pnpm_targeted_bump is True
-    args_default = parser.parse_args([])
-    assert args_default.npm_targeted_bump is False
-    assert args_default.pnpm_targeted_bump is False
-
-
-def test_upgrade_parser_accepts_poetry_pdm_targeted_bump_flags() -> None:
-    """--poetry-targeted-bump and --pdm-targeted-bump flags are registered."""
-    parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(["--poetry-targeted-bump", "--pdm-targeted-bump"])
-    assert args.poetry_targeted_bump is True
-    assert args.pdm_targeted_bump is True
-    args_default = parser.parse_args([])
-    assert args_default.poetry_targeted_bump is False
-    assert args_default.pdm_targeted_bump is False
-
-
-def test_upgrade_parser_accepts_pipenv_pip_tools_targeted_bump_flags() -> None:
-    """Pipenv and pip-tools targeted-bump flags are registered."""
-    parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(["--pipenv-targeted-bump", "--pip-tools-targeted-bump"])
-    assert args.pipenv_targeted_bump is True
-    assert args.pip_tools_targeted_bump is True
-    args_default = parser.parse_args([])
-    assert args_default.pipenv_targeted_bump is False
-    assert args_default.pip_tools_targeted_bump is False
+    assert parser.parse_args([]).conservative is False
+    assert parser.parse_args(["--conservative"]).conservative is True
+    for removed_flag in (
+        "--latest",
+        "--full",
+        "--yarn-targeted-bump",
+        "--npm-targeted-bump",
+        "--pnpm-targeted-bump",
+        "--bun-targeted-bump",
+        "--deno-targeted-bump",
+        "--rust-targeted-bump",
+        "--poetry-targeted-bump",
+        "--pdm-targeted-bump",
+        "--pipenv-targeted-bump",
+        "--pip-tools-targeted-bump",
+        "--actions-refresh-sha",
+        "--actions-pin-sha",
+        "--precommit-refresh-sha",
+        "--submodule-refresh-sha",
+        "--container-update-latest",
+        "--container-refresh-sha",
+    ):
+        with pytest.raises(SystemExit):
+            parser.parse_args([removed_flag])

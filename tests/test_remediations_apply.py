@@ -25,7 +25,7 @@ def _sample_workspace(tmp_path: Path) -> Workspace:
 def test_run_remediations_plan_vs_apply_detail(tmp_path: Path) -> None:
     ws = _sample_workspace(tmp_path)
     result = WorkspaceResult(workspace=ws)
-    fake = remediations.Remediation(
+    fake = remediations.RemediationHook(
         "playwright_browsers",
         lambda _ws, _ctx: True,
         lambda ws, _ctx: [
@@ -56,7 +56,7 @@ def test_verbose_flag_observed_live(
     """
     ws = _sample_workspace(tmp_path)
     result = WorkspaceResult(workspace=ws)
-    fake = remediations.Remediation(
+    fake = remediations.RemediationHook(
         "biome_schema",
         lambda _ws, _ctx: True,
         lambda _ws, _ctx: [],

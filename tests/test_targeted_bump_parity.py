@@ -1,9 +1,10 @@
 """Coverage for the wave-1 upgrade-parity gaps (contracts 1-3).
 
-1. ``--latest`` also flips the container/pre-commit/submodule cross-major
-   gates (previously only bun/pnpm/yarn + go were wired).
-2. ``--bun-targeted-bump`` populates ``REPO_OPS_BUN_TARGETED_BUMP`` (mirrors
-   the existing yarn/npm/pnpm wiring).
+1. The default full sweep also flips the container/pre-commit/submodule
+   cross-major gates (previously only bun/pnpm/yarn + go were wired);
+   ``--conservative`` flips all of them off.
+2. ``REPO_OPS_BUN_TARGETED_BUMP`` defaults on with the sweep (mirrors the
+   existing yarn/npm/pnpm wiring); ``--conservative`` disables it.
 3. ``_behind_latest_hint`` gives npm/pnpm/bun the same "flag not passed ->
    name the flag; flag passed -> targeted bump was tried" treatment yarn
    already had.
@@ -71,37 +72,7 @@ def _clear_env(monkeypatch, names: tuple[str, ...]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_latest_flag_sets_container_precommit_submodule_env_vars(
-    tmp_path: Path, monkeypatch
-) -> None:
-    _clear_env(monkeypatch, _LATEST_UMBRELLA_VARS)
-    _bun_workspace(tmp_path)
-    register_all()
-
-    seen: dict[str, str | None] = {}
-
-    def _capture(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
-        seen["container"] = os.environ.get("REPO_OPS_CONTAINER_UPDATE_LATEST")
-        seen["precommit"] = os.environ.get("REPO_OPS_PRECOMMIT_UPDATE_LATEST")
-        seen["submodule"] = os.environ.get("REPO_OPS_SUBMODULE_UPDATE_LATEST")
-        seen["deno"] = os.environ.get("REPO_OPS_DENO_UPDATE_LATEST")
-        return wr
-
-    with patch(
-        "repo_ops_upgrade.run.orchestration.process_workspace",
-        side_effect=_capture,
-    ):
-        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet", "--latest"])
-
-    assert seen == {
-        "container": "1",
-        "precommit": "1",
-        "submodule": "1",
-        "deno": "1",
-    }
-
-
-def test_without_latest_flag_container_precommit_submodule_env_vars_unset(
+def test_default_sweep_sets_container_precommit_submodule_env_vars(
     tmp_path: Path, monkeypatch
 ) -> None:
     _clear_env(monkeypatch, _LATEST_UMBRELLA_VARS)
@@ -124,10 +95,44 @@ def test_without_latest_flag_container_precommit_submodule_env_vars_unset(
         main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
 
     assert seen == {
-        "container": None,
-        "precommit": None,
-        "submodule": None,
-        "deno": None,
+        "container": "1",
+        "precommit": "1",
+        "submodule": "1",
+        "deno": "1",
+    }
+
+
+def test_conservative_flag_zeroes_container_precommit_submodule_env_vars(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """#136: --conservative writes each gate to "0" explicitly (not merely
+    unset) so an ambient REPO_OPS_*=1 can't outrank it."""
+    _clear_env(monkeypatch, _LATEST_UMBRELLA_VARS)
+    _bun_workspace(tmp_path)
+    register_all()
+
+    seen: dict[str, str | None] = {}
+
+    def _capture(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
+        seen["container"] = os.environ.get("REPO_OPS_CONTAINER_UPDATE_LATEST")
+        seen["precommit"] = os.environ.get("REPO_OPS_PRECOMMIT_UPDATE_LATEST")
+        seen["submodule"] = os.environ.get("REPO_OPS_SUBMODULE_UPDATE_LATEST")
+        seen["deno"] = os.environ.get("REPO_OPS_DENO_UPDATE_LATEST")
+        return wr
+
+    with patch(
+        "repo_ops_upgrade.run.orchestration.process_workspace",
+        side_effect=_capture,
+    ):
+        main_plan(
+            [str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"]
+        )
+
+    assert seen == {
+        "container": "0",
+        "precommit": "0",
+        "submodule": "0",
+        "deno": "0",
     }
 
 
@@ -136,7 +141,7 @@ def test_without_latest_flag_container_precommit_submodule_env_vars_unset(
 # ---------------------------------------------------------------------------
 
 
-def test_bun_targeted_bump_flag_sets_env_var(tmp_path: Path, monkeypatch) -> None:
+def test_bun_targeted_bump_defaults_on(tmp_path: Path, monkeypatch) -> None:
     _clear_env(
         monkeypatch,
         ("REPO_OPS_BUN_TARGETED_BUMP", "REPO_OPS_BUN_UPDATE_LATEST"),
@@ -154,21 +159,12 @@ def test_bun_targeted_bump_flag_sets_env_var(tmp_path: Path, monkeypatch) -> Non
         "repo_ops_upgrade.run.orchestration.process_workspace",
         side_effect=_capture,
     ):
-        main_plan(
-            [
-                str(tmp_path),
-                "--flat",
-                "--skip-actions",
-                "--quiet",
-                "--latest",
-                "--bun-targeted-bump",
-            ]
-        )
+        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
 
     assert seen == {"bun_targeted_bump": "1"}
 
 
-def test_bun_targeted_bump_flag_absent_leaves_env_var_unset(
+def test_bun_targeted_bump_conservative_flag_disables_it(
     tmp_path: Path, monkeypatch
 ) -> None:
     _clear_env(monkeypatch, ("REPO_OPS_BUN_TARGETED_BUMP",))
@@ -185,9 +181,11 @@ def test_bun_targeted_bump_flag_absent_leaves_env_var_unset(
         "repo_ops_upgrade.run.orchestration.process_workspace",
         side_effect=_capture,
     ):
-        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
+        main_plan(
+            [str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"]
+        )
 
-    assert seen == {"bun_targeted_bump": None}
+    assert seen == {"bun_targeted_bump": "0"}
 
 
 # ---------------------------------------------------------------------------

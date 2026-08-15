@@ -379,98 +379,93 @@ def test_yarn_behind_latest_note_when_targeted_bump_already_requested(
     assert "pass --yarn-targeted-bump to attempt" not in out
 
 
-def test_targeted_bump_flags_set_env_vars(tmp_path: Path, monkeypatch) -> None:
-    """#131: each --*-targeted-bump flag must populate its env var (else a no-op).
-
-    cli.py advertises "Sets REPO_OPS_*_TARGETED_BUMP" for yarn/npm/pnpm; run.py
-    must wire all three or npm/pnpm targeted-bump is a dead flag.
+def test_sweep_env_vars_default_on_and_conservative_off(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """#136: every _SWEEP_ENV_VARS gate defaults on with no flag needed; run.py
+    writes each one explicitly ("1" or "0") rather than leaving it unset, so an
+    ambient REPO_OPS_*=1 in the caller's shell can't outrank --conservative.
     """
     import os
 
-    for var in (
-        "REPO_OPS_YARN_TARGETED_BUMP",
-        "REPO_OPS_NPM_TARGETED_BUMP",
-        "REPO_OPS_PNPM_TARGETED_BUMP",
-        "REPO_OPS_BUN_UPDATE_LATEST",
-        "REPO_OPS_PNPM_UPDATE_LATEST",
-        "REPO_OPS_YARN_UPDATE_LATEST",
-        "REPO_OPS_GO_UPGRADE_MODE",
-    ):
+    from repo_ops_upgrade.run import _SWEEP_ENV_VARS
+
+    for var in _SWEEP_ENV_VARS:
         monkeypatch.setenv(var, "__sentinel__")
         monkeypatch.delenv(var)
     _bun_workspace(tmp_path)
     register_all()
 
-    seen: dict[str, str | None] = {}
+    seen: dict[str, dict[str, str | None]] = {"default": {}, "conservative": {}}
 
-    def _capture(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
-        seen["yarn"] = os.environ.get("REPO_OPS_YARN_TARGETED_BUMP")
-        seen["npm"] = os.environ.get("REPO_OPS_NPM_TARGETED_BUMP")
-        seen["pnpm"] = os.environ.get("REPO_OPS_PNPM_TARGETED_BUMP")
-        return wr
+    def _capture(mode: str):
+        def _inner(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
+            for var in _SWEEP_ENV_VARS:
+                seen[mode][var] = os.environ.get(var)
+            return wr
+
+        return _inner
 
     with patch(
         "repo_ops_upgrade.run.orchestration.process_workspace",
-        side_effect=_capture,
+        side_effect=_capture("default"),
+    ):
+        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
+
+    with patch(
+        "repo_ops_upgrade.run.orchestration.process_workspace",
+        side_effect=_capture("conservative"),
     ):
         main_plan(
-            [
-                str(tmp_path),
-                "--flat",
-                "--skip-actions",
-                "--quiet",
-                "--latest",
-                "--yarn-targeted-bump",
-                "--npm-targeted-bump",
-                "--pnpm-targeted-bump",
-            ]
+            [str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"]
         )
 
-    assert seen == {"yarn": "1", "npm": "1", "pnpm": "1"}
+    assert all(v == "1" for v in seen["default"].values())
+    assert all(v == "0" for v in seen["conservative"].values())
 
 
-def test_latest_flag_sets_ecosystem_env_vars(tmp_path: Path, monkeypatch) -> None:
-    """#102: --latest sets the per-ecosystem env vars before workers run."""
+def test_default_sweep_sets_go_upgrade_mode_explicit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """#102: the default sweep sets REPO_OPS_GO_UPGRADE_MODE=explicit via
+    setdefault before workers run; --conservative skips that setdefault so a
+    per-checkout go_upgrade_mode config still decides (see test_config_e2e.py's
+    ``test_fleet_run_resolves_go_upgrade_mode_per_checkout``)."""
     import os
 
-    # Seed each var so monkeypatch records the original and reliably restores it
-    # on teardown — run.py writes to os.environ directly, so without a recorded
-    # original the writes would leak into later checker tests.
-    env_vars = (
-        "REPO_OPS_BUN_UPDATE_LATEST",
-        "REPO_OPS_PNPM_UPDATE_LATEST",
-        "REPO_OPS_YARN_UPDATE_LATEST",
-        "REPO_OPS_GO_UPGRADE_MODE",
-    )
-    for var in env_vars:
-        monkeypatch.setenv(var, "__sentinel__")
-        monkeypatch.delenv(var)
+    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
     _bun_workspace(tmp_path)
     register_all()
 
     seen: dict[str, str | None] = {}
 
-    def _capture(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
-        seen["bun"] = os.environ.get("REPO_OPS_BUN_UPDATE_LATEST")
-        seen["pnpm"] = os.environ.get("REPO_OPS_PNPM_UPDATE_LATEST")
-        seen["yarn"] = os.environ.get("REPO_OPS_YARN_UPDATE_LATEST")
-        seen["go"] = os.environ.get("REPO_OPS_GO_UPGRADE_MODE")
-        return wr
+    def _capture(key: str):
+        def _inner(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
+            seen[key] = os.environ.get("REPO_OPS_GO_UPGRADE_MODE")
+            return wr
+
+        return _inner
 
     with patch(
         "repo_ops_upgrade.run.orchestration.process_workspace",
-        side_effect=_capture,
+        side_effect=_capture("default"),
     ):
-        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet", "--latest"])
+        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
+    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
+    with patch(
+        "repo_ops_upgrade.run.orchestration.process_workspace",
+        side_effect=_capture("conservative"),
+    ):
+        main_plan(
+            [str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"]
+        )
 
-    assert seen == {"bun": "1", "pnpm": "1", "yarn": "1", "go": "explicit"}
+    assert seen == {"default": "explicit", "conservative": None}
 
 
 def test_latest_umbrella_flips_actions_mode(tmp_path: Path, monkeypatch) -> None:
-    """#106: --latest opts Actions into latest mode; explicit flag overrides it."""
-    # --latest writes REPO_OPS_*_UPDATE_LATEST to os.environ directly; record the
-    # originals so monkeypatch restores them and the writes don't leak into other
-    # checker tests (mirrors test_latest_flag_sets_ecosystem_env_vars).
+    """#106: the default sweep opts Actions into latest mode; --conservative
+    reverts to normalize; an explicit --actions-upgrade-mode always wins."""
     for var in (
         "REPO_OPS_BUN_UPDATE_LATEST",
         "REPO_OPS_PNPM_UPDATE_LATEST",
@@ -491,12 +486,13 @@ def test_latest_umbrella_flips_actions_mode(tmp_path: Path, monkeypatch) -> None
         mode: str = scan.call_args.kwargs["upgrade_mode"]
         return mode
 
-    # --latest umbrella → Actions latest mode.
-    assert _mode_for(["--latest"]) == "latest"
-    # Explicit --actions-upgrade-mode overrides the umbrella.
-    assert _mode_for(["--latest", "--actions-upgrade-mode", "normalize"]) == "normalize"
-    # Neither → default normalize.
-    assert _mode_for([]) == "normalize"
+    # Default sweep → Actions latest mode.
+    assert _mode_for([]) == "latest"
+    # --conservative → normalize.
+    assert _mode_for(["--conservative"]) == "normalize"
+    # Explicit --actions-upgrade-mode overrides either umbrella.
+    assert _mode_for(["--actions-upgrade-mode", "normalize"]) == "normalize"
+    assert _mode_for(["--conservative", "--actions-upgrade-mode", "latest"]) == "latest"
 
 
 def test_footer_hint_appears_for_actions_behind_latest(tmp_path: Path) -> None:
