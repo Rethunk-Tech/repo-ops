@@ -5,7 +5,7 @@ Python module paths for importing `repo-ops` packages programmatically.
 Package `__init__.py` files typically export only `main` (CLI entry) and `register()` (ecosystem plugins). Import submodule paths below for testable APIs and library reuse.
 
 | Area | Module | Notes |
-|------|--------|-------|
+| ------ | -------- | ------- |
 | CLI | `repo_ops.cli` | Dispatches subcommands |
 | Config | `repo_ops_core.config` | `load_global_config`, `load_repo_config`, `SETTINGS_TABLE` |
 | Upgrade entrypoints | `repo_ops_upgrade` | `main_plan`, `main_apply` |
@@ -42,4 +42,4 @@ Package `__init__.py` files typically export only `main` (CLI entry) and `regist
 | Remediations Deno | `repo_ops_upgrade_remediations_deno` | Deno fmt hooks |
 | Shared core | `repo_ops_core` | git, filesystem, process, discovery, CLI helpers |
 
-Filesystem layout of `packages/*`: [docs/architecture.md](architecture.md).
+Filesystem layout of `src/*`: [docs/architecture.md](architecture.md).

@@ -17,7 +17,7 @@ repo-ops is a **uv workspace** of Python packages for scanning local git checkou
 ## Quick start
 
 ```bash
-uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git#subdirectory=packages/repo-ops"
+uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git"
 repo-ops doctor
 ```
 

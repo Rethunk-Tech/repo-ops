@@ -4,13 +4,13 @@ Thank you for contributing. Orientation: [README.md](README.md). Install, usage,
 
 ## Quick start
 
-1. [Installation — Development](docs/installation.md#development): clone, `uv sync --group dev`, optional `uv tool install -e packages/repo-ops`.
+1. [Installation — Development](docs/installation.md#development): clone, `uv sync --group dev`, optional `uv tool install -e .`.
 2. Before a PR: [Verification and Testing](docs/testing.md) (at minimum `uv run pytest` for code changes).
 3. CLI behavior and flags: [Usage](docs/usage.md).
 
 ## Development notes
 
-- Workspace members live under `packages/repo-ops-*` (`src/` per package). CLI and registration: `packages/repo-ops` (`repo_ops.cli`, `repo_ops._register`).
+- Modules live under `src/repo_ops_*`, all shipped in the one `repo-ops` distribution. CLI and registration: `src/repo_ops` (`repo_ops.cli`, `repo_ops._register`).
 - Doc tiers: README (orientation + Documentation table), HUMANS (quickstart + doc links), docs/ (deep reference), AGENTS (agent quick reference + coordination), this file (commits/style/git for agents). CLI flags: `repo-ops <subcommand> --help` (authoritative).
 
 ## Git for agents

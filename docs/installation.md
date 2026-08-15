@@ -9,7 +9,7 @@ Requires [uv](https://docs.astral.sh/uv/) and Python >= 3.10.
 Install into an isolated tool environment (no clone):
 
 ```bash
-uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git#subdirectory=packages/repo-ops"
+uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git"
 ```
 
 Put the tool bin directory on `PATH` (`uv tool dir --bin`; see uv shell hooks).
@@ -40,14 +40,14 @@ Use `uv sync --locked` in CI and before pushing.
 Editable global CLI from your clone:
 
 ```bash
-uv tool install -e packages/repo-ops
+uv tool install -e .
 ```
 
 After pulling changes, refresh the tool and bundled agent skill:
 
 ```bash
 uv sync --locked --group dev
-uv tool install -e packages/repo-ops
+uv tool install -e .
 repo-ops install-skill --force
 ```
 

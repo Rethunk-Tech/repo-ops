@@ -2,12 +2,12 @@
 
 Entry doc for operators: quickstart, requirements, and links to the full reference.
 
-The **installable package** is `packages/repo-ops`. The repository root is a uv workspace manifest only (`package = false`); `uv tool install` against the clone root fails — use `packages/repo-ops` or the git URL with `#subdirectory=packages/repo-ops` below.
+The repository is a single installable package (`repo-ops`), built from `src/`. Install the clone root or the git URL directly.
 
 ## Quickstart
 
 ```bash
-uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git#subdirectory=packages/repo-ops"
+uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git"
 repo-ops doctor
 ```
 

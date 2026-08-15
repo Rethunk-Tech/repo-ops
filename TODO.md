@@ -8,7 +8,7 @@ Backlog only. When an item ships, **delete its section** (do not leave "done" / 
 
 ### 1.1 PyPI OIDC trusted publishing (operator hold)
 
-Enable PyPI publish for the `packages/repo-ops` wheel once the trusted-publisher claim is configured. Tracked as open issue [#124](https://github.com/Rethunk-Tech/repo-ops/issues/124).
+Enable PyPI publish for the `repo-ops` wheel once the trusted-publisher claim is configured. Tracked as open issue [#124](https://github.com/Rethunk-Tech/repo-ops/issues/124).
 
 **Refs:** `.github/workflows/release.yml` (`publish-pypi` job, `environment: pypi`); `AGENTS.md` § Cutting a release; `docs/installation.md` (“After PyPI publish”).
 
