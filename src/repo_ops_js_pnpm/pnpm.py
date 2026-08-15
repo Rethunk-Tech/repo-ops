@@ -24,16 +24,22 @@ from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version, semver_tuple
-from repo_ops_js.audit_overrides import clear_audit_overrides, set_audit_overrides
-from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
+from repo_ops_js.audit_overrides import apply_audit_overrides, make_audit_override_api
+from repo_ops_js.guards import (
+    assert_targets_resolved,
+    fold_blocked_into_behind,
+    unresolved_targets,
+)
 from repo_ops_js.holds import (
     direct_dependency_names,
     enforce_holds,
+    fold_held_into_behind,
     hold_version_spec,
     is_within_ceiling,
     resolve_package_hold,
 )
 from repo_ops_js.overrides import release_unheld_pin
+from repo_ops_js.targeted_bump import run_targeted_bump
 from repo_ops_lockfiles.license_policy import _split_nv
 from repo_ops_lockfiles.parsers import versions_pnpm_lock
 from repo_ops_lockfiles.snapshots import (
@@ -65,21 +71,9 @@ def _yaml_loader() -> YAML:
 # call and cleared in a finally block after.  Empty outside of audit --fix runs.
 _AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 
-
-def set_pnpm_audit_version_overrides(overrides: dict[str, str]) -> None:
-    """Inject per-package advisory-safe versions for the next apply / targeted-bump.
-
-    Called by ``repo_ops_audit.audit.apply_remediations`` so that
-    ``apply_pnpm`` / ``targeted_bump_behind`` uses the advisory-safe version
-    (e.g. ``pnpm add pkg@1.5.5``) rather than always running
-    ``pnpm update --latest pkg``.
-    """
-    set_audit_overrides(_AUDIT_VERSION_OVERRIDES, overrides)
-
-
-def clear_pnpm_audit_version_overrides() -> None:
-    """Reset audit version overrides after each workspace apply."""
-    clear_audit_overrides(_AUDIT_VERSION_OVERRIDES)
+set_pnpm_audit_version_overrides, clear_pnpm_audit_version_overrides = (
+    make_audit_override_api(_AUDIT_VERSION_OVERRIDES)
+)
 
 
 def _pnpm_update_latest_enabled(ws: Workspace | None = None) -> bool:
@@ -453,11 +447,26 @@ def targeted_bump_behind(
     applied: list[Change] = []
     still_behind: list[Change] = []
     catalog_names = set(_catalog_specs(ws))
+
+    def run_bump(name: str, version: str) -> bool:
+        # A catalog entry never reaches here (handled separately below), so
+        # "latest" always means the normal, non-catalog registry bump.
+        cmd = (
+            ["pnpm", "update", "--latest", name]
+            if version == "latest"
+            else ["pnpm", "add", f"{name}@{version}"]
+        )
+        update = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
+        return update.returncode == 0
+
+    def resolve_landed(name: str) -> str | None:
+        return resolved_version_from_node_modules(ws.path, name)
+
     for change in behind:
-        snap = snapshot_workspace_files(ws.path, "pnpm")
-        audit_target = _AUDIT_VERSION_OVERRIDES.get(change.name)
-        held_rule = None if audit_target else resolve_package_hold(ws, change.name)
         if change.name in catalog_names:
+            snap = snapshot_workspace_files(ws.path, "pnpm")
+            audit_target = _AUDIT_VERSION_OVERRIDES.get(change.name)
+            held_rule = None if audit_target else resolve_package_hold(ws, change.name)
             target = (
                 audit_target
                 if audit_target
@@ -495,47 +504,24 @@ def targeted_bump_behind(
                 restore_workspace_snapshot(ws.path, snap, "pnpm")
                 still_behind.append(change)
             continue
-        if audit_target:
-            # Audit path wins: a security remediation must not be silently
-            # blocked by a routine hold policy. pnpm add installs an explicit
-            # version and updates both manifest and lockfile.
-            cmd = ["pnpm", "add", f"{change.name}@{audit_target}"]
-        else:
-            if held_rule is not None:
-                # A hold ceiling: pin via `pnpm add` (installs and updates
-                # the manifest range in one step, same as the audit path).
-                cmd = ["pnpm", "add", f"{change.name}@{hold_version_spec(held_rule)}"]
-            else:
-                # No active hold covers this package — release a legacy
-                # overrides pin so the retry has a real chance; the
-                # snapshot restore below reverts this edit too on
-                # no-advance.
-                release_unheld_pin(ws.path, change.name)
-                # Normal targeted-bump path: update to registry latest.
-                cmd = ["pnpm", "update", "--latest", change.name]
-        update = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
-        landed: str | None = None
-        if update.returncode == 0:
-            landed = resolved_version_from_node_modules(ws.path, change.name)
-        advanced = False
-        if landed:
-            try:
-                advanced = semver_tuple(landed) > semver_tuple(change.from_ver)
-            except (TypeError, ValueError):
-                advanced = landed != change.from_ver
-        if landed and advanced and update.returncode == 0:
-            resolved_change = Change(change.name, change.from_ver, landed)
-            try:
-                assert_targets_resolved(ws, [resolved_change], manager="pnpm")
-            except RuntimeError:
-                # Ghost bump: guard raise must restore the snapshot (npm/bun parity).
-                restore_workspace_snapshot(ws.path, snap, "pnpm")
-                still_behind.append(change)
-            else:
-                applied.append(resolved_change)
-        else:
-            restore_workspace_snapshot(ws.path, snap, "pnpm")
+        resolved = run_targeted_bump(
+            ws,
+            ws.path,
+            change,
+            manager="pnpm",
+            audit_overrides=_AUDIT_VERSION_OVERRIDES,
+            run_bump=run_bump,
+            resolve_landed=resolve_landed,
+            release_pin=release_unheld_pin,
+            verify=assert_targets_resolved,
+            # pnpm keeps a legacy pin in place when an audit override is
+            # active; every other manager releases it there too.
+            release_pin_on_audit_override=False,
+        )
+        if resolved is None:
             still_behind.append(change)
+        else:
+            applied.append(resolved)
     return applied, still_behind
 
 
@@ -545,46 +531,22 @@ def _apply_pnpm_audit_overrides(ws: Workspace) -> set[str]:
     Independent of ``REPO_OPS_PNPM_TARGETED_BUMP`` so ``audit --fix`` pins are not
     silently skipped when the user did not also opt into targeted bump.
     """
-    handled: set[str] = set()
-    if not _AUDIT_VERSION_OVERRIDES:
-        return handled
-    requested: list[Change] = []
-    for name, safe_version in list(_AUDIT_VERSION_OVERRIDES.items()):
-        name = (name or "").strip()
-        safe_version = (safe_version or "").strip()
-        if not name or not safe_version:
-            continue
+
+    def install(name: str, version: str) -> None:
         add = run(
-            ["pnpm", "add", f"{name}@{safe_version}"],
+            ["pnpm", "add", f"{name}@{version}"],
             ws.path,
             timeout=TIMEOUT_APPLY,
         )
         if add.returncode != 0:
             raise RuntimeError(
                 add.stderr.strip()
-                or f"pnpm add {name}@{safe_version} failed (audit override)"
+                or f"pnpm add {name}@{version} failed (audit override)"
             )
-        requested.append(Change(name, "", safe_version))
-        handled.add(name)
-    if requested:
-        assert_targets_resolved(ws, requested, manager="pnpm")
-    return handled
 
-
-def _fold_blocked_into_behind(
-    ws: Workspace, guardable: list[Change], behind: list[Change]
-) -> list[Change]:
-    """Merge still-unresolved targets into ``behind`` by package name."""
-    blocked = unresolved_targets(ws, guardable)
-    if not blocked:
-        return behind
-    behind_names = {c.name for c in behind}
-    merged = list(behind)
-    for change, _resolved in blocked:
-        if change.name not in behind_names:
-            merged.append(change)
-            behind_names.add(change.name)
-    return merged
+    return apply_audit_overrides(
+        ws, _AUDIT_VERSION_OVERRIDES, manager="pnpm", install=install
+    )
 
 
 def apply_pnpm(ws: Workspace) -> list[Change]:
@@ -620,7 +582,8 @@ def apply_pnpm(ws: Workspace) -> list[Change]:
             raise RuntimeError(proc2.stderr.strip() or "pnpm install failed")
         if changes:
             if _pnpm_targeted_bump_enabled(ws):
-                behind = _fold_blocked_into_behind(ws, changes, behind)
+                blocked = unresolved_targets(ws, changes)
+                behind = fold_blocked_into_behind(blocked, behind)
             else:
                 assert_targets_resolved(ws, changes, manager="pnpm")
     applied, behind = targeted_bump_behind(ws, behind)
@@ -641,6 +604,4 @@ def apply_pnpm(ws: Workspace) -> list[Change]:
             ["pnpm", "add", f"{name}@{spec}"], ws.path, timeout=TIMEOUT_APPLY
         ),
     )
-    if held:
-        behind = [c for c in behind if c.name not in {h.name for h in held}] + held
-    return behind
+    return fold_held_into_behind(held, behind)
