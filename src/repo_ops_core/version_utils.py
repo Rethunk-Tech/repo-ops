@@ -20,6 +20,22 @@ def semver_tuple(v: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
+def version_parts(version: str) -> tuple[int, int, int]:
+    """Extract a padded (major, minor, patch) triple from anywhere in *version*.
+
+    Unlike :func:`semver_tuple` (which normalizes a version string that
+    starts with the number), this searches for the first digit run — needed
+    for a manager's freeform ``latest`` string that may carry a leading
+    ``v``/prefix or trailing metadata.
+    """
+    match = re.search(r"\d+(?:\.\d+){0,2}", version.strip().lstrip("vV"))
+    if match is None:
+        return (0, 0, 0)
+    parts = [int(part) for part in match.group(0).split(".")]
+    padded = [*parts, 0, 0, 0][:3]
+    return padded[0], padded[1], padded[2]
+
+
 def hold_ceiling_spec(max_version: str) -> str:
     """Return a PEP 440 upper-bound constraint for a hold ceiling."""
     parts = [p for p in max_version.strip().split(".") if p]

@@ -56,3 +56,16 @@ def read_toml_file(path: Path) -> dict[str, Any] | None:
     except Exception:
         return None
     return data if isinstance(data, dict) else None
+
+
+def snapshot_file(path: Path) -> bytes | None:
+    """Capture a file's bytes for a later :func:`restore_file`, or ``None`` if absent."""
+    return path.read_bytes() if path.is_file() else None
+
+
+def restore_file(path: Path, snapshot: bytes | None) -> None:
+    """Undo a targeted-bump/clamp attempt: restore *path* to its pre-attempt state."""
+    if snapshot is None:
+        path.unlink(missing_ok=True)
+    else:
+        path.write_bytes(snapshot)
