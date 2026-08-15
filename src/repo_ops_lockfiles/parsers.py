@@ -8,8 +8,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from ruamel.yaml import YAML
+from ruamel.yaml.error import YAMLError
+
 from repo_ops_core.filesystem import read_json_file, read_toml_file
 from repo_ops_core.process import run
+
+_PNPM_LOCK_YAML = YAML(typ="safe")
 
 
 def split_name_version(entry: str) -> tuple[str, str]:
@@ -104,17 +109,13 @@ def versions_yarn_lock(p: Path) -> set[str]:
     return out
 
 
-def versions_pnpm_lock(p: Path) -> set[str]:
-    """pnpm-lock.yaml → set of name@version.
-
-    Handles both notations:
-    - v6+ ``@``-notation: ``foo@1.2.3:`` / ``@scope/bar@2.3.4:``
-    - v5/older path-notation: ``/lodash/4.17.21:`` / ``/@babel/core/7.22.0:``
+def _versions_pnpm_lock_regex_fallback(p: Path) -> set[str]:
+    """Line-based fallback for a ``pnpm-lock.yaml`` malformed enough that
+    ruamel.yaml refuses to parse it (e.g. a truncated/corrupt file) — best
+    effort on the two notations we know about, same as the YAML path.
     """
-    # v6+ @-notation: name@version key (name may be scoped, e.g. @babel/core@7.x)
-    _RE_AT = re.compile(r"^  ['\"]?/?([@\w][^@:'\"]*@[^:'\"\s]+)['\"]?:\s*$")
-    # v5 path-notation: /name/version: or /@scope/name/version:
-    _RE_PATH = re.compile(
+    _re_at = re.compile(r"^  ['\"]?/?([@\w][^@:'\"]*@[^:'\"\s]+)['\"]?:\s*$")
+    _re_path = re.compile(
         r"^  ['\"]?/((?:@[^/'\"@]+/)?[^/'\"@]+)/([^/:'\"\s]+)['\"]?:\s*$"
     )
     out: set[str] = set()
@@ -127,14 +128,73 @@ def versions_pnpm_lock(p: Path) -> set[str]:
             if line and not line.startswith(" "):
                 in_pkgs = False
                 continue
-            m = _RE_PATH.match(line)
+            m = _re_path.match(line)
             if m:
                 out.add(f"{m.group(1)}@{m.group(2)}")
                 continue
-            m = _RE_AT.match(line)
+            m = _re_at.match(line)
             if m:
-                token = m.group(1).split("(", 1)[0]
-                out.add(token)
+                out.add(m.group(1).split("(", 1)[0])
+    return out
+
+
+def _pnpm_v5_path_name_version(body: str) -> str | None:
+    """Try v5 path-notation ``(@scope/)?name/version`` (no ``@`` in name/scope)."""
+    parts = body.split("/")
+    if len(parts) == 2:
+        name, version = parts
+        return None if "@" in name else f"{name}@{version}"
+    if len(parts) == 3 and parts[0].startswith("@"):
+        scope, name, version = parts
+        if "@" in scope[1:] or "@" in name:
+            return None
+        return f"{scope}/{name}@{version}"
+    return None
+
+
+def _pnpm_key_to_name_version(key: str, *, is_path: bool) -> str | None:
+    """Resolve one ``packages`` key to a ``name@version`` token.
+
+    Handles v6+ ``name@version`` keys (scoped or not), v5 ``/name/version``
+    path keys, and either notation carrying a trailing ``(peer@version)``
+    suffix that must be stripped.
+    """
+    body = key[1:] if is_path else key
+    paren = body.find("(")
+    if paren != -1:
+        body = body[:paren]
+    if is_path:
+        via_path = _pnpm_v5_path_name_version(body)
+        if via_path is not None:
+            return via_path
+    if not body:
+        return None
+    name, version = split_name_version(body)
+    return f"{name}@{version}" if version else None
+
+
+def versions_pnpm_lock(p: Path) -> set[str]:
+    """pnpm-lock.yaml → set of name@version.
+
+    Handles both notations:
+    - v6+ ``@``-notation: ``foo@1.2.3:`` / ``@scope/bar@2.3.4:``
+    - v5/older path-notation: ``/lodash/4.17.21:`` / ``/@babel/core/7.22.0:``
+    """
+    try:
+        data = _PNPM_LOCK_YAML.load(p.read_text(encoding="utf-8", errors="replace"))
+    except YAMLError:
+        return _versions_pnpm_lock_regex_fallback(p)
+    if not isinstance(data, dict):
+        return set()
+    packages = data.get("packages")
+    if not isinstance(packages, dict):
+        return set()
+    out: set[str] = set()
+    for raw_key in packages:
+        key = str(raw_key)
+        token = _pnpm_key_to_name_version(key, is_path=key.startswith("/"))
+        if token:
+            out.add(token)
     return out
 
 
