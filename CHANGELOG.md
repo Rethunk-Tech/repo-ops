@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING: the 31 workspace distributions are now one `repo-ops` package.** The split shipped exactly one artifact and that artifact could not be installed: release built only `packages/repo-ops`, producing a 509-line wheel whose metadata required 24 sibling distributions that were never built or published, so `pip install repo-ops` failed to resolve `repo-ops-core`. The boundary was not real in the other direction either — `repo-ops-upgrade` and `repo-ops-upgrade-remediations-js` depended on each other at both the manifest and import level, which only worked because uv flattened the workspace into one environment. Every module keeps its name and import path (`repo_ops_core`, `repo_ops_upgrade`, …); they now live under `src/` and ship from a single manifest. Installing from a clone is `uv tool install .` and from git is the plain repository URL — the `#subdirectory=packages/repo-ops` suffix is gone.
+- **BREAKING: Python 3.10 is no longer supported.** It reaches end of life in October, and it was the only reason for the `tomli` dependency and the config-loading fallbacks around it. Minimum is now 3.11, and `tomllib` is used directly.
+- **`--sarif-out` and SARIF output are removed.** Nothing consumed them: no workflow in this repo or in `Rethunk-Tech/gh-actions` ever passed the flag, so the format was maintained for no reader. The JSON report and the GitHub step-summary writer are unaffected.
 - **BREAKING: full-coverage sweep is now the default for `plan` and `apply`.** The recommended invocation required ~15 flags nobody could remember, and agents driving the CLI routinely omitted them, producing incomplete sweeps that read as complete. Every ecosystem now crosses ranges, every package manager gets its per-package targeted bump, and GitHub Actions/container/pre-commit/submodule pins get digest refresh, pin-to-SHA, and cross-major bumps — all with no flags. `--conservative` replaces all of them: stay in-range, only move what each manifest's own constraints already allow. Removed flags: `--latest`, `--full`, `--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, `--bun-targeted-bump`, `--deno-targeted-bump`, `--rust-targeted-bump`, `--poetry-targeted-bump`, `--pdm-targeted-bump`, `--pipenv-targeted-bump`, `--pip-tools-targeted-bump`, `--actions-refresh-sha`, `--actions-pin-sha`, `--precommit-refresh-sha`, `--submodule-refresh-sha`, `--container-update-latest`, `--container-refresh-sha`.
 - **BREAKING: `--on-verify-fail` now defaults to `revert`** (was `keep`): a failed verify gate rolls back apply-artifact files (lockfiles and manifests) automatically, since the cross-range bulk upgrade a sweep performs has no per-package rollback of its own. `--on-verify-fail=keep` opts back into leaving the wreckage in place for inspection.
 - **BREAKING: `--submodules` now defaults on** (detection/annotation only, no writes). `--no-submodules` opts back out.
@@ -20,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - **`--yarn-jobs`:** use `REPO_OPS_YARN_MAX_CONCURRENCY` instead (default raised from 2 to 4). Yarn extraction now targets disk-backed scratch (honors `TMPDIR`, else `/var/tmp`) rather than the default temp dir.
+- **`scripts/set_version.py`:** it existed to hold ~20 manifests at one version, complete with drift detection and all-or-nothing validation. With a single manifest, `uv version --bump patch` does the same job.
+- **`scripts/check_import_boundaries.py`:** a hand-rolled AST linter policing a package layering that no consumer could observe, and that no longer exists.
 
 ## [0.22.3] - 2026-08-15
 
