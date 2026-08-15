@@ -24,7 +24,6 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
-from repo_ops_core.holds import HoldRule
 from repo_ops_models.models import Change, Workspace
 
 _ENV_PREFIX = "REPO_OPS_"
@@ -142,23 +141,6 @@ def make_workspace() -> Any:
         }
         fields.update(overrides)
         return Workspace(**fields)
-
-    return _factory
-
-
-@pytest.fixture
-def make_hold_rule() -> Any:
-    """Factory fixture: build a ``HoldRule`` by keyword.
-
-    Same conftest/fixture-not-import rationale as ``make_workspace`` above.
-    ``package``/``max_version`` are required by ``HoldRule`` itself — this
-    just centralizes the construction call; per-ecosystem default values
-    stay in each test file's own thin ``_held_rule`` wrapper since they're
-    real per-ecosystem data, not duplicated logic.
-    """
-
-    def _factory(**overrides: Any) -> HoldRule:
-        return HoldRule(**overrides)
 
     return _factory
 
