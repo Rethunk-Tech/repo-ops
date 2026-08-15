@@ -16,22 +16,23 @@ from repo_ops_core.config import (
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import semver_tuple
-from repo_ops_js.audit_overrides import clear_audit_overrides, set_audit_overrides
-from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
+from repo_ops_js.audit_overrides import make_audit_override_api
+from repo_ops_js.guards import (
+    assert_targets_resolved,
+    fold_blocked_into_behind,
+    unresolved_targets,
+)
 from repo_ops_js.holds import (
     direct_dependency_names,
     enforce_holds,
+    fold_held_into_behind,
     hold_version_spec,
     is_within_ceiling,
     resolve_package_hold,
 )
 from repo_ops_js.overrides import release_unheld_pin
-from repo_ops_lockfiles.snapshots import (
-    resolved_version_from_node_modules,
-    restore_workspace_snapshot,
-    snapshot_workspace_files,
-)
+from repo_ops_js.targeted_bump import run_targeted_bump
+from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
 
 # `bun outdated` has no --json flag (as of bun 1.x; the codebase checks
@@ -62,21 +63,9 @@ _BUN_TARGETED_BUMP_ENV = "REPO_OPS_BUN_TARGETED_BUMP"
 # workspaces sequentially. Empty outside of audit --fix runs.
 _AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 
-
-def set_bun_audit_version_overrides(overrides: dict[str, str]) -> None:
-    """Inject per-package advisory-safe versions for the next ``apply_bun`` call.
-
-    Called by ``repo_ops_audit.audit.apply_remediations`` so that ``apply_bun``
-    targets the advisory-safe version (e.g. ``pkg@1.5.5``) rather than silently
-    dropping it when ``bun outdated`` doesn't report the package as changed
-    (#140).
-    """
-    set_audit_overrides(_AUDIT_VERSION_OVERRIDES, overrides)
-
-
-def clear_bun_audit_version_overrides() -> None:
-    """Reset audit version overrides after each workspace apply."""
-    clear_audit_overrides(_AUDIT_VERSION_OVERRIDES)
+set_bun_audit_version_overrides, clear_bun_audit_version_overrides = (
+    make_audit_override_api(_AUDIT_VERSION_OVERRIDES)
+)
 
 
 def _bun_update_latest_enabled(ws: Workspace | None = None) -> bool:
@@ -263,78 +252,37 @@ def targeted_bump_behind(
     """
     if not behind or not _bun_targeted_bump_enabled(ws):
         return [], behind
-    applied: list[Change] = []
-    still_behind: list[Change] = []
-    for change in behind:
-        snap = snapshot_workspace_files(ws.path, "bun")
-        # The advisory-safe version wins when set (audit --fix path) — a
-        # security remediation must not be silently blocked by a routine
-        # hold policy; else a hold ceiling when an active rule matches this
-        # package; else @latest.
-        audit_override = _AUDIT_VERSION_OVERRIDES.get(change.name)
-        held_rule = None if audit_override else resolve_package_hold(ws, change.name)
-        if audit_override:
-            target_ver = audit_override
-        elif held_rule is not None:
-            target_ver = hold_version_spec(held_rule)
-        else:
-            target_ver = "latest"
-        if held_rule is None:
-            # No active hold covers this package — release a legacy
-            # resolutions/overrides pin so the retry has a real chance; the
-            # snapshot restore below reverts this edit too on no-advance.
-            release_unheld_pin(ws.path, change.name)
+
+    def run_bump(name: str, version: str) -> bool:
         install = run(
-            ["bun", "add", f"{change.name}@{target_ver}"],
+            ["bun", "add", f"{name}@{version}"],
             ws.path,
             timeout=resolve_timeout_apply(),
         )
-        landed: str | None = None
-        if install.returncode == 0:
-            landed = resolved_version_from_node_modules(ws.path, change.name)
-        advanced = False
-        if landed:
-            try:
-                advanced = semver_tuple(landed) > semver_tuple(change.from_ver)
-            except (TypeError, ValueError):
-                advanced = landed != change.from_ver
-        if landed and advanced and install.returncode == 0:
-            resolved_change = Change(change.name, change.from_ver, landed)
-            try:
-                assert_targets_resolved(ws, [resolved_change], manager="bun")
-            except RuntimeError:
-                # Ghost bump: the guard itself found the target unresolved
-                # (e.g. a second reads disagrees with the first). Restore the
-                # snapshot instead of leaving a corrupted lockfile on disk.
-                restore_workspace_snapshot(ws.path, snap, "bun")
-                still_behind.append(change)
-            else:
-                applied.append(resolved_change)
-        else:
-            restore_workspace_snapshot(ws.path, snap, "bun")
+        return install.returncode == 0
+
+    def resolve_landed(name: str) -> str | None:
+        return resolved_version_from_node_modules(ws.path, name)
+
+    applied: list[Change] = []
+    still_behind: list[Change] = []
+    for change in behind:
+        resolved = run_targeted_bump(
+            ws,
+            ws.path,
+            change,
+            manager="bun",
+            audit_overrides=_AUDIT_VERSION_OVERRIDES,
+            run_bump=run_bump,
+            resolve_landed=resolve_landed,
+            release_pin=release_unheld_pin,
+            verify=assert_targets_resolved,
+        )
+        if resolved is None:
             still_behind.append(change)
+        else:
+            applied.append(resolved)
     return applied, still_behind
-
-
-def _fold_blocked_into_behind(
-    ws: Workspace, guardable: list[Change], behind: list[Change]
-) -> list[Change]:
-    """Merge still-unresolved ``guardable`` targets into ``behind`` by name.
-
-    Used when ``--bun-targeted-bump`` is enabled so a ghost-bumped package
-    gets a per-package retry (``targeted_bump_behind``, via
-    ``_finalize_bun_apply``) instead of failing the whole workspace.
-    """
-    blocked = unresolved_targets(ws, guardable)
-    if not blocked:
-        return behind
-    behind_names = {c.name for c in behind}
-    merged = list(behind)
-    for ch, _resolved in blocked:
-        if ch.name not in behind_names:
-            merged.append(ch)
-            behind_names.add(ch.name)
-    return merged
 
 
 def _finalize_bun_apply(
@@ -361,9 +309,7 @@ def _finalize_bun_apply(
             ["bun", "add", f"{name}@{spec}"], ws.path, timeout=resolve_timeout_apply()
         ),
     )
-    if held:
-        behind = [c for c in behind if c.name not in {h.name for h in held}] + held
-    return behind
+    return fold_held_into_behind(held, behind)
 
 
 def apply_bun(ws: Workspace) -> list[Change]:
@@ -441,7 +387,8 @@ def apply_bun(ws: Workspace) -> list[Change]:
                 # an unheld legacy pin) instead of hard-failing here; a
                 # still-blocked package after that best-effort retry lands
                 # in behind_latest like any other targeted-bump miss.
-                behind = _fold_blocked_into_behind(ws, guardable, behind)
+                blocked = unresolved_targets(ws, guardable)
+                behind = fold_blocked_into_behind(blocked, behind)
             else:
                 assert_targets_resolved(ws, guardable, manager="bun")
         return _finalize_bun_apply(ws, changes, behind)
@@ -451,7 +398,8 @@ def apply_bun(ws: Workspace) -> list[Change]:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
     if _bun_targeted_bump_enabled(ws):
-        behind = _fold_blocked_into_behind(ws, requested, behind)
+        blocked = unresolved_targets(ws, requested)
+        behind = fold_blocked_into_behind(blocked, behind)
     else:
         assert_targets_resolved(ws, requested, manager="bun")
     return _finalize_bun_apply(ws, changes, behind)
