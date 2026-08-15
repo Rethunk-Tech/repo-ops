@@ -2,7 +2,7 @@
 
 A hold rule caps a package at a maximum version, optionally until an
 expiry date, so a specific major upgrade (e.g. TypeScript 7) can be held
-back fleet-wide without disabling ``--latest``/targeted-bump for every
+back fleet-wide without disabling latest-mode/targeted-bump for every
 other package.
 
 Config source: the ``hold`` array-of-tables key already returned by

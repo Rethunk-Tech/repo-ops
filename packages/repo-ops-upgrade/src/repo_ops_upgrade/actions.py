@@ -1043,8 +1043,10 @@ def scan_actions(
         (CLI: ``--actions-unpin-sha``) to opt in to resolving SHA pins to
         version tags.
     refresh_sha:
-        When True (CLI: ``--actions-refresh-sha``) and the action stays SHA-pinned
-        (``keep_sha=True``), advance the digest to the commit of the newest
+        When True (env: ``REPO_OPS_ACTIONS_REFRESH_SHA``, config key
+        ``actions_refresh_sha``; on by default with the sweep) and the action
+        stays SHA-pinned (``keep_sha=True``), advance the digest to the
+        commit of the newest
         ``vN.M.P`` release within the pin's resolved major, preserving the digest
         pin and the ``# vN`` comment (Dependabot-compatible, issue #109). When
         combined with ``upgrade_mode="latest"``, the digest may also cross a major
@@ -1053,8 +1055,10 @@ def scan_actions(
         major (#138). Ignored when ``keep_sha=False`` (the unpin path takes over).
         No-op when the major cannot be resolved or no newer digest exists.
     pin_sha:
-        When True (CLI: ``--actions-pin-sha``), a tag-pinned action (``@vN``,
-        ``@vN.M.P``) is rewritten to the commit SHA of the highest exact
+        When True (env: ``REPO_OPS_ACTIONS_PIN_SHA``, config key
+        ``actions_pin_sha``; on by default with the sweep), a tag-pinned
+        action (``@vN``, ``@vN.M.P``) is rewritten to the commit SHA of the
+        highest exact
         ``vN.M.P`` release within its resolved major, with a ``# vN.M.P``
         audit-hint comment added (or replacing any existing trailing
         comment) — supply-chain hardening for actions that were never
@@ -1070,8 +1074,9 @@ def scan_actions(
     upgrade_mode:
         ``"normalize"`` (default) → only collapse to the current floating major;
         a newer major upstream is reported only (not applied).
-        ``"latest"`` (CLI: ``--actions-upgrade-mode=latest`` / ``--latest``) → also
-        rewrite a pin to the newest available major, honoring ``tag_style`` and the
+        ``"latest"`` (CLI: ``--actions-upgrade-mode=latest``; also the sweep
+        default unless ``--conservative``) → also rewrite a pin to the newest
+        available major, honoring ``tag_style`` and the
         bare-major safety rule. Falls back to normalize/report-only when the newest
         major cannot be safely targeted.
     tag_cache:
@@ -1395,11 +1400,12 @@ def scan_actions(
                 # gh absent or API failed — skip this pin.
                 continue
 
-            # Pin a floating tag to a commit SHA (#NNN): opt-in via
-            # --actions-pin-sha. Runs before the tag-normalize logic below —
-            # once pinned to SHA, --actions-refresh-sha (not this path)
-            # governs future digest bumps for it. Same cross-major honoring
-            # of upgrade_mode="latest" as the SHA-pinned refresh path.
+            # Pin a floating tag to a commit SHA (#NNN): governed by pin_sha
+            # (REPO_OPS_ACTIONS_PIN_SHA / actions_pin_sha). Runs before the
+            # tag-normalize logic below — once pinned to SHA, refresh_sha
+            # (REPO_OPS_ACTIONS_REFRESH_SHA), not this path, governs future
+            # digest bumps for it. Same cross-major honoring of
+            # upgrade_mode="latest" as the SHA-pinned refresh path.
             if pin_sha:
                 target_major = M
                 if upgrade_mode == "latest":

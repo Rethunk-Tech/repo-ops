@@ -11,6 +11,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any, Literal
 
+from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.holds import (
     HoldRule,
     load_global_holds,
@@ -27,86 +28,89 @@ UpgradeMode = Literal["plan", "apply"]
 
 DEFAULT_MAX_FAILURE_LINES = 20
 
-# Per-manager remediation advice for packages reported behind latest.
-# bun/pnpm/yarn honour --latest (which sets their per-ecosystem env var);
-# go has a 3-way mode flag; npm and rust have no latest mode of their own, so
-# they use manager-specific targeted bumps or manual pin updates.
+# Per-manager remediation advice for packages reported behind latest, used
+# when that manager's targeted-bump setting is OFF this run (--conservative,
+# or an explicit per-manager override). go keeps a real CLI flag; the rest
+# have none any more (#136 deleted every --*-targeted-bump / --latest flag),
+# so the note points at the env var / config key and --conservative instead.
+_LATEST_HINT_NO_MODE = (
+    "no latest mode; targeted bump not attempted this run — drop "
+    "--conservative to attempt it, or bump manually"
+)
+_LATEST_HINT_DEFAULT = (
+    "targeted bump not attempted this run — drop --conservative to "
+    "attempt it, or bump manually"
+)
+# Managers with no update-latest concept at all (structural — cargo/poetry/
+# pdm/pipenv/pip-compile have no cross-range "latest" mode to fall back to,
+# unlike bun/pnpm/deno/yarn/npm's targeted bump, which stands in for one).
+_NO_LATEST_MODE_MANAGERS = frozenset(
+    {"rust", "poetry", "pdm", "pipenv", "pip-tools", "npm"}
+)
 _LATEST_HINT_BY_MANAGER: dict[str, str] = {
-    "bun": "run with --latest to include",
-    "deno": "run with --latest to include",
-    "pnpm": "run with --latest to include",
-    # yarn behind-latest is surfaced only after --latest already ran (the resolver
-    # kept these back for peer/group constraints), so re-running --latest won't move
-    # them — they need the targeted fallback or a manual bump. (#110, #111, #131)
+    # yarn's leftovers are specifically peer/group-constrained (#110, #111).
     "yarn": (
-        "peer/group-constrained; --latest can't move them — "
-        "pass --yarn-targeted-bump to attempt, or bump manually"
+        "peer/group-constrained; targeted bump not attempted this run — "
+        "drop --conservative, or set REPO_OPS_YARN_TARGETED_BUMP=1, to "
+        "attempt it, or bump manually"
     ),
     "go": "run with --go-upgrade-mode=explicit to include",
-    "rust": ("no latest mode; pass --rust-targeted-bump to attempt, or bump manually"),
-    "poetry": (
-        "no latest mode; pass --poetry-targeted-bump to attempt, or bump manually"
-    ),
-    "pdm": "no latest mode; pass --pdm-targeted-bump to attempt, or bump manually",
-    "pipenv": "no latest mode; pass --pipenv-targeted-bump to attempt, or bump manually",
-    "pip-tools": (
-        "no latest mode; pass --pip-tools-targeted-bump to attempt, or bump manually"
-    ),
+    **dict.fromkeys(_NO_LATEST_MODE_MANAGERS, _LATEST_HINT_NO_MODE),
 }
-_LATEST_HINT_NO_MODE = "no latest mode; bump the pin manually"
-_LATEST_HINT_DEFAULT = "run with --latest to include"
-# Per-manager behind-latest note when that manager's --*-targeted-bump was
-# *already* requested this run: the leftovers are packages the targeted
-# fallback could not move, so pointing the operator back at the flag they
-# already passed would be misleading (#131, extended to npm/pnpm/bun once
-# they gained the same fallback).
+# Per-manager behind-latest note when that manager's targeted bump WAS
+# attempted this run (the sweep default, unless --conservative or an
+# explicit per-manager override turned it off): the leftovers are packages
+# the fallback could not move, not packages nobody tried to move (#131,
+# extended to npm/pnpm/bun/deno once they gained the same fallback, and
+# updated for #136 — the sweep now attempts this by default, so "attempted"
+# is the common case rather than something the operator had to opt into).
 _TARGETED_TRIED_HINT: dict[str, str] = {
     "yarn": (
-        "peer/group-constrained; --yarn-targeted-bump was attempted but could not "
-        "move them (verify failed or still constrained) — bump manually"
+        "peer/group-constrained; the targeted bump was attempted but could "
+        "not move them (verify failed or still constrained) — bump manually"
     ),
     "npm": (
-        "no latest mode; --npm-targeted-bump was attempted but could not move "
+        "no latest mode; the targeted bump was attempted but could not move "
         "them (install failed or version did not advance) — bump manually"
     ),
     "pnpm": (
-        "--pnpm-targeted-bump was attempted but could not move them "
+        "the targeted bump was attempted but could not move them "
         "(install failed or still constrained) — bump manually"
     ),
     "bun": (
-        "--bun-targeted-bump was attempted but could not move them "
+        "the targeted bump was attempted but could not move them "
         "(install failed or still constrained) — bump manually"
     ),
     "deno": (
-        "--deno-targeted-bump was attempted but could not move them "
+        "the targeted bump was attempted but could not move them "
         "(install failed or version did not advance) — bump manually"
     ),
     "rust": (
-        "--rust-targeted-bump was attempted but could not move them "
+        "the targeted bump was attempted but could not move them "
         "(cargo failed or the lockfile did not advance) — bump manually"
     ),
     "poetry": (
-        "--poetry-targeted-bump was attempted but could not move them "
+        "the targeted bump was attempted but could not move them "
         "(poetry add failed or the lockfile did not land the target) — bump manually"
     ),
     "pdm": (
-        "--pdm-targeted-bump was attempted but could not move them "
+        "the targeted bump was attempted but could not move them "
         "(pdm add failed or the lockfile did not land the target) — bump manually"
     ),
     "pipenv": (
-        "--pipenv-targeted-bump was attempted but could not move them "
+        "the targeted bump was attempted but could not move them "
         "(pipenv install failed or the lockfile did not land the target) — bump manually"
     ),
     "pip-tools": (
-        "--pip-tools-targeted-bump was attempted but could not move them "
+        "the targeted bump was attempted but could not move them "
         "(compile failed or the requirements.in constraint still blocked the target) — "
         "bump manually"
     ),
 }
 
-# Env vars that signal a per-package targeted bump was requested this run. Read
-# here (not imported from the manager packages) because repo_ops_upgrade may not
-# import repo_ops_js_* per the import-boundary rules.
+# Env vars that back a per-package targeted bump, keyed by manager. Read
+# here (not imported from the manager packages) because repo_ops_upgrade may
+# not import repo_ops_js_* per the import-boundary rules.
 _TARGETED_BUMP_ENV: dict[str, str] = {
     "yarn": "REPO_OPS_YARN_TARGETED_BUMP",
     "npm": "REPO_OPS_NPM_TARGETED_BUMP",
@@ -119,37 +123,42 @@ _TARGETED_BUMP_ENV: dict[str, str] = {
     "pipenv": "REPO_OPS_PIPENV_TARGETED_BUMP",
     "pip-tools": "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
 }
-_TARGETED_BUMP_TRUE = ("1", "true", "yes", "on")
 
 
 def _targeted_bump_requested(manager: str) -> bool:
-    """True when this run opted into the per-package targeted bump for *manager*."""
-    env = _TARGETED_BUMP_ENV.get(manager)
-    if not env:
+    """True when this run's targeted-bump setting for *manager* resolves on.
+
+    Routes through the settings layer (CLI > env > config > default) via
+    ``resolve_bool_setting`` rather than a direct env read: the sweep default
+    (#136) now lives in the settings table, not always in the process
+    environment, so a plain ``os.environ`` check would wrongly report
+    "not requested" for the common default-on case where nothing is set.
+    """
+    env_var = _TARGETED_BUMP_ENV.get(manager)
+    if not env_var:
         return False
-    return os.environ.get(env, "").strip().lower() in _TARGETED_BUMP_TRUE
+    setting_name = manager.replace("-", "_") + "_targeted_bump"
+    return resolve_bool_setting(setting_name, env_var)
 
 
 def _behind_latest_hint(manager: str) -> str:
     """Per-manager remediation note for behind-latest packages (#102, #131).
 
-    npm has no latest mode; bun/pnpm honour --latest; yarn's leftovers are
-    peer/group-constrained and need --yarn-targeted-bump or a manual bump.
     Shared by the per-workspace line and the run footer so the two never
     disagree — and so neither prints a misleading "(latest-mode off)" for
     packages that latest mode genuinely could not move (#131).
 
-    When a manager's own --*-targeted-bump was already requested (yarn, and
-    now npm/pnpm/bun once they gained the same fallback), the remaining
-    leftovers are ones that fallback could not move, so the note names that
-    outcome instead of re-suggesting the flag the operator already passed
-    (#131).
+    A default sweep already attempts every manager's targeted bump (#136), so
+    a behind-latest entry usually means the resolver genuinely refused to
+    move it (peer/group constraints, a failed install, or a stuck lockfile),
+    not that the operator forgot a flag — the flags this used to point at no
+    longer exist. When the setting was off this run (--conservative, or an
+    explicit per-manager override), the note says so instead and points at
+    --conservative / the env var, which do exist.
     """
     tried = _TARGETED_TRIED_HINT.get(manager)
     if tried and _targeted_bump_requested(manager):
         return tried
-    if manager == "npm":
-        return _LATEST_HINT_NO_MODE
     return _LATEST_HINT_BY_MANAGER.get(manager, _LATEST_HINT_DEFAULT)
 
 
@@ -728,7 +737,8 @@ def print_run_footer(
             )
             if by_manager:
                 # One line per manager so the remediation advice is correct for
-                # each (npm has no latest mode; bun/pnpm/yarn honour --latest).
+                # each — npm has no latest mode at all; the rest differ in
+                # whether their targeted bump was attempted this run.
                 for manager in sorted(by_manager):
                     count = by_manager[manager]
                     manager_hint = _behind_latest_hint(manager)
@@ -743,8 +753,9 @@ def print_run_footer(
         if actions_behind > 0:
             parts.append(
                 f"{actions_behind} action(s) have a newer major available"
-                " (apply with --actions-upgrade-mode=latest or --latest;"
-                " report-only when no floating major tag exists upstream)"
+                " (report-only when no floating major tag exists upstream;"
+                " under --conservative, drop it or pass"
+                " --actions-upgrade-mode=latest to include)"
             )
         print()
         for part in parts:

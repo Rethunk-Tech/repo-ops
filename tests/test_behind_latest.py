@@ -230,16 +230,20 @@ def test_footer_hint_appears_for_packages_behind_latest(tmp_path: Path) -> None:
     out = buf.getvalue()
     assert "behind-latest" in out
     assert "3 package(s)" in out
-    # #102: remediation advice now points at the unified --latest flag
-    # (no manager breakdown in this summary, so the default hint is used).
-    assert "--latest" in out
+    # #102/#136: remediation advice points at --conservative (a real flag);
+    # no manager breakdown in this summary, so the default hint is used.
+    assert "--conservative" in out
 
 
-def test_footer_per_manager_hints_npm_vs_latest(tmp_path: Path) -> None:
+def test_footer_per_manager_hints_npm_vs_latest(tmp_path: Path, monkeypatch) -> None:
     """#102: each manager gets its own correct remediation hint.
 
-    npm has no latest mode (bump manually); bun honours --latest.
+    npm has no latest mode (bump manually); bun's targeted bump is pinned off
+    here so the "not attempted" hint is exercised rather than the "tried but
+    could not move them" one (the sweep default, #136).
     """
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "0")
+    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "0")
     summary = {
         "workspaces_ok": 2,
         "workspaces_fail": 0,
@@ -258,21 +262,26 @@ def test_footer_per_manager_hints_npm_vs_latest(tmp_path: Path) -> None:
     with patch("sys.stdout", buf):
         print_run_footer(summary=summary, failures=[], exit_code=0)
     out = buf.getvalue()
-    # npm line: no latest mode, manual bump advice (NOT --latest).
-    assert (
-        "2 npm package(s) behind latest (no latest mode; bump the pin manually)" in out
-    )
-    # bun line: --latest remediation.
-    assert "3 bun package(s) behind latest (run with --latest to include)" in out
+    # npm line: no latest mode, manual bump advice.
+    assert "2 npm package(s) behind latest (no latest mode;" in out
+    # bun line: targeted bump wasn't attempted this run.
+    assert "3 bun package(s) behind latest (targeted bump not attempted" in out
 
 
-def test_per_line_behind_latest_note_is_manager_aware(tmp_path: Path) -> None:
+def test_per_line_behind_latest_note_is_manager_aware(
+    tmp_path: Path, monkeypatch
+) -> None:
     """#131: the per-workspace behind-latest line must not hardcode
 
-    "(latest-mode off)". yarn leftovers surface only after --latest ran, so
-    that label was misleading; the note now matches the manager-aware footer
-    hint and points yarn at --yarn-targeted-bump.
+    "(latest-mode off)". yarn leftovers surface only after the targeted bump
+    ran, so that label was misleading; the note now matches the
+    manager-aware footer hint. Each manager's targeted bump is pinned off
+    here (the sweep default, #136) so the "not attempted" hints are
+    exercised rather than the "tried but could not move them" ones.
     """
+    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "0")
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "0")
+    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "0")
     yarn_ws = Workspace(
         path=tmp_path / "y",
         ecosystem="node",
@@ -323,13 +332,13 @@ def test_per_line_behind_latest_note_is_manager_aware(tmp_path: Path) -> None:
     out = buf.getvalue()
     # The misleading parenthetical is gone entirely.
     assert "(latest-mode off)" not in out
-    # yarn line points at the targeted-bump remedy (#111/#131).
-    assert "--yarn-targeted-bump" in out
+    # yarn line names the constraint and the real env var / flag.
+    assert "REPO_OPS_YARN_TARGETED_BUMP" in out
     assert "peer/group-constrained" in out
     # npm correctly reports it has no latest mode.
-    assert "no latest mode; bump the pin manually" in out
-    # Deno supports latest mode and its targeted fallback.
-    assert "run with --latest to include" in out
+    assert "no latest mode;" in out
+    # deno: targeted bump wasn't attempted this run.
+    assert "targeted bump not attempted this run" in out
 
 
 def test_yarn_behind_latest_note_when_targeted_bump_already_requested(
@@ -367,7 +376,7 @@ def test_yarn_behind_latest_note_when_targeted_bump_already_requested(
             include_actions=False,
         )
     out = buf.getvalue()
-    assert "--yarn-targeted-bump was attempted but could not move them" in out
+    assert "the targeted bump was attempted but could not move them" in out
     # Must NOT tell the operator to pass a flag they already passed.
     assert "pass --yarn-targeted-bump to attempt" not in out
 

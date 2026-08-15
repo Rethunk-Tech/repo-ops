@@ -195,109 +195,117 @@ def test_bun_targeted_bump_conservative_flag_disables_it(
 
 
 def test_npm_hint_names_flag_when_not_requested(monkeypatch) -> None:
-    monkeypatch.delenv("REPO_OPS_NPM_TARGETED_BUMP", raising=False)
+    # npm has no per-manager flag to name any more (#136 deleted it) — the
+    # hint points at --conservative / the env var instead.
+    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "0")
     hint = _behind_latest_hint("npm")
-    assert hint == "no latest mode; bump the pin manually"
+    assert "no latest mode" in hint
+    assert "not attempted this run" in hint
+    assert "bump manually" in hint
 
 
 def test_npm_hint_reports_tried_when_requested(monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
     hint = _behind_latest_hint("npm")
-    assert "--npm-targeted-bump was attempted but could not move them" in hint
+    assert "the targeted bump was attempted but could not move them" in hint
     assert "bump manually" in hint
 
 
 def test_pnpm_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.delenv("REPO_OPS_PNPM_TARGETED_BUMP", raising=False)
+    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "0")
     hint = _behind_latest_hint("pnpm")
-    assert hint == "run with --latest to include"
+    assert "not attempted this run" in hint
+    assert "bump manually" in hint
 
 
 def test_pnpm_hint_reports_tried_when_requested(monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     hint = _behind_latest_hint("pnpm")
-    assert "--pnpm-targeted-bump was attempted but could not move them" in hint
+    assert "the targeted bump was attempted but could not move them" in hint
     assert "bump manually" in hint
 
 
 def test_bun_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.delenv("REPO_OPS_BUN_TARGETED_BUMP", raising=False)
+    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "0")
     hint = _behind_latest_hint("bun")
-    assert hint == "run with --latest to include"
+    assert "not attempted this run" in hint
+    assert "bump manually" in hint
 
 
 def test_bun_hint_reports_tried_when_requested(monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
     hint = _behind_latest_hint("bun")
-    assert "--bun-targeted-bump was attempted but could not move them" in hint
+    assert "the targeted bump was attempted but could not move them" in hint
     assert "bump manually" in hint
 
 
 def test_deno_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.delenv("REPO_OPS_DENO_TARGETED_BUMP", raising=False)
-    assert _behind_latest_hint("deno") == "run with --latest to include"
+    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "0")
+    hint = _behind_latest_hint("deno")
+    assert "not attempted this run" in hint
+    assert "bump manually" in hint
 
 
 def test_deno_hint_reports_tried_when_requested(monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
     hint = _behind_latest_hint("deno")
-    assert "--deno-targeted-bump was attempted but could not move them" in hint
+    assert "the targeted bump was attempted but could not move them" in hint
     assert "bump manually" in hint
 
 
 def test_poetry_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.delenv("REPO_OPS_POETRY_TARGETED_BUMP", raising=False)
+    monkeypatch.setenv("REPO_OPS_POETRY_TARGETED_BUMP", "0")
     hint = _behind_latest_hint("poetry")
-    assert "--poetry-targeted-bump" in hint
+    assert "not attempted this run" in hint
     assert "no latest mode" in hint
 
 
 def test_poetry_hint_reports_tried_when_requested(monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_POETRY_TARGETED_BUMP", "1")
     hint = _behind_latest_hint("poetry")
-    assert "--poetry-targeted-bump was attempted but could not move them" in hint
+    assert "the targeted bump was attempted but could not move them" in hint
     assert "bump manually" in hint
 
 
 def test_pdm_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.delenv("REPO_OPS_PDM_TARGETED_BUMP", raising=False)
+    monkeypatch.setenv("REPO_OPS_PDM_TARGETED_BUMP", "0")
     hint = _behind_latest_hint("pdm")
-    assert "--pdm-targeted-bump" in hint
+    assert "not attempted this run" in hint
     assert "no latest mode" in hint
 
 
 def test_pdm_hint_reports_tried_when_requested(monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_PDM_TARGETED_BUMP", "1")
     hint = _behind_latest_hint("pdm")
-    assert "--pdm-targeted-bump was attempted but could not move them" in hint
+    assert "the targeted bump was attempted but could not move them" in hint
     assert "bump manually" in hint
 
 
 def test_pipenv_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.delenv("REPO_OPS_PIPENV_TARGETED_BUMP", raising=False)
+    monkeypatch.setenv("REPO_OPS_PIPENV_TARGETED_BUMP", "0")
     hint = _behind_latest_hint("pipenv")
-    assert "--pipenv-targeted-bump" in hint
+    assert "not attempted this run" in hint
     assert "no latest mode" in hint
 
 
 def test_pipenv_hint_reports_tried_when_requested(monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_PIPENV_TARGETED_BUMP", "1")
     hint = _behind_latest_hint("pipenv")
-    assert "--pipenv-targeted-bump was attempted but could not move them" in hint
+    assert "the targeted bump was attempted but could not move them" in hint
     assert "bump manually" in hint
 
 
 def test_pip_tools_hint_default_when_not_requested(monkeypatch) -> None:
-    monkeypatch.delenv("REPO_OPS_PIP_TOOLS_TARGETED_BUMP", raising=False)
+    monkeypatch.setenv("REPO_OPS_PIP_TOOLS_TARGETED_BUMP", "0")
     hint = _behind_latest_hint("pip-tools")
-    assert "--pip-tools-targeted-bump" in hint
+    assert "not attempted this run" in hint
     assert "no latest mode" in hint
 
 
 def test_pip_tools_hint_reports_tried_when_requested(monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_PIP_TOOLS_TARGETED_BUMP", "1")
     hint = _behind_latest_hint("pip-tools")
-    assert "--pip-tools-targeted-bump was attempted but could not move them" in hint
+    assert "the targeted bump was attempted but could not move them" in hint
     assert "bump manually" in hint
 
 
@@ -361,13 +369,14 @@ def test_bun_targeted_bump_restores_snapshot_when_guard_raises(
 
 def test_yarn_hint_unaffected_by_generalization(monkeypatch) -> None:
     """Regression guard: generalizing the yarn branch must not change its text."""
-    monkeypatch.delenv("REPO_OPS_YARN_TARGETED_BUMP", raising=False)
+    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "0")
     assert _behind_latest_hint("yarn") == (
-        "peer/group-constrained; --latest can't move them — "
-        "pass --yarn-targeted-bump to attempt, or bump manually"
+        "peer/group-constrained; targeted bump not attempted this run — "
+        "drop --conservative, or set REPO_OPS_YARN_TARGETED_BUMP=1, to "
+        "attempt it, or bump manually"
     )
     monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
     assert _behind_latest_hint("yarn") == (
-        "peer/group-constrained; --yarn-targeted-bump was attempted but could not "
+        "peer/group-constrained; the targeted bump was attempted but could not "
         "move them (verify failed or still constrained) — bump manually"
     )
