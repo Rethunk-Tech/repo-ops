@@ -52,10 +52,10 @@ jobs:
           node-version: "24"
       - name: Enable Corepack (yarn)
         run: corepack enable
-      - uses: Rethunk-Tech/gh-actions/setup-bun@29b10bda2eaf82d59230f550b919bfa3bca59771 # v1.2
+      - uses: Rethunk-Tech/gh-actions/setup-bun@ea87a602a5214e1fb513feb22a035b7e0f3b9245 # v1.5
         with:
           skip-install: "true"
-      - uses: Rethunk-Tech/gh-actions/setup-go@0ddfe1fe8e7555566134593a3e291a47b412d75f # v1.3
+      - uses: Rethunk-Tech/gh-actions/setup-go@ea87a602a5214e1fb513feb22a035b7e0f3b9245 # v1.5
         with:
           go-version: "stable"
       - name: Install govulncheck
