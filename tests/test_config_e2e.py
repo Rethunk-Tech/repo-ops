@@ -222,46 +222,26 @@ def test_go_upgrade_mode_cli_value_overrides_ambient_snapshot(
         set_ambient_env(None)
 
 
-def test_fleet_run_resolves_actions_config_per_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Fleet runs use each bundle's action settings instead of the launch config."""
-    launcher = tmp_path / "launcher"
-    repo_a = tmp_path / "repo-a"
-    repo_b = tmp_path / "repo-b"
-    for path in (launcher, repo_a, repo_b):
-        path.mkdir()
-    (launcher / "pyproject.toml").write_text(
-        '[tool.repo-ops]\nactions_lint_level = "launcher"\n'
-        'actions_policy_level = "launcher"\n',
-        encoding="utf-8",
-    )
-    (repo_a / "pyproject.toml").write_text(
-        '[tool.repo-ops]\nactions_lint_level = "block"\n'
-        'actions_policy_level = "warn"\n',
-        encoding="utf-8",
-    )
-    (repo_b / "pyproject.toml").write_text(
-        '[tool.repo-ops]\nactions_lint_level = "off"\n'
-        'actions_policy_level = "report"\n',
-        encoding="utf-8",
-    )
+def _write_repo_configs(paths_and_toml: dict[Path, str]) -> None:
+    """Create each checkout dir (if needed) and its pyproject.toml."""
+    for path, toml in paths_and_toml.items():
+        path.mkdir(exist_ok=True)
+        (path / "pyproject.toml").write_text(toml, encoding="utf-8")
 
+
+def _fleet_bundles(
+    repo_paths: tuple[Path, Path], ecosystem: str, manager: str
+) -> tuple[list[Workspace], dict[Path, RepoBundle]]:
+    """Build the two-checkout Workspace/RepoBundle scaffolding fleet tests patch around."""
     workspaces = [
         Workspace(
-            path=repo_a,
-            ecosystem="actions",
-            manager="actions",
-            git_repo=repo_a,
-            label="repo-a",
-        ),
-        Workspace(
-            path=repo_b,
-            ecosystem="actions",
-            manager="actions",
-            git_repo=repo_b,
-            label="repo-b",
-        ),
+            path=path,
+            ecosystem=ecosystem,
+            manager=manager,
+            git_repo=path,
+            label=path.name,
+        )
+        for path in repo_paths
     ]
     bundles = {
         workspace.git_repo: RepoBundle(
@@ -271,11 +251,14 @@ def test_fleet_run_resolves_actions_config_per_checkout(
         )
         for workspace in workspaces
     }
-    captured: dict[Path, tuple[object, object]] = {}
+    return workspaces, bundles
 
-    monkeypatch.chdir(launcher)
-    monkeypatch.delenv("REPO_OPS_ACTIONS_LINT_LEVEL", raising=False)
-    monkeypatch.delenv("REPO_OPS_ACTIONS_POLICY_LEVEL", raising=False)
+
+def _patch_fleet_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+    workspaces: list[Workspace],
+    bundles: dict[Path, RepoBundle],
+) -> None:
     monkeypatch.setattr(
         run_mod.workspace_discovery,
         "discover_all",
@@ -286,6 +269,35 @@ def test_fleet_run_resolves_actions_config_per_checkout(
         "group_by_repo",
         lambda found, roots: bundles.copy(),
     )
+    monkeypatch.setattr(
+        run_mod.report, "print_json_report", lambda *args, **kwargs: None
+    )
+
+
+def test_fleet_run_resolves_actions_config_per_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fleet runs use each bundle's action settings instead of the launch config."""
+    launcher = tmp_path / "launcher"
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    _write_repo_configs(
+        {
+            launcher: '[tool.repo-ops]\nactions_lint_level = "launcher"\n'
+            'actions_policy_level = "launcher"\n',
+            repo_a: '[tool.repo-ops]\nactions_lint_level = "block"\n'
+            'actions_policy_level = "warn"\n',
+            repo_b: '[tool.repo-ops]\nactions_lint_level = "off"\n'
+            'actions_policy_level = "report"\n',
+        }
+    )
+    workspaces, bundles = _fleet_bundles((repo_a, repo_b), "actions", "actions")
+    captured: dict[Path, tuple[object, object]] = {}
+
+    monkeypatch.chdir(launcher)
+    monkeypatch.delenv("REPO_OPS_ACTIONS_LINT_LEVEL", raising=False)
+    monkeypatch.delenv("REPO_OPS_ACTIONS_POLICY_LEVEL", raising=False)
+    _patch_fleet_discovery(monkeypatch, workspaces, bundles)
     monkeypatch.setattr(
         run_mod.workspace_discovery,
         "merge_action_only_bundles",
@@ -302,9 +314,6 @@ def test_fleet_run_resolves_actions_config_per_checkout(
         return [], 0
 
     monkeypatch.setattr(run_mod.actions, "scan_actions", fake_scan)
-    monkeypatch.setattr(
-        run_mod.report, "print_json_report", lambda *args, **kwargs: None
-    )
 
     rc = run_mod.run_upgrade(
         apply=False,
@@ -569,48 +578,24 @@ def test_fleet_run_resolves_timeouts_per_checkout(
     launcher = tmp_path / "launcher"
     repo_a = tmp_path / "repo-a"
     repo_b = tmp_path / "repo-b"
-    for path in (launcher, repo_a, repo_b):
-        path.mkdir()
-    (launcher / "pyproject.toml").write_text(
-        "[tool.repo-ops]\ntimeout_check = 99\n", encoding="utf-8"
+    _write_repo_configs(
+        {
+            launcher: "[tool.repo-ops]\ntimeout_check = 99\n",
+            repo_a: "[tool.repo-ops]\n"
+            "timeout_check = 11\n"
+            "timeout_apply = 12\n"
+            "timeout_verify = 13\n"
+            "find_timeout = 14\n"
+            "git_timeout = 15\n",
+            repo_b: "[tool.repo-ops]\n"
+            "timeout_check = 21\n"
+            "timeout_apply = 22\n"
+            "timeout_verify = 23\n"
+            "find_timeout = 24\n"
+            "git_timeout = 25\n",
+        }
     )
-    (repo_a / "pyproject.toml").write_text(
-        "[tool.repo-ops]\n"
-        "timeout_check = 11\n"
-        "timeout_apply = 12\n"
-        "timeout_verify = 13\n"
-        "find_timeout = 14\n"
-        "git_timeout = 15\n",
-        encoding="utf-8",
-    )
-    (repo_b / "pyproject.toml").write_text(
-        "[tool.repo-ops]\n"
-        "timeout_check = 21\n"
-        "timeout_apply = 22\n"
-        "timeout_verify = 23\n"
-        "find_timeout = 24\n"
-        "git_timeout = 25\n",
-        encoding="utf-8",
-    )
-
-    workspaces = [
-        Workspace(
-            path=path,
-            ecosystem="actions",
-            manager="actions",
-            git_repo=path,
-            label=path.name,
-        )
-        for path in (repo_a, repo_b)
-    ]
-    bundles = {
-        workspace.git_repo: RepoBundle(
-            git_repo=workspace.git_repo,
-            label=workspace.label,
-            workspaces=[WorkspaceResult(workspace)],
-        )
-        for workspace in workspaces
-    }
+    workspaces, bundles = _fleet_bundles((repo_a, repo_b), "actions", "actions")
     captured: dict[Path, tuple[int, int, int, float, float]] = {}
 
     monkeypatch.chdir(launcher)
@@ -622,16 +607,7 @@ def test_fleet_run_resolves_timeouts_per_checkout(
         "REPO_OPS_GIT_TIMEOUT",
     ):
         monkeypatch.delenv(env_var, raising=False)
-    monkeypatch.setattr(
-        run_mod.workspace_discovery,
-        "discover_all",
-        lambda *args, **kwargs: workspaces,
-    )
-    monkeypatch.setattr(
-        run_mod.workspace_discovery,
-        "group_by_repo",
-        lambda found, roots: bundles.copy(),
-    )
+    _patch_fleet_discovery(monkeypatch, workspaces, bundles)
 
     def capture_timeouts(workspace_result: WorkspaceResult, **kwargs: object):
         workspace = workspace_result.workspace
@@ -649,9 +625,6 @@ def test_fleet_run_resolves_timeouts_per_checkout(
         "process_workspace",
         capture_timeouts,
     )
-    monkeypatch.setattr(
-        run_mod.report, "print_json_report", lambda *args, **kwargs: None
-    )
 
     rc = run_mod.run_upgrade(
         apply=False,
@@ -666,68 +639,38 @@ def test_fleet_run_resolves_timeouts_per_checkout(
 
 
 def test_fleet_run_resolves_node_verify_script_per_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
     """Fleet workers use each checkout's node verify script."""
     launcher = tmp_path / "launcher"
     repo_a = tmp_path / "repo-a"
     repo_b = tmp_path / "repo-b"
-    for path in (launcher, repo_a, repo_b):
-        path.mkdir()
-    (launcher / "pyproject.toml").write_text(
-        '[tool.repo-ops]\nnode_verify_script = "launcher-script"\n',
-        encoding="utf-8",
+    _write_repo_configs(
+        {launcher: '[tool.repo-ops]\nnode_verify_script = "launcher-script"\n'}
     )
     for path, script in (
         (repo_a, "repo-a-script"),
         (repo_b, "repo-b-script"),
     ):
-        (path / "pyproject.toml").write_text(
-            f'[tool.repo-ops]\nnode_verify_script = "{script}"\n',
-            encoding="utf-8",
+        _write_repo_configs(
+            {path: f'[tool.repo-ops]\nnode_verify_script = "{script}"\n'}
         )
         (path / "package.json").write_text(
             json.dumps({"scripts": {script: f"echo {script}"}}),
             encoding="utf-8",
         )
 
-    workspaces = [
-        Workspace(
-            path=path,
-            ecosystem="node",
-            manager="npm",
-            git_repo=path,
-            label=path.name,
-        )
-        for path in (repo_a, repo_b)
-    ]
-    bundles = {
-        workspace.git_repo: RepoBundle(
-            git_repo=workspace.git_repo,
-            label=workspace.label,
-            workspaces=[WorkspaceResult(workspace)],
-        )
-        for workspace in workspaces
-    }
+    workspaces, bundles = _fleet_bundles((repo_a, repo_b), "node", "npm")
     captured: dict[Path, str] = {}
 
     monkeypatch.chdir(launcher)
     monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
-    monkeypatch.setattr(
-        run_mod.workspace_discovery,
-        "discover_all",
-        lambda *args, **kwargs: workspaces,
-    )
-    monkeypatch.setattr(
-        run_mod.workspace_discovery,
-        "group_by_repo",
-        lambda found, roots: bundles.copy(),
-    )
+    _patch_fleet_discovery(monkeypatch, workspaces, bundles)
 
     def fake_run(cmd: list[str], cwd: Path, timeout: int = 0):
         if cmd[:2] == ["npm", "run"]:
             captured[cwd] = cmd[2]
-        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        return make_proc()
 
     def process_workspace(workspace_result: WorkspaceResult, **kwargs: object):
         assert verify_mod.verify_node(workspace_result.workspace) is None
@@ -738,9 +681,6 @@ def test_fleet_run_resolves_node_verify_script_per_checkout(
         run_mod.orchestration,
         "process_workspace",
         process_workspace,
-    )
-    monkeypatch.setattr(
-        run_mod.report, "print_json_report", lambda *args, **kwargs: None
     )
 
     rc = run_mod.run_upgrade(
@@ -772,7 +712,7 @@ def test_timeout_resolver_uses_global_config_outside_checkout_scope(
 
 
 def test_node_verify_script_uses_ambient_environment(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
     """Injected process values do not override the caller environment snapshot."""
     (tmp_path / "pyproject.toml").write_text(
@@ -794,7 +734,7 @@ def test_node_verify_script_uses_ambient_environment(
 
     def fake_run(cmd: list[str], cwd: Path, timeout: int = 0):
         commands.append(cmd)
-        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        return make_proc()
 
     monkeypatch.setenv("REPO_OPS_NODE_VERIFY_SCRIPT", "injected")
     set_ambient_env({"REPO_OPS_NODE_VERIFY_SCRIPT": "caller"})
@@ -808,7 +748,7 @@ def test_node_verify_script_uses_ambient_environment(
 
 
 def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
     """Fleet runs use each checkout's Go upgrade mode."""
     launcher = tmp_path / "launcher"
@@ -948,7 +888,7 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
             stdout = go_list_stdout
         else:
             raise AssertionError(f"unexpected command: {cmd}")
-        return type("Proc", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
+        return make_proc(stdout=stdout)
 
     monkeypatch.setattr(go_mod, "run", fake_go_run)
     repo_ops_go.register()

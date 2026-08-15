@@ -6,7 +6,6 @@ ALL network operations are mocked — no real git push or gh call is made.
 from __future__ import annotations
 
 from pathlib import Path
-from subprocess import CompletedProcess
 from unittest.mock import call, patch
 
 import pytest
@@ -30,14 +29,6 @@ from repo_ops_upgrade.pr import (
 # ---------------------------------------------------------------------------
 
 
-def _ok(stdout: str = "") -> CompletedProcess[str]:
-    return CompletedProcess(args=[], returncode=0, stdout=stdout, stderr="")
-
-
-def _fail(stderr: str = "err") -> CompletedProcess[str]:
-    return CompletedProcess(args=[], returncode=1, stdout="", stderr=stderr)
-
-
 def _bundle(tmp_path: Path, *, label: str = "org/my-repo") -> RepoBundle:
     ws = Workspace(
         path=tmp_path,
@@ -55,20 +46,22 @@ def _bundle(tmp_path: Path, *, label: str = "org/my-repo") -> RepoBundle:
 # ---------------------------------------------------------------------------
 
 
-def test_branch_name_slash_in_label() -> None:
-    assert compute_branch_name("org/my-repo") == "repo-ops/deps/org-my-repo"
-
-
-def test_branch_name_home_stripped() -> None:
-    assert compute_branch_name("~/src/foo") == "repo-ops/deps/src-foo"
-
-
-def test_branch_name_plain_label() -> None:
-    assert compute_branch_name("just-a-repo") == "repo-ops/deps/just-a-repo"
-
-
-def test_branch_name_custom_prefix() -> None:
-    assert compute_branch_name("org/repo", prefix="bumps") == "bumps/org-repo"
+@pytest.mark.parametrize(
+    ("label", "prefix", "expected"),
+    [
+        pytest.param(
+            "org/my-repo", None, "repo-ops/deps/org-my-repo", id="slash_in_label"
+        ),
+        pytest.param("~/src/foo", None, "repo-ops/deps/src-foo", id="home_stripped"),
+        pytest.param(
+            "just-a-repo", None, "repo-ops/deps/just-a-repo", id="plain_label"
+        ),
+        pytest.param("org/repo", "bumps", "bumps/org-repo", id="custom_prefix"),
+    ],
+)
+def test_branch_name(label: str, prefix: str | None, expected: str) -> None:
+    kwargs = {"prefix": prefix} if prefix is not None else {}
+    assert compute_branch_name(label, **kwargs) == expected
 
 
 def test_branch_name_deterministic_same_label() -> None:
@@ -102,8 +95,10 @@ def test_branch_name_empty_after_strip_uses_unnamed() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_gh_available_true_when_installed() -> None:
-    with patch("subprocess.run", return_value=_ok("gh version 2.0.0")) as mock_run:
+def test_gh_available_true_when_installed(make_proc) -> None:
+    with patch(
+        "subprocess.run", return_value=make_proc(stdout="gh version 2.0.0")
+    ) as mock_run:
         result = gh_available()
     assert result is True
     mock_run.assert_called_once()
@@ -115,8 +110,8 @@ def test_gh_available_false_when_not_found() -> None:
     assert result is False
 
 
-def test_gh_available_false_on_nonzero_exit() -> None:
-    with patch("subprocess.run", return_value=_fail()):
+def test_gh_available_false_on_nonzero_exit(make_proc) -> None:
+    with patch("subprocess.run", return_value=make_proc(returncode=1, stderr="err")):
         result = gh_available()
     assert result is False
 
@@ -126,16 +121,21 @@ def test_gh_available_false_on_nonzero_exit() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_branch_exists_local_true(tmp_path: Path) -> None:
-    with patch("repo_ops_upgrade.pr.run_git", return_value=_ok("abc123")) as m:
+def test_branch_exists_local_true(tmp_path: Path, make_proc) -> None:
+    with patch(
+        "repo_ops_upgrade.pr.run_git", return_value=make_proc(stdout="abc123")
+    ) as m:
         assert branch_exists_local(tmp_path, "repo-ops/deps/foo") is True
     m.assert_called_once_with(
         tmp_path, "rev-parse", "--verify", "refs/heads/repo-ops/deps/foo", timeout=10
     )
 
 
-def test_branch_exists_local_false(tmp_path: Path) -> None:
-    with patch("repo_ops_upgrade.pr.run_git", return_value=_fail()):
+def test_branch_exists_local_false(tmp_path: Path, make_proc) -> None:
+    with patch(
+        "repo_ops_upgrade.pr.run_git",
+        return_value=make_proc(returncode=1, stderr="err"),
+    ):
         assert branch_exists_local(tmp_path, "repo-ops/deps/foo") is False
 
 
@@ -144,13 +144,13 @@ def test_branch_exists_local_false(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_create_or_checkout_creates_new_branch(tmp_path: Path) -> None:
+def test_create_or_checkout_creates_new_branch(tmp_path: Path, make_proc) -> None:
     """When branch does not exist locally, uses checkout -b."""
     branch = "repo-ops/deps/x"
     with patch("repo_ops_upgrade.pr.run_git") as mock_git:
         # First call: rev-parse (branch does NOT exist)
         # Second call: checkout -b
-        mock_git.side_effect = [_fail(), _ok()]
+        mock_git.side_effect = [make_proc(returncode=1, stderr="err"), make_proc()]
         ok, err = create_or_checkout_branch(tmp_path, branch)
     assert ok is True
     assert err is None
@@ -159,20 +159,26 @@ def test_create_or_checkout_creates_new_branch(tmp_path: Path) -> None:
     )
 
 
-def test_create_or_checkout_switches_existing_branch(tmp_path: Path) -> None:
+def test_create_or_checkout_switches_existing_branch(tmp_path: Path, make_proc) -> None:
     """When branch already exists locally, uses checkout (no -b)."""
     branch = "repo-ops/deps/x"
     with patch("repo_ops_upgrade.pr.run_git") as mock_git:
-        mock_git.side_effect = [_ok("abc"), _ok()]  # exists; checkout ok
+        mock_git.side_effect = [
+            make_proc(stdout="abc"),
+            make_proc(),
+        ]  # exists; checkout ok
         ok, _err = create_or_checkout_branch(tmp_path, branch)
     assert ok is True
     assert mock_git.call_args_list[1] == call(tmp_path, "checkout", branch, timeout=30)
 
 
-def test_create_or_checkout_returns_error_on_fail(tmp_path: Path) -> None:
+def test_create_or_checkout_returns_error_on_fail(tmp_path: Path, make_proc) -> None:
     branch = "repo-ops/deps/x"
     with patch("repo_ops_upgrade.pr.run_git") as mock_git:
-        mock_git.side_effect = [_fail(), _fail("checkout failed")]
+        mock_git.side_effect = [
+            make_proc(returncode=1, stderr="err"),
+            make_proc(returncode=1, stderr="checkout failed"),
+        ]
         ok, err = create_or_checkout_branch(tmp_path, branch)
     assert ok is False
     assert err is not None
@@ -183,8 +189,8 @@ def test_create_or_checkout_returns_error_on_fail(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_push_branch_success(tmp_path: Path) -> None:
-    with patch("repo_ops_upgrade.pr.run_git", return_value=_ok()) as m:
+def test_push_branch_success(tmp_path: Path, make_proc) -> None:
+    with patch("repo_ops_upgrade.pr.run_git", return_value=make_proc()) as m:
         ok, err = push_branch(tmp_path, "repo-ops/deps/x")
     assert ok is True
     assert err is None
@@ -193,8 +199,11 @@ def test_push_branch_success(tmp_path: Path) -> None:
     )
 
 
-def test_push_branch_failure(tmp_path: Path) -> None:
-    with patch("repo_ops_upgrade.pr.run_git", return_value=_fail("remote rejected")):
+def test_push_branch_failure(tmp_path: Path, make_proc) -> None:
+    with patch(
+        "repo_ops_upgrade.pr.run_git",
+        return_value=make_proc(returncode=1, stderr="remote rejected"),
+    ):
         ok, err = push_branch(tmp_path, "repo-ops/deps/x")
     assert ok is False
     assert "remote rejected" in (err or "")
@@ -205,23 +214,28 @@ def test_push_branch_failure(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_gh_pr_exists_true(tmp_path: Path) -> None:
+def test_gh_pr_exists_true(tmp_path: Path, make_proc) -> None:
     url = "https://github.com/org/repo/pull/42"
-    with patch("repo_ops_upgrade.pr._run_gh", return_value=_ok(url + "\n")):
+    with patch(
+        "repo_ops_upgrade.pr._run_gh", return_value=make_proc(stdout=url + "\n")
+    ):
         exists, found_url = gh_pr_exists(tmp_path, "repo-ops/deps/x")
     assert exists is True
     assert found_url == url
 
 
-def test_gh_pr_exists_false_no_pr(tmp_path: Path) -> None:
-    with patch("repo_ops_upgrade.pr._run_gh", return_value=_fail("no pull request")):
+def test_gh_pr_exists_false_no_pr(tmp_path: Path, make_proc) -> None:
+    with patch(
+        "repo_ops_upgrade.pr._run_gh",
+        return_value=make_proc(returncode=1, stderr="no pull request"),
+    ):
         exists, url = gh_pr_exists(tmp_path, "repo-ops/deps/x")
     assert exists is False
     assert url is None
 
 
-def test_gh_pr_exists_false_empty_output(tmp_path: Path) -> None:
-    with patch("repo_ops_upgrade.pr._run_gh", return_value=_ok("")):
+def test_gh_pr_exists_false_empty_output(tmp_path: Path, make_proc) -> None:
+    with patch("repo_ops_upgrade.pr._run_gh", return_value=make_proc()):
         exists, _url = gh_pr_exists(tmp_path, "repo-ops/deps/x")
     assert exists is False
 
@@ -231,23 +245,37 @@ def test_gh_pr_exists_false_empty_output(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_detect_default_branch_from_gh(tmp_path: Path) -> None:
-    with patch("repo_ops_upgrade.pr._run_gh", return_value=_ok("develop\n")):
+def test_detect_default_branch_from_gh(tmp_path: Path, make_proc) -> None:
+    with patch(
+        "repo_ops_upgrade.pr._run_gh", return_value=make_proc(stdout="develop\n")
+    ):
         assert detect_default_branch(tmp_path) == "develop"
 
 
-def test_detect_default_branch_fallback_origin_head(tmp_path: Path) -> None:
+def test_detect_default_branch_fallback_origin_head(tmp_path: Path, make_proc) -> None:
     with (
-        patch("repo_ops_upgrade.pr._run_gh", return_value=_fail()),
-        patch("repo_ops_upgrade.pr.run_git", return_value=_ok("origin/main\n")),
+        patch(
+            "repo_ops_upgrade.pr._run_gh",
+            return_value=make_proc(returncode=1, stderr="err"),
+        ),
+        patch(
+            "repo_ops_upgrade.pr.run_git",
+            return_value=make_proc(stdout="origin/main\n"),
+        ),
     ):
         assert detect_default_branch(tmp_path) == "main"
 
 
-def test_detect_default_branch_ultimate_fallback(tmp_path: Path) -> None:
+def test_detect_default_branch_ultimate_fallback(tmp_path: Path, make_proc) -> None:
     with (
-        patch("repo_ops_upgrade.pr._run_gh", return_value=_fail()),
-        patch("repo_ops_upgrade.pr.run_git", return_value=_fail()),
+        patch(
+            "repo_ops_upgrade.pr._run_gh",
+            return_value=make_proc(returncode=1, stderr="err"),
+        ),
+        patch(
+            "repo_ops_upgrade.pr.run_git",
+            return_value=make_proc(returncode=1, stderr="err"),
+        ),
     ):
         assert detect_default_branch(tmp_path) == "main"
 
@@ -257,13 +285,13 @@ def test_detect_default_branch_ultimate_fallback(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_open_or_update_pr_opens_when_none_exists(tmp_path: Path) -> None:
+def test_open_or_update_pr_opens_when_none_exists(tmp_path: Path, make_proc) -> None:
     url = "https://github.com/org/repo/pull/1"
 
     def _gh_side(cmd, **kw):
         if "view" in cmd:
-            return _fail()  # no existing PR
-        return _ok(url + "\n")  # pr create succeeds
+            return make_proc(returncode=1, stderr="err")  # no existing PR
+        return make_proc(stdout=url + "\n")  # pr create succeeds
 
     with patch("repo_ops_upgrade.pr._run_gh", side_effect=_gh_side):
         status, result = open_or_update_pr(
@@ -273,12 +301,12 @@ def test_open_or_update_pr_opens_when_none_exists(tmp_path: Path) -> None:
     assert result == url
 
 
-def test_open_or_update_pr_noop_when_exists(tmp_path: Path) -> None:
+def test_open_or_update_pr_noop_when_exists(tmp_path: Path, make_proc) -> None:
     existing_url = "https://github.com/org/repo/pull/7"
 
     def _gh_side(cmd, **kw):
         if "view" in cmd:
-            return _ok(existing_url + "\n")
+            return make_proc(stdout=existing_url + "\n")
         pytest.fail("gh pr create must not be called when PR exists")
 
     with patch("repo_ops_upgrade.pr._run_gh", side_effect=_gh_side):
@@ -287,11 +315,13 @@ def test_open_or_update_pr_noop_when_exists(tmp_path: Path) -> None:
     assert url == existing_url
 
 
-def test_open_or_update_pr_returns_failed_on_create_error(tmp_path: Path) -> None:
+def test_open_or_update_pr_returns_failed_on_create_error(
+    tmp_path: Path, make_proc
+) -> None:
     def _gh_side(cmd, **kw):
         if "view" in cmd:
-            return _fail()
-        return _fail("gh pr create: authentication required")
+            return make_proc(returncode=1, stderr="err")
+        return make_proc(returncode=1, stderr="gh pr create: authentication required")
 
     with patch("repo_ops_upgrade.pr._run_gh", side_effect=_gh_side):
         status, err = open_or_update_pr(tmp_path, "b", base="main", title="T", body="B")
@@ -304,7 +334,7 @@ def test_open_or_update_pr_returns_failed_on_create_error(tmp_path: Path) -> Non
 # ---------------------------------------------------------------------------
 
 
-def _mock_happy_path(branch: str = "repo-ops/deps/org-my-repo") -> list:
+def _mock_happy_path(make_proc, branch: str = "repo-ops/deps/org-my-repo") -> list:
     """Return a side_effect list for the happy-path run_pr_flow mock sequence.
 
     Call order inside run_pr_flow:
@@ -316,21 +346,21 @@ def _mock_happy_path(branch: str = "repo-ops/deps/org-my-repo") -> list:
     """
     pr_url = "https://github.com/org/my-repo/pull/1"
     return [
-        _ok("gh version 2.0"),  # gh --version
-        _fail(),  # rev-parse: branch does NOT exist
-        _ok(),  # checkout -b
-        _ok(),  # push --set-upstream
-        _ok("main\n"),  # gh repo view defaultBranchRef
-        _fail(),  # gh pr view: no open PR
-        _ok(pr_url + "\n"),  # gh pr create
+        make_proc(stdout="gh version 2.0"),  # gh --version
+        make_proc(returncode=1, stderr="err"),  # rev-parse: branch does NOT exist
+        make_proc(),  # checkout -b
+        make_proc(),  # push --set-upstream
+        make_proc(stdout="main\n"),  # gh repo view defaultBranchRef
+        make_proc(returncode=1, stderr="err"),  # gh pr view: no open PR
+        make_proc(stdout=pr_url + "\n"),  # gh pr create
     ]
 
 
-def test_run_pr_flow_happy_path(tmp_path: Path) -> None:
+def test_run_pr_flow_happy_path(tmp_path: Path, make_proc) -> None:
     """Full happy path: branch created, pushed, PR opened."""
     bundle = _bundle(tmp_path)
     pr_url = "https://github.com/org/my-repo/pull/1"
-    side_effects = _mock_happy_path()
+    side_effects = _mock_happy_path(make_proc)
 
     _all_calls: list = []
 
@@ -361,18 +391,18 @@ def test_run_pr_flow_happy_path(tmp_path: Path) -> None:
     assert outcome.branch == "repo-ops/deps/org-my-repo"
 
 
-def test_run_pr_flow_idempotent_existing_pr(tmp_path: Path) -> None:
+def test_run_pr_flow_idempotent_existing_pr(tmp_path: Path, make_proc) -> None:
     """When a PR already exists, run_pr_flow returns 'exists' without re-opening."""
     bundle = _bundle(tmp_path)
     existing_url = "https://github.com/org/my-repo/pull/5"
 
     effects = [
-        _ok("gh version 2"),  # gh --version
-        _fail(),  # rev-parse: branch not local
-        _ok(),  # checkout -b
-        _ok(),  # push
-        _ok("main\n"),  # detect default branch
-        _ok(existing_url + "\n"),  # gh pr view: PR exists → no-op
+        make_proc(stdout="gh version 2"),  # gh --version
+        make_proc(returncode=1, stderr="err"),  # rev-parse: branch not local
+        make_proc(),  # checkout -b
+        make_proc(),  # push
+        make_proc(stdout="main\n"),  # detect default branch
+        make_proc(stdout=existing_url + "\n"),  # gh pr view: PR exists → no-op
     ]
 
     with (
@@ -389,24 +419,24 @@ def test_run_pr_flow_idempotent_existing_pr(tmp_path: Path) -> None:
     assert outcome.pr_url == existing_url
 
 
-def test_run_pr_flow_idempotent_existing_branch(tmp_path: Path) -> None:
+def test_run_pr_flow_idempotent_existing_branch(tmp_path: Path, make_proc) -> None:
     """When the branch already exists locally, checkout (not -b) is used."""
     bundle = _bundle(tmp_path)
     pr_url = "https://github.com/org/my-repo/pull/2"
     git_calls: list[tuple] = []
 
     effects = {
-        "subprocess": [_ok("gh version 2")],
+        "subprocess": [make_proc(stdout="gh version 2")],
         "git": [
-            _ok("abc123"),  # rev-parse: branch EXISTS
-            _ok(),  # checkout (no -b)
-            _ok(),  # push
-            _fail(),  # origin/HEAD: not set
+            make_proc(stdout="abc123"),  # rev-parse: branch EXISTS
+            make_proc(),  # checkout (no -b)
+            make_proc(),  # push
+            make_proc(returncode=1, stderr="err"),  # origin/HEAD: not set
         ],
         "gh": [
-            _ok("main\n"),  # gh repo view
-            _fail(),  # gh pr view: no PR
-            _ok(pr_url + "\n"),  # gh pr create
+            make_proc(stdout="main\n"),  # gh repo view
+            make_proc(returncode=1, stderr="err"),  # gh pr view: no PR
+            make_proc(stdout=pr_url + "\n"),  # gh pr create
         ],
     }
 
@@ -439,15 +469,15 @@ def test_run_pr_flow_gh_missing(tmp_path: Path) -> None:
     assert outcome.branch == "repo-ops/deps/org-my-repo"
 
 
-def test_run_pr_flow_push_failure(tmp_path: Path) -> None:
+def test_run_pr_flow_push_failure(tmp_path: Path, make_proc) -> None:
     """Push failure marks the repo failed; batch continues (no exception)."""
     bundle = _bundle(tmp_path)
 
-    effects_sub = [_ok("gh version 2")]
+    effects_sub = [make_proc(stdout="gh version 2")]
     effects_git = [
-        _fail(),  # rev-parse: no local branch
-        _ok(),  # checkout -b
-        _fail("push rejected"),  # push failure
+        make_proc(returncode=1, stderr="err"),  # rev-parse: no local branch
+        make_proc(),  # checkout -b
+        make_proc(returncode=1, stderr="push rejected"),  # push failure
     ]
 
     with (
@@ -461,19 +491,24 @@ def test_run_pr_flow_push_failure(tmp_path: Path) -> None:
     assert "push" in (outcome.detail or "").lower()
 
 
-def test_run_pr_flow_pr_create_auth_error(tmp_path: Path) -> None:
+def test_run_pr_flow_pr_create_auth_error(tmp_path: Path, make_proc) -> None:
     """gh pr create auth failure is captured as failed, not raised."""
     bundle = _bundle(tmp_path)
 
-    effects_git = [_fail(), _ok(), _ok(), _fail()]
+    effects_git = [
+        make_proc(returncode=1, stderr="err"),
+        make_proc(),
+        make_proc(),
+        make_proc(returncode=1, stderr="err"),
+    ]
     effects_gh = [
-        _ok("main\n"),  # detect default branch
-        _fail(),  # gh pr view: no PR
-        _fail("authentication required"),  # gh pr create fails
+        make_proc(stdout="main\n"),  # detect default branch
+        make_proc(returncode=1, stderr="err"),  # gh pr view: no PR
+        make_proc(returncode=1, stderr="authentication required"),  # gh pr create fails
     ]
 
     with (
-        patch("subprocess.run", return_value=_ok("gh version 2")),
+        patch("subprocess.run", return_value=make_proc(stdout="gh version 2")),
         patch("repo_ops_upgrade.pr.run_git", side_effect=effects_git),
         patch("repo_ops_upgrade.pr._run_gh", side_effect=effects_gh),
     ):

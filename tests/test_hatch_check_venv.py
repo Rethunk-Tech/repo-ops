@@ -29,7 +29,7 @@ def _make_ws(tmp_path: Path) -> Workspace:
 
 
 def test_check_hatch_uses_temp_venv_not_workspace_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ):
     monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
     (tmp_path / "pyproject.toml").write_text(
@@ -48,7 +48,7 @@ def test_check_hatch_uses_temp_venv_not_workspace_dir(
             venv = Path(cmd[2])
             assert venv.parent != tmp_path
             venv.mkdir(parents=True, exist_ok=True)
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return make_proc()
 
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
@@ -61,7 +61,7 @@ def test_check_hatch_uses_temp_venv_not_workspace_dir(
 
 
 def test_check_hatch_raises_on_pip_install_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ):
     """Failed ``uv pip install`` must surface RuntimeError, not silently return []."""
     monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
@@ -75,12 +75,10 @@ def test_check_hatch_raises_on_pip_install_failure(
         if cmd[:2] == ["uv", "venv"]:
             venv = Path(cmd[2])
             venv.mkdir(parents=True, exist_ok=True)
-            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return make_proc()
         if cmd[:3] == ["uv", "pip", "install"]:
-            return subprocess.CompletedProcess(
-                cmd, 1, stdout="", stderr="No matching distribution found"
-            )
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return make_proc(returncode=1, stderr="No matching distribution found")
+        return make_proc()
 
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
@@ -91,7 +89,7 @@ def test_check_hatch_raises_on_pip_install_failure(
 
 
 def test_check_hatch_raises_on_venv_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ):
     """Failed ``uv venv`` must also surface RuntimeError."""
     monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
@@ -103,10 +101,8 @@ def test_check_hatch_raises_on_venv_failure(
 
     def fake_run(cmd, cwd, timeout=600, env=None):
         if cmd[:2] == ["uv", "venv"]:
-            return subprocess.CompletedProcess(
-                cmd, 1, stdout="", stderr="permission denied"
-            )
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return make_proc(returncode=1, stderr="permission denied")
+        return make_proc()
 
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
@@ -116,41 +112,34 @@ def test_check_hatch_raises_on_venv_failure(
         check_hatch(ws)
 
 
-def test_install_target_picks_test_when_dev_absent(tmp_path: Path):
-    """Extras detection must prefer ``[test]`` over hardcoded ``[dev]`` when dev is absent."""
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "demo"\nversion = "0.1.0"\n'
-        "[project.optional-dependencies]\n"
-        'test = ["pytest"]\n'
-        'lint = ["ruff"]\n',
-        encoding="utf-8",
+@pytest.mark.parametrize(
+    ("optional_deps", "expected"),
+    [
+        pytest.param(
+            'test = ["pytest"]\nlint = ["ruff"]\n', ".[test]", id="test_over_lint"
+        ),
+        pytest.param(
+            'dev = ["pytest", "ruff"]\ntest = ["pytest"]\n',
+            ".[dev]",
+            id="dev_over_test",
+        ),
+        pytest.param("", ".", id="no_extras"),
+    ],
+)
+def test_install_target_extras_detection(
+    tmp_path: Path, optional_deps: str, expected: str
+) -> None:
+    """Extras detection prefers ``[dev]`` over ``[test]``, and falls back to bare ``.`` with neither."""
+    header = '[project]\nname = "demo"\nversion = "0.1.0"\n'
+    section = (
+        "[project.optional-dependencies]\n" + optional_deps if optional_deps else ""
     )
-    assert _install_target(tmp_path) == ".[test]"
-
-
-def test_install_target_prefers_dev(tmp_path: Path):
-    """When both ``dev`` and ``test`` exist, ``dev`` is preferred."""
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "demo"\nversion = "0.1.0"\n'
-        "[project.optional-dependencies]\n"
-        'dev = ["pytest", "ruff"]\n'
-        'test = ["pytest"]\n',
-        encoding="utf-8",
-    )
-    assert _install_target(tmp_path) == ".[dev]"
-
-
-def test_install_target_falls_back_to_bare_dot(tmp_path: Path):
-    """No matching optional-dependencies → plain ``"."`` (no extras)."""
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "demo"\nversion = "0.1.0"\n',
-        encoding="utf-8",
-    )
-    assert _install_target(tmp_path) == "."
+    (tmp_path / "pyproject.toml").write_text(header + section, encoding="utf-8")
+    assert _install_target(tmp_path) == expected
 
 
 def test_check_hatch_raises_on_pip_list_outdated_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ):
     """Failed ``uv pip list --outdated`` must raise RuntimeError, not silently return []."""
     monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
@@ -164,14 +153,12 @@ def test_check_hatch_raises_on_pip_list_outdated_failure(
         if cmd[:2] == ["uv", "venv"]:
             venv = Path(cmd[2])
             venv.mkdir(parents=True, exist_ok=True)
-            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return make_proc()
         if cmd[:3] == ["uv", "pip", "install"]:
-            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return make_proc()
         if cmd[:3] == ["uv", "pip", "list"]:
-            return subprocess.CompletedProcess(
-                cmd, 1, stdout="", stderr="uv pip list failed: network error"
-            )
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return make_proc(returncode=1, stderr="uv pip list failed: network error")
+        return make_proc()
 
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
@@ -182,7 +169,7 @@ def test_check_hatch_raises_on_pip_list_outdated_failure(
 
 
 def test_check_hatch_uses_detected_extras(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ):
     """check_hatch passes the detected extras group to ``uv pip install``."""
     monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
@@ -201,7 +188,7 @@ def test_check_hatch_uses_detected_extras(
             venv.mkdir(parents=True, exist_ok=True)
         if cmd[:3] == ["uv", "pip", "install"]:
             install_calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return make_proc()
 
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
@@ -236,7 +223,7 @@ def test_check_hatch_uv_lock_without_uv_warns_and_returns_empty(
     assert "without uv on PATH" in capsys.readouterr().err
 
 
-def test_check_uv_lock_passes_timeout_check(tmp_path: Path) -> None:
+def test_check_uv_lock_passes_timeout_check(tmp_path: Path, make_proc) -> None:
     """#70 — check_uv_lock must call ``run`` with ``timeout=TIMEOUT_CHECK``."""
     ws = _make_ws(tmp_path)
     captured_timeout: list[int | None] = []
@@ -245,7 +232,7 @@ def test_check_uv_lock_passes_timeout_check(tmp_path: Path) -> None:
         cmd: list[str], cwd: Path, timeout: int | None = None, env: object = None
     ) -> subprocess.CompletedProcess[str]:
         captured_timeout.append(timeout)
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return make_proc()
 
     with patch("repo_ops_py.uv_lock.run", fake_run):
         check_uv_lock(ws)
@@ -254,7 +241,7 @@ def test_check_uv_lock_passes_timeout_check(tmp_path: Path) -> None:
 
 
 def test_check_hatch_pip_install_uses_timeout_check(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
     """#93 — venv-path ``uv pip install -e`` must use TIMEOUT_CHECK, not hardcoded 300."""
     monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
@@ -273,7 +260,7 @@ def test_check_hatch_pip_install_uses_timeout_check(
             venv.mkdir(parents=True, exist_ok=True)
         if cmd[:3] == ["uv", "pip", "install"]:
             install_timeout.append(timeout)
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return make_proc()
 
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
@@ -292,7 +279,7 @@ def test_check_hatch_pip_install_uses_timeout_check(
 
 
 def test_apply_hatch_no_uv_lock_no_flag_is_noop(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
     """#132 — no uv.lock + flag unset → apply_hatch returns without creating uv.lock."""
     monkeypatch.delenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", raising=False)
@@ -307,7 +294,7 @@ def test_apply_hatch_no_uv_lock_no_flag_is_noop(
         cmd: list[str], cwd: object, timeout: object = None, env: object = None
     ) -> subprocess.CompletedProcess[str]:
         run_calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return make_proc()
 
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
@@ -321,7 +308,7 @@ def test_apply_hatch_no_uv_lock_no_flag_is_noop(
 
 
 def test_apply_hatch_no_uv_lock_with_flag_runs_uv_lock(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
     """#132 — no uv.lock + flag set → apply_hatch runs uv lock then uv lock --upgrade."""
     monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
@@ -336,7 +323,7 @@ def test_apply_hatch_no_uv_lock_with_flag_runs_uv_lock(
         cmd: list[str], cwd: object, timeout: object = None, env: object = None
     ) -> subprocess.CompletedProcess[str]:
         run_calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return make_proc()
 
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
@@ -412,7 +399,7 @@ def test_apply_hatch_no_uv_warns_and_returns(
 
 
 def test_apply_hatch_with_existing_uv_lock_runs_apply_uv_lock(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
     """F154 — existing uv.lock → skip uv lock creation, run apply_uv_lock only."""
     monkeypatch.delenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", raising=False)
@@ -428,7 +415,7 @@ def test_apply_hatch_with_existing_uv_lock_runs_apply_uv_lock(
         cmd: list[str], cwd: object, timeout: object = None, env: object = None
     ) -> subprocess.CompletedProcess[str]:
         run_calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return make_proc()
 
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
@@ -443,7 +430,7 @@ def test_apply_hatch_with_existing_uv_lock_runs_apply_uv_lock(
 
 
 def test_check_hatch_with_uv_lock_delegates_to_check_uv_lock(
-    tmp_path: Path,
+    tmp_path: Path, make_proc
 ) -> None:
     """F155 — uv.lock present → check_uv_lock (uv lock --upgrade --dry-run)."""
     (tmp_path / "pyproject.toml").write_text(
@@ -458,9 +445,7 @@ def test_check_hatch_with_uv_lock_delegates_to_check_uv_lock(
         cmd: list[str], cwd: object, timeout: object = None, env: object = None
     ) -> subprocess.CompletedProcess[str]:
         run_calls.append(list(cmd))
-        return subprocess.CompletedProcess(
-            cmd, 0, stdout="would upgrade foo 1.0 -> 2.0\n", stderr=""
-        )
+        return make_proc(stdout="would upgrade foo 1.0 -> 2.0\n")
 
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
@@ -474,7 +459,7 @@ def test_check_hatch_with_uv_lock_delegates_to_check_uv_lock(
 
 
 def test_check_hatch_venv_and_list_use_timeout_check(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
     """F151 — uv venv and uv pip list --outdated use resolve_timeout_check."""
     monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
@@ -495,7 +480,7 @@ def test_check_hatch_venv_and_list_use_timeout_check(
             timeouts["install"] = timeout
         elif cmd[:3] == ["uv", "pip", "list"]:
             timeouts["list"] = timeout
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return make_proc()
 
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),

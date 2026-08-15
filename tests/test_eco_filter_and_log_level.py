@@ -35,32 +35,26 @@ def test_eco_filter_choices_includes_precommit_and_actions():
     assert "actions" in ECO_FILTER_CHOICES
 
 
-def test_inventory_parser_accepts_precommit_filter():
-    """inventory --filter precommit must parse without error."""
-    parser = build_inventory_parser()
-    args = parser.parse_args(["--filter", "precommit"])
-    assert args.eco_filter == "precommit"
-
-
-def test_inventory_parser_accepts_actions_filter():
-    """inventory --filter actions must parse without error."""
-    parser = build_inventory_parser()
-    args = parser.parse_args(["--filter", "actions"])
-    assert args.eco_filter == "actions"
-
-
-def test_upgrade_parser_accepts_precommit_filter():
-    """plan/apply --filter precommit must parse without error."""
-    parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(["--filter", "precommit"])
-    assert args.eco_filter == "precommit"
-
-
-def test_upgrade_parser_accepts_actions_filter():
-    """plan/apply --filter actions must parse without error."""
-    parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(["--filter", "actions"])
-    assert args.eco_filter == "actions"
+@pytest.mark.parametrize(
+    ("parser_builder", "filter_value"),
+    [
+        (build_inventory_parser, "precommit"),
+        (build_inventory_parser, "actions"),
+        (lambda: build_upgrade_parser(apply=False), "precommit"),
+        (lambda: build_upgrade_parser(apply=False), "actions"),
+    ],
+    ids=[
+        "inventory-precommit",
+        "inventory-actions",
+        "upgrade-precommit",
+        "upgrade-actions",
+    ],
+)
+def test_filter_flag_accepted(parser_builder, filter_value):
+    """--filter precommit/actions must parse without error on inventory and plan/apply (#16)."""
+    parser = parser_builder()
+    args = parser.parse_args(["--filter", filter_value])
+    assert args.eco_filter == filter_value
 
 
 # ---------------------------------------------------------------------------
@@ -194,18 +188,19 @@ def test_inventory_main_filter_precommit_excludes_node(tmp_path: Path, capsys):
 # ---------------------------------------------------------------------------
 
 
-def test_log_level_argument_registered_on_inventory_parser():
-    """inventory parser must accept --log-level."""
-    parser = build_inventory_parser()
-    args = parser.parse_args(["--log-level", "info"])
-    assert args.log_level == "info"
-
-
-def test_log_level_argument_registered_on_upgrade_parser():
-    """plan/apply parser must accept --log-level."""
-    parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(["--log-level", "warning"])
-    assert args.log_level == "warning"
+@pytest.mark.parametrize(
+    ("parser_builder", "level"),
+    [
+        (build_inventory_parser, "info"),
+        (lambda: build_upgrade_parser(apply=False), "warning"),
+    ],
+    ids=["inventory", "upgrade"],
+)
+def test_log_level_argument_registered(parser_builder, level):
+    """Both the inventory and plan/apply parsers must accept --log-level."""
+    parser = parser_builder()
+    args = parser.parse_args(["--log-level", level])
+    assert args.log_level == level
 
 
 def test_log_level_choices():

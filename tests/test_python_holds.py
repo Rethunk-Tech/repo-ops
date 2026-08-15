@@ -9,6 +9,7 @@ mechanism, not a safety net.
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -161,63 +162,6 @@ def _pdm_ws(tmp_path: Path) -> Workspace:
     )
 
 
-def test_apply_pdm_clamps_package_above_ceiling(tmp_path: Path, make_proc) -> None:
-    from repo_ops_py_pdm import pdm
-
-    lock_path = tmp_path / "pdm.lock"
-    lock_path.write_text(
-        '[[package]]\nname = "typescript-stub"\nversion = "7.2.0"\n', encoding="utf-8"
-    )
-    manifest_path = tmp_path / "pyproject.toml"
-    manifest_before = b"[project]\nname = 'demo'\n"
-    manifest_path.write_bytes(manifest_before)
-
-    def fake_run(cmd, cwd, timeout=None):
-        if cmd[:2] == ["pdm", "add"]:
-            manifest_path.write_bytes(b"[project]\nname = 'changed'\n")
-            lock_path.write_text(
-                '[[package]]\nname = "typescript-stub"\nversion = "6.9.0"\n',
-                encoding="utf-8",
-            )
-        return make_proc()
-
-    with (
-        patch.object(
-            core_holds,
-            "_global_holds_cached",
-            return_value=(_held_rule("typescript-stub"),),
-        ),
-        patch.object(core_holds, "_repo_holds_cached", return_value=()),
-        patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
-        patch.object(pdm, "run", side_effect=fake_run),
-    ):
-        pdm.apply_pdm(_pdm_ws(tmp_path))
-
-    assert "6.9.0" in lock_path.read_text(encoding="utf-8")
-    assert manifest_path.read_bytes() == manifest_before
-
-
-def test_apply_pdm_raises_when_clamp_fails(tmp_path: Path, make_proc) -> None:
-    from repo_ops_py_pdm import pdm
-
-    (tmp_path / "pdm.lock").write_text(
-        '[[package]]\nname = "typescript-stub"\nversion = "7.2.0"\n', encoding="utf-8"
-    )
-
-    with (
-        patch.object(
-            core_holds,
-            "_global_holds_cached",
-            return_value=(_held_rule("typescript-stub"),),
-        ),
-        patch.object(core_holds, "_repo_holds_cached", return_value=()),
-        patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
-        patch.object(pdm, "run", return_value=make_proc()),
-        pytest.raises(RuntimeError, match="hold"),
-    ):
-        pdm.apply_pdm(_pdm_ws(tmp_path))
-
-
 # ---------------------------------------------------------------------------
 # pipenv
 # ---------------------------------------------------------------------------
@@ -234,6 +178,8 @@ def _pipenv_ws(tmp_path: Path) -> Workspace:
 
 
 def test_apply_pipenv_clamps_package_above_ceiling(tmp_path: Path, make_proc) -> None:
+    """pipenv's Pipfile.lock is JSON, unlike pdm/poetry's TOML — kept separate from
+    the shared clamp-down parametrization below."""
     from repo_ops_py_pipenv import pipenv
 
     lock_path = tmp_path / "Pipfile.lock"
@@ -271,28 +217,6 @@ def test_apply_pipenv_clamps_package_above_ceiling(tmp_path: Path, make_proc) ->
     assert manifest_path.read_bytes() == manifest_before
 
 
-def test_apply_pipenv_raises_when_clamp_fails(tmp_path: Path, make_proc) -> None:
-    from repo_ops_py_pipenv import pipenv
-
-    (tmp_path / "Pipfile.lock").write_text(
-        json.dumps({"default": {"typescript-stub": {"version": "==7.2.0"}}}),
-        encoding="utf-8",
-    )
-
-    with (
-        patch.object(
-            core_holds,
-            "_global_holds_cached",
-            return_value=(_held_rule("typescript-stub"),),
-        ),
-        patch.object(core_holds, "_repo_holds_cached", return_value=()),
-        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch.object(pipenv, "run", return_value=make_proc()),
-        pytest.raises(RuntimeError, match="hold"),
-    ):
-        pipenv.apply_pipenv(_pipenv_ws(tmp_path))
-
-
 # ---------------------------------------------------------------------------
 # poetry
 # ---------------------------------------------------------------------------
@@ -308,10 +232,93 @@ def _poetry_ws(tmp_path: Path) -> Workspace:
     )
 
 
-def test_apply_poetry_clamps_package_above_ceiling(tmp_path: Path, make_proc) -> None:
-    from repo_ops_py_poetry import poetry
+# ---------------------------------------------------------------------------
+# pdm / poetry — identical clamp-down shape (TOML lock, `<mgr> add`, `pyproject.toml`
+# manifest); pdm / pipenv / poetry — identical raise-on-clamp-failure shape.
+# ---------------------------------------------------------------------------
 
-    lock_path = tmp_path / "poetry.lock"
+_CLAMP_SUCCESS_CASES = [
+    pytest.param(
+        "repo_ops_py_pdm.pdm",
+        "apply_pdm",
+        _pdm_ws,
+        "pdm.lock",
+        ["pdm", "add"],
+        "repo_ops_py_pdm.pdm.shutil.which",
+        "/usr/bin/pdm",
+        id="pdm",
+    ),
+    pytest.param(
+        "repo_ops_py_poetry.poetry",
+        "apply_poetry",
+        _poetry_ws,
+        "poetry.lock",
+        ["poetry", "add"],
+        "repo_ops_py_poetry.poetry.shutil.which",
+        "/usr/bin/poetry",
+        id="poetry",
+    ),
+]
+
+_CLAMP_FAIL_CASES = [
+    pytest.param(
+        "repo_ops_py_pdm.pdm",
+        "apply_pdm",
+        _pdm_ws,
+        "pdm.lock",
+        '[[package]]\nname = "typescript-stub"\nversion = "7.2.0"\n',
+        "repo_ops_py_pdm.pdm.shutil.which",
+        "/usr/bin/pdm",
+        id="pdm",
+    ),
+    pytest.param(
+        "repo_ops_py_pipenv.pipenv",
+        "apply_pipenv",
+        _pipenv_ws,
+        "Pipfile.lock",
+        json.dumps({"default": {"typescript-stub": {"version": "==7.2.0"}}}),
+        "repo_ops_py_pipenv.pipenv.shutil.which",
+        "/usr/bin/pipenv",
+        id="pipenv",
+    ),
+    pytest.param(
+        "repo_ops_py_poetry.poetry",
+        "apply_poetry",
+        _poetry_ws,
+        "poetry.lock",
+        '[[package]]\nname = "typescript-stub"\nversion = "7.2.0"\n',
+        "repo_ops_py_poetry.poetry.shutil.which",
+        "/usr/bin/poetry",
+        id="poetry",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    (
+        "module_path",
+        "apply_fn_name",
+        "ws_factory",
+        "lock_filename",
+        "add_cmd_prefix",
+        "which_target",
+        "which_binary",
+    ),
+    _CLAMP_SUCCESS_CASES,
+)
+def test_apply_clamps_package_above_ceiling(
+    tmp_path: Path,
+    make_proc,
+    module_path: str,
+    apply_fn_name: str,
+    ws_factory,
+    lock_filename: str,
+    add_cmd_prefix: list[str],
+    which_target: str,
+    which_binary: str,
+) -> None:
+    module = importlib.import_module(module_path)
+    lock_path = tmp_path / lock_filename
     lock_path.write_text(
         '[[package]]\nname = "typescript-stub"\nversion = "7.2.0"\n', encoding="utf-8"
     )
@@ -320,7 +327,7 @@ def test_apply_poetry_clamps_package_above_ceiling(tmp_path: Path, make_proc) ->
     manifest_path.write_bytes(manifest_before)
 
     def fake_run(cmd, cwd, timeout=None):
-        if cmd[:2] == ["poetry", "add"]:
+        if cmd[: len(add_cmd_prefix)] == add_cmd_prefix:
             manifest_path.write_bytes(b"[project]\nname = 'changed'\n")
             lock_path.write_text(
                 '[[package]]\nname = "typescript-stub"\nversion = "6.9.0"\n',
@@ -335,21 +342,40 @@ def test_apply_poetry_clamps_package_above_ceiling(tmp_path: Path, make_proc) ->
             return_value=(_held_rule("typescript-stub"),),
         ),
         patch.object(core_holds, "_repo_holds_cached", return_value=()),
-        patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry"),
-        patch.object(poetry, "run", side_effect=fake_run),
+        patch(which_target, return_value=which_binary),
+        patch.object(module, "run", side_effect=fake_run),
     ):
-        poetry.apply_poetry(_poetry_ws(tmp_path))
+        getattr(module, apply_fn_name)(ws_factory(tmp_path))
 
     assert "6.9.0" in lock_path.read_text(encoding="utf-8")
     assert manifest_path.read_bytes() == manifest_before
 
 
-def test_apply_poetry_raises_when_clamp_fails(tmp_path: Path, make_proc) -> None:
-    from repo_ops_py_poetry import poetry
-
-    (tmp_path / "poetry.lock").write_text(
-        '[[package]]\nname = "typescript-stub"\nversion = "7.2.0"\n', encoding="utf-8"
-    )
+@pytest.mark.parametrize(
+    (
+        "module_path",
+        "apply_fn_name",
+        "ws_factory",
+        "lock_filename",
+        "lock_content",
+        "which_target",
+        "which_binary",
+    ),
+    _CLAMP_FAIL_CASES,
+)
+def test_apply_raises_when_clamp_fails(
+    tmp_path: Path,
+    make_proc,
+    module_path: str,
+    apply_fn_name: str,
+    ws_factory,
+    lock_filename: str,
+    lock_content: str,
+    which_target: str,
+    which_binary: str,
+) -> None:
+    module = importlib.import_module(module_path)
+    (tmp_path / lock_filename).write_text(lock_content, encoding="utf-8")
 
     with (
         patch.object(
@@ -358,11 +384,11 @@ def test_apply_poetry_raises_when_clamp_fails(tmp_path: Path, make_proc) -> None
             return_value=(_held_rule("typescript-stub"),),
         ),
         patch.object(core_holds, "_repo_holds_cached", return_value=()),
-        patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry"),
-        patch.object(poetry, "run", return_value=make_proc()),
+        patch(which_target, return_value=which_binary),
+        patch.object(module, "run", return_value=make_proc()),
         pytest.raises(RuntimeError, match="hold"),
     ):
-        poetry.apply_poetry(_poetry_ws(tmp_path))
+        getattr(module, apply_fn_name)(ws_factory(tmp_path))
 
 
 # ---------------------------------------------------------------------------
