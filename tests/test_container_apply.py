@@ -30,28 +30,41 @@ def _make_ws(path: Path) -> Workspace:
 # ---------------------------------------------------------------------------
 
 
-def test_replace_tag_in_line_basic() -> None:
-    line = "FROM nginx:1.25\n"
-    result = _replace_tag_in_line(line, "nginx", "1.25", "1.26")
-    assert result == "FROM nginx:1.26\n"
-
-
-def test_replace_tag_in_line_preserves_indentation() -> None:
-    line = "    image: nginx:1.25\n"
-    result = _replace_tag_in_line(line, "nginx", "1.25", "1.26")
-    assert result == "    image: nginx:1.26\n"
-
-
-def test_replace_tag_in_line_no_match_untouched() -> None:
-    line = "FROM redis:7.2\n"
-    result = _replace_tag_in_line(line, "nginx", "1.25", "1.26")
-    assert result == line
-
-
-def test_replace_tag_in_line_suffix_preserved() -> None:
-    line = "FROM nginx:1.25-alpine\n"
-    result = _replace_tag_in_line(line, "nginx", "1.25-alpine", "1.26-alpine")
-    assert result == "FROM nginx:1.26-alpine\n"
+@pytest.mark.parametrize(
+    "line, image, old_tag, new_tag, expected",
+    [
+        ("FROM nginx:1.25\n", "nginx", "1.25", "1.26", "FROM nginx:1.26\n"),
+        (
+            "    image: nginx:1.25\n",
+            "nginx",
+            "1.25",
+            "1.26",
+            "    image: nginx:1.26\n",
+        ),
+        ("FROM redis:7.2\n", "nginx", "1.25", "1.26", "FROM redis:7.2\n"),
+        (
+            "FROM nginx:1.25-alpine\n",
+            "nginx",
+            "1.25-alpine",
+            "1.26-alpine",
+            "FROM nginx:1.26-alpine\n",
+        ),
+        # A bump targeting `image:1` must not fire on a line pinned to `image:1.5`.
+        ("FROM nginx:1.5\n", "nginx", "1", "2", "FROM nginx:1.5\n"),
+        # A later, boundary-correct occurrence of the tag still gets replaced.
+        (
+            "FROM nginx:1.5 AS base\nFROM nginx:1 AS final\n",
+            "nginx",
+            "1",
+            "2",
+            "FROM nginx:1.5 AS base\nFROM nginx:2 AS final\n",
+        ),
+    ],
+)
+def test_replace_tag_in_line(
+    line: str, image: str, old_tag: str, new_tag: str, expected: str
+) -> None:
+    assert _replace_tag_in_line(line, image, old_tag, new_tag) == expected
 
 
 def test_replace_tag_in_line_comment_untouched() -> None:
@@ -62,20 +75,6 @@ def test_replace_tag_in_line_comment_untouched() -> None:
     # This tests the replace logic in isolation; the higher-level apply loop
     # only calls it for lines that actually contain the image:tag.
     assert "nginx:1.26" in result
-
-
-def test_replace_tag_in_line_no_tag_prefix_collision() -> None:
-    """A bump targeting `image:1` must not fire on a line pinned to `image:1.5`."""
-    line = "FROM nginx:1.5\n"
-    result = _replace_tag_in_line(line, "nginx", "1", "2")
-    assert result == line
-
-
-def test_replace_tag_in_line_skips_collision_then_matches_real_occurrence() -> None:
-    """A later, boundary-correct occurrence of the tag still gets replaced."""
-    line = "FROM nginx:1.5 AS base\nFROM nginx:1 AS final\n"
-    result = _replace_tag_in_line(line, "nginx", "1", "2")
-    assert result == "FROM nginx:1.5 AS base\nFROM nginx:2 AS final\n"
 
 
 # ---------------------------------------------------------------------------

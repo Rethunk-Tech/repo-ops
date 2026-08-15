@@ -81,12 +81,30 @@ def _make_http_error(
 # ---------------------------------------------------------------------------
 
 
-def test_parse_www_authenticate_all_fields() -> None:
-    header = 'Bearer realm="https://auth.example.com/token",service="registry.example.com",scope="repository:myimage:pull"'
+@pytest.mark.parametrize(
+    "header, expected",
+    [
+        (
+            'Bearer realm="https://auth.example.com/token",service="registry.example.com",scope="repository:myimage:pull"',
+            {
+                "realm": "https://auth.example.com/token",
+                "service": "registry.example.com",
+                "scope": "repository:myimage:pull",
+            },
+        ),
+        (
+            "Bearer realm=https://auth.example.com/token,service=registry.example.com",
+            {
+                "realm": "https://auth.example.com/token",
+                "service": "registry.example.com",
+            },
+        ),
+    ],
+)
+def test_parse_www_authenticate(header: str, expected: dict[str, str]) -> None:
     result = _parse_www_authenticate(header)
-    assert result["realm"] == "https://auth.example.com/token"
-    assert result["service"] == "registry.example.com"
-    assert result["scope"] == "repository:myimage:pull"
+    for key, value in expected.items():
+        assert result[key] == value
 
 
 def test_parse_www_authenticate_no_scope() -> None:
@@ -94,15 +112,7 @@ def test_parse_www_authenticate_no_scope() -> None:
         'Bearer realm="https://auth.example.com/token",service="registry.example.com"'
     )
     result = _parse_www_authenticate(header)
-    assert result["realm"] == "https://auth.example.com/token"
     assert "scope" not in result
-
-
-def test_parse_www_authenticate_unquoted_values() -> None:
-    header = "Bearer realm=https://auth.example.com/token,service=registry.example.com"
-    result = _parse_www_authenticate(header)
-    assert result["realm"] == "https://auth.example.com/token"
-    assert result["service"] == "registry.example.com"
 
 
 # ---------------------------------------------------------------------------
@@ -110,58 +120,36 @@ def test_parse_www_authenticate_unquoted_values() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_basic_auth_for_host_found(tmp_path: Path) -> None:
-    creds = base64.b64encode(b"user:pass").decode()
-    cfg = {"auths": {"ghcr.io": {"auth": creds}}}
-    cfg_file = tmp_path / "config.json"
-    cfg_file.write_text(json.dumps(cfg))
+_creds = base64.b64encode(b"user:pass").decode()
+_hub_creds = base64.b64encode(b"dockerhub_user:token").decode()
+
+
+@pytest.mark.parametrize(
+    "cfg, host, expected",
+    [
+        ({"auths": {"ghcr.io": {"auth": _creds}}}, "ghcr.io", f"Basic {_creds}"),
+        ({"auths": {"ghcr.io": {"auth": "dXNlcjpwYXNz"}}}, "quay.io", None),
+        (None, "ghcr.io", None),
+        # Only a credsStore entry → no auth key → None (report-only path).
+        ({"auths": {}, "credsStore": "osxkeychain"}, "ghcr.io", None),
+        # docker.io auth stored under index.docker.io/v1/ is found for registry-1.
+        (
+            {"auths": {"https://index.docker.io/v1/": {"auth": _hub_creds}}},
+            "registry-1.docker.io",
+            f"Basic {_hub_creds}",
+        ),
+    ],
+)
+def test_basic_auth_for_host(
+    cfg: dict | None, host: str, expected: str | None, tmp_path: Path
+) -> None:
+    if cfg is not None:
+        (tmp_path / "config.json").write_text(json.dumps(cfg))
 
     with patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}):
-        result = _basic_auth_for_host("ghcr.io")
+        result = _basic_auth_for_host(host)
 
-    assert result == f"Basic {creds}"
-
-
-def test_basic_auth_for_host_not_found(tmp_path: Path) -> None:
-    cfg = {"auths": {"ghcr.io": {"auth": "dXNlcjpwYXNz"}}}
-    cfg_file = tmp_path / "config.json"
-    cfg_file.write_text(json.dumps(cfg))
-
-    with patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}):
-        result = _basic_auth_for_host("quay.io")
-
-    assert result is None
-
-
-def test_basic_auth_no_config_file(tmp_path: Path) -> None:
-    with patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}):
-        result = _basic_auth_for_host("ghcr.io")
-    assert result is None
-
-
-def test_basic_auth_creds_store_only_returns_none(tmp_path: Path) -> None:
-    """Only a credsStore entry → no auth key → return None (report-only path)."""
-    cfg = {"auths": {}, "credsStore": "osxkeychain"}
-    cfg_file = tmp_path / "config.json"
-    cfg_file.write_text(json.dumps(cfg))
-
-    with patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}):
-        result = _basic_auth_for_host("ghcr.io")
-
-    assert result is None
-
-
-def test_basic_auth_docker_registry_aliases(tmp_path: Path) -> None:
-    """docker.io auth stored under index.docker.io/v1/ is found for registry-1."""
-    creds = base64.b64encode(b"dockerhub_user:token").decode()
-    cfg = {"auths": {"https://index.docker.io/v1/": {"auth": creds}}}
-    cfg_file = tmp_path / "config.json"
-    cfg_file.write_text(json.dumps(cfg))
-
-    with patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}):
-        result = _basic_auth_for_host("registry-1.docker.io")
-
-    assert result == f"Basic {creds}"
+    assert result == expected
 
 
 # ---------------------------------------------------------------------------
