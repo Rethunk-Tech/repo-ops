@@ -18,12 +18,14 @@ from urllib.parse import quote
 
 from repo_ops_core.config import (
     ambient_env,
+    coerce_bool_setting,
     load_global_config,
     load_repo_config,
     process_env_cli_override,
     resolve_setting,
 )
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
+from repo_ops_core.filesystem import restore_file, snapshot_file
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
@@ -32,7 +34,6 @@ from repo_ops_models import Change, Workspace
 
 _AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 _RUST_TARGETED_BUMP_ENV = "REPO_OPS_RUST_TARGETED_BUMP"
-_TRUE_VALUES = ("1", "true", "yes", "on")
 
 
 def set_rust_audit_version_overrides(overrides: dict[str, str]) -> None:
@@ -52,9 +53,7 @@ def _rust_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
         repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
         global_cfg=load_global_config(),
     )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in _TRUE_VALUES
+    return coerce_bool_setting(raw)
 
 
 def _resolve_crate_hold(ws: Workspace, crate_name: str) -> HoldRule | None:
@@ -454,17 +453,6 @@ def _replace_cargo_requirement(
     return changed
 
 
-def _cargo_snapshot(path: Path) -> bytes | None:
-    return path.read_bytes() if path.is_file() else None
-
-
-def _cargo_restore(path: Path, snapshot: bytes | None) -> None:
-    if snapshot is None:
-        path.unlink(missing_ok=True)
-    else:
-        path.write_bytes(snapshot)
-
-
 def _apply_cargo_targeted_bumps(
     ws: Workspace,
     candidates: list[Change],
@@ -479,8 +467,8 @@ def _apply_cargo_targeted_bumps(
         ):
             remaining.append(candidate)
             continue
-        manifest_snapshot = _cargo_snapshot(manifest)
-        lock_snapshot = _cargo_snapshot(lockfile)
+        manifest_snapshot = snapshot_file(manifest)
+        lock_snapshot = snapshot_file(lockfile)
         requirement = candidate.from_ver
         if not _replace_cargo_requirement(
             manifest,
@@ -502,11 +490,11 @@ def _apply_cargo_targeted_bumps(
             ws.path,
             timeout=resolve_timeout_apply(),
         )
-        lock_advanced = _cargo_snapshot(lockfile) != lock_snapshot
+        lock_advanced = snapshot_file(lockfile) != lock_snapshot
         if proc.returncode == 0 and lock_advanced:
             continue
-        _cargo_restore(manifest, manifest_snapshot)
-        _cargo_restore(lockfile, lock_snapshot)
+        restore_file(manifest, manifest_snapshot)
+        restore_file(lockfile, lock_snapshot)
         remaining.append(candidate)
     return remaining
 
