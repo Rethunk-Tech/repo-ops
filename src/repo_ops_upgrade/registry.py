@@ -39,10 +39,6 @@ def register(manager: str, checker: Checker, applier: Applier) -> None:
     APPLIERS[manager] = applier
 
 
-def get_checker(manager: str) -> Checker | None:
-    return CHECKERS.get(manager)
-
-
 def check_workspace(ws: Workspace) -> WorkspaceResult:
     result = WorkspaceResult(workspace=ws)
     try:

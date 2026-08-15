@@ -18,11 +18,15 @@ from repo_ops_core.config import (
 )
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
-from repo_ops_core.holds import HoldRule, resolve_hold
-from repo_ops_core.holds import _global_holds_cached as _core_global_holds_cached
-from repo_ops_core.holds import _repo_holds_cached as _core_repo_holds_cached
+from repo_ops_core.holds import (
+    HoldRule,
+    _global_holds_cached,
+    _repo_holds_cached,
+    resolve_hold,
+)
 from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_upgrade import holds, tags
+from repo_ops_upgrade.tags import is_semver_tag
 
 logger = logging.getLogger(__name__)
 
@@ -324,14 +328,6 @@ class SubmoduleTagBump:
         }
 
 
-def _is_semver_tag(tag: str) -> bool:
-    return tags.is_semver_tag(tag)
-
-
-def _has_v_prefix(tag: str) -> bool:
-    return tags.has_v_prefix(tag)
-
-
 def _fetch_remote_tags(
     url: str, *, timeout: int = _LS_REMOTE_TIMEOUT
 ) -> list[str] | None:
@@ -425,14 +421,6 @@ def _resolve_sha_refresh(
 # ---------------------------------------------------------------------------
 # Package version-ceiling ("hold") rules
 # ---------------------------------------------------------------------------
-
-
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return _core_global_holds_cached()
-
-
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return _core_repo_holds_cached(repo_root)
 
 
 def _resolve_submodule_hold(link: SubmoduleLink) -> HoldRule | None:
@@ -570,7 +558,7 @@ def check_submodule_tag_advances(
             )
             continue
 
-        if not _is_semver_tag(current_tag):
+        if not is_semver_tag(current_tag):
             bumps.append(
                 SubmoduleTagBump(
                     path=link.path,
@@ -746,7 +734,7 @@ def _enforce_version_ceilings(links: list[SubmoduleLink], *, allow_dirty: bool) 
                     f"{rule.max_version} (submodule): no available tag "
                     "satisfies ceiling"
                 )
-        elif _is_semver_tag(current_tag):
+        elif is_semver_tag(current_tag):
             if version_satisfies_ceiling(current_tag.lstrip("vV"), rule.max_version):
                 continue
             tags = _fetch_remote_tags(link.url)

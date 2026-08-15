@@ -609,7 +609,7 @@ def add_upgrade_common_arguments(
                 "subject (model from REPO_OPS_COMMIT_AGENT_MODEL / commit_agent_model, "
                 "default "
                 "composer-2.5; needs CURSOR_API_KEY and optional "
-                "repo-ops-upgrade[commit-agent-cursor])."
+                "repo-ops[commit-agent-cursor])."
             ),
         )
         exe.add_argument(

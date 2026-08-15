@@ -26,7 +26,7 @@ from repo_ops_core.constants import (
     resolve_timeout_verify,
 )
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
-from repo_ops_upgrade import commit_agent_cursor, commit_agent_providers
+from repo_ops_upgrade import commit_agent_cursor
 
 # ---------------------------------------------------------------------------
 # apply_config_to_env unit tests
@@ -123,11 +123,11 @@ def test_commit_agent_model_uses_repo_config_over_injected_env(
         encoding="utf-8",
     )
     monkeypatch.setenv("REPO_OPS_COMMIT_AGENT_MODEL", "injected-model")
-    commit_agent_providers.set_ambient_env({})
+    set_ambient_env({})
     try:
         assert commit_agent_cursor._resolve_agent_model(tmp_path) == "repo-model"
     finally:
-        commit_agent_providers.set_ambient_env(None)
+        set_ambient_env(None)
 
 
 # ---------------------------------------------------------------------------

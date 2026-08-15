@@ -6,12 +6,14 @@ import os
 import re
 from pathlib import Path
 
-from repo_ops_core.config import load_global_config, load_repo_config, resolve_setting
-from repo_ops_models import RepoBundle
-from repo_ops_upgrade.commit_agent_providers import (
-    COMMIT_AGENT_INSTALL_HINT,
+from repo_ops_core.config import (
     ambient_env,
+    load_global_config,
+    load_repo_config,
+    resolve_setting,
 )
+from repo_ops_models import RepoBundle
+from repo_ops_upgrade.commit_agent_providers import COMMIT_AGENT_INSTALL_HINT
 
 
 def _resolve_agent_model(repo_path: Path | None = None) -> str:

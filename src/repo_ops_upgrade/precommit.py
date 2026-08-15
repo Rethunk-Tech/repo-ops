@@ -33,10 +33,13 @@ from repo_ops_core.config import (
     process_env_cli_override,
     resolve_setting,
 )
-from repo_ops_core.holds import HoldRule, resolve_hold
-from repo_ops_core.holds import _global_holds_cached as _core_global_holds_cached
-from repo_ops_core.holds import _repo_holds_cached as _core_repo_holds_cached
-from repo_ops_core.holds import workspace_rel as _core_workspace_rel
+from repo_ops_core.holds import (
+    HoldRule,
+    _global_holds_cached,
+    _repo_holds_cached,
+    resolve_hold,
+)
+from repo_ops_core.holds import workspace_rel as _workspace_rel
 from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade import holds
@@ -183,14 +186,6 @@ def _is_sha_rev(rev: str) -> bool:
     return bool(_SHA_RE.match(rev))
 
 
-def _is_semver_like(tag: str) -> bool:
-    return tag_utils.is_semver_tag(tag)
-
-
-def _has_v_prefix(tag: str) -> bool:
-    return tag_utils.has_v_prefix(tag)
-
-
 def _repo_short_name(repo_url: str) -> str:
     """Return a short ``owner/repo`` label for a URL, or the URL itself."""
     # e.g. https://github.com/pre-commit/pre-commit-hooks → pre-commit/pre-commit-hooks
@@ -201,18 +196,6 @@ def _repo_short_name(repo_url: str) -> str:
 # ---------------------------------------------------------------------------
 # Package version-ceiling ("hold") rules
 # ---------------------------------------------------------------------------
-
-
-def _workspace_rel(ws: Workspace) -> str:
-    return _core_workspace_rel(ws)
-
-
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return _core_global_holds_cached()
-
-
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return _core_repo_holds_cached(repo_root)
 
 
 def _resolve_precommit_hold(ws: Workspace, package: str) -> HoldRule | None:
@@ -421,7 +404,7 @@ def check_precommit(ws: Workspace) -> list[Change]:
             continue
 
         # Non-semver tag (branch names like "main", "master", misc strings):
-        if not _is_semver_like(rev):
+        if not tag_utils.is_semver_tag(rev):
             changes.append(
                 Change(
                     name=label,
@@ -501,7 +484,7 @@ def _enforce_version_ceilings(
                     f"hold: failed to clamp {package} back to <={rule.max_version} "
                     "(pre-commit): no available tag satisfies ceiling"
                 )
-        elif _is_semver_like(rev):
+        elif tag_utils.is_semver_tag(rev):
             if version_satisfies_ceiling(rev.lstrip("v"), rule.max_version):
                 continue
             tags = _fetch_tags_for_repo(repo_url)
@@ -583,7 +566,7 @@ def apply_precommit(ws: Workspace) -> None:
                     line_bumps[rev_line_no] = new_sha
             continue
 
-        if not _is_semver_like(from_ver):
+        if not tag_utils.is_semver_tag(from_ver):
             continue
 
         tags = _fetch_tags_for_repo(repo_url)

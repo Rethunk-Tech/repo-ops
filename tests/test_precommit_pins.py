@@ -26,8 +26,6 @@ from repo_ops_models import Workspace
 from repo_ops_upgrade.precommit import (
     _clear_tag_cache,
     _fetch_tags_for_repo,
-    _has_v_prefix,
-    _is_semver_like,
     _is_sha_rev,
     _parse_precommit_repos,
     _resolve_latest_precommit_rev,
@@ -224,24 +222,6 @@ def test_is_sha_rev_short_sha() -> None:
 def test_is_sha_rev_tag_not_sha() -> None:
     assert _is_sha_rev("v4.5.0") is False
     assert _is_sha_rev("23.3.0") is False
-
-
-def test_is_semver_like_v_prefix() -> None:
-    assert _is_semver_like("v4.5.0") is True
-
-
-def test_is_semver_like_bare() -> None:
-    assert _is_semver_like("23.3.0") is True
-
-
-def test_is_semver_like_branch_names() -> None:
-    assert _is_semver_like("main") is False
-    assert _is_semver_like("master") is False
-
-
-def test_has_v_prefix() -> None:
-    assert _has_v_prefix("v1.0.0") is True
-    assert _has_v_prefix("1.0.0") is False
 
 
 # ---------------------------------------------------------------------------

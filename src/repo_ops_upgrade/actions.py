@@ -15,9 +15,12 @@ import time
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from repo_ops_core.holds import HoldRule, resolve_hold
-from repo_ops_core.holds import _global_holds_cached as _core_global_holds_cached
-from repo_ops_core.holds import _repo_holds_cached as _core_repo_holds_cached
+from repo_ops_core.holds import (
+    HoldRule,
+    _global_holds_cached,
+    _repo_holds_cached,
+    resolve_hold,
+)
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import ActionBump
@@ -728,14 +731,6 @@ def _resolve_latest_target(info: dict, tag_style: TagStyle) -> str | None:
 # ---------------------------------------------------------------------------
 # Package version-ceiling ("hold") rules
 # ---------------------------------------------------------------------------
-
-
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return _core_global_holds_cached()
-
-
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return _core_repo_holds_cached(repo_root)
 
 
 def _resolve_actions_hold(repo: Path, package: str) -> HoldRule | None:

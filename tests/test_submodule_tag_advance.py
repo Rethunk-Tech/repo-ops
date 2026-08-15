@@ -23,12 +23,12 @@ from repo_ops_upgrade.submodules import (
     SubmoduleTagBump,
     _clear_submodule_tag_cache,
     _fetch_remote_tags,
-    _is_semver_tag,
     _resolve_latest_submodule_tag,
     apply_submodule_tag_advances,
     check_submodule_tag_advances,
     discover_submodules_under_roots,
 )
+from repo_ops_upgrade.tags import has_v_prefix, is_semver_tag
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -69,6 +69,7 @@ def _make_link(
         ("v10.0.0", True),
         ("v1.0.0-rc1", True),
         ("1.0.0-alpha.1", True),
+        ("23.3.0", True),
         ("main", False),
         ("master", False),
         ("", False),
@@ -77,7 +78,15 @@ def _make_link(
     ],
 )
 def test_is_semver_tag(tag: str, expected: bool) -> None:
-    assert _is_semver_tag(tag) is expected
+    assert is_semver_tag(tag) is expected
+
+
+@pytest.mark.parametrize(
+    "tag,expected",
+    [("v1.0.0", True), ("1.0.0", False)],
+)
+def test_has_v_prefix(tag: str, expected: bool) -> None:
+    assert has_v_prefix(tag) is expected
 
 
 # ---------------------------------------------------------------------------

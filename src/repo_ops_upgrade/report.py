@@ -621,15 +621,6 @@ def count_failures(bundles: dict[Path, RepoBundle]) -> int:
     return n
 
 
-def count_workspace_skips(bundles: dict[Path, RepoBundle]) -> int:
-    return sum(
-        1
-        for bundle in bundles.values()
-        for wr in bundle.workspaces
-        if wr.status == "skip"
-    )
-
-
 def any_workspace_skip_or_fail(bundles: dict[Path, RepoBundle]) -> bool:
     return any(
         wr.status in ("fail", "skip")
