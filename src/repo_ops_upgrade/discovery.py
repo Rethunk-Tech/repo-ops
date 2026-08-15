@@ -15,7 +15,6 @@ from repo_ops_core.discovery import discover_repos
 from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.git import git_repo_for, repo_label
 from repo_ops_core.walk import iter_scanned_dirs
-from repo_ops_go.go import register_go_work_dir
 from repo_ops_js.workspaces import (
     detect_node_manager,
     path_is_yarn_workspace_child,
@@ -359,6 +358,11 @@ def discover_workspaces_in_root(
         # classification hints in go.py can name the actionable directory.
         go_work_dir = _find_go_work(mdir, git)
         if go_work_dir is not None:
+            # Imported here rather than at module scope: repo_ops_go.go imports
+            # repo_ops_upgrade, so a top-level edge back to it makes discovery
+            # unimportable depending on which module the process loads first.
+            from repo_ops_go.go import register_go_work_dir
+
             register_go_work_dir(mdir.resolve(), go_work_dir)
         _register_workspace(mdir, "go", "go", record_skip=record_skip, found=found)
 
