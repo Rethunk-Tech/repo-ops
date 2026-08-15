@@ -2,25 +2,21 @@
 
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import sys
-from collections.abc import Iterator
-from contextlib import contextmanager
-from http.client import HTTPSConnection
-from pathlib import Path
-from urllib.parse import quote
 
 from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
-from repo_ops_core.filesystem import read_toml_file
-from repo_ops_core.holds import HoldRule, resolve_package_hold
+from repo_ops_core.filesystem import read_toml_file, restore_file, snapshot_file
+from repo_ops_core.holds import resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
-from repo_ops_core.version_utils import hold_ceiling_spec, version_satisfies_ceiling
+from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
+from repo_ops_py.pypi import pypi_latest as _pypi_latest
+from repo_ops_py.version_ceiling import enforce_version_ceilings
 
 _PDM_TARGETED_BUMP_ENV = "REPO_OPS_PDM_TARGETED_BUMP"
 
@@ -35,22 +31,6 @@ def _pdm_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
 #
 # In-range ``pdm update`` handles the lockfile; opt-in targeted ``pdm add``
 # moves direct constraints, while this clamp restores held manifests.
-
-
-@contextmanager
-def _preserve_manifest(path: Path) -> Iterator[None]:
-    original = path.read_bytes() if path.exists() else None
-    try:
-        yield
-    finally:
-        if original is not None:
-            path.write_bytes(original)
-        else:
-            path.unlink(missing_ok=True)
-
-
-def _resolve_pkg_hold(ws: Workspace, package: str) -> HoldRule | None:
-    return resolve_package_hold(ws, package)
 
 
 def _pdm_lock_versions(ws: Workspace) -> dict[str, str]:
@@ -94,48 +74,10 @@ def _pdm_direct_dependencies(ws: Workspace) -> dict[str, str]:
 
 
 def _pdm_latest_version(package: str) -> str:
-    connection = HTTPSConnection("pypi.org", timeout=resolve_timeout_check())
-    try:
-        connection.request(
-            "GET",
-            f"/pypi/{quote(package, safe='')}/json",
-            headers={"User-Agent": "repo-ops"},
-        )
-        response = connection.getresponse()
-        if not 200 <= response.status < 300:
-            raise RuntimeError(
-                f"registry lookup returned HTTP {response.status} for {package}"
-            )
-        document = json.loads(response.read().decode("utf-8"))
-    except (OSError, UnicodeError, ValueError) as exc:
-        raise RuntimeError(f"registry lookup failed for {package}: {exc}") from exc
-    finally:
-        connection.close()
-    if not isinstance(document, dict):
-        raise RuntimeError(f"registry lookup returned invalid data for {package}")
-    info = document.get("info")
-    if isinstance(info, dict) and isinstance(info.get("version"), str):
-        return info["version"]
-    releases = document.get("releases")
-    if not isinstance(releases, dict):
-        raise RuntimeError(f"registry lookup returned no version for {package}")
-    versions = [
-        version
-        for version, files in releases.items()
-        if isinstance(version, str)
-        and isinstance(files, list)
-        and any(
-            isinstance(file, dict) and file.get("yanked") is not True for file in files
-        )
-    ]
-    if not versions:
-        raise RuntimeError(f"registry lookup returned no version for {package}")
-    return max(versions, key=_pdm_version_key)
-
-
-def _pdm_version_key(version: str) -> tuple[tuple[int, ...], str]:
-    numbers = tuple(int(part) for part in re.findall(r"\d+", version))
-    return numbers, version
+    latest = _pypi_latest(package)
+    if latest is None:
+        raise RuntimeError(f"registry lookup failed for {package}")
+    return latest
 
 
 def _pdm_requirement_satisfied(version: str, requirement: str) -> bool:
@@ -155,7 +97,7 @@ def _pdm_latest_direct_changes(ws: Workspace) -> list[Change]:
             latest = _pdm_latest_version(name)
         except RuntimeError:
             continue
-        if _pdm_version_key(latest) > _pdm_version_key(
+        if semver_tuple(latest) > semver_tuple(
             resolved
         ) and not _pdm_requirement_satisfied(latest, requirement):
             changes.append(Change(name, resolved, latest))
@@ -171,17 +113,6 @@ def _pdm_bumped_requirement(requirement: str, latest: str) -> str:
     return f"=={latest}"
 
 
-def _pdm_snapshot(path: Path) -> bytes | None:
-    return path.read_bytes() if path.is_file() else None
-
-
-def _pdm_restore(path: Path, snapshot: bytes | None) -> None:
-    if snapshot is None:
-        path.unlink(missing_ok=True)
-    else:
-        path.write_bytes(snapshot)
-
-
 def _apply_pdm_targeted_bumps(
     ws: Workspace,
     candidates: list[Change],
@@ -195,14 +126,14 @@ def _apply_pdm_targeted_bumps(
         if requirement is None:
             remaining.append(candidate)
             continue
-        rule = _resolve_pkg_hold(ws, candidate.name)
+        rule = resolve_package_hold(ws, candidate.name)
         if rule is not None and not version_satisfies_ceiling(
             candidate.to, rule.max_version
         ):
             remaining.append(candidate)
             continue
-        manifest_snapshot = _pdm_snapshot(manifest)
-        lock_snapshot = _pdm_snapshot(lockfile)
+        manifest_snapshot = snapshot_file(manifest)
+        lock_snapshot = snapshot_file(lockfile)
         try:
             bumped = _pdm_bumped_requirement(requirement, candidate.to)
             proc = run(
@@ -217,8 +148,8 @@ def _apply_pdm_targeted_bumps(
                 timeout=resolve_timeout_apply(),
             )
         except Exception:
-            _pdm_restore(manifest, manifest_snapshot)
-            _pdm_restore(lockfile, lock_snapshot)
+            restore_file(manifest, manifest_snapshot)
+            restore_file(lockfile, lock_snapshot)
             raise
         landed_versions = _pdm_lock_versions(ws)
         landed = next(
@@ -231,44 +162,21 @@ def _apply_pdm_targeted_bumps(
         )
         if proc.returncode == 0 and landed == candidate.to:
             continue
-        _pdm_restore(manifest, manifest_snapshot)
-        _pdm_restore(lockfile, lock_snapshot)
+        restore_file(manifest, manifest_snapshot)
+        restore_file(lockfile, lock_snapshot)
         remaining.append(candidate)
     return remaining
 
 
 def _enforce_version_ceilings(ws: Workspace) -> None:
-    """Post-apply clamp-down: correct any locked package resolved above its ceiling.
-
-    Mirrors ``repo_ops_py.uv_lock``'s enforcement — see its docstring for why
-    this is the only mechanism (no per-package targeted install) and why it
-    also catches a hold added after the package was already locked past it.
-    """
-    versions = _pdm_lock_versions(ws)
-    if not versions:
-        return
-    for name, resolved in versions.items():
-        rule = _resolve_pkg_hold(ws, name)
-        if rule is None or version_satisfies_ceiling(resolved, rule.max_version):
-            continue
-        spec = f"{name}{hold_ceiling_spec(rule.max_version)}"
-        with _preserve_manifest(ws.path / "pyproject.toml"):
-            proc = run(
-                ["pdm", "add", spec],
-                ws.path,
-                timeout=resolve_timeout_apply(),
-            )
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"hold: failed to clamp {name} back to <={rule.max_version} "
-                f"(pdm): {proc.stderr.strip()}"
-            )
-        landed = _pdm_lock_versions(ws).get(name)
-        if landed is None or not version_satisfies_ceiling(landed, rule.max_version):
-            raise RuntimeError(
-                f"hold: {name} still at {landed or resolved} after clamp "
-                f"attempt, expected <= {rule.max_version} (pdm)"
-            )
+    enforce_version_ceilings(
+        ws,
+        tool="pdm",
+        manifest_name="pyproject.toml",
+        lock_versions=_pdm_lock_versions,
+        clamp_command=lambda name, spec: ["pdm", "add", spec],
+        run=run,
+    )
 
 
 def check_pdm(
