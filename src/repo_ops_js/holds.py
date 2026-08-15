@@ -114,3 +114,18 @@ def enforce_holds(
             )
         corrected.append(Change(name, landed, over_ceiling))
     return corrected
+
+
+def fold_held_into_behind(held: list[Change], behind: list[Change]) -> list[Change]:
+    """Merge :func:`enforce_holds`' corrections into ``behind`` by name.
+
+    A package ``enforce_holds`` had to correct didn't move all the way — the
+    hold pinned it below what the bulk/targeted bump landed — so it belongs
+    in the caller's behind_latest report, replacing any prior entry for the
+    same name. Callers run their own ``enforce_holds(...)`` first (kept local
+    so a test can patch that call per manager module) and pass the result in
+    here for the merge.
+    """
+    if not held:
+        return behind
+    return [c for c in behind if c.name not in {h.name for h in held}] + held

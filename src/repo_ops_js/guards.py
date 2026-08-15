@@ -121,6 +121,28 @@ def unresolved_targets(
     return blocked
 
 
+def fold_blocked_into_behind(
+    blocked: list[tuple[Change, str]], behind: list[Change]
+) -> list[Change]:
+    """Merge :func:`unresolved_targets`' output into ``behind`` by name.
+
+    Used when a manager's targeted-bump flag is enabled so a ghost-bumped
+    package gets a per-package retry instead of failing the whole workspace
+    outright. Callers run their own ``unresolved_targets(ws, guardable)``
+    first (kept local so a test can patch that call per manager module) and
+    pass the result in here for the merge.
+    """
+    if not blocked:
+        return behind
+    behind_names = {c.name for c in behind}
+    merged = list(behind)
+    for change, _resolved in blocked:
+        if change.name not in behind_names:
+            merged.append(change)
+            behind_names.add(change.name)
+    return merged
+
+
 def assert_targets_resolved(
     ws: Workspace,
     requested: list[Change],
