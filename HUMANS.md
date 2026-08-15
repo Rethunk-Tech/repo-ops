@@ -43,9 +43,5 @@ When using `--commit=agent`, set `REPO_OPS_COMMIT_AGENT_MODEL` or the
 | [Bulk maintenance](docs/bulk-maintenance.md) | Submodule umbrellas and multi-repo apply playbook |
 | [Programmatic imports](docs/programmatic-imports.md) | Python module paths for programmatic use |
 | [Testing](docs/testing.md) | Verification and CI commands |
-| [Agents guide](AGENTS.md) | Agent quick reference, coordination, and workflows |
-| [Contributing](CONTRIBUTING.md) | Commit conventions, code style, git for agents |
-| [Security](SECURITY.md) | Vulnerability and conduct reporting |
-| [Code of conduct](CODE_OF_CONDUCT.md) | Community standards and enforcement |
-| [Changelog](CHANGELOG.md) | Release history |
-| [License](LICENSE) | MIT License |
+
+Agents guide, contributing, security, code of conduct, changelog, license: [README.md — Documentation](README.md#documentation).

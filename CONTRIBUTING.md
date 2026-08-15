@@ -11,7 +11,7 @@ Thank you for contributing. Orientation: [README.md](README.md). Install, usage,
 ## Development notes
 
 - Modules live under `src/repo_ops_*`, all shipped in the one `repo-ops` distribution. CLI and registration: `src/repo_ops` (`repo_ops.cli`, `repo_ops._register`).
-- Doc tiers: README (orientation + Documentation table), HUMANS (quickstart + doc links), docs/ (deep reference), AGENTS (agent quick reference + coordination), this file (commits/style/git for agents). CLI flags: `repo-ops <subcommand> --help` (authoritative).
+- Doc tiers: [AGENTS.md § Agent invariants](AGENTS.md#agent-invariants-behavior) (canonical). CLI flags: `repo-ops <subcommand> --help` (authoritative).
 
 ## Git for agents
 

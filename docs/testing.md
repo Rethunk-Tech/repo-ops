@@ -9,7 +9,7 @@ uv sync --locked --group dev
 uv run ruff check .
 uv run ruff format --check .
 uv run pyrefly check . --project-excludes 'tests/**' 'scripts/**'
-uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=68
+uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=78
 uv build
 ```
 
