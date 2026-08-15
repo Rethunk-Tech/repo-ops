@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,22 +11,6 @@ from repo_ops_upgrade.post_apply_commit import (
     commit_umbrella_submodule_pointers,
 )
 from repo_ops_upgrade.submodules import SubmoduleLink
-
-
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "test"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
 
 
 def _write_gitmodules(parent: Path, path: str, url: str) -> None:
@@ -57,7 +40,7 @@ def _make_child_outcome(
 
 def test_env_off_produces_no_umbrella_commit(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, init_git_repo,
 ) -> None:
     """When REPO_OPS_COMMIT_UMBRELLA is absent, no umbrella commit is attempted."""
     monkeypatch.delenv("REPO_OPS_COMMIT_UMBRELLA", raising=False)
@@ -65,8 +48,8 @@ def test_env_off_produces_no_umbrella_commit(
     umbrella = tmp_path / "umbrella"
     child = umbrella / "child"
     child.mkdir(parents=True)
-    _init_git_repo(umbrella)
-    _init_git_repo(child)
+    init_git_repo(umbrella)
+    init_git_repo(child)
 
     links = [
         SubmoduleLink(
@@ -95,7 +78,7 @@ def test_env_off_produces_no_umbrella_commit(
 
 def test_no_child_commits_produces_no_umbrella_commit(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, init_git_repo,
 ) -> None:
     """When no child received a commit (all skipped), no umbrella commit runs."""
     monkeypatch.setenv("REPO_OPS_COMMIT_UMBRELLA", "1")
@@ -103,8 +86,8 @@ def test_no_child_commits_produces_no_umbrella_commit(
     umbrella = tmp_path / "umbrella"
     child = umbrella / "child"
     child.mkdir(parents=True)
-    _init_git_repo(umbrella)
-    _init_git_repo(child)
+    init_git_repo(umbrella)
+    init_git_repo(child)
 
     links = [
         SubmoduleLink(
@@ -141,7 +124,7 @@ def test_no_child_commits_produces_no_umbrella_commit(
 
 def test_stages_only_committed_child_gitlinks(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, init_git_repo,
 ) -> None:
     """Stages exactly the 2 gitlink paths for committed children; unrelated dirty
     files and uncommitted-child gitlinks are never touched."""
@@ -153,8 +136,8 @@ def test_stages_only_committed_child_gitlinks(
     child_c = umbrella / "child-c"
     for d in (child_a, child_b, child_c):
         d.mkdir(parents=True)
-        _init_git_repo(d)
-    _init_git_repo(umbrella)
+        init_git_repo(d)
+    init_git_repo(umbrella)
     # Also plant an unrelated dirty file in the umbrella.
     (umbrella / "README.md").write_text("dirty\n", encoding="utf-8")
 
@@ -235,7 +218,7 @@ def test_stages_only_committed_child_gitlinks(
 
 def test_umbrella_commit_message_shape(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, init_git_repo,
 ) -> None:
     """Commit subject is 'chore(submodules): bump N child pin(s)'; body names children."""
     monkeypatch.setenv("REPO_OPS_COMMIT_UMBRELLA", "1")
@@ -243,8 +226,8 @@ def test_umbrella_commit_message_shape(
     umbrella = tmp_path / "umbrella"
     child_x = umbrella / "libx"
     child_x.mkdir(parents=True)
-    _init_git_repo(umbrella)
-    _init_git_repo(child_x)
+    init_git_repo(umbrella)
+    init_git_repo(child_x)
 
     links = [
         SubmoduleLink(
@@ -302,7 +285,7 @@ def test_umbrella_commit_message_shape(
 
 def test_dry_run_produces_no_git_add(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, init_git_repo,
 ) -> None:
     """In dry-run mode, outcome is 'dry_run' and no git add/commit is executed."""
     monkeypatch.setenv("REPO_OPS_COMMIT_UMBRELLA", "1")
@@ -310,8 +293,8 @@ def test_dry_run_produces_no_git_add(
     umbrella = tmp_path / "umbrella"
     child_y = umbrella / "child-y"
     child_y.mkdir(parents=True)
-    _init_git_repo(umbrella)
-    _init_git_repo(child_y)
+    init_git_repo(umbrella)
+    init_git_repo(child_y)
 
     links = [
         SubmoduleLink(

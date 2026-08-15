@@ -22,24 +22,8 @@ from repo_ops_upgrade.post_apply import (
 )
 
 
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "test"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-
-
-def _make_workspace(tmp_path: Path) -> Workspace:
-    _init_git_repo(tmp_path)
+def _make_workspace(tmp_path: Path, init_git_repo) -> Workspace:
+    init_git_repo(tmp_path)
     lock = tmp_path / "package-lock.json"
     lock.write_text('{"lockfileVersion":1}', encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
@@ -63,9 +47,9 @@ def _make_workspace(tmp_path: Path) -> Workspace:
 # ---------------------------------------------------------------------------
 
 
-def test_checkout_failure_returns_reverted_ok_false(tmp_path: Path) -> None:
+def test_checkout_failure_returns_reverted_ok_false(tmp_path: Path, init_git_repo) -> None:
     """A non-zero git checkout during revert must return False."""
-    ws = _make_workspace(tmp_path)
+    ws = _make_workspace(tmp_path, init_git_repo=init_git_repo)
     before_snap: dict[Path, bytes] = {}
 
     def _fake_run(cmd: list[str], cwd: Path, **kwargs: object) -> CompletedProcess[str]:
@@ -85,9 +69,9 @@ def test_checkout_failure_returns_reverted_ok_false(tmp_path: Path) -> None:
     assert result is False
 
 
-def test_classify_uses_reverted_ok_flag(tmp_path: Path) -> None:
+def test_classify_uses_reverted_ok_flag(tmp_path: Path, init_git_repo) -> None:
     """classify_verify_fail_disposition must NOT return FAILED_CLEAN when reverted_ok=False."""
-    ws = _make_workspace(tmp_path)
+    ws = _make_workspace(tmp_path, init_git_repo=init_git_repo)
     before_snap: dict[Path, bytes] = {}
 
     # Even if the workspace looks clean by artifact check, a failed revert must
@@ -97,9 +81,9 @@ def test_classify_uses_reverted_ok_flag(tmp_path: Path) -> None:
     assert disposition != FAILED_CLEAN
 
 
-def test_classify_failed_checkout_end_to_end(tmp_path: Path) -> None:
+def test_classify_failed_checkout_end_to_end(tmp_path: Path, init_git_repo) -> None:
     """Full path: failed checkout → reverted_ok False → disposition FAILED_WITH_CHANGES."""
-    ws = _make_workspace(tmp_path)
+    ws = _make_workspace(tmp_path, init_git_repo=init_git_repo)
     before_snap: dict[Path, bytes] = {}
 
     def _fake_run(cmd: list[str], cwd: Path, **kwargs: object) -> CompletedProcess[str]:
@@ -127,9 +111,9 @@ def test_classify_failed_checkout_end_to_end(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_revert_removes_untracked_apply_files(tmp_path: Path) -> None:
+def test_revert_removes_untracked_apply_files(tmp_path: Path, init_git_repo) -> None:
     """git clean must remove untracked files created by apply under the workspace."""
-    ws = _make_workspace(tmp_path)
+    ws = _make_workspace(tmp_path, init_git_repo=init_git_repo)
 
     # Capture the before-snapshot (no lockfile changes expected here).
     lock = tmp_path / "package-lock.json"
@@ -149,9 +133,9 @@ def test_revert_removes_untracked_apply_files(tmp_path: Path) -> None:
     )
 
 
-def test_revert_ok_succeeds_when_nothing_to_revert(tmp_path: Path) -> None:
+def test_revert_ok_succeeds_when_nothing_to_revert(tmp_path: Path, init_git_repo) -> None:
     """When no tracked or untracked changes exist, revert returns True (trap A)."""
-    ws = _make_workspace(tmp_path)
+    ws = _make_workspace(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"
     before_snap = {lock: lock.read_bytes()}
 

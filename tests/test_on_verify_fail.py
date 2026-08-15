@@ -14,24 +14,8 @@ from repo_ops_upgrade.post_apply import FAILED_CLEAN, FAILED_WITH_CHANGES
 from repo_ops_upgrade.run import main_apply
 
 
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "test"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-
-
-def _npm_workspace(tmp_path: Path) -> Workspace:
-    _init_git_repo(tmp_path)
+def _npm_workspace(tmp_path: Path, init_git_repo) -> Workspace:
+    init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"npm@10.0.0"}',
         encoding="utf-8",
@@ -54,8 +38,8 @@ def _npm_workspace(tmp_path: Path) -> Workspace:
     )
 
 
-def test_verify_fail_revert_restores_lockfile(tmp_path: Path) -> None:
-    ws = _npm_workspace(tmp_path)
+def test_verify_fail_revert_restores_lockfile(tmp_path: Path, init_git_repo) -> None:
+    ws = _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"
     original = lock.read_bytes()
     wr = WorkspaceResult(workspace=ws)
@@ -91,8 +75,8 @@ def test_verify_fail_revert_restores_lockfile(tmp_path: Path) -> None:
     assert lock.read_bytes() == original
 
 
-def test_verify_fail_keep_leaves_changes(tmp_path: Path) -> None:
-    ws = _npm_workspace(tmp_path)
+def test_verify_fail_keep_leaves_changes(tmp_path: Path, init_git_repo) -> None:
+    ws = _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"
     wr = WorkspaceResult(workspace=ws)
     register_all()
@@ -125,8 +109,8 @@ def test_verify_fail_keep_leaves_changes(tmp_path: Path) -> None:
     assert b"mutated" in lock.read_bytes()
 
 
-def test_apply_json_includes_verify_fail_disposition(tmp_path: Path, capsys) -> None:
-    _npm_workspace(tmp_path)
+def test_apply_json_includes_verify_fail_disposition(tmp_path: Path, capsys, init_git_repo) -> None:
+    _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
     out_file = tmp_path / "apply.json"
 

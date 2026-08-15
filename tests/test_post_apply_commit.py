@@ -17,24 +17,8 @@ from repo_ops_upgrade import post_apply_commit
 from repo_ops_upgrade.post_apply import collect_changes_after_apply
 
 
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "test"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-
-
-def _bundle(tmp_path: Path, *, started_dirty: bool = False) -> RepoBundle:
-    _init_git_repo(tmp_path)
+def _bundle(tmp_path: Path, init_git_repo, *, started_dirty: bool = False) -> RepoBundle:
+    init_git_repo(tmp_path)
     ws = Workspace(
         path=tmp_path,
         ecosystem="node",
@@ -53,8 +37,8 @@ def test_forbidden_env_blocks_commit() -> None:
     assert not post_apply_commit.is_forbidden_commit_path("package-lock.json")
 
 
-def test_commit_dry_run_lists_files(tmp_path: Path) -> None:
-    bundle = _bundle(tmp_path)
+def test_commit_dry_run_lists_files(tmp_path: Path, init_git_repo) -> None:
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"
     lock.write_text('{"lockfileVersion":1}', encoding="utf-8")
     subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
@@ -121,8 +105,8 @@ def test_classify_pnpm_workspace_catalog_is_node() -> None:
     )
 
 
-def test_skips_verify_fail_by_default(tmp_path: Path) -> None:
-    bundle = _bundle(tmp_path)
+def test_skips_verify_fail_by_default(tmp_path: Path, init_git_repo) -> None:
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
     bundle.workspaces[0].status = "fail"
     bundle.workspaces[0].verify_error = "build failed"
     (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
@@ -132,9 +116,9 @@ def test_skips_verify_fail_by_default(tmp_path: Path) -> None:
     assert plan.skipped_reason == "verify failed: build failed"
 
 
-def test_commit_on_fail_true_proceeds_after_verify_fail(tmp_path: Path) -> None:
+def test_commit_on_fail_true_proceeds_after_verify_fail(tmp_path: Path, init_git_repo) -> None:
     """--commit-on-fail allows commits when verify_error is set (F041)."""
-    bundle = _bundle(tmp_path)
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
     bundle.workspaces[0].status = "fail"
     bundle.workspaces[0].verify_error = "build failed"
     bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
@@ -147,8 +131,8 @@ def test_commit_on_fail_true_proceeds_after_verify_fail(tmp_path: Path) -> None:
     assert "package-lock.json" in plan.files
 
 
-def test_allow_dirty_scopes_commit_to_upgrade_paths(tmp_path: Path) -> None:
-    bundle = _bundle(tmp_path, started_dirty=True)
+def test_allow_dirty_scopes_commit_to_upgrade_paths(tmp_path: Path, init_git_repo) -> None:
+    bundle = _bundle(tmp_path, started_dirty=True, init_git_repo=init_git_repo)
     (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
     (tmp_path / "wip.txt").write_text("unrelated", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
@@ -167,11 +151,11 @@ def test_pnpm_root_workspace_yaml_in_commit_scope() -> None:
     }
 
 
-def test_dirty_start_no_upgrade_changes_skips(tmp_path: Path) -> None:
+def test_dirty_start_no_upgrade_changes_skips(tmp_path: Path, init_git_repo) -> None:
     # #108: when the repo started dirty but no workspace produced changes, the
     # commit is scoped to upgrade paths (none here), so it skips rather than
     # sweeping the stray dirty file into a commit.
-    bundle = _bundle(tmp_path, started_dirty=True)
+    bundle = _bundle(tmp_path, started_dirty=True, init_git_repo=init_git_repo)
     (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
     plan = post_apply_commit.plan_repo_commit(
         bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
@@ -179,12 +163,12 @@ def test_dirty_start_no_upgrade_changes_skips(tmp_path: Path) -> None:
     assert plan.skipped_reason == "no upgrade-scoped changes to commit (dirty worktree)"
 
 
-def test_dirty_sibling_does_not_block_clean_workspace_commit(tmp_path: Path) -> None:
+def test_dirty_sibling_does_not_block_clean_workspace_commit(tmp_path: Path, init_git_repo) -> None:
     # #108: a dirty sibling file must not block committing a clean workspace's
     # applied bump. The root workspace's manifest AND lockfile are both scoped
     # (the manifest fix prevents a partial commit); the unrelated dirty file is
     # never staged. Fails without the root-manifest scoping fix.
-    bundle = _bundle(tmp_path, started_dirty=True)
+    bundle = _bundle(tmp_path, started_dirty=True, init_git_repo=init_git_repo)
     (tmp_path / "package.json").write_text('{"version":"1.0.0"}', encoding="utf-8")
     (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
     (tmp_path / "WIP.md").write_text("unrelated pre-existing edit", encoding="utf-8")
@@ -196,12 +180,12 @@ def test_dirty_sibling_does_not_block_clean_workspace_commit(tmp_path: Path) -> 
     assert "WIP.md" not in plan.files
 
 
-def test_skipped_dirty_sibling_workspace_does_not_block_commit(tmp_path: Path) -> None:
+def test_skipped_dirty_sibling_workspace_does_not_block_commit(tmp_path: Path, init_git_repo) -> None:
     # #108 (real repro): a *sibling workspace* skipped as dirty (status="skip",
     # error "dirty git worktree") must not veto committing a clean workspace's
     # applied bump. Exercises the second gate (_bundle_apply_ok), which the
     # original fix left in place — fails before the skip-dirty veto was removed.
-    bundle = _bundle(tmp_path)  # clean root workspace, status "ok"
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)  # clean root workspace, status "ok"
     bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
     (tmp_path / "package.json").write_text('{"version":"1.0.0"}', encoding="utf-8")
     (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
@@ -227,12 +211,12 @@ def test_skipped_dirty_sibling_workspace_does_not_block_commit(tmp_path: Path) -
     assert set(plan.files) == {"package.json", "package-lock.json"}
 
 
-def test_actions_only_repo_commits(tmp_path: Path) -> None:
+def test_actions_only_repo_commits(tmp_path: Path, init_git_repo) -> None:
     # #107: a repo with workflow bumps but no package workspaces must still
     # commit; _bundle_apply_ok previously bailed with "no workspaces".
     from repo_ops_models import ActionBump
 
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     wf_dir = tmp_path / ".github" / "workflows"
     wf_dir.mkdir(parents=True)
     wf = wf_dir / "ci.yml"
@@ -263,9 +247,9 @@ def test_actions_only_repo_commits(tmp_path: Path) -> None:
 
 
 def test_agent_missing_api_key_skips(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
 ) -> None:
-    bundle = _bundle(tmp_path)
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"
     lock.write_text("{}", encoding="utf-8")
     subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
@@ -279,8 +263,8 @@ def test_agent_missing_api_key_skips(
     assert "commit-agent-cursor" in plan.skipped_reason
 
 
-def test_agent_drafts_message_when_mocked(tmp_path: Path) -> None:
-    bundle = _bundle(tmp_path)
+def test_agent_drafts_message_when_mocked(tmp_path: Path, init_git_repo) -> None:
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"
     lock.write_text("{}", encoding="utf-8")
     subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
@@ -300,7 +284,7 @@ def test_agent_drafts_message_when_mocked(tmp_path: Path) -> None:
 
 
 def test_agent_non_runtime_error_skips_instead_of_propagating(
-    tmp_path: Path,
+    tmp_path: Path, init_git_repo,
 ) -> None:
     """Regression #84: non-RuntimeError from Agent.prompt must not crash plan_repo_commit.
 
@@ -308,7 +292,7 @@ def test_agent_non_runtime_error_skips_instead_of_propagating(
     draft_message_with_commit_agent must degrade to a skipped-commit result with a
     reason, not propagate out of plan_repo_commit and crash the commit phase.
     """
-    bundle = _bundle(tmp_path)
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"
     lock.write_text("{}", encoding="utf-8")
     subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
@@ -324,8 +308,8 @@ def test_agent_non_runtime_error_skips_instead_of_propagating(
     assert plan.message == ""
 
 
-def test_conventional_commit_writes(tmp_path: Path) -> None:
-    bundle = _bundle(tmp_path)
+def test_conventional_commit_writes(tmp_path: Path, init_git_repo) -> None:
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"
     lock.write_text('{"v":2}', encoding="utf-8")
     subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
@@ -434,9 +418,9 @@ def test_register_commit_agent_provider_round_trip(
 
 def test_cursor_provider_missing_sdk_message(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, init_git_repo,
 ) -> None:
-    bundle = _bundle(tmp_path)
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
     monkeypatch.setenv("CURSOR_API_KEY", "test-key")
     real_import = __import__
 
@@ -596,12 +580,12 @@ def test_collect_changes_json_yaml_lockb_fallback(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_actions_only_does_not_sweep_predirty_lockfile(tmp_path: Path) -> None:
+def test_actions_only_does_not_sweep_predirty_lockfile(tmp_path: Path, init_git_repo) -> None:
     """#116: an actions-only pin bump must stage only the workflow file, not a
     pre-existing dirty yarn.lock that was never touched by this run."""
     from repo_ops_models import ActionBump
 
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     wf_dir = tmp_path / ".github" / "workflows"
     wf_dir.mkdir(parents=True)
     wf = wf_dir / "ci.yml"
@@ -643,9 +627,9 @@ def test_actions_only_does_not_sweep_predirty_lockfile(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_upgrade_scoped_paths_prefix_boundary(tmp_path: Path) -> None:
+def test_upgrade_scoped_paths_prefix_boundary(tmp_path: Path, init_git_repo) -> None:
     """#116: 'packages/foo' prefix must not match 'packages/foobar/yarn.lock'."""
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     foo_dir = tmp_path / "packages" / "foo"
     foo_dir.mkdir(parents=True)
     foobar_dir = tmp_path / "packages" / "foobar"
@@ -672,13 +656,13 @@ def test_upgrade_scoped_paths_prefix_boundary(tmp_path: Path) -> None:
     assert "packages/foobar/yarn.lock" not in scoped
 
 
-def test_upgrade_scoped_paths_root_exact_path(tmp_path: Path) -> None:
+def test_upgrade_scoped_paths_root_exact_path(tmp_path: Path, init_git_repo) -> None:
     """Root-workspace name match must not fire for a subdirectory path.
 
     'yarn.lock' at root must be included; 'sub/yarn.lock' must not, because the
     active workspace is at the repo root and the subdirectory is unrelated.
     """
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     ws = Workspace(
         path=tmp_path,
         ecosystem="node",
@@ -702,13 +686,13 @@ def test_upgrade_scoped_paths_root_exact_path(tmp_path: Path) -> None:
 
 
 def test_upgrade_scoped_paths_includes_nested_yarn_workspace_member(
-    tmp_path: Path,
+    tmp_path: Path, init_git_repo,
 ) -> None:
     """A root-scanned yarn workspaces monorepo whose install resolves a bump
     into a nested member's package.json must stage that manifest alongside the
     root yarn.lock — not silently drop it and leave lockfile/manifest out of
     sync on main. Issue #153."""
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","workspaces":["apps/*"]}', encoding="utf-8"
     )
@@ -732,11 +716,11 @@ def test_upgrade_scoped_paths_includes_nested_yarn_workspace_member(
 
 
 def test_upgrade_scoped_paths_excludes_non_member_nested_package_json(
-    tmp_path: Path,
+    tmp_path: Path, init_git_repo,
 ) -> None:
     """A dirty package.json outside the monorepo's declared workspace globs must
     never be swept into the commit — only declared members are eligible."""
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","workspaces":["apps/*"]}', encoding="utf-8"
     )
@@ -766,13 +750,13 @@ def test_upgrade_scoped_paths_excludes_non_member_nested_package_json(
 
 
 def test_upgrade_scoped_paths_includes_applied_remediation_file(
-    tmp_path: Path,
+    tmp_path: Path, init_git_repo,
 ) -> None:
     """A root-scanned workspace's applied biome_schema remediation rewrites
     biome.json's $schema URL — a third file class outside the manager's own
     manifest/lockfile — and it must be staged alongside the lockfile rather
     than silently dropped and left dirty on main. Issue #154."""
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     ws = Workspace(
         path=tmp_path,
         ecosystem="node",
@@ -799,11 +783,11 @@ def test_upgrade_scoped_paths_includes_applied_remediation_file(
 
 
 def test_upgrade_scoped_paths_excludes_unapplied_remediation_file(
-    tmp_path: Path,
+    tmp_path: Path, init_git_repo,
 ) -> None:
     """A remediation that only reported (plan mode) or failed to apply must not
     stage the file it would have touched — nothing was actually written."""
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     ws = Workspace(
         path=tmp_path,
         ecosystem="node",
@@ -831,12 +815,12 @@ def test_upgrade_scoped_paths_excludes_unapplied_remediation_file(
 
 
 def test_upgrade_scoped_paths_includes_nested_remediation_file(
-    tmp_path: Path,
+    tmp_path: Path, init_git_repo,
 ) -> None:
     """A subdirectory workspace's applied remediation file must also be staged
     by the general remediation-files match (not just the prefix match), and
     must respect the workspace's own directory even outside its prefix."""
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     sub = tmp_path / "frontend"
     sub.mkdir()
 
@@ -948,14 +932,14 @@ def test_classify_single_ecosystem_unchanged() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_run_post_apply_commits_parallel_outcomes_sorted(tmp_path: Path) -> None:
+def test_run_post_apply_commits_parallel_outcomes_sorted(tmp_path: Path, init_git_repo) -> None:
     """Outcomes are returned in label order regardless of execution order."""
     # Build three minimal bundles — each in its own git repo directory.
     paths = [tmp_path / f"repo{i}" for i in range(3)]
     bundles: dict[Path, RepoBundle] = {}
     for p in paths:
         p.mkdir()
-        _init_git_repo(p)
+        init_git_repo(p)
         ws = Workspace(
             path=p, ecosystem="node", manager="npm", git_repo=p, label=p.name
         )
@@ -974,9 +958,9 @@ def test_run_post_apply_commits_parallel_outcomes_sorted(tmp_path: Path) -> None
     assert labels == sorted(labels)
 
 
-def test_run_post_apply_commits_max_workers_accepted(tmp_path: Path) -> None:
+def test_run_post_apply_commits_max_workers_accepted(tmp_path: Path, init_git_repo) -> None:
     """max_workers parameter is accepted without error."""
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     ws = Workspace(
         path=tmp_path, ecosystem="node", manager="npm", git_repo=tmp_path, label="w"
     )
@@ -1015,9 +999,9 @@ def test_collect_changes_no_diff_reports_nothing(tmp_path: Path) -> None:
     assert changes == [], f"clean diff must yield no changes, got {changes}"
 
 
-def test_pdm_root_lock_and_manifest_in_commit_scope(tmp_path: Path) -> None:
+def test_pdm_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_repo) -> None:
     """pdm.lock + pyproject.toml are staged for root pdm workspaces (F049)."""
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
     )
@@ -1045,9 +1029,9 @@ def test_pdm_root_lock_and_manifest_in_commit_scope(tmp_path: Path) -> None:
     assert set(plan.files) == {"pdm.lock", "pyproject.toml"}
 
 
-def test_pipenv_root_lock_and_manifest_in_commit_scope(tmp_path: Path) -> None:
+def test_pipenv_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_repo) -> None:
     """Pipfile.lock + Pipfile are staged for root pipenv workspaces (F049)."""
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     (tmp_path / "Pipfile").write_text('[packages]\nrequests = "*"\n', encoding="utf-8")
     (tmp_path / "Pipfile.lock").write_text('{"default":{}}', encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)

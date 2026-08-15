@@ -19,16 +19,9 @@ def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
 
 
-def _git_init_repo(repo: Path) -> None:
-    repo.mkdir(parents=True, exist_ok=True)
-    _git(repo, "init", "-q")
-    _git(repo, "config", "user.email", "test@example.com")
-    _git(repo, "config", "user.name", "Test")
-
-
-def test_count_submodule_finds_gitlink_pin(tmp_path: Path) -> None:
+def test_count_submodule_finds_gitlink_pin(tmp_path: Path, init_git_repo) -> None:
     repo = tmp_path / "repo"
-    _git_init_repo(repo)
+    init_git_repo(repo)
 
     (repo / ".gitmodules").write_text(
         '[submodule "vendor/sub"]\n'
@@ -45,9 +38,9 @@ def test_count_submodule_finds_gitlink_pin(tmp_path: Path) -> None:
     assert versions == {f"vendor/sub@{_FAKE_SHA}"}
 
 
-def test_count_submodule_no_gitmodules_returns_zero(tmp_path: Path) -> None:
+def test_count_submodule_no_gitmodules_returns_zero(tmp_path: Path, init_git_repo) -> None:
     repo = tmp_path / "repo"
-    _git_init_repo(repo)
+    init_git_repo(repo)
     (repo / "README.md").write_text("hello\n")
     _git(repo, "add", "README.md")
     _git(repo, "commit", "-q", "-m", "init")

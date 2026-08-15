@@ -46,17 +46,12 @@ def test_manifest_kinds_detects_ecosystems():
     assert manifest_kinds(set()) == []
 
 
-def _git_init(path: Path) -> None:
-    path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", "-q", str(path)], check=True)
-
-
-def test_discover_all_finds_repo_below_org_proj_depth(tmp_path: Path):
+def test_discover_all_finds_repo_below_org_proj_depth(tmp_path: Path, init_git_repo):
     """Regression for #23: a repo sitting deeper than the old two-level
     ``<root>/<org>/<proj>`` walk (here ``<root>/com.github/<org>/<repo>``,
     three levels down) must still be discovered in non-flat mode."""
     repo = tmp_path / "com.github" / "Acme" / "widget"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "pyproject.toml").write_text("[project]\nname = 'widget'\n")
     (repo / "uv.lock").write_text("")
 
@@ -66,21 +61,21 @@ def test_discover_all_finds_repo_below_org_proj_depth(tmp_path: Path):
     assert repo.resolve() in paths, f"deep repo not discovered; found={paths}"
 
 
-def test_discover_all_enumerates_multiple_and_subdir_workspaces(tmp_path: Path):
+def test_discover_all_enumerates_multiple_and_subdir_workspaces(tmp_path: Path, init_git_repo):
     """Regression for #24 (points 3 + subdir-only): a single repo with a Go
     module at its root AND a node app in ``web/`` yields BOTH workspaces, and a
     repo whose only manifest sits in a subdir is still discovered."""
     org = tmp_path / "com.github" / "Acme"
 
     multi = org / "kui"
-    _git_init(multi)
+    init_git_repo(multi)
     (multi / "go.mod").write_text("module example.com/kui\n\ngo 1.22\n")
     (multi / "web").mkdir()
     (multi / "web" / "package.json").write_text('{"name":"kui-web"}')
     (multi / "web" / "yarn.lock").write_text("")
 
     subdir_only = org / "interviewer"
-    _git_init(subdir_only)
+    init_git_repo(subdir_only)
     (subdir_only / "web").mkdir()
     (subdir_only / "web" / "package.json").write_text('{"name":"iv-web"}')
     (subdir_only / "web" / "yarn.lock").write_text("")
@@ -94,11 +89,11 @@ def test_discover_all_enumerates_multiple_and_subdir_workspaces(tmp_path: Path):
     assert (subdir_only / "web").resolve() in by_path, "subdir-only repo missed"
 
 
-def test_discover_all_suppresses_uv_workspace_members(tmp_path: Path):
+def test_discover_all_suppresses_uv_workspace_members(tmp_path: Path, init_git_repo):
     """Regression for #24 (explosion guard): uv workspace members (governed by
     the root ``uv.lock``) must NOT each surface as standalone workspaces."""
     repo = tmp_path / "com.github" / "Acme" / "monorepo"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "pyproject.toml").write_text(
         "[project]\nname = 'root'\n\n[tool.uv.workspace]\nmembers = ['packages/*']\n"
     )
@@ -115,11 +110,11 @@ def test_discover_all_suppresses_uv_workspace_members(tmp_path: Path):
     assert py[0].path == repo.resolve()
 
 
-def test_discover_all_records_skip_for_unactionable_manifest(tmp_path: Path):
+def test_discover_all_records_skip_for_unactionable_manifest(tmp_path: Path, init_git_repo):
     """Regression for #24 (point 2): a manifest found but not actionable is
     recorded as a counted skip with a reason, never silently dropped."""
     repo = tmp_path / "com.github" / "Acme" / "nolock"
-    _git_init(repo)
+    init_git_repo(repo)
     # package.json with neither a lockfile nor a packageManager field.
     (repo / "package.json").write_text('{"name":"nolock"}')
 
@@ -133,7 +128,7 @@ def test_discover_all_records_skip_for_unactionable_manifest(tmp_path: Path):
     ), f"unactionable manifest not recorded as skip; skipped={diags.skipped}"
 
 
-def test_discover_all_records_skip_for_requirements_txt_only(tmp_path: Path):
+def test_discover_all_records_skip_for_requirements_txt_only(tmp_path: Path, init_git_repo):
     """Regression for #133: a repo with requirements.txt but no requirements.in
     must be recorded as a discovery skip (unactionable), NOT silently ok.
 
@@ -141,7 +136,7 @@ def test_discover_all_records_skip_for_requirements_txt_only(tmp_path: Path):
     check_pip_tools produced a false-green result before this fix.
     """
     repo = tmp_path / "com.github" / "Acme" / "legacy"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "requirements.txt").write_text("requests==2.31.0\n")
 
     diags = DiscoveryDiagnostics()
@@ -159,13 +154,13 @@ def test_discover_all_records_skip_for_requirements_txt_only(tmp_path: Path):
     ), f"expected a py skip with requirements.in mention; skipped={diags.skipped}"
 
 
-def test_discover_all_finds_requirements_txt_only_repo(tmp_path: Path):
+def test_discover_all_finds_requirements_txt_only_repo(tmp_path: Path, init_git_repo):
     """Regression for #32: a repo with requirements.txt triggers consider_py so
     the manifest is reached.  Without requirements.in the repo is now recorded
     as an unactionable discovery skip (see #133) rather than a false-green
     workspace — assert the discovery skip is recorded but no workspace is added."""
     repo = tmp_path / "com.github" / "Acme" / "legacy"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "requirements.txt").write_text("requests==2.31.0\n")
 
     diags = DiscoveryDiagnostics()
@@ -208,11 +203,11 @@ def test_iter_scanned_dirs_skips_wailsjs(tmp_path: Path) -> None:
     )
 
 
-def test_discover_node_workspace_member_not_recorded_as_skip(tmp_path: Path):
+def test_discover_node_workspace_member_not_recorded_as_skip(tmp_path: Path, init_git_repo):
     """Regression for #49: a yarn/npm workspace member (no own lockfile, no
     packageManager field) must be silently suppressed, NOT recorded as a skip."""
     repo = tmp_path / "com.github" / "Acme" / "frontend"
-    _git_init(repo)
+    init_git_repo(repo)
     # Root package.json with yarn workspace declaration and a yarn.lock.
     (repo / "package.json").write_text(
         '{"name":"root","workspaces":["packages/*"]}',
@@ -242,7 +237,7 @@ def test_discover_node_workspace_member_not_recorded_as_skip(tmp_path: Path):
 
 
 def test_discover_skip_only_dir_not_double_printed_in_nested_repo(
-    tmp_path: Path, capsys
+    tmp_path: Path, capsys, init_git_repo
 ):
     """Regression for #46: a dir that yields only a skip (no actionable workspace)
     must not emit SKIP twice on stderr when it appears in two overlapping repo
@@ -256,8 +251,8 @@ def test_discover_skip_only_dir_not_double_printed_in_nested_repo(
     outer = tmp_path / "org" / "outer"
     inner = outer / "inner"
     inner.mkdir(parents=True)
-    _git_init(outer)
-    _git_init(inner)
+    init_git_repo(outer)
+    init_git_repo(inner)
     # package.json with no lockfile and no packageManager — will skip.
     (inner / "package.json").write_text('{"name":"inner"}')
 
@@ -272,11 +267,11 @@ def test_discover_skip_only_dir_not_double_printed_in_nested_repo(
     )
 
 
-def test_discover_cargo_workspace_members_not_enumerated_standalone(tmp_path: Path):
+def test_discover_cargo_workspace_members_not_enumerated_standalone(tmp_path: Path, init_git_repo):
     """Regression for #52: Cargo workspace members must NOT surface as separate
     rust workspaces; only the root (which owns Cargo.lock) should be returned."""
     repo = tmp_path / "com.github" / "Acme" / "crates"
-    _git_init(repo)
+    init_git_repo(repo)
     # Root: Cargo workspace with Cargo.lock.
     (repo / "Cargo.toml").write_text(
         '[workspace]\nmembers = ["crates/*"]\n\n[package]\nname = "root"\nversion = "0.1.0"\n'
@@ -297,11 +292,11 @@ def test_discover_cargo_workspace_members_not_enumerated_standalone(tmp_path: Pa
 
 
 def test_discover_cargo_collapses_excluded_and_implicit_path_members(
-    tmp_path: Path,
+    tmp_path: Path, init_git_repo,
 ):
     """Cargo metadata must collapse path-dependency members and exclusions."""
     repo = tmp_path / "com.github" / "Acme" / "cargo-layout"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "Cargo.toml").write_text(
         '[workspace]\nmembers = ["crates/app"]\n'
         'exclude = ["crates/excluded"]\nresolver = "2"\n'
@@ -337,11 +332,11 @@ def test_discover_cargo_collapses_excluded_and_implicit_path_members(
 
 def test_discover_cargo_missing_binary_falls_back_to_member_globs(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, init_git_repo,
 ):
     """Manifest member globs remain usable when Cargo is unavailable."""
     repo = tmp_path / "com.github" / "Acme" / "cargo-fallback"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "Cargo.toml").write_text('[workspace]\nmembers = ["crates/*"]\n')
     member = repo / "crates" / "util"
     (member / "src").mkdir(parents=True)
@@ -357,11 +352,11 @@ def test_discover_cargo_missing_binary_falls_back_to_member_globs(
 
 def test_discover_cargo_missing_binary_expands_path_dependencies(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, init_git_repo,
 ):
     """Fallback discovery recursively collapses path dependencies."""
     repo = tmp_path / "com.github" / "Acme" / "cargo-path-fallback"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "Cargo.toml").write_text('[workspace]\nmembers = ["crates/app"]\n')
 
     app = repo / "crates" / "app"

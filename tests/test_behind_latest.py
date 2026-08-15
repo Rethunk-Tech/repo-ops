@@ -12,7 +12,6 @@ Also covers #42: node/bun tuple-checker with empty behind_latest still triggers
 from __future__ import annotations
 
 import io
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -370,7 +369,7 @@ def test_yarn_behind_latest_note_when_targeted_bump_already_requested(
 
 
 def test_sweep_env_vars_default_on_and_conservative_off(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, init_git_repo
 ) -> None:
     """#136: every _SWEEP_ENV_VARS gate defaults on with no flag needed; run.py
     writes each one explicitly ("1" or "0") rather than leaving it unset, so an
@@ -383,7 +382,7 @@ def test_sweep_env_vars_default_on_and_conservative_off(
     for var in _SWEEP_ENV_VARS:
         monkeypatch.setenv(var, "__sentinel__")
         monkeypatch.delenv(var)
-    _bun_workspace(tmp_path)
+    _bun_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
 
     seen: dict[str, dict[str, str | None]] = {"default": {}, "conservative": {}}
@@ -415,7 +414,7 @@ def test_sweep_env_vars_default_on_and_conservative_off(
 
 
 def test_default_sweep_sets_go_upgrade_mode_explicit(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, init_git_repo
 ) -> None:
     """#102: the default sweep sets REPO_OPS_GO_UPGRADE_MODE=explicit via
     setdefault before workers run; --conservative skips that setdefault so a
@@ -424,7 +423,7 @@ def test_default_sweep_sets_go_upgrade_mode_explicit(
     import os
 
     monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
-    _bun_workspace(tmp_path)
+    _bun_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
 
     seen: dict[str, str | None] = {}
@@ -453,7 +452,7 @@ def test_default_sweep_sets_go_upgrade_mode_explicit(
     assert seen == {"default": "explicit", "conservative": None}
 
 
-def test_latest_umbrella_flips_actions_mode(tmp_path: Path, monkeypatch) -> None:
+def test_latest_umbrella_flips_actions_mode(tmp_path: Path, monkeypatch, init_git_repo) -> None:
     """#106: the default sweep opts Actions into latest mode; --conservative
     reverts to normalize; an explicit --actions-upgrade-mode always wins."""
     for var in (
@@ -464,7 +463,7 @@ def test_latest_umbrella_flips_actions_mode(tmp_path: Path, monkeypatch) -> None
     ):
         monkeypatch.setenv(var, "__sentinel__")
         monkeypatch.delenv(var)
-    _bun_workspace(tmp_path)
+    _bun_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
 
     def _mode_for(argv: list[str]) -> str:
@@ -535,12 +534,8 @@ def test_footer_hint_absent_when_none_behind_latest(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-
-
-def _bun_workspace(tmp_path: Path) -> None:
-    _init_git_repo(tmp_path)
+def _bun_workspace(tmp_path: Path, init_git_repo) -> None:
+    init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"bun@1.3.14"}',
         encoding="utf-8",
@@ -549,10 +544,10 @@ def _bun_workspace(tmp_path: Path) -> None:
 
 
 def test_behind_latest_workspace_does_not_change_plan_exit_code(
-    tmp_path: Path,
+    tmp_path: Path, init_git_repo,
 ) -> None:
     """A workspace with only behind_latest entries must yield exit_code == 0."""
-    _bun_workspace(tmp_path)
+    _bun_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
 
     behind = [Change("@hono/node-server", "1.19.14", "2.0.4")]

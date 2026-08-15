@@ -60,6 +60,62 @@ def make_proc() -> Any:
 
 
 @pytest.fixture
+def init_git_repo() -> Any:
+    """Factory fixture: ``git init`` + a throwaway committer identity.
+
+    Same conftest/fixture-not-import rationale as ``make_workspace`` above.
+
+    With ``commit=True``, also stages and commits *filename* and returns the
+    resulting HEAD SHA; otherwise returns ``None``. The committer identity is
+    always configured (even when the caller never commits) because it is
+    cheap and lets a test add its own commit later without repeating it.
+    """
+
+    def _factory(
+        path: Path,
+        *,
+        commit: bool = False,
+        filename: str = "README.md",
+        content: str = "init\n",
+    ) -> str | None:
+        path.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "init", "-q"], cwd=path, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"],
+            cwd=path,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "test"],
+            cwd=path,
+            check=True,
+            capture_output=True,
+        )
+        if not commit:
+            return None
+        (path / filename).write_text(content, encoding="utf-8")
+        subprocess.run(
+            ["git", "add", filename], cwd=path, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "init"],
+            cwd=path,
+            check=True,
+            capture_output=True,
+        )
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=path,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    return _factory
+
+
+@pytest.fixture
 def make_workspace() -> Any:
     """Factory fixture: build a ``Workspace`` with common test defaults.
 

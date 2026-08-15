@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,12 +11,8 @@ from repo_ops_upgrade.discovery import DiscoveryDiagnostics, discover_all
 from repo_ops_upgrade.run import main_plan
 
 
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-
-
-def test_discover_all_json_diagnostics_no_stderr(tmp_path: Path, capsys) -> None:
-    _init_git_repo(tmp_path)
+def test_discover_all_json_diagnostics_no_stderr(tmp_path: Path, capsys, init_git_repo) -> None:
+    init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"npm@10.0.0"}',
         encoding="utf-8",
@@ -48,9 +43,9 @@ def test_discover_all_json_diagnostics_no_stderr(tmp_path: Path, capsys) -> None
 
 
 def test_plan_json_stdout_parses_without_skip_warn_lines(
-    tmp_path: Path, capsys
+    tmp_path: Path, capsys, init_git_repo
 ) -> None:
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"npm@10.0.0"}',
         encoding="utf-8",
@@ -102,9 +97,9 @@ def test_plan_json_stdout_parses_without_skip_warn_lines(
     assert rc in (0, 1)
 
 
-def test_plan_json_v1_schema_compact_and_null_omission(tmp_path: Path, capsys) -> None:
+def test_plan_json_v1_schema_compact_and_null_omission(tmp_path: Path, capsys, init_git_repo) -> None:
     """#101: schema_version first, --compact single-line, null error keys omitted."""
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"npm@10.0.0"}',
         encoding="utf-8",
@@ -148,9 +143,9 @@ def test_plan_json_v1_schema_compact_and_null_omission(tmp_path: Path, capsys) -
 
 
 def test_plan_exclude_filters_repositories_from_config(
-    tmp_path: Path, monkeypatch, capsys
+    tmp_path: Path, monkeypatch, capsys, init_git_repo
 ) -> None:
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     (tmp_path / "pyproject.toml").write_text(
         '[tool.repo-ops]\nexclude = ["drop"]\n',
         encoding="utf-8",
@@ -159,7 +154,7 @@ def test_plan_exclude_filters_repositories_from_config(
     for name in ("keep", "drop"):
         repo = tmp_path / name
         repo.mkdir()
-        _init_git_repo(repo)
+        init_git_repo(repo)
         (repo / "package.json").write_text(
             f'{{"name":"{name}","packageManager":"npm@10.0.0"}}',
             encoding="utf-8",

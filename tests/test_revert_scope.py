@@ -22,22 +22,6 @@ from repo_ops_upgrade.post_apply import revert_workspace_after_verify_fail
 # ---------------------------------------------------------------------------
 
 
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "test"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-
-
 def _commit_all(path: Path, msg: str = "init") -> None:
     subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True)
     subprocess.run(
@@ -45,9 +29,9 @@ def _commit_all(path: Path, msg: str = "init") -> None:
     )
 
 
-def _root_npm_workspace(tmp_path: Path) -> Workspace:
+def _root_npm_workspace(tmp_path: Path, init_git_repo) -> Workspace:
     """Git repo at root; npm workspace; commits package-lock.json."""
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     (tmp_path / "package-lock.json").write_text(
         '{"lockfileVersion":1}', encoding="utf-8"
     )
@@ -66,14 +50,14 @@ def _root_npm_workspace(tmp_path: Path) -> Workspace:
 # ---------------------------------------------------------------------------
 
 
-def test_revert_restores_modified_lockfile(tmp_path: Path) -> None:
+def test_revert_restores_modified_lockfile(tmp_path: Path, init_git_repo) -> None:
     """Tracked lockfile modified by apply (on disk, not staged) is restored.
 
     apply mutates files on disk without staging them.  restore_workspace_snapshot
     handles the content restore from before_snap; the git checkout fallback
     covers files not in the snapshot scope (e.g. pyproject.toml).
     """
-    ws = _root_npm_workspace(tmp_path)
+    ws = _root_npm_workspace(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"
     original = lock.read_bytes()
 
@@ -95,13 +79,13 @@ def test_revert_restores_modified_lockfile(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_revert_preserves_preexisting_untracked_file(tmp_path: Path) -> None:
+def test_revert_preserves_preexisting_untracked_file(tmp_path: Path, init_git_repo) -> None:
     """An operator's pre-existing untracked file is not deleted by revert.
 
     Real-git test: notes.txt is untracked before apply runs.
     After revert the file must still exist on disk.
     """
-    ws = _root_npm_workspace(tmp_path)
+    ws = _root_npm_workspace(tmp_path, init_git_repo=init_git_repo)
 
     # Operator already has this file; it is NOT a lockfile or manifest.
     notes = tmp_path / "notes.txt"
@@ -120,7 +104,7 @@ def test_revert_preserves_preexisting_untracked_file(tmp_path: Path) -> None:
     )
 
 
-def test_revert_clean_skips_non_artifact_via_mock(tmp_path: Path) -> None:
+def test_revert_clean_skips_non_artifact_via_mock(tmp_path: Path, init_git_repo) -> None:
     """git clean is called with only apply-created lockfile names, not notes.txt.
 
     Mock test: ls-files returns [notes.txt, yarn.lock].
@@ -128,7 +112,7 @@ def test_revert_clean_skips_non_artifact_via_mock(tmp_path: Path) -> None:
     yarn.lock is a known artifact name absent from before_snap → eligible.
     notes.txt is not a known artifact basename → must be excluded.
     """
-    ws = _root_npm_workspace(tmp_path)
+    ws = _root_npm_workspace(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"
     before_snap = {lock: lock.read_bytes()}
 
@@ -168,13 +152,13 @@ def test_revert_clean_skips_non_artifact_via_mock(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_revert_preserves_preexisting_dirty_tracked_edit(tmp_path: Path) -> None:
+def test_revert_preserves_preexisting_dirty_tracked_edit(tmp_path: Path, init_git_repo) -> None:
     """A dirty tracked edit unrelated to apply is not reverted.
 
     Real-git test: app.py is modified by the operator BEFORE apply runs.
     After revert the operator's edit must still be present on disk.
     """
-    ws = _root_npm_workspace(tmp_path)
+    ws = _root_npm_workspace(tmp_path, init_git_repo=init_git_repo)
 
     # Commit a non-lockfile source file.
     app_py = tmp_path / "app.py"
@@ -206,13 +190,13 @@ def test_revert_preserves_preexisting_dirty_tracked_edit(tmp_path: Path) -> None
     )
 
 
-def test_revert_checkout_skips_non_artifact_via_mock(tmp_path: Path) -> None:
+def test_revert_checkout_skips_non_artifact_via_mock(tmp_path: Path, init_git_repo) -> None:
     """git checkout is called with only artifact paths, not app.py.
 
     Mock test: git diff returns [package-lock.json, app.py].
     checkout must be invoked with only package-lock.json.
     """
-    ws = _root_npm_workspace(tmp_path)
+    ws = _root_npm_workspace(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"
     before_snap = {lock: lock.read_bytes()}
 
@@ -255,7 +239,7 @@ def test_revert_checkout_skips_non_artifact_via_mock(tmp_path: Path) -> None:
 
 
 def test_revert_preserves_preexisting_dirty_artifact_not_in_snapshot(
-    tmp_path: Path,
+    tmp_path: Path, init_git_repo,
 ) -> None:
     """A dirty tracked file with artifact basename that apply never touched survives revert.
 
@@ -269,7 +253,7 @@ def test_revert_preserves_preexisting_dirty_artifact_not_in_snapshot(
     _ARTIFACT_BASENAMES alone, causing any pre-existing dirty tracked file whose
     basename matches an artifact name to be silently reverted.
     """
-    ws = _root_npm_workspace(tmp_path)
+    ws = _root_npm_workspace(tmp_path, init_git_repo=init_git_repo)
 
     # Commit subdir/requirements.txt — tracked, artifact basename, but NOT an npm
     # lockfile so snapshot_workspace_files(npm) will not capture it.

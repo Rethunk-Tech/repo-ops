@@ -34,23 +34,6 @@ def _go_result(tmp_path: Path, make_workspace: Any) -> WorkspaceResult:
     return WorkspaceResult(workspace=ws)
 
 
-def _git_init(path: Path) -> None:
-    """Initialise a real bare-minimum git repo in *path*."""
-    subprocess.run(["git", "init"], cwd=str(path), check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@test.com"],
-        cwd=str(path),
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test"],
-        cwd=str(path),
-        check=True,
-        capture_output=True,
-    )
-
-
 def _git_commit_all(path: Path, message: str = "initial") -> None:
     subprocess.run(["git", "add", "-A"], cwd=str(path), check=True, capture_output=True)
     subprocess.run(
@@ -353,10 +336,10 @@ def test_fmt_targets_only_changed_source_files(
     make_workspace: Any,
     make_change: Any,
     make_proc: Any,
-    case: _FmtCase,
+    case: _FmtCase, init_git_repo,
 ) -> None:
     """<tool> fmt targets only the files git diff reports as changed, not the whole tree."""
-    _git_init(tmp_path)
+    init_git_repo(tmp_path)
     _write(tmp_path / case.manifest_name, case.manifest_before)
     changed_path = tmp_path / case.changed_name
     _write(changed_path, case.changed_before)
@@ -393,10 +376,10 @@ def test_fmt_targets_only_changed_source_files(
 
 @pytest.mark.parametrize("case", _FMT_CASES, ids=lambda c: c.ecosystem)
 def test_fmt_no_op_when_only_manifest_changed(
-    tmp_path: Path, make_workspace: Any, make_change: Any, case: _FmtCase
+    tmp_path: Path, make_workspace: Any, make_change: Any, case: _FmtCase, init_git_repo
 ) -> None:
     """<tool> fmt is a no-op when only the manifest/lockfile changed, not source."""
-    _git_init(tmp_path)
+    init_git_repo(tmp_path)
     _write(tmp_path / case.manifest_name, case.manifest_before)
     _write(tmp_path / case.changed_name, case.changed_before)
     _git_commit_all(tmp_path)

@@ -531,29 +531,13 @@ def test_apply_continues_on_fetch_failure(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "t@example.com"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "T"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-
-
-def test_discover_populates_url(tmp_path: Path) -> None:
+def test_discover_populates_url(tmp_path: Path, init_git_repo) -> None:
     """discover_submodules_under_roots stores the URL from .gitmodules."""
     parent = tmp_path / "umbrella"
     child = parent / "libs" / "child"
     child.mkdir(parents=True)
-    _init_git_repo(parent)
-    _init_git_repo(child)
+    init_git_repo(parent)
+    init_git_repo(child)
     (parent / ".gitmodules").write_text(
         '[submodule "libs/child"]\n'
         "\tpath = libs/child\n"

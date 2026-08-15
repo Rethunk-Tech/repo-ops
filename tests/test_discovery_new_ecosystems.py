@@ -2,27 +2,20 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics, discover_all
-
-
-def _git_init(path: Path) -> None:
-    path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", "-q", str(path)], check=True)
-
 
 # ---------------------------------------------------------------------------
 # Task A: Pipfile without Pipfile.lock → accurate skip reason
 # ---------------------------------------------------------------------------
 
 
-def test_pipfile_only_produces_accurate_skip(tmp_path: Path) -> None:
+def test_pipfile_only_produces_accurate_skip(tmp_path: Path, init_git_repo) -> None:
     """Regression for #15: a Pipfile-only repo must NOT emit the misleading
     'pyproject.toml without a recognized manager' skip reason."""
     repo = tmp_path / "org" / "pipfile-only"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "Pipfile").write_text('[packages]\nrequests = "*"\n')
 
     diags = DiscoveryDiagnostics()
@@ -47,10 +40,10 @@ def test_pipfile_only_produces_accurate_skip(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_discover_pdm_with_pdm_lock(tmp_path: Path) -> None:
+def test_discover_pdm_with_pdm_lock(tmp_path: Path, init_git_repo) -> None:
     """A repo with pyproject.toml + pdm.lock is discovered as manager=pdm."""
     repo = tmp_path / "org" / "pdm-project"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "pyproject.toml").write_text("[project]\nname = 'mylib'\n\n[tool.pdm]\n")
     (repo / "pdm.lock").write_text(
         "[metadata]\nlock_version = '4.4.1'\n\n[[package]]\nname = 'requests'\nversion = '2.31.0'\n"
@@ -64,10 +57,10 @@ def test_discover_pdm_with_pdm_lock(tmp_path: Path) -> None:
     assert pdm_found[0].path == repo.resolve()
 
 
-def test_discover_pdm_lock_without_pyproject_triggers_py(tmp_path: Path) -> None:
+def test_discover_pdm_lock_without_pyproject_triggers_py(tmp_path: Path, init_git_repo) -> None:
     """pdm.lock alone (no pyproject.toml) also triggers consider_py and yields pdm."""
     repo = tmp_path / "org" / "pdm-lock-only"
-    _git_init(repo)
+    init_git_repo(repo)
     # pdm.lock without pyproject.toml (unusual but should work)
     (repo / "pdm.lock").write_text(
         "[metadata]\nlock_version = '4.4.1'\n\n[[package]]\nname = 'click'\nversion = '8.1.0'\n"
@@ -80,11 +73,11 @@ def test_discover_pdm_lock_without_pyproject_triggers_py(tmp_path: Path) -> None
 
 
 def test_discover_pdm_tool_section_without_lock_skips_accurately(
-    tmp_path: Path,
+    tmp_path: Path, init_git_repo,
 ) -> None:
     """pyproject.toml with [tool.pdm] but no pdm.lock → skip with accurate message."""
     repo = tmp_path / "org" / "pdm-no-lock"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "pyproject.toml").write_text("[project]\nname = 'x'\n\n[tool.pdm]\n")
 
     diags = DiscoveryDiagnostics()
@@ -107,10 +100,10 @@ def test_discover_pdm_tool_section_without_lock_skips_accurately(
 # ---------------------------------------------------------------------------
 
 
-def test_discover_pipenv_with_lock(tmp_path: Path) -> None:
+def test_discover_pipenv_with_lock(tmp_path: Path, init_git_repo) -> None:
     """A repo with Pipfile + Pipfile.lock is discovered as manager=pipenv."""
     repo = tmp_path / "org" / "pipenv-project"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "Pipfile").write_text('[packages]\nrequests = "*"\n')
     (repo / "Pipfile.lock").write_text(
         '{"_meta":{},"default":{"requests":{"version":"==2.31.0"}},"develop":{}}'
@@ -126,10 +119,10 @@ def test_discover_pipenv_with_lock(tmp_path: Path) -> None:
     assert pipenv_found[0].path == repo.resolve()
 
 
-def test_discover_pipenv_no_lock_skips_with_pipenv_reason(tmp_path: Path) -> None:
+def test_discover_pipenv_no_lock_skips_with_pipenv_reason(tmp_path: Path, init_git_repo) -> None:
     """Pipfile without Pipfile.lock → skip with Pipfile/pipenv reason (not pyproject msg)."""
     repo = tmp_path / "org" / "pipenv-no-lock"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "Pipfile").write_text('[packages]\nrequests = "*"\n')
 
     diags = DiscoveryDiagnostics()
@@ -154,10 +147,10 @@ def test_discover_pipenv_no_lock_skips_with_pipenv_reason(tmp_path: Path) -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_discover_deno_with_deno_json(tmp_path: Path) -> None:
+def test_discover_deno_with_deno_json(tmp_path: Path, init_git_repo) -> None:
     """A repo with deno.json is discovered as ecosystem=deno, manager=deno."""
     repo = tmp_path / "org" / "deno-project"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "deno.json").write_text('{"name":"my-deno-app","version":"0.1.0"}\n')
     (repo / "deno.lock").write_text('{"version":"3","packages":{}}\n')
 
@@ -169,10 +162,10 @@ def test_discover_deno_with_deno_json(tmp_path: Path) -> None:
     assert deno_found[0].path == repo.resolve()
 
 
-def test_discover_deno_with_deno_jsonc(tmp_path: Path) -> None:
+def test_discover_deno_with_deno_jsonc(tmp_path: Path, init_git_repo) -> None:
     """deno.jsonc also triggers Deno discovery."""
     repo = tmp_path / "org" / "deno-jsonc"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "deno.jsonc").write_text('// deno config\n{"name":"app"}\n')
 
     found = discover_all([str(tmp_path)], flat=False)
@@ -181,10 +174,10 @@ def test_discover_deno_with_deno_jsonc(tmp_path: Path) -> None:
     assert len(deno_found) == 1, f"expected one deno workspace; found={deno_found}"
 
 
-def test_discover_deno_with_lock_only(tmp_path: Path) -> None:
+def test_discover_deno_with_lock_only(tmp_path: Path, init_git_repo) -> None:
     """deno.lock alone (no deno.json) still triggers Deno discovery."""
     repo = tmp_path / "org" / "deno-lock-only"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "deno.lock").write_text('{"version":"3","packages":{}}\n')
 
     found = discover_all([str(tmp_path)], flat=False)

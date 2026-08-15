@@ -20,7 +20,6 @@ Key invariants:
 from __future__ import annotations
 
 import os
-import subprocess
 import threading
 from pathlib import Path
 
@@ -33,42 +32,6 @@ from repo_ops_upgrade.post_apply_commit import CommitOutcome
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _init_git_repo(path: Path) -> str:
-    """Init a bare git repo, create one commit, return HEAD SHA."""
-    path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "t@example.com"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "T"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    (path / "README.md").write_text("init\n", encoding="utf-8")
-    subprocess.run(
-        ["git", "add", "README.md"], cwd=path, check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "init"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip()
 
 
 def _make_bundle(git_repo: Path) -> RepoBundle:
@@ -176,7 +139,7 @@ def _run_checkpoint_round(
 
 
 def test_no_checkpoint_written_before_commit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
 ) -> None:
     """Apply alone (no commit) does not write a checkpoint entry.
 
@@ -185,7 +148,7 @@ def test_no_checkpoint_written_before_commit(
     """
     cache_dir = tmp_path / "cache"
     git_repo = tmp_path / "repo"
-    _init_git_repo(git_repo)
+    init_git_repo(git_repo, commit=True)
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(cache_dir))
     monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)
@@ -229,7 +192,7 @@ def test_no_checkpoint_written_before_commit(
 
 
 def test_checkpoint_written_after_commit_and_resume_skips(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
 ) -> None:
     """After apply+commit, checkpoint records the post-commit SHA.
 
@@ -237,7 +200,7 @@ def test_checkpoint_written_after_commit_and_resume_skips(
     """
     cache_dir = tmp_path / "cache"
     git_repo = tmp_path / "repo"
-    _init_git_repo(git_repo)
+    init_git_repo(git_repo, commit=True)
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(cache_dir))
     monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)
@@ -284,7 +247,7 @@ def test_checkpoint_written_after_commit_and_resume_skips(
 
 
 def test_dirty_skipped_repo_not_checkpointed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
 ) -> None:
     """A dirty-skipped repo (status='skip') must not be checkpointed.
 
@@ -295,7 +258,7 @@ def test_dirty_skipped_repo_not_checkpointed(
     """
     cache_dir = tmp_path / "cache"
     git_repo = tmp_path / "repo"
-    _init_git_repo(git_repo)
+    init_git_repo(git_repo, commit=True)
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(cache_dir))
     monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)
@@ -341,7 +304,7 @@ def test_dirty_skipped_repo_not_checkpointed(
 
 
 def test_different_scope_discards_checkpoint(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
 ) -> None:
     """A stale checkpoint from a different scope is discarded on resume.
 
@@ -350,7 +313,7 @@ def test_different_scope_discards_checkpoint(
     """
     cache_dir = tmp_path / "cache"
     git_repo = tmp_path / "repo"
-    _init_git_repo(git_repo)
+    init_git_repo(git_repo, commit=True)
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(cache_dir))
     monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)

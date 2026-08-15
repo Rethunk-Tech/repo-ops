@@ -16,7 +16,6 @@ Key invariants:
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -44,38 +43,6 @@ def _clear_cache():
     _clear_submodule_tag_cache()
     yield
     _clear_submodule_tag_cache()
-
-
-def _init_git_repo(path: Path) -> str:
-    """Init git repo, create initial commit, return HEAD SHA."""
-    path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "t@example.com"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "T"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    (path / "file.txt").write_text("v1\n", encoding="utf-8")
-    subprocess.run(
-        ["git", "add", "file.txt"], cwd=path, check=True, capture_output=True
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True
-    )
-    return subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
 
 
 def _ok_proc(stdout: str = "") -> MagicMock:
@@ -138,7 +105,7 @@ def _make_bundle(git_repo: Path, *, with_change: bool = False) -> RepoBundle:
 
 
 def test_apply_submodule_tag_advances_invoked_via_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
 ) -> None:
     """apply_submodule_tag_advances is called when --submodules + apply.
 
@@ -152,7 +119,7 @@ def test_apply_submodule_tag_advances_invoked_via_run(
     root = tmp_path / "root"
     repo = root / "myrepo"
     repo.mkdir(parents=True)
-    _init_git_repo(repo)
+    init_git_repo(repo, commit=True, filename="file.txt", content="v1\n")
 
     called_with: list = []
 
@@ -252,7 +219,7 @@ def test_upgrade_scoped_paths_includes_gitlink(tmp_path: Path) -> None:
     assert "go.sum" in scoped_with
 
 
-def test_plan_repo_commit_includes_gitlink_via_extra_paths(tmp_path: Path) -> None:
+def test_plan_repo_commit_includes_gitlink_via_extra_paths(tmp_path: Path, init_git_repo) -> None:
     """plan_repo_commit stages gitlink paths passed via extra_gitlink_paths.
 
     Integration path: gitlink appears in the commit plan's files list so
@@ -260,7 +227,7 @@ def test_plan_repo_commit_includes_gitlink_via_extra_paths(tmp_path: Path) -> No
     """
     git_repo = tmp_path / "parent"
     git_repo.mkdir()
-    _init_git_repo(git_repo)
+    init_git_repo(git_repo, commit=True, filename="file.txt", content="v1\n")
 
     # Write a file so there's something in the porcelain output
     (git_repo / "go.sum").write_text("module example.com/pkg\n", encoding="utf-8")

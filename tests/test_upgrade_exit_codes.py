@@ -13,12 +13,8 @@ from repo_ops_models import WorkspaceResult
 from repo_ops_upgrade.run import main_apply, main_plan
 
 
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-
-
-def _npm_workspace(tmp_path: Path) -> None:
-    _init_git_repo(tmp_path)
+def _npm_workspace(tmp_path: Path, init_git_repo) -> None:
+    init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"npm@10.0.0"}',
         encoding="utf-8",
@@ -32,8 +28,8 @@ def _fail_verify(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
     return wr
 
 
-def test_apply_verify_failure_exits_nonzero(tmp_path: Path) -> None:
-    _npm_workspace(tmp_path)
+def test_apply_verify_failure_exits_nonzero(tmp_path: Path, init_git_repo) -> None:
+    _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
     with patch(
         "repo_ops_upgrade.run.orchestration.process_workspace",
@@ -49,9 +45,9 @@ def test_apply_verify_failure_exits_nonzero(tmp_path: Path) -> None:
     assert rc == 1
 
 
-def test_apply_subprocess_exit_without_pipefail(tmp_path: Path) -> None:
+def test_apply_subprocess_exit_without_pipefail(tmp_path: Path, init_git_repo) -> None:
     """Child process exit code is non-zero without shell pipefail."""
-    _npm_workspace(tmp_path)
+    _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
     script = f"""
 import sys
@@ -86,12 +82,12 @@ with patch(
     assert proc.returncode == 1
 
 
-def test_apply_worker_exception_reports_fail_not_clean(tmp_path: Path) -> None:
+def test_apply_worker_exception_reports_fail_not_clean(tmp_path: Path, init_git_repo) -> None:
     """A worker that raises must surface as a FAILED workspace, not a silent
     clean exit 0 (#62). Exit code alone is insufficient: the defensive
     fallthrough would also yield rc=1, so the error text ("boom") pins that the
     guard path in _process_one actually ran and recorded the exception."""
-    _npm_workspace(tmp_path)
+    _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     out_file = tmp_path / "apply.json"
     register_all()
     with patch(
@@ -118,8 +114,8 @@ def test_apply_worker_exception_reports_fail_not_clean(tmp_path: Path) -> None:
     assert any("boom" in (ws["error"] or "") for ws in workspaces)
 
 
-def test_apply_log_file_captures_transcript(tmp_path: Path) -> None:
-    _npm_workspace(tmp_path)
+def test_apply_log_file_captures_transcript(tmp_path: Path, init_git_repo) -> None:
+    _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     log_path = tmp_path / "apply.log"
     register_all()
     with patch(
@@ -144,8 +140,8 @@ def test_apply_log_file_captures_transcript(tmp_path: Path) -> None:
     assert "workspaces fail" in transcript
 
 
-def test_plan_log_file_includes_footer(tmp_path: Path, capsys) -> None:
-    _npm_workspace(tmp_path)
+def test_plan_log_file_includes_footer(tmp_path: Path, capsys, init_git_repo) -> None:
+    _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     log_path = tmp_path / "plan.log"
     register_all()
 
@@ -178,8 +174,8 @@ def _dirty_skip(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
     return wr
 
 
-def test_apply_dirty_skip_does_not_scan_actions(tmp_path: Path) -> None:
-    _npm_workspace(tmp_path)
+def test_apply_dirty_skip_does_not_scan_actions(tmp_path: Path, init_git_repo) -> None:
+    _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     (tmp_path / ".github" / "workflows").mkdir(parents=True)
     (tmp_path / ".github" / "workflows" / "ci.yml").write_text(
         "jobs:\n  x:\n    steps:\n      - uses: actions/checkout@v3\n",
@@ -204,8 +200,8 @@ def test_apply_dirty_skip_does_not_scan_actions(tmp_path: Path) -> None:
     assert scan_calls == []
 
 
-def test_strict_exit_counts_dirty_skip(tmp_path: Path) -> None:
-    _npm_workspace(tmp_path)
+def test_strict_exit_counts_dirty_skip(tmp_path: Path, init_git_repo) -> None:
+    _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
 
     with patch(
@@ -226,13 +222,13 @@ def test_strict_exit_counts_dirty_skip(tmp_path: Path) -> None:
     assert rc_strict == 1
 
 
-def test_apply_snapshots_repo_dirty_state_once_per_bundle(tmp_path: Path) -> None:
+def test_apply_snapshots_repo_dirty_state_once_per_bundle(tmp_path: Path, init_git_repo) -> None:
     """Two sibling workspaces in the same repo must share one dirty snapshot,
     not each re-check the live git tree — otherwise an earlier sibling's own
     applied-but-uncommitted changes make every later sibling look dirty and get
     skipped outright, even though the repo was clean at run-start. Issue #152.
     """
-    _npm_workspace(tmp_path)
+    _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
     register_all()
 

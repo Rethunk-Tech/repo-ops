@@ -132,19 +132,12 @@ def test_classify_empty_stderr_returns_empty() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _git_init(path: Path) -> None:
-    import subprocess as sp
-
-    path.mkdir(parents=True, exist_ok=True)
-    sp.run(["git", "init", "-q", str(path)], check=True)
-
-
-def test_discovery_registers_go_work_dir(tmp_path: Path) -> None:
+def test_discovery_registers_go_work_dir(tmp_path: Path, init_git_repo) -> None:
     """consider_go registers the go.work dir when go.work is above the module."""
     from repo_ops_upgrade.discovery import discover_all
 
     repo = tmp_path / "myorg" / "myrepo"
-    _git_init(repo)
+    init_git_repo(repo)
     # go.work at repo root
     (repo / "go.work").write_text("go 1.25\n")
     # module in sub-directory
@@ -163,12 +156,12 @@ def test_discovery_registers_go_work_dir(tmp_path: Path) -> None:
     assert _go_work_dirs[module.resolve()] == repo.resolve()
 
 
-def test_discovery_no_go_work_no_registration(tmp_path: Path) -> None:
+def test_discovery_no_go_work_no_registration(tmp_path: Path, init_git_repo) -> None:
     """When there is no go.work anywhere up to the git root, nothing is registered."""
     from repo_ops_upgrade.discovery import discover_all
 
     repo = tmp_path / "myorg" / "standalone"
-    _git_init(repo)
+    init_git_repo(repo)
     (repo / "go.mod").write_text("module example.com/standalone\n\ngo 1.22\n")
 
     _go_work_dirs.clear()

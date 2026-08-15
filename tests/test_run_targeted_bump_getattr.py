@@ -1,5 +1,4 @@
 import os
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -59,12 +58,8 @@ def test_conservative_flag_writes_sweep_vars_to_zero(monkeypatch):
     assert all(os.environ[name] == "0" for name in run._SWEEP_ENV_VARS)
 
 
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-
-
-def _bun_workspace(tmp_path: Path) -> None:
-    _init_git_repo(tmp_path)
+def _bun_workspace(tmp_path: Path, init_git_repo) -> None:
+    init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"bun@1.3.14"}',
         encoding="utf-8",
@@ -73,7 +68,7 @@ def _bun_workspace(tmp_path: Path) -> None:
 
 
 def test_conservative_ignores_ambient_targeted_bump_env_var(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, init_git_repo
 ) -> None:
     """Regression: an ambient REPO_OPS_YARN_TARGETED_BUMP=1 already set in the
     operator's shell must not outrank --conservative. run.py used to leave a
@@ -81,7 +76,7 @@ def test_conservative_ignores_ambient_targeted_bump_env_var(
     ambient value pass straight through resolve_setting; it must now force "0"
     so the real resolver reports the setting disabled regardless of ambient."""
     monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
-    _bun_workspace(tmp_path)
+    _bun_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
 
     resolved: dict[str, bool] = {}

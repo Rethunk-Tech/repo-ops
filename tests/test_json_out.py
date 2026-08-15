@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,12 +11,8 @@ from repo_ops_upgrade.report import build_json_payload
 from repo_ops_upgrade.run import main_apply, main_plan
 
 
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-
-
-def test_plan_json_out_writes_file_and_prints_path_only(tmp_path: Path, capsys) -> None:
-    _init_git_repo(tmp_path)
+def test_plan_json_out_writes_file_and_prints_path_only(tmp_path: Path, capsys, init_git_repo) -> None:
+    init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"npm@10.0.0"}',
         encoding="utf-8",
@@ -72,7 +67,7 @@ def test_json_out_requires_json(tmp_path: Path) -> None:
             raise AssertionError("expected SystemExit")
 
 
-def test_apply_json_out_keeps_colocated_npm_and_container(tmp_path: Path) -> None:
+def test_apply_json_out_keeps_colocated_npm_and_container(tmp_path: Path, init_git_repo) -> None:
     """Co-located ecosystems must both survive result reconciliation (#146).
 
     A directory with package.json + Dockerfile yields two WorkspaceResults that
@@ -80,7 +75,7 @@ def test_apply_json_out_keeps_colocated_npm_and_container(tmp_path: Path) -> Non
     earlier (npm) result with the later (container) one, so --json-out dropped
     the non-container workspace.
     """
-    _init_git_repo(tmp_path)
+    init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"npm@10.0.0"}',
         encoding="utf-8",

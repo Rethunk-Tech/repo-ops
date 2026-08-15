@@ -32,14 +32,8 @@ from repo_ops_upgrade.run import main_plan
 # ---------------------------------------------------------------------------
 
 
-def _init_git_repo(path: Path) -> None:
-    import subprocess
-
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-
-
-def _bun_workspace(tmp_path: Path) -> None:
-    _init_git_repo(tmp_path)
+def _bun_workspace(tmp_path: Path, init_git_repo) -> None:
+    init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"bun@1.3.14"}',
         encoding="utf-8",
@@ -73,10 +67,10 @@ def _clear_env(monkeypatch, names: tuple[str, ...]) -> None:
 
 
 def test_default_sweep_sets_container_precommit_submodule_env_vars(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, init_git_repo
 ) -> None:
     _clear_env(monkeypatch, _LATEST_UMBRELLA_VARS)
-    _bun_workspace(tmp_path)
+    _bun_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
 
     seen: dict[str, str | None] = {}
@@ -103,12 +97,12 @@ def test_default_sweep_sets_container_precommit_submodule_env_vars(
 
 
 def test_conservative_flag_zeroes_container_precommit_submodule_env_vars(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, init_git_repo
 ) -> None:
     """#136: --conservative writes each gate to "0" explicitly (not merely
     unset) so an ambient REPO_OPS_*=1 can't outrank it."""
     _clear_env(monkeypatch, _LATEST_UMBRELLA_VARS)
-    _bun_workspace(tmp_path)
+    _bun_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
 
     seen: dict[str, str | None] = {}
@@ -141,12 +135,12 @@ def test_conservative_flag_zeroes_container_precommit_submodule_env_vars(
 # ---------------------------------------------------------------------------
 
 
-def test_bun_targeted_bump_defaults_on(tmp_path: Path, monkeypatch) -> None:
+def test_bun_targeted_bump_defaults_on(tmp_path: Path, monkeypatch, init_git_repo) -> None:
     _clear_env(
         monkeypatch,
         ("REPO_OPS_BUN_TARGETED_BUMP", "REPO_OPS_BUN_UPDATE_LATEST"),
     )
-    _bun_workspace(tmp_path)
+    _bun_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
 
     seen: dict[str, str | None] = {}
@@ -165,10 +159,10 @@ def test_bun_targeted_bump_defaults_on(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_bun_targeted_bump_conservative_flag_disables_it(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, init_git_repo
 ) -> None:
     _clear_env(monkeypatch, ("REPO_OPS_BUN_TARGETED_BUMP",))
-    _bun_workspace(tmp_path)
+    _bun_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
 
     seen: dict[str, str | None] = {}

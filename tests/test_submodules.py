@@ -12,22 +12,6 @@ from repo_ops_upgrade import submodules
 from repo_ops_upgrade.run import main_plan
 
 
-def _init_git_repo(path: Path) -> None:
-    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test"],
-        cwd=path,
-        check=True,
-        capture_output=True,
-    )
-
-
 def _write_gitmodules(parent: Path, path: str, url: str) -> None:
     (parent / ".gitmodules").write_text(
         f'[submodule "{path}"]\n\tpath = {path}\n\turl = {url}\n',
@@ -35,12 +19,12 @@ def _write_gitmodules(parent: Path, path: str, url: str) -> None:
     )
 
 
-def test_parse_gitmodules_and_discover(tmp_path: Path) -> None:
+def test_parse_gitmodules_and_discover(tmp_path: Path, init_git_repo) -> None:
     parent = tmp_path / "umbrella"
     child = parent / "libs" / "child"
     child.mkdir(parents=True)
-    _init_git_repo(parent)
-    _init_git_repo(child)
+    init_git_repo(parent)
+    init_git_repo(child)
     _write_gitmodules(parent, "libs/child", "https://example.com/child.git")
 
     links = submodules.discover_submodules_under_roots([str(parent)], flat=True)
@@ -76,12 +60,12 @@ def test_sort_bundles_children_first(tmp_path: Path) -> None:
     assert ordered[1] == parent_p
 
 
-def test_plan_json_includes_submodules(tmp_path: Path, capsys) -> None:
+def test_plan_json_includes_submodules(tmp_path: Path, capsys, init_git_repo) -> None:
     parent = tmp_path / "umbrella"
     child = parent / "pkg"
     child.mkdir(parents=True)
-    _init_git_repo(parent)
-    _init_git_repo(child)
+    init_git_repo(parent)
+    init_git_repo(child)
     _write_gitmodules(parent, "pkg", "https://example.com/pkg.git")
     (child / "package.json").write_text(
         '{"name":"child","packageManager":"npm@10.0.0"}',
@@ -125,11 +109,11 @@ def test_sort_bundles_self_referential_link_terminates(tmp_path: Path) -> None:
     assert ordered == [p]
 
 
-def test_discover_skips_uninitialized_submodule(tmp_path: Path) -> None:
+def test_discover_skips_uninitialized_submodule(tmp_path: Path, init_git_repo) -> None:
     """A registered but uninitialized submodule (no .git) is excluded."""
     parent = tmp_path / "umbrella"
     parent.mkdir()
-    _init_git_repo(parent)
+    init_git_repo(parent)
     # Register a submodule path that exists as a plain dir (no git init).
     uninit_dir = parent / "sub"
     uninit_dir.mkdir()
@@ -139,12 +123,12 @@ def test_discover_skips_uninitialized_submodule(tmp_path: Path) -> None:
     assert links == []
 
 
-def test_dirty_submodule_pointer_hint(tmp_path: Path) -> None:
+def test_dirty_submodule_pointer_hint(tmp_path: Path, init_git_repo) -> None:
     parent = tmp_path / "umbrella"
     child = parent / "pkg"
     child.mkdir(parents=True)
-    _init_git_repo(parent)
-    _init_git_repo(child)
+    init_git_repo(parent)
+    init_git_repo(child)
     _write_gitmodules(parent, "pkg", "https://example.com/pkg.git")
     (child / "README.md").write_text("child\n", encoding="utf-8")
     subprocess.run(
@@ -180,12 +164,12 @@ def test_dirty_submodule_pointer_hint(tmp_path: Path) -> None:
     assert "pkg" in hints[0]["paths"]
 
 
-def test_find_gitmodules_prunes_skip_dirs(tmp_path: Path) -> None:
+def test_find_gitmodules_prunes_skip_dirs(tmp_path: Path, init_git_repo) -> None:
     """Regression for #43: _find_gitmodules must not descend into SKIP_DIRS
     (e.g. node_modules) and must not register a .gitmodules found inside them."""
     root = tmp_path / "repo"
     root.mkdir()
-    _init_git_repo(root)
+    init_git_repo(root)
     # Legitimate .gitmodules at the repo root.
     _write_gitmodules(root, "sub", "https://example.com/sub.git")
     # A .gitmodules inside node_modules — should be ignored.
@@ -208,14 +192,14 @@ def test_find_gitmodules_prunes_skip_dirs(tmp_path: Path) -> None:
     )
 
 
-def test_discover_rejects_self_referential_dot_path(tmp_path: Path) -> None:
+def test_discover_rejects_self_referential_dot_path(tmp_path: Path, init_git_repo) -> None:
     """Regression for #47: a .gitmodules entry with path='.' produces
     child_dir == parent; the existing guard (child_repo.resolve() != child_dir)
     passes because git_repo_for('.') == the repo itself, so an explicit check
     for child_repo.resolve() == parent is required to reject it."""
     repo = tmp_path / "repo"
     repo.mkdir()
-    _init_git_repo(repo)
+    init_git_repo(repo)
     # Write a .gitmodules with path = "." (self-referential).
     (repo / ".gitmodules").write_text(
         '[submodule "self"]\n\tpath = .\n\turl = https://example.com/self.git\n',
