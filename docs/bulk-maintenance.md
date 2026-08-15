@@ -4,7 +4,7 @@ Submodule umbrella workflows and the multi-step bulk maintenance playbook for ru
 
 ## Submodule umbrellas (git-push-order)
 
-Umbrella repos (e.g. Bastion with many Go/Node submodules) need **children-first** apply/push: upgrade and push each submodule checkout, then commit the parent's submodule pointer, then push the parent. `repo-ops` discovers submodule repos via `find .git` like any checkout; `--submodules` reads `.gitmodules` for explicit parent/child links. Aligns with the **git-push-order** skill (dependency-first push, no force unless asked). See [Bulk maintenance](#bulk-maintenance) step 4 for the full playbook.
+Umbrella repos (e.g. Bastion with many Go/Node submodules) need **children-first** apply/push: upgrade and push each submodule checkout, then commit the parent's submodule pointer, then push the parent. `repo-ops` discovers submodule repos via `find .git` like any checkout; `--submodules` (default on) reads `.gitmodules` for explicit parent/child links, and `apply` processes children before parent umbrellas by default (`--submodule-order=children-first`). Aligns with the **git-push-order** skill (dependency-first push, no force unless asked). See [Bulk maintenance](#bulk-maintenance) step 4 for the full playbook.
 
 ## Bulk maintenance
 
@@ -46,22 +46,21 @@ Use this flow when running `plan` / `apply` across many checkouts under a parent
 4. **Submodule umbrellas.** When a parent repo contains submodules (Bastion-style layouts), apply and push **child** checkouts first, then update the **parent** submodule pointer and commit that last. Same dependency-first idea as the [git-push-order](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/bulk-maintenance.md#submodule-umbrellas-git-push-order) agent skill (`~/.claude/skills/git-push-order/SKILL.md`): children before parent pointer.
 
    ```bash
-   repo-ops plan --submodules --json --json-out plan.json /path/to/Bastion
-   repo-ops apply --submodule-order=children-first --submodules \
-     --commit=conventional --commit-umbrella /path/to/Bastion --log-file apply.log
+   repo-ops plan --json --json-out plan.json /path/to/Bastion
+   repo-ops apply --commit=conventional --commit-umbrella /path/to/Bastion --log-file apply.log
    ```
 
-   The required apply combo for child-to-parent ordering and umbrella pointer commits is `--submodules --submodule-order=children-first --commit=conventional --commit-umbrella`. `--commit-umbrella` only enables parent pointer commits; it does not select child-first processing. Set `REPO_OPS_COMMIT_UMBRELLA=1` instead of the flag when needed, but umbrella commits still require `--commit`, and child-to-parent ordering still requires `--submodule-order=children-first`. Plan/apply JSON with `--submodules` adds top-level `submodules: [{path, git_repo, parent}]`. After apply, human output and JSON may include `submodule_pointer_hints` when a parent still has dirty submodule gitlinks.
+   Submodule detection and children-first apply ordering are on by default (`--submodules`, `--submodule-order=children-first`); the only flags left to add are `--commit=conventional` (or `--commit=agent`) and `--commit-umbrella` for the umbrella pointer commits. `--commit-umbrella` only enables parent pointer commits; it does not select child-first processing. Set `REPO_OPS_COMMIT_UMBRELLA=1` instead of the flag when needed, but umbrella commits still require `--commit`. Plan/apply JSON adds top-level `submodules: [{path, git_repo, parent}]` unless `--no-submodules` is passed. After apply, human output and JSON may include `submodule_pointer_hints` when a parent still has dirty submodule gitlinks.
 
    **Bastion-style example** (umbrella with nested Go/Node submodules under one parent root):
 
-   1. `repo-ops plan --submodules --json-out bastion-plan.json /usr/local/src/com.github/Rethunk-Tech/Bastion` — review `submodules[]` and drift per repo.
-   2. `repo-ops apply --submodule-order=children-first --submodules --commit=conventional --commit-umbrella /usr/local/src/com.github/Rethunk-Tech/Bastion --log-file bastion-apply.log` — children apply and commit first; umbrella pointer commits follow successful child commits.
+   1. `repo-ops plan --json-out bastion-plan.json /usr/local/src/com.github/Rethunk-Tech/Bastion` — review `submodules[]` and drift per repo.
+   2. `repo-ops apply --commit=conventional --commit-umbrella /usr/local/src/com.github/Rethunk-Tech/Bastion --log-file bastion-apply.log` — children apply and commit first; umbrella pointer commits follow successful child commits.
    3. Push each **child** repo (commit per child, then `/git-push-order`, children first).
    4. Review **Submodule pointers** and any `submodule_pointer_hints`; if a parent pointer remains dirty, stage the updated path and commit it (`git add path/to/submodule && git commit -m "chore: bump submodule pointers"`).
    5. Push the parent last.
 
-5. **Verify failures are not always dependency regressions.** Apply runs ecosystem verify gates (build/test). Failures may be missing env vars (for example Next.js `build` needing secrets), flaky tests, or local toolchain gaps — not a bad bump. Inspect logs before reverting. Use `--on-verify-fail=revert` on bulk apply when you want failed workspaces rolled back automatically; default `keep` preserves changes for manual triage. JSON/human output sets `verify_fail_disposition` to `FAILED_WITH_CHANGES` or `FAILED_CLEAN`.
+5. **Verify failures are not always dependency regressions.** Apply runs ecosystem verify gates (build/test). Failures may be missing env vars (for example Next.js `build` needing secrets), flaky tests, or local toolchain gaps — not a bad bump. Inspect logs before reverting. `--on-verify-fail=revert` (default) rolls back apply-artifact files for failed workspaces automatically; pass `--on-verify-fail=keep` on bulk apply to preserve changes for manual triage instead. JSON/human output sets `verify_fail_disposition` to `FAILED_WITH_CHANGES` or `FAILED_CLEAN`.
 
 6. **Optional post-apply commits.** After a green apply+verify pass, commit dependency changes in one shot per repo:
 

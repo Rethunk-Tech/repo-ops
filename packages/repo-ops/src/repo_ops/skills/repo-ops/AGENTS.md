@@ -60,16 +60,16 @@ repo-ops apply --log-file apply.log /path/to/root
 # Stay in-range instead of the default full sweep
 repo-ops apply --conservative --log-file apply.log
 
-# Submodule umbrellas: plan first, apply children before parent
-repo-ops plan --submodules --json --json-out plan.json /path/to/umbrella
-repo-ops apply --submodule-order=children-first --submodules /path/to/umbrella
+# Submodule umbrellas: submodule detection + children-first apply order are on by default
+repo-ops plan --json --json-out plan.json /path/to/umbrella
+repo-ops apply /path/to/umbrella
 ```
 
 ### Workflow
 
 1. **`plan` before `apply`** — same flags and roots. Plan is read-only; exit `1` when actionable drift exists.
 2. **Dirty worktrees** — skipped by default; use `--allow-dirty` only when intentional.
-3. **Verify failures** — default `--on-verify-fail=keep` leaves changes; `--on-verify-fail=revert` rolls back lockfiles and tracked paths.
+3. **Verify failures** — default `--on-verify-fail=revert` rolls back apply-artifact files (lockfiles and manifests); `--on-verify-fail=keep` leaves them for inspection.
 4. **Commits** — commit tooling is fleet canon (`~/.claude/CLAUDE.md` § Git & GitHub); headless: `apply --commit=conventional` or `--commit=agent` (preview with `--commit-dry-run`).
 5. **Bulk multi-repo playbook** — [docs/bulk-maintenance.md](docs/bulk-maintenance.md).
 
@@ -97,20 +97,20 @@ repo-ops apply --submodule-order=children-first --submodules /path/to/umbrella
 | `--allow-dirty` | plan, apply | Process dirty git worktrees |
 | `--skip-actions` | plan, apply | Dependency-only (no Actions pin audit) |
 | `--log-file PATH` | plan, apply | Combined stdout/stderr transcript |
-| `--migrate-to-uv-lock` | plan, apply | Opt into creating `uv.lock` for Hatch projects that lack one |
-| `--submodules` | plan, apply | Include submodule metadata in JSON |
-| `--submodule-order=children-first` | apply | Process child repos before parent umbrellas |
+| `--migrate-to-uv-lock` | plan, apply | Create `uv.lock` for Hatch projects that lack one (default); `--no-migrate-to-uv-lock` to opt out |
+| `--submodules` | plan, apply | Detect submodules and annotate JSON (default, no writes); `--no-submodules` to opt out |
+| `--submodule-order=children-first\|discovery` | apply | Process child repos before parent umbrellas (default `children-first`); `discovery` restores plain scan order |
 | `--no-verify` | apply | Skip verify gates |
-| `--on-verify-fail=revert\|keep` | apply | Roll back or keep on verify failure |
+| `--on-verify-fail=revert\|keep` | apply | Roll back apply-artifact files (default `revert`) or keep them for inspection (`keep`) |
 | `--commit=none\|conventional\|agent` | apply | Post-apply commits |
-| `--only-outdated` | plan, apply | Filter human-readable output to outdated entries; JSON remains unfiltered |
+| `--only-outdated` | plan, apply | Filter human-readable output to outdated entries (default); `--no-only-outdated` lists everything. JSON remains unfiltered either way |
 | `--skip-remediations IDS` | plan, apply | Skip selected remediation IDs; see [usage.md](docs/usage.md) for the current catalog |
 | `--exclude PATTERN` | plan, apply, audit, dependabot, pushed | Exclude repos matching pattern (repeatable) |
 | `--go-upgrade-mode MODE` | plan, apply | Go upgrade policy override: `patch`, `explicit`, or `mvs`. Unset default follows sweep mode: `explicit` under the default full sweep, `patch` under `--conservative` |
 | `--actions-upgrade-mode MODE` | plan, apply | Actions cross-major policy override: `normalize` or `latest`. Unset default follows sweep mode: `latest` under the default full sweep, `normalize` under `--conservative` |
 | `--actions-tag-style STYLE` | plan, apply | Tag style when unpinning SHA pins: `major` (default) or `exact` |
 | `--actions-unpin-sha` | plan, apply | Resolve SHA-pinned Actions to version tags on apply (independent of the sweep default; SHA pins stay preserved either way unless this is passed) |
-| `--actions-org-policy` | plan, apply | Fetch org allowed-actions policy and flag violations |
+| `--actions-org-policy` | plan, apply | Force org allowed-actions policy check on (default: automatic whenever `gh` is authenticated) |
 | `--actions-policy-level block\|warn\|report` | plan, apply | How org-policy violations gate pin rewrites (default `report`) |
 | `--actions-lint-level block\|warn\|off` | plan, apply | Actionlint gate policy |
 
