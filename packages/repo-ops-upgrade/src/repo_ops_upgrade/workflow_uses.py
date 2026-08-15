@@ -201,6 +201,11 @@ class PinReplacement:
     # text.  Applied on the same line as the pin replacement (e.g. ``"# v6"``
     # → ``"# v7"`` when a SHA pin crosses a major boundary).
     comment_rewrite: tuple[str, str] | None = None
+    # Set (replacing any existing trailing comment, or appending if none) when
+    # pinning a previously-floating tag to a SHA (#NNN) — the new SHA needs a
+    # ``# vN`` audit hint whether or not the original tag ref had one at all.
+    # Unlike comment_rewrite, this does not require the old text to match.
+    set_comment: str | None = None
 
 
 def _apply_pin_to_line(line: str, action: str, old_pin: str, new_pin: str) -> str:
@@ -247,6 +252,26 @@ def _apply_comment_rewrite_to_line(
     return line
 
 
+def _apply_comment_to_line(line: str, new_comment: str) -> str:
+    """Return *line* with its trailing comment set to *new_comment*.
+
+    Replaces any existing trailing ``# ...`` comment verbatim, or appends one
+    (with a leading two-space gap, matching this repo's style) if the line
+    has none. Used when pinning a floating tag to SHA — the new SHA needs an
+    audit-hint comment whether or not the original tag ref had one.
+    """
+    ending = ""
+    body = line
+    for eol in ("\r\n", "\n"):
+        if line.endswith(eol):
+            ending = eol
+            body = line[: -len(eol)]
+            break
+    hash_idx = body.find("#")
+    prefix = body[:hash_idx] if hash_idx != -1 else body
+    return prefix.rstrip() + "  " + new_comment + ending
+
+
 def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool:
     """Apply pin updates in place using byte-preserving targeted line edits.
 
@@ -290,6 +315,8 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
                     new_line = _apply_comment_rewrite_to_line(
                         new_line, old_cmt, new_cmt
                     )
+                if repl.set_comment is not None:
+                    new_line = _apply_comment_to_line(new_line, repl.set_comment)
                 if new_line != lines[idx]:
                     lines[idx] = new_line
                     changed = True
@@ -302,6 +329,12 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
                     new_line = _apply_comment_rewrite_to_line(
                         new_line, old_cmt, new_cmt
                     )
+                if repl.set_comment is not None and new_line != line:
+                    # Only when the pin substitution actually matched this
+                    # line — set_comment is not content-scoped like
+                    # comment_rewrite, so applying it unconditionally in this
+                    # scan-all-lines fallback would corrupt unrelated lines.
+                    new_line = _apply_comment_to_line(new_line, repl.set_comment)
                 if new_line != line:
                     lines[idx] = new_line
                     changed = True

@@ -589,6 +589,21 @@ def add_upgrade_common_arguments(
         ),
     )
     pol.add_argument(
+        "--actions-pin-sha",
+        action="store_true",
+        dest="actions_pin_sha",
+        help=(
+            "Convert a floating tag-pinned Action (@vN, @vN.M.P) to a commit-SHA "
+            "pin, resolved to the highest vN.M.P release in the pin's current "
+            "major, with a # vN.M.P audit-hint comment added or replacing any "
+            "existing trailing comment. Supply-chain hardening for Actions that "
+            "were never SHA-pinned. With --latest (or --actions-upgrade-mode="
+            "latest), also crosses major boundaries the same way "
+            "--actions-refresh-sha does. Independent of --actions-unpin-sha/"
+            "--actions-refresh-sha, which only govern already-SHA-pinned Actions."
+        ),
+    )
+    pol.add_argument(
         "--precommit-refresh-sha",
         action=_StoreTrueSetEnv,
         const="REPO_OPS_PRECOMMIT_REFRESH_SHA",

@@ -520,6 +520,11 @@ def _run_upgrade_body(
         refresh_sha = keep_sha and (
             full_sweep or _cli_flag(args, "actions_refresh_sha")
         )
+        # Pin-to-SHA (#NNN): pure opt-in, not bundled into --full yet — unlike
+        # refresh_sha's within-major digest bump, this changes a tag pin to a
+        # SHA pin and rewrites/adds a comment, a bigger structural change to
+        # roll out by default across a whole fleet sweep.
+        pin_sha = _cli_flag(args, "actions_pin_sha")
         _raw_tag_style = getattr(args, "actions_tag_style", "major")
         tag_style: actions.TagStyle = "exact" if _raw_tag_style == "exact" else "major"
         # Cross-major apply (#106): explicit --actions-upgrade-mode wins; otherwise
@@ -553,6 +558,7 @@ def _run_upgrade_body(
                         apply=apply,
                         keep_sha=keep_sha,
                         refresh_sha=refresh_sha,
+                        pin_sha=pin_sha,
                         tag_style=tag_style,
                         upgrade_mode=actions_mode,
                         tag_cache=local_cache,

@@ -1038,6 +1038,7 @@ def scan_actions(
     *,
     keep_sha: bool = True,
     refresh_sha: bool = False,
+    pin_sha: bool = False,
     tag_style: TagStyle = "major",
     upgrade_mode: ActionsUpgradeMode = "normalize",
     tag_cache: dict[str, dict | None] | None = None,
@@ -1068,6 +1069,18 @@ def scan_actions(
         re-pinned to that commit and the ``# vN`` comment is updated to the new
         major (#138). Ignored when ``keep_sha=False`` (the unpin path takes over).
         No-op when the major cannot be resolved or no newer digest exists.
+    pin_sha:
+        When True (CLI: ``--actions-pin-sha``), a tag-pinned action (``@vN``,
+        ``@vN.M.P``) is rewritten to the commit SHA of the highest exact
+        ``vN.M.P`` release within its resolved major, with a ``# vN.M.P``
+        audit-hint comment added (or replacing any existing trailing
+        comment) — supply-chain hardening for actions that were never
+        SHA-pinned in the first place. With ``upgrade_mode="latest"``, also
+        crosses major boundaries the same way ``refresh_sha`` does. Falls
+        back to the existing tag-normalize behavior (report only) when no
+        exact release exists in the resolved major. Independent of
+        ``keep_sha``/``refresh_sha``, which only govern already-SHA-pinned
+        actions.
     tag_style:
         ``"major"`` (default) → rewrite SHA pins to ``@vN``.
         ``"exact"`` → rewrite to the highest ``@vN.M.P`` within the resolved major.
@@ -1400,6 +1413,51 @@ def scan_actions(
             if info is None:
                 # gh absent or API failed — skip this pin.
                 continue
+
+            # Pin a floating tag to a commit SHA (#NNN): opt-in via
+            # --actions-pin-sha. Runs before the tag-normalize logic below —
+            # once pinned to SHA, --actions-refresh-sha (not this path)
+            # governs future digest bumps for it. Same cross-major honoring
+            # of upgrade_mode="latest" as the SHA-pinned refresh path.
+            if pin_sha:
+                target_major = M
+                if upgrade_mode == "latest":
+                    latest_major = info.get("max_major")
+                    if (
+                        latest_major is not None
+                        and latest_major > M
+                        and _highest_exact_digest_in_major(info, latest_major)
+                        is not None
+                    ):
+                        target_major = latest_major
+                digest = _highest_exact_digest_in_major(info, target_major)
+                if digest is not None:
+                    new_sha, tag_label = digest
+                    if _target_within_hold(repo, action, tag_label):
+                        if not policy_blocked:
+                            bumps.append(
+                                ActionBump(
+                                    workflow=rel,
+                                    action=action,
+                                    pin=pin,
+                                    latest=new_sha,
+                                    status="ok",
+                                    detail=f"pin floating {pin} to SHA ({tag_label}, {new_sha[:12]})",
+                                )
+                            )
+                        if apply and not policy_blocked:
+                            replacements.append(
+                                PinReplacement(
+                                    action=action,
+                                    pin=pin,
+                                    latest=new_sha,
+                                    line=uses.line or None,
+                                    set_comment=f"# {tag_label}",
+                                )
+                            )
+                        continue
+                # Unresolvable digest for this major — fall through to the
+                # tag-normalize logic below (report only; stays tag-pinned).
 
             bare_major_exists = M in info["bare_majors"]
             max_major = info["max_major"]
