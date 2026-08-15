@@ -68,7 +68,6 @@ from repo_ops_core.cli import (
     add_follow_symlinks_argument,
     add_json_argument,
     add_roots_argument,
-    add_sarif_argument,
     add_verbose_argument,
     resolve_scan_roots,
     wire_verbose,
@@ -2702,7 +2701,17 @@ tools used (must be on PATH or workspace is skipped):
         dest="no_verify",
         help="With --fix: skip post-apply verification (default: verify).",
     )
-    add_sarif_argument(parser)
+    parser.add_argument(
+        "--sarif-out",
+        metavar="PATH",
+        dest="sarif_out",
+        default=None,
+        help=(
+            "Write SARIF 2.1.0 output to PATH so findings surface in "
+            "GitHub code-scanning. Each remediable vulnerability becomes "
+            "one SARIF result with a rule per advisory package."
+        ),
+    )
     add_json_argument(parser, dest="json_out")
     add_verbose_argument(parser)
     return parser
