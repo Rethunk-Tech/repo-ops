@@ -16,18 +16,6 @@ Design notes
   ``REPO_OPS_PRECOMMIT_UPDATE_LATEST=1`` to allow cross-major bumps.
 * All subprocess and network calls are bounded; failures degrade gracefully to
   report-only entries so the check never raises.
-
-Wire-up notes
--------------
-To enable this ecosystem in the main upgrade loop, add two lines to
-``packages/repo-ops/src/repo_ops/_register.py``::
-
-    from repo_ops_core._register import register_precommit
-    register_precommit()
-
-and add a ``consider_precommit(mdir)`` call inside
-``repo_ops_upgrade.discovery.discover_workspaces_in_root`` (similar to
-``consider_container``).
 """
 
 from __future__ import annotations
