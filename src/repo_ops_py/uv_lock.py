@@ -6,7 +6,7 @@ import re
 
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import read_toml_file
-from repo_ops_core.holds import HoldRule, resolve_package_hold
+from repo_ops_core.holds import resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import hold_ceiling_spec, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
@@ -20,10 +20,6 @@ from repo_ops_py.holds import filter_held_changes as _filter_held_changes
 # ``uv lock --upgrade`` regenerates the whole lockfile — so unlike the JS
 # ecosystems, this clamp-down is the *only* enforcement mechanism, not a
 # safety net.
-
-
-def _resolve_pkg_hold(ws: Workspace, package: str) -> HoldRule | None:
-    return resolve_package_hold(ws, package)
 
 
 def _uv_lock_versions(ws: Workspace) -> dict[str, str]:
@@ -57,7 +53,7 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
     if not versions:
         return
     for name, resolved in versions.items():
-        rule = _resolve_pkg_hold(ws, name)
+        rule = resolve_package_hold(ws, name)
         if rule is None or version_satisfies_ceiling(resolved, rule.max_version):
             continue
         spec = f"{name}{hold_ceiling_spec(rule.max_version)}"
