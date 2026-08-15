@@ -14,7 +14,7 @@ import pytest
 
 import repo_ops_core.state as state_mod
 import repo_ops_upgrade.run as run_mod
-from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
+from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -153,183 +153,150 @@ def test_checkpoint_should_not_skip_when_sha_unavailable(
 # ---------------------------------------------------------------------------
 
 
-def test_checkpoint_written_after_successful_apply(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def _stub_discovery_and_apply(
+    monkeypatch: pytest.MonkeyPatch,
+    bundle: RepoBundle,
+    process_fn,
 ) -> None:
-    """After a successful apply run, the repo appears in the checkpoint file."""
-    monkeypatch.setenv("REPO_OPS_RESUME", "1")
+    """Point run_mod's discovery + apply steps at *bundle* and *process_fn*.
+
+    Everything past this boundary (filtering, checkpoint skip/save, commit)
+    is the real ``_run_upgrade_body`` code.
+    """
+    git_repo = bundle.git_repo
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "discover_all",
+        lambda *a, **k: [wr.workspace for wr in bundle.workspaces],
+    )
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "group_by_repo",
+        lambda found, roots: {git_repo: bundle},
+    )
+    monkeypatch.setattr(run_mod.orchestration, "process_workspace", process_fn)
+
+
+def test_checkpoint_written_after_successful_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
+) -> None:
+    """After a successful apply+commit run, the repo appears in the checkpoint file."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)
-    monkeypatch.chdir(tmp_path)
 
-    POST_SHA = "deadbeefcafe1234"
     git_repo = tmp_path / "repo"
-    git_repo.mkdir()
-
-    # _get_head_sha is called before AND after processing;
-    # always return the same SHA for simplicity.
-    monkeypatch.setattr(run_mod, "_get_head_sha", lambda p: POST_SHA)
-
-    # Fake _run_upgrade_body: simulate a successful apply of one bundle.
-    # We drive _process_repo_checkpointed directly by injecting a bundle
-    # into the body logic.  The simplest path: replace _run_upgrade_body
-    # with one that calls the checkpointed wrapper manually.
+    init_git_repo(
+        git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}'
+    )
     bundle = _make_bundle(git_repo)
 
-    def _fake_body(*, apply: bool, args, roots, follow_symlinks: bool = False) -> int:
-        # Simulate the minimal body: set up checkpoint infra (mirroring
-        # _run_upgrade_body) and call the checkpointed wrapper once.
-        import threading as _threading
+    def _apply(wr: WorkspaceResult, **_kwargs: object) -> WorkspaceResult:
+        (wr.workspace.git_repo / "package.json").write_text(
+            '{"version": "0.0.1"}', encoding="utf-8"
+        )
+        wr.status = "ok"
+        wr.changes = [Change(name="demo-dep", from_ver="1.0.0", to="1.0.1")]
+        return wr
 
-        from repo_ops_core import state as _cpt_state
+    _stub_discovery_and_apply(monkeypatch, bundle, _apply)
 
-        checkpoint: dict[str, str] = _cpt_state.load_checkpoint()
-        checkpoint_lock = _threading.Lock()
-
-        def _process_repo_checkpointed(b: RepoBundle) -> list[WorkspaceResult]:
-            if run_mod._checkpoint_should_skip(b, checkpoint):
-                for wr in b.workspaces:
-                    wr.status = "skip"
-                    wr.error = "resume: already applied"
-                return list(b.workspaces)
-            # Simulate a successful (ok) result
-            for wr in b.workspaces:
-                wr.status = "ok"
-            results = list(b.workspaces)
-            if not any(r.status == "fail" for r in results):
-                post_sha = run_mod._get_head_sha(b.git_repo)
-                if post_sha:
-                    with checkpoint_lock:
-                        checkpoint[str(b.git_repo)] = post_sha
-                        to_save = dict(checkpoint)
-                    _cpt_state.save_checkpoint(to_save)
-            return results
-
-        _process_repo_checkpointed(bundle)
-        return 0
-
-    monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
-    rc = run_mod.run_upgrade(apply=True, argv=["--flat", str(tmp_path)])
+    rc = run_mod.run_upgrade(
+        apply=True,
+        argv=[
+            "--flat",
+            "--skip-actions",
+            "--quiet",
+            "--resume",
+            "--commit",
+            "conventional",
+            str(git_repo),
+        ],
+    )
     assert rc == 0
 
-    # Checkpoint must now contain the repo at POST_SHA
     loaded = state_mod.load_checkpoint()
-    assert loaded.get(str(git_repo)) == POST_SHA
+    assert loaded.get(str(git_repo)) == run_mod._get_head_sha(git_repo)
 
 
 def test_resume_skips_completed_repo(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
 ) -> None:
     """On resume, a repo in the checkpoint at the current HEAD is not re-processed."""
-    monkeypatch.setenv("REPO_OPS_RESUME", "1")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)
 
-    HEAD_SHA = "abc123def456"
     git_repo = tmp_path / "repo"
-    git_repo.mkdir()
-
-    # Pre-populate checkpoint (simulating a completed previous run)
-    state_mod.save_checkpoint({str(git_repo): HEAD_SHA})
+    init_git_repo(
+        git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}'
+    )
+    head_sha = run_mod._get_head_sha(git_repo)
+    # "_scope": "" matches the unfiltered run below, so the checkpoint isn't
+    # discarded on the scope-mismatch check before the per-repo SHA check runs.
+    state_mod.save_checkpoint({str(git_repo): head_sha, "_scope": ""})
 
     bundle = _make_bundle(git_repo)
-    process_calls: list[RepoBundle] = []
+    process_calls: list[Path] = []
 
-    def _fake_body(*, apply: bool, args, roots, follow_symlinks: bool = False) -> int:
-        import threading as _threading
+    def _apply(wr: WorkspaceResult, **_kwargs: object) -> WorkspaceResult:
+        process_calls.append(wr.workspace.git_repo)
+        wr.status = "ok"
+        return wr
 
-        from repo_ops_core import state as _cpt_state
+    _stub_discovery_and_apply(monkeypatch, bundle, _apply)
 
-        checkpoint: dict[str, str] = _cpt_state.load_checkpoint()
-        checkpoint_lock = _threading.Lock()
-
-        def _process_repo_real(b: RepoBundle) -> list[WorkspaceResult]:
-            process_calls.append(b)
-            for wr in b.workspaces:
-                wr.status = "ok"
-            return list(b.workspaces)
-
-        def _process_repo_checkpointed(b: RepoBundle) -> list[WorkspaceResult]:
-            if run_mod._checkpoint_should_skip(b, checkpoint):
-                for wr in b.workspaces:
-                    wr.status = "skip"
-                    wr.error = "resume: already applied"
-                return list(b.workspaces)
-            results = _process_repo_real(b)
-            if not any(r.status == "fail" for r in results):
-                post_sha = run_mod._get_head_sha(b.git_repo)
-                if post_sha:
-                    with checkpoint_lock:
-                        checkpoint[str(b.git_repo)] = post_sha
-                        to_save = dict(checkpoint)
-                    _cpt_state.save_checkpoint(to_save)
-            return results
-
-        _process_repo_checkpointed(bundle)
-        return 0
-
-    monkeypatch.setattr(run_mod, "_get_head_sha", lambda p: HEAD_SHA)
-    monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
-    run_mod.run_upgrade(apply=True, argv=["--flat", str(tmp_path)])
-
+    rc = run_mod.run_upgrade(
+        apply=True,
+        argv=[
+            "--flat",
+            "--skip-actions",
+            "--quiet",
+            "--resume",
+            "--commit",
+            "conventional",
+            str(git_repo),
+        ],
+    )
+    assert rc == 0
     assert process_calls == [], "repo already in checkpoint must not be re-processed"
 
 
 def test_resume_does_not_skip_on_changed_sha(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
 ) -> None:
     """On resume, a repo whose HEAD changed since checkpointing IS re-processed."""
-    monkeypatch.setenv("REPO_OPS_RESUME", "1")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)
 
-    OLD_SHA = "oldsha000"
-    NEW_SHA = "newsha999"
     git_repo = tmp_path / "repo"
-    git_repo.mkdir()
-
-    # Checkpoint has the old SHA; current HEAD is different
-    state_mod.save_checkpoint({str(git_repo): OLD_SHA})
+    init_git_repo(
+        git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}'
+    )
+    # Checkpoint holds a SHA that doesn't match the repo's real current HEAD.
+    state_mod.save_checkpoint(
+        {str(git_repo): "stale-sha-not-current-head", "_scope": ""}
+    )
 
     bundle = _make_bundle(git_repo)
-    process_calls: list[RepoBundle] = []
+    process_calls: list[Path] = []
 
-    def _fake_body(*, apply: bool, args, roots, follow_symlinks: bool = False) -> int:
-        import threading as _threading
+    def _apply(wr: WorkspaceResult, **_kwargs: object) -> WorkspaceResult:
+        process_calls.append(wr.workspace.git_repo)
+        wr.status = "ok"
+        return wr
 
-        from repo_ops_core import state as _cpt_state
+    _stub_discovery_and_apply(monkeypatch, bundle, _apply)
 
-        checkpoint: dict[str, str] = _cpt_state.load_checkpoint()
-        checkpoint_lock = _threading.Lock()
-
-        def _process_repo_real(b: RepoBundle) -> list[WorkspaceResult]:
-            process_calls.append(b)
-            for wr in b.workspaces:
-                wr.status = "ok"
-            return list(b.workspaces)
-
-        def _process_repo_checkpointed(b: RepoBundle) -> list[WorkspaceResult]:
-            if run_mod._checkpoint_should_skip(b, checkpoint):
-                for wr in b.workspaces:
-                    wr.status = "skip"
-                    wr.error = "resume: already applied"
-                return list(b.workspaces)
-            results = _process_repo_real(b)
-            if not any(r.status == "fail" for r in results):
-                post_sha = run_mod._get_head_sha(b.git_repo)
-                if post_sha:
-                    with checkpoint_lock:
-                        checkpoint[str(b.git_repo)] = post_sha
-                        to_save = dict(checkpoint)
-                    _cpt_state.save_checkpoint(to_save)
-            return results
-
-        _process_repo_checkpointed(bundle)
-        return 0
-
-    monkeypatch.setattr(run_mod, "_get_head_sha", lambda p: NEW_SHA)
-    monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
-    run_mod.run_upgrade(apply=True, argv=["--flat", str(tmp_path)])
-
-    assert len(process_calls) == 1, "repo with changed HEAD must be re-processed"
-    assert process_calls[0].git_repo == git_repo
+    rc = run_mod.run_upgrade(
+        apply=True,
+        argv=[
+            "--flat",
+            "--skip-actions",
+            "--quiet",
+            "--resume",
+            "--commit",
+            "conventional",
+            str(git_repo),
+        ],
+    )
+    assert rc == 0
+    assert process_calls == [git_repo], "repo with changed HEAD must be re-processed"
