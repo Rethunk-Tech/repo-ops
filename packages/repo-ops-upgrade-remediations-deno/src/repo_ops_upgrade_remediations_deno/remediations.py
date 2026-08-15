@@ -22,7 +22,6 @@ deno_fix
 from __future__ import annotations
 
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +30,7 @@ from repo_ops_models import Workspace
 from repo_ops_upgrade_remediations_core.remediations import (
     ApplyResult,
     RemediationHook,
+    changed_files_since_head,
     register,
     run_hooks,
     stderr_tail,
@@ -60,45 +60,12 @@ def _has_deno_config(path: Path) -> bool:
 def _changed_deno_files(ws: Workspace) -> list[str] | None:
     """Return absolute paths of Deno-formattable files changed since HEAD in *ws*.
 
-    Only files within *ws.path* are returned.  Returns ``None`` when git is
-    unavailable or this is not a git repository — the caller should fall back
-    to whole-workspace ``deno fmt``.  Returns an empty list when git worked
-    but no formattable source files changed (typical for a pure dep bump
-    that only touched ``deno.json``/``deno.lock``).
-
-    Uses ``subprocess`` directly (not the repo_ops_core.process.run helper)
-    so that tests that mock the process helper can still exercise the fallback
-    path without interference from git calls.
+    Config/lock bumps are not "source" reformats — excluded so pure dep
+    updates that only touch deno.json / deno.lock become a no-op.
     """
-    try:
-        proc = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
-            cwd=str(ws.git_repo),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except (FileNotFoundError, OSError):
-        return None
-    if proc.returncode != 0:
-        return None
-    changed: list[str] = []
-    for rel in proc.stdout.splitlines():
-        if not rel.endswith(DENO_FMT_EXTENSIONS):
-            continue
-        # Config/lock bumps are not "source" reformats — skip so pure dep
-        # updates that only touch deno.json / deno.lock become a no-op.
-        basename = Path(rel).name
-        if basename in DENO_CONFIG_NAMES:
-            continue
-        abs_path = ws.git_repo / rel
-        try:
-            abs_path.relative_to(ws.path)
-        except ValueError:
-            continue
-        if abs_path.exists():
-            changed.append(str(abs_path))
-    return changed
+    return changed_files_since_head(
+        ws, DENO_FMT_EXTENSIONS, exclude_names=DENO_CONFIG_NAMES
+    )
 
 
 # ── deno_fix hook ────────────────────────────────────────────────────────────

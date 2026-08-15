@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from repo_ops_core import process
-from repo_ops_models import WorkspaceResult
+from repo_ops_models import Workspace, WorkspaceResult
 
 ApplyResult = tuple[bool, str]
 
@@ -35,16 +37,60 @@ class RemediationHook:
     files: Callable[[Any], list[str]] | None = field(default=None)
 
 
-# compat: intentional alias — tests/callers construct Remediation(...) (JS legacy).
-Remediation = RemediationHook
-
-
 def stderr_tail(text: str, *, max_chars: int = 200) -> str:
     """Return a short trailing snippet of *text* for remediation failure details."""
     s = (text or "").strip()
     if not s:
         return "non-zero exit"
     return s if len(s) <= max_chars else s[-max_chars:]
+
+
+def changed_files_since_head(
+    ws: Workspace,
+    extensions: tuple[str, ...],
+    exclude_names: Iterable[str] = (),
+) -> list[str] | None:
+    """Return absolute paths of *extensions* files changed since HEAD in *ws*.
+
+    Only files within *ws.path* are returned.  Returns ``None`` when git is
+    unavailable or this is not a git repository — the caller should fall back
+    to whole-workspace formatting.  Returns an empty list when git worked but
+    no matching source files changed (typical for a pure dep bump that only
+    touched a manifest/lockfile).  Files whose basename is in *exclude_names*
+    are dropped (e.g. a formatter's own config/lock files, which are not a
+    "source" reformat).
+
+    Uses ``subprocess`` directly (not the repo_ops_core.process.run helper)
+    so that tests that mock the process helper can still exercise the
+    fallback path without interference from git calls.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=str(ws.git_repo),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (FileNotFoundError, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    exclude = set(exclude_names)
+    changed: list[str] = []
+    for rel in proc.stdout.splitlines():
+        if not rel.endswith(extensions):
+            continue
+        if Path(rel).name in exclude:
+            continue
+        abs_path = ws.git_repo / rel
+        try:
+            abs_path.relative_to(ws.path)
+        except ValueError:
+            continue
+        if abs_path.exists():
+            changed.append(str(abs_path))
+    return changed
 
 
 # Global registry — populated by ecosystem packages on import.

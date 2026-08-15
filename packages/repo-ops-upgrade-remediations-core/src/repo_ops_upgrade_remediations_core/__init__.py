@@ -2,8 +2,8 @@
 
 from repo_ops_upgrade_remediations_core.remediations import (
     ApplyResult,
-    Remediation,
     RemediationHook,
+    changed_files_since_head,
     dispatch,
     register,
     run_hooks,
@@ -12,8 +12,8 @@ from repo_ops_upgrade_remediations_core.remediations import (
 
 __all__ = [
     "ApplyResult",
-    "Remediation",
     "RemediationHook",
+    "changed_files_since_head",
     "dispatch",
     "register",
     "run_hooks",
