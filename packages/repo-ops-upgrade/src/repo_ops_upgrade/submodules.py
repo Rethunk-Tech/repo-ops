@@ -9,7 +9,6 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass, field
-from functools import cache
 from pathlib import Path
 
 from repo_ops_core.config import (
@@ -21,13 +20,10 @@ from repo_ops_core.config import (
 )
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
-from repo_ops_core.holds import (
-    HoldRule,
-    load_global_holds,
-    load_repo_holds,
-    resolve_hold,
-)
+from repo_ops_core.holds import HoldRule, resolve_hold
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
+
+from repo_ops_upgrade import holds
 
 logger = logging.getLogger(__name__)
 
@@ -554,20 +550,10 @@ def _resolve_sha_refresh(
 # ---------------------------------------------------------------------------
 
 
-@cache
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return tuple(load_global_holds())
-
-
-@cache
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return tuple(load_repo_holds(Path(repo_root)))
-
-
 def _resolve_submodule_hold(link: SubmoduleLink) -> HoldRule | None:
     """Return the active submodule hold for *link*, if any."""
     repo_root = str(link.parent.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
+    rules = [*holds.global_holds_cached(), *holds.repo_holds_cached(repo_root)]
     if not rules:
         return None
     return resolve_hold(
@@ -581,115 +567,31 @@ def _resolve_submodule_hold(link: SubmoduleLink) -> HoldRule | None:
 
 def _target_within_hold(link: SubmoduleLink, target_tag: str) -> bool:
     """Return whether a resolved tag target is allowed by its active hold."""
-    rule = _resolve_submodule_hold(link)
-    return rule is None or version_satisfies_ceiling(
-        target_tag.lstrip("vV"), rule.max_version
-    )
+    return holds.target_within_hold(target_tag, _resolve_submodule_hold(link))
 
 
 def _resolve_hold_tag_target(
     current_tag: str, tags: list[str], rule: HoldRule
 ) -> str | None:
     """Return the highest tag at or below *rule* when *current_tag* violates it."""
-    if not _is_semver_tag(current_tag):
-        return None
-    try:
-        current_version = semver_tuple(current_tag.lstrip("vV"))
-    except Exception:
-        logger.warning(
-            "ignoring invalid semver tag %r while enforcing submodule hold",
-            current_tag,
-        )
-        return None
-    if version_satisfies_ceiling(current_tag.lstrip("vV"), rule.max_version):
-        return None
-
-    want_v = _has_v_prefix(current_tag)
-    candidates: list[tuple[tuple[int, ...], str]] = []
-    for tag in tags:
-        if not _is_semver_tag(tag) or _has_v_prefix(tag) != want_v:
-            continue
-        try:
-            tag_version = semver_tuple(tag.lstrip("vV"))
-        except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r while enforcing submodule hold",
-                tag,
-            )
-            continue
-        if version_satisfies_ceiling(tag.lstrip("vV"), rule.max_version):
-            candidates.append((tag_version, tag))
-
-    if not candidates:
-        return None
-    target_version, target_tag = max(candidates, key=lambda item: (item[0], item[1]))
-    if target_version >= current_version:
-        return None
-    return target_tag
+    return holds.resolve_hold_tag_target(current_tag, tags, rule, context="submodule")
 
 
 def _matching_sha_tags(
     current_sha: str, refs: list[tuple[str, str]]
 ) -> list[tuple[tuple[int, ...], str, str]]:
     """Return semver tags attached to *current_sha*."""
-    normalized = current_sha.lower()
-    matching_tags: list[tuple[tuple[int, ...], str, str]] = []
-    for tag_sha, tag in refs:
-        candidate_sha = tag_sha.lower()
-        if not (
-            candidate_sha == normalized
-            or (len(normalized) < 40 and candidate_sha.startswith(normalized))
-        ):
-            continue
-        if not _is_semver_tag(tag):
-            continue
-        try:
-            tag_version = semver_tuple(tag.lstrip("vV"))
-        except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r while enforcing submodule hold",
-                tag,
-            )
-            continue
-        matching_tags.append((tag_version, tag, tag_sha))
-    return matching_tags
+    return holds.matching_sha_tags(current_sha, refs, context="submodule")
 
 
 def _resolve_hold_sha_target(
     current_sha: str, refs: list[tuple[str, str]], rule: HoldRule
 ) -> str | None:
     """Return the highest held tag when *current_sha* violates its hold."""
-    matching_tags = _matching_sha_tags(current_sha, refs)
-    if not matching_tags:
-        return None
-    current_version, current_tag, _ = max(
-        matching_tags, key=lambda item: (item[0], item[1])
+    resolved = holds.resolve_hold_sha_target(
+        current_sha, refs, rule, context="submodule"
     )
-    if version_satisfies_ceiling(current_tag.lstrip("vV"), rule.max_version):
-        return None
-
-    want_v = _has_v_prefix(current_tag)
-    candidates: list[tuple[tuple[int, ...], str]] = []
-    for _tag_sha, tag in refs:
-        if not _is_semver_tag(tag) or _has_v_prefix(tag) != want_v:
-            continue
-        try:
-            tag_version = semver_tuple(tag.lstrip("vV"))
-        except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r while enforcing submodule hold",
-                tag,
-            )
-            continue
-        if version_satisfies_ceiling(tag.lstrip("vV"), rule.max_version):
-            candidates.append((tag_version, tag))
-
-    if not candidates:
-        return None
-    target_version, target_tag = max(candidates, key=lambda item: (item[0], item[1]))
-    if target_version >= current_version:
-        return None
-    return target_tag
+    return None if resolved is None else resolved[0]
 
 
 def check_submodule_tag_advances(

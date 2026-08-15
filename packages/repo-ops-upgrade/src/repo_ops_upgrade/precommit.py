@@ -36,7 +36,6 @@ import logging
 import re
 import subprocess
 import threading
-from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -47,14 +46,11 @@ from repo_ops_core.config import (
     process_env_cli_override,
     resolve_setting,
 )
-from repo_ops_core.holds import (
-    HoldRule,
-    load_global_holds,
-    load_repo_holds,
-    resolve_hold,
-)
+from repo_ops_core.holds import HoldRule, resolve_hold
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
+
+from repo_ops_upgrade import holds
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -221,16 +217,6 @@ def _repo_short_name(repo_url: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-@cache
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return tuple(load_global_holds())
-
-
-@cache
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return tuple(load_repo_holds(Path(repo_root)))
-
-
 def _workspace_rel(ws: Workspace) -> str:
     try:
         rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
@@ -242,7 +228,7 @@ def _workspace_rel(ws: Workspace) -> str:
 def _resolve_precommit_hold(ws: Workspace, package: str) -> HoldRule | None:
     """Return the active pre-commit hold for *package*, if any."""
     repo_root = str(ws.git_repo.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
+    rules = [*holds.global_holds_cached(), *holds.repo_holds_cached(repo_root)]
     if not rules:
         return None
     return resolve_hold(
@@ -256,9 +242,8 @@ def _resolve_precommit_hold(ws: Workspace, package: str) -> HoldRule | None:
 
 def _target_within_hold(ws: Workspace, package: str, target_version: str) -> bool:
     """Return whether a resolved tag target is allowed by its active hold."""
-    rule = _resolve_precommit_hold(ws, package)
-    return rule is None or version_satisfies_ceiling(
-        target_version.lstrip("v"), rule.max_version
+    return holds.target_within_hold(
+        target_version, _resolve_precommit_hold(ws, package)
     )
 
 
@@ -479,107 +464,24 @@ def _resolve_hold_tag_target(
     current_rev: str, tags: list[str], rule: HoldRule
 ) -> str | None:
     """Return the highest tag at or below *rule* when *current_rev* violates it."""
-    if not _is_semver_like(current_rev):
-        return None
-    try:
-        current_version = semver_tuple(current_rev.lstrip("v"))
-    except Exception:
-        logger.warning(
-            "ignoring invalid semver rev %r while enforcing pre-commit hold",
-            current_rev,
-        )
-        return None
-    if version_satisfies_ceiling(current_rev.lstrip("v"), rule.max_version):
-        return None
-
-    want_v = _has_v_prefix(current_rev)
-    candidates: list[tuple[tuple[int, ...], str]] = []
-    for tag in tags:
-        if not _is_semver_like(tag) or _has_v_prefix(tag) != want_v:
-            continue
-        try:
-            tag_version = semver_tuple(tag.lstrip("v"))
-        except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r while enforcing pre-commit hold",
-                tag,
-            )
-            continue
-        if version_satisfies_ceiling(tag.lstrip("v"), rule.max_version):
-            candidates.append((tag_version, tag))
-
-    if not candidates:
-        return None
-    target_version, target_tag = max(candidates, key=lambda item: (item[0], item[1]))
-    if target_version >= current_version:
-        return None
-    return target_tag
+    return holds.resolve_hold_tag_target(current_rev, tags, rule, context="pre-commit")
 
 
 def _matching_sha_tags(
     current_sha: str, refs: list[tuple[str, str]]
 ) -> list[tuple[tuple[int, ...], str, str]]:
     """Return semver tags attached to *current_sha*."""
-    normalized = current_sha.lower()
-    matching_tags: list[tuple[tuple[int, ...], str, str]] = []
-    for tag_sha, tag in refs:
-        candidate_sha = tag_sha.lower()
-        if not (
-            candidate_sha == normalized
-            or (len(normalized) < 40 and candidate_sha.startswith(normalized))
-        ):
-            continue
-        if not _is_semver_like(tag):
-            continue
-        try:
-            tag_version = semver_tuple(tag.lstrip("v"))
-        except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r while enforcing pre-commit hold",
-                tag,
-            )
-            continue
-        matching_tags.append((tag_version, tag, tag_sha))
-    return matching_tags
+    return holds.matching_sha_tags(current_sha, refs, context="pre-commit")
 
 
 def _resolve_hold_sha_target(
     current_sha: str, refs: list[tuple[str, str]], rule: HoldRule
 ) -> str | None:
     """Return the SHA for the highest held tag when *current_sha* violates it."""
-    matching_tags = _matching_sha_tags(current_sha, refs)
-    if not matching_tags:
-        return None
-    current_version, current_tag, _ = max(
-        matching_tags, key=lambda item: (item[0], item[1])
+    resolved = holds.resolve_hold_sha_target(
+        current_sha, refs, rule, context="pre-commit"
     )
-    if version_satisfies_ceiling(current_tag.lstrip("v"), rule.max_version):
-        return None
-
-    want_v = _has_v_prefix(current_tag)
-    candidates: list[tuple[tuple[int, ...], str, str]] = []
-    for tag_sha, tag in refs:
-        if not _is_semver_like(tag) or _has_v_prefix(tag) != want_v:
-            continue
-        try:
-            tag_version = semver_tuple(tag.lstrip("v"))
-        except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r while enforcing pre-commit hold",
-                tag,
-            )
-            continue
-        if version_satisfies_ceiling(tag.lstrip("v"), rule.max_version):
-            candidates.append((tag_version, tag, tag_sha))
-
-    if not candidates:
-        return None
-    target_version, _target_tag, target_sha = max(
-        candidates, key=lambda item: (item[0], item[1])
-    )
-    if target_version >= current_version:
-        return None
-    return target_sha
+    return None if resolved is None else resolved[1]
 
 
 # ---------------------------------------------------------------------------

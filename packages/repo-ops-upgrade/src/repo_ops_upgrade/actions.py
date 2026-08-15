@@ -12,20 +12,15 @@ import shutil
 import subprocess
 import sys
 import time
-from functools import cache
 from pathlib import Path
 from typing import Any, Literal
 
-from repo_ops_core.holds import (
-    HoldRule,
-    load_global_holds,
-    load_repo_holds,
-    resolve_hold,
-)
+from repo_ops_core.holds import HoldRule, resolve_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import ActionBump
 
+from repo_ops_upgrade import holds
 from repo_ops_upgrade.workflow_uses import (
     PinReplacement,
     WorkflowParseError,
@@ -749,20 +744,10 @@ def _resolve_latest_target(info: dict, tag_style: TagStyle) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-@cache
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return tuple(load_global_holds())
-
-
-@cache
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return tuple(load_repo_holds(Path(repo_root)))
-
-
 def _resolve_actions_hold(repo: Path, package: str) -> HoldRule | None:
     """Return the active Actions hold for *package*, if any."""
     repo_root = str(repo.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
+    rules = [*holds.global_holds_cached(), *holds.repo_holds_cached(repo_root)]
     if not rules:
         return None
     return resolve_hold(
@@ -776,9 +761,8 @@ def _resolve_actions_hold(repo: Path, package: str) -> HoldRule | None:
 
 def _target_within_hold(repo: Path, package: str, target_version: str) -> bool:
     """Return whether a resolved action tag is allowed by its active hold."""
-    rule = _resolve_actions_hold(repo, package)
-    return rule is None or version_satisfies_ceiling(
-        target_version.lstrip("v"), rule.max_version
+    return holds.target_within_hold(
+        target_version, _resolve_actions_hold(repo, package)
     )
 
 
