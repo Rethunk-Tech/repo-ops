@@ -158,6 +158,28 @@ def run_hooks(
             result.remediations.append(entry)
 
 
+def make_run_remediations(
+    hooks: Callable[[], list[RemediationHook]],
+) -> Callable[..., None]:
+    """Build a ``run_remediations(result, *, apply, skip)`` for one ecosystem.
+
+    *hooks* is called fresh on every invocation rather than captured once, so
+    a test that patches an ecosystem module's own ``REMEDIATIONS`` list (to
+    isolate it from the global registry) still takes effect through the
+    returned wrapper — pass e.g. ``lambda: REMEDIATIONS``.
+    """
+
+    def run_remediations(
+        result: WorkspaceResult,
+        *,
+        apply: bool,
+        skip: set[str],
+    ) -> None:
+        run_hooks(hooks(), result, apply=apply, skip=skip)
+
+    return run_remediations
+
+
 def dispatch(
     result: WorkspaceResult,
     *,

@@ -21,13 +21,13 @@ from repo_ops_js.workspaces import (
 from repo_ops_lockfiles.snapshots import (
     resolved_version_from_node_modules,
 )
-from repo_ops_models import Workspace, WorkspaceResult
+from repo_ops_models import Workspace
 from repo_ops_upgrade.constants import BIOME_PKG, CODEGEN_TRIGGERS, PLAYWRIGHT_PKG
 from repo_ops_upgrade_remediations_core.remediations import (
     ApplyResult,
     RemediationHook,
+    make_run_remediations,
     register,
-    run_hooks,
     stderr_tail,
 )
 
@@ -316,16 +316,4 @@ for _hook in REMEDIATIONS:
     register(_hook)
 
 
-def run_remediations(
-    result: WorkspaceResult,
-    *,
-    apply: bool,
-    skip: set[str],
-) -> None:
-    """Run JS remediation hooks against *result*.
-
-    Delegates to :func:`repo_ops_upgrade_remediations_core.remediations.run_hooks`
-    using the local ``REMEDIATIONS`` list.  Patching ``REMEDIATIONS`` in tests
-    overrides which hooks run without affecting the global registry.
-    """
-    run_hooks(REMEDIATIONS, result, apply=apply, skip=skip)
+run_remediations = make_run_remediations(lambda: REMEDIATIONS)

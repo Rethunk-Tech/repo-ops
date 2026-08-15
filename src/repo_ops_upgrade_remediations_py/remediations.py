@@ -23,8 +23,8 @@ from repo_ops_models import Workspace
 from repo_ops_upgrade_remediations_core.remediations import (
     ApplyResult,
     RemediationHook,
+    make_run_remediations,
     register,
-    run_hooks,
     stderr_tail,
 )
 
@@ -96,15 +96,4 @@ for _hook in REMEDIATIONS:
     register(_hook)
 
 
-def run_remediations(
-    result: Any,
-    *,
-    apply: bool,
-    skip: set[str],
-) -> None:
-    """Run Python remediation hooks against *result*.
-
-    Uses the local ``REMEDIATIONS`` list so tests can patch it independently
-    of the global registry.
-    """
-    run_hooks(REMEDIATIONS, result, apply=apply, skip=skip)
+run_remediations = make_run_remediations(lambda: REMEDIATIONS)
