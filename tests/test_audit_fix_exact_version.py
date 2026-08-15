@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -383,18 +385,76 @@ def test_yarn_targeted_bump_uses_latest_when_no_override(
 # ---------------------------------------------------------------------------
 
 
-def test_apply_remediations_sets_npm_overrides_before_process_workspace(
-    tmp_path: Path,
+@dataclass(frozen=True)
+class _OverrideCase:
+    ecosystem: str
+    manager: str
+    setup_files: dict[str, str]
+    package: str
+    safe_version: str
+    expected_version: str  # after any manager-side normalization
+    overrides_module: str
+
+
+_OVERRIDE_CASES = [
+    _OverrideCase(
+        ecosystem="node",
+        manager="npm",
+        setup_files={"package.json": "{}", "package-lock.json": "{}"},
+        package="lodash",
+        safe_version="4.17.21",
+        expected_version="4.17.21",
+        overrides_module="repo_ops_js_npm.npm",
+    ),
+    _OverrideCase(
+        ecosystem="node",
+        manager="pnpm",
+        setup_files={
+            "package.json": "{}",
+            "pnpm-lock.yaml": "lockfileVersion: '6.0'\n",
+        },
+        package="express",
+        safe_version="4.18.2",
+        expected_version="4.18.2",
+        overrides_module="repo_ops_js_pnpm.pnpm",
+    ),
+    _OverrideCase(
+        # #140: the missing `elif manager == "bun"` branch was the reported
+        # silent-skip bug -- bun must wire overrides the same as npm/pnpm.
+        ecosystem="node",
+        manager="bun",
+        setup_files={"package.json": "{}", "bun.lock": ""},
+        package="lodash",
+        safe_version="4.17.21",
+        expected_version="4.17.21",
+        overrides_module="repo_ops_js_bun.bun",
+    ),
+    _OverrideCase(
+        ecosystem="rust",
+        manager="rust",
+        setup_files={"Cargo.toml": '[package]\nname = "demo"\n'},
+        package="serde",
+        safe_version=">= 2.0.0",
+        expected_version="2.0.0",
+        overrides_module="repo_ops_rust.rust",
+    ),
+]
+
+
+@pytest.mark.parametrize("case", _OVERRIDE_CASES, ids=lambda c: c.manager)
+def test_apply_remediations_sets_manager_overrides_before_process_workspace(
+    tmp_path: Path, case: _OverrideCase
 ) -> None:
-    """apply_remediations injects npm version overrides so targeted_bump uses safe_version."""
-    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
+    """apply_remediations injects <manager> version overrides so targeted_bump uses
+    safe_version, and clears them again once the workspace apply finishes."""
+    for name, content in case.setup_files.items():
+        (tmp_path / name).write_text(content, encoding="utf-8")
 
     items = [
         RemediationItem(
-            package="lodash",
-            safe_version="4.17.21",
-            ecosystem="node",
+            package=case.package,
+            safe_version=case.safe_version,
+            ecosystem=case.ecosystem,
             workspace=str(tmp_path),
         )
     ]
@@ -402,10 +462,9 @@ def test_apply_remediations_sets_npm_overrides_before_process_workspace(
     overrides_captured: list[dict[str, str]] = []
 
     def _fake_process_workspace(result, **kwargs):
-        # Capture the npm override state at the moment process_workspace runs.
-        from repo_ops_js_npm.npm import _AUDIT_VERSION_OVERRIDES
-
-        overrides_captured.append(dict(_AUDIT_VERSION_OVERRIDES))
+        # Capture the override state at the moment process_workspace runs.
+        overrides_mod = import_module(case.overrides_module)
+        overrides_captured.append(dict(overrides_mod._AUDIT_VERSION_OVERRIDES))
         mock = MagicMock()
         mock.status = "ok"
         mock.error = None
@@ -419,97 +478,20 @@ def test_apply_remediations_sets_npm_overrides_before_process_workspace(
             "repo_ops_upgrade.orchestration.process_workspace",
             side_effect=_fake_process_workspace,
         ),
-        # _detect_node_manager reads the lockfile; npm is detected from package-lock.json.
     ):
         apply_remediations(items)
 
     assert overrides_captured, "process_workspace was not called"
-    # At the time process_workspace ran, the npm override must have been set.
-    assert overrides_captured[0].get("lodash") == "4.17.21", (
-        f"expected lodash→4.17.21 in npm overrides; got {overrides_captured[0]}"
+    assert overrides_captured[0].get(case.package) == case.expected_version, (
+        f"expected {case.package}→{case.expected_version} in {case.manager} "
+        f"overrides; got {overrides_captured[0]}"
     )
 
-
-def test_apply_remediations_clears_npm_overrides_after_workspace(
-    tmp_path: Path,
-) -> None:
-    """npm audit version overrides are cleared after each workspace apply (finally block)."""
-    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
-
-    items = [
-        RemediationItem(
-            package="express",
-            safe_version="4.18.2",
-            ecosystem="node",
-            workspace=str(tmp_path),
-        )
-    ]
-
-    mock_final = MagicMock()
-    mock_final.status = "ok"
-    mock_final.error = None
-    mock_final.changes = []
-
-    with (
-        patch("repo_ops_audit.audit._try_register_manager", return_value=True),
-        patch("repo_ops_core.git.git_repo_for", return_value=tmp_path),
-        patch(
-            "repo_ops_upgrade.orchestration.process_workspace",
-            return_value=mock_final,
-        ),
-    ):
-        apply_remediations(items)
-
-    # After apply_remediations returns, overrides must be empty.
-    from repo_ops_js_npm.npm import _AUDIT_VERSION_OVERRIDES
-
-    assert _AUDIT_VERSION_OVERRIDES == {}, (
-        f"npm overrides should be cleared after apply; got {_AUDIT_VERSION_OVERRIDES}"
+    overrides_mod = import_module(case.overrides_module)
+    assert overrides_mod._AUDIT_VERSION_OVERRIDES == {}, (
+        f"{case.manager} overrides should be cleared after apply; "
+        f"got {overrides_mod._AUDIT_VERSION_OVERRIDES}"
     )
-
-
-def test_apply_remediations_sets_rust_overrides_before_process_workspace(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "Cargo.toml").write_text('[package]\nname = "demo"\n', encoding="utf-8")
-
-    items = [
-        RemediationItem(
-            package="serde",
-            safe_version=">= 2.0.0",
-            ecosystem="rust",
-            workspace=str(tmp_path),
-        )
-    ]
-
-    overrides_captured: list[dict[str, str]] = []
-
-    def _fake_process_workspace(result, **kwargs):
-        from repo_ops_rust.rust import _AUDIT_VERSION_OVERRIDES
-
-        overrides_captured.append(dict(_AUDIT_VERSION_OVERRIDES))
-        mock = MagicMock()
-        mock.status = "ok"
-        mock.error = None
-        mock.changes = []
-        return mock
-
-    with (
-        patch("repo_ops_audit.audit._try_register_manager", return_value=True),
-        patch("repo_ops_core.git.git_repo_for", return_value=tmp_path),
-        patch(
-            "repo_ops_upgrade.orchestration.process_workspace",
-            side_effect=_fake_process_workspace,
-        ),
-    ):
-        apply_remediations(items)
-
-    assert overrides_captured == [{"serde": "2.0.0"}]
-
-    from repo_ops_rust.rust import _AUDIT_VERSION_OVERRIDES
-
-    assert _AUDIT_VERSION_OVERRIDES == {}
 
 
 def test_apply_remediations_applies_deno_overrides_after_audit_fix(
@@ -556,101 +538,6 @@ def test_apply_remediations_applies_deno_overrides_after_audit_fix(
     from repo_ops_js.deno import _AUDIT_VERSION_OVERRIDES
 
     assert _AUDIT_VERSION_OVERRIDES == {}
-
-
-def test_apply_remediations_sets_pnpm_overrides(tmp_path: Path) -> None:
-    """apply_remediations injects pnpm version overrides for pnpm workspaces."""
-    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "pnpm-lock.yaml").write_text(
-        "lockfileVersion: '6.0'\n", encoding="utf-8"
-    )
-
-    items = [
-        RemediationItem(
-            package="express",
-            safe_version="4.18.2",
-            ecosystem="node",
-            workspace=str(tmp_path),
-        )
-    ]
-
-    overrides_captured: list[dict[str, str]] = []
-
-    def _fake_process_workspace(result, **kwargs):
-        from repo_ops_js_pnpm.pnpm import _AUDIT_VERSION_OVERRIDES
-
-        overrides_captured.append(dict(_AUDIT_VERSION_OVERRIDES))
-        mock = MagicMock()
-        mock.status = "ok"
-        mock.error = None
-        mock.changes = []
-        return mock
-
-    with (
-        patch("repo_ops_audit.audit._try_register_manager", return_value=True),
-        patch("repo_ops_core.git.git_repo_for", return_value=tmp_path),
-        patch(
-            "repo_ops_upgrade.orchestration.process_workspace",
-            side_effect=_fake_process_workspace,
-        ),
-    ):
-        apply_remediations(items)
-
-    assert overrides_captured, "process_workspace was not called"
-    assert overrides_captured[0].get("express") == "4.18.2", (
-        f"expected express→4.18.2 in pnpm overrides; got {overrides_captured[0]}"
-    )
-
-
-def test_apply_remediations_sets_bun_overrides(tmp_path: Path) -> None:
-    """#140: apply_remediations must wire advisory-safe version overrides for
-    bun workspaces the same way it does for npm/pnpm/yarn — the missing
-    ``elif manager == "bun"`` branch was the reported silent-skip bug."""
-    (tmp_path / "package.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "bun.lock").write_text("", encoding="utf-8")
-
-    items = [
-        RemediationItem(
-            package="lodash",
-            safe_version="4.17.21",
-            ecosystem="node",
-            workspace=str(tmp_path),
-        )
-    ]
-
-    overrides_captured: list[dict[str, str]] = []
-
-    def _fake_process_workspace(result, **kwargs):
-        from repo_ops_js_bun.bun import _AUDIT_VERSION_OVERRIDES
-
-        overrides_captured.append(dict(_AUDIT_VERSION_OVERRIDES))
-        mock = MagicMock()
-        mock.status = "ok"
-        mock.error = None
-        mock.changes = []
-        return mock
-
-    with (
-        patch("repo_ops_audit.audit._try_register_manager", return_value=True),
-        patch("repo_ops_core.git.git_repo_for", return_value=tmp_path),
-        patch(
-            "repo_ops_upgrade.orchestration.process_workspace",
-            side_effect=_fake_process_workspace,
-        ),
-    ):
-        apply_remediations(items)
-
-    assert overrides_captured, "process_workspace was not called"
-    assert overrides_captured[0].get("lodash") == "4.17.21", (
-        f"expected lodash→4.17.21 in bun overrides; got {overrides_captured[0]}"
-    )
-
-    # Overrides must be cleared after the workspace apply (finally block).
-    from repo_ops_js_bun.bun import _AUDIT_VERSION_OVERRIDES
-
-    assert _AUDIT_VERSION_OVERRIDES == {}, (
-        f"bun overrides should be cleared after apply; got {_AUDIT_VERSION_OVERRIDES}"
-    )
 
 
 # ---------------------------------------------------------------------------
