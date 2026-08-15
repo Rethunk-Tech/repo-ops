@@ -33,69 +33,67 @@ from repo_ops_upgrade import commit_agent_cursor
 # ---------------------------------------------------------------------------
 
 
-def test_apply_config_to_env_sets_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
-    """String value from repo config reaches os.environ."""
-    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
-    apply_config_to_env(repo_cfg={"go_upgrade_mode": "explicit"})
-    assert os.environ["REPO_OPS_GO_UPGRADE_MODE"] == "explicit"
+# (env_var, repo_cfg, global_cfg, preset_env, expected) — preset_env pre-seeds
+# the var (env > config) before the call; expected None means the var stays unset.
+_APPLY_CONFIG_TO_ENV_CASES = [
+    (
+        "REPO_OPS_GO_UPGRADE_MODE",
+        {"go_upgrade_mode": "explicit"},
+        None,
+        None,
+        "explicit",
+    ),
+    ("REPO_OPS_YARN_TARGETED_BUMP", {"yarn_targeted_bump": True}, None, None, "1"),
+    ("REPO_OPS_BUN_UPDATE_LATEST", {"bun_update_latest": False}, None, None, "0"),
+    (
+        "REPO_OPS_GO_UPGRADE_MODE",
+        {"go_upgrade_mode": "explicit"},
+        None,
+        "patch",
+        "patch",
+    ),
+    ("REPO_OPS_GO_UPGRADE_MODE", {}, {"go_upgrade_mode": "mvs"}, None, "mvs"),
+    (
+        "REPO_OPS_GO_UPGRADE_MODE",
+        {"go_upgrade_mode": "explicit"},
+        {"go_upgrade_mode": "patch"},
+        None,
+        "explicit",
+    ),
+    ("REPO_OPS_YARN_MAX_CONCURRENCY", {"yarn_max_concurrency": 4}, None, None, "4"),
+    ("REPO_OPS_GO_UPGRADE_MODE", {"go_upgrade_mode": None}, None, None, None),
+]
 
 
-def test_apply_config_to_env_bool_true(monkeypatch: pytest.MonkeyPatch) -> None:
-    """TOML boolean true → '1' in os.environ."""
-    monkeypatch.delenv("REPO_OPS_YARN_TARGETED_BUMP", raising=False)
-    apply_config_to_env(repo_cfg={"yarn_targeted_bump": True})
-    assert os.environ["REPO_OPS_YARN_TARGETED_BUMP"] == "1"
-
-
-def test_apply_config_to_env_bool_false(monkeypatch: pytest.MonkeyPatch) -> None:
-    """TOML boolean false → '0' in os.environ."""
-    monkeypatch.delenv("REPO_OPS_BUN_UPDATE_LATEST", raising=False)
-    apply_config_to_env(repo_cfg={"bun_update_latest": False})
-    assert os.environ["REPO_OPS_BUN_UPDATE_LATEST"] == "0"
-
-
-def test_apply_config_to_env_skips_if_already_set(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    "env_var,repo_cfg,global_cfg,preset_env,expected",
+    _APPLY_CONFIG_TO_ENV_CASES,
+    ids=[
+        "string-value",
+        "bool-true",
+        "bool-false",
+        "skip-if-already-set",
+        "global-fallback",
+        "repo-wins-over-global",
+        "integer-value",
+        "none-is-noop",
+    ],
+)
+def test_apply_config_to_env(
+    monkeypatch: pytest.MonkeyPatch, env_var, repo_cfg, global_cfg, preset_env, expected
 ) -> None:
-    """Existing env var is not overwritten (env > config)."""
-    monkeypatch.setenv("REPO_OPS_GO_UPGRADE_MODE", "patch")
-    apply_config_to_env(repo_cfg={"go_upgrade_mode": "explicit"})
-    assert os.environ["REPO_OPS_GO_UPGRADE_MODE"] == "patch"
-
-
-def test_apply_config_to_env_global_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When repo config is absent, global config fills the env var."""
-    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
-    apply_config_to_env(global_cfg={"go_upgrade_mode": "mvs"}, repo_cfg={})
-    assert os.environ["REPO_OPS_GO_UPGRADE_MODE"] == "mvs"
-
-
-def test_apply_config_to_env_repo_wins_over_global(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Per-repo config key overrides the same key in global config."""
-    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
-    apply_config_to_env(
-        global_cfg={"go_upgrade_mode": "patch"},
-        repo_cfg={"go_upgrade_mode": "explicit"},
-    )
-    assert os.environ["REPO_OPS_GO_UPGRADE_MODE"] == "explicit"
-
-
-def test_apply_config_to_env_integer_value(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Integer config values (e.g. yarn_max_concurrency) are stringified."""
-    monkeypatch.delenv("REPO_OPS_YARN_MAX_CONCURRENCY", raising=False)
-    apply_config_to_env(repo_cfg={"yarn_max_concurrency": 4})
-    assert os.environ["REPO_OPS_YARN_MAX_CONCURRENCY"] == "4"
-
-
-def test_apply_config_to_env_none_value_is_noop(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Config key present but None → env var not set (no accidental 'None' string)."""
-    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
-    apply_config_to_env(repo_cfg={"go_upgrade_mode": None})
-    assert "REPO_OPS_GO_UPGRADE_MODE" not in os.environ
+    if preset_env is None:
+        monkeypatch.delenv(env_var, raising=False)
+    else:
+        monkeypatch.setenv(env_var, preset_env)
+    kwargs = {"repo_cfg": repo_cfg}
+    if global_cfg is not None:
+        kwargs["global_cfg"] = global_cfg
+    apply_config_to_env(**kwargs)
+    if expected is None:
+        assert env_var not in os.environ
+    else:
+        assert os.environ[env_var] == expected
 
 
 def test_resolve_setting_uses_ambient_snapshot(
