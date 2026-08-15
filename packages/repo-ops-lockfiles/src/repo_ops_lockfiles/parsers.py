@@ -12,6 +12,22 @@ from repo_ops_core.filesystem import read_json_file, read_toml_file
 from repo_ops_core.process import run
 
 
+def split_name_version(entry: str) -> tuple[str, str]:
+    """Split a ``name@version`` string into (name, version).
+
+    Handles scoped packages like ``@babel/core@7.22.0``.
+    """
+    if entry.startswith("@"):
+        second_at = entry.find("@", 1)
+        if second_at == -1:
+            return entry, ""
+        return entry[:second_at], entry[second_at + 1 :]
+    at = entry.find("@")
+    if at == -1:
+        return entry, ""
+    return entry[:at], entry[at + 1 :]
+
+
 def parse_package_json_direct(p: Path) -> int:
     d = read_json_file(p)
     if not d:

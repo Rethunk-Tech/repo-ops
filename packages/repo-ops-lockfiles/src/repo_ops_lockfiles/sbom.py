@@ -43,6 +43,7 @@ from repo_ops_core.filesystem import should_exclude, write_json_atomic
 
 from repo_ops_lockfiles.license_enrich import enrich_component
 from repo_ops_lockfiles.parsers import (
+    split_name_version,
     versions_bun_lock,
     versions_cargo_lock,
     versions_deno_lock,
@@ -125,17 +126,9 @@ def _is_local_action_ref(action: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _split_nv(entry: str) -> tuple[str, str]:
-    """Split name@version (handles scoped @scope/pkg@ver)."""
-    if entry.startswith("@"):
-        second_at = entry.find("@", 1)
-        if second_at == -1:
-            return entry, ""
-        return entry[:second_at], entry[second_at + 1 :]
-    at = entry.find("@")
-    if at == -1:
-        return entry, ""
-    return entry[:at], entry[at + 1 :]
+# Kept as a module-level name (rather than calling split_name_version
+# directly) since tests import it from here.
+_split_nv = split_name_version
 
 
 def _safe_parse(path: Path, parser: Callable[[Path], Iterable[str]]) -> Iterable[str]:
