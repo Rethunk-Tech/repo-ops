@@ -126,6 +126,37 @@ def _resolve_exit_code(
     return 0
 
 
+# Every gate the default full sweep opens. Each ecosystem module already reads
+# its own var, so enabling the sweep is just setting them all; --conservative
+# leaves them unset and each module falls back to its in-range behavior.
+_SWEEP_ENV_VARS = (
+    # Cross-range upgrades per ecosystem.
+    "REPO_OPS_BUN_UPDATE_LATEST",
+    "REPO_OPS_PNPM_UPDATE_LATEST",
+    "REPO_OPS_YARN_UPDATE_LATEST",
+    "REPO_OPS_DENO_UPDATE_LATEST",
+    "REPO_OPS_CONTAINER_UPDATE_LATEST",
+    "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
+    "REPO_OPS_SUBMODULE_UPDATE_LATEST",
+    # Per-package targeted fallback: moves a behind_latest dep instead of only
+    # reporting it. Reversible per package.
+    "REPO_OPS_YARN_TARGETED_BUMP",
+    "REPO_OPS_NPM_TARGETED_BUMP",
+    "REPO_OPS_PNPM_TARGETED_BUMP",
+    "REPO_OPS_BUN_TARGETED_BUMP",
+    "REPO_OPS_DENO_TARGETED_BUMP",
+    "REPO_OPS_RUST_TARGETED_BUMP",
+    "REPO_OPS_POETRY_TARGETED_BUMP",
+    "REPO_OPS_PDM_TARGETED_BUMP",
+    "REPO_OPS_PIPENV_TARGETED_BUMP",
+    "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
+    # Digest refresh for things already pinned by SHA.
+    "REPO_OPS_CONTAINER_REFRESH_SHA",
+    "REPO_OPS_PRECOMMIT_REFRESH_SHA",
+    "REPO_OPS_SUBMODULE_REFRESH_SHA",
+)
+
+
 def _cli_flag(args: object, name: str) -> bool:
     """Return True only for an explicit True CLI flag.
 
@@ -162,54 +193,25 @@ def _run_upgrade_body(
     # checker modules already read, BEFORE any worker pool starts (#102).
     # Additive: the env-var reads stay; these flags just populate them for this
     # process.
-    full_sweep = _cli_flag(args, "full")
-    latest = _cli_flag(args, "latest") or full_sweep
+    # Full sweep is the default (#136): every ecosystem crosses ranges and every
+    # package manager gets its per-package targeted fallback. --conservative is
+    # the single opt-out for a run that must stay inside declared constraints.
+    # Targeted bumps are safe to default on because each one snapshots the
+    # workspace and restores it unless the install succeeds *and* the resolved
+    # version actually advances (see e.g. yarn.targeted_bump_behind).
+    conservative = _cli_flag(args, "conservative")
+    latest = not conservative
+    # Written explicitly in both directions rather than left unset: an ambient
+    # REPO_OPS_*=1 in the caller's environment outranks an unset process value,
+    # so a merely-absent var would let the environment silently override
+    # --conservative and run the very sweep it was passed to prevent.
+    for _var in _SWEEP_ENV_VARS:
+        _set_cli_env(_var, "1" if latest else "0")
     if latest:
-        _set_cli_env("REPO_OPS_BUN_UPDATE_LATEST", "1")
-        _set_cli_env("REPO_OPS_PNPM_UPDATE_LATEST", "1")
-        _set_cli_env("REPO_OPS_YARN_UPDATE_LATEST", "1")
-        _set_cli_env("REPO_OPS_DENO_UPDATE_LATEST", "1")
-        # Cross-major gates for the non-JS ecosystems the --latest umbrella also
-        # covers: container image tags, pre-commit hook revs, and submodule tag
-        # pointers all read their own REPO_OPS_*_UPDATE_LATEST env var.
-        _set_cli_env("REPO_OPS_CONTAINER_UPDATE_LATEST", "1")
-        _set_cli_env("REPO_OPS_PRECOMMIT_UPDATE_LATEST", "1")
-        _set_cli_env("REPO_OPS_SUBMODULE_UPDATE_LATEST", "1")
         os.environ.setdefault("REPO_OPS_GO_UPGRADE_MODE", "explicit")
-    # Opt-in per-package targeted fallback (#111); only meaningful with --latest,
-    # which is what produces the behind_latest work-list it consumes. Each
-    # manager's flag must populate its env var or the CLI flag is a no-op (#131).
-    if full_sweep or _cli_flag(args, "yarn_targeted_bump"):
-        _set_cli_env("REPO_OPS_YARN_TARGETED_BUMP", "1")
-    if full_sweep or _cli_flag(args, "npm_targeted_bump"):
-        _set_cli_env("REPO_OPS_NPM_TARGETED_BUMP", "1")
-    if full_sweep or _cli_flag(args, "pnpm_targeted_bump"):
-        _set_cli_env("REPO_OPS_PNPM_TARGETED_BUMP", "1")
-    if full_sweep or _cli_flag(args, "bun_targeted_bump"):
-        _set_cli_env("REPO_OPS_BUN_TARGETED_BUMP", "1")
-    if full_sweep or _cli_flag(args, "deno_targeted_bump"):
-        _set_cli_env("REPO_OPS_DENO_TARGETED_BUMP", "1")
-    if _cli_flag(args, "rust_targeted_bump"):
-        _set_cli_env("REPO_OPS_RUST_TARGETED_BUMP", "1")
-    if _cli_flag(args, "poetry_targeted_bump"):
-        _set_cli_env("REPO_OPS_POETRY_TARGETED_BUMP", "1")
-    if _cli_flag(args, "pdm_targeted_bump"):
-        _set_cli_env("REPO_OPS_PDM_TARGETED_BUMP", "1")
-    if _cli_flag(args, "pipenv_targeted_bump"):
-        _set_cli_env("REPO_OPS_PIPENV_TARGETED_BUMP", "1")
-    if _cli_flag(args, "pip_tools_targeted_bump"):
-        _set_cli_env("REPO_OPS_PIP_TOOLS_TARGETED_BUMP", "1")
-    if full_sweep:
-        _set_cli_env("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
-        _set_cli_env("REPO_OPS_PRECOMMIT_REFRESH_SHA", "1")
-        _set_cli_env("REPO_OPS_SUBMODULE_REFRESH_SHA", "1")
     # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects (#132).
     if _cli_flag(args, "migrate_to_uv_lock"):
         _set_cli_env("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
-    # --yarn-jobs: cap concurrent yarn isolated-copy extractions to avoid /tmp ENOSPC.
-    yarn_jobs = getattr(args, "yarn_jobs", None)
-    if isinstance(yarn_jobs, int):
-        os.environ["REPO_OPS_YARN_MAX_CONCURRENCY"] = str(yarn_jobs)
     # --commit-umbrella: opt in to post-commit umbrella pointer bumps (#125).
     if _cli_flag(args, "commit_umbrella"):
         _set_cli_env("REPO_OPS_COMMIT_UMBRELLA", "1")
@@ -517,14 +519,11 @@ def _run_upgrade_body(
         # Only unpin when the user explicitly opts in via --actions-unpin-sha.
         keep_sha = not _cli_flag(args, "actions_unpin_sha")
         # Digest refresh (#109): only meaningful while staying SHA-pinned.
-        refresh_sha = keep_sha and (
-            full_sweep or _cli_flag(args, "actions_refresh_sha")
-        )
-        # Pin-to-SHA (#NNN): pure opt-in, not bundled into --full yet — unlike
-        # refresh_sha's within-major digest bump, this changes a tag pin to a
-        # SHA pin and rewrites/adds a comment, a bigger structural change to
-        # roll out by default across a whole fleet sweep.
-        pin_sha = _cli_flag(args, "actions_pin_sha")
+        refresh_sha = keep_sha and latest
+        # Pin-to-SHA (#136): a floating tag pin is invisible to refresh_sha,
+        # so leaving it opt-in meant the common case — an Action that was
+        # never SHA-pinned at all — was silently never hardened.
+        pin_sha = keep_sha and latest
         _raw_tag_style = getattr(args, "actions_tag_style", "major")
         tag_style: actions.TagStyle = "exact" if _raw_tag_style == "exact" else "major"
         # Cross-major apply (#106): explicit --actions-upgrade-mode wins; otherwise
@@ -604,17 +603,10 @@ def _run_upgrade_body(
         ) as _actions_pool:
             list(_actions_pool.map(_scan_one_bundle_actions, list(bundles.values())))
 
+    # Display-only concern: the human renderer applies its own visibility gate,
+    # so filtering here as well would strip clean workspaces out of the JSON
+    # report too, which is meant to be a complete record of what was scanned.
     only_outdated = _cli_flag(args, "only_outdated")
-    if only_outdated:
-        for bundle in bundles.values():
-            bundle.workspaces = [
-                wr
-                for wr in bundle.workspaces
-                if wr.changes
-                or wr.behind_latest
-                or wr.status != "ok"
-                or wr.remediations
-            ]
 
     # Submodule tag advances (apply-only, opt-in via --submodules).
     # Runs BEFORE pointer_hints so that staged gitlinks are visible to the

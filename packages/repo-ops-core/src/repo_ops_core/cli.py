@@ -117,27 +117,22 @@ exit codes:
 
 workflow:
   Prefer plan first (same flags/roots). Dirty git worktrees are skipped
-  unless --allow-dirty. On verify failure, default --on-verify-fail=keep
-  leaves changes; use revert to roll back only apply-artifact files
-  (lockfiles and manifests); pre-existing dirty edits and untracked
-  files outside that set are preserved.
+  unless --allow-dirty. On verify failure, default --on-verify-fail=revert
+  rolls back only apply-artifact files (lockfiles and manifests); use keep
+  to leave them in place for inspection. Pre-existing dirty edits and
+  untracked files outside that set are preserved either way.
 
 docs:
   Agents: AGENTS.md. Humans: HUMANS.md. Bulk playbook: docs/bulk-maintenance.md.
 """
 
-LATEST_FLAG_HELP = (
-    "Aggressive / cross-range upgrade mode for this run. Sets "
-    "REPO_OPS_BUN_UPDATE_LATEST, REPO_OPS_PNPM_UPDATE_LATEST, and "
-    "REPO_OPS_YARN_UPDATE_LATEST; defaults REPO_OPS_GO_UPGRADE_MODE to "
-    "explicit when unset; and opts GitHub Actions into "
-    "--actions-upgrade-mode=latest. Per ecosystem: bun/pnpm use their "
-    "CLI --latest; yarn uses yarn up -R '*' (peer-constrained deps may "
-    "stay behind_latest); go uses explicit latest tags; npm has no latest "
-    "mode (semver ranges only). An explicit --actions-upgrade-mode or "
-    "--go-upgrade-mode overrides the umbrella for that ecosystem. This is "
-    "not a full-coverage sweep; use --full to include Actions and container "
-    "digest refreshes plus targeted JavaScript bumps."
+CONSERVATIVE_FLAG_HELP = (
+    "Stay in-range: only move dependencies their own manifest constraints "
+    "already allow. The default is a full sweep — cross-range upgrades, "
+    "per-package targeted bumps for every package manager, GitHub Actions "
+    "pin/digest/major bumps, and container image tag and digest bumps. Use "
+    "this when a run must not cross a declared range. Per-ecosystem policy "
+    "flags (--go-upgrade-mode, --actions-upgrade-mode) still override it."
 )
 
 
@@ -390,141 +385,9 @@ def add_upgrade_common_arguments(
     # ---- Upgrade policy ---------------------------------------------------
     pol = parser.add_argument_group("Upgrade policy")
     pol.add_argument(
-        "--latest",
+        "--conservative",
         action="store_true",
-        help=LATEST_FLAG_HELP,
-    )
-    pol.add_argument(
-        "--full",
-        action="store_true",
-        help=(
-            "Full-coverage sweep umbrella: enable --latest, "
-            "--actions-refresh-sha, --container-refresh-sha, "
-            "--precommit-refresh-sha, --submodule-refresh-sha, and all five "
-            "JS/Deno targeted-bump flags (Yarn, npm, pnpm, bun, and Deno). "
-            "Opt in explicitly; per-ecosystem policy flags still override it."
-        ),
-    )
-    pol.add_argument(
-        "--yarn-targeted-bump",
-        action="store_true",
-        dest="yarn_targeted_bump",
-        help=(
-            "Yarn only, requires --latest: for each direct dep that yarn up -R '*' "
-            "left behind_latest (peer/group-constrained), try a reversible targeted "
-            "yarn up <pkg>@latest and keep it only if the workspace still installs and "
-            "the version actually advances. Moves the gap instead of just reporting it; "
-            "bumps that fight the resolver are reverted per-package, never committed. "
-            "Sets REPO_OPS_YARN_TARGETED_BUMP."
-        ),
-    )
-    pol.add_argument(
-        "--npm-targeted-bump",
-        action="store_true",
-        dest="npm_targeted_bump",
-        help=(
-            "npm only, requires --latest: for each direct dep that npm update left "
-            "behind latest, attempt a targeted npm install <pkg>@latest and keep it "
-            "only if the workspace still installs and the version advances. "
-            "Sets REPO_OPS_NPM_TARGETED_BUMP."
-        ),
-    )
-    pol.add_argument(
-        "--pnpm-targeted-bump",
-        action="store_true",
-        dest="pnpm_targeted_bump",
-        help=(
-            "pnpm only, requires --latest: for each direct dep that pnpm update "
-            "--latest left behind, attempt a targeted pnpm add <pkg>@latest and keep "
-            "it only if the workspace still installs and the version advances. "
-            "Sets REPO_OPS_PNPM_TARGETED_BUMP."
-        ),
-    )
-    pol.add_argument(
-        "--bun-targeted-bump",
-        action="store_true",
-        dest="bun_targeted_bump",
-        help=(
-            "bun only, requires --latest: for each direct dep that bun update left "
-            "behind latest, attempt a targeted bun add <pkg>@latest and keep it "
-            "only if the workspace still installs and the version advances. "
-            "Sets REPO_OPS_BUN_TARGETED_BUMP."
-        ),
-    )
-    pol.add_argument(
-        "--deno-targeted-bump",
-        action="store_true",
-        dest="deno_targeted_bump",
-        help=(
-            "Deno only, requires --latest: for each direct dep that "
-            "deno outdated --update left behind latest, attempt a targeted "
-            "deno update <pkg> and keep it only if the lock/import map advances. "
-            "Sets REPO_OPS_DENO_TARGETED_BUMP."
-        ),
-    )
-    pol.add_argument(
-        "--rust-targeted-bump",
-        action="store_true",
-        dest="rust_targeted_bump",
-        help=(
-            "Rust only: opt in to targeted Cargo.toml constraint bumps for direct "
-            "dependencies that remain behind the latest non-yanked release. "
-            "Sets REPO_OPS_RUST_TARGETED_BUMP."
-        ),
-    )
-    pol.add_argument(
-        "--poetry-targeted-bump",
-        action="store_true",
-        dest="poetry_targeted_bump",
-        help=(
-            "Poetry only: opt in to targeted pyproject.toml constraint bumps for "
-            "direct dependencies that remain behind the latest release. "
-            "Sets REPO_OPS_POETRY_TARGETED_BUMP."
-        ),
-    )
-    pol.add_argument(
-        "--pdm-targeted-bump",
-        action="store_true",
-        dest="pdm_targeted_bump",
-        help=(
-            "PDM only: opt in to targeted pyproject.toml constraint bumps for "
-            "direct dependencies that remain behind the latest release. "
-            "Sets REPO_OPS_PDM_TARGETED_BUMP."
-        ),
-    )
-    pol.add_argument(
-        "--pipenv-targeted-bump",
-        action="store_true",
-        dest="pipenv_targeted_bump",
-        help=(
-            "Pipenv only: opt in to targeted Pipfile constraint bumps for "
-            "direct dependencies that remain behind the latest release. "
-            "Sets REPO_OPS_PIPENV_TARGETED_BUMP."
-        ),
-    )
-    pol.add_argument(
-        "--pip-tools-targeted-bump",
-        action="store_true",
-        dest="pip_tools_targeted_bump",
-        help=(
-            "pip-tools only: opt in to targeted requirements.in constraint "
-            "bumps for direct dependencies that remain behind the latest "
-            "release. Sets REPO_OPS_PIP_TOOLS_TARGETED_BUMP."
-        ),
-    )
-    pol.add_argument(
-        "--yarn-jobs",
-        type=int,
-        default=None,
-        dest="yarn_jobs",
-        metavar="N",
-        help=(
-            "Max concurrent yarn isolated-copy extractions (default 2). Each yarn "
-            "check/guard run copies the workspace to a temp dir and lets Yarn Berry "
-            "extract its cache there; running one per --jobs worker can exhaust /tmp "
-            "(ENOSPC) on large monorepos. Caps the disk-heavy yarn phase without "
-            "slowing other ecosystems. Sets REPO_OPS_YARN_MAX_CONCURRENCY."
-        ),
+        help=CONSERVATIVE_FLAG_HELP,
     )
     pol.add_argument(
         "--go-upgrade-mode",
@@ -533,10 +396,11 @@ def add_upgrade_common_arguments(
         dest="go_upgrade_mode",
         metavar="MODE",
         help=(
-            "Go module upgrade selection: patch (default) bumps within the "
-            "current minor; explicit takes the latest tagged version; mvs uses "
-            "the module graph's minimum version selection. Overrides "
-            "REPO_OPS_GO_UPGRADE_MODE for this run."
+            "Go module upgrade selection: explicit takes the latest tagged "
+            "version; patch bumps within the current minor; mvs uses the "
+            "module graph's minimum version selection. A default sweep uses "
+            "explicit; --conservative falls back to patch. Setting this "
+            "overrides both for this run."
         ),
     )
     pol.add_argument(
@@ -546,11 +410,12 @@ def add_upgrade_common_arguments(
         dest="actions_upgrade_mode",
         metavar="MODE",
         help=(
-            "GitHub Actions cross-major policy: normalize (default) collapses to "
-            "the current floating major and reports newer majors; latest also "
-            "applies cross-major bumps to the newest available major (honoring "
-            "--actions-tag-style and the bare-major safety check). Overrides the "
-            "--latest umbrella for Actions."
+            "GitHub Actions cross-major policy: latest applies cross-major "
+            "bumps to the newest available major (honoring --actions-tag-style "
+            "and the bare-major safety check); normalize collapses to the "
+            "current floating major and only reports newer ones. A default "
+            "sweep uses latest; --conservative falls back to normalize. "
+            "Setting this overrides both for Actions."
         ),
     )
     pol.add_argument(
@@ -574,96 +439,15 @@ def add_upgrade_common_arguments(
         ),
     )
     pol.add_argument(
-        "--actions-refresh-sha",
-        action="store_true",
-        dest="actions_refresh_sha",
-        help=(
-            "Keep SHA-pinned Actions pinned by digest, but advance the digest to "
-            "the newest vN.M.P release within the pin's current major (preserves "
-            "the # vN comment). Dependabot-compatible digest bumps; supersedes "
-            "their SHA-pin PRs within a major. With --latest (or "
-            "--actions-upgrade-mode=latest), also crosses major boundaries: "
-            "re-pins to the newest major's digest and updates the # vN comment "
-            "(supersedes Dependabot's cross-major SHA-pin PRs, e.g. v6→v7). "
-            "No effect with --actions-unpin-sha."
-        ),
-    )
-    pol.add_argument(
-        "--actions-pin-sha",
-        action="store_true",
-        dest="actions_pin_sha",
-        help=(
-            "Convert a floating tag-pinned Action (@vN, @vN.M.P) to a commit-SHA "
-            "pin, resolved to the highest vN.M.P release in the pin's current "
-            "major, with a # vN.M.P audit-hint comment added or replacing any "
-            "existing trailing comment. Supply-chain hardening for Actions that "
-            "were never SHA-pinned. With --latest (or --actions-upgrade-mode="
-            "latest), also crosses major boundaries the same way "
-            "--actions-refresh-sha does. Independent of --actions-unpin-sha/"
-            "--actions-refresh-sha, which only govern already-SHA-pinned Actions."
-        ),
-    )
-    pol.add_argument(
-        "--precommit-refresh-sha",
-        action=_StoreTrueSetEnv,
-        const="REPO_OPS_PRECOMMIT_REFRESH_SHA",
-        default=False,
-        dest="precommit_refresh_sha",
-        nargs=0,
-        help=(
-            "Refresh SHA-pinned pre-commit hook revisions to the newest "
-            "resolvable release within the pin's current tagged major "
-            "(sets REPO_OPS_PRECOMMIT_REFRESH_SHA). Without this flag, SHA "
-            "pins remain report-only."
-        ),
-    )
-    pol.add_argument(
-        "--submodule-refresh-sha",
-        action=_StoreTrueSetEnv,
-        const="REPO_OPS_SUBMODULE_REFRESH_SHA",
-        default=False,
-        dest="submodule_refresh_sha",
-        nargs=0,
-        help=(
-            "Refresh SHA-only submodule pointers to the newest resolvable "
-            "release within the pin's current tagged major "
-            "(sets REPO_OPS_SUBMODULE_REFRESH_SHA). Without this flag, SHA "
-            "pins remain report-only."
-        ),
-    )
-    pol.add_argument(
         "--migrate-to-uv-lock",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         dest="migrate_to_uv_lock",
         help=(
-            "Opt into creating a uv.lock for hatch projects that currently lack one, "
-            "converting them to uv-managed lockfile mode. Without this flag, hatch "
-            "projects without a uv.lock are skipped on apply. "
+            "Create a uv.lock for hatch projects that lack one, converting them to "
+            "uv-managed lockfile mode (default). --no-migrate-to-uv-lock skips such "
+            "projects instead, which leaves them permanently outside the sweep. "
             "Sets REPO_OPS_HATCH_MIGRATE_UV_LOCK."
-        ),
-    )
-    pol.add_argument(
-        "--container-update-latest",
-        action=_StoreTrueSetEnv,
-        const="REPO_OPS_CONTAINER_UPDATE_LATEST",
-        default=False,
-        dest="container_update_latest",
-        nargs=0,
-        help=(
-            "Allow cross-major container image tag bumps (sets "
-            "REPO_OPS_CONTAINER_UPDATE_LATEST). Also implied by --latest."
-        ),
-    )
-    pol.add_argument(
-        "--container-refresh-sha",
-        action=_StoreTrueSetEnv,
-        const="REPO_OPS_CONTAINER_REFRESH_SHA",
-        default=False,
-        dest="container_refresh_sha",
-        nargs=0,
-        help=(
-            "Refresh digests for SHA-pinned container image references "
-            "(sets REPO_OPS_CONTAINER_REFRESH_SHA)."
         ),
     )
     pol.add_argument(
@@ -711,14 +495,17 @@ def add_upgrade_common_arguments(
         saf.add_argument(
             "--on-verify-fail",
             choices=("keep", "revert"),
-            default="keep",
+            default="revert",
             dest="on_verify_fail",
             metavar="POLICY",
             help=(
-                "When verify fails after apply: keep changes in the worktree (default) "
-                "or revert only apply-artifact files (lockfiles and manifests) under the "
-                "workspace; pre-existing dirty edits and untracked files outside that set "
-                "are preserved."
+                "When verify fails after apply: revert only apply-artifact files "
+                "(lockfiles and manifests) under the workspace (default), or keep the "
+                "changes in the worktree to inspect them. Reverting is the default "
+                "because the cross-range bulk upgrade a sweep performs has no "
+                "per-package rollback of its own, so a failure would otherwise leave "
+                "the workspace broken. Pre-existing dirty edits and untracked files "
+                "outside the apply-artifact set are preserved either way."
             ),
         )
         # ---- Resume / checkpoint (apply-only) --------------------------------
@@ -771,8 +558,13 @@ def add_upgrade_common_arguments(
     # registered unconditionally (#103).
     out.add_argument(
         "--only-outdated",
-        action="store_true",
-        help="Omit clean workspaces from human output.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Omit clean workspaces from human output (default). "
+            "--no-only-outdated lists every workspace scanned. JSON output is "
+            "unfiltered either way."
+        ),
     )
 
     # ---- Execution --------------------------------------------------------
@@ -801,22 +593,26 @@ def add_upgrade_common_arguments(
     )
     exe.add_argument(
         "--submodules",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help=(
             "Detect .gitmodules under roots; include submodules[] in JSON and "
-            "call out parent repos needing submodule pointer commits."
+            "call out parent repos needing submodule pointer commits (default). "
+            "Detection only — no writes. --no-submodules skips the scan."
         ),
     )
     if apply:
         exe.add_argument(
             "--submodule-order",
             choices=("discovery", "children-first"),
-            default="discovery",
+            default="children-first",
             dest="submodule_order",
             metavar="ORDER",
             help=(
-                "Repo processing order when submodules exist: discovery (default) "
-                "or children-first (child git repos before parent umbrellas)."
+                "Repo processing order when submodules exist: children-first "
+                "(default) applies child git repos before parent umbrellas, so a "
+                "parent never bumps its pointer at a child this run has not "
+                "updated yet; discovery uses plain scan order."
             ),
         )
         exe.add_argument(
