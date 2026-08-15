@@ -9,9 +9,11 @@ import re
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 from repo_ops_core.config import (
     ambient_env,
+    coerce_bool_setting,
     load_global_config,
     load_repo_config,
     resolve_setting,
@@ -143,38 +145,34 @@ def _valid_go_get_target(target: str) -> bool:
 
 
 def _process_env_cli_override(env_var: str) -> str | None:
-    """Return a process value changed after the ambient environment snapshot."""
+    """Return a process value changed after the ambient environment snapshot.
+
+    Kept local (mirrors ``repo_ops_core.config.process_env_cli_override``)
+    rather than imported: it must read *this module's* ``ambient_env``
+    binding so callers can substitute a per-test snapshot for it.
+    """
     ambient = ambient_env()
     if ambient is None:
         return None
     process_value = os.environ.get(env_var)
     if env_var not in ambient:
-        if process_value is None:
-            return None
-        setting = env_var.removeprefix("REPO_OPS_").lower()
-        global_value = load_global_config().get(setting)
-        if global_value is True:
-            global_value = "1"
-        elif global_value is False:
-            global_value = "0"
-        return (
-            None
-            if global_value is not None and process_value == str(global_value)
-            else process_value
-        )
+        return process_value
     return process_value if process_value != ambient[env_var] else None
 
 
-def _go_upgrade_mode(ws: Workspace | None = None) -> str:
-    ambient = ambient_env()
-    cli_value = _process_env_cli_override(GO_UPGRADE_MODE_ENV)
-    raw = resolve_setting(
-        "go_upgrade_mode",
-        cli_value=cli_value,
-        env=ambient or None,
+def _resolve_go_setting(name: str, env_var: str, ws: Workspace | None = None) -> Any:
+    """Resolve one Go setting: CLI > env > repo config > global config > default."""
+    return resolve_setting(
+        name,
+        cli_value=_process_env_cli_override(env_var),
+        env=ambient_env() or None,
         repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
         global_cfg=load_global_config(),
     )
+
+
+def _go_upgrade_mode(ws: Workspace | None = None) -> str:
+    raw = _resolve_go_setting("go_upgrade_mode", GO_UPGRADE_MODE_ENV, ws)
     if raw is None:
         raw = "patch"
     if not isinstance(raw, str):
@@ -348,18 +346,9 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
 
 
 def _go_work_sync_enabled(ws: Workspace | None = None) -> bool:
-    ambient = ambient_env()
-    cli_value = _process_env_cli_override(GO_WORK_SYNC_ENV)
-    raw = resolve_setting(
-        "go_work_sync",
-        cli_value=cli_value,
-        env=ambient or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
+    return coerce_bool_setting(
+        _resolve_go_setting("go_work_sync", GO_WORK_SYNC_ENV, ws)
     )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 # ---------------------------------------------------------------------------
@@ -460,15 +449,7 @@ def _go_directive_target(ws: Workspace | None = None) -> str | None:
 
     Returns ``None`` when the env var is unset or empty.
     """
-    ambient = ambient_env()
-    cli_value = _process_env_cli_override(GO_DIRECTIVE_ENV)
-    raw = resolve_setting(
-        "go_directive",
-        cli_value=cli_value,
-        env=ambient or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
-    )
+    raw = _resolve_go_setting("go_directive", GO_DIRECTIVE_ENV, ws)
     return str(raw).strip() if raw is not None and str(raw).strip() else None
 
 
@@ -479,15 +460,7 @@ def _go_toolchain_target(ws: Workspace | None = None) -> str | None:
     work with the bare version string (e.g. ``"1.25.10"``).  Returns ``None``
     when unset or empty.
     """
-    ambient = ambient_env()
-    cli_value = _process_env_cli_override(GO_TOOLCHAIN_ENV)
-    raw = resolve_setting(
-        "go_toolchain",
-        cli_value=cli_value,
-        env=ambient or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
-    )
+    raw = _resolve_go_setting("go_toolchain", GO_TOOLCHAIN_ENV, ws)
     if not raw:
         return None
     return str(raw).strip().removeprefix("go") or None
