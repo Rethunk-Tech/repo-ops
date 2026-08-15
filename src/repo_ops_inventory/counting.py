@@ -9,6 +9,7 @@ from __future__ import annotations
 import concurrent.futures
 import configparser
 import contextlib
+import importlib
 import json
 import os
 import re
@@ -508,6 +509,21 @@ def count_container(proj: Path) -> tuple[int, set[str]]:
 # ---------- GitHub Actions ----------
 
 
+def _lazy_import(module: str, *names: str) -> tuple[Any, ...] | None:
+    """Import *names* from *module*; return None if unavailable.
+
+    AttributeError is caught alongside ImportError because a transitive
+    failure while importing the module itself (e.g. a renamed symbol
+    referenced internally) should degrade the calling scan gracefully
+    instead of crashing it.
+    """
+    try:
+        mod = importlib.import_module(module)
+        return tuple(getattr(mod, name) for name in names)
+    except (ImportError, AttributeError):
+        return None
+
+
 def count_actions(proj: Path) -> tuple[int, set[str]]:
     """Count GitHub Actions ``uses:`` pins in ``.github/workflows/``.
 
@@ -516,20 +532,16 @@ def count_actions(proj: Path) -> tuple[int, set[str]]:
 
     Lazy-imports from repo_ops_upgrade; gracefully returns zeros if unavailable.
     """
-    try:
-        from repo_ops_upgrade.actions import (
-            discover_workflow_files,
-        )
-        from repo_ops_upgrade.workflow_uses import (
-            WorkflowParseError,
-            parse_workflow_uses,
-        )
-    except (ImportError, AttributeError):
-        # AttributeError covers a transitive failure while importing
-        # repo_ops_upgrade.actions/workflow_uses themselves (e.g. a renamed
-        # symbol referenced internally) degrading gracefully instead of
-        # crashing this scan.
+    actions_imports = _lazy_import(
+        "repo_ops_upgrade.actions", "discover_workflow_files"
+    )
+    uses_imports = _lazy_import(
+        "repo_ops_upgrade.workflow_uses", "WorkflowParseError", "parse_workflow_uses"
+    )
+    if actions_imports is None or uses_imports is None:
         return 0, set()
+    (discover_workflow_files,) = actions_imports
+    WorkflowParseError, parse_workflow_uses = uses_imports
 
     direct = 0
     versions: set[str] = set()
@@ -555,17 +567,14 @@ def count_precommit(proj: Path) -> tuple[int, set[str]]:
 
     Lazy-imports from repo_ops_upgrade.precommit.
     """
-    try:
-        from repo_ops_upgrade.precommit import (
-            _PRECOMMIT_CONFIG_NAMES,
-            _parse_precommit_repos,
-        )
-    except (ImportError, AttributeError):
-        # AttributeError covers a transitive failure while importing
-        # repo_ops_upgrade.precommit itself (e.g. a renamed private symbol
-        # referenced internally) degrading gracefully instead of crashing
-        # this scan.
+    imported = _lazy_import(
+        "repo_ops_upgrade.precommit",
+        "_PRECOMMIT_CONFIG_NAMES",
+        "_parse_precommit_repos",
+    )
+    if imported is None:
         return 0, set()
+    _PRECOMMIT_CONFIG_NAMES, _parse_precommit_repos = imported
 
     direct = 0
     versions: set[str] = set()
