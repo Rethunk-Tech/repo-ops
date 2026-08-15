@@ -26,13 +26,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from repo_ops_core.config import (
-    ambient_env,
-    load_global_config,
-    load_repo_config,
-    process_env_cli_override,
-    resolve_setting,
-)
+from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.holds import (
     HoldRule,
     _global_holds_cached,
@@ -80,29 +74,11 @@ _REV_LINE_RE = re.compile(r"^(\s+)rev:\s+(.+?)\s*$")
 
 
 def _precommit_update_latest_enabled(ws: Workspace) -> bool:
-    raw = resolve_setting(
-        "precommit_update_latest",
-        cli_value=process_env_cli_override(_UPDATE_LATEST_ENV),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo),
-        global_cfg=load_global_config(),
-    )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
+    return resolve_bool_setting("precommit_update_latest", _UPDATE_LATEST_ENV, ws)
 
 
 def _precommit_refresh_sha_enabled(ws: Workspace) -> bool:
-    raw = resolve_setting(
-        "precommit_refresh_sha",
-        cli_value=process_env_cli_override(_REFRESH_SHA_ENV),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo),
-        global_cfg=load_global_config(),
-    )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
+    return resolve_bool_setting("precommit_refresh_sha", _REFRESH_SHA_ENV, ws)
 
 
 # ---------------------------------------------------------------------------

@@ -8,14 +8,9 @@ import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 
-from repo_ops_core.config import (
-    ambient_env,
-    load_global_config,
-    load_repo_config,
-    process_env_cli_override,
-    resolve_setting,
-)
+from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
 from repo_ops_core.holds import (
@@ -270,29 +265,19 @@ _SUBMODULE_TAG_REF_CACHE: dict[str, list[tuple[str, str]] | None] = {}
 
 
 def _submodule_update_latest_enabled(repo_root: Path) -> bool:
-    raw = resolve_setting(
+    return resolve_bool_setting(
         "submodule_update_latest",
-        cli_value=process_env_cli_override(_SUBMODULE_UPDATE_LATEST_ENV),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(repo_root),
-        global_cfg=load_global_config(),
+        _SUBMODULE_UPDATE_LATEST_ENV,
+        SimpleNamespace(git_repo=repo_root),
     )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _submodule_refresh_sha_enabled(repo_root: Path) -> bool:
-    raw = resolve_setting(
+    return resolve_bool_setting(
         "submodule_refresh_sha",
-        cli_value=process_env_cli_override(_SUBMODULE_REFRESH_SHA_ENV),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(repo_root),
-        global_cfg=load_global_config(),
+        _SUBMODULE_REFRESH_SHA_ENV,
+        SimpleNamespace(git_repo=repo_root),
     )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True)
