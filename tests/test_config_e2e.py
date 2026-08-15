@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-import repo_ops_go
 import repo_ops_go.go as go_mod
 import repo_ops_upgrade.run as run_mod
 import repo_ops_upgrade.verify as verify_mod
+from repo_ops._register import register_all
 from repo_ops_core.config import apply_config_to_env, resolve_setting, set_ambient_env
 from repo_ops_core.constants import (
     resolve_find_timeout,
@@ -889,7 +889,7 @@ def test_fleet_run_resolves_go_upgrade_mode_per_checkout(
         return make_proc(stdout=stdout)
 
     monkeypatch.setattr(go_mod, "run", fake_go_run)
-    repo_ops_go.register()
+    register_all()
 
     original_check_workspace = run_mod.orchestration.ecosystems.check_workspace
 

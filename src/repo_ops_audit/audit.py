@@ -213,40 +213,18 @@ def _eco_to_manager(ecosystem: str) -> str:
 
 
 def _try_register_manager(manager: str) -> bool:
-    """Lazy-import and register a manager's checker/applier with the upgrade registry.
+    """Register a manager's checker/applier with the upgrade registry on demand.
 
-    Uses the same per-ecosystem ``register()`` entry points as ``repo_ops._register``
-    (the main CLI), but loads only the manager that is actually needed to avoid
-    pulling all ecosystem packages into the audit import tree unconditionally.
+    Loads only the one manager that is actually needed (via ``repo_ops._register
+    .register_one``) to avoid pulling all ecosystem packages into the audit
+    import tree unconditionally.
 
     Returns ``True`` if the manager is (or was) registered successfully.
     Returns ``False`` if the package for that manager is not installed.
     """
-    from repo_ops_upgrade import registry
+    from repo_ops._register import register_one
 
-    if manager in registry.APPLIERS:
-        return True
-    try:
-        if manager == "npm":
-            from repo_ops_js_npm import register as _r
-        elif manager == "yarn":
-            from repo_ops_js_yarn import register as _r
-        elif manager == "pnpm":
-            from repo_ops_js_pnpm import register as _r
-        elif manager == "bun":
-            from repo_ops_js_bun import register as _r
-        elif manager == "uv":
-            from repo_ops_py_uv import register as _r
-        elif manager == "cargo":
-            from repo_ops_rust import register as _r
-        elif manager == "go":
-            from repo_ops_go import register as _r
-        else:
-            return False
-        _r()
-        return True
-    except ImportError:
-        return False
+    return register_one(manager)
 
 
 def _detect_node_manager(ws: Path) -> str | None:
