@@ -10,36 +10,13 @@ bare-numeric tags) and are resolved separately in ``actions.py``.
 from __future__ import annotations
 
 import logging
-import re
-from functools import cache
-from pathlib import Path
 
-from repo_ops_core.holds import HoldRule, load_global_holds, load_repo_holds
+from repo_ops_core.holds import HoldRule
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
+from repo_ops_upgrade.tags import has_v_prefix as _has_v_prefix
+from repo_ops_upgrade.tags import is_semver_tag as _is_semver_tag
 
 logger = logging.getLogger(__name__)
-
-_SEMVER_TAG_RE = re.compile(r"^v?(\d+)(?:\.\d+)*(?:[-.][\w.]+)?$")
-
-
-@cache
-def global_holds_cached() -> tuple[HoldRule, ...]:
-    """Process-wide cache of the global hold rules file."""
-    return tuple(load_global_holds())
-
-
-@cache
-def repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    """Process-wide cache of one repo's local hold rules file."""
-    return tuple(load_repo_holds(Path(repo_root)))
-
-
-def _is_semver_tag(tag: str) -> bool:
-    return bool(_SEMVER_TAG_RE.match(tag))
-
-
-def _has_v_prefix(tag: str) -> bool:
-    return tag.startswith("v")
 
 
 def target_within_hold(target: str, rule: HoldRule | None) -> bool:

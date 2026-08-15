@@ -7,20 +7,14 @@ import json
 import os
 import tempfile
 from datetime import UTC, date, datetime
-from functools import cache
 from pathlib import Path
 from typing import Any, Literal
 
 from repo_ops_core.config import resolve_bool_setting
-from repo_ops_core.holds import (
-    HoldRule,
-    load_global_holds,
-    load_repo_holds,
-    resolve_hold,
-)
+from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.state import cache_get_dirty_skip, cache_get_staleness
 from repo_ops_core.table import column_width, format_cell
-from repo_ops_models import DIRTY_SKIP_MARKER, RepoBundle, Workspace, WorkspaceResult
+from repo_ops_models import DIRTY_SKIP_MARKER, RepoBundle, WorkspaceResult
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 
 UpgradeMode = Literal["plan", "apply"]
@@ -167,45 +161,13 @@ def _behind_latest_hint(manager: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-@cache
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return tuple(load_global_holds())
-
-
-@cache
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return tuple(load_repo_holds(Path(repo_root)))
-
-
-def _workspace_rel_for_hold(ws: Workspace) -> str:
-    rel = "."
-    with contextlib.suppress(ValueError):
-        rel = ws.path.relative_to(ws.git_repo).as_posix()
-    return rel
-
-
-def _resolve_report_hold(ws: Workspace, package: str) -> HoldRule | None:
-    """Return the active hold covering *package* in *ws*, if any."""
-    repo_root = str(ws.git_repo.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
-    if not rules:
-        return None
-    return resolve_hold(
-        rules,
-        package=package,
-        ecosystem=ws.ecosystem,
-        manager=ws.manager,
-        workspace_rel=_workspace_rel_for_hold(ws),
-    )
-
-
 def _behind_latest_holds(wr: WorkspaceResult) -> list[HoldRule | None]:
     """Active hold (if any) per ``wr.behind_latest`` entry, same order.
 
     Shared by the row annotation and the summary counter so "held" means the
     same thing in both places.
     """
-    return [_resolve_report_hold(wr.workspace, c.name) for c in wr.behind_latest]
+    return [resolve_package_hold(wr.workspace, c.name) for c in wr.behind_latest]
 
 
 def _format_behind_latest_annotation(rule: HoldRule | None) -> str:

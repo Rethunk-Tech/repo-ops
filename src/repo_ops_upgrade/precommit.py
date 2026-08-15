@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 import re
-import subprocess
 import threading
 from pathlib import Path
 from typing import Any
@@ -35,9 +34,13 @@ from repo_ops_core.config import (
     resolve_setting,
 )
 from repo_ops_core.holds import HoldRule, resolve_hold
-from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
+from repo_ops_core.holds import _global_holds_cached as _core_global_holds_cached
+from repo_ops_core.holds import _repo_holds_cached as _core_repo_holds_cached
+from repo_ops_core.holds import workspace_rel as _core_workspace_rel
+from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade import holds
+from repo_ops_upgrade import tags as tag_utils
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -65,9 +68,6 @@ logger = logging.getLogger(__name__)
 
 # A rev: value that is a hex commit SHA (7-40 hex chars).
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
-
-# A rev: value that looks like a semver tag (with or without a leading "v").
-_SEMVER_TAG_RE = re.compile(r"^v?(\d+)(?:\.\d+)*(?:[-.][\w.]+)?$")
 
 # Regex to match "- repo: <url>" lines (any leading whitespace + list bullet).
 _REPO_LINE_RE = re.compile(r"^\s*-\s+repo:\s+(.+?)\s*$")
@@ -184,12 +184,11 @@ def _is_sha_rev(rev: str) -> bool:
 
 
 def _is_semver_like(tag: str) -> bool:
-    """True when *tag* looks like a semver version (bare or v-prefixed)."""
-    return bool(_SEMVER_TAG_RE.match(tag))
+    return tag_utils.is_semver_tag(tag)
 
 
 def _has_v_prefix(tag: str) -> bool:
-    return tag.startswith("v")
+    return tag_utils.has_v_prefix(tag)
 
 
 def _repo_short_name(repo_url: str) -> str:
@@ -205,19 +204,15 @@ def _repo_short_name(repo_url: str) -> str:
 
 
 def _workspace_rel(ws: Workspace) -> str:
-    try:
-        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
-    except ValueError:
-        return "."
-    return rel or "."
+    return _core_workspace_rel(ws)
 
 
 def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return holds.global_holds_cached()
+    return _core_global_holds_cached()
 
 
 def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return holds.repo_holds_cached(repo_root)
+    return _core_repo_holds_cached(repo_root)
 
 
 def _resolve_precommit_hold(ws: Workspace, package: str) -> HoldRule | None:
@@ -249,65 +244,17 @@ def _target_within_hold(ws: Workspace, package: str, target_version: str) -> boo
 
 def _resolve_latest_precommit_rev(
     current_rev: str,
-    tags: list[str],
+    revs: list[str],
     *,
     allow_cross_major: bool = False,
 ) -> str | None:
-    """Return the best candidate tag for *current_rev* from *tags*.
+    """Return the best candidate tag for *current_rev* from *revs*.
 
-    Matching rules:
-    - Only semver-like tags are considered.
-    - Tag must share the same ``v``-prefix style as *current_rev*.
-    - Default (conservative): same major only.
-    - ``allow_cross_major=True``: pick the global best across all majors.
-    - Returns None when already at latest, or no suitable candidate exists.
+    See :func:`repo_ops_upgrade.tags.resolve_latest_tag` for matching rules.
     """
-    if not _is_semver_like(current_rev):
-        return None
-
-    want_v = _has_v_prefix(current_rev)
-    current_bare = current_rev.lstrip("v")
-
-    try:
-        current_tup = semver_tuple(current_bare)
-    except Exception:
-        return None
-
-    # Build candidate list: same prefix style + parseable semver.
-    candidates: list[tuple[tuple[int, ...], str]] = []
-    for tag in tags:
-        if not _is_semver_like(tag):
-            continue
-        if _has_v_prefix(tag) != want_v:
-            continue
-        bare = tag.lstrip("v")
-        try:
-            tup = semver_tuple(bare)
-        except Exception:  # noqa: S112
-            continue
-        candidates.append((tup, tag))
-
-    if not candidates:
-        return None
-
-    candidates.sort(key=lambda x: x[0], reverse=True)
-
-    if not allow_cross_major:
-        # Same major only
-        same_major = [
-            (tup, t)
-            for tup, t in candidates
-            if tup and current_tup and tup[0] == current_tup[0]
-        ]
-        if not same_major:
-            return None
-        candidates = same_major
-
-    best_tup, best_tag = candidates[0]
-    if best_tup <= current_tup:
-        return None  # already at latest
-
-    return best_tag
+    return tag_utils.resolve_latest_tag(
+        current_rev, revs, allow_cross_major=allow_cross_major
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -354,35 +301,9 @@ def _fetch_tag_refs_for_repo(
         if repo_url in _TAG_REF_CACHE:
             return _TAG_REF_CACHE[repo_url]
 
-        try:
-            proc = subprocess.run(
-                ["git", "ls-remote", "--tags", "--refs", repo_url],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-            _TAG_REF_CACHE[repo_url] = None
-            _TAG_CACHE[repo_url] = None
-            return None
-
-        if proc.returncode != 0:
-            _TAG_REF_CACHE[repo_url] = None
-            _TAG_CACHE[repo_url] = None
-            return None
-
-        refs: list[tuple[str, str]] = []
-        for line in proc.stdout.splitlines():
-            # Format: "<sha>\trefs/tags/<tag>"
-            parts = line.split("\t", 1)
-            if len(parts) == 2 and parts[1].startswith("refs/tags/"):
-                sha = parts[0].strip()
-                tag = parts[1][len("refs/tags/") :]
-                if sha and tag:
-                    refs.append((sha, tag))
-
+        refs = tag_utils.fetch_tag_refs(repo_url, timeout=timeout)
         _TAG_REF_CACHE[repo_url] = refs
-        _TAG_CACHE[repo_url] = [tag for _, tag in refs]
+        _TAG_CACHE[repo_url] = None if refs is None else [tag for _, tag in refs]
         return refs
 
 
@@ -402,57 +323,7 @@ def _resolve_sha_refresh(
     The target keeps that tag's prefix style and major, even when
     ``REPO_OPS_PRECOMMIT_UPDATE_LATEST`` is enabled.
     """
-    normalized = current_sha.lower()
-    matching_tags: list[tuple[tuple[int, ...], str, str]] = []
-    for tag_sha, tag in refs:
-        candidate_sha = tag_sha.lower()
-        if not (
-            candidate_sha == normalized
-            or (len(normalized) < 40 and candidate_sha.startswith(normalized))
-        ):
-            continue
-        if not _is_semver_like(tag):
-            continue
-        try:
-            tag_version = semver_tuple(tag.lstrip("v"))
-        except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r during pre-commit SHA refresh",
-                tag,
-            )
-            continue
-        matching_tags.append((tag_version, tag, tag_sha))
-
-    if not matching_tags:
-        return None
-
-    _, current_tag, _ = max(matching_tags, key=lambda item: (item[0], item[1]))
-    current_version = semver_tuple(current_tag.lstrip("v"))
-    want_v = _has_v_prefix(current_tag)
-    candidates: list[tuple[tuple[int, ...], str, str]] = []
-    for tag_sha, tag in refs:
-        if not _is_semver_like(tag) or _has_v_prefix(tag) != want_v:
-            continue
-        try:
-            tag_version = semver_tuple(tag.lstrip("v"))
-        except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r during pre-commit SHA refresh",
-                tag,
-            )
-            continue
-        if tag_version and tag_version[0] == current_version[0]:
-            candidates.append((tag_version, tag, tag_sha))
-
-    if not candidates:
-        return None
-    _, latest_tag, latest_sha = max(candidates, key=lambda item: (item[0], item[1]))
-    latest_sha_lower = latest_sha.lower()
-    if latest_sha_lower == normalized or (
-        len(normalized) < 40 and latest_sha_lower.startswith(normalized)
-    ):
-        return None
-    return latest_sha, current_tag, latest_tag
+    return tag_utils.resolve_sha_refresh(current_sha, refs, context="pre-commit")
 
 
 def _resolve_hold_tag_target(

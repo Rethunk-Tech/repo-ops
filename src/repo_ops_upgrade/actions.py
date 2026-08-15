@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from repo_ops_core.holds import HoldRule, resolve_hold
+from repo_ops_core.holds import _global_holds_cached as _core_global_holds_cached
+from repo_ops_core.holds import _repo_holds_cached as _core_repo_holds_cached
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import ActionBump
@@ -170,7 +172,9 @@ def _derive_owner(repo: Path) -> str | None:
     return None
 
 
-def _action_policy_violation(action: str, policy: dict) -> str | None:
+def _action_policy_violation(
+    action: str, policy: dict, org_owner: str | None = None
+) -> str | None:
     """Return a human-readable reason string when *action* is blocked by *policy*.
 
     Returns ``None`` when the action is allowed.
@@ -183,10 +187,11 @@ def _action_policy_violation(action: str, policy: dict) -> str | None:
           ``github``, OR
         - the action matches any glob in ``patterns_allowed`` (fnmatch semantics
           per GitHub docs: ``owner/*`` matches ``owner/any-repo``).
-
-    ``allowed_actions=local_only`` is handled by
-    :func:`_action_policy_violation_local_only`, which needs the org owner to
-    tell same-owner refs from cross-org ones; callers route local_only there.
+    - ``allowed_actions=local_only`` → allowed when the action's owner matches
+      *org_owner* (case-insensitive); same-owner refs pass, cross-org refs are
+      blocked. Needs *org_owner* to tell those apart, so callers evaluating a
+      ``local_only`` policy must pass it — without it, ``local_only`` is
+      treated as an unrecognized mode (permissive).
     """
     allowed_actions = policy.get("allowed_actions", "all")
 
@@ -214,7 +219,16 @@ def _action_policy_violation(action: str, policy: dict) -> str | None:
             " — workflows using it will fail at startup"
         )
 
-    # Unknown mode — be permissive.
+    if allowed_actions == "local_only" and org_owner is not None:
+        action_owner = action.split("/")[0] if "/" in action else ""
+        if action_owner.lower() == org_owner.lower():
+            return None  # same-org action — allowed
+        return (
+            f"org policy (local_only): {action} not allowed"
+            " — workflows using it will fail at startup"
+        )
+
+    # Unknown mode (or local_only without an org_owner) — be permissive.
     return None
 
 
@@ -223,29 +237,10 @@ def _action_policy_violation_local_only(
     policy: dict,
     org_owner: str,
 ) -> str | None:
-    """Variant of ``_action_policy_violation`` for ``local_only`` mode.
-
-    Receives the org *owner* so same-owner actions can be distinguished from
-    cross-org refs.  Same-owner actions (``owner/repo``) are allowed;
-    cross-org refs are blocked.
+    """Backward-compatible alias — ``local_only`` handling now lives in
+    :func:`_action_policy_violation`, which takes *org_owner* directly.
     """
-    if not policy.get("enabled", True):
-        return f"org policy (disabled): {action} not allowed — Actions are disabled for this org"
-    allowed_actions = policy.get("allowed_actions", "all")
-    if allowed_actions == "all":
-        return None
-    if action.startswith("./"):
-        return None
-    if allowed_actions == "local_only":
-        action_owner = action.split("/")[0] if "/" in action else ""
-        if action_owner.lower() == org_owner.lower():
-            return None  # same-org action — allowed
-        return (
-            f"org policy (local_only): {action} not allowed"
-            " — workflows using it will fail at startup"
-        )
-    # Delegate to the generic checker for other modes.
-    return _action_policy_violation(action, policy)
+    return _action_policy_violation(action, policy, org_owner)
 
 
 def _fetch_org_policy_cached(owner: str, store: dict[str, dict | None]) -> dict | None:
@@ -736,11 +731,11 @@ def _resolve_latest_target(info: dict, tag_style: TagStyle) -> str | None:
 
 
 def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return holds.global_holds_cached()
+    return _core_global_holds_cached()
 
 
 def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return holds.repo_holds_cached(repo_root)
+    return _core_repo_holds_cached(repo_root)
 
 
 def _resolve_actions_hold(repo: Path, package: str) -> HoldRule | None:
@@ -1145,9 +1140,7 @@ def scan_actions(
     def _policy_violation_for(action: str) -> str | None:
         if _org_policy is None or _org_owner is None or action.startswith("./"):
             return None
-        if _org_policy.get("allowed_actions", "all") == "local_only":
-            return _action_policy_violation_local_only(action, _org_policy, _org_owner)
-        return _action_policy_violation(action, _org_policy)
+        return _action_policy_violation(action, _org_policy, _org_owner)
 
     # Load the actionlint result cache once per run (skipped in "off" mode).
     _lint_cache: dict[str, dict] | None = None

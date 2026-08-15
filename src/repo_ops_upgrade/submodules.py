@@ -6,8 +6,6 @@ import configparser
 import contextlib
 import logging
 import os
-import re
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -21,8 +19,10 @@ from repo_ops_core.config import (
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
 from repo_ops_core.holds import HoldRule, resolve_hold
-from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
-from repo_ops_upgrade import holds
+from repo_ops_core.holds import _global_holds_cached as _core_global_holds_cached
+from repo_ops_core.holds import _repo_holds_cached as _core_repo_holds_cached
+from repo_ops_core.version_utils import version_satisfies_ceiling
+from repo_ops_upgrade import holds, tags
 
 logger = logging.getLogger(__name__)
 
@@ -259,10 +259,6 @@ _SUBMODULE_REFRESH_SHA_ENV = "REPO_OPS_SUBMODULE_REFRESH_SHA"
 #: Bounded timeout (seconds) for ``git ls-remote`` calls.
 _LS_REMOTE_TIMEOUT = 30
 
-#: Recognises semver-like tags with or without a leading ``v`` and an optional
-#: pre-release / build-metadata suffix (e.g. ``v1.2.3``, ``1.0.0-rc1``).
-_SEMVER_TAG_RE = re.compile(r"^v?(\d+)(?:\.\d+)*(?:[-.][\w.]+)?$")
-
 #: In-process cache: URL → tag list (or None on error).
 #: One entry per unique upstream URL so repeated checks cost only one RTT.
 _SUBMODULE_TAG_CACHE: dict[str, list[str] | None] = {}
@@ -329,12 +325,11 @@ class SubmoduleTagBump:
 
 
 def _is_semver_tag(tag: str) -> bool:
-    """True when *tag* looks like a semver version (bare or ``v``-prefixed)."""
-    return bool(_SEMVER_TAG_RE.match(tag))
+    return tags.is_semver_tag(tag)
 
 
 def _has_v_prefix(tag: str) -> bool:
-    return tag.startswith(("v", "V"))
+    return tags.has_v_prefix(tag)
 
 
 def _fetch_remote_tags(
@@ -349,9 +344,9 @@ def _fetch_remote_tags(
     if url in _SUBMODULE_TAG_CACHE:
         return _SUBMODULE_TAG_CACHE[url]
     refs = _fetch_remote_tag_refs(url, timeout=timeout)
-    tags = None if refs is None else [tag for _, tag in refs]
-    _SUBMODULE_TAG_CACHE[url] = tags
-    return tags
+    tag_list = None if refs is None else [tag for _, tag in refs]
+    _SUBMODULE_TAG_CACHE[url] = tag_list
+    return tag_list
 
 
 def _fetch_remote_tag_refs(
@@ -361,35 +356,9 @@ def _fetch_remote_tag_refs(
     if url in _SUBMODULE_TAG_REF_CACHE:
         return _SUBMODULE_TAG_REF_CACHE[url]
 
-    try:
-        proc = subprocess.run(
-            ["git", "ls-remote", "--tags", "--refs", "--", url],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env={**os.environ, "GIT_ALLOW_PROTOCOL": "https:ssh"},
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        _SUBMODULE_TAG_REF_CACHE[url] = None
-        _SUBMODULE_TAG_CACHE[url] = None
-        return None
-
-    if proc.returncode != 0:
-        _SUBMODULE_TAG_REF_CACHE[url] = None
-        _SUBMODULE_TAG_CACHE[url] = None
-        return None
-
-    refs: list[tuple[str, str]] = []
-    for line in proc.stdout.splitlines():
-        parts = line.split("\t", 1)
-        if len(parts) == 2 and parts[1].startswith("refs/tags/"):
-            sha = parts[0].strip()
-            tag = parts[1][len("refs/tags/") :]
-            if sha and tag:
-                refs.append((sha, tag))
-
+    refs = tags.fetch_tag_refs(url, timeout=timeout)
     _SUBMODULE_TAG_REF_CACHE[url] = refs
-    _SUBMODULE_TAG_CACHE[url] = [tag for _, tag in refs]
+    _SUBMODULE_TAG_CACHE[url] = None if refs is None else [tag for _, tag in refs]
     return refs
 
 
@@ -435,110 +404,21 @@ def _resolve_latest_submodule_tag(
 ) -> str | None:
     """Return the best candidate tag for *current_tag* from *available_tags*.
 
-    Matching rules:
-    - *current_tag* must be semver-like; returns ``None`` otherwise.
-    - Candidates must share the same ``v``-prefix style as *current_tag*.
-    - Conservative (default): same major only.
-    - ``allow_cross_major=True``: pick the global best across all majors.
-    - Returns ``None`` when already at latest or no suitable candidate exists.
+    See :func:`repo_ops_upgrade.tags.resolve_latest_tag` for matching rules.
     """
-    if not _is_semver_tag(current_tag):
-        return None
-
-    want_v = _has_v_prefix(current_tag)
-    bare = current_tag.lstrip("vV")
-    try:
-        current_tup = semver_tuple(bare)
-    except Exception:
-        return None
-
-    candidates: list[tuple[tuple[int, ...], str]] = []
-    for tag in available_tags:
-        if not _is_semver_tag(tag):
-            continue
-        if _has_v_prefix(tag) != want_v:
-            continue
-        tag_bare = tag.lstrip("vV")
-        try:
-            tup = semver_tuple(tag_bare)
-        except Exception:  # noqa: S112
-            continue
-        candidates.append((tup, tag))
-
-    if not candidates:
-        return None
-
-    candidates.sort(key=lambda x: x[0], reverse=True)
-
-    if not allow_cross_major:
-        same_major = [
-            (tup, t)
-            for tup, t in candidates
-            if tup and current_tup and tup[0] == current_tup[0]
-        ]
-        if not same_major:
-            return None
-        candidates = same_major
-
-    best_tup, best_tag = candidates[0]
-    if best_tup <= current_tup:
-        return None  # already at latest
-
-    return best_tag
+    return tags.resolve_latest_tag(
+        current_tag, available_tags, allow_cross_major=allow_cross_major
+    )
 
 
 def _resolve_sha_refresh(
     current_sha: str, refs: list[tuple[str, str]]
 ) -> tuple[str, str] | None:
     """Return the newest tag within the major and style resolved from a SHA."""
-    normalized = current_sha.lower()
-    matching: list[tuple[tuple[int, ...], str, str]] = []
-    for tag_sha, tag in refs:
-        candidate_sha = tag_sha.lower()
-        if not (
-            candidate_sha == normalized
-            or (len(normalized) < 40 and candidate_sha.startswith(normalized))
-        ):
-            continue
-        if not _is_semver_tag(tag):
-            continue
-        try:
-            version = semver_tuple(tag.lstrip("vV"))
-        except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r during submodule SHA refresh",
-                tag,
-            )
-            continue
-        matching.append((version, tag, tag_sha))
-
-    if not matching:
+    resolved = tags.resolve_sha_refresh(current_sha, refs, context="submodule")
+    if resolved is None:
         return None
-    _, current_tag, _ = max(matching, key=lambda item: (item[0], item[1]))
-    current_version = semver_tuple(current_tag.lstrip("vV"))
-    want_v = _has_v_prefix(current_tag)
-    candidates: list[tuple[tuple[int, ...], str, str]] = []
-    for tag_sha, tag in refs:
-        if not _is_semver_tag(tag) or _has_v_prefix(tag) != want_v:
-            continue
-        try:
-            version = semver_tuple(tag.lstrip("vV"))
-        except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r during submodule SHA refresh",
-                tag,
-            )
-            continue
-        if version and version[0] == current_version[0]:
-            candidates.append((version, tag, tag_sha))
-    if not candidates:
-        return None
-    _, latest_tag, latest_sha = max(candidates, key=lambda item: (item[0], item[1]))
-    latest_sha_lower = latest_sha.lower()
-    if latest_sha_lower == normalized or (
-        len(normalized) < 40 and latest_sha_lower.startswith(normalized)
-    ):
-        return None
+    _, current_tag, latest_tag = resolved
     return current_tag, latest_tag
 
 
@@ -548,11 +428,11 @@ def _resolve_sha_refresh(
 
 
 def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return holds.global_holds_cached()
+    return _core_global_holds_cached()
 
 
 def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return holds.repo_holds_cached(repo_root)
+    return _core_repo_holds_cached(repo_root)
 
 
 def _resolve_submodule_hold(link: SubmoduleLink) -> HoldRule | None:
