@@ -475,12 +475,6 @@ def enrich_component(
 ) -> str | None:
     """Resolve a lockfile component's license; non-registry ecosystems skip."""
     ecosystem = component.get("ecosystem", "")
-    if not ecosystem:
-        ecosystem = (
-            component.get("purl", "").split(":", 2)[1]
-            if ":" in component.get("purl", "")
-            else ""
-        )
     return enrich_license(
         component.get("name", ""),
         component.get("version", ""),

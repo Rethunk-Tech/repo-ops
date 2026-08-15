@@ -48,8 +48,9 @@ from repo_ops_core.cli import (
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.filesystem import read_json_file, read_toml_file
 
-from repo_ops_lockfiles.license_enrich import enrich_license
+from repo_ops_lockfiles.license_enrich import classify_license_text, enrich_license
 from repo_ops_lockfiles.parsers import (
+    split_name_version,
     versions_bun_lock,
     versions_deno_lock,
     versions_npm_lock,
@@ -84,7 +85,6 @@ class PolicyResult:
     violations: list[PackageLicense] = field(default_factory=list)
     unknown: list[PackageLicense] = field(default_factory=list)
     allowed: list[PackageLicense] = field(default_factory=list)
-    policy_mode: str = "allow"  # "allow" or "deny"
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +93,10 @@ class PolicyResult:
 
 # node_modules subdirs we never descend into
 _NM_SKIP = SKIP_DIRS - {"node_modules"}
+
+# Kept as a module-level name (rather than calling split_name_version
+# directly) since repo_ops_js_pnpm imports it from here.
+_split_nv = split_name_version
 
 _NPM_LOCK_PARSERS: tuple[tuple[str, object], ...] = (
     ("package-lock.json", versions_npm_lock),
@@ -117,19 +121,6 @@ def _normalize_npm_license(raw: object) -> str:
         )
     lic_id = str(raw or UNKNOWN_LICENSE).strip() or UNKNOWN_LICENSE
     return lic_id
-
-
-def _split_nv(entry: str) -> tuple[str, str]:
-    """Split name@version (handles scoped @scope/pkg@ver)."""
-    if entry.startswith("@"):
-        second_at = entry.find("@", 1)
-        if second_at == -1:
-            return entry, ""
-        return entry[:second_at], entry[second_at + 1 :]
-    at = entry.find("@")
-    if at == -1:
-        return entry, ""
-    return entry[:at], entry[at + 1 :]
 
 
 def _scan_node_modules_licenses(root: Path) -> list[PackageLicense]:
@@ -199,7 +190,7 @@ def _licenses_from_package_lock(lock: Path) -> list[PackageLicense]:
 
     # v1 fallback — no license fields; enumerate versions as UNKNOWN
     for entry in versions_npm_lock(lock):
-        name, ver = _split_nv(entry)
+        name, ver = split_name_version(entry)
         if not name or not ver:
             continue
         results.append(
@@ -221,7 +212,7 @@ def _licenses_from_npm_version_lock(
     results: list[PackageLicense] = []
     with contextlib.suppress(Exception):
         for entry in parser(lock):  # type: ignore[operator]
-            name, ver = _split_nv(entry)
+            name, ver = split_name_version(entry)
             if not name or not ver:
                 continue
             results.append(
@@ -492,13 +483,13 @@ def scan_python_dep_licenses(root: Path) -> list[PackageLicense]:
 
         if "pdm.lock" in fname_set:
             for entry in versions_pdm_lock(lock_dir / "pdm.lock"):
-                name, ver = _split_nv(entry)
+                name, ver = split_name_version(entry)
                 if name and ver:
                     _add(name, ver, "pdm.lock", licenses)
 
         if "Pipfile.lock" in fname_set:
             for entry in versions_pipenv_lock(lock_dir / "Pipfile.lock"):
-                name, ver = _split_nv(entry)
+                name, ver = split_name_version(entry)
                 if name and ver:
                     _add(name, ver, "Pipfile.lock", licenses)
 
@@ -511,46 +502,10 @@ def scan_python_dep_licenses(root: Path) -> list[PackageLicense]:
 
 _GO_LICENSE_FILENAMES = ("LICENSE", "LICENSE.txt", "LICENSE.md", "COPYING")
 
-# Coarse, offline license-text classifier: (SPDX id, required substrings) in
-# priority order. Best-effort only — a handful of distinguishing phrases per
-# license family. BSD-3-Clause is checked before BSD-2-Clause because the
-# redistribution clause is shared.
-_LICENSE_TEXT_SIGNATURES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Apache-2.0", ("APACHE LICENSE", "VERSION 2.0")),
-    ("MPL-2.0", ("MOZILLA PUBLIC LICENSE", "2.0")),
-    ("GPL-3.0", ("GNU GENERAL PUBLIC LICENSE", "Version 3")),
-    ("GPL-2.0", ("GNU GENERAL PUBLIC LICENSE", "Version 2")),
-    ("LGPL-3.0", ("GNU LESSER GENERAL PUBLIC LICENSE", "Version 3")),
-    ("LGPL-2.1", ("GNU LESSER GENERAL PUBLIC LICENSE", "Version 2.1")),
-    (
-        "BSD-3-Clause",
-        (
-            "REDISTRIBUTION AND USE IN SOURCE AND BINARY FORMS",
-            "ENDORSE OR PROMOTE PRODUCTS DERIVED",
-        ),
-    ),
-    ("BSD-2-Clause", ("REDISTRIBUTION AND USE IN SOURCE AND BINARY FORMS",)),
-    ("MIT", ("PERMISSION IS HEREBY GRANTED, FREE OF CHARGE",)),
-    (
-        "ISC",
-        ("PERMISSION TO USE, COPY, MODIFY, AND/OR DISTRIBUTE THIS SOFTWARE",),
-    ),
-    (
-        "Unlicense",
-        ("THIS IS FREE AND UNENCUMBERED SOFTWARE RELEASED INTO THE PUBLIC DOMAIN",),
-    ),
-)
-
 
 def _classify_license_text(text: str) -> str:
     """Best-effort SPDX id from raw LICENSE file text (offline heuristics)."""
-    upper = text.upper()
-    for spdx_id, needles in _LICENSE_TEXT_SIGNATURES:
-        if spdx_id == "BSD-2-Clause" and "ENDORSE OR PROMOTE PRODUCTS DERIVED" in upper:
-            continue
-        if all(n in upper for n in needles):
-            return spdx_id
-    return UNKNOWN_LICENSE
+    return classify_license_text(text) or UNKNOWN_LICENSE
 
 
 def _go_escape(s: str) -> str:
@@ -735,19 +690,6 @@ def _default_deno_dir() -> Path:
     return base / "deno"
 
 
-def _split_npm_specifier(entry: str) -> tuple[str, str]:
-    """Split "name@version" or "@scope/name@version" into (name, version)."""
-    if entry.startswith("@"):
-        second_at = entry.find("@", 1)
-        if second_at == -1:
-            return entry, ""
-        return entry[:second_at], entry[second_at + 1 :]
-    at = entry.find("@")
-    if at == -1:
-        return entry, ""
-    return entry[:at], entry[at + 1 :]
-
-
 def resolve_deno_npm_license(
     pkg_name: str, version: str, deno_dir: Path | None = None
 ) -> str:
@@ -788,14 +730,14 @@ def scan_deno_licenses(
             continue
         for entry in versions_deno_lock(Path(dirpath_str) / "deno.lock"):
             if entry.startswith("npm:"):
-                name, ver = _split_npm_specifier(entry[len("npm:") :])
+                name, ver = split_name_version(entry[len("npm:") :])
                 if not name or not ver:
                     continue
                 lic = resolve_deno_npm_license(name, ver, deno_dir=cache)
                 ecosystem = "deno"
                 source = "deno.lock+DENO_DIR" if lic != UNKNOWN_LICENSE else "deno.lock"
             elif entry.startswith("jsr:"):
-                name, ver = _split_npm_specifier(entry[len("jsr:") :])
+                name, ver = split_name_version(entry[len("jsr:") :])
                 jsr_name = name.removeprefix("@").split("/")
                 if (
                     not name.startswith("@")
@@ -927,7 +869,6 @@ def apply_policy(
 
         result.allowed.append(pkg)
 
-    result.policy_mode = "deny" if (deny and not allow) else "allow"
     return result
 
 
