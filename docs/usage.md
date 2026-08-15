@@ -181,14 +181,11 @@ C/I/A components.
 - **`--fail-on-unknown`** — exit `1` when any workspace has govulncheck findings with unknown severity (default: off).
 - **`--fix-plan`** — read-only remediation checklist: for each finding with a known-safe fix version, emit `(package, safe_version, ecosystem, workspace)`. With `--json`, included under the `remediations` key. Exits `1` when actionable remediations exist.
 - **`--fix`** — apply remediations (implies `--fix-plan` collection). Delegates to upgrade orchestration per workspace; skips dirty worktrees unless **`--allow-dirty`**. Verifies each applied workspace by default; pass `--no-verify` to skip post-apply verification. No automatic commit.
-- **`--sarif-out PATH`** — write SARIF 2.1.0 output for GitHub code scanning (repo-relative artifact URIs). Findings at or above `--fail-on` are emitted; `--fail-on-unknown` includes unknown-severity findings. Unfixed findings are marked with `properties.unfixed=true` and omit remediation `fixes`.
 - **`--json`** — structured payload with per-workspace counts, optional `remediations[]`, and `summary`. When repositories are excluded, audit JSON reports the count as `summary.excluded`.
 
 Each JSON workspace row may include `findings[]`, serialized from
 `FindingItem.as_dict`, with finding identifier, package/version data, severity,
-description, and available remediation details. SARIF uses these same findings
-as its results; `--fail-on` controls the exit status and the findings selected
-for SARIF, not whether JSON includes `findings[]`.
+and description.
 
 **Exit codes:**
 

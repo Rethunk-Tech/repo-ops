@@ -2390,218 +2390,6 @@ def apply_remediations(
 # SARIF 2.1.0 report builder
 # ---------------------------------------------------------------------------
 
-_SARIF_SCHEMA = (
-    "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/"
-    "master/Schemata/sarif-schema-2.1.0.json"
-)
-
-_SEV_TO_SARIF_LEVEL: dict[str | None, str] = {
-    "critical": "error",
-    "high": "error",
-    "moderate": "warning",
-    "low": "note",
-    None: "warning",
-}
-
-
-def _finding_passes_sarif_threshold(
-    finding: FindingItem, fail_on: str | None, fail_on_unknown: bool
-) -> bool:
-    if finding.severity is None:
-        return fail_on_unknown
-    if fail_on is None:
-        return True
-    if fail_on == "never":
-        return False
-    return _SEV_RANK.get(finding.severity, 4) <= _SEV_RANK.get(fail_on, 4)
-
-
-def build_sarif_report(
-    results: list[WorkspaceResult],
-    remediations: list[RemediationItem],
-    *,
-    fail_on: str | None = None,
-    fail_on_unknown: bool = False,
-) -> dict[str, Any]:
-    """Build a SARIF 2.1.0 document for the audit findings.
-
-    One rule is emitted per unique (advisory-id, ecosystem) pair. Findings are
-    limited to the configured failure threshold; unknown findings are included
-    only when ``fail_on_unknown`` is enabled. Remediation metadata is retained
-    for fixed findings, while unfixed findings are marked in result properties.
-
-    The SARIF document validates against the official 2.1.0 schema and is
-    suitable for upload to GitHub code-scanning via
-    ``github/codeql-action/upload-sarif``: ``artifactLocation.uri`` is emitted
-    repo-relative (never an absolute host path) with a matching
-    ``run.originalUriBaseIds`` entry for the ``%SRCROOT%`` base, since GitHub
-    code-scanning ingestion resolves ``uriBaseId``-qualified locations against
-    that mapping.
-    """
-    # Build workspace-path → (worst-severity, repo-relative label) indexes.
-    # ``r.label`` is already computed relative to the scan roots by
-    # ``repo_label`` (see run_audit), so it doubles as a repo-relative URI —
-    # an absolute host path here would not resolve against %SRCROOT% on
-    # GitHub's code-scanning ingestion.
-    ws_severity: dict[str, str | None] = {r.path: r.counts.worst for r in results}
-    ws_label: dict[str, str] = {r.path: r.label for r in results}
-    remediation_by_key = {
-        (item.workspace, item.ecosystem, item.package): item for item in remediations
-    }
-
-    rules: list[dict[str, Any]] = []
-    sarif_results: list[dict[str, Any]] = []
-    seen_rules: set[str] = set()
-
-    findings_to_emit: list[FindingItem] = []
-    represented_packages: set[tuple[str, str, str]] = set()
-    for result in results:
-        for finding in result.findings:
-            key = (finding.workspace, finding.ecosystem, finding.package)
-            remediation = remediation_by_key.get(key)
-            safe_version = finding.safe_version or (
-                remediation.safe_version if remediation else None
-            )
-            normalized = FindingItem(
-                id=finding.id,
-                severity=finding.severity,
-                package=finding.package,
-                ecosystem=finding.ecosystem,
-                workspace=finding.workspace,
-                fixed=finding.fixed or remediation is not None,
-                safe_version=safe_version,
-            )
-            represented_packages.add(key)
-            if _finding_passes_sarif_threshold(normalized, fail_on, fail_on_unknown):
-                findings_to_emit.append(normalized)
-
-    # Preserve compatibility for callers that only provide remediation rows.
-    # Auditors now populate findings, but synthetic fixed findings keep the
-    # public builder useful for older integrations and direct callers.
-    for item in remediations:
-        key = (item.workspace, item.ecosystem, item.package)
-        if key in represented_packages:
-            continue
-        synthetic = FindingItem(
-            id=item.package,
-            severity=ws_severity.get(item.workspace),
-            package=item.package,
-            ecosystem=item.ecosystem,
-            workspace=item.workspace,
-            fixed=True,
-            safe_version=item.safe_version,
-        )
-        if _finding_passes_sarif_threshold(synthetic, fail_on, fail_on_unknown):
-            findings_to_emit.append(synthetic)
-
-    for finding in findings_to_emit:
-        rule_id = f"audit/{finding.ecosystem}/{finding.id}"
-        if rule_id not in seen_rules:
-            seen_rules.add(rule_id)
-            rule_properties: dict[str, Any] = {"ecosystem": finding.ecosystem}
-            if finding.safe_version:
-                rule_properties["fix_version"] = finding.safe_version
-            rules.append(
-                {
-                    "id": rule_id,
-                    "name": finding.package,
-                    "shortDescription": {
-                        "text": (
-                            f"Vulnerable {finding.ecosystem} dependency: "
-                            f"{finding.package}"
-                        )
-                    },
-                    "helpUri": "",
-                    "properties": rule_properties,
-                }
-            )
-
-        level = _SEV_TO_SARIF_LEVEL.get(finding.severity, "warning")
-        # Repo-relative URI: prefer the pre-computed scan-root-relative label;
-        # fall back to a path stripped of any leading slash so an unmatched
-        # workspace never emits an absolute host path.
-        rel_uri = ws_label.get(finding.workspace) or finding.workspace.lstrip("/")
-        rel_uri = rel_uri.replace("\\", "/")
-        sarif_result: dict[str, Any] = {
-            "ruleId": rule_id,
-            "level": level,
-            "message": {
-                "text": (
-                    f"{finding.package} has a vulnerability in "
-                    f"{finding.ecosystem} workspace '{finding.workspace}'; "
-                    + (
-                        f"safe version: {finding.safe_version}"
-                        if finding.safe_version
-                        else "no known safe version"
-                    )
-                )
-            },
-            "locations": [
-                {
-                    "physicalLocation": {
-                        "artifactLocation": {
-                            "uri": rel_uri,
-                            "uriBaseId": "%SRCROOT%",
-                        }
-                    }
-                }
-            ],
-        }
-        if finding.fixed and finding.safe_version:
-            sarif_result["fixes"] = [
-                {
-                    "description": {
-                        "text": (f"Upgrade {finding.package} to {finding.safe_version}")
-                    },
-                    "artifactChanges": [
-                        {
-                            "artifactLocation": {
-                                "uri": rel_uri,
-                                "uriBaseId": "%SRCROOT%",
-                            },
-                            "replacements": [
-                                {
-                                    "deletedRegion": {
-                                        "startLine": 1,
-                                        "startColumn": 1,
-                                        "endLine": 1,
-                                        "endColumn": 1,
-                                    },
-                                    "insertedContent": {"text": ""},
-                                }
-                            ],
-                        }
-                    ],
-                }
-            ]
-        else:
-            sarif_result["properties"] = {"unfixed": True}
-        sarif_results.append(sarif_result)
-
-    return {
-        "$schema": _SARIF_SCHEMA,
-        "version": "2.1.0",
-        "runs": [
-            {
-                "tool": {
-                    "driver": {
-                        "name": "repo-ops-audit",
-                        "informationUri": ("https://github.com/Rethunk-Tech/repo-ops"),
-                        "rules": rules,
-                    }
-                },
-                # Maps the %SRCROOT% uriBaseId used by every result's
-                # artifactLocation to the checkout root, per SARIF 2.1.0
-                # §3.14. GitHub's code-scanning ingestion substitutes the
-                # actual checkout path for %SRCROOT% at upload time; this
-                # entry keeps the document self-consistent and schema-valid.
-                "originalUriBaseIds": {"%SRCROOT%": {"uri": "file:///"}},
-                "results": sarif_results,
-            }
-        ],
-    }
-
-
 def build_audit_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="repo-ops audit",
@@ -2701,17 +2489,6 @@ tools used (must be on PATH or workspace is skipped):
         dest="no_verify",
         help="With --fix: skip post-apply verification (default: verify).",
     )
-    parser.add_argument(
-        "--sarif-out",
-        metavar="PATH",
-        dest="sarif_out",
-        default=None,
-        help=(
-            "Write SARIF 2.1.0 output to PATH so findings surface in "
-            "GitHub code-scanning. Each remediable vulnerability becomes "
-            "one SARIF result with a rule per advisory package."
-        ),
-    )
     add_json_argument(parser, dest="json_out")
     add_verbose_argument(parser)
     return parser
@@ -2756,7 +2533,6 @@ def main(argv: list[str] | None = None) -> int:
     do_fix = bool(getattr(args, "fix", False))
     allow_dirty = bool(getattr(args, "allow_dirty", False))
     do_verify = not bool(getattr(args, "no_verify", False))
-    sarif_out: str | None = getattr(args, "sarif_out", None)
 
     # --fix implies --fix-plan (collect remediations regardless)
     if do_fix:
@@ -2773,29 +2549,18 @@ def main(argv: list[str] | None = None) -> int:
 
     sev_exit = _exit_code_for(results, fail_on, fail_on_unknown)
 
-    # Collect remediations when either fix-plan or fix is active.
+    # Collect remediations when fix-plan is active.
     remediations: list[RemediationItem] = []
-    if fix_plan or sarif_out:
-        if fix_plan:
-            for result in results:
-                if (
-                    result.ecosystem == "deno"
-                    and result.status == "vulns"
-                    and not result.remediations
-                    and shutil.which("deno") is not None
-                ):
-                    result.remediations = _plan_deno_fix(result.path)
+    if fix_plan:
+        for result in results:
+            if (
+                result.ecosystem == "deno"
+                and result.status == "vulns"
+                and not result.remediations
+                and shutil.which("deno") is not None
+            ):
+                result.remediations = _plan_deno_fix(result.path)
         remediations = collect_all_remediations(results)
-
-    # --- SARIF output -------------------------------------------------------
-    if sarif_out:
-        sarif_doc = build_sarif_report(
-            results,
-            remediations,
-            fail_on=fail_on,
-            fail_on_unknown=fail_on_unknown,
-        )
-        Path(sarif_out).write_text(json.dumps(sarif_doc, indent=2), encoding="utf-8")
 
     # --- GitHub step-summary (auto when GITHUB_STEP_SUMMARY env var is set) --
     if os.environ.get("GITHUB_STEP_SUMMARY"):

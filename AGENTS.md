@@ -144,7 +144,6 @@ Default scan is read-only; `--fix` applies remediations (no auto-commit).
 | `--fail-on-unknown` | Exit 1 when any workspace has findings with unknown severity (govulncheck); default off |
 | `--fix-plan` | Read-only remediation list; with `--json` populates `remediations` key; exit 1 when actionable |
 | `--fix` | Apply remediations via `repo-ops-upgrade` orchestration; skips dirty worktrees unless `--allow-dirty` |
-| `--sarif-out PATH` | Write SARIF 2.1.0 output for GitHub code-scanning |
 | `--exclude PATTERN` | Exclude repos matching pattern (repeatable) |
 
 #### `dependabot` flags
