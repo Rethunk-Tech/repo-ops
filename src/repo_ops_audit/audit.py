@@ -357,6 +357,25 @@ def _detect_workspaces(repo: str) -> list[tuple[str, str, str]]:
 _SUBPROCESS_TIMEOUT = 120
 _GOVULNCHECK_TIMEOUT = 60
 
+def _skip(ws: str, ecosystem: str, manager: str, reason: str) -> WorkspaceResult:
+    return WorkspaceResult(
+        label=ws,
+        path=ws,
+        ecosystem=ecosystem,
+        manager=manager,
+        status="skipped",
+        skip_reason=reason,
+    )
+
+def _error(ws: str, ecosystem: str, manager: str, error: str) -> WorkspaceResult:
+    return WorkspaceResult(
+        label=ws,
+        path=ws,
+        ecosystem=ecosystem,
+        manager=manager,
+        status="error",
+        error=error,
+    )
 
 def _run(
     cmd: list[str], cwd: str, *, timeout: float | None = None
@@ -381,14 +400,7 @@ def _run(
 def _audit_go(ws: str) -> WorkspaceResult:
     label = ws
     if shutil.which("govulncheck") is None:
-        return WorkspaceResult(
-            label=label,
-            path=ws,
-            ecosystem="go",
-            manager="go",
-            status="skipped",
-            skip_reason="govulncheck not on PATH",
-        )
+        return _skip(ws, "go", "go", "govulncheck not on PATH")
     rc, stdout, stderr = _run(
         ["govulncheck", "-json", "./..."], ws, timeout=_GOVULNCHECK_TIMEOUT
     )
@@ -417,13 +429,11 @@ def _audit_go(ws: str) -> WorkspaceResult:
         findings.append({"osv": "govulncheck/error", "trace": []})
 
     if counts.total_with_unknown == 0 and rc != 0:
-        return WorkspaceResult(
-            label=label,
-            path=ws,
-            ecosystem="go",
-            manager="go",
-            status="error",
-            error=(stderr or stdout or "govulncheck exited non-zero").strip()[:200],
+        return _error(
+            ws,
+            "go",
+            "go",
+            (stderr or stdout or "govulncheck exited non-zero").strip()[:200],
         )
     has_findings = counts.total_with_unknown > 0
     status = "vulns" if has_findings else "ok"
@@ -481,24 +491,15 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
     }
     tool = bin_map.get(manager, manager)
     if shutil.which(tool) is None:
-        return WorkspaceResult(
-            label=label,
-            path=ws,
-            ecosystem="node",
-            manager=manager,
-            status="skipped",
-            skip_reason=f"{tool} not on PATH",
-        )
+        return _skip(ws, "node", manager, f"{tool} not on PATH")
 
     # bun: probe for audit subcommand availability before running
     if manager == "bun" and not _probe_bun_audit(ws):
-        return WorkspaceResult(
-            label=label,
-            path=ws,
-            ecosystem="node",
-            manager=manager,
-            status="skipped",
-            skip_reason="bun audit subcommand not available in this bun version",
+        return _skip(
+            ws,
+            "node",
+            manager,
+            "bun audit subcommand not available in this bun version",
         )
 
     cmd = cmd_map.get(manager, ["npm", "audit", "--json"])
@@ -529,13 +530,11 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
             bun_findings = _extract_findings_bun_audit_text(bun_text, ws)
         status = "vulns" if counts.total > 0 else ("error" if rc != 0 else "ok")
         if status == "error":
-            return WorkspaceResult(
-                label=label,
-                path=ws,
-                ecosystem="node",
-                manager=manager,
-                status="error",
-                error=(stderr or stdout or "bun audit exited non-zero").strip()[:200],
+            return _error(
+                ws,
+                "node",
+                manager,
+                (stderr or stdout or "bun audit exited non-zero").strip()[:200],
             )
         return WorkspaceResult(
             label=label,
@@ -558,13 +557,11 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
         findings = _extract_findings_npm_json(data, ws)
     except (json.JSONDecodeError, ValueError, KeyError):
         if rc != 0:
-            return WorkspaceResult(
-                label=label,
-                path=ws,
-                ecosystem="node",
-                manager=manager,
-                status="error",
-                error=(stderr or stdout or "audit parse error").strip()[:200],
+            return _error(
+                ws,
+                "node",
+                manager,
+                (stderr or stdout or "audit parse error").strip()[:200],
             )
         return WorkspaceResult(
             label=label, path=ws, ecosystem="node", manager=manager, status="ok"
@@ -811,14 +808,7 @@ def _parse_deno_audit_text(
 def _audit_deno(ws: str) -> WorkspaceResult:
     label = ws
     if shutil.which("deno") is None:
-        return WorkspaceResult(
-            label=label,
-            path=ws,
-            ecosystem="deno",
-            manager="deno",
-            status="skipped",
-            skip_reason="deno not on PATH",
-        )
+        return _skip(ws, "deno", "deno", "deno not on PATH")
     rc, stdout, stderr = _run_deno_audit(ws)
     counts = VulnCount()
     remediations: list[RemediationItem] = []
@@ -831,13 +821,11 @@ def _audit_deno(ws: str) -> WorkspaceResult:
         counts, remediations, findings = _parse_deno_audit_json(data, ws)
 
     if counts.total == 0 and rc != 0:
-        return WorkspaceResult(
-            label=label,
-            path=ws,
-            ecosystem="deno",
-            manager="deno",
-            status="error",
-            error=(stderr or stdout or "deno audit exited non-zero").strip()[:200],
+        return _error(
+            ws,
+            "deno",
+            "deno",
+            (stderr or stdout or "deno audit exited non-zero").strip()[:200],
         )
     return WorkspaceResult(
         label=label,
@@ -1617,13 +1605,11 @@ def _pip_audit_result(
         remediations = _extract_remediations_pip_audit(data, ws, ecosystem)
         findings = _extract_findings_pip_audit(data, ws, ecosystem)
     except (json.JSONDecodeError, ValueError, KeyError, TypeError):
-        return WorkspaceResult(
-            label=ws,
-            path=ws,
-            ecosystem=ecosystem,
-            manager=manager,
-            status="error",
-            error=(stderr or stdout or "pip-audit parse error").strip()[:200],
+        return _error(
+            ws,
+            ecosystem,
+            manager,
+            (stderr or stdout or "pip-audit parse error").strip()[:200],
         )
 
     status = "vulns" if counts.total > 0 else "ok"
@@ -1639,22 +1625,11 @@ def _pip_audit_result(
     )
 
 
-def _python_skip(ws: str, ecosystem: str, manager: str, reason: str) -> WorkspaceResult:
-    return WorkspaceResult(
-        label=ws,
-        path=ws,
-        ecosystem=ecosystem,
-        manager=manager,
-        status="skipped",
-        skip_reason=reason,
-    )
-
-
 def _audit_py_uv(ws: str) -> WorkspaceResult:
     if shutil.which("uv") is None:
-        return _python_skip(ws, "py-uv", "uv", "uv not on PATH")
+        return _skip(ws, "py-uv", "uv", "uv not on PATH")
     if not _probe_pip_audit(ws):
-        return _python_skip(
+        return _skip(
             ws,
             "py-uv",
             "uv",
@@ -1701,14 +1676,14 @@ def _run_python_export(
 
 def _audit_py_exported(ws: str, ecosystem: str, manager: str) -> WorkspaceResult:
     if manager != "pip-tools" and shutil.which(manager) is None:
-        return _python_skip(ws, ecosystem, manager, f"{manager} not on PATH")
+        return _skip(ws, ecosystem, manager, f"{manager} not on PATH")
     if shutil.which("pip-audit") is None:
-        return _python_skip(ws, ecosystem, manager, "pip-audit not on PATH")
+        return _skip(ws, ecosystem, manager, "pip-audit not on PATH")
 
     if manager == "pip-tools":
         requirements_path = Path(ws) / "requirements.txt"
         if not requirements_path.is_file():
-            return _python_skip(
+            return _skip(
                 ws,
                 ecosystem,
                 manager,
@@ -1724,16 +1699,12 @@ def _audit_py_exported(ws: str, ecosystem: str, manager: str) -> WorkspaceResult
         )
     try:
         if rc_export != 0:
-            return WorkspaceResult(
-                label=ws,
-                path=ws,
-                ecosystem=ecosystem,
-                manager=manager,
-                status="error",
-                error=(
-                    f"{manager} export failed: "
-                    f"{(export_stderr or export_stdout or 'unknown error').strip()[:160]}"
-                ),
+            return _error(
+                ws,
+                ecosystem,
+                manager,
+                f"{manager} export failed: "
+                f"{(export_stderr or export_stdout or 'unknown error').strip()[:160]}",
             )
         rc, stdout, stderr = _run(
             [
@@ -1763,24 +1734,15 @@ _PY_EXPORTED_MANAGERS = {
 def _audit_rust(ws: str) -> WorkspaceResult:
     label = ws
     if shutil.which("cargo") is None:
-        return WorkspaceResult(
-            label=label,
-            path=ws,
-            ecosystem="rust",
-            manager="cargo",
-            status="skipped",
-            skip_reason="cargo not on PATH",
-        )
+        return _skip(ws, "rust", "cargo", "cargo not on PATH")
     # Check cargo-audit is installed (subcommand of cargo)
     rc_check, _, _ = _run(["cargo", "audit", "--version"], ws)
     if rc_check != 0:
-        return WorkspaceResult(
-            label=label,
-            path=ws,
-            ecosystem="rust",
-            manager="cargo",
-            status="skipped",
-            skip_reason="cargo-audit not installed (cargo audit --version failed)",
+        return _skip(
+            ws,
+            "rust",
+            "cargo",
+            "cargo-audit not installed (cargo audit --version failed)",
         )
     rc, stdout, stderr = _run(["cargo", "audit", "--json"], ws)
     counts = VulnCount()
@@ -1813,13 +1775,11 @@ def _audit_rust(ws: str) -> WorkspaceResult:
         findings = _extract_findings_cargo_json(data, ws)
     except (json.JSONDecodeError, ValueError, KeyError, TypeError):
         if rc != 0:
-            return WorkspaceResult(
-                label=label,
-                path=ws,
-                ecosystem="rust",
-                manager="cargo",
-                status="error",
-                error=(stderr or stdout or "cargo audit parse error").strip()[:200],
+            return _error(
+                ws,
+                "rust",
+                "cargo",
+                (stderr or stdout or "cargo audit parse error").strip()[:200],
             )
 
     status = "vulns" if counts.total > 0 else "ok"
@@ -1928,14 +1888,7 @@ def audit_workspace(ws: str, ecosystem: str, manager: str) -> WorkspaceResult:
         return _audit_rust(ws)
     if ecosystem == "deno":
         return _audit_deno(ws)
-    return WorkspaceResult(
-        label=ws,
-        path=ws,
-        ecosystem=ecosystem,
-        manager=manager,
-        status="skipped",
-        skip_reason=f"no auditor for ecosystem {ecosystem!r}",
-    )
+    return _skip(ws, ecosystem, manager, f"no auditor for ecosystem {ecosystem!r}")
 
 
 def run_audit(
