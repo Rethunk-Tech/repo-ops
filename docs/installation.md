@@ -2,7 +2,7 @@
 
 Install, environment requirements, the bundled agent skill, and verify-install checks for the `repo-ops` CLI.
 
-Requires [uv](https://docs.astral.sh/uv/) and Python >= 3.11.
+Requires [uv](https://docs.astral.sh/uv/) and Python >= 3.12.
 
 ## Runtime
 
@@ -90,7 +90,7 @@ repo-ops pushed --count-only /path/to/checkout
 
 ## Environment
 
-- Python >= 3.11 (`.python-version` pins 3.12 for local/uv default)
+- Python >= 3.12 (`.python-version` pins 3.14 for local/uv default)
 - Git on `PATH`
 - Optional for upgrades: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, …) and `gh` / `actionlint` for Actions pin audits
 - `REPO_OPS_FIND_TIMEOUT` — repo-discovery `find` subprocess timeout in seconds (default 60); accepts any positive float

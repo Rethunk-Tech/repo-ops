@@ -19,7 +19,7 @@ The pyrefly check scope mirrors `[tool.pyrefly] project-includes` in root `pypro
 
 Every test lives in `tests/` — one `testpaths` entry, so a bare `uv run pytest` runs the whole suite.
 
-Config: root `pyproject.toml` `[tool.pytest.ini_options]`. CI runs the same checks on Python 3.11–3.13 (3.14 is an allowed failure); tag `v*` triggers [release.yml](../.github/workflows/release.yml). When changing Markdown tiers, run the doc-audit skill on the repo root (e.g. `~/.cursor/skills/doc-audit` or `~/.claude/skills/doc-audit`).
+Config: root `pyproject.toml` `[tool.pytest.ini_options]`. CI runs the same checks on Python 3.12–3.14; tag `v*` triggers [release.yml](../.github/workflows/release.yml). When changing Markdown tiers, run the doc-audit skill on the repo root (e.g. `~/.cursor/skills/doc-audit` or `~/.claude/skills/doc-audit`).
 
 ## Coverage floor
 

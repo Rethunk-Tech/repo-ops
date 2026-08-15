@@ -29,7 +29,7 @@ When using `--commit=agent`, set `REPO_OPS_COMMIT_AGENT_MODEL` or the
 
 ## Requirements
 
-- [uv](https://docs.astral.sh/uv/) and Python >= 3.11
+- [uv](https://docs.astral.sh/uv/) and Python >= 3.12
 - Git on `PATH`
 - Optional: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, `hatch`, `pyrefly`, `ruff`, `pre-commit`, …) and `gh` / `actionlint` for Actions pin audits — run `repo-ops doctor` to see which are found and whether `gh` is authenticated
 
