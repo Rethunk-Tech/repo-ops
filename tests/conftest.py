@@ -196,6 +196,34 @@ def _isolate_state_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.fixture(autouse=True)
+def _disable_ambient_color() -> Iterator[None]:
+    """Neutralise colour-forcing env so help-text assertions are deterministic.
+
+    Python 3.14's argparse colourises usage output and honours ``FORCE_COLOR``,
+    so a developer whose terminal exports it sees ANSI-wrapped help while CI
+    sees plain text, and substring assertions pass in one place and fail in the
+    other.
+
+    Saves and restores directly rather than taking ``monkeypatch``: requesting
+    it here would construct it earlier than ``_isolate_state_store`` does,
+    which inverts teardown order against ``_isolate_repo_ops_env`` and lets a
+    ``REPO_OPS_*`` value a test's own ``delenv`` captured get restored after
+    that fixture has already stripped it.
+    """
+    names = ("FORCE_COLOR", "CLICOLOR_FORCE", "COLORTERM", "NO_COLOR")
+    before = {k: os.environ[k] for k in names if k in os.environ}
+    for name in names:
+        os.environ.pop(name, None)
+    os.environ["NO_COLOR"] = "1"
+    try:
+        yield
+    finally:
+        for name in names:
+            os.environ.pop(name, None)
+        os.environ.update(before)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_repo_ops_env() -> Iterator[None]:
     """Snapshot all ``REPO_OPS_*`` env vars before a test and restore after.
 
