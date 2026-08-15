@@ -73,9 +73,10 @@ from repo_ops_core.cli import (
     wire_verbose,
 )
 from repo_ops_core.config import (
-    apply_config_to_env,
+    coerce_bool_setting,
     load_global_config,
     load_repo_config,
+    resolve_setting,
 )
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
@@ -2393,20 +2394,21 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     wire_verbose(args)
 
-    # Config-driven fail-on gates: promote TOML config-file values (global +
-    # per-repo) into REPO_OPS_AUDIT_FAIL_ON / REPO_OPS_AUDIT_FAIL_ON_UNKNOWN
-    # env vars (never overriding an already-set env var), then resolve with
-    # precedence CLI flag > env > default. The parser's own defaults
-    # ("high" / False) are left untouched so callers using build_audit_parser()
-    # directly still see them; the env layer is applied here in main() only.
+    # fail_on/fail_on_unknown route through the shared settings table (CLI >
+    # env > config > default) like every other setting; only the CLI layer is
+    # bespoke here, since argparse's own default ("high"/False) — needed so
+    # callers using build_audit_parser() directly still see it — masks
+    # whether the flag was actually passed, so _flag_explicit disambiguates.
     global_cfg = load_global_config()
     repo_cfg = load_repo_config(Path.cwd())
-    apply_config_to_env(global_cfg=global_cfg, repo_cfg=repo_cfg)
-    fail_on = args.fail_on
-    if not _flag_explicit(argv_list, "--fail-on"):
-        env_fail_on = os.environ.get("REPO_OPS_AUDIT_FAIL_ON", "").strip()
-        if env_fail_on:
-            fail_on = env_fail_on
+    fail_on = resolve_setting(
+        "audit_fail_on",
+        cli_value=args.fail_on if _flag_explicit(argv_list, "--fail-on") else None,
+        global_cfg=global_cfg,
+        repo_cfg=repo_cfg,
+    )
+    if fail_on is None:
+        fail_on = args.fail_on
 
     roots = resolve_scan_roots(list(args.roots), parser)
     follow_symlinks = bool(getattr(args, "follow_symlinks", False))
@@ -2419,9 +2421,14 @@ def main(argv: list[str] | None = None) -> int:
         getattr(args, "exclude_patterns", None),
         config_exclude,
     )
-    fail_on_unknown = bool(getattr(args, "fail_on_unknown", False))
-    if not _flag_explicit(argv_list, "--fail-on-unknown"):
-        fail_on_unknown = os.environ.get("REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", "") == "1"
+    fail_on_unknown = coerce_bool_setting(
+        resolve_setting(
+            "audit_fail_on_unknown",
+            cli_value="1" if _flag_explicit(argv_list, "--fail-on-unknown") else None,
+            global_cfg=global_cfg,
+            repo_cfg=repo_cfg,
+        )
+    )
     fix_plan = bool(getattr(args, "fix_plan", False))
     do_fix = bool(getattr(args, "fix", False))
     allow_dirty = bool(getattr(args, "allow_dirty", False))
