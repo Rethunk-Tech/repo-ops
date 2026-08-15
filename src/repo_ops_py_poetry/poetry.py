@@ -5,20 +5,19 @@ from __future__ import annotations
 import re
 import shutil
 import sys
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
 from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
-from repo_ops_core.filesystem import read_toml_file
-from repo_ops_core.holds import HoldRule, resolve_package_hold
+from repo_ops_core.filesystem import read_toml_file, restore_file, snapshot_file
+from repo_ops_core.holds import resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
-from repo_ops_core.version_utils import hold_ceiling_spec, version_satisfies_ceiling
+from repo_ops_core.version_utils import version_parts, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
 from repo_ops_py.pypi import pypi_latest as _pypi_latest
+from repo_ops_py.version_ceiling import enforce_version_ceilings
 
 _POETRY_TARGETED_BUMP_ENV = "REPO_OPS_POETRY_TARGETED_BUMP"
 
@@ -28,20 +27,6 @@ _POETRY_TARGETED_BUMP_ENV = "REPO_OPS_POETRY_TARGETED_BUMP"
 #
 # poetry has no per-package targeted install — ``poetry update`` regenerates
 # the whole lockfile — so this clamp-down is the only enforcement mechanism.
-
-
-@contextmanager
-def _preserve_manifest(path: Path) -> Iterator[None]:
-    original = path.read_bytes() if path.exists() else None
-    try:
-        yield
-    finally:
-        if original is not None:
-            path.write_bytes(original)
-
-
-def _resolve_pkg_hold(ws: Workspace, package: str) -> HoldRule | None:
-    return resolve_package_hold(ws, package)
 
 
 def _poetry_lock_versions(ws: Workspace) -> dict[str, str]:
@@ -60,15 +45,6 @@ def _poetry_lock_versions(ws: Workspace) -> dict[str, str]:
 
 def _poetry_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
     return resolve_bool_setting("poetry_targeted_bump", _POETRY_TARGETED_BUMP_ENV, ws)
-
-
-def _poetry_version_parts(version: str) -> tuple[int, int, int]:
-    match = re.search(r"\d+(?:\.\d+){0,2}", version.strip().lstrip("vV"))
-    if match is None:
-        return (0, 0, 0)
-    parts = [int(part) for part in match.group(0).split(".")]
-    padded = [*parts, 0, 0, 0][:3]
-    return padded[0], padded[1], padded[2]
 
 
 def _poetry_requirement_satisfied(version: str, requirement: str) -> bool:
@@ -124,7 +100,7 @@ def _poetry_latest_direct_changes(ws: Workspace) -> list[Change]:
         if (
             locked is None
             or latest is None
-            or _poetry_version_parts(latest) <= _poetry_version_parts(locked)
+            or version_parts(latest) <= version_parts(locked)
             or _poetry_requirement_satisfied(latest, requirement)
         ):
             continue
@@ -133,37 +109,14 @@ def _poetry_latest_direct_changes(ws: Workspace) -> list[Change]:
 
 
 def _enforce_version_ceilings(ws: Workspace) -> None:
-    """Post-apply clamp-down: correct any locked package resolved above its ceiling.
-
-    Mirrors ``repo_ops_py.uv_lock``'s enforcement — see its docstring for why
-    this is the only mechanism (no per-package targeted install) and why it
-    also catches a hold added after the package was already locked past it.
-    """
-    versions = _poetry_lock_versions(ws)
-    if not versions:
-        return
-    for name, resolved in versions.items():
-        rule = _resolve_pkg_hold(ws, name)
-        if rule is None or version_satisfies_ceiling(resolved, rule.max_version):
-            continue
-        spec = f"{name}{hold_ceiling_spec(rule.max_version)}"
-        with _preserve_manifest(ws.path / "pyproject.toml"):
-            proc = run(
-                ["poetry", "add", spec],
-                ws.path,
-                timeout=resolve_timeout_apply(),
-            )
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"hold: failed to clamp {name} back to <={rule.max_version} "
-                f"(poetry): {proc.stderr.strip()}"
-            )
-        landed = _poetry_lock_versions(ws).get(name)
-        if landed is None or not version_satisfies_ceiling(landed, rule.max_version):
-            raise RuntimeError(
-                f"hold: {name} still at {landed or resolved} after clamp "
-                f"attempt, expected <= {rule.max_version} (poetry)"
-            )
+    enforce_version_ceilings(
+        ws,
+        tool="poetry",
+        manifest_name="pyproject.toml",
+        lock_versions=_poetry_lock_versions,
+        clamp_command=lambda name, spec: ["poetry", "add", spec],
+        run=run,
+    )
 
 
 def _poetry_bumped_requirement(requirement: str, latest: str) -> str:
@@ -173,17 +126,6 @@ def _poetry_bumped_requirement(requirement: str, latest: str) -> str:
     if stripped.startswith("~"):
         return f"~{latest}"
     return latest
-
-
-def _poetry_snapshot(path: Path) -> bytes | None:
-    return path.read_bytes() if path.is_file() else None
-
-
-def _poetry_restore(path: Path, snapshot: bytes | None) -> None:
-    if snapshot is None:
-        path.unlink(missing_ok=True)
-    else:
-        path.write_bytes(snapshot)
 
 
 def _apply_poetry_targeted_bumps(
@@ -199,14 +141,14 @@ def _apply_poetry_targeted_bumps(
         if requirement is None:
             remaining.append(candidate)
             continue
-        rule = _resolve_pkg_hold(ws, candidate.name)
+        rule = resolve_package_hold(ws, candidate.name)
         if rule is not None and not version_satisfies_ceiling(
             candidate.to, rule.max_version
         ):
             remaining.append(candidate)
             continue
-        manifest_snapshot = _poetry_snapshot(manifest)
-        lock_snapshot = _poetry_snapshot(lockfile)
+        manifest_snapshot = snapshot_file(manifest)
+        lock_snapshot = snapshot_file(lockfile)
         bumped = _poetry_bumped_requirement(requirement, candidate.to)
         try:
             proc = run(
@@ -215,14 +157,14 @@ def _apply_poetry_targeted_bumps(
                 timeout=resolve_timeout_apply(),
             )
         except Exception:
-            _poetry_restore(manifest, manifest_snapshot)
-            _poetry_restore(lockfile, lock_snapshot)
+            restore_file(manifest, manifest_snapshot)
+            restore_file(lockfile, lock_snapshot)
             raise
         landed = _poetry_lock_versions(ws).get(candidate.name)
         if proc.returncode == 0 and landed == candidate.to:
             continue
-        _poetry_restore(manifest, manifest_snapshot)
-        _poetry_restore(lockfile, lock_snapshot)
+        restore_file(manifest, manifest_snapshot)
+        restore_file(lockfile, lock_snapshot)
         remaining.append(candidate)
     return remaining
 
