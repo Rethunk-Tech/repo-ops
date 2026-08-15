@@ -559,7 +559,7 @@ def _run_upgrade_body(
         _raw_tag_style = getattr(args, "actions_tag_style", "major")
         tag_style: actions.TagStyle = "exact" if _raw_tag_style == "exact" else "major"
         # Cross-major apply (#106): explicit --actions-upgrade-mode wins; otherwise
-        # --latest is the umbrella that also opts Actions into latest mode.
+        # A default sweep also opts Actions into latest mode.
         _raw_actions_mode = getattr(args, "actions_upgrade_mode", None)
         if not isinstance(_raw_actions_mode, str):
             _raw_actions_mode = "latest" if latest else "normalize"

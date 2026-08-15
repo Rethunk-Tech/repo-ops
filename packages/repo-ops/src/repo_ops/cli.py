@@ -92,8 +92,9 @@ When no root_dir arguments are passed, subcommands scan DEFAULT_ROOTS
 
 _TOP_LEVEL_EPILOG = """\
 examples:
-  repo-ops plan --latest
-  repo-ops apply --latest --log-file apply.log
+  repo-ops plan
+  repo-ops apply --log-file apply.log
+  repo-ops apply --conservative
   repo-ops inventory --flat /path/to/checkout
   repo-ops audit --fail-on critical
   repo-ops dependabot --close

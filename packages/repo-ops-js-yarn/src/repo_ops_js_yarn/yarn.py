@@ -126,7 +126,7 @@ def _yarn_extraction_slot() -> Iterator[None]:
     """Hold one extraction slot for the duration of an isolated-copy yarn run.
 
     Lazily sized from the env on first use (set by ``run`` before the worker
-    pool starts), so the cap reflects ``--yarn-jobs`` for the whole process.
+    pool starts), so the cap applies to the whole process.
     """
     global _extraction_sem
     if _extraction_sem is None:
@@ -477,7 +477,7 @@ def targeted_bump_behind(
     (guards the ghost-bump case where the lock churns but the resolver holds the old
     version). On any failure or no-op we restore the snapshot, leaving that package behind.
 
-    Opt-in (``REPO_OPS_YARN_TARGETED_BUMP`` / ``--yarn-targeted-bump``) and reversible
+    On by default (``REPO_OPS_YARN_TARGETED_BUMP``) and reversible
     per-package: a bump that fights peer constraints is dropped, never committed. Returns
     ``(applied, still_behind)`` — ``applied`` carries the real resolved version landed.
 
