@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
+import repo_ops_upgrade.run as run_mod
 from repo_ops_models import ActionBump, RepoBundle
 from repo_ops_upgrade.report import (
     build_run_summary,
@@ -308,18 +309,16 @@ def test_actions_org_policy_flag_registered_on_apply() -> None:
 def test_commit_umbrella_wires_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """--commit-umbrella sets REPO_OPS_COMMIT_UMBRELLA=1 before post-apply phase."""
+    """--commit-umbrella reaches REPO_OPS_COMMIT_UMBRELLA through the real apply entry point."""
     monkeypatch.delenv("REPO_OPS_COMMIT_UMBRELLA", raising=False)
+    monkeypatch.chdir(tmp_path)
 
-    from repo_ops_core.cli import build_upgrade_parser
+    rc = run_mod.run_upgrade(
+        apply=True,
+        argv=["--flat", "--skip-actions", "--commit-umbrella", str(tmp_path)],
+    )
 
-    parser = build_upgrade_parser(apply=True)
-    args = parser.parse_args(["--commit-umbrella"])
-
-    # Simulate the env-wiring block from _run_upgrade_body
-    if getattr(args, "commit_umbrella", False):
-        os.environ["REPO_OPS_COMMIT_UMBRELLA"] = "1"
-
+    assert rc == 0
     assert os.environ.get("REPO_OPS_COMMIT_UMBRELLA") == "1"
     monkeypatch.delenv("REPO_OPS_COMMIT_UMBRELLA", raising=False)
 
@@ -327,18 +326,16 @@ def test_commit_umbrella_wires_env(
 def test_actions_org_policy_wires_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """--actions-org-policy sets REPO_OPS_ACTIONS_ORG_POLICY=1."""
+    """--actions-org-policy reaches REPO_OPS_ACTIONS_ORG_POLICY through the real plan entry point."""
     monkeypatch.delenv("REPO_OPS_ACTIONS_ORG_POLICY", raising=False)
+    monkeypatch.chdir(tmp_path)
 
-    from repo_ops_core.cli import build_upgrade_parser
+    rc = run_mod.run_upgrade(
+        apply=False,
+        argv=["--flat", "--skip-actions", "--actions-org-policy", str(tmp_path)],
+    )
 
-    parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(["--actions-org-policy"])
-
-    # Simulate the env-wiring block from _run_upgrade_body
-    if getattr(args, "actions_org_policy", False):
-        os.environ["REPO_OPS_ACTIONS_ORG_POLICY"] = "1"
-
+    assert rc == 0
     assert os.environ.get("REPO_OPS_ACTIONS_ORG_POLICY") == "1"
     monkeypatch.delenv("REPO_OPS_ACTIONS_ORG_POLICY", raising=False)
 
