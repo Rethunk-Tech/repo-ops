@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.3] - 2026-08-15
+
+### Fixed
+
+- **`discover_repos` could never find a git submodule:** the underlying `find -type d -name .git` predicate structurally cannot match a submodule's `.git`, which is always a regular *file* (a gitlink pointing at `.git/modules/<name>`), never a directory. Every submodule in a monorepo was silently invisible to every scan/apply — `--submodules` only annotates parent-pointer-commit metadata and was never wired into repo discovery itself. `find` now matches `.git` as either a directory or a file. Verified against `Rethunk-Tech/Bastion`: repo count for the `actions` filter went from 3 (the top-level repo plus two submodules that happened to be reachable some other way) to the real 19.
+
 ## [0.22.2] - 2026-08-15
 
 ### Added
