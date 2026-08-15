@@ -18,7 +18,6 @@ import pytest
 
 from repo_ops_upgrade.actions import (
     _action_policy_violation,
-    _action_policy_violation_local_only,
     _derive_owner,
     _fetch_org_policy_cached,
     _read_policy_level_env,
@@ -299,12 +298,12 @@ def test_policy_path_local_always_allowed() -> None:
 
 def test_policy_local_only_same_org_allowed() -> None:
     p = _policy(allowed_actions="local_only")
-    assert _action_policy_violation_local_only("myorg/some-action", p, "myorg") is None
+    assert _action_policy_violation("myorg/some-action", p, "myorg") is None
 
 
 def test_policy_local_only_cross_org_blocked() -> None:
     p = _policy(allowed_actions="local_only")
-    v = _action_policy_violation_local_only("actions/checkout", p, "myorg")
+    v = _action_policy_violation("actions/checkout", p, "myorg")
     assert v is not None
     assert "local_only" in v
 

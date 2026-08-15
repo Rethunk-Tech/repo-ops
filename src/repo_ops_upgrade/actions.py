@@ -235,17 +235,6 @@ def _action_policy_violation(
     return None
 
 
-def _action_policy_violation_local_only(
-    action: str,
-    policy: dict,
-    org_owner: str,
-) -> str | None:
-    """Backward-compatible alias — ``local_only`` handling now lives in
-    :func:`_action_policy_violation`, which takes *org_owner* directly.
-    """
-    return _action_policy_violation(action, policy, org_owner)
-
-
 def _fetch_org_policy_cached(owner: str, store: dict[str, dict | None]) -> dict | None:
     """Return cached org policy for *owner*, fetching via ``gh api`` on miss.
 
