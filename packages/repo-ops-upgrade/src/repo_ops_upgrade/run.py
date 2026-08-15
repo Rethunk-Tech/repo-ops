@@ -5,7 +5,10 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import contextlib
+import functools
 import os
+import shutil
+import subprocess
 import sys
 import threading
 from itertools import groupby
@@ -128,7 +131,7 @@ def _resolve_exit_code(
 
 # Every gate the default full sweep opens. Each ecosystem module already reads
 # its own var, so enabling the sweep is just setting them all; --conservative
-# leaves them unset and each module falls back to its in-range behavior.
+# writes "0" to each, which is what makes the opt-out beat an ambient value.
 _SWEEP_ENV_VARS = (
     # Cross-range upgrades per ecosystem.
     "REPO_OPS_BUN_UPDATE_LATEST",
@@ -155,6 +158,31 @@ _SWEEP_ENV_VARS = (
     "REPO_OPS_PRECOMMIT_REFRESH_SHA",
     "REPO_OPS_SUBMODULE_REFRESH_SHA",
 )
+
+
+@functools.cache
+def _github_token_available() -> bool:
+    """Whether org-policy lookups can authenticate, probed once per process.
+
+    The policy fetch shells out to ``gh api``, so the question is whether ``gh``
+    itself is authenticated rather than whether any particular variable is set;
+    ``gh auth token`` answers exactly that and honors the same precedence gh
+    uses for the real call. Any failure means no policy fetch, which is a
+    skipped annotation rather than a failed run.
+    """
+    if not shutil.which("gh"):
+        return False
+    try:
+        proc = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0 and bool(proc.stdout.strip())
 
 
 def _cli_flag(args: object, name: str) -> bool:
@@ -189,10 +217,9 @@ def _run_upgrade_body(
     roots: list[str],
     follow_symlinks: bool = False,
 ) -> int:
-    # --latest / --full / --go-upgrade-mode set the per-ecosystem env vars the
-    # checker modules already read, BEFORE any worker pool starts (#102).
-    # Additive: the env-var reads stay; these flags just populate them for this
-    # process.
+    # Populate the per-ecosystem env vars the checker modules already read,
+    # BEFORE any worker pool starts. Additive: the env-var reads stay; this
+    # just fills them in for the current process.
     # Full sweep is the default (#136): every ecosystem crosses ranges and every
     # package manager gets its per-package targeted fallback. --conservative is
     # the single opt-out for a run that must stay inside declared constraints.
@@ -215,8 +242,13 @@ def _run_upgrade_body(
     # --commit-umbrella: opt in to post-commit umbrella pointer bumps (#125).
     if _cli_flag(args, "commit_umbrella"):
         _set_cli_env("REPO_OPS_COMMIT_UMBRELLA", "1")
-    # --actions-org-policy: enable org policy enforcement in scan_actions (#125).
-    if _cli_flag(args, "actions_org_policy"):
+    # Org allowed-actions policy. Enabled whenever a GitHub token is available,
+    # because without it a sweep will happily bump a pin on an Action the org
+    # forbids — a clean-looking report and a workflow that fails at startup.
+    # At the default `report` level this only annotates rows, so the only cost
+    # of running it is the fetch; a tokenless host silently skips it rather
+    # than failing the run.
+    if _cli_flag(args, "actions_org_policy") or _github_token_available():
         _set_cli_env("REPO_OPS_ACTIONS_ORG_POLICY", "1")
     policy_level = getattr(args, "actions_policy_level", None)
     if isinstance(policy_level, str) and policy_level:
