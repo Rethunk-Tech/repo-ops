@@ -7,13 +7,36 @@ from unittest.mock import patch
 
 import pytest
 
-from repo_ops_core.holds import HoldRule
+from repo_ops_core.holds import clear_hold_caches
 from repo_ops_upgrade import submodules
 from repo_ops_upgrade.submodules import (
     SubmoduleLink,
     apply_submodule_tag_advances,
     check_submodule_tag_advances,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolated_hold_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Point the global hold config at a tmp dir and drop the process cache.
+
+    ``_global_holds_cached``/``_repo_holds_cached`` are ``@cache``d for the
+    process lifetime, so without this every test after the first would keep
+    reusing whatever the first one loaded.
+    """
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    clear_hold_caches()
+    yield
+    clear_hold_caches()
+
+
+def _write_global_hold(tmp_path: Path, **overrides) -> None:
+    defaults = {"package": "sub", "max_version": "1.4", "ecosystem": "submodule"}
+    defaults.update(overrides)
+    cfg_dir = tmp_path / "repo-ops"
+    cfg_dir.mkdir(exist_ok=True)
+    lines = ["[[hold]]", *(f'{key} = "{value}"' for key, value in defaults.items())]
+    (cfg_dir / "config.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _make_link(tmp_path: Path, *, path: str = "sub") -> SubmoduleLink:
@@ -27,22 +50,11 @@ def _make_link(tmp_path: Path, *, path: str = "sub") -> SubmoduleLink:
     )
 
 
-def _held_rule(**overrides) -> HoldRule:
-    defaults = {
-        "package": "sub",
-        "max_version": "1.4",
-        "ecosystem": "submodule",
-    }
-    defaults.update(overrides)
-    return HoldRule(**defaults)
-
-
 def test_check_surfaces_tag_hold_clamp_at_upstream_latest(tmp_path: Path) -> None:
     link = _make_link(tmp_path)
+    _write_global_hold(tmp_path)
 
     with (
-        patch.object(submodules, "_global_holds_cached", return_value=(_held_rule(),)),
-        patch.object(submodules, "_repo_holds_cached", return_value=()),
         patch.object(submodules, "_current_submodule_tag", return_value="v1.5.0"),
         patch.object(
             submodules,
@@ -69,10 +81,9 @@ def test_check_surfaces_sha_hold_clamp_without_refresh(
         ("b" * 40, "v1.0.0"),
         ("c" * 40, "v2.0.0"),
     ]
+    _write_global_hold(tmp_path)
 
     with (
-        patch.object(submodules, "_global_holds_cached", return_value=(_held_rule(),)),
-        patch.object(submodules, "_repo_holds_cached", return_value=()),
         patch.object(submodules, "_current_submodule_tag", return_value=None),
         patch.object(submodules, "_current_submodule_sha", return_value=current_sha),
         patch.object(submodules, "_fetch_remote_tag_refs", return_value=refs),
@@ -87,10 +98,9 @@ def test_check_surfaces_sha_hold_clamp_without_refresh(
 
 def test_apply_clamps_tag_above_ceiling(tmp_path: Path, make_proc) -> None:
     link = _make_link(tmp_path)
+    _write_global_hold(tmp_path)
 
     with (
-        patch.object(submodules, "_global_holds_cached", return_value=(_held_rule(),)),
-        patch.object(submodules, "_repo_holds_cached", return_value=()),
         patch.object(
             submodules,
             "_current_submodule_tag",
@@ -115,10 +125,9 @@ def test_apply_clamps_tag_above_ceiling(tmp_path: Path, make_proc) -> None:
 
 def test_apply_raises_when_hold_cannot_be_clamped(tmp_path: Path) -> None:
     link = _make_link(tmp_path)
+    _write_global_hold(tmp_path)
 
     with (
-        patch.object(submodules, "_global_holds_cached", return_value=(_held_rule(),)),
-        patch.object(submodules, "_repo_holds_cached", return_value=()),
         patch.object(submodules, "_current_submodule_tag", return_value="v1.5.0"),
         patch.object(
             submodules,
@@ -147,7 +156,6 @@ def test_expired_hold_is_ignored_without_config_rewrite(
     original_hold_config = hold_config.read_bytes()
 
     with (
-        patch.object(submodules, "_global_holds_cached", return_value=()),
         patch.object(submodules, "_current_submodule_tag", return_value="v1.0.0"),
         patch.object(
             submodules,

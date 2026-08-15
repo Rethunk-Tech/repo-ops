@@ -1,12 +1,39 @@
 """Container image pin hold enforcement."""
 
-from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from repo_ops_container import container
-from repo_ops_core.holds import HoldRule
+from repo_ops_core.holds import clear_hold_caches
+
+
+@pytest.fixture(autouse=True)
+def _isolated_hold_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Point the global hold config at a tmp dir and drop the process cache.
+
+    ``_global_holds_cached``/``_repo_holds_cached`` are ``@cache``d for the
+    process lifetime, so without this every test after the first would keep
+    reusing whatever the first one loaded.
+    """
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    clear_hold_caches()
+    yield
+    clear_hold_caches()
+
+
+def _write_global_hold(tmp_path: Path, **overrides) -> None:
+    defaults = {
+        "package": "docker.io/library/node",
+        "max_version": "1.4",
+        "ecosystem": "container",
+    }
+    defaults.update(overrides)
+    cfg_dir = tmp_path / "repo-ops"
+    cfg_dir.mkdir(exist_ok=True)
+    lines = ["[[hold]]", *(f'{key} = "{value}"' for key, value in defaults.items())]
+    (cfg_dir / "config.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _dockerfile(
@@ -20,29 +47,6 @@ def _dockerfile(
     return dockerfile
 
 
-def _held_rule(**overrides) -> HoldRule:
-    defaults = {
-        "package": "docker.io/library/node",
-        "max_version": "1.4",
-        "ecosystem": "container",
-    }
-    defaults.update(overrides)
-    return HoldRule(**defaults)
-
-
-@contextmanager
-def _held_holds():
-    with (
-        patch.object(
-            container,
-            "_global_holds_cached",
-            return_value=(_held_rule(),),
-        ),
-        patch.object(container, "_repo_holds_cached", return_value=()),
-    ):
-        yield
-
-
 def test_check_container_surfaces_clamp_when_upstream_latest_exceeds_ceiling(
     tmp_path,
     make_workspace,
@@ -51,14 +55,12 @@ def test_check_container_surfaces_clamp_when_upstream_latest_exceeds_ceiling(
     ws = make_workspace(
         tmp_path, ecosystem="container", manager="container", label="repo"
     )
+    _write_global_hold(tmp_path)
 
-    with (
-        _held_holds(),
-        patch.object(
-            container,
-            "_fetch_tags",
-            return_value=["1.0.0", "1.4.0", "1.5.0", "1.6.0"],
-        ),
+    with patch.object(
+        container,
+        "_fetch_tags",
+        return_value=["1.0.0", "1.4.0", "1.5.0", "1.6.0"],
     ):
         changes = container.check_container(ws)
 
@@ -76,14 +78,12 @@ def test_check_container_matches_fully_qualified_hold_for_short_image(
     ws = make_workspace(
         tmp_path, ecosystem="container", manager="container", label="repo"
     )
+    _write_global_hold(tmp_path)
 
-    with (
-        _held_holds(),
-        patch.object(
-            container,
-            "_fetch_tags",
-            return_value=["1.0.0", "1.4.0", "1.5.0"],
-        ),
+    with patch.object(
+        container,
+        "_fetch_tags",
+        return_value=["1.0.0", "1.4.0", "1.5.0"],
     ):
         changes = container.check_container(ws)
 
@@ -102,14 +102,12 @@ def test_check_container_filters_digest_refresh_above_ceiling(
         tmp_path, ecosystem="container", manager="container", label="repo"
     )
     monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
+    _write_global_hold(tmp_path)
 
-    with (
-        _held_holds(),
-        patch.object(
-            container,
-            "_fetch_manifest_digest",
-            return_value=f"sha256:{'b' * 64}",
-        ),
+    with patch.object(
+        container,
+        "_fetch_manifest_digest",
+        return_value=f"sha256:{'b' * 64}",
     ):
         assert container.check_container(ws) == []
 
@@ -124,9 +122,9 @@ def test_apply_container_clamps_tag_and_digest_to_ceiling(
         tmp_path, ecosystem="container", manager="container", label="repo"
     )
     monkeypatch.delenv("REPO_OPS_CONTAINER_REFRESH_SHA", raising=False)
+    _write_global_hold(tmp_path)
 
     with (
-        _held_holds(),
         patch.object(
             container,
             "_fetch_tags",
@@ -152,9 +150,9 @@ def test_apply_container_raises_when_no_tag_satisfies_ceiling(
     ws = make_workspace(
         tmp_path, ecosystem="container", manager="container", label="repo"
     )
+    _write_global_hold(tmp_path)
 
     with (
-        _held_holds(),
         patch.object(
             container,
             "_fetch_tags",
