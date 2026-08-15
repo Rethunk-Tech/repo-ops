@@ -1,10 +1,10 @@
-"""Pluggable commit-message agents for ``--commit=agent`` (Cursor SDK optional)."""
+"""Commit-message drafting for ``--commit=agent`` (Cursor SDK optional)."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from repo_ops_core.config import (
     ambient_env as _config_ambient_env,
@@ -30,7 +30,6 @@ COMMIT_AGENT_INSTALL_HINT = (
 )
 
 
-@runtime_checkable
 class CommitAgentProvider(Protocol):
     """Draft a full commit message (subject + optional body) for post-apply commits."""
 
@@ -38,12 +37,6 @@ class CommitAgentProvider(Protocol):
     def name(self) -> str: ...
 
     def draft_commit_message(self, bundle: RepoBundle, files: list[str]) -> str: ...
-
-
-_ProviderFactory = Callable[[], CommitAgentProvider]
-
-_FACTORIES: dict[str, _ProviderFactory] = {}
-_builtins_registered = False
 
 
 def set_ambient_env(env: Mapping[str, str] | None) -> None:
@@ -56,13 +49,8 @@ def ambient_env() -> Mapping[str, str] | None:
     return _config_ambient_env()
 
 
-def register_commit_agent_provider(name: str, factory: _ProviderFactory) -> None:
-    """Register a provider factory (for built-ins or third-party extensions)."""
-    _FACTORIES[name] = factory
-
-
 def known_commit_agent_providers() -> list[str]:
-    return sorted(_FACTORIES)
+    return [DEFAULT_COMMIT_AGENT_PROVIDER]
 
 
 def commit_agent_provider_name(repo_path: Path | None = None) -> str:
@@ -87,41 +75,23 @@ def commit_agent_provider_name(repo_path: Path | None = None) -> str:
     return provider
 
 
-def _ensure_builtin_providers() -> None:
-    global _builtins_registered
-    if _builtins_registered:
-        return
-    from repo_ops_upgrade.commit_agent_cursor import CursorCommitAgentProvider
-
-    register_commit_agent_provider(
-        CursorCommitAgentProvider.name,
-        CursorCommitAgentProvider,
-    )
-    _builtins_registered = True
-
-
 def resolve_commit_agent_provider(
     name: str | None = None,
     *,
     repo_path: Path | None = None,
 ) -> CommitAgentProvider:
     """Instantiate the configured commit-agent provider."""
-    _ensure_builtin_providers()
     key = (name or commit_agent_provider_name(repo_path)).strip().lower()
-    factory = _FACTORIES.get(key)
-    if factory is None:
-        known = ", ".join(known_commit_agent_providers()) or "(none)"
+    if key != DEFAULT_COMMIT_AGENT_PROVIDER:
+        known = ", ".join(known_commit_agent_providers())
         raise RuntimeError(
             f"Unknown commit agent provider {key!r} "
             f"(known: {known}). "
             f"Set {COMMIT_AGENT_PROVIDER_ENV} or use --commit=conventional."
         )
-    provider = factory()
-    if not isinstance(provider, CommitAgentProvider):
-        raise RuntimeError(
-            f"Provider {key!r} factory did not return a CommitAgentProvider"
-        )
-    return provider
+    from repo_ops_upgrade.commit_agent_cursor import CursorCommitAgentProvider
+
+    return CursorCommitAgentProvider()
 
 
 def draft_message_with_commit_agent(

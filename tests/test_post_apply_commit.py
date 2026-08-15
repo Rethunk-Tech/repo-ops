@@ -57,14 +57,16 @@ def test_commit_dry_run_lists_files(tmp_path: Path, init_git_repo) -> None:
 
 def test_parse_porcelain_unstaged_preserves_filename() -> None:
     # Regression: unstaged entries (" M path") have a space in the X column.
-    # Stripping the line before slicing dropped the filename's first char
+    # Stripping the entry before slicing dropped the filename's first char
     # ("go.mod" -> "o.mod"), which broke staging and subject classification.
-    out = " M go.mod\n M go.sum\n"
+    out = " M go.mod\0 M go.sum\0"
     assert post_apply_commit._parse_porcelain(out) == ["go.mod", "go.sum"]
 
 
 def test_parse_porcelain_staged_and_rename() -> None:
-    out = "M  package-lock.json\nR  old.txt -> new.txt\n?? extra.json\n"
+    # -z reverses rename field order to new-path-first: the record's own PATH
+    # is the new name, followed by a second NUL-terminated field for the origin.
+    out = "M  package-lock.json\0R  new.txt\0old.txt\0?? extra.json\0"
     assert post_apply_commit._parse_porcelain(out) == [
         "package-lock.json",
         "new.txt",
@@ -72,13 +74,11 @@ def test_parse_porcelain_staged_and_rename() -> None:
     ]
 
 
-def test_parse_porcelain_quoted_path_and_rename() -> None:
-    # Regression #72: git wraps paths containing spaces (or non-ASCII) in
-    # double-quotes with C-style escapes. The quotes must be stripped and octal
-    # sequences decoded before the path reaches `git add`.
-    # Also verifies that a rename entry returns only the new (right-hand) path,
-    # and that the new path itself may also be quoted.
-    out = ' M "path with spaces.txt"\nR  "old dir/a.txt" -> "new dir/b.txt"\n'
+def test_parse_porcelain_paths_with_spaces_and_rename() -> None:
+    # Regression #72 (superseded by the -z rewrite): with -z, git emits paths
+    # verbatim — no quoting or octal escaping — even when they contain spaces.
+    # Also verifies a rename entry returns only the new (right-hand) path.
+    out = " M path with spaces.txt\0R  new dir/b.txt\0old dir/a.txt\0"
     assert post_apply_commit._parse_porcelain(out) == [
         "path with spaces.txt",
         "new dir/b.txt",
@@ -88,7 +88,7 @@ def test_parse_porcelain_quoted_path_and_rename() -> None:
 def test_unstaged_go_change_classifies_as_go_modules() -> None:
     # End-to-end of the bug: a real unstaged go.mod/go.sum change must yield
     # the Go subject, not the generic fallback.
-    paths = post_apply_commit._parse_porcelain(" M go.mod\n M go.sum\n")
+    paths = post_apply_commit._parse_porcelain(" M go.mod\0 M go.sum\0")
     assert post_apply_commit.classify_commit_subject(paths) == (
         "chore(deps): update Go modules"
     )
@@ -360,7 +360,6 @@ def test_unknown_commit_agent_provider(
 
 
 def test_default_provider_is_cursor() -> None:
-    providers._ensure_builtin_providers()
     assert providers.commit_agent_provider_name() == "cursor"
     provider = providers.resolve_commit_agent_provider()
     assert provider.name == "cursor"
@@ -374,22 +373,12 @@ def test_commit_agent_provider_uses_global_config(
     config_dir = xdg_config / "repo-ops"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
-        "commit_agent_provider = 'stub-global'\n", encoding="utf-8"
+        "commit_agent_provider = 'cursor'\n", encoding="utf-8"
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_config))
 
-    class _StubProvider:
-        name = "stub-global"
-
-        def draft_commit_message(self, bundle: RepoBundle, files: list[str]) -> str:
-            return "chore(deps): stub"
-
-    providers.register_commit_agent_provider("stub-global", _StubProvider)
-    try:
-        assert providers.commit_agent_provider_name() == "stub-global"
-        assert providers.resolve_commit_agent_provider().name == "stub-global"
-    finally:
-        providers._FACTORIES.pop("stub-global", None)
+    assert providers.commit_agent_provider_name() == "cursor"
+    assert providers.resolve_commit_agent_provider().name == "cursor"
 
 
 def test_commit_agent_provider_env_overrides_global_config(
@@ -406,28 +395,6 @@ def test_commit_agent_provider_env_overrides_global_config(
 
     assert providers.commit_agent_provider_name() == "cursor"
     assert providers.resolve_commit_agent_provider().name == "cursor"
-
-
-def test_register_commit_agent_provider_round_trip(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Third-party providers register + resolve (F206)."""
-
-    class _StubProvider:
-        name = "stub-wave2"
-
-        def draft_commit_message(self, bundle: RepoBundle, files: list[str]) -> str:
-            return "chore(deps): stub"
-
-    providers._ensure_builtin_providers()
-    providers.register_commit_agent_provider("stub-wave2", _StubProvider)
-    try:
-        monkeypatch.setenv(providers.COMMIT_AGENT_PROVIDER_ENV, "stub-wave2")
-        resolved = providers.resolve_commit_agent_provider()
-        assert resolved.name == "stub-wave2"
-        assert "stub-wave2" in providers.known_commit_agent_providers()
-    finally:
-        providers._FACTORIES.pop("stub-wave2", None)
 
 
 def test_cursor_provider_missing_sdk_message(

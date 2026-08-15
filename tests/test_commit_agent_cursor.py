@@ -2,9 +2,10 @@
 
 Exercises: missing CURSOR_API_KEY (RuntimeError), cursor_sdk not installed
 (ImportError -> RuntimeError), Agent.prompt returning an error status
-(RuntimeError), the happy path (including >40 files truncation and the
-draft_message_with_agent wrapper), and _normalize_agent_subject's line
-selection / quote-stripping / whitespace-collapsing / truncation logic.
+(RuntimeError), the happy path (including >40 files truncation via
+commit_agent_providers.draft_message_with_commit_agent), and
+_normalize_agent_subject's line selection / quote-stripping /
+whitespace-collapsing / truncation logic.
 No real Cursor API key or cursor-sdk install required.
 """
 
@@ -21,7 +22,6 @@ from repo_ops_upgrade import commit_agent_providers
 from repo_ops_upgrade.commit_agent_cursor import (
     CursorCommitAgentProvider,
     _normalize_agent_subject,
-    draft_message_with_agent,
 )
 
 
@@ -85,12 +85,15 @@ def test_draft_commit_message_success_via_wrapper(
 ) -> None:
     _isolate_config_home(monkeypatch, tmp_path)
     monkeypatch.delenv("REPO_OPS_COMMIT_AGENT_MODEL", raising=False)
+    monkeypatch.setenv("CURSOR_API_KEY", "test-key")
     result = types.SimpleNamespace(status="ok", result="`feat(x): bump deps`\n")
     captured: dict = {}
     _install_fake_cursor_sdk(monkeypatch, result, captured)
 
     files = [f"pkg{i}/file.txt" for i in range(45)]  # exercise >40 truncation
-    message = draft_message_with_agent(_bundle(tmp_path), files, api_key="test-key")
+    message = commit_agent_providers.draft_message_with_commit_agent(
+        _bundle(tmp_path), files
+    )
 
     assert message.startswith("feat(x): bump deps\n\n")
     assert "Automated post-apply commit (cursor commit-agent)." in message
@@ -135,34 +138,6 @@ def test_draft_commit_message_uses_target_repo_config(
     )
 
     assert captured["options"].model == "repo-model"
-
-
-def test_draft_commit_message_uses_target_repo_provider(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _isolate_config_home(monkeypatch, tmp_path)
-    monkeypatch.delenv(commit_agent_providers.COMMIT_AGENT_PROVIDER_ENV, raising=False)
-    (tmp_path / "pyproject.toml").write_text(
-        "[tool.repo-ops]\ncommit_agent_provider = 'repo-provider'\n", encoding="utf-8"
-    )
-
-    class _StubProvider:
-        name = "repo-provider"
-
-        def draft_commit_message(self, bundle: RepoBundle, files: list[str]) -> str:
-            return "chore(deps): repo provider"
-
-    commit_agent_providers.register_commit_agent_provider(
-        "repo-provider", _StubProvider
-    )
-    try:
-        message = commit_agent_providers.draft_message_with_commit_agent(
-            _bundle(tmp_path), ["a.txt"]
-        )
-    finally:
-        commit_agent_providers._FACTORIES.pop("repo-provider", None)
-
-    assert message == "chore(deps): repo provider"
 
 
 def test_draft_commit_message_rejects_empty_configured_model(
