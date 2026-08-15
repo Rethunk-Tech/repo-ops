@@ -4,23 +4,13 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-from repo_ops_models import Change, Workspace
+from repo_ops_models import Change
 from repo_ops_py_pipenv.pipenv import (
     _apply_pipenv_targeted_bumps,
     _pipenv_requirement_satisfied,
     apply_pipenv,
     check_pipenv,
 )
-
-
-def _ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="py",
-        manager="pipenv",
-        git_repo=tmp_path,
-        label="demo",
-    )
 
 
 def _seed_workspace(tmp_path: Path) -> None:
@@ -40,7 +30,7 @@ def test_pipenv_requirement_preserves_caret_semantics() -> None:
     assert _pipenv_requirement_satisfied("2.31.0", "==2.28.0") is False
 
 
-def test_check_pipenv_reports_direct_constraint_bump(tmp_path: Path) -> None:
+def test_check_pipenv_reports_direct_constraint_bump(tmp_path: Path, make_workspace) -> None:
     _seed_workspace(tmp_path)
 
     def fake_run(cmd, cwd, timeout=None):
@@ -60,14 +50,14 @@ def test_check_pipenv_reports_direct_constraint_bump(tmp_path: Path) -> None:
             return_value="3.0.0",
         ),
     ):
-        result = check_pipenv(_ws(tmp_path))
+        result = check_pipenv(make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo"))
 
     in_range, behind = result
     assert in_range == []
     assert behind == [Change("requests", "2.31.0", "3.0.0")]
 
 
-def test_apply_pipenv_skips_targeted_install_without_venv(tmp_path: Path) -> None:
+def test_apply_pipenv_skips_targeted_install_without_venv(tmp_path: Path, make_workspace) -> None:
     _seed_workspace(tmp_path)
     calls: list[list[str]] = []
     candidate = Change("requests", "2.31.0", "3.0.0")
@@ -90,14 +80,14 @@ def test_apply_pipenv_skips_targeted_install_without_venv(tmp_path: Path) -> Non
             return_value=[candidate],
         ),
     ):
-        remaining = apply_pipenv(_ws(tmp_path))
+        remaining = apply_pipenv(make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo"))
 
     assert remaining == [candidate]
     assert calls == [["pipenv", "update"], ["pipenv", "--venv"]]
 
 
 def test_targeted_pipenv_bump_skips_missing_pipfile_constraint(
-    tmp_path: Path,
+    tmp_path: Path, make_workspace,
 ) -> None:
     _seed_workspace(tmp_path)
     candidate = Change("flask", "2.3.0", "3.0.0")
@@ -108,13 +98,13 @@ def test_targeted_pipenv_bump_skips_missing_pipfile_constraint(
         return subprocess.CompletedProcess(cmd, 0, stdout="/fake/.venv", stderr="")
 
     with patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run):
-        remaining = _apply_pipenv_targeted_bumps(_ws(tmp_path), [candidate])
+        remaining = _apply_pipenv_targeted_bumps(make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo"), [candidate])
 
     assert remaining == [candidate]
     assert calls == [["pipenv", "--venv"]]
 
 
-def test_apply_pipenv_restores_failed_targeted_install(tmp_path: Path) -> None:
+def test_apply_pipenv_restores_failed_targeted_install(tmp_path: Path, make_workspace) -> None:
     _seed_workspace(tmp_path)
     manifest = tmp_path / "Pipfile"
     lockfile = tmp_path / "Pipfile.lock"
@@ -143,14 +133,14 @@ def test_apply_pipenv_restores_failed_targeted_install(tmp_path: Path) -> None:
             return_value=[candidate],
         ),
     ):
-        remaining = apply_pipenv(_ws(tmp_path))
+        remaining = apply_pipenv(make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo"))
 
     assert remaining == [candidate]
     assert manifest.read_bytes() == manifest_before
     assert lockfile.read_bytes() == lock_before
 
 
-def test_apply_pipenv_keeps_successful_targeted_install(tmp_path: Path) -> None:
+def test_apply_pipenv_keeps_successful_targeted_install(tmp_path: Path, make_workspace) -> None:
     _seed_workspace(tmp_path)
     candidate = Change("requests", "2.31.0", "3.0.0")
     calls: list[list[str]] = []
@@ -176,7 +166,7 @@ def test_apply_pipenv_keeps_successful_targeted_install(tmp_path: Path) -> None:
             return_value=[candidate],
         ),
     ):
-        remaining = apply_pipenv(_ws(tmp_path))
+        remaining = apply_pipenv(make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo"))
 
     assert remaining == []
     assert calls == [

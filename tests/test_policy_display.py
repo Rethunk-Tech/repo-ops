@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from repo_ops_models import ActionBump, RepoBundle, Workspace, WorkspaceResult
+from repo_ops_models import ActionBump, RepoBundle
 from repo_ops_upgrade.report import (
     build_run_summary,
     print_human_report,
@@ -30,17 +30,6 @@ def _bundle(
         actions=actions or [],
         actions_workflows_scanned=workflows_scanned,
     )
-
-
-def _ws(tmp_path: Path) -> WorkspaceResult:
-    ws = Workspace(
-        path=tmp_path,
-        ecosystem="node",
-        manager="npm",
-        git_repo=tmp_path,
-        label="demo",
-    )
-    return WorkspaceResult(workspace=ws, status="ok")
 
 
 # ---------------------------------------------------------------------------

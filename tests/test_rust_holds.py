@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 import pytest
 from repo_ops_core.holds import HoldRule
-from repo_ops_models import Workspace
 from repo_ops_rust.rust import (
     _cargo_registry_versions,
     apply_rust,
@@ -19,16 +18,6 @@ _REPO_HOLDS_CACHE = "repo_ops_rust.rust._repo_holds_cached"
 _REGISTRY_VERSIONS = "repo_ops_rust.rust._cargo_registry_versions"
 _REGISTRY_CONNECTION = "repo_ops_rust.rust.HTTPSConnection"
 _CRATE = "serde"
-
-
-def _ws(tmp_path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="rust",
-        manager="rust",
-        git_repo=tmp_path,
-        label="crate",
-    )
 
 
 def _held_rule(**overrides) -> HoldRule:
@@ -123,8 +112,8 @@ def test_cargo_registry_versions_follows_seek_pagination() -> None:
     assert set(versions) == {"1.5.7", "1.5.5"}
 
 
-def test_check_rust_filters_change_past_ceiling(tmp_path) -> None:
-    ws = _ws(tmp_path)
+def test_check_rust_filters_change_past_ceiling(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
 
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
@@ -136,8 +125,8 @@ def test_check_rust_filters_change_past_ceiling(tmp_path) -> None:
         assert check_rust(ws) == []
 
 
-def test_check_rust_matches_rust_ecosystem_hold(tmp_path) -> None:
-    ws = _ws(tmp_path)
+def test_check_rust_matches_rust_ecosystem_hold(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
 
     with (
         patch(
@@ -152,8 +141,8 @@ def test_check_rust_matches_rust_ecosystem_hold(tmp_path) -> None:
         assert check_rust(ws) == []
 
 
-def test_check_rust_keeps_change_within_ceiling(tmp_path) -> None:
-    ws = _ws(tmp_path)
+def test_check_rust_keeps_change_within_ceiling(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     expected = "    Updating serde v1.2.0 -> v1.4.0\n"
 
     with (
@@ -168,8 +157,8 @@ def test_check_rust_keeps_change_within_ceiling(tmp_path) -> None:
     assert changes[0].to == "1.4.0"
 
 
-def test_apply_rust_clamps_resolved_crate_above_ceiling(tmp_path) -> None:
-    ws = _ws(tmp_path)
+def test_apply_rust_clamps_resolved_crate_above_ceiling(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["1.8.0", "1.5.7"]
     clamp_calls: list[list[str]] = []
 
@@ -206,8 +195,8 @@ def test_apply_rust_clamps_resolved_crate_above_ceiling(tmp_path) -> None:
     assert versions[0] == "1.5.7"
 
 
-def test_apply_rust_audit_override_wins_over_hold_ceiling(tmp_path) -> None:
-    ws = _ws(tmp_path)
+def test_apply_rust_audit_override_wins_over_hold_ceiling(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["2.1.0"]
     override_calls: list[list[str]] = []
 
@@ -245,8 +234,8 @@ def test_apply_rust_audit_override_wins_over_hold_ceiling(tmp_path) -> None:
     assert versions == ["2.0.0"]
 
 
-def test_apply_rust_uses_highest_published_prefix_version(tmp_path) -> None:
-    ws = _ws(tmp_path)
+def test_apply_rust_uses_highest_published_prefix_version(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["1.8.0"]
     clamp_calls: list[list[str]] = []
 
@@ -284,8 +273,8 @@ def test_apply_rust_uses_highest_published_prefix_version(tmp_path) -> None:
     assert versions[0] == "1.5.7"
 
 
-def test_apply_rust_audit_override_without_hold(tmp_path) -> None:
-    ws = _ws(tmp_path)
+def test_apply_rust_audit_override_without_hold(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["2.1.0"]
     override_calls: list[list[str]] = []
 
@@ -323,8 +312,8 @@ def test_apply_rust_audit_override_without_hold(tmp_path) -> None:
     assert versions == ["2.0.0"]
 
 
-def test_apply_rust_skips_unheld_crate_without_audit_override(tmp_path) -> None:
-    ws = _ws(tmp_path)
+def test_apply_rust_skips_unheld_crate_without_audit_override(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     versions = ["2.1.0"]
     calls: list[list[str]] = []
 

@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from repo_ops_models import Workspace
 from repo_ops_py_pip_tools.pip_tools import (
     _compile_requirements,
     apply_pip_tools,
@@ -14,17 +13,7 @@ from repo_ops_py_pip_tools.pip_tools import (
 )
 
 
-def _ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="python",
-        manager="pip-tools",
-        git_repo=tmp_path,
-        label="demo",
-    )
-
-
-def test_check_pip_tools_uv_path_uses_upgrade(tmp_path: Path) -> None:
+def test_check_pip_tools_uv_path_uses_upgrade(tmp_path: Path, make_workspace) -> None:
     """#54 — uv pip compile in check must include --upgrade so proposed reflects apply."""
     req_in = tmp_path / "requirements.in"
     req_in.write_text("requests\n")
@@ -46,14 +35,14 @@ def test_check_pip_tools_uv_path_uses_upgrade(tmp_path: Path) -> None:
         ),
         patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_run),
     ):
-        check_pip_tools(_ws(tmp_path))
+        check_pip_tools(make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"))
 
     assert len(captured) == 1
     assert "--upgrade" in captured[0]
 
 
 def test_check_pip_tools_pip_compile_fallback_dry_run_uses_upgrade(
-    tmp_path: Path,
+    tmp_path: Path, make_workspace,
 ) -> None:
     """#73 — pip-compile fallback dry-run in check must include --upgrade so plan matches apply."""
     req_in = tmp_path / "requirements.in"
@@ -76,14 +65,14 @@ def test_check_pip_tools_pip_compile_fallback_dry_run_uses_upgrade(
         ),
         patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_run),
     ):
-        check_pip_tools(_ws(tmp_path))
+        check_pip_tools(make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"))
 
     assert len(captured) == 1
     assert "--upgrade" in captured[0]
 
 
 def test_check_pip_tools_diffs_against_existing_requirements_txt(
-    tmp_path: Path,
+    tmp_path: Path, make_workspace,
 ) -> None:
     """Existing requirements.txt pins are read as 'current' and diffed against
     the freshly compiled 'proposed' set (exercises the req_txt.exists() branch)."""
@@ -99,7 +88,7 @@ def test_check_pip_tools_diffs_against_existing_requirements_txt(
             return_value=_fake_proc(0, stdout="requests==2.31.0\n"),
         ),
     ):
-        changes = check_pip_tools(_ws(tmp_path))
+        changes = check_pip_tools(make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"))
 
     assert len(changes) == 1
     assert changes[0].name == "requests"
@@ -108,7 +97,7 @@ def test_check_pip_tools_diffs_against_existing_requirements_txt(
 
 
 def test_check_pip_tools_uv_empty_stdout_falls_through_to_pip_compile(
-    tmp_path: Path,
+    tmp_path: Path, make_workspace,
 ) -> None:
     """uv returncode 0 with empty stdout is treated like 'no proposal yet' and
     falls through to the pip-compile branch, not an error."""
@@ -129,20 +118,20 @@ def test_check_pip_tools_uv_empty_stdout_falls_through_to_pip_compile(
         ),
         patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_run),
     ):
-        changes = check_pip_tools(_ws(tmp_path))
+        changes = check_pip_tools(make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"))
 
     assert calls[0][0] == "uv"
     assert calls[1][0] == "pip-compile"
     assert any(c.name == "requests" for c in changes)
 
 
-def test_check_pip_tools_no_tools_available_returns_empty(tmp_path: Path) -> None:
+def test_check_pip_tools_no_tools_available_returns_empty(tmp_path: Path, make_workspace) -> None:
     """Neither uv nor pip-compile installed: quiet no-op, not an error (uv was
     never attempted so uv_failed stays False)."""
     (tmp_path / "requirements.in").write_text("requests\n")
 
     with patch("repo_ops_py_pip_tools.pip_tools.shutil.which", return_value=None):
-        assert check_pip_tools(_ws(tmp_path)) == []
+        assert check_pip_tools(make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")) == []
 
 
 def _fake_proc(returncode: int, stdout: str = "", stderr: str = ""):
@@ -152,7 +141,7 @@ def _fake_proc(returncode: int, stdout: str = "", stderr: str = ""):
 
 
 def test_check_pip_tools_uv_fails_pip_compile_missing_raises(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], make_workspace
 ) -> None:
     """uv pip compile failing with no pip-compile fallback must raise, not silently
     return an empty change list (previous behaviour was inconsistent with the
@@ -171,13 +160,13 @@ def test_check_pip_tools_uv_fails_pip_compile_missing_raises(
         ),
         pytest.raises(RuntimeError, match="pip-compile not on PATH"),
     ):
-        check_pip_tools(_ws(tmp_path))
+        check_pip_tools(make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"))
 
     assert "WARN uv pip compile failed: boom" in capsys.readouterr().err
 
 
 def test_check_pip_tools_uv_fails_falls_through_to_pip_compile_with_warning(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], make_workspace
 ) -> None:
     """uv failure still falls through to pip-compile (existing fallback preserved),
     but now emits a WARN so the failure is not silently swallowed."""
@@ -199,15 +188,15 @@ def test_check_pip_tools_uv_fails_falls_through_to_pip_compile_with_warning(
         ),
         patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_run),
     ):
-        changes = check_pip_tools(_ws(tmp_path))
+        changes = check_pip_tools(make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"))
 
     assert "WARN uv pip compile failed: uv exploded" in capsys.readouterr().err
     assert any(c.name == "requests" for c in changes)
     assert calls[0][0] == "uv"
 
 
-def test_compile_requirements_uv_success_returns_early(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_compile_requirements_uv_success_returns_early(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
     out = tmp_path / "requirements.txt"
     req_in = tmp_path / "requirements.in"
 
@@ -226,9 +215,9 @@ def test_compile_requirements_uv_success_returns_early(tmp_path: Path) -> None:
 
 
 def test_compile_requirements_uv_fails_pip_compile_missing_raises(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], make_workspace
 ) -> None:
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
     out = tmp_path / "requirements.txt"
     req_in = tmp_path / "requirements.in"
 
@@ -248,8 +237,8 @@ def test_compile_requirements_uv_fails_pip_compile_missing_raises(
     assert "WARN uv pip compile failed: uv broke" in capsys.readouterr().err
 
 
-def test_compile_requirements_uv_fails_pip_compile_succeeds(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_compile_requirements_uv_fails_pip_compile_succeeds(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
     out = tmp_path / "requirements.txt"
     req_in = tmp_path / "requirements.in"
 
@@ -268,8 +257,8 @@ def test_compile_requirements_uv_fails_pip_compile_succeeds(tmp_path: Path) -> N
         _compile_requirements(ws, out, req_in)  # must not raise
 
 
-def test_compile_requirements_pip_compile_fails_raises(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_compile_requirements_pip_compile_fails_raises(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
     out = tmp_path / "requirements.txt"
     req_in = tmp_path / "requirements.in"
 
@@ -287,14 +276,14 @@ def test_compile_requirements_pip_compile_fails_raises(tmp_path: Path) -> None:
         _compile_requirements(ws, out, req_in)
 
 
-def test_apply_pip_tools_missing_requirements_in_raises(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_apply_pip_tools_missing_requirements_in_raises(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
     with pytest.raises(RuntimeError, match=r"requirements\.in not found"):
         apply_pip_tools(ws)
 
 
-def test_apply_pip_tools_uses_existing_requirements_txt(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_apply_pip_tools_uses_existing_requirements_txt(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
     (tmp_path / "requirements.in").write_text("requests\n")
     (tmp_path / "requirements.txt").write_text("requests==2.30.0\n")
 
@@ -306,8 +295,8 @@ def test_apply_pip_tools_uses_existing_requirements_txt(tmp_path: Path) -> None:
     assert args[2] == tmp_path / "requirements.in"
 
 
-def test_apply_pip_tools_derives_txt_path_when_no_existing_txt(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_apply_pip_tools_derives_txt_path_when_no_existing_txt(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
     (tmp_path / "requirements.in").write_text("requests\n")
 
     with patch("repo_ops_py_pip_tools.pip_tools._compile_requirements") as mock_compile:

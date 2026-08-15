@@ -4,22 +4,12 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-from repo_ops_models import Change, Workspace
+from repo_ops_models import Change
 from repo_ops_py_poetry.poetry import (
     _poetry_requirement_satisfied,
     apply_poetry,
     check_poetry,
 )
-
-
-def _ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="py",
-        manager="poetry",
-        git_repo=tmp_path,
-        label="demo",
-    )
 
 
 def _seed_workspace(tmp_path: Path) -> None:
@@ -40,7 +30,7 @@ def test_poetry_bare_version_uses_caret_range() -> None:
     assert _poetry_requirement_satisfied("2.31.0", "==2.28.0") is False
 
 
-def test_check_poetry_reports_constraint_bump(tmp_path: Path) -> None:
+def test_check_poetry_reports_constraint_bump(tmp_path: Path, make_workspace) -> None:
     _seed_workspace(tmp_path)
 
     def fake_run(
@@ -60,14 +50,14 @@ def test_check_poetry_reports_constraint_bump(tmp_path: Path) -> None:
             return_value="3.0.0",
         ),
     ):
-        result = check_poetry(_ws(tmp_path))
+        result = check_poetry(make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo"))
 
     in_range, behind = result
     assert in_range == []
     assert behind == [Change("requests", "2.31.0", "3.0.0")]
 
 
-def test_apply_poetry_restores_failed_targeted_add(tmp_path: Path) -> None:
+def test_apply_poetry_restores_failed_targeted_add(tmp_path: Path, make_workspace) -> None:
     _seed_workspace(tmp_path)
     manifest = tmp_path / "pyproject.toml"
     lockfile = tmp_path / "poetry.lock"
@@ -97,7 +87,7 @@ def test_apply_poetry_restores_failed_targeted_add(tmp_path: Path) -> None:
             return_value=[Change("requests", "2.31.0", "3.0.0")],
         ),
     ):
-        remaining = apply_poetry(_ws(tmp_path))
+        remaining = apply_poetry(make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo"))
 
     assert remaining == [Change("requests", "2.31.0", "3.0.0")]
     assert manifest.read_bytes() == manifest_before
@@ -106,7 +96,7 @@ def test_apply_poetry_restores_failed_targeted_add(tmp_path: Path) -> None:
 
 
 def test_apply_poetry_restores_when_target_version_does_not_land(
-    tmp_path: Path,
+    tmp_path: Path, make_workspace,
 ) -> None:
     _seed_workspace(tmp_path)
     manifest = tmp_path / "pyproject.toml"
@@ -137,14 +127,14 @@ def test_apply_poetry_restores_when_target_version_does_not_land(
             return_value=[Change("requests", "2.31.0", "3.0.0")],
         ),
     ):
-        remaining = apply_poetry(_ws(tmp_path))
+        remaining = apply_poetry(make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo"))
 
     assert remaining == [Change("requests", "2.31.0", "3.0.0")]
     assert manifest.read_bytes() == manifest_before
     assert lockfile.read_bytes() == lock_before
 
 
-def test_apply_poetry_keeps_successful_targeted_add(tmp_path: Path) -> None:
+def test_apply_poetry_keeps_successful_targeted_add(tmp_path: Path, make_workspace) -> None:
     _seed_workspace(tmp_path)
     manifest = tmp_path / "pyproject.toml"
     lockfile = tmp_path / "poetry.lock"
@@ -177,7 +167,7 @@ def test_apply_poetry_keeps_successful_targeted_add(tmp_path: Path) -> None:
             return_value=[Change("requests", "2.31.0", "3.0.0")],
         ),
     ):
-        remaining = apply_poetry(_ws(tmp_path))
+        remaining = apply_poetry(make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo"))
 
     assert remaining == []
     assert "updated" in manifest.read_text(encoding="utf-8")

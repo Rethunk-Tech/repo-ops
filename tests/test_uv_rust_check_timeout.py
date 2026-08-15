@@ -7,19 +7,8 @@ from unittest.mock import patch
 
 import pytest
 from repo_ops_core.constants import resolve_timeout_check
-from repo_ops_models import Workspace
 from repo_ops_py_uv.uv import check_uv
 from repo_ops_rust.rust import check_rust
-
-
-def _ws(tmp_path: Path, ecosystem: str, manager: str) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem=ecosystem,
-        manager=manager,
-        git_repo=tmp_path,
-        label="demo",
-    )
 
 
 @pytest.mark.parametrize(
@@ -30,7 +19,7 @@ def _ws(tmp_path: Path, ecosystem: str, manager: str) -> Workspace:
     ],
 )
 def test_dry_run_check_uses_timeout_check(
-    tmp_path: Path, target: str, check, ecosystem: str, manager: str
+    tmp_path: Path, target: str, check, ecosystem: str, manager: str, make_workspace
 ) -> None:
     captured: list[dict] = []
 
@@ -39,7 +28,7 @@ def test_dry_run_check_uses_timeout_check(
         return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     with patch(target, side_effect=fake_run):
-        check(_ws(tmp_path, ecosystem, manager))
+        check(make_workspace(tmp_path, ecosystem=ecosystem, manager=manager, label="demo"))
 
     assert len(captured) == 1
     assert captured[0]["timeout"] == resolve_timeout_check()

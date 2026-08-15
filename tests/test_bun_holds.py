@@ -15,20 +15,10 @@ from repo_ops_js_bun.bun import (
     set_bun_audit_version_overrides,
     targeted_bump_behind,
 )
-from repo_ops_models import Change, Workspace
+from repo_ops_models import Change
 
 _GLOBAL_HOLDS_CACHE = "repo_ops_js.holds._global_holds_cached"
 _REPO_HOLDS_CACHE = "repo_ops_js.holds._repo_holds_cached"
-
-
-def _ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="node",
-        manager="bun",
-        git_repo=tmp_path,
-        label="demo",
-    )
 
 
 def _seed(d: Path, *, pkg_content: str | None = None) -> None:
@@ -57,12 +47,12 @@ def _no_repo_holds():
 
 
 def test_targeted_bump_behind_uses_hold_ceiling_instead_of_latest(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """The still-behind fallback (`targeted_bump_behind`) targets `<=ceiling`."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     captured_cmds: list[list[str]] = []
 
     def _fake_run(cmd, cwd, timeout=600, env=None):
@@ -81,12 +71,12 @@ def test_targeted_bump_behind_uses_hold_ceiling_instead_of_latest(
 
 
 def test_targeted_bump_behind_audit_override_wins_over_hold_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """A security remediation (audit --fix) must not be blocked by a hold."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     captured_cmds: list[list[str]] = []
 
     def _fake_run(cmd, cwd, timeout=600, env=None):
@@ -109,11 +99,11 @@ def test_targeted_bump_behind_audit_override_wins_over_hold_ceiling(
 
 
 def test_apply_bun_target_loop_uses_hold_ceiling_between_override_and_to(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """apply_bun's per-package target loop: audit override > hold ceiling > ch.to."""
     _seed(tmp_path)
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     captured_cmds: list[list[str]] = []
 
     def _fake_run(cmd, cwd, timeout=600, env=None):
@@ -142,10 +132,10 @@ def test_apply_bun_target_loop_uses_hold_ceiling_between_override_and_to(
 
 
 def test_check_bun_does_not_promote_held_package_past_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     payload = {"typescript": {"current": "6.5.0", "latest": "7.0.0"}}
 
     def _fake_run(cmd, cwd, timeout=600, env=None):
@@ -164,11 +154,11 @@ def test_check_bun_does_not_promote_held_package_past_ceiling(
 
 
 def test_check_bun_promotes_held_package_within_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """A target that stays within the ceiling is still promoted into changes."""
     monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     payload = {"typescript": {"current": "6.5.0", "latest": "6.9.0"}}
 
     def _fake_run(cmd, cwd, timeout=600, env=None):
@@ -192,7 +182,7 @@ def test_check_bun_promotes_held_package_within_ceiling(
 
 
 def test_apply_bun_clamps_package_already_past_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """A package already on 7.x when a hold is added gets clamped back down.
 
@@ -201,7 +191,7 @@ def test_apply_bun_clamps_package_already_past_ceiling(
     on disk violates a hold ceiling added after the fact.
     """
     _seed(tmp_path, pkg_content=json.dumps({"dependencies": {"typescript": "^7.0.0"}}))
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
 
     nm_dir = tmp_path / "node_modules" / "typescript"
     nm_dir.mkdir(parents=True)
@@ -230,11 +220,11 @@ def test_apply_bun_clamps_package_already_past_ceiling(
 
 
 def test_apply_bun_raises_when_clamp_cannot_satisfy_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """A corrective install that still can't land under ceiling is a loud failure."""
     _seed(tmp_path, pkg_content=json.dumps({"dependencies": {"typescript": "^7.0.0"}}))
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
 
     nm_dir = tmp_path / "node_modules" / "typescript"
     nm_dir.mkdir(parents=True)
@@ -277,12 +267,12 @@ def _seed_is_odd_pin(d: Path, *, installed_version: str = "0.1.2") -> None:
 
 
 def test_targeted_bump_releases_unheld_overrides_pin(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """An untracked overrides pin is released so the retry can advance."""
     _seed_is_odd_pin(tmp_path)
     monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     captured_cmds: list[list[str]] = []
 
     def _fake_run(cmd, cwd, timeout=600, env=None):
@@ -306,11 +296,11 @@ def test_targeted_bump_releases_unheld_overrides_pin(
     assert "is-odd" not in pkg_after.get("overrides", {})
 
 
-def test_targeted_bump_keeps_held_overrides_pin(tmp_path: Path, monkeypatch) -> None:
+def test_targeted_bump_keeps_held_overrides_pin(tmp_path: Path, monkeypatch, make_workspace) -> None:
     """An active hold leaves its overrides pin untouched during retry."""
     _seed_is_odd_pin(tmp_path)
     monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
 
     def _fake_run(cmd, cwd, timeout=600, env=None):
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")

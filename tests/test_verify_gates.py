@@ -34,16 +34,6 @@ from repo_ops_upgrade.verify import verify_node, verify_workspace
 # ---------------------------------------------------------------------------
 
 
-def _ws(tmp_path: Path, manager: str, ecosystem: str = "go") -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem=ecosystem,
-        manager=manager,
-        git_repo=tmp_path,
-        label="demo",
-    )
-
-
 def _ok(stdout: str = "", stderr: str = "") -> CompletedProcess[str]:
     return CompletedProcess([], 0, stdout=stdout, stderr=stderr)
 
@@ -58,7 +48,7 @@ def _fail(stdout: str = "", stderr: str = "err") -> CompletedProcess[str]:
 
 
 class TestGoVerifyGates:
-    def test_go_build_runs_after_mod_verify(self, tmp_path: Path) -> None:
+    def test_go_build_runs_after_mod_verify(self, tmp_path: Path, make_workspace) -> None:
         """go build ./... must be called after go mod verify when both pass."""
         calls: list[list[str]] = []
 
@@ -68,7 +58,7 @@ class TestGoVerifyGates:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "go")
+        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
@@ -76,7 +66,7 @@ class TestGoVerifyGates:
         assert calls[0] == ["go", "mod", "verify"]
         assert calls[1] == ["go", "build", "./..."]
 
-    def test_go_mod_verify_failure_short_circuits(self, tmp_path: Path) -> None:
+    def test_go_mod_verify_failure_short_circuits(self, tmp_path: Path, make_workspace) -> None:
         """go build must NOT run if go mod verify fails."""
         calls: list[list[str]] = []
 
@@ -88,7 +78,7 @@ class TestGoVerifyGates:
                 return _fail(stderr="checksum mismatch")
             return _ok()
 
-        ws = _ws(tmp_path, "go")
+        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
@@ -96,7 +86,7 @@ class TestGoVerifyGates:
         assert "checksum" in result
         assert not any(c == ["go", "build", "./..."] for c in calls)
 
-    def test_go_build_failure_returns_error(self, tmp_path: Path) -> None:
+    def test_go_build_failure_returns_error(self, tmp_path: Path, make_workspace) -> None:
         """go build failure must surface as an error string."""
 
         def fake_run(
@@ -108,14 +98,14 @@ class TestGoVerifyGates:
                 return _fail(stderr="undefined: foo.Bar")
             return _ok()
 
-        ws = _ws(tmp_path, "go")
+        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
         assert result is not None
         assert "undefined" in result
 
-    def test_go_test_runs_after_build_when_verify_test(self, tmp_path: Path) -> None:
+    def test_go_test_runs_after_build_when_verify_test(self, tmp_path: Path, make_workspace) -> None:
         """go test ./... must run after go build when verify_test=True."""
         calls: list[list[str]] = []
 
@@ -125,7 +115,7 @@ class TestGoVerifyGates:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "go")
+        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=True)
 
@@ -138,7 +128,7 @@ class TestGoVerifyGates:
         assert cmd_strs.index("go mod verify") < cmd_strs.index("go build ./...")
         assert cmd_strs.index("go build ./...") < cmd_strs.index("go test ./...")
 
-    def test_go_build_skipped_when_mod_verify_fails(self, tmp_path: Path) -> None:
+    def test_go_build_skipped_when_mod_verify_fails(self, tmp_path: Path, make_workspace) -> None:
         """go test must NOT run if go build fails."""
         called_test = False
 
@@ -152,7 +142,7 @@ class TestGoVerifyGates:
                 return _fail(stderr="build error")
             return _ok()
 
-        ws = _ws(tmp_path, "go")
+        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             verify_workspace(ws, verify_test=True)
 
@@ -160,7 +150,7 @@ class TestGoVerifyGates:
 
 
 class TestRustVerifyGates:
-    def test_rust_test_runs_after_check_when_verify_test(self, tmp_path: Path) -> None:
+    def test_rust_test_runs_after_check_when_verify_test(self, tmp_path: Path, make_workspace) -> None:
         """cargo test must run after cargo check when verify_test=True."""
         calls: list[list[str]] = []
 
@@ -170,7 +160,7 @@ class TestRustVerifyGates:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "rust")
+        ws = make_workspace(tmp_path, manager="rust", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=True)
 
@@ -190,7 +180,7 @@ class TestUvRuffGate:
     def _write_pyproject(self, path: Path, content: str) -> None:
         (path / "pyproject.toml").write_text(content, encoding="utf-8")
 
-    def test_hatch_fast_replaces_tool_ruff_only_gate(self, tmp_path: Path) -> None:
+    def test_hatch_fast_replaces_tool_ruff_only_gate(self, tmp_path: Path, make_workspace) -> None:
         """uv uses the shared fast stack instead of a uv-only ruff branch."""
         self._write_pyproject(
             tmp_path,
@@ -205,7 +195,7 @@ class TestUvRuffGate:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "uv", "python")
+        ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
@@ -213,7 +203,7 @@ class TestUvRuffGate:
         assert ["uv", "run", "check"] in calls
         assert not any(cmd[:4] == ["uv", "run", "ruff", "check"] for cmd in calls)
 
-    def test_ruff_runs_when_ruff_in_dev_deps(self, tmp_path: Path) -> None:
+    def test_ruff_runs_when_ruff_in_dev_deps(self, tmp_path: Path, make_workspace) -> None:
         """ruff check must run when ruff appears in uv dev-dependencies."""
         self._write_pyproject(
             tmp_path,
@@ -227,14 +217,14 @@ class TestUvRuffGate:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "uv", "python")
+        ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
         assert result is None
         assert any(cmd[:4] == ["uv", "run", "ruff", "check"] for cmd in calls)
 
-    def test_ruff_skipped_when_not_configured(self, tmp_path: Path) -> None:
+    def test_ruff_skipped_when_not_configured(self, tmp_path: Path, make_workspace) -> None:
         """ruff check must NOT run when ruff is absent from pyproject.toml."""
         self._write_pyproject(tmp_path, '[project]\nname = "myapp"\n')
         calls: list[list[str]] = []
@@ -245,14 +235,14 @@ class TestUvRuffGate:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "uv", "python")
+        ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
         assert result is None
         assert not any(cmd[:4] == ["uv", "run", "ruff", "check"] for cmd in calls)
 
-    def test_ruff_failure_returns_error(self, tmp_path: Path) -> None:
+    def test_ruff_failure_returns_error(self, tmp_path: Path, make_workspace) -> None:
         """ruff check failure must surface as an error string."""
         self._write_pyproject(
             tmp_path,
@@ -266,14 +256,14 @@ class TestUvRuffGate:
                 return CompletedProcess([], 1, stdout="Found 3 errors.\n", stderr="")
             return _ok()
 
-        ws = _ws(tmp_path, "uv", "python")
+        ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
         assert result is not None
         assert "error" in result.lower() or "ruff" in result.lower()
 
-    def test_uv_sync_failure_short_circuits_ruff(self, tmp_path: Path) -> None:
+    def test_uv_sync_failure_short_circuits_ruff(self, tmp_path: Path, make_workspace) -> None:
         """ruff check must NOT run when uv sync --locked fails."""
         self._write_pyproject(tmp_path, "[tool.ruff]\n")
         called_ruff = False
@@ -288,7 +278,7 @@ class TestUvRuffGate:
                 return _fail(stderr="lock file mismatch")
             return _ok()
 
-        ws = _ws(tmp_path, "uv", "python")
+        ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             verify_workspace(ws, verify_test=False)
 
@@ -314,7 +304,7 @@ class TestPythonManagerFastGates:
         tmp_path: Path,
         manager: str,
         lock_cmd: list[str],
-        fast_cmd: list[str],
+        fast_cmd: list[str], make_workspace,
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
@@ -328,7 +318,7 @@ class TestPythonManagerFastGates:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, manager, "python")
+        ws = make_workspace(tmp_path, manager=manager, ecosystem="python", label="demo")
         with (
             patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
@@ -356,7 +346,7 @@ class TestPythonManagerFastGates:
         tmp_path: Path,
         manager: str,
         lock_cmd: list[str],
-        fast_cmd: list[str],
+        fast_cmd: list[str], make_workspace,
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
@@ -370,7 +360,7 @@ class TestPythonManagerFastGates:
             calls.append(cmd)
             return _fail(stderr="lock gate failed") if cmd == lock_cmd else _ok()
 
-        ws = _ws(tmp_path, manager, "python")
+        ws = make_workspace(tmp_path, manager=manager, ecosystem="python", label="demo")
         with (
             patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
@@ -394,13 +384,13 @@ class TestPythonManagerFastGates:
         self,
         tmp_path: Path,
         manager: str,
-        binary: str,
+        binary: str, make_workspace,
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
             encoding="utf-8",
         )
-        ws = _ws(tmp_path, manager, "python")
+        ws = make_workspace(tmp_path, manager=manager, ecosystem="python", label="demo")
         with (
             patch("repo_ops_upgrade.verify.shutil.which", return_value=None),
             patch("repo_ops_upgrade.verify.run") as run_mock,
@@ -428,7 +418,7 @@ class TestPythonManagerFastGates:
         tmp_path: Path,
         manager: str,
         lock_cmd: list[str],
-        fast_cmd: list[str],
+        fast_cmd: list[str], make_workspace,
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
@@ -442,7 +432,7 @@ class TestPythonManagerFastGates:
                 return _fail(stderr="fast gate failed")
             return _ok()
 
-        ws = _ws(tmp_path, manager, "python")
+        ws = make_workspace(tmp_path, manager=manager, ecosystem="python", label="demo")
         with (
             patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
@@ -466,7 +456,7 @@ class TestNodeVerifyScriptEnv:
         (path / "package.json").write_text(json.dumps(content), encoding="utf-8")
 
     def test_env_override_uses_specified_script(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """REPO_OPS_NODE_VERIFY_SCRIPT=custom → use 'custom', not the waterfall."""
         self._write_pkg(tmp_path, {"ci": "echo ci", "custom": "echo custom"})
@@ -479,7 +469,7 @@ class TestNodeVerifyScriptEnv:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "yarn", "node")
+        ws = make_workspace(tmp_path, manager="yarn", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_node(ws)
 
@@ -488,7 +478,7 @@ class TestNodeVerifyScriptEnv:
         assert script_calls, f"expected 'custom' script call, got: {calls}"
 
     def test_env_override_empty_string_skips_script_step(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """REPO_OPS_NODE_VERIFY_SCRIPT='' → skip script step (immutable install still runs)."""
         self._write_pkg(tmp_path, {"ci": "echo ci"})
@@ -501,7 +491,7 @@ class TestNodeVerifyScriptEnv:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "npm", "node")
+        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_node(ws)
 
@@ -514,7 +504,7 @@ class TestNodeVerifyScriptEnv:
         assert not any("echo" in str(c) for c in calls)
 
     def test_env_unset_uses_waterfall(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """When env var absent, first matching waterfall candidate is used."""
         self._write_pkg(tmp_path, {"build": "echo build"})
@@ -527,7 +517,7 @@ class TestNodeVerifyScriptEnv:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "npm", "node")
+        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_node(ws)
 
@@ -536,7 +526,7 @@ class TestNodeVerifyScriptEnv:
         assert any("build" in c for c in calls)
 
     def test_env_override_script_failure_propagates(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """REPO_OPS_NODE_VERIFY_SCRIPT failure must surface as an error."""
         self._write_pkg(tmp_path, {"myscript": "echo ok"})
@@ -549,14 +539,14 @@ class TestNodeVerifyScriptEnv:
                 return _fail(stderr="script failed")
             return _ok()
 
-        ws = _ws(tmp_path, "npm", "node")
+        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_node(ws)
 
         assert result is not None
 
     def test_waterfall_first_match_wins(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """Waterfall picks 'ci' over 'build' when both exist."""
         self._write_pkg(
@@ -571,7 +561,7 @@ class TestNodeVerifyScriptEnv:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "npm", "node")
+        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             verify_node(ws)
 
@@ -592,10 +582,10 @@ class TestVerifyHatchFast:
     def _write_pyproject(self, path: Path, content: str) -> None:
         (path / "pyproject.toml").write_text(content, encoding="utf-8")
 
-    def _hatch_ws(self, tmp_path: Path) -> Workspace:
-        return _ws(tmp_path, "hatch", "python")
+    def _hatch_ws(self, tmp_path: Path, make_workspace) -> Workspace:
+        return make_workspace(tmp_path, manager="hatch", ecosystem="python", label="demo")
 
-    def test_check_script_invoked(self, tmp_path: Path) -> None:
+    def test_check_script_invoked(self, tmp_path: Path, make_workspace) -> None:
         """'check' script in [project.scripts] must be invoked."""
         self._write_pyproject(
             tmp_path,
@@ -609,14 +599,14 @@ class TestVerifyHatchFast:
             calls.append(cmd)
             return _ok()
 
-        ws = self._hatch_ws(tmp_path)
+        ws = self._hatch_ws(tmp_path, make_workspace)
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
         assert result is None
         assert any(c == ["uv", "run", "check"] for c in calls)
 
-    def test_typecheck_script_invoked(self, tmp_path: Path) -> None:
+    def test_typecheck_script_invoked(self, tmp_path: Path, make_workspace) -> None:
         """'typecheck' script must be invoked when present."""
         self._write_pyproject(
             tmp_path,
@@ -630,14 +620,14 @@ class TestVerifyHatchFast:
             calls.append(cmd)
             return _ok()
 
-        ws = self._hatch_ws(tmp_path)
+        ws = self._hatch_ws(tmp_path, make_workspace)
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
         assert result is None
         assert any(c == ["uv", "run", "typecheck"] for c in calls)
 
-    def test_mypy_in_dev_deps_invoked(self, tmp_path: Path) -> None:
+    def test_mypy_in_dev_deps_invoked(self, tmp_path: Path, make_workspace) -> None:
         """mypy in dev deps triggers 'uv run mypy .' when no higher-priority heuristic matches."""
         self._write_pyproject(
             tmp_path,
@@ -651,14 +641,14 @@ class TestVerifyHatchFast:
             calls.append(cmd)
             return _ok()
 
-        ws = self._hatch_ws(tmp_path)
+        ws = self._hatch_ws(tmp_path, make_workspace)
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
         assert result is None
         assert any(c == ["uv", "run", "mypy", "."] for c in calls)
 
-    def test_mypy_skipped_when_test_script_present(self, tmp_path: Path) -> None:
+    def test_mypy_skipped_when_test_script_present(self, tmp_path: Path, make_workspace) -> None:
         """'test' script takes priority over mypy heuristic."""
         self._write_pyproject(
             tmp_path,
@@ -673,7 +663,7 @@ class TestVerifyHatchFast:
             calls.append(cmd)
             return _ok()
 
-        ws = self._hatch_ws(tmp_path)
+        ws = self._hatch_ws(tmp_path, make_workspace)
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
@@ -681,7 +671,7 @@ class TestVerifyHatchFast:
         assert any(c == ["uv", "run", "test"] for c in calls)
         assert not any(c == ["uv", "run", "mypy", "."] for c in calls)
 
-    def test_check_script_failure_returns_error(self, tmp_path: Path) -> None:
+    def test_check_script_failure_returns_error(self, tmp_path: Path, make_workspace) -> None:
         """check script failure must surface an error string."""
         self._write_pyproject(
             tmp_path,
@@ -695,14 +685,14 @@ class TestVerifyHatchFast:
                 return _fail(stderr="type error found")
             return _ok()
 
-        ws = self._hatch_ws(tmp_path)
+        ws = self._hatch_ws(tmp_path, make_workspace)
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
         assert result is not None
         assert "check" in result or "type" in result
 
-    def test_hatch_env_deps_mypy_recognised(self, tmp_path: Path) -> None:
+    def test_hatch_env_deps_mypy_recognised(self, tmp_path: Path, make_workspace) -> None:
         """mypy in hatch env dependencies is still recognised as a dev dep."""
         self._write_pyproject(
             tmp_path,
@@ -716,14 +706,14 @@ class TestVerifyHatchFast:
             calls.append(cmd)
             return _ok()
 
-        ws = self._hatch_ws(tmp_path)
+        ws = self._hatch_ws(tmp_path, make_workspace)
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
         assert result is None
         assert any(c == ["uv", "run", "mypy", "."] for c in calls)
 
-    def test_pyrefly_in_dev_deps_invoked(self, tmp_path: Path) -> None:
+    def test_pyrefly_in_dev_deps_invoked(self, tmp_path: Path, make_workspace) -> None:
         """pyrefly in dev deps triggers 'uv run pyrefly check .' when no higher-priority heuristic matches."""
         self._write_pyproject(
             tmp_path,
@@ -738,7 +728,7 @@ class TestVerifyHatchFast:
             calls.append(cmd)
             return _ok()
 
-        ws = self._hatch_ws(tmp_path)
+        ws = self._hatch_ws(tmp_path, make_workspace)
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
@@ -758,7 +748,7 @@ class TestVerifyHatchFast:
             for c in calls
         )
 
-    def test_hatch_env_deps_pyrefly_recognised(self, tmp_path: Path) -> None:
+    def test_hatch_env_deps_pyrefly_recognised(self, tmp_path: Path, make_workspace) -> None:
         """pyrefly in hatch env dependencies is still recognised as a dev dep."""
         self._write_pyproject(
             tmp_path,
@@ -772,14 +762,14 @@ class TestVerifyHatchFast:
             calls.append(cmd)
             return _ok()
 
-        ws = self._hatch_ws(tmp_path)
+        ws = self._hatch_ws(tmp_path, make_workspace)
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
         assert result is None
         assert any(c == ["uv", "run", "pyrefly", "check", "."] for c in calls)
 
-    def test_pyrefly_skipped_when_test_script_present(self, tmp_path: Path) -> None:
+    def test_pyrefly_skipped_when_test_script_present(self, tmp_path: Path, make_workspace) -> None:
         """'test' script takes priority over pyrefly heuristic."""
         self._write_pyproject(
             tmp_path,
@@ -794,7 +784,7 @@ class TestVerifyHatchFast:
             calls.append(cmd)
             return _ok()
 
-        ws = self._hatch_ws(tmp_path)
+        ws = self._hatch_ws(tmp_path, make_workspace)
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
@@ -802,7 +792,7 @@ class TestVerifyHatchFast:
         assert any(c == ["uv", "run", "test"] for c in calls)
         assert not any(c == ["uv", "run", "pyrefly", "check", "."] for c in calls)
 
-    def test_mypy_takes_priority_over_pyrefly(self, tmp_path: Path) -> None:
+    def test_mypy_takes_priority_over_pyrefly(self, tmp_path: Path, make_workspace) -> None:
         """When both mypy and pyrefly are present in dev deps, the mypy branch wins (checked first)."""
         self._write_pyproject(
             tmp_path,
@@ -816,7 +806,7 @@ class TestVerifyHatchFast:
             calls.append(cmd)
             return _ok()
 
-        ws = self._hatch_ws(tmp_path)
+        ws = self._hatch_ws(tmp_path, make_workspace)
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
@@ -890,7 +880,7 @@ class TestTimeoutEnvOverride:
         assert resolve_timeout_verify() == 45
 
     def test_verify_workspace_go_uses_resolved_timeout(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """verify_workspace (go) must pass the resolved verify timeout to go build."""
         monkeypatch.setenv(_TIMEOUT_VERIFY_ENV, "77")
@@ -902,7 +892,7 @@ class TestTimeoutEnvOverride:
             captured.append({"cmd": cmd, "timeout": timeout})
             return _ok()
 
-        ws = _ws(tmp_path, "go")
+        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             verify_workspace(ws, verify_test=False)
 
@@ -910,7 +900,7 @@ class TestTimeoutEnvOverride:
         assert build_call["timeout"] == 77
 
     def test_verify_workspace_uv_ruff_uses_resolved_timeout(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """verify_workspace (uv) ruff step must use the resolved verify timeout."""
         monkeypatch.setenv(_TIMEOUT_VERIFY_ENV, "55")
@@ -926,7 +916,7 @@ class TestTimeoutEnvOverride:
             captured.append({"cmd": cmd, "timeout": timeout})
             return _ok()
 
-        ws = _ws(tmp_path, "uv", "python")
+        ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             verify_workspace(ws, verify_test=False)
 

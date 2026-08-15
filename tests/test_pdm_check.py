@@ -6,21 +6,10 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-from repo_ops_models import Workspace
 from repo_ops_py_pdm.pdm import apply_pdm, check_pdm
 
 
-def _ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="py",
-        manager="pdm",
-        git_repo=tmp_path,
-        label="demo",
-    )
-
-
-def test_check_pdm_returns_changes_from_dry_run(tmp_path: Path) -> None:
+def test_check_pdm_returns_changes_from_dry_run(tmp_path: Path, make_workspace) -> None:
     """check_pdm parses '- name old -> new' lines from pdm update --dry-run."""
     output = (
         "Dry run: updating packages\n"
@@ -35,7 +24,7 @@ def test_check_pdm_returns_changes_from_dry_run(tmp_path: Path) -> None:
         patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
         patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
     ):
-        changes = check_pdm(_ws(tmp_path))
+        changes = check_pdm(make_workspace(tmp_path, ecosystem="py", manager="pdm", label="demo"))
 
     assert len(changes) == 2
     names = {c.name for c in changes}
@@ -46,7 +35,7 @@ def test_check_pdm_returns_changes_from_dry_run(tmp_path: Path) -> None:
     assert requests_change.to == "2.31.0"
 
 
-def test_check_pdm_returns_empty_when_up_to_date(tmp_path: Path) -> None:
+def test_check_pdm_returns_empty_when_up_to_date(tmp_path: Path, make_workspace) -> None:
     def fake_run(cmd, cwd, timeout=None):
         return subprocess.CompletedProcess(
             cmd, 0, stdout="All packages are up-to-date.\n", stderr=""
@@ -56,21 +45,21 @@ def test_check_pdm_returns_empty_when_up_to_date(tmp_path: Path) -> None:
         patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
         patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
     ):
-        changes = check_pdm(_ws(tmp_path))
+        changes = check_pdm(make_workspace(tmp_path, ecosystem="py", manager="pdm", label="demo"))
 
     assert changes == []
 
 
-def test_check_pdm_warns_when_pdm_not_on_path(tmp_path: Path, capsys) -> None:
+def test_check_pdm_warns_when_pdm_not_on_path(tmp_path: Path, capsys, make_workspace) -> None:
     """check_pdm must not raise when pdm is absent — returns [] + WARN."""
     with patch("repo_ops_py_pdm.pdm.shutil.which", return_value=None):
-        result = check_pdm(_ws(tmp_path))
+        result = check_pdm(make_workspace(tmp_path, ecosystem="py", manager="pdm", label="demo"))
 
     assert result == []
     assert "WARN" in capsys.readouterr().err
 
 
-def test_check_pdm_raises_on_nonzero_returncode(tmp_path: Path) -> None:
+def test_check_pdm_raises_on_nonzero_returncode(tmp_path: Path, make_workspace) -> None:
     def fake_run(cmd, cwd, timeout=None):
         return subprocess.CompletedProcess(
             cmd, 1, stdout="", stderr="lock file is corrupt"
@@ -81,14 +70,14 @@ def test_check_pdm_raises_on_nonzero_returncode(tmp_path: Path) -> None:
         patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
     ):
         try:
-            check_pdm(_ws(tmp_path))
+            check_pdm(make_workspace(tmp_path, ecosystem="py", manager="pdm", label="demo"))
         except RuntimeError as exc:
             assert "lock file is corrupt" in str(exc)
         else:
             raise AssertionError("expected RuntimeError")
 
 
-def test_apply_pdm_runs_pdm_update(tmp_path: Path) -> None:
+def test_apply_pdm_runs_pdm_update(tmp_path: Path, make_workspace) -> None:
     captured: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=None):
@@ -99,15 +88,15 @@ def test_apply_pdm_runs_pdm_update(tmp_path: Path) -> None:
         patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
         patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
     ):
-        apply_pdm(_ws(tmp_path))
+        apply_pdm(make_workspace(tmp_path, ecosystem="py", manager="pdm", label="demo"))
 
     assert captured == [["pdm", "update"]]
 
 
-def test_apply_pdm_raises_when_pdm_absent(tmp_path: Path) -> None:
+def test_apply_pdm_raises_when_pdm_absent(tmp_path: Path, make_workspace) -> None:
     with patch("repo_ops_py_pdm.pdm.shutil.which", return_value=None):
         try:
-            apply_pdm(_ws(tmp_path))
+            apply_pdm(make_workspace(tmp_path, ecosystem="py", manager="pdm", label="demo"))
         except RuntimeError as exc:
             assert "pdm not on PATH" in str(exc)
         else:

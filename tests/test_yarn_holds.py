@@ -14,7 +14,7 @@ from repo_ops_js_yarn.yarn import (
     set_yarn_audit_version_overrides,
     targeted_bump_behind,
 )
-from repo_ops_models import Change, Workspace
+from repo_ops_models import Change
 
 _GLOBAL_HOLDS_CACHE = "repo_ops_js.holds._global_holds_cached"
 _REPO_HOLDS_CACHE = "repo_ops_js.holds._repo_holds_cached"
@@ -24,16 +24,6 @@ _COPY_PATH = "repo_ops_js_yarn.yarn._copy_yarn_workspace_to_temp"
 _SNAPSHOT_PATH = "repo_ops_js_yarn.yarn.snapshot_workspace_files"
 _DIFF_PATH = "repo_ops_js_yarn.yarn.diff_workspace_snapshots"
 _OVERRIDES_PATH = "repo_ops_js_yarn.yarn.overrides_audit"
-
-
-def _ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="node",
-        manager="yarn",
-        git_repo=tmp_path,
-        label="demo",
-    )
 
 
 def _held_rule(**overrides):
@@ -76,11 +66,11 @@ def _no_repo_holds():
 
 
 def test_targeted_bump_uses_hold_ceiling_instead_of_latest(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="yarn", label="demo")
     captured_cmds: list[list[str]] = []
 
     def _fake_run(cmd, cwd, timeout=None):
@@ -103,12 +93,12 @@ def test_targeted_bump_uses_hold_ceiling_instead_of_latest(
 
 
 def test_targeted_bump_audit_override_wins_over_hold_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """A security remediation (audit --fix) must not be blocked by a hold."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="yarn", label="demo")
     captured_cmds: list[list[str]] = []
 
     def _fake_run(cmd, cwd, timeout=None):
@@ -160,7 +150,7 @@ def test_targeted_bump_without_ws_keeps_latest_fallback(
 
 
 def test_check_yarn_snapshot_does_not_promote_held_package_past_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """A behind-latest candidate blocked by a hold ceiling never lands in changes.
 
@@ -173,7 +163,7 @@ def test_check_yarn_snapshot_does_not_promote_held_package_past_ceiling(
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_YARN_UPDATE_LATEST", "1")
     monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="yarn", label="demo")
 
     def _fake_run(cmd, cwd, timeout=None):
         if cmd[:3] == ["yarn", "npm", "info"]:
@@ -224,7 +214,7 @@ def _node_modules_typescript(tmp_path: Path, version: str) -> Path:
 
 
 def test_apply_yarn_clamps_package_already_past_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """Retroactive hold: package already on 7.x gets clamped back down.
 
@@ -236,7 +226,7 @@ def test_apply_yarn_clamps_package_already_past_ceiling(
     _seed(tmp_path, pkg_content=json.dumps({"dependencies": {"typescript": "^7.0.0"}}))
     monkeypatch.delenv("REPO_OPS_YARN_UPDATE_LATEST", raising=False)
     monkeypatch.delenv("REPO_OPS_YARN_TARGETED_BUMP", raising=False)
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="yarn", label="demo")
     nm_dir = _node_modules_typescript(tmp_path, "7.2.0")
 
     def _fake_run(cmd, cwd, timeout=None):
@@ -260,13 +250,13 @@ def test_apply_yarn_clamps_package_already_past_ceiling(
 
 
 def test_apply_yarn_raises_when_clamp_cannot_satisfy_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """A corrective install that still can't land under ceiling is a loud failure."""
     _seed(tmp_path, pkg_content=json.dumps({"dependencies": {"typescript": "^7.0.0"}}))
     monkeypatch.delenv("REPO_OPS_YARN_UPDATE_LATEST", raising=False)
     monkeypatch.delenv("REPO_OPS_YARN_TARGETED_BUMP", raising=False)
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="yarn", label="demo")
     _node_modules_typescript(tmp_path, "7.2.0")
 
     def _fake_run(cmd, cwd, timeout=None):
@@ -311,13 +301,13 @@ def _seed_is_odd_pin(d: Path, *, lock_version: str = "0.1.2") -> None:
 
 
 def test_targeted_bump_releases_unheld_resolutions_pin(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """No hold covers is-odd — the legacy resolutions pin is released so the
     retry can actually move the version, instead of ghost-bumping forever."""
     _seed_is_odd_pin(tmp_path)
     monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="yarn", label="demo")
 
     def _fake_run(cmd, cwd, timeout=None):
         if cmd[:2] == ["yarn", "up"]:
@@ -341,12 +331,12 @@ def test_targeted_bump_releases_unheld_resolutions_pin(
     assert "is-odd" not in pkg_after.get("resolutions", {})
 
 
-def test_targeted_bump_keeps_held_resolutions_pin(tmp_path: Path, monkeypatch) -> None:
+def test_targeted_bump_keeps_held_resolutions_pin(tmp_path: Path, monkeypatch, make_workspace) -> None:
     """An active hold on the package leaves its resolutions pin untouched —
     the pin-release path only fires for packages with no tracked hold."""
     _seed_is_odd_pin(tmp_path)
     monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="yarn", label="demo")
 
     def _fake_run(cmd, cwd, timeout=None):
         return MagicMock(returncode=0, stdout="", stderr="")

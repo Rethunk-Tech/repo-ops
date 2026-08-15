@@ -27,16 +27,6 @@ from repo_ops_upgrade.report import (
 from repo_ops_upgrade.run import main_plan
 
 
-def _ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="node",
-        manager="bun",
-        git_repo=tmp_path,
-        label="demo",
-    )
-
-
 def _bundle(
     tmp_path: Path,
     *,
@@ -59,16 +49,16 @@ def _bundle(
 # ---------------------------------------------------------------------------
 
 
-def test_workspace_result_behind_latest_field(tmp_path: Path) -> None:
+def test_workspace_result_behind_latest_field(tmp_path: Path, make_workspace) -> None:
     """WorkspaceResult has a behind_latest field, default empty."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     wr = WorkspaceResult(workspace=ws)
     assert wr.behind_latest == []
     assert wr.status == "ok"
 
 
-def test_workspace_result_to_json_includes_behind_latest(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_workspace_result_to_json_includes_behind_latest(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     wr = WorkspaceResult(
         workspace=ws,
         behind_latest=[Change("@hono/node-server", "1.19.14", "2.0.4")],
@@ -88,8 +78,8 @@ def test_workspace_result_to_json_includes_behind_latest(tmp_path: Path) -> None
 # ---------------------------------------------------------------------------
 
 
-def test_build_run_summary_counts_behind_latest(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_build_run_summary_counts_behind_latest(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     wr = WorkspaceResult(
         workspace=ws,
         status="ok",
@@ -107,8 +97,8 @@ def test_build_run_summary_counts_behind_latest(tmp_path: Path) -> None:
     assert summary["workspaces_fail"] == 0
 
 
-def test_behind_latest_does_not_affect_failure_count(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_behind_latest_does_not_affect_failure_count(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     wr = WorkspaceResult(
         workspace=ws,
         status="ok",

@@ -19,10 +19,41 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
+from repo_ops_models.models import Workspace
 
 _ENV_PREFIX = "REPO_OPS_"
+
+
+@pytest.fixture
+def make_workspace() -> Any:
+    """Factory fixture: build a ``Workspace`` with common test defaults.
+
+    A plain module-level helper would collide at import time with the other
+    ``conftest.py`` under ``tests/integration`` (both resolve to the bare
+    name ``conftest``, and whichever loads last wins in ``sys.modules``) —
+    so this is exposed as a fixture instead; tests take ``make_workspace``
+    as a parameter rather than importing it.
+
+    Call as ``make_workspace(tmp_path, **overrides)`` — any ``Workspace``
+    field can be overridden by keyword; ``path``/``git_repo`` default to the
+    first positional argument.
+    """
+
+    def _factory(root: Path, **overrides: Any) -> Workspace:
+        fields: dict[str, Any] = {
+            "path": root,
+            "ecosystem": "node",
+            "manager": "npm",
+            "git_repo": root,
+            "label": "test",
+        }
+        fields.update(overrides)
+        return Workspace(**fields)
+
+    return _factory
 
 
 @pytest.fixture(autouse=True)

@@ -7,22 +7,12 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-from repo_ops_models import Change, Workspace
+from repo_ops_models import Change
 from repo_ops_py_pdm.pdm import (
     _pdm_requirement_satisfied,
     apply_pdm,
     check_pdm,
 )
-
-
-def _ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="py",
-        manager="pdm",
-        git_repo=tmp_path,
-        label="demo",
-    )
 
 
 def _write_fixture(tmp_path: Path) -> None:
@@ -46,7 +36,7 @@ def test_pdm_bare_version_requirement_is_caret_compatible() -> None:
     assert _pdm_requirement_satisfied("2.31.0", "==2.28.0") is False
 
 
-def test_check_pdm_reports_latest_direct_dependency(tmp_path: Path) -> None:
+def test_check_pdm_reports_latest_direct_dependency(tmp_path: Path, make_workspace) -> None:
     _write_fixture(tmp_path)
     with (
         patch.dict(os.environ, {"REPO_OPS_PDM_TARGETED_BUMP": "1"}),
@@ -54,7 +44,7 @@ def test_check_pdm_reports_latest_direct_dependency(tmp_path: Path) -> None:
         patch("repo_ops_py_pdm.pdm.run", side_effect=_fake_pdm_run),
         patch("repo_ops_py_pdm.pdm._pdm_latest_version", return_value="3.0.0"),
     ):
-        result = check_pdm(_ws(tmp_path))
+        result = check_pdm(make_workspace(tmp_path, ecosystem="py", manager="pdm", label="demo"))
 
     assert result == (
         [],
@@ -62,7 +52,7 @@ def test_check_pdm_reports_latest_direct_dependency(tmp_path: Path) -> None:
     )
 
 
-def test_apply_pdm_restores_files_when_targeted_add_fails(tmp_path: Path) -> None:
+def test_apply_pdm_restores_files_when_targeted_add_fails(tmp_path: Path, make_workspace) -> None:
     _write_fixture(tmp_path)
     manifest = tmp_path / "pyproject.toml"
     lockfile = tmp_path / "pdm.lock"
@@ -82,14 +72,14 @@ def test_apply_pdm_restores_files_when_targeted_add_fails(tmp_path: Path) -> Non
         patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
         patch("repo_ops_py_pdm.pdm._pdm_latest_version", return_value="3.0.0"),
     ):
-        remaining = apply_pdm(_ws(tmp_path))
+        remaining = apply_pdm(make_workspace(tmp_path, ecosystem="py", manager="pdm", label="demo"))
 
     assert remaining == [Change("requests", "2.31.0", "3.0.0")]
     assert manifest.read_bytes() == original_manifest
     assert lockfile.read_bytes() == original_lockfile
 
 
-def test_apply_pdm_adds_targeted_constraint(tmp_path: Path) -> None:
+def test_apply_pdm_adds_targeted_constraint(tmp_path: Path, make_workspace) -> None:
     _write_fixture(tmp_path)
     captured: list[list[str]] = []
 
@@ -108,14 +98,14 @@ def test_apply_pdm_adds_targeted_constraint(tmp_path: Path) -> None:
         patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
         patch("repo_ops_py_pdm.pdm._pdm_latest_version", return_value="3.0.0"),
     ):
-        remaining = apply_pdm(_ws(tmp_path))
+        remaining = apply_pdm(make_workspace(tmp_path, ecosystem="py", manager="pdm", label="demo"))
 
     assert remaining == []
     assert captured == [["pdm", "update"], ["pdm", "add", "requests@^3.0.0"]]
 
 
 def test_apply_pdm_restores_files_when_targeted_add_lands_wrong_version(
-    tmp_path: Path,
+    tmp_path: Path, make_workspace,
 ) -> None:
     _write_fixture(tmp_path)
     manifest = tmp_path / "pyproject.toml"
@@ -137,7 +127,7 @@ def test_apply_pdm_restores_files_when_targeted_add_lands_wrong_version(
         patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
         patch("repo_ops_py_pdm.pdm._pdm_latest_version", return_value="3.0.0"),
     ):
-        remaining = apply_pdm(_ws(tmp_path))
+        remaining = apply_pdm(make_workspace(tmp_path, ecosystem="py", manager="pdm", label="demo"))
 
     assert remaining == [Change("requests", "2.31.0", "3.0.0")]
     assert manifest.read_bytes() == original_manifest

@@ -13,20 +13,10 @@ from repo_ops_js_pnpm.pnpm import (
     clear_pnpm_audit_version_overrides,
     set_pnpm_audit_version_overrides,
 )
-from repo_ops_models import Change, Workspace
+from repo_ops_models import Change
 
 _RESOLVER_PATH = "repo_ops_js.guards.resolved_version_from_node_modules"
 _OUTDATED = "repo_ops_js_pnpm.pnpm._pnpm_outdated"
-
-
-def _ws() -> Workspace:
-    return Workspace(
-        path=Path("/tmp/proj"),
-        ecosystem="node",
-        manager="pnpm",
-        git_repo=Path("/tmp/proj"),
-        label="demo",
-    )
 
 
 def _fake_run_ok(cmd, cwd, timeout=600, env=None):
@@ -38,7 +28,7 @@ def _fake_run_ok(cmd, cwd, timeout=600, env=None):
 # ---------------------------------------------------------------------------
 
 
-def test_apply_pnpm_raises_on_ghost_bump_overrides_pin() -> None:
+def test_apply_pnpm_raises_on_ghost_bump_overrides_pin(tmp_path: Path, make_workspace) -> None:
     """Ghost bump: pnpm.overrides/resolutions keeps old version installed.
 
     pnpm update + pnpm install finish with rc=0, but node_modules still has
@@ -50,13 +40,13 @@ def test_apply_pnpm_raises_on_ghost_bump_overrides_pin() -> None:
         patch(_RESOLVER_PATH, return_value="1.6.0"),
         pytest.raises(RuntimeError) as exc_info,
     ):
-        apply_pnpm(_ws())
+        apply_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
     assert "axios" in str(exc_info.value)
     assert "1.6.0" in str(exc_info.value)
 
 
 def test_apply_pnpm_targeted_bump_defers_ghost_to_retry(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, make_workspace,
 ) -> None:
     """A blocked initial target is handed to targeted_bump_behind."""
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
@@ -84,14 +74,14 @@ def test_apply_pnpm_targeted_bump_defers_ghost_to_retry(
         ),
         patch("repo_ops_js_pnpm.pnpm.enforce_holds", return_value=[]),
     ):
-        behind = apply_pnpm(_ws())
+        behind = apply_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
 
     initial_guard.assert_not_called()
     assert retry_inputs == [[blocked]]
     assert behind == [blocked]
 
 
-def test_apply_pnpm_ok_when_resolved_at_target() -> None:
+def test_apply_pnpm_ok_when_resolved_at_target(tmp_path: Path, make_workspace) -> None:
     """Resolved version at or above target → no ghost bump raised."""
     for resolved in ("1.7.0", "1.8.0"):
         with (
@@ -99,20 +89,20 @@ def test_apply_pnpm_ok_when_resolved_at_target() -> None:
             patch(_OUTDATED, return_value=([Change("axios", "1.6.0", "1.7.0")], [])),
             patch(_RESOLVER_PATH, return_value=resolved),
         ):
-            apply_pnpm(_ws())  # must not raise
+            apply_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))  # must not raise
 
 
-def test_apply_pnpm_guard_skipped_when_resolver_returns_none() -> None:
+def test_apply_pnpm_guard_skipped_when_resolver_returns_none(tmp_path: Path, make_workspace) -> None:
     """When node_modules is absent/unreadable, the guard skips without raising."""
     with (
         patch("repo_ops_js_pnpm.pnpm.run", _fake_run_ok),
         patch(_OUTDATED, return_value=([Change("vue", "3.0.0", "3.5.0")], [])),
         patch(_RESOLVER_PATH, return_value=None),
     ):
-        apply_pnpm(_ws())  # must not raise
+        apply_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))  # must not raise
 
 
-def test_apply_pnpm_audit_override_absent_from_outdated() -> None:
+def test_apply_pnpm_audit_override_absent_from_outdated(tmp_path: Path, make_workspace) -> None:
     """#140: audit-safe pin must install even when outdated reports nothing."""
     calls: list[list[str]] = []
 
@@ -127,7 +117,7 @@ def test_apply_pnpm_audit_override_absent_from_outdated() -> None:
             patch(_OUTDATED, return_value=([], [])),
             patch(_RESOLVER_PATH, return_value="1.2.3"),
         ):
-            apply_pnpm(_ws())
+            apply_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
     finally:
         clear_pnpm_audit_version_overrides()
 

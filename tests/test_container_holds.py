@@ -6,17 +6,6 @@ from unittest.mock import patch
 import pytest
 from repo_ops_container import container
 from repo_ops_core.holds import HoldRule
-from repo_ops_models import Workspace
-
-
-def _ws(tmp_path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="container",
-        manager="container",
-        git_repo=tmp_path,
-        label="repo",
-    )
 
 
 def _dockerfile(
@@ -54,10 +43,10 @@ def _held_holds():
 
 
 def test_check_container_surfaces_clamp_when_upstream_latest_exceeds_ceiling(
-    tmp_path,
+    tmp_path, make_workspace,
 ) -> None:
     _dockerfile(tmp_path, ref="1.5.0")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
 
     with (
         _held_holds(),
@@ -76,10 +65,10 @@ def test_check_container_surfaces_clamp_when_upstream_latest_exceeds_ceiling(
 
 
 def test_check_container_matches_fully_qualified_hold_for_short_image(
-    tmp_path,
+    tmp_path, make_workspace,
 ) -> None:
     _dockerfile(tmp_path, ref="1.5.0", image="node")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
 
     with (
         _held_holds(),
@@ -98,11 +87,11 @@ def test_check_container_matches_fully_qualified_hold_for_short_image(
 
 
 def test_check_container_filters_digest_refresh_above_ceiling(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, make_workspace
 ) -> None:
     digest = "a" * 64
     _dockerfile(tmp_path, ref=f"1.5.0@sha256:{digest}")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
     monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
 
     with (
@@ -117,12 +106,12 @@ def test_check_container_filters_digest_refresh_above_ceiling(
 
 
 def test_apply_container_clamps_tag_and_digest_to_ceiling(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, make_workspace
 ) -> None:
     old_digest = "a" * 64
     new_digest = f"sha256:{'b' * 64}"
     dockerfile = _dockerfile(tmp_path, ref=f"1.5.0@sha256:{old_digest}")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
     monkeypatch.delenv("REPO_OPS_CONTAINER_REFRESH_SHA", raising=False)
 
     with (
@@ -145,9 +134,9 @@ def test_apply_container_clamps_tag_and_digest_to_ceiling(
     )
 
 
-def test_apply_container_raises_when_no_tag_satisfies_ceiling(tmp_path) -> None:
+def test_apply_container_raises_when_no_tag_satisfies_ceiling(tmp_path, make_workspace) -> None:
     _dockerfile(tmp_path, ref="1.5.0")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
 
     with (
         _held_holds(),
@@ -165,7 +154,7 @@ def test_apply_container_raises_when_no_tag_satisfies_ceiling(tmp_path) -> None:
 
 
 def test_apply_container_ignores_expired_hold_without_rewriting_config(
-    tmp_path,
+    tmp_path, make_workspace,
 ) -> None:
     dockerfile = _dockerfile(tmp_path, ref="1.5.0")
     hold_config = tmp_path / ".repo-ops.toml"
@@ -175,7 +164,7 @@ def test_apply_container_ignores_expired_hold_without_rewriting_config(
         encoding="utf-8",
     )
     original_hold_config = hold_config.read_bytes()
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
 
     with patch.object(
         container,

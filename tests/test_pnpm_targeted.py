@@ -16,16 +16,6 @@ _OUTDATED = "repo_ops_js_pnpm.pnpm._pnpm_outdated"
 _VUE_BEHIND = [Change("vue", "3.0.0", "4.0.0")]
 
 
-def _ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="node",
-        manager="pnpm",
-        git_repo=tmp_path,
-        label="demo",
-    )
-
-
 def _fake_run_ok(cmd, cwd, timeout=600, env=None):
     return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
@@ -43,12 +33,12 @@ def _seed(d: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_targeted_bump_disabled_by_default(tmp_path: Path, monkeypatch) -> None:
+def test_targeted_bump_disabled_by_default(tmp_path: Path, monkeypatch, make_workspace) -> None:
     _seed(tmp_path)
     monkeypatch.delenv("REPO_OPS_PNPM_TARGETED_BUMP", raising=False)
     run_mock = patch("repo_ops_js_pnpm.pnpm.run")
     with run_mock as mock_run:
-        applied, still_behind = targeted_bump_behind(_ws(tmp_path), _VUE_BEHIND)
+        applied, still_behind = targeted_bump_behind(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"), _VUE_BEHIND)
     assert applied == []
     assert still_behind == _VUE_BEHIND
     mock_run.assert_not_called()  # opt-in: no pnpm invocations when disabled
@@ -76,10 +66,10 @@ def _pnpm_update_run(tmp_path: Path, *, landed: str = "4.0.0", update_rc: int = 
     return _run
 
 
-def test_targeted_bump_moves_the_gap(tmp_path: Path, monkeypatch) -> None:
+def test_targeted_bump_moves_the_gap(tmp_path: Path, monkeypatch, make_workspace) -> None:
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
     with (
         patch("repo_ops_js_pnpm.pnpm.run", side_effect=_pnpm_update_run(tmp_path)),
         patch(_RESOLVER_PATH, return_value="4.0.0"),
@@ -94,11 +84,11 @@ def test_targeted_bump_moves_the_gap(tmp_path: Path, monkeypatch) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_targeted_bump_reverts_when_update_fails(tmp_path: Path, monkeypatch) -> None:
+def test_targeted_bump_reverts_when_update_fails(tmp_path: Path, monkeypatch, make_workspace) -> None:
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     original_lock = (tmp_path / "pnpm-lock.yaml").read_bytes()
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
     with (
         patch(
             "repo_ops_js_pnpm.pnpm.run",
@@ -113,12 +103,12 @@ def test_targeted_bump_reverts_when_update_fails(tmp_path: Path, monkeypatch) ->
     assert (tmp_path / "pnpm-lock.yaml").read_bytes() == original_lock
 
 
-def test_targeted_bump_reverts_ghost_bump(tmp_path: Path, monkeypatch) -> None:
+def test_targeted_bump_reverts_ghost_bump(tmp_path: Path, monkeypatch, make_workspace) -> None:
     """pnpm update exits 0 but node_modules still has the old version → revert."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     original_lock = (tmp_path / "pnpm-lock.yaml").read_bytes()
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
     with (
         patch("repo_ops_js_pnpm.pnpm.run", _fake_run_ok),
         # Resolver returns the old version — no advance (ghost bump).
@@ -131,13 +121,13 @@ def test_targeted_bump_reverts_ghost_bump(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_targeted_bump_reverts_when_resolver_returns_none(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """If node_modules is unreadable, treat it as no-op and revert."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     original_lock = (tmp_path / "pnpm-lock.yaml").read_bytes()
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
     with (
         patch("repo_ops_js_pnpm.pnpm.run", _fake_run_ok),
         patch(_RESOLVER_PATH, return_value=None),
@@ -153,11 +143,11 @@ def test_targeted_bump_reverts_when_resolver_returns_none(
 # ---------------------------------------------------------------------------
 
 
-def test_targeted_bump_uses_update_latest_command(tmp_path: Path, monkeypatch) -> None:
+def test_targeted_bump_uses_update_latest_command(tmp_path: Path, monkeypatch, make_workspace) -> None:
     """Verifies the exact pnpm command issued: pnpm update --latest <pkg>."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
     captured_cmds: list[list[str]] = []
 
     def _capture_run(cmd, cwd, timeout=600, env=None):
@@ -207,12 +197,12 @@ def test_apply_pnpm_returns_empty_behind_when_targeted_disabled(
     assert behind == [Change("vue", "3.0.0", "4.0.0")]
 
 
-def test_apply_pnpm_targeted_clears_behind(tmp_path: Path, monkeypatch) -> None:
+def test_apply_pnpm_targeted_clears_behind(tmp_path: Path, monkeypatch, make_workspace) -> None:
     """Targeted bump enabled + successful → apply_pnpm returns empty behind."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     monkeypatch.delenv("REPO_OPS_PNPM_UPDATE_LATEST", raising=False)
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
     with (
         patch("repo_ops_js_pnpm.pnpm.run", side_effect=_pnpm_update_run(tmp_path)),
         patch(_OUTDATED, return_value=([], [Change("vue", "3.0.0", "4.0.0")])),
@@ -223,13 +213,13 @@ def test_apply_pnpm_targeted_clears_behind(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_pnpm_targeted_bump_restores_snapshot_when_guard_raises(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """Guard raise must restore lockfile (npm/bun parity — F046)."""
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     _seed(tmp_path)
     original_lock = (tmp_path / "pnpm-lock.yaml").read_bytes()
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
 
     def fake_run(cmd, cwd, timeout=600, env=None):
         (tmp_path / "pnpm-lock.yaml").write_text("mutated-lock\n", encoding="utf-8")

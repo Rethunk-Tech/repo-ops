@@ -6,22 +6,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops_core.holds import HoldRule
-from repo_ops_models import Workspace
 from repo_ops_rust.rust import (
     _cargo_latest_direct_changes,
     apply_rust,
     check_rust,
 )
-
-
-def _ws(path: Path) -> Workspace:
-    return Workspace(
-        path=path,
-        ecosystem="rust",
-        manager="rust",
-        git_repo=path,
-        label="crate",
-    )
 
 
 def _proc(
@@ -35,14 +24,14 @@ def _proc(
 
 
 def test_check_rust_reports_direct_dependency_behind_latest(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     (tmp_path / "Cargo.toml").write_text(
         '[package]\nname = "demo"\nversion = "0.1.0"\n\n'
         '[dependencies]\nserde = "^1.0"\n',
         encoding="utf-8",
     )
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
 
     with (
         patch(
@@ -66,7 +55,7 @@ def test_check_rust_reports_direct_dependency_behind_latest(
     ]
 
 
-def test_cargo_latest_changes_cache_keys_on_manifest_digest(tmp_path: Path) -> None:
+def test_cargo_latest_changes_cache_keys_on_manifest_digest(tmp_path: Path, make_workspace) -> None:
     manifest = tmp_path / "Cargo.toml"
     initial = (
         b'[package]\nname = "demo"\nversion = "0.1.0"\n\n'
@@ -80,14 +69,14 @@ def test_cargo_latest_changes_cache_keys_on_manifest_digest(tmp_path: Path) -> N
         "repo_ops_rust.rust._cargo_registry_versions",
         return_value=("2.0.0",),
     ):
-        first = _cargo_latest_direct_changes(_ws(tmp_path))
+        first = _cargo_latest_direct_changes(make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate"))
         manifest.write_bytes(replacement)
         os.utime(
             manifest,
             ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
         )
         replacement_stat = manifest.stat()
-        second = _cargo_latest_direct_changes(_ws(tmp_path))
+        second = _cargo_latest_direct_changes(make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate"))
 
     assert replacement_stat.st_mtime_ns == original_stat.st_mtime_ns
     assert replacement_stat.st_size == original_stat.st_size
@@ -96,7 +85,7 @@ def test_cargo_latest_changes_cache_keys_on_manifest_digest(tmp_path: Path) -> N
 
 
 def test_check_rust_targeted_bump_defaults_off_without_config(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     monkeypatch.delenv("REPO_OPS_RUST_TARGETED_BUMP", raising=False)
     with (
@@ -106,13 +95,13 @@ def test_check_rust_targeted_bump_defaults_off_without_config(
         ),
         patch("repo_ops_rust.rust.load_global_config", return_value={}),
     ):
-        result = check_rust(_ws(tmp_path))
+        result = check_rust(make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate"))
 
     assert isinstance(result, list)
 
 
 def test_check_rust_targeted_bump_reads_repo_config(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     (tmp_path / "Cargo.toml").write_text(
         '[package]\nname = "demo"\nversion = "0.1.0"\n\n'
@@ -134,14 +123,14 @@ def test_check_rust_targeted_bump_reads_repo_config(
         ),
         patch("repo_ops_rust.rust.load_global_config", return_value={}),
     ):
-        result = check_rust(_ws(tmp_path))
+        result = check_rust(make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate"))
 
     assert isinstance(result, tuple)
     assert result[1][0].name == "serde"
 
 
 def test_workspace_dependency_targeted_bump_checks_and_rewrites(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     manifest = tmp_path / "Cargo.toml"
     lockfile = tmp_path / "Cargo.lock"
@@ -151,7 +140,7 @@ def test_workspace_dependency_targeted_bump_checks_and_rewrites(
         encoding="utf-8",
     )
     lockfile.write_text("serde 1.0.0\n", encoding="utf-8")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
 
     with (
@@ -186,7 +175,7 @@ def test_workspace_dependency_targeted_bump_checks_and_rewrites(
     assert 'serde = "2.0.0"' in manifest.read_text(encoding="utf-8")
 
 
-def test_apply_rust_reuses_check_registry_lookup(tmp_path: Path, monkeypatch) -> None:
+def test_apply_rust_reuses_check_registry_lookup(tmp_path: Path, monkeypatch, make_workspace) -> None:
     manifest = tmp_path / "Cargo.toml"
     lockfile = tmp_path / "Cargo.lock"
     manifest.write_text(
@@ -207,7 +196,7 @@ def test_apply_rust_reuses_check_registry_lookup(tmp_path: Path, monkeypatch) ->
         return _proc(list(cmd))
 
     monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     with (
         patch("repo_ops_rust.rust.run", side_effect=fake_run),
         patch(
@@ -223,7 +212,7 @@ def test_apply_rust_reuses_check_registry_lookup(tmp_path: Path, monkeypatch) ->
 
 
 def test_held_crate_stays_behind_latest_and_manifest_unchanged(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     manifest = tmp_path / "Cargo.toml"
     manifest.write_text(
@@ -235,7 +224,7 @@ def test_held_crate_stays_behind_latest_and_manifest_unchanged(
     lockfile.write_text("serde 1.0.0\n", encoding="utf-8")
     original_manifest = manifest.read_text(encoding="utf-8")
     hold = HoldRule(package="serde", max_version="1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "true")
 
     with (
@@ -277,7 +266,7 @@ def test_held_crate_stays_behind_latest_and_manifest_unchanged(
 
 
 def test_apply_rust_bumps_manifest_and_precise_updates_lock(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     manifest = tmp_path / "Cargo.toml"
     lockfile = tmp_path / "Cargo.lock"
@@ -303,7 +292,7 @@ def test_apply_rust_bumps_manifest_and_precise_updates_lock(
         ),
     ):
         monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
-        remaining = apply_rust(_ws(tmp_path))
+        remaining = apply_rust(make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate"))
 
     assert remaining == []
     assert 'serde = "^2.0.0"' in manifest.read_text(encoding="utf-8")
@@ -315,7 +304,7 @@ def test_apply_rust_bumps_manifest_and_precise_updates_lock(
 
 
 def test_apply_rust_restores_manifest_and_lock_on_precise_failure(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     manifest = tmp_path / "Cargo.toml"
     lockfile = tmp_path / "Cargo.lock"
@@ -340,7 +329,7 @@ def test_apply_rust_restores_manifest_and_lock_on_precise_failure(
         ),
     ):
         monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
-        remaining = apply_rust(_ws(tmp_path))
+        remaining = apply_rust(make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate"))
 
     assert [(change.name, change.to) for change in remaining or []] == [
         ("serde", "2.0.0")
@@ -350,7 +339,7 @@ def test_apply_rust_restores_manifest_and_lock_on_precise_failure(
 
 
 def test_rust_targeted_bump_skips_non_registry_dependencies(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     (tmp_path / "Cargo.toml").write_text(
         '[package]\nname = "demo"\nversion = "0.1.0"\n\n'
@@ -378,7 +367,7 @@ def test_rust_targeted_bump_skips_non_registry_dependencies(
         ),
     ):
         monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
-        result = check_rust(_ws(tmp_path))
+        result = check_rust(make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate"))
 
     assert result == ([], [])
     assert registry_calls == []

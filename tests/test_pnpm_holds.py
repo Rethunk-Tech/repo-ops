@@ -15,22 +15,12 @@ from repo_ops_js_pnpm.pnpm import (
     set_pnpm_audit_version_overrides,
     targeted_bump_behind,
 )
-from repo_ops_models import Change, Workspace
+from repo_ops_models import Change
 
 _RESOLVER_PATH = "repo_ops_lockfiles.snapshots.resolved_version_from_node_modules"
 _OUTDATED = "repo_ops_js_pnpm.pnpm._pnpm_outdated"
 _GLOBAL_HOLDS_CACHE = "repo_ops_js.holds._global_holds_cached"
 _REPO_HOLDS_CACHE = "repo_ops_js.holds._repo_holds_cached"
-
-
-def _ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="node",
-        manager="pnpm",
-        git_repo=tmp_path,
-        label="demo",
-    )
 
 
 def _seed(d: Path, *, pkg_content: str | None = None) -> None:
@@ -55,12 +45,12 @@ def _no_repo_holds():
 
 
 def test_targeted_bump_uses_hold_ceiling_instead_of_latest(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """A held package's targeted bump targets `pnpm add pkg@<=ceiling`, not --latest."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
     captured_cmds: list[list[str]] = []
 
     def _fake_run(cmd, cwd, timeout=600, env=None):
@@ -80,12 +70,12 @@ def test_targeted_bump_uses_hold_ceiling_instead_of_latest(
 
 
 def test_targeted_bump_audit_override_wins_over_hold_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """A security remediation (audit --fix) must not be blocked by a hold."""
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
     captured_cmds: list[list[str]] = []
 
     def _fake_run(cmd, cwd, timeout=600, env=None):
@@ -108,7 +98,7 @@ def test_targeted_bump_audit_override_wins_over_hold_ceiling(
 
 
 def test_check_pnpm_does_not_promote_held_package_past_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     with (
@@ -118,13 +108,13 @@ def test_check_pnpm_does_not_promote_held_package_past_ceiling(
             return_value=([], [Change("typescript", "6.5.0", "7.0.0")]),
         ),
     ):
-        changes, behind = check_pnpm(_ws(tmp_path))
+        changes, behind = check_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
     assert "typescript" not in {c.name for c in changes}
     assert behind == [Change("typescript", "6.5.0", "7.0.0")]
 
 
 def test_check_pnpm_promotes_held_package_within_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """A behind-latest bump that stays within the ceiling is still promoted."""
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
@@ -135,13 +125,13 @@ def test_check_pnpm_promotes_held_package_within_ceiling(
             return_value=([], [Change("typescript", "6.5.0", "6.9.0")]),
         ),
     ):
-        changes, behind = check_pnpm(_ws(tmp_path))
+        changes, behind = check_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
     assert "typescript" in {c.name for c in changes}
     assert behind == []
 
 
 def test_apply_pnpm_clamps_package_already_past_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """A package already on 7.x when a hold is added gets clamped back down.
 
@@ -151,7 +141,7 @@ def test_apply_pnpm_clamps_package_already_past_ceiling(
     """
     _seed(tmp_path, pkg_content=json.dumps({"dependencies": {"typescript": "^7.0.0"}}))
     monkeypatch.delenv("REPO_OPS_PNPM_TARGETED_BUMP", raising=False)
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
 
     nm_dir = tmp_path / "node_modules" / "typescript"
     nm_dir.mkdir(parents=True)
@@ -180,12 +170,12 @@ def test_apply_pnpm_clamps_package_already_past_ceiling(
 
 
 def test_apply_pnpm_raises_when_clamp_cannot_satisfy_ceiling(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """A corrective install that still can't land under ceiling is a loud failure."""
     _seed(tmp_path, pkg_content=json.dumps({"dependencies": {"typescript": "^7.0.0"}}))
     monkeypatch.delenv("REPO_OPS_PNPM_TARGETED_BUMP", raising=False)
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
 
     nm_dir = tmp_path / "node_modules" / "typescript"
     nm_dir.mkdir(parents=True)
@@ -224,12 +214,12 @@ def _seed_is_odd_pin(d: Path) -> None:
 
 
 def test_targeted_bump_releases_unheld_overrides_pin(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """An unheld package's pnpm overrides pin is removed before the bump."""
     _seed_is_odd_pin(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
     captured_cmds: list[list[str]] = []
 
     def _fake_run(cmd, cwd, timeout=600, env=None):
@@ -254,11 +244,11 @@ def test_targeted_bump_releases_unheld_overrides_pin(
     assert "is-odd" not in pkg_after.get("pnpm", {}).get("overrides", {})
 
 
-def test_targeted_bump_keeps_held_overrides_pin(tmp_path: Path, monkeypatch) -> None:
+def test_targeted_bump_keeps_held_overrides_pin(tmp_path: Path, monkeypatch, make_workspace) -> None:
     """An active hold leaves the package's pnpm overrides pin in place."""
     _seed_is_odd_pin(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
 
     def _fake_run(cmd, cwd, timeout=600, env=None):
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")

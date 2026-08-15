@@ -6,22 +6,12 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from repo_ops_models import Workspace, WorkspaceResult
+from repo_ops_models import WorkspaceResult
 from repo_ops_upgrade_remediations_py import remediations as py_rem
 
 
-def _ws(tmp_path: Path, ecosystem: str = "py") -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem=ecosystem,
-        manager="uv",
-        git_repo=tmp_path,
-        label="test",
-    )
-
-
-def _result(tmp_path: Path, ecosystem: str = "py") -> WorkspaceResult:
-    return WorkspaceResult(workspace=_ws(tmp_path, ecosystem))
+def _result(tmp_path: Path, make_workspace, ecosystem: str = "py") -> WorkspaceResult:
+    return WorkspaceResult(workspace=make_workspace(tmp_path, ecosystem=ecosystem, manager="uv", label="test"))
 
 
 def _fake_change(name: str) -> Any:
@@ -33,74 +23,74 @@ def _fake_change(name: str) -> Any:
 # ── detect_ruff ─────────────────────────────────────────────────────────────
 
 
-def test_detect_ruff_false_for_node_ecosystem(tmp_path: Path) -> None:
-    ws = _ws(tmp_path, ecosystem="node")
+def test_detect_ruff_false_for_node_ecosystem(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="node", manager="uv", label="test")
     ctx: dict[str, Any] = {"changes": [_fake_change("react")], "apply": True}
     assert py_rem.detect_ruff(ws, ctx) is False
 
 
-def test_detect_ruff_false_for_go_ecosystem(tmp_path: Path) -> None:
-    ws = _ws(tmp_path, ecosystem="go")
+def test_detect_ruff_false_for_go_ecosystem(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="go", manager="uv", label="test")
     ctx: dict[str, Any] = {"changes": [_fake_change("golang.org/x/net")], "apply": True}
     assert py_rem.detect_ruff(ws, ctx) is False
 
 
-def test_detect_ruff_false_python_no_ruff_config(tmp_path: Path) -> None:
+def test_detect_ruff_false_python_no_ruff_config(tmp_path: Path, make_workspace) -> None:
     # python workspace but no ruff.toml / [tool.ruff]
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'foo'\n")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
     ctx: dict[str, Any] = {"changes": [_fake_change("httpx")], "apply": True}
     assert py_rem.detect_ruff(ws, ctx) is False
 
 
-def test_detect_ruff_true_via_ruff_toml(tmp_path: Path) -> None:
+def test_detect_ruff_true_via_ruff_toml(tmp_path: Path, make_workspace) -> None:
     (tmp_path / "ruff.toml").write_text("line-length = 88\n")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
     ctx: dict[str, Any] = {"changes": [_fake_change("httpx")], "apply": True}
     with patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"):
         assert py_rem.detect_ruff(ws, ctx) is True
 
 
-def test_detect_ruff_true_via_dot_ruff_toml(tmp_path: Path) -> None:
+def test_detect_ruff_true_via_dot_ruff_toml(tmp_path: Path, make_workspace) -> None:
     (tmp_path / ".ruff.toml").write_text("line-length = 88\n")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
     ctx: dict[str, Any] = {"changes": [_fake_change("httpx")], "apply": True}
     with patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"):
         assert py_rem.detect_ruff(ws, ctx) is True
 
 
-def test_detect_ruff_true_via_pyproject_tool_ruff(tmp_path: Path) -> None:
+def test_detect_ruff_true_via_pyproject_tool_ruff(tmp_path: Path, make_workspace) -> None:
     (tmp_path / "pyproject.toml").write_text(
         "[project]\nname = 'foo'\n\n[tool.ruff]\nline-length = 88\n"
     )
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
     ctx: dict[str, Any] = {"changes": [_fake_change("httpx")], "apply": True}
     with patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"):
         assert py_rem.detect_ruff(ws, ctx) is True
 
 
-def test_detect_ruff_false_when_no_changes(tmp_path: Path) -> None:
+def test_detect_ruff_false_when_no_changes(tmp_path: Path, make_workspace) -> None:
     """No changes AND apply=True → don't trigger (nothing changed to reformat)."""
     (tmp_path / "ruff.toml").write_text("line-length = 88\n")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
     ctx: dict[str, Any] = {"changes": [], "apply": True}
     with patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"):
         assert py_rem.detect_ruff(ws, ctx) is False
 
 
-def test_detect_ruff_true_plan_mode_no_changes(tmp_path: Path) -> None:
+def test_detect_ruff_true_plan_mode_no_changes(tmp_path: Path, make_workspace) -> None:
     """Plan mode (apply=False) with empty changes still triggers for report."""
     (tmp_path / "ruff.toml").write_text("line-length = 88\n")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
     ctx: dict[str, Any] = {"changes": [], "apply": False}
     with patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"):
         assert py_rem.detect_ruff(ws, ctx) is True
 
 
-def test_detect_ruff_false_when_ruff_absent(tmp_path: Path) -> None:
+def test_detect_ruff_false_when_ruff_absent(tmp_path: Path, make_workspace) -> None:
     """Gracefully skip detection when the ruff binary is not installed."""
     (tmp_path / "ruff.toml").write_text("line-length = 88\n")
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
     ctx: dict[str, Any] = {"changes": [_fake_change("httpx")], "apply": True}
     with patch.object(py_rem.shutil, "which", return_value=None):
         assert py_rem.detect_ruff(ws, ctx) is False
@@ -109,8 +99,8 @@ def test_detect_ruff_false_when_ruff_absent(tmp_path: Path) -> None:
 # ── report_ruff ──────────────────────────────────────────────────────────────
 
 
-def test_report_ruff_returns_useful_message(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_report_ruff_returns_useful_message(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
     ctx: dict[str, Any] = {"changes": [], "apply": False}
     lines = py_rem.report_ruff(ws, ctx)
     assert len(lines) == 1
@@ -129,8 +119,8 @@ def _make_proc(returncode: int, stdout: str = "", stderr: str = "") -> MagicMock
     return p
 
 
-def test_apply_ruff_success(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_apply_ruff_success(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
     ctx: dict[str, Any] = {"changes": [], "apply": True}
     fix_ok = _make_proc(0, stdout="All checks passed")
     fmt_ok = _make_proc(0, stdout="reformatted 0 files")
@@ -150,8 +140,8 @@ def test_apply_ruff_success(tmp_path: Path) -> None:
     assert "format" in second_cmd
 
 
-def test_apply_ruff_check_fails(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_apply_ruff_check_fails(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
     ctx: dict[str, Any] = {}
     fix_fail = _make_proc(1, stderr="E501 line too long")
     fmt_ok = _make_proc(0)
@@ -165,8 +155,8 @@ def test_apply_ruff_check_fails(tmp_path: Path) -> None:
     assert "E501" in detail
 
 
-def test_apply_ruff_format_fails(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_apply_ruff_format_fails(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
     ctx: dict[str, Any] = {}
     fix_ok = _make_proc(0)
     fmt_fail = _make_proc(1, stderr="format error")
@@ -179,8 +169,8 @@ def test_apply_ruff_format_fails(tmp_path: Path) -> None:
     assert "format" in detail
 
 
-def test_apply_ruff_both_fail_detail_covers_both(tmp_path: Path) -> None:
-    ws = _ws(tmp_path)
+def test_apply_ruff_both_fail_detail_covers_both(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
     ctx: dict[str, Any] = {}
     fix_fail = _make_proc(1, stderr="lint error")
     fmt_fail = _make_proc(1, stderr="format error")
@@ -197,9 +187,9 @@ def test_apply_ruff_both_fail_detail_covers_both(tmp_path: Path) -> None:
 # ── run_remediations integration (via run_hooks) ─────────────────────────────
 
 
-def test_run_remediations_plan_mode(tmp_path: Path) -> None:
+def test_run_remediations_plan_mode(tmp_path: Path, make_workspace) -> None:
     (tmp_path / "ruff.toml").write_text("line-length = 88\n")
-    result = _result(tmp_path)
+    result = _result(tmp_path, make_workspace=make_workspace)
     result.changes = [_fake_change("httpx")]
 
     fake = py_rem.RemediationHook(
@@ -219,9 +209,9 @@ def test_run_remediations_plan_mode(tmp_path: Path) -> None:
     assert "REMEDIATE ruff" in result.remediations[0]["detail"]
 
 
-def test_run_remediations_apply_mode(tmp_path: Path) -> None:
+def test_run_remediations_apply_mode(tmp_path: Path, make_workspace) -> None:
     (tmp_path / "ruff.toml").write_text("line-length = 88\n")
-    result = _result(tmp_path)
+    result = _result(tmp_path, make_workspace=make_workspace)
     result.changes = [_fake_change("httpx")]
 
     fix_ok = _make_proc(0)
@@ -245,9 +235,9 @@ def test_run_remediations_apply_mode(tmp_path: Path) -> None:
     assert result.status == "ok"
 
 
-def test_ruff_skipped_in_skip_set(tmp_path: Path) -> None:
+def test_ruff_skipped_in_skip_set(tmp_path: Path, make_workspace) -> None:
     (tmp_path / "ruff.toml").write_text("")
-    result = _result(tmp_path)
+    result = _result(tmp_path, make_workspace=make_workspace)
     result.changes = [_fake_change("httpx")]
 
     fake = py_rem.RemediationHook(

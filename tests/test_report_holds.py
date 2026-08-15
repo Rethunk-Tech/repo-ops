@@ -11,18 +11,8 @@ import io
 from pathlib import Path
 from unittest.mock import patch
 
-from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
+from repo_ops_models import Change, RepoBundle, WorkspaceResult
 from repo_ops_upgrade.report import build_run_summary, print_human_report
-
-
-def _ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="node",
-        manager="npm",
-        git_repo=tmp_path,
-        label="demo",
-    )
 
 
 def _bundle(tmp_path: Path, wr: WorkspaceResult) -> RepoBundle:
@@ -50,12 +40,12 @@ def _render_and_summarize(tmp_path: Path, bundle: RepoBundle) -> tuple[str, dict
     return buf.getvalue(), summary
 
 
-def test_held_behind_latest_row_header_and_summary(tmp_path: Path) -> None:
+def test_held_behind_latest_row_header_and_summary(tmp_path: Path, make_workspace) -> None:
     """A repo-scoped hold that declines a bump is named in the row, the
     section header gets a held count, and the summary counts it."""
     _write_hold_config(tmp_path, until="2026-11-01")
     wr = WorkspaceResult(
-        workspace=_ws(tmp_path),
+        workspace=make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"),
         behind_latest=[Change("typescript", "5.9.0", "7.0.0")],
     )
     out, summary = _render_and_summarize(tmp_path, _bundle(tmp_path, wr))
@@ -67,11 +57,11 @@ def test_held_behind_latest_row_header_and_summary(tmp_path: Path) -> None:
     assert summary["packages_behind_latest"] == 1
 
 
-def test_no_holds_configured_output_and_summary_unchanged(tmp_path: Path) -> None:
+def test_no_holds_configured_output_and_summary_unchanged(tmp_path: Path, make_workspace) -> None:
     """No `.repo-ops.toml`/pyproject.toml anywhere (the common case) — row,
     header, and summary must render exactly as before hold visibility."""
     wr = WorkspaceResult(
-        workspace=_ws(tmp_path),
+        workspace=make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"),
         behind_latest=[Change("typescript", "5.9.0", "7.0.0")],
     )
     out, summary = _render_and_summarize(tmp_path, _bundle(tmp_path, wr))

@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import io
 from datetime import date, timedelta
-from pathlib import Path
 from unittest.mock import patch
 
 from repo_ops_core import state as state_mod
 from repo_ops_core.state import cache_get_staleness, cache_record_behind_latest
-from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
+from repo_ops_models import Change, RepoBundle, WorkspaceResult
 from repo_ops_upgrade.orchestration import process_workspace
 from repo_ops_upgrade.report import (
     build_json_payload,
@@ -36,16 +35,6 @@ def _new_run() -> None:
     """Simulate a fresh repo-ops process: persist, drop cache, new rotation."""
     state_mod._flush_cache()
     _reset_module_cache()
-
-
-def _ws(repo: Path, manager: str = "npm") -> Workspace:
-    return Workspace(
-        path=repo,
-        ecosystem="node",
-        manager=manager,
-        git_repo=repo,
-        label="test-repo",
-    )
 
 
 def test_first_run_records_and_second_run_scores_delta(tmp_path, monkeypatch):
@@ -124,11 +113,11 @@ def test_zero_behind_run_resets_aging_and_prunes(tmp_path, monkeypatch):
     _reset_module_cache()
 
 
-def test_process_workspace_records_plan_behind_latest(tmp_path, monkeypatch):
+def test_process_workspace_records_plan_behind_latest(tmp_path, monkeypatch, make_workspace):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("REPO_OPS_NO_PROGRESS", "1")
     _reset_module_cache()
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="node", manager="npm", label="test-repo")
     checked = WorkspaceResult(
         workspace=ws,
         status="ok",
@@ -158,7 +147,7 @@ def test_process_workspace_records_plan_behind_latest(tmp_path, monkeypatch):
     _reset_module_cache()
 
 
-def test_report_surfaces_score_delta_and_footer_top3(tmp_path, monkeypatch):
+def test_report_surfaces_score_delta_and_footer_top3(tmp_path, monkeypatch, make_workspace):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     _reset_module_cache()
     repo = tmp_path / "repo"
@@ -166,7 +155,7 @@ def test_report_surfaces_score_delta_and_footer_top3(tmp_path, monkeypatch):
     # report layer's real date.today() yields a deterministic score.
     cache_record_behind_latest(repo, "npm", 4, date.today() - timedelta(days=10))
 
-    ws = _ws(repo)
+    ws = make_workspace(repo, ecosystem="node", manager="npm", label="test-repo")
     bundle = RepoBundle(
         git_repo=repo,
         label="test-repo",
@@ -195,7 +184,7 @@ def test_report_surfaces_score_delta_and_footer_top3(tmp_path, monkeypatch):
     _reset_module_cache()
 
 
-def test_empty_store_keeps_report_output_unchanged(tmp_path, monkeypatch):
+def test_empty_store_keeps_report_output_unchanged(tmp_path, monkeypatch, make_workspace):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     _reset_module_cache()
     repo = tmp_path / "repo"
@@ -204,7 +193,7 @@ def test_empty_store_keeps_report_output_unchanged(tmp_path, monkeypatch):
         label="test-repo",
         workspaces=[
             WorkspaceResult(
-                workspace=_ws(repo),
+                workspace=make_workspace(repo, ecosystem="node", manager="npm", label="test-repo"),
                 behind_latest=[Change(name="pkg", from_ver="1.0.0", to="2.0.0")],
             )
         ],

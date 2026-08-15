@@ -12,27 +12,17 @@ from repo_ops_js_npm.npm import (
     clear_npm_audit_version_overrides,
     set_npm_audit_version_overrides,
 )
-from repo_ops_models import Change, Workspace
+from repo_ops_models import Change
 
 _RESOLVER_PATH = "repo_ops_js.guards.resolved_version_from_node_modules"
 _OUTDATED = "repo_ops_js_npm.npm._npm_outdated"
-
-
-def _ws() -> Workspace:
-    return Workspace(
-        path=Path("/tmp/proj"),
-        ecosystem="node",
-        manager="npm",
-        git_repo=Path("/tmp/proj"),
-        label="demo",
-    )
 
 
 def _fake_run_ok(cmd, cwd, timeout=600, env=None):
     return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
 
-def test_apply_npm_raises_on_ghost_bump_overrides_pin() -> None:
+def test_apply_npm_raises_on_ghost_bump_overrides_pin(tmp_path: Path, make_workspace) -> None:
     """Ghost bump: overrides/exact-pin keeps old version installed after npm update.
 
     npm update + npm install finish with rc=0, but node_modules still has the
@@ -45,12 +35,12 @@ def test_apply_npm_raises_on_ghost_bump_overrides_pin() -> None:
         patch(_RESOLVER_PATH, return_value="4.17.20"),
         pytest.raises(RuntimeError) as exc_info,
     ):
-        apply_npm(_ws())
+        apply_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))
     assert "lodash" in str(exc_info.value)
     assert "4.17.20" in str(exc_info.value)
 
 
-def test_apply_npm_targeted_bump_defers_ghost_to_retry() -> None:
+def test_apply_npm_targeted_bump_defers_ghost_to_retry(tmp_path: Path, make_workspace) -> None:
     """Targeted bump mode sends a ghost target to the per-package retry."""
     change = Change("lodash", "4.17.20", "4.17.21")
     with (
@@ -64,14 +54,14 @@ def test_apply_npm_targeted_bump_defers_ghost_to_retry() -> None:
             return_value=([], [change]),
         ) as retry,
     ):
-        assert apply_npm(_ws()) == [change]
+        assert apply_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo")) == [change]
 
     retry.assert_called_once()
     assert retry.call_args.args[1] == [change]
     guard.assert_not_called()
 
 
-def test_apply_npm_ok_when_resolved_at_target() -> None:
+def test_apply_npm_ok_when_resolved_at_target(tmp_path: Path, make_workspace) -> None:
     """Resolved version at or above target → no ghost bump raised."""
     for resolved in ("4.17.21", "4.17.22"):
         with (
@@ -81,10 +71,10 @@ def test_apply_npm_ok_when_resolved_at_target() -> None:
             ),
             patch(_RESOLVER_PATH, return_value=resolved),
         ):
-            apply_npm(_ws())  # must not raise
+            apply_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))  # must not raise
 
 
-def test_apply_npm_noop_when_nothing_outdated() -> None:
+def test_apply_npm_noop_when_nothing_outdated(tmp_path: Path, make_workspace) -> None:
     """No changes reported → apply still runs npm update/install (no short-circuit)."""
     calls: list[list[str]] = []
 
@@ -96,24 +86,24 @@ def test_apply_npm_noop_when_nothing_outdated() -> None:
         patch("repo_ops_js_npm.npm.run", fake_run),
         patch(_OUTDATED, return_value=([], [])),
     ):
-        apply_npm(_ws())
+        apply_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))
 
     # When outdated returns no changes, apply_npm still runs npm update/install
     # (it doesn't short-circuit like bun does), but the guard is skipped.
     assert any(c[:2] == ["npm", "update"] for c in calls)
 
 
-def test_apply_npm_guard_skipped_when_resolver_returns_none() -> None:
+def test_apply_npm_guard_skipped_when_resolver_returns_none(tmp_path: Path, make_workspace) -> None:
     """When node_modules is absent/unreadable, the guard skips without raising."""
     with (
         patch("repo_ops_js_npm.npm.run", _fake_run_ok),
         patch(_OUTDATED, return_value=([Change("react", "18.0.0", "18.3.0")], [])),
         patch(_RESOLVER_PATH, return_value=None),
     ):
-        apply_npm(_ws())  # must not raise
+        apply_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))  # must not raise
 
 
-def test_apply_npm_audit_override_absent_from_outdated() -> None:
+def test_apply_npm_audit_override_absent_from_outdated(tmp_path: Path, make_workspace) -> None:
     """#140: audit-safe pin must install even when outdated reports nothing."""
     calls: list[list[str]] = []
 
@@ -128,7 +118,7 @@ def test_apply_npm_audit_override_absent_from_outdated() -> None:
             patch(_OUTDATED, return_value=([], [])),
             patch(_RESOLVER_PATH, return_value="1.2.3"),
         ):
-            apply_npm(_ws())
+            apply_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))
     finally:
         clear_npm_audit_version_overrides()
 

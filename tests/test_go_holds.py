@@ -23,12 +23,6 @@ _REPO_HOLDS_CACHE = "repo_ops_go.go._repo_holds_cached"
 _MODULE = "example.com/a"
 
 
-def _ws(tmp_path) -> Workspace:
-    return Workspace(
-        path=tmp_path, ecosystem="go", manager="go", git_repo=tmp_path, label="mod"
-    )
-
-
 def _held_rule(**overrides) -> HoldRule:
     defaults = {"package": _MODULE, "max_version": "1.5"}
     defaults.update(overrides)
@@ -76,8 +70,8 @@ def test_go_ceiling_query_uses_shared_hold_padding(
     assert _go_ceiling_query(max_version) == expected
 
 
-def test_changes_from_go_list_json_then_filter_held_past_ceiling(tmp_path) -> None:
-    ws = _ws(tmp_path)
+def test_changes_from_go_list_json_then_filter_held_past_ceiling(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     line = json.dumps(
         {
             "Path": _MODULE,
@@ -96,8 +90,8 @@ def test_changes_from_go_list_json_then_filter_held_past_ceiling(tmp_path) -> No
     assert filtered == []
 
 
-def test_filter_held_go_changes_keeps_within_ceiling(tmp_path) -> None:
-    ws = _ws(tmp_path)
+def test_filter_held_go_changes_keeps_within_ceiling(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     line = json.dumps(
         {
             "Path": _MODULE,
@@ -115,8 +109,8 @@ def test_filter_held_go_changes_keeps_within_ceiling(tmp_path) -> None:
     assert filtered == changes
 
 
-def test_explicit_go_get_targets_skips_held_target_past_ceiling(tmp_path) -> None:
-    ws = _ws(tmp_path)
+def test_explicit_go_get_targets_skips_held_target_past_ceiling(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     line = json.dumps(
         {
             "Path": _MODULE,
@@ -132,8 +126,8 @@ def test_explicit_go_get_targets_skips_held_target_past_ceiling(tmp_path) -> Non
         assert _explicit_go_get_targets(ws) == []
 
 
-def test_enforce_version_ceilings_clamps_resolved_above_ceiling(tmp_path) -> None:
-    ws = _ws(tmp_path)
+def test_enforce_version_ceilings_clamps_resolved_above_ceiling(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     versions = {_MODULE: "v1.8.0"}
 
     def fake_run(cmd, cwd, timeout=0):
@@ -163,8 +157,8 @@ def test_enforce_version_ceilings_clamps_resolved_above_ceiling(tmp_path) -> Non
     assert versions[_MODULE] == "v1.5.0"
 
 
-def test_enforce_version_ceilings_raises_when_still_above_ceiling(tmp_path) -> None:
-    ws = _ws(tmp_path)
+def test_enforce_version_ceilings_raises_when_still_above_ceiling(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
         if cmd[:3] == ["go", "mod", "edit"]:
@@ -204,11 +198,11 @@ def test_workspace_rel_falls_back_when_path_outside_git_repo(tmp_path) -> None:
 
 
 def test_enforce_version_ceilings_skips_unheld_and_already_compliant(
-    tmp_path,
+    tmp_path, make_workspace,
 ) -> None:
     """Mixed candidates: no matching rule, and held-but-already-compliant —
     neither triggers a corrective `go get`."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     unheld = "example.com/unheld"
     compliant = "example.com/compliant"
     get_calls: list[list[str]] = []
@@ -247,11 +241,11 @@ def test_enforce_version_ceilings_skips_unheld_and_already_compliant(
 
 
 def test_enforce_version_ceilings_raises_when_corrective_get_command_fails(
-    tmp_path,
+    tmp_path, make_workspace,
 ) -> None:
     """Distinct failure mode from 'still above ceiling after get': the
     corrective `go get` command itself errors out (e.g. network failure)."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
         if cmd[:3] == ["go", "mod", "edit"]:
@@ -277,10 +271,10 @@ def test_enforce_version_ceilings_raises_when_corrective_get_command_fails(
         _enforce_version_ceilings(ws)
 
 
-def test_apply_go_patch_mode_invokes_enforce_ceilings(tmp_path, monkeypatch) -> None:
+def test_apply_go_patch_mode_invokes_enforce_ceilings(tmp_path, monkeypatch, make_workspace) -> None:
     """apply_go's default (patch) mode calls the clamp-down safety net."""
     monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     calls: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0, env=None):

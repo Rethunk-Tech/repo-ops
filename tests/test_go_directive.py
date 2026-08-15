@@ -28,21 +28,10 @@ from repo_ops_go.go import (
     check_go,
     register_go_work_dir,
 )
-from repo_ops_models import Workspace
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem="go",
-        manager="go",
-        git_repo=tmp_path,
-        label="mod",
-    )
 
 
 def _ok_proc(stdout: str = "", stderr: str = ""):
@@ -168,9 +157,9 @@ def test_plan_go_work_no_go_directive_in_work(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_check_go_includes_work_directive_change(tmp_path: Path) -> None:
+def test_check_go_includes_work_directive_change(tmp_path: Path, make_workspace) -> None:
     """check_go prepends go.work directive change when go.work is stale."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     # Register a go.work dir and write fixture files.
     go_work_dir = tmp_path / "workspace"
     go_work_dir.mkdir()
@@ -200,9 +189,9 @@ def test_check_go_includes_work_directive_change(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_apply_go_work_directive_runs_when_stale(tmp_path: Path) -> None:
+def test_apply_go_work_directive_runs_when_stale(tmp_path: Path, make_workspace) -> None:
     """_apply_go_work_directive calls go work use when go.work is behind a member."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     go_work_dir = tmp_path / "workspace"
     go_work_dir.mkdir()
     mod = go_work_dir / "api"
@@ -225,9 +214,9 @@ def test_apply_go_work_directive_runs_when_stale(tmp_path: Path) -> None:
     )
 
 
-def test_apply_go_work_directive_skips_when_current(tmp_path: Path) -> None:
+def test_apply_go_work_directive_skips_when_current(tmp_path: Path, make_workspace) -> None:
     """_apply_go_work_directive does NOT call go work use when directive is current."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     go_work_dir = tmp_path / "workspace"
     go_work_dir.mkdir()
     mod = go_work_dir / "api"
@@ -248,9 +237,9 @@ def test_apply_go_work_directive_skips_when_current(tmp_path: Path) -> None:
     assert ["go", "work", "use"] not in calls_recorded
 
 
-def test_apply_go_work_directive_no_go_work_dir_registered(tmp_path: Path) -> None:
+def test_apply_go_work_directive_no_go_work_dir_registered(tmp_path: Path, make_workspace) -> None:
     """_apply_go_work_directive is a no-op when no go.work dir is registered."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     calls_recorded: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0):
@@ -263,9 +252,9 @@ def test_apply_go_work_directive_no_go_work_dir_registered(tmp_path: Path) -> No
     assert calls_recorded == []
 
 
-def test_apply_go_work_directive_raises_on_failure(tmp_path: Path) -> None:
+def test_apply_go_work_directive_raises_on_failure(tmp_path: Path, make_workspace) -> None:
     """When go work use fails, RuntimeError is raised."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     go_work_dir = tmp_path / "workspace"
     go_work_dir.mkdir()
     mod = go_work_dir / "api"
@@ -286,9 +275,9 @@ def test_apply_go_work_directive_raises_on_failure(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_plan_fleet_directive_no_env_vars(tmp_path: Path) -> None:
+def test_plan_fleet_directive_no_env_vars(tmp_path: Path, make_workspace) -> None:
     """No env vars set → empty list (zero behaviour change)."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     with patch.dict("os.environ", {}, clear=False):
         # Ensure both vars are absent.
         for k in (GO_DIRECTIVE_ENV, GO_TOOLCHAIN_ENV):
@@ -299,9 +288,9 @@ def test_plan_fleet_directive_no_env_vars(tmp_path: Path) -> None:
     assert changes == []
 
 
-def test_plan_fleet_directive_go_upgrade_needed(tmp_path: Path) -> None:
+def test_plan_fleet_directive_go_upgrade_needed(tmp_path: Path, make_workspace) -> None:
     """REPO_OPS_GO_DIRECTIVE=1.25 with module at 1.22 → one Change."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
         return _ok_proc(stdout=_gomod_json("1.22"))
@@ -318,9 +307,9 @@ def test_plan_fleet_directive_go_upgrade_needed(tmp_path: Path) -> None:
     assert changes[0].to == "1.25"
 
 
-def test_plan_fleet_directive_already_current(tmp_path: Path) -> None:
+def test_plan_fleet_directive_already_current(tmp_path: Path, make_workspace) -> None:
     """Module already at target → no change emitted."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
         return _ok_proc(stdout=_gomod_json("1.25"))
@@ -334,9 +323,9 @@ def test_plan_fleet_directive_already_current(tmp_path: Path) -> None:
     assert changes == []
 
 
-def test_plan_fleet_directive_toolchain_upgrade_needed(tmp_path: Path) -> None:
+def test_plan_fleet_directive_toolchain_upgrade_needed(tmp_path: Path, make_workspace) -> None:
     """REPO_OPS_GO_TOOLCHAIN=1.25.10 with module at 1.25.3 → one Change."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
         return _ok_proc(stdout=_gomod_json("1.25", toolchain="1.25.3"))
@@ -353,9 +342,9 @@ def test_plan_fleet_directive_toolchain_upgrade_needed(tmp_path: Path) -> None:
     assert changes[0].to == "1.25.10"
 
 
-def test_plan_fleet_toolchain_normalises_go_prefix(tmp_path: Path) -> None:
+def test_plan_fleet_toolchain_normalises_go_prefix(tmp_path: Path, make_workspace) -> None:
     """REPO_OPS_GO_TOOLCHAIN=go1.25.10 (with go prefix) is treated identically."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
         return _ok_proc(stdout=_gomod_json("1.25", toolchain="1.25.3"))
@@ -370,9 +359,9 @@ def test_plan_fleet_toolchain_normalises_go_prefix(tmp_path: Path) -> None:
     assert changes[0].to == "1.25.10"
 
 
-def test_plan_fleet_toolchain_no_existing_directive(tmp_path: Path) -> None:
+def test_plan_fleet_toolchain_no_existing_directive(tmp_path: Path, make_workspace) -> None:
     """No current toolchain directive in go.mod → treated as needing the bump."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
         # Toolchain key absent from JSON.
@@ -389,9 +378,9 @@ def test_plan_fleet_toolchain_no_existing_directive(tmp_path: Path) -> None:
     assert changes[0].from_ver == "(none)"
 
 
-def test_plan_fleet_directive_both_vars(tmp_path: Path) -> None:
+def test_plan_fleet_directive_both_vars(tmp_path: Path, make_workspace) -> None:
     """Both REPO_OPS_GO_DIRECTIVE and REPO_OPS_GO_TOOLCHAIN set → two changes."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
     def fake_run(cmd, cwd, timeout=0):
         return _ok_proc(stdout=_gomod_json("1.22", toolchain="1.22.0"))
@@ -414,9 +403,9 @@ def test_plan_fleet_directive_both_vars(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_apply_fleet_directive_runs_mod_edit_go(tmp_path: Path) -> None:
+def test_apply_fleet_directive_runs_mod_edit_go(tmp_path: Path, make_workspace) -> None:
     """REPO_OPS_GO_DIRECTIVE triggers go mod edit -go=<ver> + go mod tidy."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     calls_recorded: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0):
@@ -433,9 +422,9 @@ def test_apply_fleet_directive_runs_mod_edit_go(tmp_path: Path) -> None:
     assert ["go", "mod", "tidy"] in calls_recorded
 
 
-def test_apply_fleet_directive_runs_mod_edit_toolchain(tmp_path: Path) -> None:
+def test_apply_fleet_directive_runs_mod_edit_toolchain(tmp_path: Path, make_workspace) -> None:
     """REPO_OPS_GO_TOOLCHAIN triggers go mod edit -toolchain=go<ver> + go mod tidy."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     calls_recorded: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0):
@@ -452,9 +441,9 @@ def test_apply_fleet_directive_runs_mod_edit_toolchain(tmp_path: Path) -> None:
     assert ["go", "mod", "tidy"] in calls_recorded
 
 
-def test_apply_fleet_directive_no_op_when_env_unset(tmp_path: Path) -> None:
+def test_apply_fleet_directive_no_op_when_env_unset(tmp_path: Path, make_workspace) -> None:
     """No env vars set → no subprocess calls at all."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     import os
 
     calls_recorded: list[list[str]] = []
@@ -472,9 +461,9 @@ def test_apply_fleet_directive_no_op_when_env_unset(tmp_path: Path) -> None:
     assert calls_recorded == []
 
 
-def test_apply_fleet_directive_no_op_when_already_current(tmp_path: Path) -> None:
+def test_apply_fleet_directive_no_op_when_already_current(tmp_path: Path, make_workspace) -> None:
     """Target matches current directive → no edit/tidy calls."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     calls_recorded: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=0):
@@ -490,9 +479,9 @@ def test_apply_fleet_directive_no_op_when_already_current(tmp_path: Path) -> Non
     assert ["go", "mod", "edit", "-go=1.25"] not in calls_recorded
 
 
-def test_apply_fleet_directive_raises_on_mod_edit_failure(tmp_path: Path) -> None:
+def test_apply_fleet_directive_raises_on_mod_edit_failure(tmp_path: Path, make_workspace) -> None:
     """go mod edit failure raises RuntimeError."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     call_n = [0]
 
     def fake_run(cmd, cwd, timeout=0):
@@ -515,9 +504,9 @@ def test_apply_fleet_directive_raises_on_mod_edit_failure(tmp_path: Path) -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_apply_go_calls_work_directive_before_dep_upgrade(tmp_path: Path) -> None:
+def test_apply_go_calls_work_directive_before_dep_upgrade(tmp_path: Path, make_workspace) -> None:
     """apply_go: _apply_go_work_directive is called before go get."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     go_work_dir = tmp_path / "workspace"
     go_work_dir.mkdir()
     mod = go_work_dir / "api"
@@ -552,9 +541,9 @@ def test_apply_go_calls_work_directive_before_dep_upgrade(tmp_path: Path) -> Non
     assert call_order.index("go_work_use") < call_order.index("go_get")
 
 
-def test_apply_go_fleet_directive_runs_before_dep_upgrade(tmp_path: Path) -> None:
+def test_apply_go_fleet_directive_runs_before_dep_upgrade(tmp_path: Path, make_workspace) -> None:
     """apply_go: fleet directive mod edit runs before go get."""
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     call_order: list[str] = []
 
     def fake_run(cmd, cwd, timeout=0):
@@ -588,13 +577,13 @@ def test_apply_go_fleet_directive_runs_before_dep_upgrade(tmp_path: Path) -> Non
 
 
 def test_issue_118_timeout_resolvers_used_in_gomod_require_paths(
-    tmp_path: Path,
+    tmp_path: Path, make_workspace,
 ) -> None:
     """_gomod_require_paths uses resolve_timeout_check(), honoring env override."""
     from repo_ops_core.constants import TIMEOUT_CHECK
     from repo_ops_go.go import _gomod_require_paths
 
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     captured: list[int] = []
 
     def fake_run(cmd, cwd, timeout=0):
@@ -614,11 +603,11 @@ def test_issue_118_timeout_resolvers_used_in_gomod_require_paths(
     assert captured[0] == custom, f"expected {custom}, got {captured[0]}"
 
 
-def test_issue_118_timeout_resolvers_used_in_apply_go_tidy(tmp_path: Path) -> None:
+def test_issue_118_timeout_resolvers_used_in_apply_go_tidy(tmp_path: Path, make_workspace) -> None:
     """apply_go uses resolve_timeout_apply() for go mod tidy, honoring env override."""
     from repo_ops_core.constants import TIMEOUT_APPLY
 
-    ws = _ws(tmp_path)
+    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     tidy_timeouts: list[int] = []
 
     def fake_run(cmd, cwd, timeout=0):

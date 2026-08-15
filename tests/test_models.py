@@ -9,24 +9,13 @@ from repo_ops_models import (
     ActionBump,
     Change,
     RepoBundle,
-    Workspace,
     WorkspaceResult,
 )
 
 
-def _ws() -> Workspace:
-    return Workspace(
-        path=Path("/tmp/repo"),
-        ecosystem="py",
-        manager="uv",
-        git_repo=Path("/tmp/repo"),
-        label="",
-    )
-
-
-def test_any_dirty_skip_true_when_marker_present() -> None:
+def test_any_dirty_skip_true_when_marker_present(tmp_path: Path, make_workspace) -> None:
     wr = WorkspaceResult(
-        workspace=_ws(),
+        workspace=make_workspace(tmp_path, ecosystem="py", manager="uv", label=""),
         status="skip",
         error=f"{models_mod.DIRTY_SKIP_MARKER} (use --allow-dirty)",
     )
@@ -34,36 +23,36 @@ def test_any_dirty_skip_true_when_marker_present() -> None:
     assert bundle.any_dirty_skip() is True
 
 
-def test_any_dirty_skip_false_when_marker_absent() -> None:
-    wr = WorkspaceResult(workspace=_ws(), status="skip", error="some other reason")
+def test_any_dirty_skip_false_when_marker_absent(tmp_path: Path, make_workspace) -> None:
+    wr = WorkspaceResult(workspace=make_workspace(tmp_path, ecosystem="py", manager="uv", label=""), status="skip", error="some other reason")
     bundle = RepoBundle(git_repo=Path("/tmp/repo"), label="", workspaces=[wr])
     assert bundle.any_dirty_skip() is False
 
 
 def test_any_dirty_skip_uses_shared_constant_not_a_hardcoded_literal(
-    monkeypatch,
+    monkeypatch, tmp_path: Path, make_workspace,
 ) -> None:
     """any_dirty_skip() must key off the module constant, not a duplicated
     literal -- so retargeting the constant changes detection accordingly.
     """
     monkeypatch.setattr(models_mod, "DIRTY_SKIP_MARKER", "totally-different-marker")
     wr = WorkspaceResult(
-        workspace=_ws(), status="skip", error="dirty git worktree (use --allow-dirty)"
+        workspace=make_workspace(tmp_path, ecosystem="py", manager="uv", label=""), status="skip", error="dirty git worktree (use --allow-dirty)"
     )
     bundle = RepoBundle(git_repo=Path("/tmp/repo"), label="", workspaces=[wr])
     # Old literal no longer matches the (patched) constant.
     assert bundle.any_dirty_skip() is False
 
     wr2 = WorkspaceResult(
-        workspace=_ws(), status="skip", error="totally-different-marker present"
+        workspace=make_workspace(tmp_path, ecosystem="py", manager="uv", label=""), status="skip", error="totally-different-marker present"
     )
     bundle2 = RepoBundle(git_repo=Path("/tmp/repo"), label="", workspaces=[wr2])
     assert bundle2.any_dirty_skip() is True
 
 
-def test_workspace_result_to_json_includes_started_dirty() -> None:
+def test_workspace_result_to_json_includes_started_dirty(tmp_path: Path, make_workspace) -> None:
     wr = WorkspaceResult(
-        workspace=_ws(),
+        workspace=make_workspace(tmp_path, ecosystem="py", manager="uv", label=""),
         status="ok",
         changes=[Change(name="pkg", from_ver="1.0", to="1.1")],
         started_dirty=True,
@@ -71,7 +60,7 @@ def test_workspace_result_to_json_includes_started_dirty() -> None:
     payload = wr.to_json()
     assert payload["started_dirty"] is True
     assert payload["changes"] == [{"name": "pkg", "from": "1.0", "to": "1.1"}]
-    assert "started_dirty" not in WorkspaceResult(workspace=_ws()).to_json()
+    assert "started_dirty" not in WorkspaceResult(workspace=make_workspace(tmp_path, ecosystem="py", manager="uv", label="")).to_json()
 
 
 def test_action_bump_to_json_optional_detail() -> None:

@@ -19,22 +19,11 @@ from unittest.mock import patch
 
 import pytest
 from repo_ops_core.config import load_dot_repo_ops_config, load_repo_config
-from repo_ops_models import Workspace
 from repo_ops_upgrade.verify import verify_node, verify_workspace
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _ws(tmp_path: Path, manager: str, ecosystem: str = "node") -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem=ecosystem,
-        manager=manager,
-        git_repo=tmp_path,
-        label="demo",
-    )
 
 
 def _ok(stdout: str = "", stderr: str = "") -> CompletedProcess[str]:
@@ -149,7 +138,7 @@ class TestSidecarPrecedence:
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 class TestVerifyScriptFromConfig:
     def test_config_script_used_instead_of_waterfall(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """verify.script in config overrides the waterfall when env var absent."""
         monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
@@ -165,7 +154,7 @@ class TestVerifyScriptFromConfig:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "npm")
+        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_node(ws)
 
@@ -178,7 +167,7 @@ class TestVerifyScriptFromConfig:
         )
 
     def test_config_script_empty_string_skips_script_step(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """verify.script = '' in config skips the script step (immutable install still runs)."""
         monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
@@ -194,7 +183,7 @@ class TestVerifyScriptFromConfig:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "npm")
+        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_node(ws)
 
@@ -205,7 +194,7 @@ class TestVerifyScriptFromConfig:
         assert not any("echo" in str(c) for c in calls)
 
     def test_config_script_failure_propagates(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         _write_pkg(tmp_path, {"gate": "echo gate"})
@@ -220,7 +209,7 @@ class TestVerifyScriptFromConfig:
                 return _fail(stderr="gate failed")
             return _ok()
 
-        ws = _ws(tmp_path, "npm")
+        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_node(ws)
 
@@ -235,7 +224,7 @@ class TestVerifyScriptFromConfig:
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 class TestVerifySkip:
-    def test_skip_true_returns_none(self, tmp_path: Path) -> None:
+    def test_skip_true_returns_none(self, tmp_path: Path, make_workspace) -> None:
         (tmp_path / ".repo-ops.toml").write_text(
             "[verify]\nskip = true\n", encoding="utf-8"
         )
@@ -247,7 +236,7 @@ class TestVerifySkip:
             called.append(True)
             return _ok()
 
-        ws = _ws(tmp_path, "go", "go")
+        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
@@ -257,7 +246,7 @@ class TestVerifySkip:
         assert not called, "run() must not be called when skip=true"
 
     def test_skip_false_runs_normally(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         (tmp_path / ".repo-ops.toml").write_text(
@@ -272,7 +261,7 @@ class TestVerifySkip:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "npm")
+        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws, verify_test=False)
 
@@ -280,11 +269,11 @@ class TestVerifySkip:
         assert calls, "expected at least one run() call"
 
     def test_skip_absent_runs_normally(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         _write_pkg(tmp_path, {"ci": "echo ci"})
-        ws = _ws(tmp_path, "npm")
+        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         calls: list[list[str]] = []
 
         def fake_run(
@@ -308,7 +297,7 @@ class TestVerifySkip:
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 class TestVerifyTimeout:
     def test_config_timeout_passed_to_run(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         monkeypatch.delenv("REPO_OPS_TIMEOUT_VERIFY", raising=False)
         (tmp_path / ".repo-ops.toml").write_text(
@@ -322,7 +311,7 @@ class TestVerifyTimeout:
             captured.append({"cmd": cmd, "timeout": timeout})
             return _ok()
 
-        ws = _ws(tmp_path, "go", "go")
+        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             verify_workspace(ws, verify_test=False)
 
@@ -333,7 +322,7 @@ class TestVerifyTimeout:
         assert build_call["timeout"] == 42
 
     def test_env_var_wins_over_config_timeout(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         monkeypatch.setenv("REPO_OPS_TIMEOUT_VERIFY", "99")
         (tmp_path / ".repo-ops.toml").write_text(
@@ -347,7 +336,7 @@ class TestVerifyTimeout:
             captured.append({"cmd": cmd, "timeout": timeout})
             return _ok()
 
-        ws = _ws(tmp_path, "go", "go")
+        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             verify_workspace(ws, verify_test=False)
 
@@ -359,7 +348,7 @@ class TestVerifyTimeout:
         assert build_call["timeout"] == 99
 
     def test_node_config_timeout_used(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         monkeypatch.delenv("REPO_OPS_TIMEOUT_VERIFY", raising=False)
         monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
@@ -375,7 +364,7 @@ class TestVerifyTimeout:
             captured.append({"cmd": cmd, "timeout": timeout})
             return _ok()
 
-        ws = _ws(tmp_path, "npm")
+        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             verify_node(ws)
 
@@ -393,7 +382,7 @@ class TestVerifyTimeout:
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 class TestEnvWinsOverConfig:
     def test_env_verify_script_wins_over_config_script(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """REPO_OPS_NODE_VERIFY_SCRIPT env var must override verify.script from config."""
         monkeypatch.setenv("REPO_OPS_NODE_VERIFY_SCRIPT", "env-script")
@@ -409,7 +398,7 @@ class TestEnvWinsOverConfig:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "npm")
+        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_node(ws)
 
@@ -420,7 +409,7 @@ class TestEnvWinsOverConfig:
         )
 
     def test_env_verify_script_empty_skips_even_with_config_script(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """REPO_OPS_NODE_VERIFY_SCRIPT='' must skip script step regardless of config."""
         monkeypatch.setenv("REPO_OPS_NODE_VERIFY_SCRIPT", "")
@@ -436,7 +425,7 @@ class TestEnvWinsOverConfig:
             calls.append(cmd)
             return _ok()
 
-        ws = _ws(tmp_path, "npm")
+        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_node(ws)
 

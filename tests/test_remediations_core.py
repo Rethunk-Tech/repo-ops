@@ -5,22 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from repo_ops_models import Workspace, WorkspaceResult
+from repo_ops_models import WorkspaceResult
 from repo_ops_upgrade_remediations_core import remediations as core
 
 
-def _ws(tmp_path: Path, ecosystem: str = "node") -> Workspace:
-    return Workspace(
-        path=tmp_path,
-        ecosystem=ecosystem,
-        manager="npm",
-        git_repo=tmp_path,
-        label="test",
-    )
-
-
-def _result(tmp_path: Path, ecosystem: str = "node") -> WorkspaceResult:
-    return WorkspaceResult(workspace=_ws(tmp_path, ecosystem))
+def _result(tmp_path: Path, make_workspace, ecosystem: str = "node") -> WorkspaceResult:
+    return WorkspaceResult(workspace=make_workspace(tmp_path, ecosystem=ecosystem, manager="npm", label="test"))
 
 
 # ── RemediationHook dataclass ──────────────────────────────────────────────
@@ -37,7 +27,7 @@ def test_hook_fields_accessible(tmp_path: Path) -> None:
     assert hook.files is None  # default
 
 
-def test_hook_with_files_callable(tmp_path: Path) -> None:
+def test_hook_with_files_callable(tmp_path: Path, make_workspace) -> None:
     hook = core.RemediationHook(
         id="files_hook",
         detect=lambda ws, ctx: True,
@@ -46,14 +36,14 @@ def test_hook_with_files_callable(tmp_path: Path) -> None:
         files=lambda ws: ["some/file.json"],
     )
     assert hook.files is not None
-    assert hook.files(_ws(tmp_path)) == ["some/file.json"]
+    assert hook.files(make_workspace(tmp_path, ecosystem="node", manager="npm", label="test")) == ["some/file.json"]
 
 
 # ── run_hooks: plan mode ───────────────────────────────────────────────────
 
 
-def test_run_hooks_plan_records_pending(tmp_path: Path) -> None:
-    result = _result(tmp_path)
+def test_run_hooks_plan_records_pending(tmp_path: Path, make_workspace) -> None:
+    result = _result(tmp_path, make_workspace=make_workspace)
     hook = core.RemediationHook(
         "h",
         lambda ws, ctx: True,
@@ -66,8 +56,8 @@ def test_run_hooks_plan_records_pending(tmp_path: Path) -> None:
     assert "would do X" in result.remediations[0]["detail"]
 
 
-def test_run_hooks_apply_records_applied(tmp_path: Path) -> None:
-    result = _result(tmp_path)
+def test_run_hooks_apply_records_applied(tmp_path: Path, make_workspace) -> None:
+    result = _result(tmp_path, make_workspace=make_workspace)
     hook = core.RemediationHook(
         "h",
         lambda ws, ctx: True,
@@ -79,8 +69,8 @@ def test_run_hooks_apply_records_applied(tmp_path: Path) -> None:
     assert "(ok)" in result.remediations[0]["detail"]
 
 
-def test_run_hooks_apply_fail_sets_result_fail(tmp_path: Path) -> None:
-    result = _result(tmp_path)
+def test_run_hooks_apply_fail_sets_result_fail(tmp_path: Path, make_workspace) -> None:
+    result = _result(tmp_path, make_workspace=make_workspace)
     hook = core.RemediationHook(
         "h",
         lambda ws, ctx: True,
@@ -92,9 +82,9 @@ def test_run_hooks_apply_fail_sets_result_fail(tmp_path: Path) -> None:
     assert result.status == "fail"
 
 
-def test_run_hooks_no_detect_no_entry(tmp_path: Path) -> None:
+def test_run_hooks_no_detect_no_entry(tmp_path: Path, make_workspace) -> None:
     """Hooks that don't detect produce no remediation entry (status ok is suppressed)."""
-    result = _result(tmp_path)
+    result = _result(tmp_path, make_workspace=make_workspace)
     hook = core.RemediationHook(
         "h",
         lambda ws, ctx: False,
@@ -105,8 +95,8 @@ def test_run_hooks_no_detect_no_entry(tmp_path: Path) -> None:
     assert result.remediations == []
 
 
-def test_run_hooks_skip_set_bypasses_hook(tmp_path: Path) -> None:
-    result = _result(tmp_path)
+def test_run_hooks_skip_set_bypasses_hook(tmp_path: Path, make_workspace) -> None:
+    result = _result(tmp_path, make_workspace=make_workspace)
     hook = core.RemediationHook(
         "skip_me",
         lambda ws, ctx: True,
@@ -117,9 +107,9 @@ def test_run_hooks_skip_set_bypasses_hook(tmp_path: Path) -> None:
     assert result.remediations == []
 
 
-def test_run_hooks_exception_caught_per_hook(tmp_path: Path) -> None:
+def test_run_hooks_exception_caught_per_hook(tmp_path: Path, make_workspace) -> None:
     """An exception in detect is caught; subsequent hooks still run."""
-    result = _result(tmp_path)
+    result = _result(tmp_path, make_workspace=make_workspace)
     bad = core.RemediationHook(
         "bad",
         lambda ws, ctx: (_ for _ in ()).throw(RuntimeError("boom")),  # type: ignore[arg-type]
@@ -139,8 +129,8 @@ def test_run_hooks_exception_caught_per_hook(tmp_path: Path) -> None:
     assert "good" in ids
 
 
-def test_run_hooks_files_included_in_entry(tmp_path: Path) -> None:
-    result = _result(tmp_path)
+def test_run_hooks_files_included_in_entry(tmp_path: Path, make_workspace) -> None:
+    result = _result(tmp_path, make_workspace=make_workspace)
     hook = core.RemediationHook(
         "h",
         lambda ws, ctx: True,
@@ -152,8 +142,8 @@ def test_run_hooks_files_included_in_entry(tmp_path: Path) -> None:
     assert result.remediations[0].get("files") == ["biome.json"]
 
 
-def test_run_hooks_empty_files_not_included(tmp_path: Path) -> None:
-    result = _result(tmp_path)
+def test_run_hooks_empty_files_not_included(tmp_path: Path, make_workspace) -> None:
+    result = _result(tmp_path, make_workspace=make_workspace)
     hook = core.RemediationHook(
         "h",
         lambda ws, ctx: True,
@@ -168,8 +158,8 @@ def test_run_hooks_empty_files_not_included(tmp_path: Path) -> None:
 # ── dispatch: global registry integration ─────────────────────────────────
 
 
-def test_dispatch_uses_provided_registry(tmp_path: Path) -> None:
-    result = _result(tmp_path)
+def test_dispatch_uses_provided_registry(tmp_path: Path, make_workspace) -> None:
+    result = _result(tmp_path, make_workspace=make_workspace)
     hook = core.RemediationHook(
         "custom",
         lambda ws, ctx: True,
@@ -181,8 +171,8 @@ def test_dispatch_uses_provided_registry(tmp_path: Path) -> None:
     assert result.remediations[0]["status"] == "pending"
 
 
-def test_dispatch_empty_registry_no_op(tmp_path: Path) -> None:
-    result = _result(tmp_path)
+def test_dispatch_empty_registry_no_op(tmp_path: Path, make_workspace) -> None:
+    result = _result(tmp_path, make_workspace=make_workspace)
     core.dispatch(result, apply=True, skip=set(), _registry=[])
     assert result.remediations == []
     assert result.status == "ok"
@@ -218,11 +208,11 @@ def test_dispatch_global_registry_populated(tmp_path: Path) -> None:
 
 
 def test_verbose_flag_observed(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], make_workspace
 ) -> None:
     from repo_ops_core import process
 
-    result = _result(tmp_path)
+    result = _result(tmp_path, make_workspace=make_workspace)
     hook = core.RemediationHook(
         "verbose_hook",
         lambda ws, ctx: True,
