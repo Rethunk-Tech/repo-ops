@@ -17,8 +17,8 @@ from repo_ops_js_pnpm.pnpm import (
 )
 from repo_ops_models import Change
 
-_GLOBAL_HOLDS_CACHE = "repo_ops_js.holds._global_holds_cached"
-_REPO_HOLDS_CACHE = "repo_ops_js.holds._repo_holds_cached"
+_GLOBAL_HOLDS_CACHE = "repo_ops_core.holds._global_holds_cached"
+_REPO_HOLDS_CACHE = "repo_ops_core.holds._repo_holds_cached"
 
 
 def _seed(tmp_path: Path) -> None:

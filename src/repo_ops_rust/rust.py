@@ -24,12 +24,7 @@ from repo_ops_core.config import (
     resolve_setting,
 )
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
-from repo_ops_core.holds import (
-    HoldRule,
-    load_global_holds,
-    load_repo_holds,
-    resolve_hold,
-)
+from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
@@ -62,37 +57,8 @@ def _rust_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
     return str(raw or "").strip().lower() in _TRUE_VALUES
 
 
-@cache
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return tuple(load_global_holds())
-
-
-@cache
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return tuple(load_repo_holds(Path(repo_root)))
-
-
-def _workspace_rel(ws: Workspace) -> str:
-    try:
-        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
-    except ValueError:
-        return "."
-    return rel or "."
-
-
 def _resolve_crate_hold(ws: Workspace, crate_name: str) -> HoldRule | None:
-    """Return the active hold rule for *crate_name* in this workspace."""
-    repo_root = str(ws.git_repo.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
-    if not rules:
-        return None
-    return resolve_hold(
-        rules,
-        package=crate_name,
-        ecosystem=ws.ecosystem,
-        manager=ws.manager,
-        workspace_rel=_workspace_rel(ws),
-    )
+    return resolve_package_hold(ws, crate_name)
 
 
 def _cargo_registry_versions(crate_name: str) -> tuple[str, ...]:

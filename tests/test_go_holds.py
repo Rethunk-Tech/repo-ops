@@ -8,19 +8,19 @@ from unittest.mock import patch
 import pytest
 
 from repo_ops_core.holds import HoldRule
+from repo_ops_core.holds import workspace_rel as _workspace_rel
 from repo_ops_go.go import (
     _changes_from_go_list_json,
     _enforce_version_ceilings,
     _explicit_go_get_targets,
     _filter_held_go_changes,
     _go_ceiling_query,
-    _workspace_rel,
     apply_go,
 )
 from repo_ops_models import Workspace
 
-_GLOBAL_HOLDS_CACHE = "repo_ops_go.go._global_holds_cached"
-_REPO_HOLDS_CACHE = "repo_ops_go.go._repo_holds_cached"
+_GLOBAL_HOLDS_CACHE = "repo_ops_core.holds._global_holds_cached"
+_REPO_HOLDS_CACHE = "repo_ops_core.holds._repo_holds_cached"
 _MODULE = "example.com/a"
 
 

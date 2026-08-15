@@ -13,11 +13,12 @@ from unittest.mock import patch
 import pytest
 
 from repo_ops_core.holds import HoldRule
-from repo_ops_js.holds import _workspace_rel, enforce_holds
+from repo_ops_core.holds import workspace_rel as _workspace_rel
+from repo_ops_js.holds import enforce_holds
 from repo_ops_models import Workspace
 
-_GLOBAL_HOLDS_CACHE = "repo_ops_js.holds._global_holds_cached"
-_REPO_HOLDS_CACHE = "repo_ops_js.holds._repo_holds_cached"
+_GLOBAL_HOLDS_CACHE = "repo_ops_core.holds._global_holds_cached"
+_REPO_HOLDS_CACHE = "repo_ops_core.holds._repo_holds_cached"
 _RESOLVER_PATH = "repo_ops_lockfiles.snapshots.resolved_version_from_node_modules"
 
 

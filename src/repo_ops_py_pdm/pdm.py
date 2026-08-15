@@ -8,7 +8,6 @@ import shutil
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
-from functools import cache
 from http.client import HTTPSConnection
 from pathlib import Path
 from urllib.parse import quote
@@ -16,16 +15,12 @@ from urllib.parse import quote
 from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import read_toml_file
-from repo_ops_core.holds import (
-    HoldRule,
-    load_global_holds,
-    load_repo_holds,
-    resolve_hold,
-)
+from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
 from repo_ops_core.version_utils import hold_ceiling_spec, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
+from repo_ops_py.holds import filter_held_changes as _filter_held_changes
 
 _PDM_TARGETED_BUMP_ENV = "REPO_OPS_PDM_TARGETED_BUMP"
 
@@ -54,36 +49,8 @@ def _preserve_manifest(path: Path) -> Iterator[None]:
             path.unlink(missing_ok=True)
 
 
-@cache
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return tuple(load_global_holds())
-
-
-@cache
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return tuple(load_repo_holds(Path(repo_root)))
-
-
-def _workspace_rel(ws: Workspace) -> str:
-    try:
-        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
-    except ValueError:
-        return "."
-    return rel or "."
-
-
 def _resolve_pkg_hold(ws: Workspace, package: str) -> HoldRule | None:
-    repo_root = str(ws.git_repo.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
-    if not rules:
-        return None
-    return resolve_hold(
-        rules,
-        package=package,
-        ecosystem=ws.ecosystem,
-        manager=ws.manager,
-        workspace_rel=_workspace_rel(ws),
-    )
+    return resolve_package_hold(ws, package)
 
 
 def _pdm_lock_versions(ws: Workspace) -> dict[str, str]:
@@ -268,16 +235,6 @@ def _apply_pdm_targeted_bumps(
         _pdm_restore(lockfile, lock_snapshot)
         remaining.append(candidate)
     return remaining
-
-
-def _filter_held_changes(ws: Workspace, changes: list[Change]) -> list[Change]:
-    kept: list[Change] = []
-    for c in changes:
-        rule = _resolve_pkg_hold(ws, c.name)
-        if rule is not None and not version_satisfies_ceiling(c.to, rule.max_version):
-            continue
-        kept.append(c)
-    return kept
 
 
 def _enforce_version_ceilings(ws: Workspace) -> None:

@@ -24,8 +24,8 @@ from repo_ops_js.deno import (
 )
 from repo_ops_models import Change
 
-_GLOBAL_HOLDS_CACHE = "repo_ops_js.deno._global_holds_cached"
-_REPO_HOLDS_CACHE = "repo_ops_js.deno._repo_holds_cached"
+_GLOBAL_HOLDS_CACHE = "repo_ops_core.holds._global_holds_cached"
+_REPO_HOLDS_CACHE = "repo_ops_core.holds._repo_holds_cached"
 _PACKAGE = "npm:held"
 
 

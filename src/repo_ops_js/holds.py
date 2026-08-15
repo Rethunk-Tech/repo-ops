@@ -14,16 +14,9 @@ held packages up front).
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from functools import cache
-from pathlib import Path
 from typing import Protocol
 
-from repo_ops_core.holds import (
-    HoldRule,
-    load_global_holds,
-    load_repo_holds,
-    resolve_hold,
-)
+from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
@@ -32,39 +25,6 @@ from repo_ops_models import Change, Workspace
 class _RunResult(Protocol):
     returncode: int
     stderr: str
-
-
-@cache
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return tuple(load_global_holds())
-
-
-@cache
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return tuple(load_repo_holds(Path(repo_root)))
-
-
-def _workspace_rel(ws: Workspace) -> str:
-    try:
-        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
-    except ValueError:
-        return "."
-    return rel or "."
-
-
-def resolve_package_hold(ws: Workspace, package: str) -> HoldRule | None:
-    """Return the active hold rule for *package* in this workspace, if any."""
-    repo_root = str(ws.git_repo.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
-    if not rules:
-        return None
-    return resolve_hold(
-        rules,
-        package=package,
-        ecosystem=ws.ecosystem,
-        manager=ws.manager,
-        workspace_rel=_workspace_rel(ws),
-    )
 
 
 def hold_version_spec(rule: HoldRule) -> str:

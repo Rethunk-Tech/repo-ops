@@ -17,8 +17,8 @@ from repo_ops_js_yarn.yarn import (
 )
 from repo_ops_models import Change
 
-_GLOBAL_HOLDS_CACHE = "repo_ops_js.holds._global_holds_cached"
-_REPO_HOLDS_CACHE = "repo_ops_js.holds._repo_holds_cached"
+_GLOBAL_HOLDS_CACHE = "repo_ops_core.holds._global_holds_cached"
+_REPO_HOLDS_CACHE = "repo_ops_core.holds._repo_holds_cached"
 
 # check_yarn_snapshot patch targets (mirrors tests/test_yarn_upgrade_policy.py).
 _COPY_PATH = "repo_ops_js_yarn.yarn._copy_yarn_workspace_to_temp"

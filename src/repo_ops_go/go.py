@@ -8,7 +8,6 @@ import os
 import re
 import subprocess
 from collections.abc import Iterator
-from functools import cache
 from pathlib import Path
 
 from repo_ops_core.config import (
@@ -18,12 +17,7 @@ from repo_ops_core.config import (
     resolve_setting,
 )
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
-from repo_ops_core.holds import (
-    HoldRule,
-    load_global_holds,
-    load_repo_holds,
-    resolve_hold,
-)
+from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import (
     hold_ceiling_spec,
@@ -261,37 +255,8 @@ def _gomod_require_paths(ws: Workspace) -> set[str] | None:
 # "stay on 1.5.x for now"), just lower-stakes than the JS ecosystems.
 
 
-@cache
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return tuple(load_global_holds())
-
-
-@cache
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return tuple(load_repo_holds(Path(repo_root)))
-
-
-def _workspace_rel(ws: Workspace) -> str:
-    try:
-        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
-    except ValueError:
-        return "."
-    return rel or "."
-
-
 def _resolve_module_hold(ws: Workspace, module_path: str) -> HoldRule | None:
-    """Return the active hold rule for *module_path* in this workspace, if any."""
-    repo_root = str(ws.git_repo.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
-    if not rules:
-        return None
-    return resolve_hold(
-        rules,
-        package=module_path,
-        ecosystem=ws.ecosystem,
-        manager=ws.manager,
-        workspace_rel=_workspace_rel(ws),
-    )
+    return resolve_package_hold(ws, module_path)
 
 
 def _go_ceiling_query(max_version: str) -> str:

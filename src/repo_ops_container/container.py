@@ -51,7 +51,6 @@ import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
-from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -64,10 +63,11 @@ from repo_ops_core.config import (
 )
 from repo_ops_core.holds import (
     HoldRule,
-    load_global_holds,
-    load_repo_holds,
+    _global_holds_cached,
+    _repo_holds_cached,
     resolve_hold,
 )
+from repo_ops_core.holds import workspace_rel as _workspace_rel
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 
@@ -894,24 +894,6 @@ def _resolve_latest_tag(
 # ---------------------------------------------------------------------------
 # Package version-ceiling ("hold") rules
 # ---------------------------------------------------------------------------
-
-
-@cache
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return tuple(load_global_holds())
-
-
-@cache
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return tuple(load_repo_holds(Path(repo_root)))
-
-
-def _workspace_rel(ws: Workspace) -> str:
-    try:
-        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
-    except ValueError:
-        return "."
-    return rel or "."
 
 
 def _resolve_container_hold(ws: Workspace, package: str) -> HoldRule | None:

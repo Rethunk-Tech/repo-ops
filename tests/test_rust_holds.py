@@ -12,8 +12,8 @@ from repo_ops_rust.rust import (
     set_rust_audit_version_overrides,
 )
 
-_GLOBAL_HOLDS_CACHE = "repo_ops_rust.rust._global_holds_cached"
-_REPO_HOLDS_CACHE = "repo_ops_rust.rust._repo_holds_cached"
+_GLOBAL_HOLDS_CACHE = "repo_ops_core.holds._global_holds_cached"
+_REPO_HOLDS_CACHE = "repo_ops_core.holds._repo_holds_cached"
 _REGISTRY_VERSIONS = "repo_ops_rust.rust._cargo_registry_versions"
 _REGISTRY_CONNECTION = "repo_ops_rust.rust.HTTPSConnection"
 _CRATE = "serde"

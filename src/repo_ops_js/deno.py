@@ -7,7 +7,6 @@ import os
 import re
 import shutil
 import sys
-from functools import cache
 from pathlib import Path
 
 from repo_ops_core.config import (
@@ -17,14 +16,10 @@ from repo_ops_core.config import (
     resolve_setting,
 )
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
-from repo_ops_core.holds import (
-    HoldRule,
-    load_global_holds,
-    load_repo_holds,
-    resolve_hold,
-)
+from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
+from repo_ops_js.audit_overrides import clear_audit_overrides, set_audit_overrides
 from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 from repo_ops_lockfiles.parsers import versions_deno_lock
 from repo_ops_lockfiles.snapshots import snapshot_workspace_files
@@ -298,12 +293,11 @@ def _restore_deno_workspace(ws: Workspace, before: dict[Path, bytes]) -> None:
 
 
 def set_deno_audit_version_overrides(overrides: dict[str, str]) -> None:
-    _AUDIT_VERSION_OVERRIDES.clear()
-    _AUDIT_VERSION_OVERRIDES.update(overrides)
+    set_audit_overrides(_AUDIT_VERSION_OVERRIDES, overrides)
 
 
 def clear_deno_audit_version_overrides() -> None:
-    _AUDIT_VERSION_OVERRIDES.clear()
+    clear_audit_overrides(_AUDIT_VERSION_OVERRIDES)
 
 
 def apply_deno_audit_version_overrides(ws: Workspace) -> None:
@@ -333,37 +327,8 @@ def _deno_ceiling_target(name: str, version: str) -> str:
     return f"{name}@<={_deno_precise_version(version)}"
 
 
-@cache
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return tuple(load_global_holds())
-
-
-@cache
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return tuple(load_repo_holds(Path(repo_root)))
-
-
-def _workspace_rel(ws: Workspace) -> str:
-    try:
-        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
-    except ValueError:
-        return "."
-    return rel or "."
-
-
 def _resolve_deno_hold(ws: Workspace, package: str) -> HoldRule | None:
-    """Return the active hold rule for *package* in this workspace, if any."""
-    repo_root = str(ws.git_repo.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
-    if not rules:
-        return None
-    return resolve_hold(
-        rules,
-        package=package,
-        ecosystem=ws.ecosystem,
-        manager=ws.manager,
-        workspace_rel=_workspace_rel(ws),
-    )
+    return resolve_package_hold(ws, package)
 
 
 def _filter_held_deno_changes(ws: Workspace, changes: list[Change]) -> list[Change]:

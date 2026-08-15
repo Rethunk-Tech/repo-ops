@@ -3,20 +3,14 @@
 from __future__ import annotations
 
 import re
-from functools import cache
-from pathlib import Path
 
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import read_toml_file
-from repo_ops_core.holds import (
-    HoldRule,
-    load_global_holds,
-    load_repo_holds,
-    resolve_hold,
-)
+from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import hold_ceiling_spec, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
+from repo_ops_py.holds import filter_held_changes as _filter_held_changes
 
 # ---------------------------------------------------------------------------
 # Package version-ceiling ("hold") rules
@@ -28,36 +22,8 @@ from repo_ops_models import Change, Workspace
 # safety net.
 
 
-@cache
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return tuple(load_global_holds())
-
-
-@cache
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return tuple(load_repo_holds(Path(repo_root)))
-
-
-def _workspace_rel(ws: Workspace) -> str:
-    try:
-        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
-    except ValueError:
-        return "."
-    return rel or "."
-
-
 def _resolve_pkg_hold(ws: Workspace, package: str) -> HoldRule | None:
-    repo_root = str(ws.git_repo.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
-    if not rules:
-        return None
-    return resolve_hold(
-        rules,
-        package=package,
-        ecosystem=ws.ecosystem,
-        manager=ws.manager,
-        workspace_rel=_workspace_rel(ws),
-    )
+    return resolve_package_hold(ws, package)
 
 
 def _uv_lock_versions(ws: Workspace) -> dict[str, str]:
@@ -72,16 +38,6 @@ def _uv_lock_versions(ws: Workspace) -> dict[str, str]:
         if name and version:
             out[str(name)] = str(version)
     return out
-
-
-def _filter_held_changes(ws: Workspace, changes: list[Change]) -> list[Change]:
-    kept: list[Change] = []
-    for c in changes:
-        rule = _resolve_pkg_hold(ws, c.name)
-        if rule is not None and not version_satisfies_ceiling(c.to, rule.max_version):
-            continue
-        kept.append(c)
-    return kept
 
 
 def _enforce_version_ceilings(ws: Workspace) -> None:

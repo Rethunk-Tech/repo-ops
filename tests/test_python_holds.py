@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
+from repo_ops_core import holds as core_holds
 from repo_ops_core.holds import HoldRule
 from repo_ops_models import Workspace
 
@@ -44,11 +45,11 @@ def test_check_uv_lock_filters_held_package_past_ceiling(
     stdout = "Resolved 10 packages\nwould upgrade typescript-stub 6.5 -> 7.0\n"
     with (
         patch.object(
-            uv_lock,
+            core_holds,
             "_global_holds_cached",
             return_value=(_held_rule("typescript-stub"),),
         ),
-        patch.object(uv_lock, "_repo_holds_cached", return_value=()),
+        patch.object(core_holds, "_repo_holds_cached", return_value=()),
         patch.object(uv_lock, "run", return_value=make_proc(stdout=stdout)),
     ):
         changes = uv_lock.check_uv_lock(_uv_ws(tmp_path))
@@ -83,11 +84,11 @@ def test_apply_uv_lock_clamps_package_above_ceiling(tmp_path: Path, make_proc) -
 
     with (
         patch.object(
-            uv_lock,
+            core_holds,
             "_global_holds_cached",
             return_value=(_held_rule("typescript-stub"),),
         ),
-        patch.object(uv_lock, "_repo_holds_cached", return_value=()),
+        patch.object(core_holds, "_repo_holds_cached", return_value=()),
         patch.object(uv_lock, "run", side_effect=fake_run),
     ):
         uv_lock.apply_uv_lock(_uv_ws(tmp_path))
@@ -108,11 +109,11 @@ def test_apply_uv_lock_raises_when_clamp_fails(tmp_path: Path, make_proc) -> Non
 
     with (
         patch.object(
-            uv_lock,
+            core_holds,
             "_global_holds_cached",
             return_value=(_held_rule("typescript-stub"),),
         ),
-        patch.object(uv_lock, "_repo_holds_cached", return_value=()),
+        patch.object(core_holds, "_repo_holds_cached", return_value=()),
         patch.object(uv_lock, "run", return_value=make_proc()),  # lock never changes
         pytest.raises(RuntimeError, match="hold"),
     ):
@@ -138,11 +139,11 @@ def test_apply_uv_lock_raises_when_corrective_install_command_fails(
 
     with (
         patch.object(
-            uv_lock,
+            core_holds,
             "_global_holds_cached",
             return_value=(_held_rule("typescript-stub"),),
         ),
-        patch.object(uv_lock, "_repo_holds_cached", return_value=()),
+        patch.object(core_holds, "_repo_holds_cached", return_value=()),
         patch.object(uv_lock, "run", side_effect=fake_run),
         pytest.raises(RuntimeError, match=r"hold.*resolver conflict"),
     ):
@@ -182,9 +183,11 @@ def test_apply_pdm_clamps_package_above_ceiling(tmp_path: Path, make_proc) -> No
 
     with (
         patch.object(
-            pdm, "_global_holds_cached", return_value=(_held_rule("typescript-stub"),)
+            core_holds,
+            "_global_holds_cached",
+            return_value=(_held_rule("typescript-stub"),),
         ),
-        patch.object(pdm, "_repo_holds_cached", return_value=()),
+        patch.object(core_holds, "_repo_holds_cached", return_value=()),
         patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
         patch.object(pdm, "run", side_effect=fake_run),
     ):
@@ -203,9 +206,11 @@ def test_apply_pdm_raises_when_clamp_fails(tmp_path: Path, make_proc) -> None:
 
     with (
         patch.object(
-            pdm, "_global_holds_cached", return_value=(_held_rule("typescript-stub"),)
+            core_holds,
+            "_global_holds_cached",
+            return_value=(_held_rule("typescript-stub"),),
         ),
-        patch.object(pdm, "_repo_holds_cached", return_value=()),
+        patch.object(core_holds, "_repo_holds_cached", return_value=()),
         patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
         patch.object(pdm, "run", return_value=make_proc()),
         pytest.raises(RuntimeError, match="hold"),
@@ -252,11 +257,11 @@ def test_apply_pipenv_clamps_package_above_ceiling(tmp_path: Path, make_proc) ->
 
     with (
         patch.object(
-            pipenv,
+            core_holds,
             "_global_holds_cached",
             return_value=(_held_rule("typescript-stub"),),
         ),
-        patch.object(pipenv, "_repo_holds_cached", return_value=()),
+        patch.object(core_holds, "_repo_holds_cached", return_value=()),
         patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
         patch.object(pipenv, "run", side_effect=fake_run),
     ):
@@ -276,11 +281,11 @@ def test_apply_pipenv_raises_when_clamp_fails(tmp_path: Path, make_proc) -> None
 
     with (
         patch.object(
-            pipenv,
+            core_holds,
             "_global_holds_cached",
             return_value=(_held_rule("typescript-stub"),),
         ),
-        patch.object(pipenv, "_repo_holds_cached", return_value=()),
+        patch.object(core_holds, "_repo_holds_cached", return_value=()),
         patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
         patch.object(pipenv, "run", return_value=make_proc()),
         pytest.raises(RuntimeError, match="hold"),
@@ -325,11 +330,11 @@ def test_apply_poetry_clamps_package_above_ceiling(tmp_path: Path, make_proc) ->
 
     with (
         patch.object(
-            poetry,
+            core_holds,
             "_global_holds_cached",
             return_value=(_held_rule("typescript-stub"),),
         ),
-        patch.object(poetry, "_repo_holds_cached", return_value=()),
+        patch.object(core_holds, "_repo_holds_cached", return_value=()),
         patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry"),
         patch.object(poetry, "run", side_effect=fake_run),
     ):
@@ -348,11 +353,11 @@ def test_apply_poetry_raises_when_clamp_fails(tmp_path: Path, make_proc) -> None
 
     with (
         patch.object(
-            poetry,
+            core_holds,
             "_global_holds_cached",
             return_value=(_held_rule("typescript-stub"),),
         ),
-        patch.object(poetry, "_repo_holds_cached", return_value=()),
+        patch.object(core_holds, "_repo_holds_cached", return_value=()),
         patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry"),
         patch.object(poetry, "run", return_value=make_proc()),
         pytest.raises(RuntimeError, match="hold"),
@@ -391,11 +396,11 @@ def test_apply_pip_tools_passes_hold_constraints_file(
 
     with (
         patch.object(
-            pip_tools,
+            core_holds,
             "_global_holds_cached",
             return_value=(_held_rule("typescript-stub"),),
         ),
-        patch.object(pip_tools, "_repo_holds_cached", return_value=()),
+        patch.object(core_holds, "_repo_holds_cached", return_value=()),
         patch(
             "repo_ops_py_pip_tools.pip_tools.shutil.which", return_value="/usr/bin/uv"
         ),
@@ -422,11 +427,11 @@ def test_pip_tools_constraints_file_contains_only_held_direct_deps(
     ws = _pip_tools_ws(tmp_path)
     with (
         patch.object(
-            pip_tools,
+            core_holds,
             "_global_holds_cached",
             return_value=(_held_rule("typescript-stub"),),
         ),
-        patch.object(pip_tools, "_repo_holds_cached", return_value=()),
+        patch.object(core_holds, "_repo_holds_cached", return_value=()),
     ):
         with pip_tools._hold_constraints_file(
             ws, tmp_path / "requirements.in"

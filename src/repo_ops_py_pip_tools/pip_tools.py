@@ -2,30 +2,22 @@
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import shutil
 import sys
 import tempfile
 from contextlib import contextmanager
-from functools import cache
-from http.client import HTTPSConnection
 from pathlib import Path
-from urllib.parse import quote
 
 from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
-from repo_ops_core.holds import (
-    HoldRule,
-    load_global_holds,
-    load_repo_holds,
-    resolve_hold,
-)
+from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
 from repo_ops_core.version_utils import hold_ceiling_spec
 from repo_ops_models import Change, Workspace
+from repo_ops_py.pypi import pypi_latest as _pypi_latest
 from repo_ops_py.requirements import parse_requirements_lines
 
 # ---------------------------------------------------------------------------
@@ -45,36 +37,8 @@ _REQ_NAME_RE = re.compile(r"^([A-Za-z0-9_.-]+)")
 _PIP_TOOLS_TARGETED_BUMP_ENV = "REPO_OPS_PIP_TOOLS_TARGETED_BUMP"
 
 
-@cache
-def _global_holds_cached() -> tuple[HoldRule, ...]:
-    return tuple(load_global_holds())
-
-
-@cache
-def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
-    return tuple(load_repo_holds(Path(repo_root)))
-
-
-def _workspace_rel(ws: Workspace) -> str:
-    try:
-        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
-    except ValueError:
-        return "."
-    return rel or "."
-
-
 def _resolve_pkg_hold(ws: Workspace, package: str) -> HoldRule | None:
-    repo_root = str(ws.git_repo.resolve())
-    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
-    if not rules:
-        return None
-    return resolve_hold(
-        rules,
-        package=package,
-        ecosystem=ws.ecosystem,
-        manager=ws.manager,
-        workspace_rel=_workspace_rel(ws),
-    )
+    return resolve_package_hold(ws, package)
 
 
 def _requirements_in_names(req_in: Path) -> set[str]:
@@ -136,30 +100,6 @@ def _pip_tools_version_parts(version: str) -> tuple[int, int, int]:
 
 def _pip_tools_requirement_satisfied(version: str, requirement: str) -> bool:
     return requirement_satisfied(version, requirement, default_operator="==")
-
-
-def _pypi_latest(package: str) -> str | None:
-    connection = HTTPSConnection("pypi.org", timeout=resolve_timeout_check())
-    try:
-        connection.request(
-            "GET",
-            f"/pypi/{quote(package, safe='')}/json",
-            headers={"User-Agent": "repo-ops"},
-        )
-        response = connection.getresponse()
-        if not 200 <= response.status < 300:
-            return None
-        document = json.loads(response.read().decode("utf-8"))
-    except (OSError, UnicodeError, ValueError, TypeError):
-        return None
-    finally:
-        connection.close()
-    if not isinstance(document, dict):
-        return None
-    info = document.get("info")
-    if isinstance(info, dict) and isinstance(info.get("version"), str):
-        return info["version"]
-    return None
 
 
 def _pip_tools_latest_direct_changes(ws: Workspace) -> list[Change]:

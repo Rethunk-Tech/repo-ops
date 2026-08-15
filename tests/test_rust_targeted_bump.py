@@ -257,8 +257,8 @@ def test_held_crate_stays_behind_latest_and_manifest_unchanged(
     monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "true")
 
     with (
-        patch("repo_ops_rust.rust._global_holds_cached", return_value=(hold,)),
-        patch("repo_ops_rust.rust._repo_holds_cached", return_value=()),
+        patch("repo_ops_core.holds._global_holds_cached", return_value=(hold,)),
+        patch("repo_ops_core.holds._repo_holds_cached", return_value=()),
         patch(
             "repo_ops_rust.rust.run",
             return_value=make_proc(),
@@ -274,8 +274,8 @@ def test_held_crate_stays_behind_latest_and_manifest_unchanged(
     assert [(change.name, change.to) for change in result[1]] == [("serde", "2.0.0")]
 
     with (
-        patch("repo_ops_rust.rust._global_holds_cached", return_value=(hold,)),
-        patch("repo_ops_rust.rust._repo_holds_cached", return_value=()),
+        patch("repo_ops_core.holds._global_holds_cached", return_value=(hold,)),
+        patch("repo_ops_core.holds._repo_holds_cached", return_value=()),
         patch(
             "repo_ops_rust.rust.run",
             return_value=make_proc(),

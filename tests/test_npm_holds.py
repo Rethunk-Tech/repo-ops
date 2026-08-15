@@ -20,8 +20,8 @@ from repo_ops_models import Change
 
 _RESOLVER_PATH = "repo_ops_lockfiles.snapshots.resolved_version_from_node_modules"
 _OUTDATED = "repo_ops_js_npm.npm._npm_outdated"
-_GLOBAL_HOLDS_CACHE = "repo_ops_js.holds._global_holds_cached"
-_REPO_HOLDS_CACHE = "repo_ops_js.holds._repo_holds_cached"
+_GLOBAL_HOLDS_CACHE = "repo_ops_core.holds._global_holds_cached"
+_REPO_HOLDS_CACHE = "repo_ops_core.holds._repo_holds_cached"
 
 
 def _seed(d: Path, *, pkg_content: str | None = None) -> None:
