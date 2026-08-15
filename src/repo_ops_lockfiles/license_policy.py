@@ -45,6 +45,7 @@ from repo_ops_core.cli import (
     resolve_scan_roots,
     wire_verbose,
 )
+from repo_ops_core.config import coerce_bool_setting
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.filesystem import read_json_file, read_toml_file
 from repo_ops_lockfiles.license_enrich import classify_license_text, enrich_license
@@ -67,7 +68,7 @@ UNKNOWN_LICENSE = "UNKNOWN"
 
 
 def _env_flag(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+    return coerce_bool_setting(os.environ.get(name, ""))
 
 
 @dataclass

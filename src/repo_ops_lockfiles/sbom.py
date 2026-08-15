@@ -38,6 +38,7 @@ from repo_ops_core.cli import (
     resolve_scan_roots,
     wire_verbose,
 )
+from repo_ops_core.config import coerce_bool_setting
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.filesystem import should_exclude, write_json_atomic
 from repo_ops_lockfiles.license_enrich import enrich_component
@@ -64,7 +65,7 @@ _LICENSE_NOASSERTION = "NOASSERTION"
 
 
 def _env_flag(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+    return coerce_bool_setting(os.environ.get(name, ""))
 
 
 # ---------------------------------------------------------------------------
