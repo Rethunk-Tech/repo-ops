@@ -30,6 +30,7 @@ import fnmatch
 import sys
 from dataclasses import dataclass
 from datetime import date
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -227,3 +228,52 @@ def resolve_hold(
 
     candidates.sort(key=specificity, reverse=True)
     return candidates[0]
+
+
+@cache
+def _global_holds_cached() -> tuple[HoldRule, ...]:
+    return tuple(load_global_holds())
+
+
+@cache
+def _repo_holds_cached(repo_root: str) -> tuple[HoldRule, ...]:
+    return tuple(load_repo_holds(Path(repo_root)))
+
+
+def workspace_rel(ws: Any) -> str:
+    """Workspace path relative to its repo root, or ``"."`` at the root."""
+    try:
+        rel = ws.path.resolve().relative_to(ws.git_repo.resolve()).as_posix()
+    except ValueError:
+        return "."
+    return rel or "."
+
+
+def resolve_package_hold(ws: Any, package: str) -> HoldRule | None:
+    """Return the active hold rule for *package* in *ws*, or ``None``.
+
+    Reads global + per-repo rules through a process-lifetime cache: every
+    ecosystem plugin resolves holds per package across a whole sweep, so the
+    config files would otherwise be re-read once per package per workspace.
+    Call :func:`clear_hold_caches` after writing config in a test.
+
+    ``ws`` is any object with ``path``, ``git_repo``, ``ecosystem`` and
+    ``manager`` attributes (e.g. ``repo_ops_models.Workspace``).
+    """
+    repo_root = str(ws.git_repo.resolve())
+    rules = [*_global_holds_cached(), *_repo_holds_cached(repo_root)]
+    if not rules:
+        return None
+    return resolve_hold(
+        rules,
+        package=package,
+        ecosystem=ws.ecosystem,
+        manager=ws.manager,
+        workspace_rel=workspace_rel(ws),
+    )
+
+
+def clear_hold_caches() -> None:
+    """Drop the cached global/per-repo hold rules."""
+    _global_holds_cached.cache_clear()
+    _repo_holds_cached.cache_clear()
