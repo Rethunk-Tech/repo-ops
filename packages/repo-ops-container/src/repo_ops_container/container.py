@@ -1185,21 +1185,6 @@ def _replace_tag_in_line(line: str, image: str, old_tag: str, new_tag: str) -> s
         return line[:idx] + new + line[end:]
 
 
-def _replace_digest_in_line(
-    line: str, image: str, tag: str, old_sha: str, new_sha: str
-) -> str:
-    """Byte-preserving single-line digest replacement.
-
-    Replaces the sha256 digest in ``<image>:<tag>@<old_sha>`` with *new_sha*.
-    Never reflows or reformats the line.
-    """
-    old = f"{image}:{tag}@{old_sha}"
-    new = f"{image}:{tag}@{new_sha}"
-    if old in line:
-        return line.replace(old, new, 1)
-    return line
-
-
 def _replace_image_ref_in_line(
     line: str,
     image: str,
@@ -1330,7 +1315,9 @@ def apply_container(ws: Workspace) -> None:
 
         for image, tag, old_sha, new_sha in sha_bumps:
             for i, line in enumerate(lines):
-                updated = _replace_digest_in_line(line, image, tag, old_sha, new_sha)
+                updated = _replace_image_ref_in_line(
+                    line, image, tag, old_sha, tag, new_sha
+                )
                 if updated != line:
                     lines[i] = updated
                     changed = True
