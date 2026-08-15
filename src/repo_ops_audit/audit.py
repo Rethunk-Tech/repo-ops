@@ -484,13 +484,7 @@ def _audit_node(ws: str, manager: str) -> WorkspaceResult:
         # triggers the _parse_bun_audit_text fallback below.
         "bun": ["bun", "audit", "--json"],
     }
-    bin_map: dict[str, str] = {
-        "npm": "npm",
-        "yarn": "yarn",
-        "pnpm": "pnpm",
-        "bun": "bun",
-    }
-    tool = bin_map.get(manager, manager)
+    tool = manager
     if shutil.which(tool) is None:
         return _skip(ws, "node", manager, f"{tool} not on PATH")
 
