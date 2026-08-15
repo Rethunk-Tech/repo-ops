@@ -215,39 +215,50 @@ def _owner_repo(remote_url: str) -> str | None:
 
 _GH_TIMEOUT = 30
 
+def _gh(args: list[str]) -> tuple[subprocess.CompletedProcess[str] | None, str]:
+    """Run ``gh *args``; return (completed_process, error).
 
-def _gh_list_dependabot_prs(
-    owner_repo: str,
-) -> tuple[list[dict[str, str | int]], str]:
-    """Return (list_of_pr_dicts, error_string)."""
+    *error* is non-empty (and the process ``None``) only when ``gh`` itself
+    could not be run (missing from PATH or timed out) — a non-zero exit from
+    a *successful* invocation is left for the caller to interpret.
+    """
     if shutil.which("gh") is None:
-        return [], "gh not on PATH"
+        return None, "gh not on PATH"
     try:
         proc = subprocess.run(
-            [
-                "gh",
-                "pr",
-                "list",
-                "--repo",
-                owner_repo,
-                "--author",
-                "app/dependabot",
-                "--state",
-                "open",
-                "--json",
-                "number,title,headRefName",
-            ],
+            ["gh", *args],
             capture_output=True,
             text=True,
             timeout=_GH_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
-        return [], f"gh pr list timed out after {_GH_TIMEOUT}s"
+        return None, f"gh timed out after {_GH_TIMEOUT}s"
     except FileNotFoundError:
-        return [], "gh not found"
-    if proc.returncode != 0:
-        err = (proc.stderr or proc.stdout or "gh pr list failed").strip()[:200]
+        return None, "gh not found"
+    return proc, ""
+
+def _gh_list_dependabot_prs(
+    owner_repo: str,
+) -> tuple[list[dict[str, str | int]], str]:
+    """Return (list_of_pr_dicts, error_string)."""
+    proc, err = _gh(
+        [
+            "pr",
+            "list",
+            "--repo",
+            owner_repo,
+            "--author",
+            "app/dependabot",
+            "--state",
+            "open",
+            "--json",
+            "number,title,headRefName",
+        ]
+    )
+    if proc is None:
         return [], err
+    if proc.returncode != 0:
+        return [], (proc.stderr or proc.stdout or "gh pr list failed").strip()[:200]
     try:
         data = json.loads(proc.stdout)
         if not isinstance(data, list):
@@ -259,31 +270,13 @@ def _gh_list_dependabot_prs(
 
 def _gh_pr_body(owner_repo: str, pr_number: int) -> tuple[str, str]:
     """Return (body_text, error_string) for the given PR."""
-    if shutil.which("gh") is None:
-        return "", "gh not on PATH"
-    try:
-        proc = subprocess.run(
-            [
-                "gh",
-                "pr",
-                "view",
-                str(pr_number),
-                "--repo",
-                owner_repo,
-                "--json",
-                "body",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=_GH_TIMEOUT,
-        )
-    except subprocess.TimeoutExpired:
-        return "", f"gh pr view timed out after {_GH_TIMEOUT}s"
-    except FileNotFoundError:
-        return "", "gh not found"
-    if proc.returncode != 0:
-        err = (proc.stderr or proc.stdout or "gh pr view failed").strip()[:200]
+    proc, err = _gh(
+        ["pr", "view", str(pr_number), "--repo", owner_repo, "--json", "body"]
+    )
+    if proc is None:
         return "", err
+    if proc.returncode != 0:
+        return "", (proc.stderr or proc.stdout or "gh pr view failed").strip()[:200]
     try:
         data = json.loads(proc.stdout)
         return str(data.get("body") or ""), ""
@@ -293,28 +286,11 @@ def _gh_pr_body(owner_repo: str, pr_number: int) -> tuple[str, str]:
 
 def _gh_close_pr(owner_repo: str, pr_number: int, comment: str) -> str:
     """Close *pr_number* with *comment*; return error string (empty = success)."""
-    if shutil.which("gh") is None:
-        return "gh not on PATH"
-    try:
-        proc = subprocess.run(
-            [
-                "gh",
-                "pr",
-                "close",
-                str(pr_number),
-                "--repo",
-                owner_repo,
-                "--comment",
-                comment,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=_GH_TIMEOUT,
-        )
-    except subprocess.TimeoutExpired:
-        return f"timeout after {_GH_TIMEOUT}s"
-    except FileNotFoundError:
-        return "gh not found"
+    proc, err = _gh(
+        ["pr", "close", str(pr_number), "--repo", owner_repo, "--comment", comment]
+    )
+    if proc is None:
+        return err
     if proc.returncode != 0:
         return (proc.stderr or proc.stdout or "gh pr close failed").strip()[:200]
     return ""
