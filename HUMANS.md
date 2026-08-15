@@ -13,10 +13,11 @@ repo-ops doctor
 
 ## Common maintenance
 
-For routine full-coverage maintenance, run `repo-ops plan --full` and review it
-before `repo-ops apply --full`. Bare `--latest` is incomplete: it does not
-refresh pinned Actions or container digests or close JavaScript targeted-bump
-gaps.
+For routine maintenance, run `repo-ops plan` and review it before
+`repo-ops apply` — full-coverage sweeping (cross-range upgrades, targeted
+bumps, Actions pin/digest refresh, container digest refresh) is the default,
+no flags required. Pass `--conservative` to stay within existing manifest
+constraints instead.
 
 `--verify-test` enables Go and Rust tests during apply verification. Hatch
 verification includes mypy and pyrefly when configured; pyrefly project

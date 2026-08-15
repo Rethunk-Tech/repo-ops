@@ -16,7 +16,7 @@ description: >-
 
 Use the **`repo-ops`** CLI for dependency and Actions maintenance.
 
-**Agent quick reference (invocations, DEFAULT_ROOTS, workflow, flags, do-nots):** [AGENTS.md](AGENTS.md) — bundled alongside this file; open it now. ([canonical/latest on GitHub](https://github.com/Rethunk-Tech/repo-ops/blob/main/AGENTS.md)) When the user names a command (e.g. `/repo-ops apply --latest`), **run it directly** with default roots; do not run `which repo-ops`, read source, or probe `--help` first.
+**Agent quick reference (invocations, DEFAULT_ROOTS, workflow, flags, do-nots):** [AGENTS.md](AGENTS.md) — bundled alongside this file; open it now. ([canonical/latest on GitHub](https://github.com/Rethunk-Tech/repo-ops/blob/main/AGENTS.md)) When the user names a command (e.g. `/repo-ops apply`), **run it directly** with default roots; do not run `which repo-ops`, read source, or probe `--help` first. `plan`/`apply` run the full-coverage sweep by default — no flags to remember. Pass `--conservative` only when a run must stay within existing manifest constraints.
 
 **Install and environment:** [HUMANS.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/HUMANS.md). **CLI flags (authoritative):** `repo-ops <subcommand> --help`. **Deep reference:** [docs/usage.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/usage.md), [docs/bulk-maintenance.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/bulk-maintenance.md).
 

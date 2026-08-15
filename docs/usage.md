@@ -44,12 +44,13 @@ pushes.
 - **Apply** performs updates; `--no-verify`, `--skip-remediations`, or `--skip-actions` narrow scope. On verify failure, `--on-verify-fail=keep` (default) leaves the worktree as-is; `--on-verify-fail=revert` restores pre-apply lockfile snapshots and git-tracked paths under the workspace. Human and JSON workspace rows include `verify_fail_disposition` (`FAILED_WITH_CHANGES` vs `FAILED_CLEAN`) when verify fails.
 - **Verification tests:** `--verify-test` runs the additional Go and Rust test gates during apply verification. Go tests run with the Go verify gates, and Rust runs `cargo test` after `cargo check`; the default remains off.
 - Actions pins included by default; `--skip-actions` for dependency-only runs.
-- **Cross-major Actions bumps:** By default a newer major upstream (e.g. `actions/checkout@v4` → `v6`) is **report only**. `--actions-upgrade-mode=latest` (or the `--latest` umbrella) applies it: tag-style `major` rewrites to the floating `@v{max}` (only when a bare `v{max}` tag exists upstream — same safety check as normalize), tag-style `exact` rewrites to the highest `@v{max}.M.P`. When the newest major cannot be safely targeted, it falls back to normalize/report-only. An explicit `--actions-upgrade-mode` overrides the `--latest` umbrella. For SHA-pinned actions, combine `--actions-refresh-sha` with `--latest` to re-pin to the newest major's commit SHA (with comment update) — see SHA digest refresh below.
-- **SHA pins (default: preserve):** By default, `uses: owner/repo@<sha>` pins are **report only** on apply (supply-chain hardening). Opt in to tag resolution with `--actions-unpin-sha`. When unpinning: (1) trailing `# vN[.N.N]` comment → use that major; (2) tags API SHA→tag lookup → highest semver tag for that commit. If neither resolves, the SHA is reported but left untouched. `--actions-tag-style=major` (default) → `@vN`; `exact` → highest `@vN.M.P` within the resolved major (falls back to `@vN`).
-- **SHA digest refresh (keep pinned):** `--actions-refresh-sha` keeps a `uses: owner/repo@<sha>  # vN` action pinned **by digest** but advances the SHA to the commit of the newest `vN.M.P` release **within its current major**, preserving the `# vN` comment. Use this to supersede Dependabot's digest-pin bumps (e.g. `actions/checkout` `6.0.2 → 6.0.3`) without un-hardening the pin to a floating tag. Combined with `--latest` (or `--actions-upgrade-mode=latest`), also **crosses major boundaries**: re-pins to the newest major's commit SHA and updates the `# vN` comment to the new major (e.g. `# v6` → `# v7`) — superseding Dependabot's cross-major SHA-pin PRs such as `actions/checkout` v6→v7 or `sigstore/cosign-installer` v3→v4. Falls back to within-major refresh when the newest major has no exact `vN.M.P` tag. The major is resolved from the `# vN` comment, else the tags API. No effect with `--actions-unpin-sha` (that resolves the SHA to a tag instead); a no-op when the major can't be resolved or the pin is already the newest digest.
-- **Pre-commit SHA refresh:** `--precommit-refresh-sha` keeps resolvable SHA-pinned `rev:` entries pinned by digest while advancing them to the newest release within the tagged major for the same hook repository. Without the flag, SHA pins remain report only; unresolvable pins remain unchanged.
-- **Submodule SHA refresh:** `--submodule-refresh-sha` keeps SHA-only submodule HEADs pinned by commit while advancing them to the newest resolvable release within the tagged major for the same `.gitmodules` URL. Without the flag, SHA-only pointers remain report only; unresolvable pins remain unchanged.
-- **Full coverage (`--full`):** This opt-in umbrella enables `--latest`, `--actions-refresh-sha`, `--container-refresh-sha`, `--precommit-refresh-sha`, `--submodule-refresh-sha`, and all five targeted-bump flags (`--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, `--bun-targeted-bump`, and `--deno-targeted-bump`). It does not change defaults when absent. `--latest` alone is incomplete: it does not refresh SHA-pinned Actions, container digests, pre-commit revisions, or submodule pointers and does not close yarn/npm/pnpm/bun/deno `behind_latest` gaps.
+- **Cross-major Actions bumps:** By default a newer major upstream (e.g. `actions/checkout@v4` → `v6`) is applied: tag-style `major` rewrites to the floating `@v{max}` (only when a bare `v{max}` tag exists upstream — same safety check as normalize), tag-style `exact` rewrites to the highest `@v{max}.M.P`. When the newest major cannot be safely targeted, it falls back to normalize/report-only. `--actions-upgrade-mode=normalize` keeps Actions within-major only (report the newer major instead of applying it) without disabling digest refresh or pin-to-SHA for those same Actions, and without affecting any other ecosystem's sweep. `--conservative` turns off cross-major bumps, digest refresh, and pin-to-SHA together. For SHA-pinned actions, digest refresh re-pins to the newest major's commit SHA (with comment update) by default — see SHA digest refresh below.
+- **SHA pins (default: preserve):** By default, `uses: owner/repo@<sha>` pins are never unpinned to a floating tag on apply (supply-chain hardening) — this default holds regardless of `--conservative`. Opt in to tag resolution with `--actions-unpin-sha`. When unpinning: (1) trailing `# vN[.N.N]` comment → use that major; (2) tags API SHA→tag lookup → highest semver tag for that commit. If neither resolves, the SHA is reported but left untouched. `--actions-tag-style=major` (default) → `@vN`; `exact` → highest `@vN.M.P` within the resolved major (falls back to `@vN`).
+- **SHA digest refresh (keep pinned):** By default, a `uses: owner/repo@<sha>  # vN` action pinned **by digest** has its SHA advanced to the commit of the newest `vN.M.P` release **within its current major**, preserving the `# vN` comment — superseding Dependabot's digest-pin bumps (e.g. `actions/checkout` `6.0.2 → 6.0.3`) without un-hardening the pin to a floating tag. This also **crosses major boundaries** by default: re-pins to the newest major's commit SHA and updates the `# vN` comment to the new major (e.g. `# v6` → `# v7`) — superseding Dependabot's cross-major SHA-pin PRs such as `actions/checkout` v6→v7 or `sigstore/cosign-installer` v3→v4. Falls back to within-major refresh when the newest major has no exact `vN.M.P` tag. The major is resolved from the `# vN` comment, else the tags API. No effect with `--actions-unpin-sha` (that resolves the SHA to a tag instead); a no-op when the major can't be resolved or the pin is already the newest digest. `--conservative` turns this off entirely (SHA pins stay report-only).
+- **Floating (never-SHA-pinned) Actions:** By default, a floating tag pin (`@vN`, `@vN.M.P`) is converted to the commit SHA of the highest `vN.M.P` release in its resolved major, adding or replacing a `# vN.M.P` comment; crosses major the same way digest refresh does. `--conservative` leaves floating tags untouched.
+- **Pre-commit SHA refresh:** By default, resolvable SHA-pinned `rev:` entries stay pinned by digest while advancing to the newest release within the tagged major for the same hook repository. `--conservative` leaves SHA pins report only; unresolvable pins remain unchanged either way.
+- **Submodule SHA refresh:** By default, SHA-only submodule HEADs stay pinned by commit while advancing to the newest resolvable release within the tagged major for the same `.gitmodules` URL. `--conservative` leaves SHA-only pointers report only; unresolvable pins remain unchanged either way.
+- **Full coverage is the default.** `plan`/`apply` cross ranges for every ecosystem, targeted-bump every package manager, and refresh/pin Actions, container, pre-commit, and submodule SHAs — all without any flag. `--conservative` is the single opt-out: stay in-range, only move what each manifest's own constraints already allow.
 - **Human-only filtering (`--only-outdated`):** Human-readable output can be limited to entries with outdated dependencies. JSON output remains complete and unfiltered; `--only-outdated` does not remove rows from JSON reports.
 - **Remediations:** `--skip-remediations` accepts the current remediation IDs below. Remediations are enabled by default unless marked off.
 
@@ -87,23 +88,27 @@ When JSON is enabled, audit and pushed report excluded repositories in
 
 ### Ecosystem upgrade modes (plan and apply)
 
-| Ecosystem | Default behavior | Aggressive / latest opt-in |
-| ----------- | ------------------ | ---------------------------- |
-| **npm** | `npm update` (semver ranges in manifests) | Add `--npm-targeted-bump` (`REPO_OPS_NPM_TARGETED_BUMP=1`) to move deps left behind when a latest-mode bump was attempted |
-| **pnpm** | `pnpm update -r` (within ranges) | `REPO_OPS_PNPM_UPDATE_LATEST=1` → adds `--latest`; add `--pnpm-targeted-bump` (`REPO_OPS_PNPM_TARGETED_BUMP=1`) for behind-latest fallback, including `catalog:` / `catalogs:` entries in `pnpm-workspace.yaml` |
-| **yarn** | `yarn up` (Berry, in-range bumps in isolated plan snapshots) | `REPO_OPS_YARN_UPDATE_LATEST=1` → `yarn up -R '*'`; reports direct deps yarn's resolver kept behind their newest published version as `behind_latest` (#110). Add `--yarn-targeted-bump` (`REPO_OPS_YARN_TARGETED_BUMP=1`) to also *move* those gaps: a reversible per-package `yarn up <pkg>@latest`, kept only if the workspace still installs and the version actually advances (#111) |
-| **bun** | `bun update` (within ranges) | `REPO_OPS_BUN_UPDATE_LATEST=1` → includes out-of-range "latest" packages. Add `--bun-targeted-bump` (`REPO_OPS_BUN_TARGETED_BUMP=1`) to also *move* deps `bun update --latest` left behind: a reversible per-package `bun add <pkg>@latest`, kept only if the workspace still installs and the version actually advances |
-| **go** | `REPO_OPS_GO_UPGRADE_MODE=patch` (default) | `explicit` or `mvs` (see below) |
-| **rust** | `cargo update --dry-run` / `cargo update` (within semver constraints in `Cargo.lock`) | No cross-range / `--latest` mode — `--latest` does not change cargo behavior. Opt into direct Cargo.toml constraint bumps with `--rust-targeted-bump` (`REPO_OPS_RUST_TARGETED_BUMP=1`); this flag is not part of `--full`. Rust major upgrades are out of scope for repo-ops; edit manifests by hand |
-| **python** | Manager-specific (`uv`, poetry, pip-tools, hatch) | uv stays constraint-respecting (`uv lock --upgrade`). Poetry/PDM/Pipenv/pip-tools have no `--latest` umbrella; opt into constraint bumps with their targeted-bump flags (not part of `--full`) |
-| **poetry** | `poetry update --dry-run` / `poetry update` (in-range); skipped with a WARN when `poetry` is not on PATH | `--poetry-targeted-bump` (`REPO_OPS_POETRY_TARGETED_BUMP=1`) — reversible per-package `poetry add pkg@^X` when the lock is behind a published version that needs a constraint bump. Not implied by `--latest` or `--full` |
-| **pdm** | `pdm update --dry-run` / `pdm update` (in-range); skipped with a WARN when `pdm` is not on PATH | `--pdm-targeted-bump` (`REPO_OPS_PDM_TARGETED_BUMP=1`) — reversible per-package `pdm add pkg@^X`. Not implied by `--latest` or `--full` |
-| **pipenv** | venv `pip list --outdated --format=json` (via `pipenv --venv`, read-only; never creates a venv) / `pipenv update`; skipped with a WARN when `pipenv` is not on PATH or the venv is not initialised | `--pipenv-targeted-bump` (`REPO_OPS_PIPENV_TARGETED_BUMP=1`) — reversible per-package `pipenv install`, only when an existing venv is detected; not implied by `--latest` or `--full` |
-| **pip-tools** | `uv pip compile` or `pip-compile` from `requirements.in` (within constraints) | `--pip-tools-targeted-bump` (`REPO_OPS_PIP_TOOLS_TARGETED_BUMP=1`) — rewrites `requirements.in` only when its constraint blocks the latest published version, then recompiles reversibly; not implied by `--latest` or `--full` |
-| **deno** | `deno outdated` / `deno outdated --update` (Deno ≥ 2.x); supports both box-drawing and plain-text output; skipped with a WARN when `deno` is not on PATH | `REPO_OPS_DENO_UPDATE_LATEST=1` → adds `--latest`; add `--deno-targeted-bump` (`REPO_OPS_DENO_TARGETED_BUMP=1`) for behind-latest fallback via selective `deno update <pkg>` |
-| **pre-commit** | Checks `.pre-commit-config.yaml` hook revs against latest upstream tags (within-major only by default); SHA pins are report-only | `REPO_OPS_PRECOMMIT_UPDATE_LATEST=1` → allow cross-major rev bumps; `--precommit-refresh-sha` (`REPO_OPS_PRECOMMIT_REFRESH_SHA=1`) → refresh resolvable SHA pins within their tagged major |
-| **GitHub Actions** | `--actions-upgrade-mode=normalize` (default): normalize exact tag pins to the floating major (`@vN`); a newer major upstream is reported only. SHA pins: report only (preserve digest). | `--actions-upgrade-mode=latest` (or `--latest`) → also apply cross-major bumps; `--actions-unpin-sha` → resolve SHA pins to tags; `--actions-refresh-sha` → advance digest within current major (with `--latest`: cross-major re-pin + comment update); `--actions-tag-style=exact` → highest `@vN.M.P` when unpinning. With `--actions-org-policy`, `--actions-policy-level=report | warn | block` (default `report`) controls whether violating pin rewrites are annotated only, warned, or blocked (`policy-blocked`) |
-| **container** | Checks `FROM` / `image:` references in Dockerfiles and Compose files; SHA-pinned images are report-only by default | `REPO_OPS_CONTAINER_UPDATE_LATEST=1` (or `--latest`) → allow cross-major tag bumps; `REPO_OPS_CONTAINER_REFRESH_SHA=1` → advance SHA digest for `image:tag@sha256:…` pins to the latest digest for the same tag (keeps pin hardened, advances to current content) |
+Full coverage is the default: every ecosystem below crosses ranges and moves
+`behind_latest` gaps without any flag. `--conservative` is the single
+opt-out, per ecosystem behavior described in its own column.
+
+| Ecosystem | Default (full sweep) | `--conservative` |
+| ----------- | ----------------------- | ------------------- |
+| **npm** | `npm update`, then a reversible per-package targeted bump (`npm install <pkg>@latest`) for any dep left `behind_latest` after the update | `npm update` only (semver ranges in manifests); gaps stay reported as `behind_latest` |
+| **pnpm** | `pnpm update -r --latest` (cross-range), plus a reversible per-package targeted bump for behind-latest fallback, including `catalog:` / `catalogs:` entries in `pnpm-workspace.yaml` | `pnpm update -r` within existing ranges only |
+| **yarn** | `yarn up -R '*'` (Berry, cross-range), plus a reversible per-package targeted bump (`yarn up <pkg>@latest`) for any direct dep yarn's resolver still kept behind its newest published version, kept only if the workspace still installs and the version actually advances | `yarn up` — in-range bumps only, in isolated plan snapshots |
+| **bun** | `bun update` including out-of-range "latest" packages identified via `bun outdated`, plus a reversible per-package targeted bump (`bun add <pkg>@<version>`) for any remaining gap, kept only if the workspace still installs and the version actually advances | `bun update` within existing ranges only |
+| **go** | `REPO_OPS_GO_UPGRADE_MODE=explicit` (all `list -u` updates) unless `--go-upgrade-mode` overrides it | `REPO_OPS_GO_UPGRADE_MODE=patch` (same-minor-line patches only) unless `--go-upgrade-mode` overrides it |
+| **rust** | Direct Cargo.toml constraint bumps for crates.io deps (including `[workspace.dependencies]`) outside the current req, on top of `cargo update`. Rust major upgrades stay out of scope for repo-ops; edit manifests by hand | `cargo update --dry-run` / `cargo update` — within existing semver constraints in `Cargo.lock` only |
+| **python** | Manager-specific; see the poetry/pdm/pipenv/pip-tools rows below. `uv` always stays constraint-respecting (`uv lock --upgrade`) regardless of `--conservative` | Same as default for `uv`; poetry/pdm/pipenv/pip-tools stay in-range |
+| **poetry** | `poetry update`, plus a reversible per-package `poetry add pkg@^X` when the lock is behind a published version the current range can't take; skipped with a WARN when `poetry` is not on PATH | `poetry update --dry-run` / `poetry update` — in-range only |
+| **pdm** | `pdm update`, plus a reversible per-package `pdm add pkg@^X`; skipped with a WARN when `pdm` is not on PATH | `pdm update --dry-run` / `pdm update` — in-range only |
+| **pipenv** | venv `pip list --outdated --format=json` (via `pipenv --venv`, read-only; never creates a venv) / `pipenv update`, plus a reversible per-package `pipenv install` when an existing venv is detected; skipped with a WARN when `pipenv` is not on PATH or the venv is not initialised | Same read-only outdated check / `pipenv update`, no targeted bump |
+| **pip-tools** | `uv pip compile` or `pip-compile` from `requirements.in`, plus rewriting `requirements.in` when its constraint blocks the latest published version, then recompiling reversibly | Compile from `requirements.in` within existing constraints only |
+| **deno** | `deno outdated --update --latest` (Deno ≥ 2.x, cross-range), plus a reversible per-package fallback via selective `deno update <pkg>` for any remaining gap | `deno outdated --update` — in-range only; skipped with a WARN when `deno` is not on PATH |
+| **pre-commit** | Cross-major hook rev bumps against latest upstream tags, plus resolvable SHA pins refreshed within their tagged major | Within-major rev bumps only; SHA pins stay report-only |
+| **GitHub Actions** | `--actions-upgrade-mode=latest`: cross-major bumps applied; SHA pins get digest refresh (within-major advance, or cross-major re-pin with comment update); floating tag pins get converted to SHA pins. `--actions-unpin-sha` (independent of the sweep default) resolves SHA pins to tags instead; `--actions-tag-style=exact` picks the highest `@vN.M.P` when unpinning. With `--actions-org-policy`, `--actions-policy-level=report\|warn\|block` (default `report`) controls whether violating pin rewrites are annotated only, warned, or blocked (`policy-blocked`) | `--actions-upgrade-mode=normalize`: exact tag pins normalize to the floating major (`@vN`); a newer major upstream is reported only; SHA pins stay report-only (preserve digest); floating tags are left untouched |
+| **container** | Checks `FROM` / `image:` references in Dockerfiles and Compose files; cross-major tag bumps applied; SHA-pinned images get digest refresh to the latest digest for the same tag (keeps the pin hardened, advances to current content) | Within-major tag bumps only; SHA-pinned images stay report-only |
 
 #### Hatch and `--migrate-to-uv-lock`
 
@@ -111,27 +116,29 @@ Hatch workspaces without a `uv.lock` are not upgraded unless `--migrate-to-uv-lo
 
 ### Go modules
 
-`REPO_OPS_GO_UPGRADE_MODE` (default `patch`) aligns plan and apply:
+`REPO_OPS_GO_UPGRADE_MODE` aligns plan and apply. Its own default is `patch`
+(what `--conservative` falls back to); the default full sweep sets it to
+`explicit` automatically. `--go-upgrade-mode` always overrides either default:
 
 | Mode | Plan | Apply |
 | ------ | ------ | ------- |
-| `patch` (default) | `go list -m -u -json`, same minor-line patches only | `go get -u=patch all`, `go mod tidy` |
-| `explicit` | all `list -u` updates | batched `go get path@version`, tidy |
+| `patch` (`--conservative` default) | `go list -m -u -json`, same minor-line patches only | `go get -u=patch all`, `go mod tidy` |
+| `explicit` (full-sweep default) | all `list -u` updates | batched `go get path@version`, tidy |
 | `mvs` | legacy `go list -u -m all` text | `go get -u -t all`, tidy |
 
 ### Yarn isolated plan
 
 Isolated snapshots copy `.yarn/releases/` (Berry) and `file:../…` siblings from `package.json`; skip `node_modules`, `.yarn/cache`, and other heavy dirs. Failed `yarn up` / `install` errors include a stderr tail in plan JSON `error`. Upgrade command policy: table above (`REPO_OPS_YARN_UPDATE_LATEST`).
 
-#### Targeted bump fallback (`--yarn-targeted-bump`, #111)
+#### Targeted bump fallback
 
-`yarn up -R '*'` delegates to yarn's resolver, which keeps peer/group-constrained direct deps below their newest release; `behind_latest` (#110) reports those. Opt into `--yarn-targeted-bump` (with `--latest`) to *move* the gap instead of only reporting it: for each `behind_latest` dep, repo-ops snapshots the lockfile/manifests, runs a targeted `yarn up <pkg>@latest` + `yarn install`, and keeps the result only when install succeeds **and** the resolved version actually advances. Any failure — install break, or a ghost bump where the lock churns but the resolver holds the old version — restores the snapshot, so the dep stays in `behind_latest` and nothing broken is committed. Successful bumps become normal planned changes (visible in `plan`, applied by `apply`). Same shape for npm/pnpm/bun via their own `--*-targeted-bump` flags.
+`yarn up -R '*'` delegates to yarn's resolver, which keeps peer/group-constrained direct deps below their newest release; `behind_latest` reports those. By default, repo-ops *moves* the gap instead of only reporting it: for each `behind_latest` dep, it snapshots the lockfile/manifests, runs a targeted `yarn up <pkg>@latest` + `yarn install`, and keeps the result only when install succeeds **and** the resolved version actually advances. Any failure — install break, or a ghost bump where the lock churns but the resolver holds the old version — restores the snapshot, so the dep stays in `behind_latest` and nothing broken is committed. Successful bumps become normal planned changes (visible in `plan`, applied by `apply`). Same shape for every other package manager; `--conservative` disables the fallback everywhere and leaves gaps report-only.
 
-A `resolutions`/`overrides`/`pnpm.overrides` manifest pin blocking the target is not automatically a hard stop: if no [package hold](#package-holds--capping-a-packages-version-temporarily) covers the package, the retry releases that pin first (it predates the hold feature, or was a one-off fix never promoted to a tracked hold) before running the install — reverted along with everything else in the snapshot if the retry still doesn't land. A package covered by an active hold keeps its pin untouched and is bumped only up to the hold's ceiling. This applies to the *initial* bulk-update ghost-bump guard too (yarn/bun): with targeted-bump enabled, a blocked target from that first pass is handed to this retry instead of failing the whole workspace outright — the guard only raises immediately when there is no targeted-bump fallback to hand it to. Deno uses the same opt-in shape via `--deno-targeted-bump` (selective `deno update <pkg>` with lock/import-map snapshot restore).
+A `resolutions`/`overrides`/`pnpm.overrides` manifest pin blocking the target is not automatically a hard stop: if no [package hold](#package-holds--capping-a-packages-version-temporarily) covers the package, the retry releases that pin first (it predates the hold feature, or was a one-off fix never promoted to a tracked hold) before running the install — reverted along with everything else in the snapshot if the retry still doesn't land. A package covered by an active hold keeps its pin untouched and is bumped only up to the hold's ceiling. This applies to the *initial* bulk-update ghost-bump guard too (yarn/bun): a blocked target from that first pass is handed to this retry instead of failing the whole workspace outright — the guard only raises immediately when `--conservative` leaves no targeted-bump fallback to hand it to. Deno uses the same fallback shape (selective `deno update <pkg>` with lock/import-map snapshot restore).
 
 ### Submodule tag-advance
 
-When `--submodules` is active, `plan` detects available semver tag advances for each discovered submodule (comparing the current registered commit against upstream tags). By default only **within-major** advances are surfaced. Set `REPO_OPS_SUBMODULE_UPDATE_LATEST=1` to also surface and apply **cross-major** tag advances. Set `--submodule-refresh-sha` (`REPO_OPS_SUBMODULE_REFRESH_SHA=1`) to refresh SHA-only HEADs when the same `.gitmodules` URL resolves their tagged major. `apply --submodule-order=children-first` applies submodule pointer updates before parent umbrella commits.
+When `--submodules` is active, `plan` detects available semver tag advances for each discovered submodule (comparing the current registered commit against upstream tags). By default, both within-major and **cross-major** tag advances are surfaced and applied, and SHA-only HEADs are refreshed when the same `.gitmodules` URL resolves their tagged major. `--conservative` restricts advances to within-major and leaves SHA-only HEADs report-only. `apply --submodule-order=children-first` applies submodule pointer updates before parent umbrella commits.
 
 ### Apply resume
 
@@ -371,31 +378,37 @@ For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 `commit_agent_model` config key selects the agent model; the default is
 `composer-2.5`.
 
+The `*_update_latest`, `*_targeted_bump`, `precommit_refresh_sha`, and
+`submodule_refresh_sha` settings below have no CLI flag of their own — each
+env var's own default is `0` (in-range), but `plan`/`apply` set all of them to
+`1` automatically as part of the default full sweep. `--conservative` is the
+single flag that leaves them unset, restoring each one's own `0` default.
+
 | Setting | Flag | Env var | Config key | Default |
 | --------- | ------ | --------- | ------------ | --------- |
 | jobs | `--jobs` | (none) | `jobs` | `min(16, cpu_count)` |
 | yarn_max_concurrency | `--yarn-jobs` | `REPO_OPS_YARN_MAX_CONCURRENCY` | `yarn_max_concurrency` | `2` |
-| go_upgrade_mode | `--go-upgrade-mode` | `REPO_OPS_GO_UPGRADE_MODE` | `go_upgrade_mode` | `patch` |
+| go_upgrade_mode | `--go-upgrade-mode` | `REPO_OPS_GO_UPGRADE_MODE` | `go_upgrade_mode` | `patch` (full sweep sets `explicit` unless overridden) |
 | actions_lint_level | `--actions-lint-level` | `REPO_OPS_ACTIONS_LINT_LEVEL` | `actions_lint_level` | `block` |
 | timeout_check | (none) | `REPO_OPS_TIMEOUT_CHECK` | `timeout_check` | `60` |
 | timeout_apply | (none) | `REPO_OPS_TIMEOUT_APPLY` | `timeout_apply` | `60` |
 | timeout_verify | (none) | `REPO_OPS_TIMEOUT_VERIFY` | `timeout_verify` | `60` |
 | find_timeout | (none) | `REPO_OPS_FIND_TIMEOUT` | `find_timeout` | `60` |
 | git_timeout | (none) | `REPO_OPS_GIT_TIMEOUT` | `git_timeout` | `10` |
-| bun_update_latest | `--latest` | `REPO_OPS_BUN_UPDATE_LATEST` | `bun_update_latest` | `0` |
-| pnpm_update_latest | `--latest` | `REPO_OPS_PNPM_UPDATE_LATEST` | `pnpm_update_latest` | `0` |
-| yarn_update_latest | `--latest` | `REPO_OPS_YARN_UPDATE_LATEST` | `yarn_update_latest` | `0` |
-| deno_update_latest | `--latest` | `REPO_OPS_DENO_UPDATE_LATEST` | `deno_update_latest` | `0` |
-| yarn_targeted_bump | `--yarn-targeted-bump` | `REPO_OPS_YARN_TARGETED_BUMP` | `yarn_targeted_bump` | `0` |
-| npm_targeted_bump | `--npm-targeted-bump` | `REPO_OPS_NPM_TARGETED_BUMP` | `npm_targeted_bump` | `0` |
-| pnpm_targeted_bump | `--pnpm-targeted-bump` | `REPO_OPS_PNPM_TARGETED_BUMP` | `pnpm_targeted_bump` | `0` |
-| bun_targeted_bump | `--bun-targeted-bump` | `REPO_OPS_BUN_TARGETED_BUMP` | `bun_targeted_bump` | `0` |
-| deno_targeted_bump | `--deno-targeted-bump` | `REPO_OPS_DENO_TARGETED_BUMP` | `deno_targeted_bump` | `0` |
-| rust_targeted_bump | `--rust-targeted-bump` | `REPO_OPS_RUST_TARGETED_BUMP` | `rust_targeted_bump` | `0` |
-| poetry_targeted_bump | `--poetry-targeted-bump` | `REPO_OPS_POETRY_TARGETED_BUMP` | `poetry_targeted_bump` | `0` |
-| pdm_targeted_bump | `--pdm-targeted-bump` | `REPO_OPS_PDM_TARGETED_BUMP` | `pdm_targeted_bump` | `0` |
-| pipenv_targeted_bump | `--pipenv-targeted-bump` | `REPO_OPS_PIPENV_TARGETED_BUMP` | `pipenv_targeted_bump` | `0` |
-| pip_tools_targeted_bump | `--pip-tools-targeted-bump` | `REPO_OPS_PIP_TOOLS_TARGETED_BUMP` | `pip_tools_targeted_bump` | `0` |
+| bun_update_latest | (none) | `REPO_OPS_BUN_UPDATE_LATEST` | `bun_update_latest` | `0` |
+| pnpm_update_latest | (none) | `REPO_OPS_PNPM_UPDATE_LATEST` | `pnpm_update_latest` | `0` |
+| yarn_update_latest | (none) | `REPO_OPS_YARN_UPDATE_LATEST` | `yarn_update_latest` | `0` |
+| deno_update_latest | (none) | `REPO_OPS_DENO_UPDATE_LATEST` | `deno_update_latest` | `0` |
+| yarn_targeted_bump | (none) | `REPO_OPS_YARN_TARGETED_BUMP` | `yarn_targeted_bump` | `0` |
+| npm_targeted_bump | (none) | `REPO_OPS_NPM_TARGETED_BUMP` | `npm_targeted_bump` | `0` |
+| pnpm_targeted_bump | (none) | `REPO_OPS_PNPM_TARGETED_BUMP` | `pnpm_targeted_bump` | `0` |
+| bun_targeted_bump | (none) | `REPO_OPS_BUN_TARGETED_BUMP` | `bun_targeted_bump` | `0` |
+| deno_targeted_bump | (none) | `REPO_OPS_DENO_TARGETED_BUMP` | `deno_targeted_bump` | `0` |
+| rust_targeted_bump | (none) | `REPO_OPS_RUST_TARGETED_BUMP` | `rust_targeted_bump` | `0` |
+| poetry_targeted_bump | (none) | `REPO_OPS_POETRY_TARGETED_BUMP` | `poetry_targeted_bump` | `0` |
+| pdm_targeted_bump | (none) | `REPO_OPS_PDM_TARGETED_BUMP` | `pdm_targeted_bump` | `0` |
+| pipenv_targeted_bump | (none) | `REPO_OPS_PIPENV_TARGETED_BUMP` | `pipenv_targeted_bump` | `0` |
+| pip_tools_targeted_bump | (none) | `REPO_OPS_PIP_TOOLS_TARGETED_BUMP` | `pip_tools_targeted_bump` | `0` |
 | go_work_sync | (none) | `REPO_OPS_GO_WORK_SYNC` | `go_work_sync` | `0` |
 | no_progress | (none) | `REPO_OPS_NO_PROGRESS` | `no_progress` | `0` |
 | no_state | (none) | `REPO_OPS_NO_STATE` | `no_state` | `0` |
@@ -413,9 +426,9 @@ For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 | container_refresh_sha | (none) | `REPO_OPS_CONTAINER_REFRESH_SHA` | `container_refresh_sha` | `0` |
 | hatch_migrate_uv_lock | `--migrate-to-uv-lock` | `REPO_OPS_HATCH_MIGRATE_UV_LOCK` | `hatch_migrate_uv_lock` | `0` |
 | precommit_update_latest | (none) | `REPO_OPS_PRECOMMIT_UPDATE_LATEST` | `precommit_update_latest` | `0` |
-| precommit_refresh_sha | `--precommit-refresh-sha` | `REPO_OPS_PRECOMMIT_REFRESH_SHA` | `precommit_refresh_sha` | `0` |
+| precommit_refresh_sha | (none) | `REPO_OPS_PRECOMMIT_REFRESH_SHA` | `precommit_refresh_sha` | `0` |
 | submodule_update_latest | (none) | `REPO_OPS_SUBMODULE_UPDATE_LATEST` | `submodule_update_latest` | `0` |
-| submodule_refresh_sha | `--submodule-refresh-sha` | `REPO_OPS_SUBMODULE_REFRESH_SHA` | `submodule_refresh_sha` | `0` |
+| submodule_refresh_sha | (none) | `REPO_OPS_SUBMODULE_REFRESH_SHA` | `submodule_refresh_sha` | `0` |
 | resume | (none) | `REPO_OPS_RESUME` | `resume` | `0` |
 | remediate_go_generate | (none) | `REPO_OPS_REMEDIATE_GO_GENERATE` | (none) | `0` |
 | audit_fail_on | `--fail-on` | `REPO_OPS_AUDIT_FAIL_ON` | `audit_fail_on` | `high` |
@@ -425,8 +438,8 @@ For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
 
 `exclude_patterns` above excludes whole repos; a **hold** does the same job
 at package granularity — cap one package (e.g. `typescript`) at a maximum
-version, optionally until an expiry date, without disabling `--latest` /
-`--*-targeted-bump` for every other package in the repo.
+version, optionally until an expiry date, without disabling the default full
+sweep for every other package in the repo.
 
 Holds are config-file only (no CLI flag or env var — arrays don't serialize
 to env, same reasoning as `exclude_patterns`), read from the same layered
@@ -487,7 +500,7 @@ for that remediation only.
 
 **How it's enforced, per ecosystem:**
 
-- **npm / yarn / pnpm / bun** — a held package's targeted/`--latest` bump
+- **npm / yarn / pnpm / bun** — a held package's cross-range/targeted bump
   targets the ceiling instead of `latest`, and a held package already
   resolved above its ceiling (e.g. a hold added after the fact) is clamped
   back down at the end of `apply` via a targeted install. Shows up in the

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: full-coverage sweep is now the default for `plan` and `apply`.** The recommended invocation required ~15 flags nobody could remember, and agents driving the CLI routinely omitted them, producing incomplete sweeps that read as complete. Every ecosystem now crosses ranges, every package manager gets its per-package targeted bump, and GitHub Actions/container/pre-commit/submodule pins get digest refresh, pin-to-SHA, and cross-major bumps — all with no flags. `--conservative` replaces all of them: stay in-range, only move what each manifest's own constraints already allow. Removed flags: `--latest`, `--full`, `--yarn-targeted-bump`, `--npm-targeted-bump`, `--pnpm-targeted-bump`, `--bun-targeted-bump`, `--deno-targeted-bump`, `--rust-targeted-bump`, `--poetry-targeted-bump`, `--pdm-targeted-bump`, `--pipenv-targeted-bump`, `--pip-tools-targeted-bump`, `--actions-refresh-sha`, `--actions-pin-sha`, `--precommit-refresh-sha`, `--submodule-refresh-sha`, `--container-update-latest`, `--container-refresh-sha`.
+
 ## [0.22.3] - 2026-08-15
 
 ### Fixed
