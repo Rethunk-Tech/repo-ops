@@ -643,3 +643,32 @@ def resolve_setting(
     if global_cfg and config_key in global_cfg:
         return global_cfg[config_key]
     return default
+
+_BOOL_TRUE_VALUES = ("1", "true", "yes", "on")
+
+def coerce_bool_setting(raw: Any) -> bool:
+    """Normalize a resolved setting value (bool, ``"1"``/``"true"``/etc, or None) to bool."""
+    if isinstance(raw, bool):
+        return raw
+    return str(raw or "").strip().lower() in _BOOL_TRUE_VALUES
+
+def resolve_bool_setting(name: str, env_var: str, ws: Any = None) -> bool:
+    """Resolve a boolean feature-flag setting: CLI > env > config > default.
+
+    ``ws`` supplies the per-repo config scope — any object with a
+    ``git_repo`` path attribute (e.g. ``repo_ops_models.Workspace``); omit
+    to resolve from global config only.
+
+    Callers that need ``ambient_env``/``load_repo_config``/``load_global_config``
+    individually patchable (e.g. a test suite mocking the config layer at the
+    call site's module) should call :func:`resolve_setting` directly and pass
+    the result through :func:`coerce_bool_setting` instead.
+    """
+    raw = resolve_setting(
+        name,
+        cli_value=process_env_cli_override(env_var),
+        env=ambient_env() or None,
+        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
+        global_cfg=load_global_config(),
+    )
+    return coerce_bool_setting(raw)
