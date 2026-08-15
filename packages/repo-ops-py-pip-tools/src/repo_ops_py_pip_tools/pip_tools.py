@@ -14,13 +14,7 @@ from http.client import HTTPSConnection
 from pathlib import Path
 from urllib.parse import quote
 
-from repo_ops_core.config import (
-    ambient_env,
-    load_global_config,
-    load_repo_config,
-    process_env_cli_override,
-    resolve_setting,
-)
+from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.holds import (
     HoldRule,
@@ -49,7 +43,6 @@ from repo_ops_py.requirements import parse_requirements_lines
 
 _REQ_NAME_RE = re.compile(r"^([A-Za-z0-9_.-]+)")
 _PIP_TOOLS_TARGETED_BUMP_ENV = "REPO_OPS_PIP_TOOLS_TARGETED_BUMP"
-_TRUE_VALUES = ("1", "true", "yes", "on")
 
 
 @cache
@@ -127,16 +120,9 @@ def _requirements_in_constraints(req_in: Path) -> dict[str, str]:
 
 
 def _pip_tools_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
-    raw = resolve_setting(
-        "pip_tools_targeted_bump",
-        cli_value=process_env_cli_override(_PIP_TOOLS_TARGETED_BUMP_ENV),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
+    return resolve_bool_setting(
+        "pip_tools_targeted_bump", _PIP_TOOLS_TARGETED_BUMP_ENV, ws
     )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in _TRUE_VALUES
 
 
 def _pip_tools_version_parts(version: str) -> tuple[int, int, int]:

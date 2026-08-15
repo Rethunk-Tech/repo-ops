@@ -13,13 +13,7 @@ from http.client import HTTPSConnection
 from pathlib import Path
 from urllib.parse import quote
 
-from repo_ops_core.config import (
-    ambient_env,
-    load_global_config,
-    load_repo_config,
-    process_env_cli_override,
-    resolve_setting,
-)
+from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.holds import (
@@ -34,20 +28,10 @@ from repo_ops_core.version_utils import hold_ceiling_spec, version_satisfies_cei
 from repo_ops_models import Change, Workspace
 
 _PDM_TARGETED_BUMP_ENV = "REPO_OPS_PDM_TARGETED_BUMP"
-_TRUE_VALUES = ("1", "true", "yes", "on")
 
 
 def _pdm_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
-    raw = resolve_setting(
-        "pdm_targeted_bump",
-        cli_value=process_env_cli_override(_PDM_TARGETED_BUMP_ENV),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
-    )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in _TRUE_VALUES
+    return resolve_bool_setting("pdm_targeted_bump", _PDM_TARGETED_BUMP_ENV, ws)
 
 
 # ---------------------------------------------------------------------------
