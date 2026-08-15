@@ -1,7 +1,7 @@
 """Direct unit coverage for repo_ops_js.holds — the shared enforcement layer
 reused by npm/yarn/pnpm/bun. Tests here exercise branches once instead of
-duplicating them per ecosystem (see per-manager test_*_holds.py files for
-the ecosystem-specific wiring).
+duplicating them per ecosystem (see test_js_holds_wiring.py for the
+per-manager wiring).
 """
 
 from __future__ import annotations
