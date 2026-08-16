@@ -69,9 +69,15 @@ def test_yarn_guard_fires_when_resolutions_block_upgrade(
 
 
 def test_yarn_apply_raises_ghost_bump_with_resolutions_pin(
-    yarn_ghost_apply_root: Path,
+    yarn_ghost_apply_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """apply_yarn raises ghost-bump when resolutions block an in-range upgrade (#121)."""
+    # yarn_targeted_bump defaults on (settings-table default, #136) — this test
+    # covers the hard-raise path (assert_targets_resolved), which only runs
+    # with targeted-bump off. The opt-in retry path is covered separately by
+    # test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising.
+    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "0")
+
     ws = ghost_workspace(
         yarn_ghost_apply_root, manager="yarn", label="yarn-ghost-apply-test"
     )

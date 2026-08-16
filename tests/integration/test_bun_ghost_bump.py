@@ -21,8 +21,16 @@ from repo_ops_js_bun.bun import apply_bun
 pytestmark = pytest.mark.integration
 
 
-def test_bun_ghost_bump_overrides_raises(bun_ghost_root: Path) -> None:
+def test_bun_ghost_bump_overrides_raises(
+    bun_ghost_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """apply_bun raises ghost-bump error when overrides block the real upgrade."""
+    # bun_targeted_bump defaults on (settings-table default, #136) — this test
+    # covers the hard-raise path (assert_targets_resolved), which only runs
+    # with targeted-bump off. The opt-in retry path is covered separately by
+    # test_bun_apply_targeted_bump_releases_unheld_pin_instead_of_raising.
+    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "0")
+
     installed = json.loads(
         (bun_ghost_root / "node_modules" / "is-odd" / "package.json").read_text()
     )
