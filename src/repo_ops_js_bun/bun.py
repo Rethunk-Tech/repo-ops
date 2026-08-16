@@ -133,10 +133,7 @@ def _changes_from_bun_json(
             continue
         cur = str(meta.get("current") or meta.get("installed") or "?")
         latest = str(meta.get("latest", "?"))
-        if want_latest:
-            target = latest
-        else:
-            target = str(meta.get("update") or meta.get("latest") or "?")
+        target = latest if want_latest else str(meta.get("update") or meta.get("latest") or "?")
         if cur != target and target not in ("?", ""):
             held_rule = resolve_package_hold(ws, str(name)) if ws is not None else None
             if held_rule is not None and not is_within_ceiling(target, held_rule):

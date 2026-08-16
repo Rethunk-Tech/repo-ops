@@ -1916,10 +1916,7 @@ def _cvss_to_score(cvss_vector: str) -> float:
 
     iss = 1.0 - (1.0 - c_val) * (1.0 - i_val) * (1.0 - a_val)
     exploitability = 8.22 * av_val * ac_val * pr_val * ui_val
-    if scope_changed:
-        impact = 7.52 * (iss - 0.029) - 3.25 * (iss - 0.02) ** 15
-    else:
-        impact = 6.42 * iss
+    impact = 7.52 * (iss - 0.029) - 3.25 * (iss - 0.02) ** 15 if scope_changed else 6.42 * iss
     if impact <= 0:
         return 0.0
     if scope_changed:
