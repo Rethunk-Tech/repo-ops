@@ -118,7 +118,9 @@ def install_one(
         return 0
 
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(src, dest)
+    # AGENTS.md is the checkout's contributor guide. Copying it into
+    # ~/.claude/skills would make Cursor auto-apply it as a workspace rule.
+    shutil.copytree(src, dest, ignore=shutil.ignore_patterns("AGENTS.md"))
     _rewrite_markdown_links(dest)
     print(f"installed {dest}")
     return 0

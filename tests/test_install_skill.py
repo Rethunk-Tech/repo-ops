@@ -225,35 +225,28 @@ def test_validate_dest_allows_unrelated_dest(tmp_path: Path) -> None:
     validate_dest(dest, src)
 
 
-# --- AGENTS.md bundle drift guard ---
+# --- skill bundle: REFERENCE.md, not AGENTS.md ---
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_ROOT_AGENTS_MD = _REPO_ROOT / "AGENTS.md"
+_CONTRIBUTOR_MARKERS = ("PyPI publish", "Cutting a release")
 
 
-def test_bundled_agents_md_is_byte_identical_to_root() -> None:
-    """Bundled AGENTS.md must resolve to the root copy.
-
-    src/repo_ops/skills/repo-ops/AGENTS.md is a symlink to the root file, so
-    this holds by construction; the test fails if someone replaces it with a
-    copy, which is how the two drifted apart before.
-    """
+def test_bundled_skill_has_reference_md_not_agents_md() -> None:
+    """Skill dir ships operator REFERENCE.md; checkout AGENTS.md stays at root."""
     skill = bundled_skill_dir()
-    bundled = skill / "AGENTS.md"
-    assert bundled.is_file(), f"bundled AGENTS.md missing at {bundled}"
-    assert bundled.read_bytes() == _ROOT_AGENTS_MD.read_bytes(), (
-        "Bundled AGENTS.md has drifted from root AGENTS.md. "
-        "It should be a symlink: ln -sf ../../../../AGENTS.md "
-        "src/repo_ops/skills/repo-ops/AGENTS.md"
-    )
+    assert (skill / "REFERENCE.md").is_file()
+    assert not (skill / "AGENTS.md").exists()
+    text = (skill / "REFERENCE.md").read_text(encoding="utf-8")
+    for marker in _CONTRIBUTOR_MARKERS:
+        assert marker not in text, f"{marker!r} belongs in checkout AGENTS.md"
 
 
-def test_install_skill_includes_agents_md(tmp_path: Path) -> None:
-    """install-skill copytree must deliver AGENTS.md to the destination."""
+def test_install_skill_includes_reference_md(tmp_path: Path) -> None:
+    """install-skill copytree must deliver REFERENCE.md, not AGENTS.md."""
     dest = tmp_path / "skills" / "repo-ops"
     code = main(["--dest", str(dest), "--target", "cursor"])
     assert code == 0
-    assert (dest / "AGENTS.md").is_file()
+    assert (dest / "REFERENCE.md").is_file()
+    assert not (dest / "AGENTS.md").exists()
 
 
 def test_rewrite_install_links_rewrites_relative_doc_paths() -> None:
@@ -270,12 +263,13 @@ def test_rewrite_install_links_rewrites_relative_doc_paths() -> None:
     assert "[keep](CONTRIBUTING.md)" in out
 
 
-def test_install_skill_rewrites_agents_links_on_install(tmp_path: Path) -> None:
+def test_install_skill_rewrites_reference_links_on_install(tmp_path: Path) -> None:
     dest = tmp_path / "skills" / "repo-ops"
     code = main(["--dest", str(dest), "--target", "cursor"])
     assert code == 0
-    agents = (dest / "AGENTS.md").read_text(encoding="utf-8")
-    assert f"]({_GITHUB_BLOB}HUMANS.md)" in agents
-    assert f"]({_GITHUB_BLOB}docs/usage.md" in agents
-    assert f"]({_GITHUB_BLOB}src/repo_ops_core/constants.py)" in agents
-    assert "[CONTRIBUTING.md](CONTRIBUTING.md)" in agents
+    reference = (dest / "REFERENCE.md").read_text(encoding="utf-8")
+    assert f"]({_GITHUB_BLOB}HUMANS.md)" in reference
+    assert f"]({_GITHUB_BLOB}docs/usage.md" in reference
+    assert f"]({_GITHUB_BLOB}src/repo_ops_core/constants.py)" in reference
+    for marker in _CONTRIBUTOR_MARKERS:
+        assert marker not in reference

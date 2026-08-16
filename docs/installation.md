@@ -71,6 +71,8 @@ repo-ops install-skill
 
 Options: `--target cursor|claude|both`, `--check`, `--force`, `--dry-run`, `--home DIR` (or `REPO_OPS_HOME`). `--check` is read-only and exits 1 when an installed copy differs from the bundled skill. For testing only, `--dest DIR` must resolve to a directory named `repo-ops` (refuses to overwrite unrelated paths). Do not install under `~/.cursor/skills-cursor/` (Cursor built-ins).
 
+The bundled skill ships `SKILL.md` plus operator `REFERENCE.md`. It does **not** copy the checkout `AGENTS.md` — Cursor auto-applies any `AGENTS.md` in a workspace, which would load contributor/release procedure into every `~/.claude` session.
+
 ## Verify install
 
 ```bash

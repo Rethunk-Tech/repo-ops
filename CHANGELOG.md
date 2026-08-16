@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Bundled agent skill ships `REFERENCE.md` instead of `AGENTS.md`.** Cursor auto-applies any `AGENTS.md` in a workspace, so installing the contributor guide into `~/.claude/skills/repo-ops` loaded release-cut and PyPI notes on every harness-editing session. `install-skill` now copies operator quick reference as `REFERENCE.md` and ignores `AGENTS.md`. Checkout `AGENTS.md` is unchanged.
+
 ## [0.23.0] - 2026-08-15
 
 ### Fixed
