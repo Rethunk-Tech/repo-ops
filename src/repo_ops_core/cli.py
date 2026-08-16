@@ -33,8 +33,7 @@ ECO_FILTER_CHOICES = (
     "actions",
 )
 ECO_FILTER_HELP = (
-    "Limit inventory rows or upgrade workspaces to one ecosystem "
-    f"({'/'.join(ECO_FILTER_CHOICES)})."
+    f"Limit inventory rows or upgrade workspaces to one ecosystem ({'/'.join(ECO_FILTER_CHOICES)})."
 )
 
 # Package-manager filter choices. Mirrors the registry's CHECKERS keys exactly
@@ -58,8 +57,7 @@ MANAGER_FILTER_CHOICES = (
     "precommit",
 )
 MANAGER_FILTER_HELP = (
-    "Limit upgrade workspaces to one package manager "
-    f"({'/'.join(MANAGER_FILTER_CHOICES)})."
+    f"Limit upgrade workspaces to one package manager ({'/'.join(MANAGER_FILTER_CHOICES)})."
 )
 
 DEFAULT_ROOTS_HELP = (
@@ -133,20 +131,12 @@ def positive_int(value: str) -> int:
 def parse_iso8601(value: str) -> datetime:
     """Parse an ISO 8601 string into a timezone-aware UTC datetime.
 
-    Replaces trailing 'Z' with '+00:00' for Python < 3.11 compatibility
-    (fromisoformat only accepts 'Z' natively from 3.11+).
     Rejects naive datetimes with an argparse-compatible error.
-    (Compat kept because requires-python >= 3.10 per pyproject.toml.)
     """
-    normalized = value.strip()
-    if normalized.endswith("Z"):
-        normalized = normalized[:-1] + "+00:00"
     try:
-        dt = datetime.fromisoformat(normalized)
+        dt = datetime.fromisoformat(value.strip())
     except ValueError as exc:
-        raise argparse.ArgumentTypeError(
-            f"Invalid ISO 8601 datetime {value!r}: {exc}"
-        ) from exc
+        raise argparse.ArgumentTypeError(f"Invalid ISO 8601 datetime {value!r}: {exc}") from exc
     if dt.tzinfo is None or dt.utcoffset() is None:
         raise argparse.ArgumentTypeError(
             f"Datetime {value!r} has no timezone; use e.g. 2026-05-26T00:00Z or +00:00 suffix"
@@ -234,9 +224,7 @@ def add_roots_argument(
     )
 
 
-def add_json_argument(
-    parser: argparse._ActionsContainer, dest: str = "json_out"
-) -> None:
+def add_json_argument(parser: argparse._ActionsContainer, dest: str = "json_out") -> None:
     """Add --json flag (common across commands), plus --compact for single-line JSON."""
     parser.add_argument(
         "--json",

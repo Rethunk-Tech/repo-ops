@@ -12,11 +12,6 @@ from datetime import date
 from pathlib import Path
 from typing import Literal
 
-import repo_ops_upgrade_remediations_deno  # noqa: F401 — side-effect: registers Deno hooks
-import repo_ops_upgrade_remediations_go  # noqa: F401 — side-effect: registers Go hooks
-import repo_ops_upgrade_remediations_js  # noqa: F401 — side-effect: registers JS hooks
-import repo_ops_upgrade_remediations_py  # noqa: F401 — side-effect: registers Python hooks
-import repo_ops_upgrade_remediations_rust  # noqa: F401 — side-effect: registers Rust hooks
 from repo_ops_core.filesystem import should_exclude
 from repo_ops_core.git import is_git_dirty
 from repo_ops_core.state import (
@@ -40,6 +35,9 @@ from repo_ops_upgrade.post_apply import (
 from repo_ops_upgrade_remediations_core.remediations import (
     dispatch as _dispatch_remediations,
 )
+from repo_ops_upgrade_remediations_core.remediations import load_ecosystem_hooks
+
+load_ecosystem_hooks()
 
 logger = logging.getLogger(__name__)
 
@@ -188,9 +186,7 @@ def _process_workspace_body(
         # Falls back to a live check when the caller has no bundle context
         # (e.g. direct process_workspace callers/tests). Issue #152.
         result.started_dirty = (
-            is_git_dirty(ws.git_repo)
-            if repo_started_dirty is None
-            else repo_started_dirty
+            is_git_dirty(ws.git_repo) if repo_started_dirty is None else repo_started_dirty
         )
         if result.started_dirty and not allow_dirty:
             result.status = "skip"
@@ -206,9 +202,7 @@ def _process_workspace_body(
                 # Direct deps a latest-mode apply left behind (yarn, issue #110).
                 result.behind_latest = behind_after
             after_snap = snapshot_workspace_files(ws.path, ws.manager)
-            result.changes = diff_workspace_snapshots(
-                before_snap, after_snap, ws.manager
-            )
+            result.changes = diff_workspace_snapshots(before_snap, after_snap, ws.manager)
             if not result.changes:
                 result.changes = collect_changes_after_apply(ws)
             if ws.ecosystem == "node":
@@ -232,9 +226,7 @@ def _process_workspace_body(
                 reverted_ok = True
                 if on_verify_fail == "revert":
                     try:
-                        reverted_ok = revert_workspace_after_verify_fail(
-                            ws, before_snap
-                        )
+                        reverted_ok = revert_workspace_after_verify_fail(ws, before_snap)
                     except (
                         RuntimeError,
                         OSError,

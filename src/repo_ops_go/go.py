@@ -130,7 +130,10 @@ def classify_go_error(stderr: str, ws_path: Path | None = None) -> str:
 
     # Toolchain version constraint not satisfied.
     if text.startswith("go: toolchain") or "\ngo: toolchain" in text:
-        return f"[env] toolchain constraint not met — update Go or set GOTOOLCHAIN=auto; {text}"  # noqa: S608
+        return (
+            f"[env] toolchain constraint not met"
+            f" — install a newer Go, or export GOTOOLCHAIN=auto; {text}"
+        )
 
     return text
 
@@ -235,11 +238,7 @@ def _gomod_require_paths(ws: Workspace) -> set[str] | None:
     if not isinstance(doc, dict):
         return None
     requires = doc.get("Require") or []
-    return {
-        r["Path"]
-        for r in requires
-        if isinstance(r, dict) and isinstance(r.get("Path"), str)
-    }
+    return {r["Path"] for r in requires if isinstance(r, dict) and isinstance(r.get("Path"), str)}
 
 
 # ---------------------------------------------------------------------------
@@ -346,9 +345,7 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
 
 
 def _go_work_sync_enabled(ws: Workspace | None = None) -> bool:
-    return coerce_bool_setting(
-        _resolve_go_setting("go_work_sync", GO_WORK_SYNC_ENV, ws)
-    )
+    return coerce_bool_setting(_resolve_go_setting("go_work_sync", GO_WORK_SYNC_ENV, ws))
 
 
 # ---------------------------------------------------------------------------
@@ -504,9 +501,7 @@ def _plan_fleet_directive_changes(ws: Workspace) -> list[Change]:
 
     # Read the current go directive from go.mod.
     if directive_target:
-        proc = run(
-            ["go", "mod", "edit", "-json"], ws.path, timeout=resolve_timeout_check()
-        )
+        proc = run(["go", "mod", "edit", "-json"], ws.path, timeout=resolve_timeout_check())
         current_go: str | None = None
         if proc.returncode == 0:
             try:
@@ -534,9 +529,7 @@ def _plan_fleet_directive_changes(ws: Workspace) -> list[Change]:
             target_tuple = _go_directive_version_tuple(toolchain_target)
             current_tuple = _go_directive_version_tuple(current_toolchain)
             if target_tuple > current_tuple:
-                changes.append(
-                    Change("go toolchain", current_toolchain, toolchain_target)
-                )
+                changes.append(Change("go toolchain", current_toolchain, toolchain_target))
         else:
             # No toolchain directive yet; treat as needing the bump.
             changes.append(Change("go toolchain", "(none)", toolchain_target))
@@ -769,9 +762,7 @@ def apply_go(ws: Workspace) -> None:
         targets = _explicit_go_get_targets(ws)
         for i in range(0, len(targets), _GO_GET_BATCH):
             batch = targets[i : i + _GO_GET_BATCH]
-            proc = run(
-                ["go", "get", "--", *batch], ws.path, timeout=resolve_timeout_apply()
-            )
+            proc = run(["go", "get", "--", *batch], ws.path, timeout=resolve_timeout_apply())
             if proc.returncode != 0:
                 _raise_classified(proc.stderr, "go get failed", ws.path)
     else:

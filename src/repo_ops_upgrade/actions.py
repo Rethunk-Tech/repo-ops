@@ -6,6 +6,7 @@ import contextlib
 import fnmatch
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -27,6 +28,8 @@ from repo_ops_upgrade.workflow_uses import (
     parse_workflow_uses,
     update_workflow_pins,
 )
+
+logger = logging.getLogger(__name__)
 
 _TAG_CACHE: dict[str, dict | None] = {}
 
@@ -171,9 +174,7 @@ def _derive_owner(repo: Path) -> str | None:
     return None
 
 
-def _action_policy_violation(
-    action: str, policy: dict, org_owner: str | None = None
-) -> str | None:
+def _action_policy_violation(action: str, policy: dict, org_owner: str | None = None) -> str | None:
     """Return a human-readable reason string when *action* is blocked by *policy*.
 
     Returns ``None`` when the action is allowed.
@@ -293,19 +294,17 @@ def _fetch_org_policy_cached(owner: str, store: dict[str, dict | None]) -> dict 
             if sel_proc.returncode == 0:
                 sel: object = json.loads(sel_proc.stdout)
                 if isinstance(sel, dict):
-                    policy["github_owned_allowed"] = bool(
-                        sel.get("github_owned_allowed", False)
-                    )
-                    policy["verified_allowed"] = bool(
-                        sel.get("verified_allowed", False)
-                    )
+                    policy["github_owned_allowed"] = bool(sel.get("github_owned_allowed", False))
+                    policy["verified_allowed"] = bool(sel.get("verified_allowed", False))
                     patterns = sel.get("patterns_allowed")
                     if isinstance(patterns, list):
                         policy["patterns_allowed"] = [
                             str(p) for p in patterns if isinstance(p, str)
                         ]
-        except Exception:  # noqa: S110 — best-effort: selected-actions fetch is non-fatal
-            pass
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            # Non-fatal: an unreadable selected-actions policy leaves the
+            # conservative defaults above in place.
+            logger.debug("selected-actions fetch failed for %s: %s", owner, exc)
 
     store[owner] = policy
     return policy
@@ -313,10 +312,8 @@ def _fetch_org_policy_cached(owner: str, store: dict[str, dict | None]) -> dict 
 
 def _actionlint_cache_path() -> Path:
     """Return ``$XDG_CACHE_HOME/repo-ops/actionlint-cache.json``."""
-    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(
-        os.path.expanduser("~"), ".cache"
-    )
-    return Path(base) / "repo-ops" / "actionlint-cache.json"
+    base = os.environ.get("XDG_CACHE_HOME")
+    return (Path(base) if base else Path.home() / ".cache") / "repo-ops" / "actionlint-cache.json"
 
 
 def _load_lint_cache(path: Path) -> dict[str, dict]:
@@ -346,8 +343,10 @@ def _save_lint_cache(path: Path, cache: dict[str, dict]) -> None:
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(pruned, indent=2), encoding="utf-8")
         os.replace(tmp, path)
-    except Exception:  # noqa: S110 — best-effort: cache write failure is non-fatal
-        pass
+    except (OSError, TypeError) as exc:
+        # Non-fatal: the cache is a speed-up, so a failed write only costs a
+        # re-lint next run.
+        logger.debug("actionlint cache write failed for %s: %s", path, exc)
 
 
 def _lint_cache_key(wf_bytes: bytes, version: str) -> str:
@@ -419,14 +418,10 @@ def discover_workflow_files(repo: Path) -> list[Path]:
     wf_dir = repo / ".github" / "workflows"
     if not wf_dir.is_dir():
         return []
-    return sorted(
-        p for p in wf_dir.iterdir() if p.suffix in (".yml", ".yaml") and p.is_file()
-    )
+    return sorted(p for p in wf_dir.iterdir() if p.suffix in (".yml", ".yaml") and p.is_file())
 
 
-def action_tag_info(
-    action: str, *, cache: dict[str, dict | None] | None = None
-) -> dict | None:
+def action_tag_info(action: str, *, cache: dict[str, dict | None] | None = None) -> dict | None:
     """Return tag info dict for a GitHub Action via ``gh api repos/<action>/tags``.
 
     Returns a dict with:
@@ -612,9 +607,7 @@ def _resolve_sha_target(
     return target, f"unpin SHA to {target} ({style_note}; via {source_desc})"
 
 
-def _resolve_sha_major(
-    sha: str, *, comment_hint: str | None, info: dict | None
-) -> int | None:
+def _resolve_sha_major(sha: str, *, comment_hint: str | None, info: dict | None) -> int | None:
     """Resolve the floating major (integer N) a SHA pin belongs to.
 
     Mirrors step 1 of ``_resolve_sha_target``: prefer the ``# vN`` comment hint,
@@ -725,17 +718,13 @@ def _resolve_actions_hold(repo: Path, package: str) -> HoldRule | None:
     so ``path`` and ``git_repo`` are the same resolved repo root.
     """
     repo_root = repo.resolve()
-    ws = SimpleNamespace(
-        path=repo_root, git_repo=repo_root, ecosystem="actions", manager="actions"
-    )
+    ws = SimpleNamespace(path=repo_root, git_repo=repo_root, ecosystem="actions", manager="actions")
     return resolve_package_hold(ws, package)
 
 
 def _target_within_hold(repo: Path, package: str, target_version: str) -> bool:
     """Return whether a resolved action tag is allowed by its active hold."""
-    return holds.target_within_hold(
-        target_version, _resolve_actions_hold(repo, package)
-    )
+    return holds.target_within_hold(target_version, _resolve_actions_hold(repo, package))
 
 
 def _action_tag_version(tag: str) -> tuple[int, ...] | None:
@@ -747,9 +736,7 @@ def _action_tag_version(tag: str) -> tuple[int, ...] | None:
         return None
 
 
-def _resolve_hold_action_tag_target(
-    current_ref: str, tags: set[str], rule: HoldRule
-) -> str | None:
+def _resolve_hold_action_tag_target(current_ref: str, tags: set[str], rule: HoldRule) -> str | None:
     """Return the highest action tag at or below *rule* when held back."""
     current_version = _action_tag_version(current_ref)
     if current_version is None or version_satisfies_ceiling(
@@ -804,9 +791,7 @@ def _resolve_hold_action_sha_target(
     matching_tags = _matching_action_sha_tags(current_sha, info)
     if not matching_tags:
         return None
-    current_version, current_tag, _ = max(
-        matching_tags, key=lambda item: (item[0], item[1])
-    )
+    current_version, current_tag, _ = max(matching_tags, key=lambda item: (item[0], item[1]))
     if version_satisfies_ceiling(current_tag.lstrip("v"), rule.max_version):
         return None
 
@@ -820,9 +805,7 @@ def _resolve_hold_action_sha_target(
                 candidates.append((tag_version, tag, sha))
     if not candidates:
         return None
-    target_version, target_tag, target_sha = max(
-        candidates, key=lambda item: (item[0], item[1])
-    )
+    target_version, target_tag, target_sha = max(candidates, key=lambda item: (item[0], item[1]))
     if target_version >= current_version:
         return None
     return target_sha, current_tag, target_tag
@@ -853,12 +836,8 @@ def _enforce_version_ceilings(
             if resolved is None:
                 matching_tags = _matching_action_sha_tags(pin, info)
                 if matching_tags:
-                    _, current_tag, _ = max(
-                        matching_tags, key=lambda item: (item[0], item[1])
-                    )
-                    if not version_satisfies_ceiling(
-                        current_tag.lstrip("v"), rule.max_version
-                    ):
+                    _, current_tag, _ = max(matching_tags, key=lambda item: (item[0], item[1]))
+                    if not version_satisfies_ceiling(current_tag.lstrip("v"), rule.max_version):
                         raise RuntimeError(
                             f"hold: failed to clamp {action} back to <={rule.max_version} "
                             "(actions): no available tag satisfies ceiling"
@@ -869,11 +848,7 @@ def _enforce_version_ceilings(
             if uses.comment:
                 current_major = _action_tag_version(current_tag)
                 target_major = _action_tag_version(target_tag)
-                if (
-                    current_major
-                    and target_major
-                    and current_major[0] != target_major[0]
-                ):
+                if current_major and target_major and current_major[0] != target_major[0]:
                     comment_rewrite = (
                         f"# v{current_major[0]}",
                         f"# v{target_major[0]}",
@@ -890,9 +865,7 @@ def _enforce_version_ceilings(
             continue
 
         current_version = _action_tag_version(pin)
-        if current_version is None or version_satisfies_ceiling(
-            pin.lstrip("v"), rule.max_version
-        ):
+        if current_version is None or version_satisfies_ceiling(pin.lstrip("v"), rule.max_version):
             continue
         if info is None:
             raise RuntimeError(
@@ -1094,17 +1067,13 @@ def scan_actions(
         policy_level if policy_level is not None else _read_policy_level_env()
     )
     if effective_lint_level != "off" and not shutil.which("actionlint"):
-        print(
-            "WARN: actionlint not on PATH; skipping action validation", file=sys.stderr
-        )
+        print("WARN: actionlint not on PATH; skipping action validation", file=sys.stderr)
     workflows = discover_workflow_files(repo)
     bumps: list[ActionBump] = []
     _cache: dict[str, dict | None] = tag_cache if tag_cache is not None else {}
 
     # Org allowed-actions policy (opt-in via REPO_OPS_ACTIONS_ORG_POLICY=1).
-    _policy_enabled: bool = (
-        os.environ.get("REPO_OPS_ACTIONS_ORG_POLICY", "").strip() == "1"
-    )
+    _policy_enabled: bool = os.environ.get("REPO_OPS_ACTIONS_ORG_POLICY", "").strip() == "1"
     _policy_store: dict[str, dict | None] = (
         org_policy_cache if org_policy_cache is not None else _ORG_POLICY_CACHE
     )
@@ -1182,9 +1151,7 @@ def scan_actions(
         for uses in pins:
             action, pin = uses.action, uses.pin
             policy_violation = _policy_violation_for(action)
-            policy_blocked = (
-                effective_policy_level == "block" and policy_violation is not None
-            )
+            policy_blocked = effective_policy_level == "block" and policy_violation is not None
             # SHA-pinned: attempt to resolve to a version tag (unless keep_sha).
             if _SHA_RE.fullmatch(pin):
                 if keep_sha:
@@ -1193,9 +1160,7 @@ def scan_actions(
                     if refresh_sha:
                         info = action_tag_info(action, cache=_cache)
                         major = (
-                            _resolve_sha_major(
-                                pin, comment_hint=uses.comment, info=info
-                            )
+                            _resolve_sha_major(pin, comment_hint=uses.comment, info=info)
                             if info is not None
                             else None
                         )
@@ -1204,16 +1169,10 @@ def scan_actions(
                         # Falls back to the current major when the newest major has
                         # no exact tag (same safety check as the unpin path).
                         target_major = major
-                        if (
-                            upgrade_mode == "latest"
-                            and info is not None
-                            and major is not None
-                        ):
+                        if upgrade_mode == "latest" and info is not None and major is not None:
                             max_major = info.get("max_major")
                             if max_major is not None and max_major > major:
-                                candidate = _highest_exact_digest_in_major(
-                                    info, max_major
-                                )
+                                candidate = _highest_exact_digest_in_major(info, max_major)
                                 if candidate is not None:
                                     target_major = max_major
                         digest = (
@@ -1229,9 +1188,7 @@ def scan_actions(
                             already_current = pin_norm == new_sha or (
                                 len(pin_norm) < 40 and new_sha.startswith(pin_norm)
                             )
-                            if not already_current and _target_within_hold(
-                                repo, action, tag
-                            ):
+                            if not already_current and _target_within_hold(repo, action, tag):
                                 cross_major = (
                                     target_major is not None
                                     and major is not None
@@ -1280,9 +1237,7 @@ def scan_actions(
                     info = action_tag_info(action, cache=_cache)
                     hold_rule = _resolve_actions_hold(repo, action)
                     if info is not None and hold_rule is not None:
-                        hold_resolution = _resolve_hold_action_sha_target(
-                            pin, info, hold_rule
-                        )
+                        hold_resolution = _resolve_hold_action_sha_target(pin, info, hold_rule)
                         if hold_resolution is not None:
                             target_sha, current_tag, target_tag = hold_resolution
                             if not policy_blocked:
@@ -1383,8 +1338,7 @@ def scan_actions(
                     if (
                         latest_major is not None
                         and latest_major > M
-                        and _highest_exact_digest_in_major(info, latest_major)
-                        is not None
+                        and _highest_exact_digest_in_major(info, latest_major) is not None
                     ):
                         target_major = latest_major
                 digest = _highest_exact_digest_in_major(info, target_major)
@@ -1433,8 +1387,7 @@ def scan_actions(
                                 latest=hold_target,
                                 status="ok",
                                 detail=(
-                                    f"hold clamp {pin} -> {hold_target} "
-                                    f"(<={hold_rule.max_version})"
+                                    f"hold clamp {pin} -> {hold_target} (<={hold_rule.max_version})"
                                 ),
                             )
                         )
@@ -1489,8 +1442,7 @@ def scan_actions(
             else:
                 # Exact/minor pin (e.g. v3.19.0) — try to collapse to floating major.
                 hold_has_finer_ceiling = (
-                    hold_rule is not None
-                    and len(semver_tuple(hold_rule.max_version)) > 1
+                    hold_rule is not None and len(semver_tuple(hold_rule.max_version)) > 1
                 )
                 if (
                     bare_major_exists
@@ -1526,15 +1478,8 @@ def scan_actions(
                     # e.g. astral-sh/setup-uv publishes only vN.M.P tags, so
                     # v8.1.0 would otherwise never move while v8.2.0 exists.
                     in_major = _highest_exact_in_major(info, M)
-                    if (
-                        in_major
-                        and in_major != pin
-                        and _target_within_hold(repo, action, in_major)
-                    ):
-                        detail = (
-                            f"advance exact pin within v{M} "
-                            "(no floating major tag upstream)"
-                        )
+                    if in_major and in_major != pin and _target_within_hold(repo, action, in_major):
+                        detail = f"advance exact pin within v{M} (no floating major tag upstream)"
                         if newer_major:
                             detail += f"; newer major v{max_major} available"
                         if not policy_blocked:

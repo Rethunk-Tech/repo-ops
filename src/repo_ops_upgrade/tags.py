@@ -77,20 +77,13 @@ def resolve_latest_tag(
         return None
 
     want_v = has_v_prefix(current)
-    try:
-        current_tup = semver_tuple(current.lstrip("v"))
-    except Exception:
-        return None
+    current_tup = semver_tuple(current.lstrip("v"))
 
     scored: list[tuple[tuple[int, ...], str]] = []
     for tag in candidates:
         if not is_semver_tag(tag) or has_v_prefix(tag) != want_v:
             continue
-        try:
-            tup = semver_tuple(tag.lstrip("v"))
-        except Exception:  # noqa: S112
-            continue
-        scored.append((tup, tag))
+        scored.append((semver_tuple(tag.lstrip("v")), tag))
 
     if not scored:
         return None
@@ -132,9 +125,7 @@ def resolve_sha_refresh(
         try:
             tag_version = semver_tuple(tag.lstrip("v"))
         except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r during %s SHA refresh", tag, context
-            )
+            logger.warning("ignoring invalid semver tag %r during %s SHA refresh", tag, context)
             continue
         matching.append((tag_version, tag, tag_sha))
 
@@ -150,9 +141,7 @@ def resolve_sha_refresh(
         try:
             tag_version = semver_tuple(tag.lstrip("v"))
         except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r during %s SHA refresh", tag, context
-            )
+            logger.warning("ignoring invalid semver tag %r during %s SHA refresh", tag, context)
             continue
         if tag_version[0] == current_version[0]:
             candidates.append((tag_version, tag, tag_sha))

@@ -12,9 +12,7 @@ from repo_ops_upgrade_remediations_core import remediations as core
 
 def _result(tmp_path: Path, make_workspace, ecosystem: str = "node") -> WorkspaceResult:
     return WorkspaceResult(
-        workspace=make_workspace(
-            tmp_path, ecosystem=ecosystem, manager="npm", label="test"
-        )
+        workspace=make_workspace(tmp_path, ecosystem=ecosystem, manager="npm", label="test")
     )
 
 
@@ -41,9 +39,9 @@ def test_hook_with_files_callable(tmp_path: Path, make_workspace) -> None:
         files=lambda ws: ["some/file.json"],
     )
     assert hook.files is not None
-    assert hook.files(
-        make_workspace(tmp_path, ecosystem="node", manager="npm", label="test")
-    ) == ["some/file.json"]
+    assert hook.files(make_workspace(tmp_path, ecosystem="node", manager="npm", label="test")) == [
+        "some/file.json"
+    ]
 
 
 # ── run_hooks: plan mode ───────────────────────────────────────────────────
@@ -119,7 +117,7 @@ def test_run_hooks_exception_caught_per_hook(tmp_path: Path, make_workspace) -> 
     result = _result(tmp_path, make_workspace=make_workspace)
     bad = core.RemediationHook(
         "bad",
-        lambda ws, ctx: (_ for _ in ()).throw(RuntimeError("boom")),  # type: ignore[arg-type]
+        lambda ws, ctx: (_ for _ in ()).throw(RuntimeError("boom")),
         lambda ws, ctx: [],
         lambda ws, ctx: (True, ""),
     )
@@ -186,13 +184,8 @@ def test_dispatch_empty_registry_no_op(tmp_path: Path, make_workspace) -> None:
 
 
 def test_dispatch_global_registry_populated(tmp_path: Path) -> None:
-    """After importing orchestration ecosystem set, registry has unique expected hooks."""
-    # Match orchestration import set (side-effect registration).
-    import repo_ops_upgrade_remediations_deno  # noqa: F401
-    import repo_ops_upgrade_remediations_go  # noqa: F401
-    import repo_ops_upgrade_remediations_js  # noqa: F401
-    import repo_ops_upgrade_remediations_py  # noqa: F401
-    import repo_ops_upgrade_remediations_rust  # noqa: F401
+    """After the ecosystem packages load, the registry has unique expected hooks."""
+    core.load_ecosystem_hooks()
 
     ids = [h.id for h in core._GLOBAL_REGISTRY]
     expected = {

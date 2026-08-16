@@ -33,18 +33,14 @@ def _isolate_config_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
 
 
-def test_missing_api_key_raises(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_missing_api_key_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("CURSOR_API_KEY", raising=False)
     provider = CursorCommitAgentProvider()
     with pytest.raises(RuntimeError, match="CURSOR_API_KEY"):
         provider.draft_commit_message(_bundle(tmp_path), ["a.txt"], api_key=None)
 
 
-def test_cursor_sdk_not_installed_raises(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_cursor_sdk_not_installed_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # sys.modules[name] = None is the standard trick to force ImportError on
     # `import name`/`from name import ...` regardless of whether the real
     # package happens to be installed in this environment.
@@ -74,9 +70,9 @@ def _install_fake_cursor_sdk(
         def __init__(self, **kw: object) -> None:
             self.__dict__.update(kw)
 
-    fake_mod.Agent = Agent  # type: ignore[attr-defined]
-    fake_mod.AgentOptions = AgentOptions  # type: ignore[attr-defined]
-    fake_mod.LocalAgentOptions = LocalAgentOptions  # type: ignore[attr-defined]
+    fake_mod.Agent = Agent
+    fake_mod.AgentOptions = AgentOptions
+    fake_mod.LocalAgentOptions = LocalAgentOptions
     monkeypatch.setitem(sys.modules, "cursor_sdk", fake_mod)
 
 
@@ -91,9 +87,7 @@ def test_draft_commit_message_success_via_wrapper(
     _install_fake_cursor_sdk(monkeypatch, result, captured)
 
     files = [f"pkg{i}/file.txt" for i in range(45)]  # exercise >40 truncation
-    message = commit_agent_providers.draft_message_with_commit_agent(
-        _bundle(tmp_path), files
-    )
+    message = commit_agent_providers.draft_message_with_commit_agent(_bundle(tmp_path), files)
 
     assert message.startswith("feat(x): bump deps\n\n")
     assert "Automated post-apply commit (cursor commit-agent)." in message
@@ -149,9 +143,7 @@ def test_draft_commit_message_rejects_empty_configured_model(
     captured: dict = {}
     _install_fake_cursor_sdk(monkeypatch, result, captured)
 
-    with pytest.raises(
-        RuntimeError, match="REPO_OPS_COMMIT_AGENT_MODEL must be a non-empty"
-    ):
+    with pytest.raises(RuntimeError, match="REPO_OPS_COMMIT_AGENT_MODEL must be a non-empty"):
         CursorCommitAgentProvider().draft_commit_message(
             _bundle(tmp_path), ["a.txt"], api_key="test-key"
         )

@@ -36,6 +36,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -98,7 +99,7 @@ _NM_SKIP = SKIP_DIRS - {"node_modules"}
 # directly) since repo_ops_js_pnpm imports it from here.
 _split_nv = split_name_version
 
-_NPM_LOCK_PARSERS: tuple[tuple[str, object], ...] = (
+_NPM_LOCK_PARSERS: tuple[tuple[str, Callable[[Path], set[str]]], ...] = (
     ("package-lock.json", versions_npm_lock),
     ("yarn.lock", versions_yarn_lock),
     ("pnpm-lock.yaml", versions_pnpm_lock),
@@ -112,11 +113,7 @@ def _normalize_npm_license(raw: object) -> str:
         raw = raw.get("type") or UNKNOWN_LICENSE
     if isinstance(raw, list):
         raw = " OR ".join(
-            (
-                str(entry.get("type") or UNKNOWN_LICENSE)
-                if isinstance(entry, dict)
-                else str(entry)
-            )
+            (str(entry.get("type") or UNKNOWN_LICENSE) if isinstance(entry, dict) else str(entry))
             for entry in raw
         )
     lic_id = str(raw or UNKNOWN_LICENSE).strip() or UNKNOWN_LICENSE
@@ -134,9 +131,7 @@ def _scan_node_modules_licenses(root: Path) -> list[PackageLicense]:
         dp = Path(dirpath_str)
         # Prune deeply nested node_modules to avoid infinite descent
         dirnames[:] = [
-            d
-            for d in dirnames
-            if d not in _NM_SKIP and not (dp != nm and d == "node_modules")
+            d for d in dirnames if d not in _NM_SKIP and not (dp != nm and d == "node_modules")
         ]
         if "package.json" not in filenames or dp == nm:
             continue
@@ -206,12 +201,12 @@ def _licenses_from_package_lock(lock: Path) -> list[PackageLicense]:
 
 
 def _licenses_from_npm_version_lock(
-    lock: Path, *, parser: object, source: str
+    lock: Path, *, parser: Callable[[Path], set[str]], source: str
 ) -> list[PackageLicense]:
     """Enumerate name@version from a lockfile parser; license UNKNOWN offline."""
     results: list[PackageLicense] = []
     with contextlib.suppress(Exception):
-        for entry in parser(lock):  # type: ignore[operator]
+        for entry in parser(lock):
             name, ver = split_name_version(entry)
             if not name or not ver:
                 continue
@@ -243,9 +238,7 @@ def _scan_npm_lockfile_licenses(root: Path) -> list[PackageLicense]:
                 if lf_name not in fname_set:
                     continue
                 batch.extend(
-                    _licenses_from_npm_version_lock(
-                        dp / lf_name, parser=parser, source=lf_name
-                    )
+                    _licenses_from_npm_version_lock(dp / lf_name, parser=parser, source=lf_name)
                 )
         for pkg in batch:
             key = (pkg.name, pkg.version)
@@ -404,9 +397,7 @@ def _dist_info_license_index(lock_dir: Path) -> dict[str, str]:
                 dist_name = dist_info.name[: -len(".dist-info")].rsplit("-", 1)[0]
                 meta = dist_info / "METADATA"
                 with contextlib.suppress(OSError):
-                    lic = _license_from_metadata(
-                        meta.read_text(encoding="utf-8", errors="replace")
-                    )
+                    lic = _license_from_metadata(meta.read_text(encoding="utf-8", errors="replace"))
                     if lic:
                         index[_norm_py_name(dist_name)] = lic
     return index
@@ -461,9 +452,7 @@ def scan_python_dep_licenses(root: Path) -> list[PackageLicense]:
                     if not isinstance(name, str) or not name:
                         continue
                     source = entry.get("source")
-                    if isinstance(source, dict) and (
-                        "editable" in source or "virtual" in source
-                    ):
+                    if isinstance(source, dict) and ("editable" in source or "virtual" in source):
                         continue
                     _add(name, str(entry.get("version") or "?"), "uv.lock", licenses)
 
@@ -477,9 +466,7 @@ def scan_python_dep_licenses(root: Path) -> list[PackageLicense]:
                     name = entry.get("name")
                     if not isinstance(name, str) or not name:
                         continue
-                    _add(
-                        name, str(entry.get("version") or "?"), "poetry.lock", licenses
-                    )
+                    _add(name, str(entry.get("version") or "?"), "poetry.lock", licenses)
 
         if "pdm.lock" in fname_set:
             for entry in versions_pdm_lock(lock_dir / "pdm.lock"):
@@ -537,9 +524,7 @@ def _default_gomodcache() -> Path:
     return Path.home() / "go" / "pkg" / "mod"
 
 
-def resolve_go_license(
-    module: str, version: str, gomodcache: Path | None = None
-) -> str:
+def resolve_go_license(module: str, version: str, gomodcache: Path | None = None) -> str:
     """Classify a Go module's license from its LICENSE* file in GOMODCACHE.
 
     Offline/local-only: modules not present in the cache (never ``go build``/
@@ -572,9 +557,7 @@ def _iter_go_sum_entries(p: Path) -> set[tuple[str, str]]:
     return out
 
 
-def scan_go_licenses(
-    root: Path, *, gomodcache: Path | None = None
-) -> list[PackageLicense]:
+def scan_go_licenses(root: Path, *, gomodcache: Path | None = None) -> list[PackageLicense]:
     """Return PackageLicense entries for go.sum modules, classified via GOMODCACHE."""
     results: list[PackageLicense] = []
     cache = gomodcache if gomodcache is not None else _default_gomodcache()
@@ -690,18 +673,14 @@ def _default_deno_dir() -> Path:
     return base / "deno"
 
 
-def resolve_deno_npm_license(
-    pkg_name: str, version: str, deno_dir: Path | None = None
-) -> str:
+def resolve_deno_npm_license(pkg_name: str, version: str, deno_dir: Path | None = None) -> str:
     """Read the ``license`` field of a cached npm ``package.json`` (offline).
 
     Looks under ``DENO_DIR/npm/registry.npmjs.org/<pkg>/<version>/package.json``
     (Deno's local npm-compat cache layout). Missing/unresolvable → UNKNOWN.
     """
     cache = deno_dir if deno_dir is not None else _default_deno_dir()
-    pkg_json = (
-        cache / "npm" / "registry.npmjs.org" / pkg_name / version / "package.json"
-    )
+    pkg_json = cache / "npm" / "registry.npmjs.org" / pkg_name / version / "package.json"
     if not pkg_json.is_file():
         return UNKNOWN_LICENSE
     with contextlib.suppress(Exception):
@@ -713,9 +692,7 @@ def resolve_deno_npm_license(
     return UNKNOWN_LICENSE
 
 
-def scan_deno_licenses(
-    root: Path, *, deno_dir: Path | None = None
-) -> list[PackageLicense]:
+def scan_deno_licenses(root: Path, *, deno_dir: Path | None = None) -> list[PackageLicense]:
     """Return PackageLicense entries for deno.lock npm: and jsr: specifiers.
 
     npm: entries resolve offline via the cached package.json's ``license``
@@ -739,12 +716,7 @@ def scan_deno_licenses(
             elif entry.startswith("jsr:"):
                 name, ver = split_name_version(entry[len("jsr:") :])
                 jsr_name = name.removeprefix("@").split("/")
-                if (
-                    not name.startswith("@")
-                    or len(jsr_name) != 2
-                    or not all(jsr_name)
-                    or not ver
-                ):
+                if not name.startswith("@") or len(jsr_name) != 2 or not all(jsr_name) or not ver:
                     continue
                 lic = UNKNOWN_LICENSE
                 ecosystem = "jsr"
@@ -807,8 +779,7 @@ def _license_violates_deny(lic_id: str, deny: list[str]) -> bool:
     """
     branches = _split_or(lic_id)
     return all(
-        any(_matches_any(part.strip(), deny) for part in _split_and(branch))
-        for branch in branches
+        any(_matches_any(part.strip(), deny) for part in _split_and(branch)) for branch in branches
     )
 
 
@@ -821,8 +792,7 @@ def _license_satisfies_allow(lic_id: str, allow: list[str]) -> bool:
     """
     branches = _split_or(lic_id)
     return any(
-        all(_matches_any(part.strip(), allow) for part in _split_and(branch))
-        for branch in branches
+        all(_matches_any(part.strip(), allow) for part in _split_and(branch)) for branch in branches
     )
 
 
@@ -959,10 +929,7 @@ def build_license_parser() -> argparse.ArgumentParser:
         "--enrich-licenses-network",
         action="store_true",
         default=_env_flag("REPO_OPS_ENRICH_LICENSES_NETWORK"),
-        help=(
-            "Force registry network enrichment, even when local enrichment "
-            "is also enabled."
-        ),
+        help=("Force registry network enrichment, even when local enrichment is also enabled."),
     )
     parser.add_argument(
         "--json",
@@ -1005,11 +972,7 @@ def main(argv: list[str] | None = None) -> int:
         root_packages.extend(scan_go_licenses(root))
         root_packages.extend(scan_rust_licenses(root))
         root_packages.extend(scan_deno_licenses(root))
-        if (
-            args.enrich_licenses
-            or args.enrich_licenses_local
-            or args.enrich_licenses_network
-        ):
+        if args.enrich_licenses or args.enrich_licenses_local or args.enrich_licenses_network:
             for package in root_packages:
                 if package.license_id != UNKNOWN_LICENSE:
                     continue
@@ -1018,18 +981,14 @@ def main(argv: list[str] | None = None) -> int:
                     package.version,
                     package.ecosystem,
                     root,
-                    allow_network=(
-                        args.enrich_licenses_network or not args.enrich_licenses_local
-                    ),
+                    allow_network=(args.enrich_licenses_network or not args.enrich_licenses_local),
                 )
                 if license_id:
                     package.license_id = license_id
                     package.source = f"{package.source}+enriched"
         all_packages.extend(root_packages)
 
-    result = apply_policy(
-        all_packages, allow=allow_list or None, deny=deny_list or None
-    )
+    result = apply_policy(all_packages, allow=allow_list or None, deny=deny_list or None)
 
     if args.json_out:
         payload: dict[str, object] = {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 from unittest.mock import patch
 
 import pytest
@@ -23,12 +24,12 @@ def _write_gitmodules(parent: Path, path: str, url: str) -> None:
 
 def _make_child_outcome(
     git_repo: Path,
-    status: str = "committed",
+    status: Literal["committed", "dry_run", "skipped", "failed"] = "committed",
 ) -> CommitOutcome:
     return CommitOutcome(
         git_repo=git_repo,
         label=git_repo.name,
-        status=status,  # type: ignore[arg-type]
+        status=status,
         message="chore(deps): update",
         files=["go.mod"],
     )
@@ -146,15 +147,9 @@ def test_stages_only_committed_child_gitlinks(
     (umbrella / "README.md").write_text("dirty\n", encoding="utf-8")
 
     links = [
-        SubmoduleLink(
-            path="child-a", git_repo=child_a.resolve(), parent=umbrella.resolve()
-        ),
-        SubmoduleLink(
-            path="child-b", git_repo=child_b.resolve(), parent=umbrella.resolve()
-        ),
-        SubmoduleLink(
-            path="child-c", git_repo=child_c.resolve(), parent=umbrella.resolve()
-        ),
+        SubmoduleLink(path="child-a", git_repo=child_a.resolve(), parent=umbrella.resolve()),
+        SubmoduleLink(path="child-b", git_repo=child_b.resolve(), parent=umbrella.resolve()),
+        SubmoduleLink(path="child-c", git_repo=child_c.resolve(), parent=umbrella.resolve()),
     ]
 
     # child-a and child-b received commits; child-c was skipped.
@@ -177,9 +172,7 @@ def test_stages_only_committed_child_gitlinks(
 
     from subprocess import CompletedProcess
 
-    def _fake_run_git(
-        repo: Path, *args: str, timeout: int = 60
-    ) -> CompletedProcess[str]:
+    def _fake_run_git(repo: Path, *args: str, timeout: int = 60) -> CompletedProcess[str]:
         cmd_list = list(args)
         if "status" in cmd_list and "--porcelain" in cmd_list:
             return CompletedProcess(cmd_list, 0, stdout=fake_porcelain, stderr="")
@@ -234,11 +227,7 @@ def test_umbrella_commit_message_shape(
     init_git_repo(umbrella)
     init_git_repo(child_x)
 
-    links = [
-        SubmoduleLink(
-            path="libx", git_repo=child_x.resolve(), parent=umbrella.resolve()
-        )
-    ]
+    links = [SubmoduleLink(path="libx", git_repo=child_x.resolve(), parent=umbrella.resolve())]
     child_outcomes = [_make_child_outcome(child_x.resolve())]
 
     fake_porcelain = " M libx\0"
@@ -247,9 +236,7 @@ def test_umbrella_commit_message_shape(
 
     committed_message: list[str] = []
 
-    def _fake_run_git(
-        repo: Path, *args: str, timeout: int = 60
-    ) -> CompletedProcess[str]:
+    def _fake_run_git(repo: Path, *args: str, timeout: int = 60) -> CompletedProcess[str]:
         cmd_list = list(args)
         if "status" in cmd_list and "--porcelain" in cmd_list:
             return CompletedProcess(cmd_list, 0, stdout=fake_porcelain, stderr="")
@@ -302,11 +289,7 @@ def test_dry_run_produces_no_git_add(
     init_git_repo(umbrella)
     init_git_repo(child_y)
 
-    links = [
-        SubmoduleLink(
-            path="child-y", git_repo=child_y.resolve(), parent=umbrella.resolve()
-        )
-    ]
+    links = [SubmoduleLink(path="child-y", git_repo=child_y.resolve(), parent=umbrella.resolve())]
     child_outcomes = [_make_child_outcome(child_y.resolve())]
 
     fake_porcelain = " M child-y\0"
@@ -314,9 +297,7 @@ def test_dry_run_produces_no_git_add(
 
     from subprocess import CompletedProcess
 
-    def _fake_run_git(
-        repo: Path, *args: str, timeout: int = 60
-    ) -> CompletedProcess[str]:
+    def _fake_run_git(repo: Path, *args: str, timeout: int = 60) -> CompletedProcess[str]:
         git_calls.append(args)
         cmd_list = list(args)
         if "status" in cmd_list and "--porcelain" in cmd_list:

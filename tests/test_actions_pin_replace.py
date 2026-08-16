@@ -75,7 +75,7 @@ def test_update_workflow_pins_write_oserror_raises_parse_error(
     def _raise_on_write(self: Path, mode: str = "r", **kwargs: object) -> object:
         if "w" in mode:
             raise OSError("permission denied")
-        return _real_open(self, mode, **kwargs)  # type: ignore[call-overload]
+        return _real_open(self, mode, **kwargs)
 
     with (
         patch("pathlib.Path.open", _raise_on_write),

@@ -71,8 +71,8 @@ def _yaml_loader() -> YAML:
 # call and cleared in a finally block after.  Empty outside of audit --fix runs.
 _AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 
-set_pnpm_audit_version_overrides, clear_pnpm_audit_version_overrides = (
-    make_audit_override_api(_AUDIT_VERSION_OVERRIDES)
+set_pnpm_audit_version_overrides, clear_pnpm_audit_version_overrides = make_audit_override_api(
+    _AUDIT_VERSION_OVERRIDES
 )
 
 
@@ -111,9 +111,7 @@ def _catalog_tables(data: Any) -> list[MutableMapping[Any, Any]]:
         tables.append(default)
     named = data.get("catalogs")
     if isinstance(named, MutableMapping):
-        tables.extend(
-            table for table in named.values() if isinstance(table, MutableMapping)
-        )
+        tables.extend(table for table in named.values() if isinstance(table, MutableMapping))
     return tables
 
 
@@ -262,17 +260,16 @@ def _bucket_pnpm_pkg(
     bucketing logic in isolation (no ``Workspace``) keep prior behavior;
     ``_pnpm_outdated`` always passes the real workspace.
     """
-    if _pnpm_update_latest_enabled(ws):  # noqa: SIM102
-        # Treat latest as the upgrade target — mirrors apply_pnpm --latest.
-        if latest not in ("?", "") and cur != latest:
-            held_rule = resolve_package_hold(ws, name) if ws is not None else None
-            if held_rule is not None and not is_within_ceiling(latest, held_rule):
-                behind_latest.append(Change(name, cur, latest))
-                return
-            changes.append(Change(name, cur, latest))
+    # Treat latest as the upgrade target — mirrors apply_pnpm --latest. An
+    # unknown latest ('?') falls through to the wanted check below so a known
+    # in-range bump is not silently omitted (#5).
+    if _pnpm_update_latest_enabled(ws) and latest not in ("?", "") and cur != latest:
+        held_rule = resolve_package_hold(ws, name) if ws is not None else None
+        if held_rule is not None and not is_within_ceiling(latest, held_rule):
+            behind_latest.append(Change(name, cur, latest))
             return
-        # latest unknown ('?') — fall through to wanted check so a known
-        # in-range bump is not silently omitted (#5).
+        changes.append(Change(name, cur, latest))
+        return
     if cur != wanted and wanted not in ("?", ""):
         changes.append(Change(name, cur, wanted))
     elif latest not in ("?", "") and cur != latest:
@@ -302,9 +299,7 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
                         wanted = str(meta.get("wanted", "?"))
                         latest = str(meta.get("latest", "?"))
                         outdated[name] = (cur, wanted, latest)
-                        _bucket_pnpm_pkg(
-                            name, cur, wanted, latest, changes, behind_latest, ws=ws
-                        )
+                        _bucket_pnpm_pkg(name, cur, wanted, latest, changes, behind_latest, ws=ws)
             elif isinstance(items, list):
                 for meta in items:
                     if isinstance(meta, dict) and meta.get("name"):
@@ -334,16 +329,12 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
         for name, specs in catalog_specs.items():
             meta = outdated.get(name)
             if meta is None:
-                if not (
-                    _pnpm_update_latest_enabled(ws) or _pnpm_targeted_bump_enabled(ws)
-                ):
+                if not (_pnpm_update_latest_enabled(ws) or _pnpm_targeted_bump_enabled(ws)):
                     continue
                 latest = _latest_published(ws, name)
                 if latest is None:
                     continue
-                behind_specs = [
-                    spec for spec in specs if _catalog_spec_is_behind(spec, latest)
-                ]
+                behind_specs = [spec for spec in specs if _catalog_spec_is_behind(spec, latest)]
                 if behind_specs:
                     from_ver = min(behind_specs, key=_catalog_version_key)
                     behind_latest.append(
@@ -370,9 +361,7 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
                 else ""
             )
             if target:
-                behind_specs = [
-                    spec for spec in specs if _catalog_spec_is_behind(spec, target)
-                ]
+                behind_specs = [spec for spec in specs if _catalog_spec_is_behind(spec, target)]
                 if behind_specs:
                     behind_latest.append(
                         Change(
@@ -418,9 +407,7 @@ def check_pnpm(ws: Workspace) -> tuple[list[Change], list[Change]]:
     return changes, behind
 
 
-def targeted_bump_behind(
-    ws: Workspace, behind: list[Change]
-) -> tuple[list[Change], list[Change]]:
+def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Change], list[Change]]:
     """Per-package ``pnpm update --latest <pkg>`` fallback for still-behind deps (#122).
 
     Mirrors yarn's ``targeted_bump_behind``: for each behind-latest direct dep we
@@ -540,13 +527,10 @@ def _apply_pnpm_audit_overrides(ws: Workspace) -> set[str]:
         )
         if add.returncode != 0:
             raise RuntimeError(
-                add.stderr.strip()
-                or f"pnpm add {name}@{version} failed (audit override)"
+                add.stderr.strip() or f"pnpm add {name}@{version} failed (audit override)"
             )
 
-    return apply_audit_overrides(
-        ws, _AUDIT_VERSION_OVERRIDES, manager="pnpm", install=install
-    )
+    return apply_audit_overrides(ws, _AUDIT_VERSION_OVERRIDES, manager="pnpm", install=install)
 
 
 def apply_pnpm(ws: Workspace) -> list[Change]:
@@ -593,9 +577,9 @@ def apply_pnpm(ws: Workspace) -> list[Change]:
     # it is for npm/yarn/bun, which are already per-package for the
     # major-crossing case. Also catches a package already sitting above a
     # *newly added* hold ceiling from before the hold existed.
-    candidate_names = direct_dependency_names(
-        read_json_file(ws.path / "package.json") or {}
-    ) | {c.name for c in (*changes, *applied, *behind)}
+    candidate_names = direct_dependency_names(read_json_file(ws.path / "package.json") or {}) | {
+        c.name for c in (*changes, *applied, *behind)
+    }
     held = enforce_holds(
         ws,
         candidate_names,

@@ -11,6 +11,7 @@ import configparser
 import contextlib
 import importlib
 import json
+import logging
 import os
 import re
 import subprocess
@@ -38,6 +39,8 @@ from repo_ops_lockfiles.parsers import (
     versions_uv_lock,
     versions_yarn_lock,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _versions_bun_lockb(mdir: Path) -> tuple[set[str], str]:
@@ -152,10 +155,8 @@ def count_dep_edges(proj: Path) -> int:
 
 
 def _go_cache_path() -> Path:
-    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(
-        os.path.expanduser("~"), ".cache"
-    )
-    return Path(base) / "repo-ops" / "go-cache.json"
+    base = os.environ.get("XDG_CACHE_HOME")
+    return (Path(base) if base else Path.home() / ".cache") / "repo-ops" / "go-cache.json"
 
 
 def _go_cache_key(mod: Path) -> str:
@@ -227,9 +228,7 @@ def _count_go_subprocess(mdir: Path) -> tuple[int, set[str]]:
     if not versions:
         gosum = mdir / "go.sum"
         if gosum.exists():
-            for line in gosum.read_text(
-                encoding="utf-8", errors="replace"
-            ).splitlines():
+            for line in gosum.read_text(encoding="utf-8", errors="replace").splitlines():
                 parts = line.split()
                 if len(parts) >= 2:
                     ver = parts[1].split("/")[0]
@@ -246,14 +245,18 @@ def count_go(mdir: Path, go_cache: dict | None = None) -> tuple[int, set[str]]:
             if key in go_cache:
                 entry = go_cache[key]
                 return entry["direct"], set(entry["versions"])
-        except Exception:  # noqa: S110 — best-effort: malformed-manifest cache read skipped
-            pass
+        except (OSError, KeyError, TypeError) as exc:
+            # A vanished go.mod or a cache entry from an older schema just
+            # means a recount, not a failed scan.
+            logger.debug("go cache read skipped for %s: %s", mod, exc)
         direct, versions = _count_go_subprocess(mdir)
         try:
-            key = _go_cache_key(mod)
-            go_cache[key] = {"direct": direct, "versions": sorted(versions)}
-        except Exception:  # noqa: S110 — best-effort: cache-write failure is non-fatal
-            pass
+            go_cache[_go_cache_key(mod)] = {
+                "direct": direct,
+                "versions": sorted(versions),
+            }
+        except OSError as exc:
+            logger.debug("go cache write skipped for %s: %s", mod, exc)
         return direct, versions
     return _count_go_subprocess(mdir)
 
@@ -326,9 +329,7 @@ def count_python(mdir: Path) -> tuple[int, set[str], str]:
             direct += sum(
                 1
                 for ln in req.read_text(encoding="utf-8", errors="replace").splitlines()
-                if ln.strip()
-                and not ln.strip().startswith("#")
-                and not ln.strip().startswith("-")
+                if ln.strip() and not ln.strip().startswith("#") and not ln.strip().startswith("-")
             )
     versions: set[str] = set()
     for lockname in ("uv.lock", "poetry.lock"):
@@ -336,9 +337,7 @@ def count_python(mdir: Path) -> tuple[int, set[str], str]:
         if not lf.exists():
             continue
         src_tags.append(lockname.split(".")[0])
-        versions = (
-            versions_uv_lock(lf) if lockname == "uv.lock" else versions_poetry_lock(lf)
-        )
+        versions = versions_uv_lock(lf) if lockname == "uv.lock" else versions_poetry_lock(lf)
         if versions:
             break
     # pdm.lock when uv/poetry produced no versions
@@ -441,9 +440,7 @@ def _count_python_manifest_edges(mdir: Path, names: set[str]) -> int:
         total += sum(
             1
             for ln in req.read_text(encoding="utf-8", errors="replace").splitlines()
-            if ln.strip()
-            and not ln.strip().startswith("#")
-            and not ln.strip().startswith("-")
+            if ln.strip() and not ln.strip().startswith("#") and not ln.strip().startswith("-")
         )
     return total
 
@@ -489,7 +486,10 @@ def count_container(proj: Path) -> tuple[int, set[str]]:
             seen.add(rp)
             try:
                 refs = _parse_image_refs(fpath)
-            except Exception:  # noqa: S112 — best-effort: malformed container file skipped
+            except (OSError, ValueError) as exc:
+                # One unreadable Dockerfile/compose file must not zero the
+                # whole container count.
+                logger.debug("container file skipped: %s: %s", fpath, exc)
                 continue
             for ref in refs:
                 if ref.get("is_stage_ref"):
@@ -532,9 +532,7 @@ def count_actions(proj: Path) -> tuple[int, set[str]]:
 
     Lazy-imports from repo_ops_upgrade; gracefully returns zeros if unavailable.
     """
-    actions_imports = _lazy_import(
-        "repo_ops_upgrade.actions", "discover_workflow_files"
-    )
+    actions_imports = _lazy_import("repo_ops_upgrade.actions", "discover_workflow_files")
     uses_imports = _lazy_import(
         "repo_ops_upgrade.workflow_uses", "WorkflowParseError", "parse_workflow_uses"
     )
@@ -589,8 +587,10 @@ def count_precommit(proj: Path) -> tuple[int, set[str]]:
                 for entry in _parse_precommit_repos(text):
                     versions.add(f"{entry['repo']}@{entry['rev']}")
                     direct += 1
-            except Exception:  # noqa: S110 — best-effort: malformed pre-commit config skipped
-                pass
+            except (OSError, KeyError) as exc:
+                # One unreadable config must not zero the pre-commit count for
+                # the whole tree.
+                logger.debug("pre-commit config skipped: %s: %s", cfg, exc)
     return direct, versions
 
 
@@ -722,10 +722,11 @@ def count_deno(mdir: Path) -> tuple[int, set[str]]:
             if cfg_name.endswith(".jsonc"):
                 text = _strip_jsonc_line_comments(text)
             d = json.loads(text)
-            imports = d.get("imports") or {}
-            direct += len(imports)
-        except Exception:  # noqa: S110 — best-effort: malformed deno.json/deno.jsonc is skipped
-            pass
+            imports = d.get("imports") if isinstance(d, dict) else None
+            direct += len(imports) if isinstance(imports, dict) else 0
+        except (OSError, json.JSONDecodeError) as exc:
+            # A malformed deno config still leaves deno.lock below to count.
+            logger.debug("deno config skipped: %s: %s", cfg, exc)
         break
     # Count resolved specifiers from deno.lock
     lock = mdir / "deno.lock"
@@ -951,8 +952,7 @@ def scan(
     if go_tasks:
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
             future_to_row = {
-                executor.submit(count_go, mdir, cache): row
-                for row, mdir, cache in go_tasks
+                executor.submit(count_go, mdir, cache): row for row, mdir, cache in go_tasks
             }
             for future in concurrent.futures.as_completed(future_to_row):
                 row = future_to_row[future]

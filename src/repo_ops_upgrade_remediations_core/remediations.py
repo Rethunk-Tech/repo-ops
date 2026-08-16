@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 import subprocess
 import sys
@@ -153,10 +154,7 @@ def make_fmt_hook(
         if files is not None and not files:
             return [no_changes_plan_detail]
         argv = " ".join(build_argv(files))
-        return [
-            f"REMEDIATE {hook_id}: would run {argv} "
-            f"(normalize {ecosystem_label} formatting)"
-        ]
+        return [f"REMEDIATE {hook_id}: would run {argv} (normalize {ecosystem_label} formatting)"]
 
     def apply(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
         files = _changed(ws)
@@ -180,6 +178,27 @@ _GLOBAL_REGISTRY: list[RemediationHook] = []
 def register(hook: RemediationHook) -> None:
     """Register *hook* in the global dispatch registry."""
     _GLOBAL_REGISTRY.append(hook)
+
+
+# Ecosystem packages whose import populates the global registry.
+ECOSYSTEM_MODULES = (
+    "repo_ops_upgrade_remediations_deno",
+    "repo_ops_upgrade_remediations_go",
+    "repo_ops_upgrade_remediations_js",
+    "repo_ops_upgrade_remediations_py",
+    "repo_ops_upgrade_remediations_rust",
+)
+
+
+def load_ecosystem_hooks() -> None:
+    """Import every ecosystem package so its hooks reach the global registry.
+
+    Imported by name: the packages import this module to call :func:`register`,
+    so naming them as imports here would be a cycle. Repeat calls are free —
+    ``sys.modules`` makes the second import a lookup, so hooks register once.
+    """
+    for name in ECOSYSTEM_MODULES:
+        importlib.import_module(name)
 
 
 def run_hooks(
