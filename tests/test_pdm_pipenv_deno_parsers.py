@@ -163,9 +163,7 @@ def test_versions_pipenv_lock_strips_eq_prefix():
     """Double-equals (==) version prefix must be stripped from the token."""
     with tempfile.TemporaryDirectory() as tmp:
         p = Path(tmp) / "Pipfile.lock"
-        p.write_text(
-            json.dumps({"default": {"foo": {"version": "==1.2.3"}}, "develop": {}})
-        )
+        p.write_text(json.dumps({"default": {"foo": {"version": "==1.2.3"}}, "develop": {}}))
         result = versions_pipenv_lock(p)
     assert "foo@1.2.3" in result
     assert "foo@==1.2.3" not in result

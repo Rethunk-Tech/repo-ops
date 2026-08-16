@@ -108,9 +108,7 @@ def test_apply_go_targeted_calls_go_get_then_tidy_once() -> None:
 def test_apply_go_targeted_returns_fail_on_nonzero_go_get() -> None:
     items = [RemediationItem("golang.org/x/net", "v1.9.1", "go", "/ws")]
 
-    with patch(
-        "repo_ops_audit.audit._run", return_value=(1, "", "go: module not found")
-    ):
+    with patch("repo_ops_audit.audit._run", return_value=(1, "", "go: module not found")):
         outcome = _apply_go_targeted("/ws", items)
 
     assert outcome.status == "fail"

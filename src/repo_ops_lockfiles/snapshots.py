@@ -127,12 +127,8 @@ def _pkg_json_dep_changes(before: bytes, after: bytes) -> list[Change]:
         b_sec = (b_pkg.get(section) or {}) if isinstance(b_pkg, dict) else {}
         a_sec = (a_pkg.get(section) or {}) if isinstance(a_pkg, dict) else {}
         for name in set(b_sec) | set(a_sec):
-            bv = (
-                normalize_version(str(b_sec.get(name, ""))) if b_sec.get(name) else None
-            )
-            av = (
-                normalize_version(str(a_sec.get(name, ""))) if a_sec.get(name) else None
-            )
+            bv = normalize_version(str(b_sec.get(name, ""))) if b_sec.get(name) else None
+            av = normalize_version(str(a_sec.get(name, ""))) if a_sec.get(name) else None
             if bv != av and av:
                 changes.append(Change(name, bv or "?", av))
     return changes

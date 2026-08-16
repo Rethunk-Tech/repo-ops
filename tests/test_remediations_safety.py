@@ -53,13 +53,9 @@ def _git_commit_all(path: Path, message: str = "initial") -> None:
 class TestGoGenerateEnvGate:
     """go_generate must be default-off; only run when REPO_OPS_REMEDIATE_GO_GENERATE=1."""
 
-    def _setup_ws(
-        self, tmp_path: Path, make_workspace: Any, make_change: Any
-    ) -> WorkspaceResult:
+    def _setup_ws(self, tmp_path: Path, make_workspace: Any, make_change: Any) -> WorkspaceResult:
         (tmp_path / "go.mod").write_text("module example.com/m\n\ngo 1.21\n")
-        (tmp_path / "gen.go").write_text(
-            "package main\n//go:generate stringer -type=Foo\n"
-        )
+        (tmp_path / "gen.go").write_text("package main\n//go:generate stringer -type=Foo\n")
         result = _go_result(tmp_path, make_workspace)
         result.changes = [make_change("golang.org/x/tools")]
         return result
@@ -121,13 +117,9 @@ class TestGoGenerateEnvGate:
 class TestGoGenerateDispatchPathGate:
     """Production path: orchestration remediations proxy / core.dispatch must gate go_generate."""
 
-    def _setup_ws(
-        self, tmp_path: Path, make_workspace: Any, make_change: Any
-    ) -> WorkspaceResult:
+    def _setup_ws(self, tmp_path: Path, make_workspace: Any, make_change: Any) -> WorkspaceResult:
         (tmp_path / "go.mod").write_text("module example.com/m\n\ngo 1.21\n")
-        (tmp_path / "gen.go").write_text(
-            "package main\n//go:generate stringer -type=Foo\n"
-        )
+        (tmp_path / "gen.go").write_text("package main\n//go:generate stringer -type=Foo\n")
         result = _go_result(tmp_path, make_workspace)
         result.changes = [make_change("golang.org/x/tools")]
         return result
@@ -350,9 +342,7 @@ def test_fmt_targets_only_changed_source_files(
 
     changed_path.write_text(case.changed_after)
 
-    ws = make_workspace(
-        tmp_path, ecosystem=case.ecosystem, manager=case.manager, label="test"
-    )
+    ws = make_workspace(tmp_path, ecosystem=case.ecosystem, manager=case.manager, label="test")
     ctx: dict[str, Any] = {"changes": [make_change(case.change_pkg)], "apply": True}
 
     with patch(case.run_patch_target, return_value=make_proc(0)) as mock_run:
@@ -391,9 +381,7 @@ def test_fmt_no_op_when_only_manifest_changed(
         name, content = case.extra_no_op_file
         (tmp_path / name).write_text(content)
 
-    ws = make_workspace(
-        tmp_path, ecosystem=case.ecosystem, manager=case.manager, label="test"
-    )
+    ws = make_workspace(tmp_path, ecosystem=case.ecosystem, manager=case.manager, label="test")
     ctx: dict[str, Any] = {"changes": [make_change(case.change_pkg)], "apply": True}
 
     with patch(case.run_patch_target) as mock_run:
@@ -401,9 +389,9 @@ def test_fmt_no_op_when_only_manifest_changed(
 
     assert ok is True
     assert case.no_op_detail in detail
-    assert not any(
-        c[0][0] and c[0][0][0] == case.tool_argv0 for c in mock_run.call_args_list
-    ), f"{case.tool_argv0} must not run when no source files changed"
+    assert not any(c[0][0] and c[0][0][0] == case.tool_argv0 for c in mock_run.call_args_list), (
+        f"{case.tool_argv0} must not run when no source files changed"
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -478,9 +466,7 @@ class TestToolMissingYieldsSkip:
     ) -> None:
         """detect_<tool> returns False when the tool binary is not installed."""
         (tmp_path / case.manifest_name).write_text(case.manifest_content)
-        ws = make_workspace(
-            tmp_path, ecosystem=case.ecosystem, manager=case.manager, label="test"
-        )
+        ws = make_workspace(tmp_path, ecosystem=case.ecosystem, manager=case.manager, label="test")
         ctx: dict[str, Any] = {"changes": [make_change(case.change_pkg)], "apply": True}
 
         with patch(f"{case.rem.__name__}.shutil") as mock_sh:
@@ -499,9 +485,7 @@ class TestToolMissingYieldsSkip:
     ) -> None:
         """result.status stays 'ok' when the tool is absent (detect silently skips it)."""
         (tmp_path / case.manifest_name).write_text(case.manifest_content)
-        ws = make_workspace(
-            tmp_path, ecosystem=case.ecosystem, manager=case.manager, label="test"
-        )
+        ws = make_workspace(tmp_path, ecosystem=case.ecosystem, manager=case.manager, label="test")
         result = WorkspaceResult(workspace=ws)
         result.changes = [make_change(case.change_pkg)]
 
@@ -541,9 +525,7 @@ class TestToolMissingYieldsSkip:
         )
         core.run_hooks([hook], result, apply=True, skip=set())
 
-        assert result.status == "ok", (
-            "result.status must not become 'fail' when a tool is missing"
-        )
+        assert result.status == "ok", "result.status must not become 'fail' when a tool is missing"
         assert result.remediations[0]["status"] == "skip"
         assert "tool not found" in result.remediations[0]["detail"]
 
@@ -552,9 +534,7 @@ class TestToolMissingYieldsSkip:
     ) -> None:
         """Missing 'go' binary: detect_go_generate returns False, result stays ok."""
         (tmp_path / "go.mod").write_text("module example.com/m\n")
-        (tmp_path / "gen.go").write_text(
-            "package main\n//go:generate stringer -type=Foo\n"
-        )
+        (tmp_path / "gen.go").write_text("package main\n//go:generate stringer -type=Foo\n")
         ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="test")
         ctx: dict[str, Any] = {"changes": [make_change("pkg")], "apply": True}
 
@@ -577,9 +557,7 @@ class TestSkipDirsPruning:
         "skip_dir",
         ["vendor", ".git", "node_modules", "testdata", "_vendor"],
     )
-    def test_has_go_generate_skips_directory(
-        self, tmp_path: Path, skip_dir: str
-    ) -> None:
+    def test_has_go_generate_skips_directory(self, tmp_path: Path, skip_dir: str) -> None:
         """//go:generate inside a skip-dir is not detected."""
         skip_path = tmp_path / skip_dir
         skip_path.mkdir()
@@ -590,9 +568,7 @@ class TestSkipDirsPruning:
             f"//go:generate in {skip_dir}/ must not trigger detection"
         )
 
-    def test_has_go_generate_finds_directive_outside_skip_dirs(
-        self, tmp_path: Path
-    ) -> None:
+    def test_has_go_generate_finds_directive_outside_skip_dirs(self, tmp_path: Path) -> None:
         """//go:generate in a normal subdirectory IS detected."""
         (tmp_path / "vendor").mkdir()
         (tmp_path / "vendor" / "skip.go").write_text(
@@ -606,9 +582,7 @@ class TestSkipDirsPruning:
             "//go:generate in a non-skipped directory must be detected"
         )
 
-    def test_has_go_generate_false_when_only_skip_dirs_exist(
-        self, tmp_path: Path
-    ) -> None:
+    def test_has_go_generate_false_when_only_skip_dirs_exist(self, tmp_path: Path) -> None:
         """When ALL .go files with directives are in skip dirs, returns False."""
         for skip_dir in go_rem._SKIP_DIRS:
             d = tmp_path / skip_dir

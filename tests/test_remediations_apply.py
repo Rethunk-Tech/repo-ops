@@ -29,9 +29,7 @@ def test_run_remediations_plan_vs_apply_detail(tmp_path: Path) -> None:
     fake = remediations.RemediationHook(
         "playwright_browsers",
         lambda _ws, _ctx: True,
-        lambda ws, _ctx: [
-            f"REMEDIATE playwright: would run {ws.manager} exec playwright install"
-        ],
+        lambda ws, _ctx: [f"REMEDIATE playwright: would run {ws.manager} exec playwright install"],
         lambda ws, _ctx: (True, f"{ws.manager} exec playwright install (ok)"),
     )
     with patch.object(remediations, "REMEDIATIONS", [fake]):
@@ -47,9 +45,7 @@ def test_run_remediations_plan_vs_apply_detail(tmp_path: Path) -> None:
     assert "(ok)" in result2.remediations[0]["detail"]
 
 
-def test_verbose_flag_observed_live(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_verbose_flag_observed_live(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """process.VERBOSE rebind is visible to run_remediations (issue #68).
 
     A by-value import of VERBOSE would freeze it at False; the module-level
@@ -103,9 +99,7 @@ def test_detect_playwright_peer_and_optional_deps(tmp_path: Path) -> None:
     from repo_ops_models import Workspace
 
     def _ws(path: Path) -> Workspace:
-        return Workspace(
-            path=path, ecosystem="node", manager="bun", git_repo=path, label="t"
-        )
+        return Workspace(path=path, ecosystem="node", manager="bun", git_repo=path, label="t")
 
     # apply=True so the browser dry-run path is eligible (plan mode skips it).
     ctx: dict = {"changes": [], "apply": True}
@@ -131,9 +125,7 @@ def test_detect_playwright_peer_and_optional_deps(tmp_path: Path) -> None:
     # neither section — must exit before browser check (return_value irrelevant)
     none_dir = tmp_path / "none"
     none_dir.mkdir()
-    (none_dir / "package.json").write_text(
-        json.dumps({"dependencies": {"react": "^18.0.0"}})
-    )
+    (none_dir / "package.json").write_text(json.dumps({"dependencies": {"react": "^18.0.0"}}))
     with patch.object(remediations, "_playwright_missing_browsers", return_value=True):
         assert remediations.detect_playwright(_ws(none_dir), ctx) is False
 
@@ -172,9 +164,7 @@ def test_js_detect_requires_node_ecosystem(tmp_path: Path) -> None:
         label="test",
     )
     ctx: dict = {
-        "changes": [
-            type("C", (), {"name": "@biomejs/biome", "from_ver": "1", "to": "2"})()
-        ],
+        "changes": [type("C", (), {"name": "@biomejs/biome", "from_ver": "1", "to": "2"})()],
         "apply": True,
     }
     assert remediations.detect_biome(go_ws, ctx) is False

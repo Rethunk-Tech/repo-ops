@@ -350,9 +350,7 @@ def test_grouped_pr_not_closed_when_row_low_confidence(tmp_path: Path) -> None:
         ),
         patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
         patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git),
-        patch(
-            "repo_ops_dependabot.dependabot._gh_close_pr", return_value=""
-        ) as mock_close,
+        patch("repo_ops_dependabot.dependabot._gh_close_pr", return_value="") as mock_close,
     ):
         main(["--close", fake_repo])
         # Low-confidence rows → grouped PR must NOT be closed
@@ -394,9 +392,7 @@ def test_unparseable_grouped_pr_never_closed(tmp_path: Path) -> None:
         patch("repo_ops_dependabot.dependabot._lockfile_versions", return_value=set()),
         patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
         patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git),
-        patch(
-            "repo_ops_dependabot.dependabot._gh_close_pr", return_value=""
-        ) as mock_close,
+        patch("repo_ops_dependabot.dependabot._gh_close_pr", return_value="") as mock_close,
     ):
         main(["--close", fake_repo])
         mock_close.assert_not_called()
@@ -617,9 +613,7 @@ def test_dependabot_close_calls_gh_pr_close(tmp_path: Path) -> None:
 
     mock_git_result = MagicMock(returncode=0, stdout="origin/main\n")
     with (
-        patch(
-            "repo_ops_dependabot.dependabot.discover_repos", side_effect=mock_discover
-        ),
+        patch("repo_ops_dependabot.dependabot.discover_repos", side_effect=mock_discover),
         patch(
             "repo_ops_dependabot.dependabot._github_remote",
             return_value="https://github.com/owner/repo",
@@ -639,9 +633,7 @@ def test_dependabot_close_calls_gh_pr_close(tmp_path: Path) -> None:
         ),
         patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
         patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
-        patch(
-            "repo_ops_dependabot.dependabot._gh_close_pr", return_value=""
-        ) as mock_close,
+        patch("repo_ops_dependabot.dependabot._gh_close_pr", return_value="") as mock_close,
     ):
         main(["--close", fake_repo])
         mock_close.assert_called_once()
@@ -695,9 +687,7 @@ def test_deno_lock_resolves_npm_and_jsr_high_confidence(tmp_path: Path) -> None:
             return_value=(mock_pr_data, ""),
         ),
         patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
-        patch(
-            "repo_ops_dependabot.dependabot._gh_close_pr", return_value=""
-        ) as mock_close,
+        patch("repo_ops_dependabot.dependabot._gh_close_pr", return_value="") as mock_close,
     ):
         results = scan_repos([fake_repo], do_close=True, repo_paths=[fake_repo])
 
@@ -741,9 +731,7 @@ def test_bun_lockb_without_bun_never_closes_dependabot_pr(
             return_value=set(),
         ),
         patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
-        patch(
-            "repo_ops_dependabot.dependabot._gh_close_pr", return_value=""
-        ) as mock_close,
+        patch("repo_ops_dependabot.dependabot._gh_close_pr", return_value="") as mock_close,
     ):
         main(["--close", fake_repo])
 
@@ -789,9 +777,7 @@ def test_dependabot_close_comment_when_default_branch_unresolved(
         ),
         patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
         patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
-        patch(
-            "repo_ops_dependabot.dependabot._gh_close_pr", return_value=""
-        ) as mock_close,
+        patch("repo_ops_dependabot.dependabot._gh_close_pr", return_value="") as mock_close,
     ):
         main(["--close", fake_repo])
         mock_close.assert_called_once()
@@ -837,9 +823,7 @@ def test_dependabot_low_confidence_never_closed(tmp_path: Path) -> None:
         ),
         patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
         patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
-        patch(
-            "repo_ops_dependabot.dependabot._gh_close_pr", return_value=""
-        ) as mock_close,
+        patch("repo_ops_dependabot.dependabot._gh_close_pr", return_value="") as mock_close,
     ):
         main(["--close", fake_repo])
         mock_close.assert_not_called()

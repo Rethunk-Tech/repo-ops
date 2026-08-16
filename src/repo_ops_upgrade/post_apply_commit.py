@@ -189,9 +189,7 @@ def upgrade_scoped_paths(
             for f in entry.get("files") or []:
                 try:
                     rem_rel = (
-                        (wr.workspace.path / f)
-                        .resolve()
-                        .relative_to(bundle.git_repo.resolve())
+                        (wr.workspace.path / f).resolve().relative_to(bundle.git_repo.resolve())
                     )
                 except ValueError:
                     continue
@@ -352,9 +350,7 @@ def classify_commit_subject(files: list[str]) -> str:
         ".github" in p.replace("\\", "/") for p in files
     )
     has_go = any(n in ("go.mod", "go.sum") for n in names)
-    has_rust = any(
-        n == "cargo.lock" or (n.endswith(".toml") and "cargo" in n) for n in names
-    )
+    has_rust = any(n == "cargo.lock" or (n.endswith(".toml") and "cargo" in n) for n in names)
     has_python = any(
         n
         in (
@@ -463,9 +459,7 @@ def plan_repo_commit(
     # Always scope to paths this run actually modified so that pre-existing dirty
     # files (e.g. an operator-kept yarn.lock) are never swept into a commit, even
     # when the repo was clean at run-start. Issue #116 generalises Issue #108.
-    scoped = upgrade_scoped_paths(
-        bundle, files, extra_gitlink_paths=extra_gitlink_paths
-    )
+    scoped = upgrade_scoped_paths(bundle, files, extra_gitlink_paths=extra_gitlink_paths)
     if not scoped:
         skip_reason = (
             "no upgrade-scoped changes to commit (dirty worktree)"
@@ -484,9 +478,7 @@ def plan_repo_commit(
             + ("…" if len(blocked) > 3 else ""),
         )
     if not safe:
-        return CommitPlan(
-            repo, bundle.label, "", skipped_reason="no safe paths to stage"
-        )
+        return CommitPlan(repo, bundle.label, "", skipped_reason="no safe paths to stage")
     if mode == "agent":
         try:
             from repo_ops_upgrade.commit_agent_providers import (
@@ -649,9 +641,7 @@ def _dirty_gitlink_paths_for_children(
             path_to_child[link.path.replace("\\", "/")] = link.git_repo.resolve()
 
     # Subset: only submodule paths whose children were committed this run.
-    eligible: set[str] = {
-        p for p, child in path_to_child.items() if child in committed_child_repos
-    }
+    eligible: set[str] = {p for p, child in path_to_child.items() if child in committed_child_repos}
     if not eligible:
         return []
 
@@ -694,9 +684,7 @@ def commit_umbrella_submodule_pointers(
 
     # Set of child git repos that got a real commit (not dry_run, skip, fail).
     committed_children: set[Path] = {
-        o.git_repo.resolve()
-        for o in child_outcomes
-        if o.status in ("committed", "dry_run")
+        o.git_repo.resolve() for o in child_outcomes if o.status in ("committed", "dry_run")
     }
     if not committed_children:
         return [], 0
@@ -710,9 +698,7 @@ def commit_umbrella_submodule_pointers(
     outcomes: list[CommitOutcome] = []
     exit_code = 0
 
-    for umbrella, submodule_paths in sorted(
-        umbrella_repos.items(), key=lambda x: str(x[0])
-    ):
+    for umbrella, submodule_paths in sorted(umbrella_repos.items(), key=lambda x: str(x[0])):
         label = umbrella.name
 
         dirty_paths = _dirty_gitlink_paths_for_children(
@@ -728,10 +714,7 @@ def commit_umbrella_submodule_pointers(
         n = len(dirty_paths)
         child_names = ", ".join(Path(p).name for p in sorted(dirty_paths))
         subject = f"chore(submodules): bump {n} child pin(s)"
-        body = (
-            f"Automated pointer-bump commit for {label}.\n\n"
-            f"Children updated: {child_names}"
-        )
+        body = f"Automated pointer-bump commit for {label}.\n\nChildren updated: {child_names}"
         message = f"{subject}\n\n{body}"
 
         if dry_run:

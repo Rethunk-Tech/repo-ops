@@ -39,9 +39,7 @@ from repo_ops_models import Workspace
         ({"README.md": "# readme\n", "main.go": "package main\n"}, False),
     ],
 )
-def test_is_container_workspace(
-    files: dict[str, str], expected: bool, tmp_path: Path
-) -> None:
+def test_is_container_workspace(files: dict[str, str], expected: bool, tmp_path: Path) -> None:
     for name, content in files.items():
         (tmp_path / name).write_text(content)
     assert is_container_workspace(tmp_path) is expected
@@ -92,7 +90,9 @@ def test_parse_from_sha_only() -> None:
 
 
 def test_parse_from_tag_and_sha() -> None:
-    text = "FROM nginx:1.25@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456ab12\n"
+    text = (
+        "FROM nginx:1.25@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456ab12\n"
+    )
     refs = _parse_from_lines(text)
     assert len(refs) == 1
     assert refs[0]["tag"] == "1.25"
@@ -144,11 +144,7 @@ _ANY_SHA = object()
     "text, expected",
     [
         (
-            "services:\n"
-            "  web:\n"
-            "    image: nginx:1.25\n"
-            "  db:\n"
-            "    image: postgres:15-alpine\n",
+            "services:\n  web:\n    image: nginx:1.25\n  db:\n    image: postgres:15-alpine\n",
             [
                 {"image": "nginx", "tag": "1.25"},
                 {"image": "postgres", "tag": "15-alpine"},
@@ -246,10 +242,7 @@ def test_normalize_docker_image(image: str, host: str, repo: str) -> None:
 def test_resolve_latest_tag(
     current: str, available: list[str], allow_cross_major: bool, expected: str | None
 ) -> None:
-    assert (
-        _resolve_latest_tag(current, available, allow_cross_major=allow_cross_major)
-        == expected
-    )
+    assert _resolve_latest_tag(current, available, allow_cross_major=allow_cross_major) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -345,9 +338,7 @@ def test_check_container_semver_bump(tmp_path: Path) -> None:
 
 def test_check_container_stage_ref_skipped(tmp_path: Path) -> None:
     """Stage ref lines must not generate check results."""
-    (tmp_path / "Dockerfile").write_text(
-        "FROM nginx:1.25 AS base\nFROM base AS runtime\n"
-    )
+    (tmp_path / "Dockerfile").write_text("FROM nginx:1.25 AS base\nFROM base AS runtime\n")
 
     with patch(
         "repo_ops_container.container._fetch_tags",
@@ -404,9 +395,7 @@ def test_check_container_compose_file(tmp_path: Path) -> None:
 
 def test_check_container_deduplicates_same_image(tmp_path: Path) -> None:
     """Same image:tag referenced in multiple FROM lines → only one Change."""
-    (tmp_path / "Dockerfile").write_text(
-        "FROM nginx:1.25 AS first\nFROM nginx:1.25 AS second\n"
-    )
+    (tmp_path / "Dockerfile").write_text("FROM nginx:1.25 AS first\nFROM nginx:1.25 AS second\n")
 
     with patch(
         "repo_ops_container.container._fetch_tags",
@@ -419,9 +408,7 @@ def test_check_container_deduplicates_same_image(tmp_path: Path) -> None:
     assert len(nginx_changes) == 1
 
 
-def test_check_container_cross_major_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_check_container_cross_major_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("REPO_OPS_CONTAINER_UPDATE_LATEST", "1")
     (tmp_path / "Dockerfile").write_text("FROM nginx:1.25\n")
 

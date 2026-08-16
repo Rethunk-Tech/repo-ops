@@ -44,9 +44,7 @@ class _Subcommand:
 
 
 _SUBCOMMANDS: dict[str, _Subcommand] = {
-    "inventory": _Subcommand(
-        inventory_main, build_inventory_parser, "Dependency footprint report"
-    ),
+    "inventory": _Subcommand(inventory_main, build_inventory_parser, "Dependency footprint report"),
     "plan": _Subcommand(
         main_plan,
         lambda: build_upgrade_parser(apply=False),
@@ -100,9 +98,7 @@ _HELP_BUILDERS: dict[str, Callable[[], argparse.ArgumentParser]] = {
 
 _REGISTER_COMMANDS = frozenset({"inventory", "plan", "apply", "audit"})
 
-_SUBCOMMAND_HELP: dict[str, str] = {
-    name: sc.help_text for name, sc in _SUBCOMMANDS.items()
-}
+_SUBCOMMAND_HELP: dict[str, str] = {name: sc.help_text for name, sc in _SUBCOMMANDS.items()}
 
 
 def _resolve_version() -> str:

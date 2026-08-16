@@ -134,11 +134,7 @@ def _deno_import_map_paths(ws: Workspace) -> list[Path]:
     )
     return [
         *sorted(existing_config_paths, key=lambda path: path.as_posix()),
-        *(
-            path
-            for path in paths
-            if path.is_file() and path not in existing_config_paths
-        ),
+        *(path for path in paths if path.is_file() and path not in existing_config_paths),
     ]
 
 
@@ -183,9 +179,7 @@ def _deno_package_matches(left: str, right: str) -> bool:
     left_registry, left_name = normalize(left)
     right_registry, right_name = normalize(right)
     return left_name == right_name and (
-        left_registry is None
-        or right_registry is None
-        or left_registry == right_registry
+        left_registry is None or right_registry is None or left_registry == right_registry
     )
 
 
@@ -290,8 +284,8 @@ def _restore_deno_workspace(ws: Workspace, before: dict[Path, bytes]) -> None:
             path.unlink()
 
 
-set_deno_audit_version_overrides, clear_deno_audit_version_overrides = (
-    make_audit_override_api(_AUDIT_VERSION_OVERRIDES)
+set_deno_audit_version_overrides, clear_deno_audit_version_overrides = make_audit_override_api(
+    _AUDIT_VERSION_OVERRIDES
 )
 
 
@@ -541,9 +535,7 @@ def _deno_lock_package_names(ws: Workspace) -> set[str]:
     return names
 
 
-def targeted_bump_behind(
-    ws: Workspace, behind: list[Change]
-) -> tuple[list[Change], list[Change]]:
+def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Change], list[Change]]:
     """Run a reversible per-package ``deno update`` for behind-latest deps."""
     if not behind or not _deno_targeted_bump_enabled(ws):
         return [], behind
@@ -627,9 +619,7 @@ def targeted_bump_behind(
     return applied, still_behind
 
 
-def _enforce_deno_version_ceilings(
-    ws: Workspace, candidate_names: list[str] | None = None
-) -> None:
+def _enforce_deno_version_ceilings(ws: Workspace, candidate_names: list[str] | None = None) -> None:
     """Clamp held packages that remain above their ceiling after an update."""
     candidates = set(candidate_names or ())
     candidates.update(_deno_lock_package_names(ws))

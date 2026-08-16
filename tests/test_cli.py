@@ -95,9 +95,7 @@ def test_parse_iso8601_rejects_naive():
 
 
 @pytest.mark.parametrize("module_name,func_name,prefix", _MAIN_HELP_TARGETS)
-def test_entrypoint_main_help(
-    module_name: str, func_name: str, prefix: list[str]
-) -> None:
+def test_entrypoint_main_help(module_name: str, func_name: str, prefix: list[str]) -> None:
     _call_main_help(module_name, func_name, prefix)
 
 

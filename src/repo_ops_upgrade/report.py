@@ -31,15 +31,12 @@ _LATEST_HINT_NO_MODE = (
     "--conservative to attempt it, or bump manually"
 )
 _LATEST_HINT_DEFAULT = (
-    "targeted bump not attempted this run — drop --conservative to "
-    "attempt it, or bump manually"
+    "targeted bump not attempted this run — drop --conservative to attempt it, or bump manually"
 )
 # Managers with no update-latest concept at all (structural — cargo/poetry/
 # pdm/pipenv/pip-compile have no cross-range "latest" mode to fall back to,
 # unlike bun/pnpm/deno/yarn/npm's targeted bump, which stands in for one).
-_NO_LATEST_MODE_MANAGERS = frozenset(
-    {"rust", "poetry", "pdm", "pipenv", "pip-tools", "npm"}
-)
+_NO_LATEST_MODE_MANAGERS = frozenset({"rust", "poetry", "pdm", "pipenv", "pip-tools", "npm"})
 _LATEST_HINT_BY_MANAGER: dict[str, str] = {
     # yarn's leftovers are specifically peer/group-constrained (#110, #111).
     "yarn": (
@@ -221,9 +218,7 @@ def build_run_summary(
                 behind_latest_by_manager[manager] = (
                     behind_latest_by_manager.get(manager, 0) + n_behind
                 )
-                packages_held += sum(
-                    1 for rule in _behind_latest_holds(wr) if rule is not None
-                )
+                packages_held += sum(1 for rule in _behind_latest_holds(wr) if rule is not None)
         action_totals = bundle.actions_summary()
         actions_bumps += action_totals["bumps"]
         actions_failures += action_totals["failures"]
@@ -343,9 +338,7 @@ def build_json_payload(
 ) -> dict[str, Any]:
     sorted_bundles = sorted(bundles.values(), key=lambda x: x.label)
     repos_json = [
-        _enrich_repo_json_with_staleness(
-            b, _enrich_repo_json_with_aging(b, b.to_json())
-        )
+        _enrich_repo_json_with_staleness(b, _enrich_repo_json_with_aging(b, b.to_json()))
         for b in sorted_bundles
     ]
     payload: dict[str, Any] = {
@@ -523,8 +516,7 @@ def print_human_report(
                 held_n = sum(1 for rule in behind_holds if rule is not None)
                 held_suffix = f", {held_n} held" if held_n else ""
                 print(
-                    f"    behind-latest: {behind_n} package(s) not actioned"
-                    f"{held_suffix} ({hint})"
+                    f"    behind-latest: {behind_n} package(s) not actioned{held_suffix} ({hint})"
                 )
                 shown_behind = wr.behind_latest[:top_n]
                 shown_holds = behind_holds[:top_n]
@@ -542,9 +534,7 @@ def print_human_report(
                 print(f"    {oa.get('detail', oa)}")
             for rem in wr.remediations:
                 if rem.get("status") != "ok" or rem.get("detail"):
-                    print(
-                        f"    [{rem.get('id')}] {rem.get('detail') or rem.get('status')}"
-                    )
+                    print(f"    [{rem.get('id')}] {rem.get('detail') or rem.get('status')}")
         if include_actions:
             summary = repo.actions_summary()
             seen_action_pins: set[tuple[str, str]] = set()
@@ -567,18 +557,12 @@ def print_human_report(
                     # Rows apply never rewrites carry a "report only" detail;
                     # printing their status ("ok") reads as an applied bump.
                     marker = (
-                        "report-only"
-                        if ab.detail and "report only" in ab.detail
-                        else ab.status
+                        "report-only" if ab.detail and "report only" in ab.detail else ab.status
                     )
-                    print(
-                        f"    {ab.workflow}: {ab.action}@{ab.pin} → {ab.latest} [{marker}]"
-                    )
+                    print(f"    {ab.workflow}: {ab.action}@{ab.pin} → {ab.latest} [{marker}]")
                 for ab in policy_rows:
                     explanation = ab.detail or "org policy violation"
-                    print(
-                        f"    {ab.workflow}: {ab.action}@{ab.pin} [{ab.status}] {explanation}"
-                    )
+                    print(f"    {ab.workflow}: {ab.action}@{ab.pin} [{ab.status}] {explanation}")
             print(
                 "  Actions: "
                 f"{summary['bumps']} bump(s) "
@@ -623,9 +607,7 @@ def count_failures(bundles: dict[Path, RepoBundle]) -> int:
 
 def any_workspace_skip_or_fail(bundles: dict[Path, RepoBundle]) -> bool:
     return any(
-        wr.status in ("fail", "skip")
-        for bundle in bundles.values()
-        for wr in bundle.workspaces
+        wr.status in ("fail", "skip") for bundle in bundles.values() for wr in bundle.workspaces
     )
 
 
@@ -672,9 +654,7 @@ def print_run_footer(
     # Sentence-form total package-upgrade count across all workspaces (#103).
     pkgs = summary.get("packages_upgraded", 0)
     workspaces_total = (
-        summary["workspaces_ok"]
-        + summary["workspaces_fail"]
-        + summary["workspaces_skip"]
+        summary["workspaces_ok"] + summary["workspaces_fail"] + summary["workspaces_skip"]
     )
     print(f"  {pkgs} package(s) upgraded across {workspaces_total} workspace(s)")
 
@@ -684,9 +664,7 @@ def print_run_footer(
     if total_behind > 0:
         parts: list[str] = []
         if packages_behind > 0:
-            by_manager: dict[str, int] = summary.get(
-                "packages_behind_latest_by_manager", {}
-            )
+            by_manager: dict[str, int] = summary.get("packages_behind_latest_by_manager", {})
             if by_manager:
                 # One line per manager so the remediation advice is correct for
                 # each — npm has no latest mode at all; the rest differ in
@@ -694,14 +672,9 @@ def print_run_footer(
                 for manager in sorted(by_manager):
                     count = by_manager[manager]
                     manager_hint = _behind_latest_hint(manager)
-                    parts.append(
-                        f"{count} {manager} package(s) behind latest ({manager_hint})"
-                    )
+                    parts.append(f"{count} {manager} package(s) behind latest ({manager_hint})")
             else:
-                parts.append(
-                    f"{packages_behind} package(s) behind latest"
-                    f" ({_LATEST_HINT_DEFAULT})"
-                )
+                parts.append(f"{packages_behind} package(s) behind latest ({_LATEST_HINT_DEFAULT})")
         if actions_behind > 0:
             parts.append(
                 f"{actions_behind} action(s) have a newer major available"
@@ -718,9 +691,7 @@ def print_run_footer(
     # above zero, so an empty state store keeps the footer byte-identical.
     staleness_top = summary.get("staleness_top") or []
     if staleness_top:
-        rendered = ", ".join(
-            f"{item['repo']} {item['score']}" for item in staleness_top
-        )
+        rendered = ", ".join(f"{item['repo']} {item['score']}" for item in staleness_top)
         print()
         print(f"  staleness: {rendered} (behind-count x days-behind)")
 

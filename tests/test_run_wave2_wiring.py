@@ -328,9 +328,7 @@ def test_pr_dry_run_skips_run_pr_flow(
     assert "dry-run: branch/PR creation skipped" in capsys.readouterr().err
 
 
-def test_pr_failed_outcome_sets_exit_code(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_pr_failed_outcome_sets_exit_code(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """run_pr_flow status=failed propagates to exit_code (F141)."""
     ws = _npm_ws(tmp_path)
     wr = WorkspaceResult(workspace=ws, status="ok")

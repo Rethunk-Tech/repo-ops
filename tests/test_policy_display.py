@@ -123,9 +123,7 @@ def test_print_human_report_renders_policy_rows(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("status", ["policy", "policy-blocked", "warn"])
-def test_print_human_report_renders_policy_status_marker(
-    tmp_path: Path, status: str
-) -> None:
+def test_print_human_report_renders_policy_status_marker(tmp_path: Path, status: str) -> None:
     """All policy statuses render as policy rows, not action bumps."""
     bundles = {
         tmp_path: _bundle(
@@ -306,9 +304,7 @@ def test_actions_org_policy_flag_registered_on_apply() -> None:
     assert args.actions_org_policy is True
 
 
-def test_commit_umbrella_wires_env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_commit_umbrella_wires_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """--commit-umbrella reaches REPO_OPS_COMMIT_UMBRELLA through the real apply entry point."""
     monkeypatch.delenv("REPO_OPS_COMMIT_UMBRELLA", raising=False)
     monkeypatch.chdir(tmp_path)
@@ -323,9 +319,7 @@ def test_commit_umbrella_wires_env(
     monkeypatch.delenv("REPO_OPS_COMMIT_UMBRELLA", raising=False)
 
 
-def test_actions_org_policy_wires_env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_actions_org_policy_wires_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """--actions-org-policy reaches REPO_OPS_ACTIONS_ORG_POLICY through the real plan entry point."""
     monkeypatch.delenv("REPO_OPS_ACTIONS_ORG_POLICY", raising=False)
     monkeypatch.chdir(tmp_path)
@@ -386,9 +380,7 @@ def test_settings_table_container_update_latest_env_var() -> None:
     ],
     ids=["commit-umbrella", "actions-org-policy", "container-update-latest"],
 )
-def test_resolve_setting(
-    monkeypatch: pytest.MonkeyPatch, env_var: str, setting_name: str
-) -> None:
+def test_resolve_setting(monkeypatch: pytest.MonkeyPatch, env_var: str, setting_name: str) -> None:
     from repo_ops_core.config import resolve_setting
 
     monkeypatch.setenv(env_var, "1")

@@ -41,9 +41,7 @@ def _rust_extra_patches(monkeypatch: pytest.MonkeyPatch) -> list:
 
 
 def _poetry_extra_patches(monkeypatch: pytest.MonkeyPatch) -> list:
-    return [
-        patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry")
-    ]
+    return [patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry")]
 
 
 # ---------------------------------------------------------------------------
@@ -89,9 +87,7 @@ def test_timeout_check_env_override(
         for extra in extra_patches(monkeypatch):
             stack.enter_context(extra)
         stack.enter_context(patch(patch_target, side_effect=_fake_run(captured)))
-        check_fn(
-            make_workspace(tmp_path, ecosystem=ecosystem, manager=manager, label="demo")
-        )
+        check_fn(make_workspace(tmp_path, ecosystem=ecosystem, manager=manager, label="demo"))
 
     assert captured, "run() was never called"
     assert captured[0]["timeout"] == env_val, (
@@ -141,9 +137,7 @@ def test_timeout_apply_env_override(
         for extra in extra_patches(monkeypatch):
             stack.enter_context(extra)
         stack.enter_context(patch(patch_target, side_effect=_fake_run(captured)))
-        apply_fn(
-            make_workspace(tmp_path, ecosystem=ecosystem, manager=manager, label="demo")
-        )
+        apply_fn(make_workspace(tmp_path, ecosystem=ecosystem, manager=manager, label="demo"))
 
     assert captured, "run() was never called"
     assert all(c["timeout"] == env_val for c in captured), (
@@ -186,8 +180,6 @@ def test_timeout_apply_default_unchanged(
     from repo_ops_rust.rust import apply_rust
 
     with patch("repo_ops_rust.rust.run", side_effect=_fake_run(captured)):
-        apply_rust(
-            make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="demo")
-        )
+        apply_rust(make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="demo"))
 
     assert captured[0]["timeout"] == TIMEOUT_APPLY

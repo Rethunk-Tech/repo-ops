@@ -137,9 +137,7 @@ def create_or_checkout_branch(repo: Path, branch: str) -> tuple[bool, str | None
     return True, None
 
 
-def push_branch(
-    repo: Path, branch: str, remote: str = "origin"
-) -> tuple[bool, str | None]:
+def push_branch(repo: Path, branch: str, remote: str = "origin") -> tuple[bool, str | None]:
     """Push *branch* to *remote* with ``--set-upstream``.
 
     Returns ``(ok, err_msg)``.  The push is always forced only if the remote
@@ -290,9 +288,7 @@ def _build_pr_content(bundle: RepoBundle, *, branch: str) -> tuple[str, str]:
             body_lines.append(
                 f"- **{ws.label}** (`{ws.ecosystem}/{ws.manager}`): {len(wr.changes)} bump(s)"
             )
-    n_actions = sum(
-        1 for ab in bundle.actions if ab.status == "ok" and ab.pin != ab.latest
-    )
+    n_actions = sum(1 for ab in bundle.actions if ab.status == "ok" and ab.pin != ab.latest)
     if n_actions:
         body_lines.append(f"- GitHub Actions: {n_actions} pin(s) bumped")
 

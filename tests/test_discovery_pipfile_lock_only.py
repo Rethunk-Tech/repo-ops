@@ -32,9 +32,7 @@ def test_pipfile_lock_only_discovered_as_pipenv(tmp_path: Path, init_git_repo) -
     assert pipenv_found[0].path == repo.resolve()
 
 
-def test_pipfile_lock_only_not_double_counted_with_pipfile(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_pipfile_lock_only_not_double_counted_with_pipfile(tmp_path: Path, init_git_repo) -> None:
     """When both Pipfile and Pipfile.lock exist, exactly one pipenv workspace is found."""
     repo = tmp_path / "org" / "full-pipenv"
     init_git_repo(repo)

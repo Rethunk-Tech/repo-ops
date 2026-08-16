@@ -143,9 +143,7 @@ def test_build_json_payload_generated_at_and_exit_code(tmp_path: Path) -> None:
     assert payload_no_code["generated_at"].endswith("Z")
     assert "exit_code" not in payload_no_code
 
-    payload_with_code = build_json_payload(
-        bundles, roots=["/tmp"], mode="apply", exit_code=1
-    )
+    payload_with_code = build_json_payload(bundles, roots=["/tmp"], mode="apply", exit_code=1)
     assert payload_with_code["exit_code"] == 1
     assert "generated_at" in payload_with_code
 

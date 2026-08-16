@@ -314,9 +314,7 @@ def test_json_out_requires_json_flag() -> None:
 def test_probe_gh_auth_unauthenticated(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fake_run(cmd: list[str], **_kwargs: object) -> MagicMock:
         assert cmd == ["/usr/bin/gh", "auth", "status"]
-        return MagicMock(
-            returncode=1, stdout="", stderr="You are not logged into any hosts"
-        )
+        return MagicMock(returncode=1, stdout="", stderr="You are not logged into any hosts")
 
     monkeypatch.setattr(doctor.subprocess, "run", _fake_run)
 
@@ -455,9 +453,7 @@ def test_missing_cargo_audit_with_strict_exits_one(
 
     def _fake_run(cmd: list[str], **_kwargs: object) -> MagicMock:
         if cmd[1:] == ["audit", "--version"]:
-            return MagicMock(
-                returncode=1, stdout="", stderr="cargo-audit not installed"
-            )
+            return MagicMock(returncode=1, stdout="", stderr="cargo-audit not installed")
         if cmd[1:] == ["auth", "status"]:
             return MagicMock(returncode=0, stdout="ok", stderr="")
         return _fake_run_version(cmd)

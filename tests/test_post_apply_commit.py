@@ -18,9 +18,7 @@ from repo_ops_upgrade import post_apply_commit
 from repo_ops_upgrade.post_apply import collect_changes_after_apply
 
 
-def _bundle(
-    tmp_path: Path, init_git_repo, *, started_dirty: bool = False
-) -> RepoBundle:
+def _bundle(tmp_path: Path, init_git_repo, *, started_dirty: bool = False) -> RepoBundle:
     init_git_repo(tmp_path)
     ws = Workspace(
         path=tmp_path,
@@ -89,9 +87,7 @@ def test_unstaged_go_change_classifies_as_go_modules() -> None:
     # End-to-end of the bug: a real unstaged go.mod/go.sum change must yield
     # the Go subject, not the generic fallback.
     paths = post_apply_commit._parse_porcelain(" M go.mod\0 M go.sum\0")
-    assert post_apply_commit.classify_commit_subject(paths) == (
-        "chore(deps): update Go modules"
-    )
+    assert post_apply_commit.classify_commit_subject(paths) == ("chore(deps): update Go modules")
 
 
 def test_classify_bun_lock_text_format_is_node() -> None:
@@ -119,9 +115,7 @@ def test_skips_verify_fail_by_default(tmp_path: Path, init_git_repo) -> None:
     assert plan.skipped_reason == "verify failed: build failed"
 
 
-def test_commit_on_fail_true_proceeds_after_verify_fail(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_commit_on_fail_true_proceeds_after_verify_fail(tmp_path: Path, init_git_repo) -> None:
     """--commit-on-fail allows commits when verify_error is set (F041)."""
     bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
     bundle.workspaces[0].status = "fail"
@@ -136,9 +130,7 @@ def test_commit_on_fail_true_proceeds_after_verify_fail(
     assert "package-lock.json" in plan.files
 
 
-def test_allow_dirty_scopes_commit_to_upgrade_paths(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_allow_dirty_scopes_commit_to_upgrade_paths(tmp_path: Path, init_git_repo) -> None:
     bundle = _bundle(tmp_path, started_dirty=True, init_git_repo=init_git_repo)
     (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
     (tmp_path / "wip.txt").write_text("unrelated", encoding="utf-8")
@@ -170,9 +162,7 @@ def test_dirty_start_no_upgrade_changes_skips(tmp_path: Path, init_git_repo) -> 
     assert plan.skipped_reason == "no upgrade-scoped changes to commit (dirty worktree)"
 
 
-def test_dirty_sibling_does_not_block_clean_workspace_commit(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_dirty_sibling_does_not_block_clean_workspace_commit(tmp_path: Path, init_git_repo) -> None:
     # #108: a dirty sibling file must not block committing a clean workspace's
     # applied bump. The root workspace's manifest AND lockfile are both scoped
     # (the manifest fix prevents a partial commit); the unrelated dirty file is
@@ -196,9 +186,7 @@ def test_skipped_dirty_sibling_workspace_does_not_block_commit(
     # error "dirty git worktree") must not veto committing a clean workspace's
     # applied bump. Exercises the second gate (_bundle_apply_ok), which the
     # original fix left in place — fails before the skip-dirty veto was removed.
-    bundle = _bundle(
-        tmp_path, init_git_repo=init_git_repo
-    )  # clean root workspace, status "ok"
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)  # clean root workspace, status "ok"
     bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
     (tmp_path / "package.json").write_text('{"version":"1.0.0"}', encoding="utf-8")
     (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
@@ -372,9 +360,7 @@ def test_commit_agent_provider_uses_global_config(
     xdg_config = tmp_path / "xdg"
     config_dir = xdg_config / "repo-ops"
     config_dir.mkdir(parents=True)
-    (config_dir / "config.toml").write_text(
-        "commit_agent_provider = 'cursor'\n", encoding="utf-8"
-    )
+    (config_dir / "config.toml").write_text("commit_agent_provider = 'cursor'\n", encoding="utf-8")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_config))
 
     assert providers.commit_agent_provider_name() == "cursor"
@@ -455,9 +441,7 @@ def test_collect_changes_no_phantom_downgrade(tmp_path: Path) -> None:
         " }\n"
     )
 
-    def _fake_run(
-        cmd: list[str], cwd: object, **kwargs: object
-    ) -> CompletedProcess[str]:
+    def _fake_run(cmd: list[str], cwd: object, **kwargs: object) -> CompletedProcess[str]:
         if "--name-only" in cmd:
             return CompletedProcess(cmd, 0, stdout="app/package.json\n", stderr="")
         # git diff -- app/package.json
@@ -501,9 +485,7 @@ def test_collect_changes_root_workspace_and_non_dep_fields_excluded(
         " }\n"
     )
 
-    def _fake_run(
-        cmd: list[str], cwd: object, **kwargs: object
-    ) -> CompletedProcess[str]:
+    def _fake_run(cmd: list[str], cwd: object, **kwargs: object) -> CompletedProcess[str]:
         if "--name-only" in cmd:
             # bare "package.json" — no leading subdirectory prefix
             return CompletedProcess(cmd, 0, stdout="package.json\n", stderr="")
@@ -534,9 +516,7 @@ def test_collect_changes_json_yaml_lockb_fallback(tmp_path: Path) -> None:
         label="root",
     )
 
-    def _fake_run(
-        cmd: list[str], cwd: object, **kwargs: object
-    ) -> CompletedProcess[str]:
+    def _fake_run(cmd: list[str], cwd: object, **kwargs: object) -> CompletedProcess[str]:
         if "--name-only" in cmd:
             return CompletedProcess(
                 cmd,
@@ -550,9 +530,7 @@ def test_collect_changes_json_yaml_lockb_fallback(tmp_path: Path) -> None:
         changes = collect_changes_after_apply(ws)
 
     names = {c.name for c in changes}
-    assert "package-lock.json" in names, (
-        f"package-lock.json missing from changes: {changes}"
-    )
+    assert "package-lock.json" in names, f"package-lock.json missing from changes: {changes}"
     assert "pnpm-lock.yaml" in names, f"pnpm-lock.yaml missing from changes: {changes}"
     assert "bun.lockb" in names, f"bun.lockb missing from changes: {changes}"
 
@@ -562,9 +540,7 @@ def test_collect_changes_json_yaml_lockb_fallback(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_actions_only_does_not_sweep_predirty_lockfile(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_actions_only_does_not_sweep_predirty_lockfile(tmp_path: Path, init_git_repo) -> None:
     """#116: an actions-only pin bump must stage only the workflow file, not a
     pre-existing dirty yarn.lock that was never touched by this run."""
     from repo_ops_models import ActionBump
@@ -878,9 +854,7 @@ def test_classify_mixed_deno_and_node() -> None:
 
 
 def test_classify_mixed_rust_and_ci_pins() -> None:
-    subject = post_apply_commit.classify_commit_subject(
-        ["Cargo.lock", ".github/workflows/ci.yml"]
-    )
+    subject = post_apply_commit.classify_commit_subject(["Cargo.lock", ".github/workflows/ci.yml"])
     assert subject == "chore(deps,ci): update Rust lockfiles and CI pins"
 
 
@@ -921,9 +895,7 @@ def test_classify_single_ecosystem_unchanged() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_run_post_apply_commits_parallel_outcomes_sorted(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_run_post_apply_commits_parallel_outcomes_sorted(tmp_path: Path, init_git_repo) -> None:
     """Outcomes are returned in label order regardless of execution order."""
     # Build three minimal bundles — each in its own git repo directory.
     paths = [tmp_path / f"repo{i}" for i in range(3)]
@@ -931,9 +903,7 @@ def test_run_post_apply_commits_parallel_outcomes_sorted(
     for p in paths:
         p.mkdir()
         init_git_repo(p)
-        ws = Workspace(
-            path=p, ecosystem="node", manager="npm", git_repo=p, label=p.name
-        )
+        ws = Workspace(path=p, ecosystem="node", manager="npm", git_repo=p, label=p.name)
         wr = WorkspaceResult(workspace=ws, status="ok")
         # No changes → each will skip as "no upgrade-scoped changes to commit".
         bundles[p] = RepoBundle(git_repo=p, label=p.name, workspaces=[wr])
@@ -949,14 +919,10 @@ def test_run_post_apply_commits_parallel_outcomes_sorted(
     assert labels == sorted(labels)
 
 
-def test_run_post_apply_commits_max_workers_accepted(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_run_post_apply_commits_max_workers_accepted(tmp_path: Path, init_git_repo) -> None:
     """max_workers parameter is accepted without error."""
     init_git_repo(tmp_path)
-    ws = Workspace(
-        path=tmp_path, ecosystem="node", manager="npm", git_repo=tmp_path, label="w"
-    )
+    ws = Workspace(path=tmp_path, ecosystem="node", manager="npm", git_repo=tmp_path, label="w")
     wr = WorkspaceResult(workspace=ws, status="ok")
     bundle = RepoBundle(git_repo=tmp_path, label="w", workspaces=[wr])
     outcomes, _ = post_apply_commit.run_post_apply_commits(
@@ -981,9 +947,7 @@ def test_collect_changes_no_diff_reports_nothing(tmp_path: Path) -> None:
         label="root",
     )
 
-    def _fake_run(
-        cmd: list[str], cwd: object, **kwargs: object
-    ) -> CompletedProcess[str]:
+    def _fake_run(cmd: list[str], cwd: object, **kwargs: object) -> CompletedProcess[str]:
         return CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with patch("repo_ops_upgrade.post_apply.run", side_effect=_fake_run):
@@ -992,9 +956,7 @@ def test_collect_changes_no_diff_reports_nothing(tmp_path: Path) -> None:
     assert changes == [], f"clean diff must yield no changes, got {changes}"
 
 
-def test_pdm_root_lock_and_manifest_in_commit_scope(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_pdm_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_repo) -> None:
     """pdm.lock + pyproject.toml are staged for root pdm workspaces (F049)."""
     init_git_repo(tmp_path)
     (tmp_path / "pyproject.toml").write_text(
@@ -1024,21 +986,15 @@ def test_pdm_root_lock_and_manifest_in_commit_scope(
     assert set(plan.files) == {"pdm.lock", "pyproject.toml"}
 
 
-def test_pipenv_root_lock_and_manifest_in_commit_scope(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_pipenv_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_repo) -> None:
     """Pipfile.lock + Pipfile are staged for root pipenv workspaces (F049)."""
     init_git_repo(tmp_path)
     (tmp_path / "Pipfile").write_text('[packages]\nrequests = "*"\n', encoding="utf-8")
     (tmp_path / "Pipfile.lock").write_text('{"default":{}}', encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
-    (tmp_path / "Pipfile.lock").write_text(
-        '{"default":{"requests":{}}}', encoding="utf-8"
-    )
-    (tmp_path / "Pipfile").write_text(
-        '[packages]\nrequests = "==2.1"\n', encoding="utf-8"
-    )
+    (tmp_path / "Pipfile.lock").write_text('{"default":{"requests":{}}}', encoding="utf-8")
+    (tmp_path / "Pipfile").write_text('[packages]\nrequests = "==2.1"\n', encoding="utf-8")
     ws = Workspace(
         path=tmp_path,
         ecosystem="py",

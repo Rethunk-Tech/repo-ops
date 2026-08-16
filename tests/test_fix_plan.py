@@ -134,16 +134,12 @@ def test_extract_remediations_pip_audit_multiple_packages() -> None:
         {
             "name": "requests",
             "version": "2.28.0",
-            "vulns": [
-                {"id": "G1", "aliases": ["CVE-2023-001"], "fix_versions": ["2.31.0"]}
-            ],
+            "vulns": [{"id": "G1", "aliases": ["CVE-2023-001"], "fix_versions": ["2.31.0"]}],
         },
         {
             "name": "Pillow",
             "version": "9.0.0",
-            "vulns": [
-                {"id": "G2", "aliases": ["CVE-2023-002"], "fix_versions": ["9.1.0"]}
-            ],
+            "vulns": [{"id": "G2", "aliases": ["CVE-2023-002"], "fix_versions": ["9.1.0"]}],
         },
     ]
     items = _extract_remediations_pip_audit(data, "/ws")
@@ -469,9 +465,7 @@ def test_audit_node_npm_remediations_populated() -> None:
             "vulnerabilities": {
                 "lodash": {
                     "severity": "high",
-                    "via": [
-                        {"url": "https://npmjs.com/advisories/1", "severity": "high"}
-                    ],
+                    "via": [{"url": "https://npmjs.com/advisories/1", "severity": "high"}],
                     "fixAvailable": {
                         "name": "lodash",
                         "version": "4.17.21",
@@ -479,9 +473,7 @@ def test_audit_node_npm_remediations_populated() -> None:
                     },
                 }
             },
-            "metadata": {
-                "vulnerabilities": {"high": 1, "critical": 0, "moderate": 0, "low": 0}
-            },
+            "metadata": {"vulnerabilities": {"high": 1, "critical": 0, "moderate": 0, "low": 0}},
         }
     )
     with (
@@ -490,10 +482,7 @@ def test_audit_node_npm_remediations_populated() -> None:
     ):
         result = _audit_node("/some/repo", "npm")
     assert result.status == "vulns"
-    assert any(
-        r.package == "lodash" and r.safe_version == "4.17.21"
-        for r in result.remediations
-    )
+    assert any(r.package == "lodash" and r.safe_version == "4.17.21" for r in result.remediations)
 
 
 def test_audit_rust_remediations_populated() -> None:

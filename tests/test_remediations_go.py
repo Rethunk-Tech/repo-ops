@@ -14,9 +14,7 @@ from repo_ops_upgrade_remediations_go import remediations as go_rem
 
 def _result(tmp_path: Path, make_workspace, ecosystem: str = "go") -> WorkspaceResult:
     return WorkspaceResult(
-        workspace=make_workspace(
-            tmp_path, ecosystem=ecosystem, manager="go", label="test"
-        )
+        workspace=make_workspace(tmp_path, ecosystem=ecosystem, manager="go", label="test")
     )
 
 
@@ -94,9 +92,7 @@ def test_apply_gofmt_success(tmp_path: Path, make_workspace, make_proc) -> None:
     assert cmd == ["gofmt", "-w", "."]
 
 
-def test_apply_gofmt_failure_captures_stderr(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
+def test_apply_gofmt_failure_captures_stderr(tmp_path: Path, make_workspace, make_proc) -> None:
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="test")
     ctx: dict[str, Any] = {}
     fail_proc = make_proc(1, stderr="cannot find package")
@@ -113,17 +109,13 @@ def test_apply_gofmt_failure_captures_stderr(
 # ── detect_go_generate ───────────────────────────────────────────────────────
 
 
-def test_detect_go_generate_false_for_non_go(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
+def test_detect_go_generate_false_for_non_go(tmp_path: Path, make_workspace, make_change) -> None:
     ws = make_workspace(tmp_path, ecosystem="node", manager="go", label="test")
     ctx: dict[str, Any] = {"changes": [make_change("pkg")], "apply": True}
     assert go_rem.detect_go_generate(ws, ctx) is False
 
 
-def test_detect_go_generate_false_no_go_mod(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
+def test_detect_go_generate_false_no_go_mod(tmp_path: Path, make_workspace, make_change) -> None:
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="test")
     ctx: dict[str, Any] = {"changes": [make_change("pkg")], "apply": True}
     assert go_rem.detect_go_generate(ws, ctx) is False
@@ -149,9 +141,7 @@ def test_detect_go_generate_true_with_directive(
     assert go_rem.detect_go_generate(ws, ctx) is True
 
 
-def test_detect_go_generate_false_no_changes_apply_mode(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_detect_go_generate_false_no_changes_apply_mode(tmp_path: Path, make_workspace) -> None:
     (tmp_path / "go.mod").write_text("module example.com/m\n")
     (tmp_path / "gen.go").write_text("package main\n//go:generate stringer -type=Foo\n")
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="test")
@@ -162,9 +152,7 @@ def test_detect_go_generate_false_no_changes_apply_mode(
 # ── report_go_generate ───────────────────────────────────────────────────────
 
 
-def test_report_go_generate_returns_useful_message(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_report_go_generate_returns_useful_message(tmp_path: Path, make_workspace) -> None:
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="test")
     ctx: dict[str, Any] = {"changes": [], "apply": False}
     lines = go_rem.report_go_generate(ws, ctx)
@@ -210,9 +198,7 @@ def test_apply_go_generate_failure_captures_stderr(
 # ── run_remediations integration ─────────────────────────────────────────────
 
 
-def test_run_remediations_plan_mode(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
+def test_run_remediations_plan_mode(tmp_path: Path, make_workspace, make_change) -> None:
     (tmp_path / "go.mod").write_text("module example.com/m\n")
     result = _result(tmp_path, make_workspace=make_workspace)
     result.changes = [make_change("golang.org/x/net")]
@@ -273,9 +259,7 @@ def test_gofmt_skipped_in_skip_set(tmp_path: Path, make_workspace, make_change) 
     assert result.remediations == []
 
 
-def test_go_generate_skipped_in_skip_set(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
+def test_go_generate_skipped_in_skip_set(tmp_path: Path, make_workspace, make_change) -> None:
     (tmp_path / "go.mod").write_text("module example.com/m\n")
     (tmp_path / "gen.go").write_text("package main\n//go:generate stringer\n")
     result = _result(tmp_path, make_workspace=make_workspace)

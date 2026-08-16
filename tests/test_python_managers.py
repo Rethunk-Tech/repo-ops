@@ -27,11 +27,7 @@ def test_detects_python_managers_from_lockfiles_and_manifests(tmp_path: Path) ->
         "pip-tools": (["requirements.in", "requirements.txt"], ""),
         "hatch": (
             ["pyproject.toml"],
-            (
-                "[build-system]\n"
-                'requires = ["hatchling"]\n'
-                'build-backend = "hatchling.build"\n'
-            ),
+            ('[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n'),
         ),
     }
     for name, (files, pyproject) in fixtures.items():
@@ -63,11 +59,7 @@ def test_uv_lock_takes_precedence_over_hatchling(tmp_path: Path) -> None:
     workspace = tmp_path / "uv-hatch"
     workspace.mkdir()
     (workspace / "pyproject.toml").write_text(
-        (
-            "[build-system]\n"
-            'requires = ["hatchling"]\n'
-            'build-backend = "hatchling.build"\n'
-        ),
+        ('[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n'),
         encoding="utf-8",
     )
     (workspace / "uv.lock").touch()

@@ -97,9 +97,7 @@ def init_git_repo() -> Any:
         if not commit:
             return None
         (path / filename).write_text(content, encoding="utf-8")
-        subprocess.run(
-            ["git", "add", filename], cwd=path, check=True, capture_output=True
-        )
+        subprocess.run(["git", "add", filename], cwd=path, check=True, capture_output=True)
         subprocess.run(
             ["git", "commit", "-q", "-m", "init"],
             cwd=path,

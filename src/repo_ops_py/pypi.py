@@ -45,10 +45,7 @@ def pypi_latest(package: str) -> str | None:
         if isinstance(version, str)
         and (
             not isinstance(files, list)
-            or any(
-                isinstance(file, dict) and file.get("yanked") is not True
-                for file in files
-            )
+            or any(isinstance(file, dict) and file.get("yanked") is not True for file in files)
         )
     ]
     return max(candidates, key=semver_tuple, default=None)

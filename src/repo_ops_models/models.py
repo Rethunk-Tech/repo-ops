@@ -51,12 +51,9 @@ class WorkspaceResult:
             "ecosystem": self.workspace.ecosystem,
             "manager": self.workspace.manager,
             "status": self.status,
-            "changes": [
-                {"name": c.name, "from": c.from_ver, "to": c.to} for c in self.changes
-            ],
+            "changes": [{"name": c.name, "from": c.from_ver, "to": c.to} for c in self.changes],
             "behind_latest": [
-                {"name": c.name, "from": c.from_ver, "to": c.to}
-                for c in self.behind_latest
+                {"name": c.name, "from": c.from_ver, "to": c.to} for c in self.behind_latest
             ],
             "overrides_audit": self.overrides_audit,
             "remediations": self.remediations,
@@ -111,8 +108,7 @@ class RepoBundle:
 
     def any_dirty_skip(self) -> bool:
         return any(
-            w.status == "skip" and w.error and DIRTY_SKIP_MARKER in w.error
-            for w in self.workspaces
+            w.status == "skip" and w.error and DIRTY_SKIP_MARKER in w.error for w in self.workspaces
         )
 
     def actions_summary(self) -> dict[str, int]:

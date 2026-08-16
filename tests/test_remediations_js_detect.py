@@ -21,9 +21,7 @@ def _write_pkg(path: Path, data: dict) -> None:
 
 def _write_biome_cfg(path: Path, schema_version: str) -> None:
     (path / "biome.json").write_text(
-        json.dumps(
-            {"$schema": f"https://biomejs.dev/schemas/{schema_version}/schema.json"}
-        ),
+        json.dumps({"$schema": f"https://biomejs.dev/schemas/{schema_version}/schema.json"}),
         encoding="utf-8",
     )
 
@@ -104,9 +102,7 @@ def test_detect_biome_true_when_change_names_biome_even_without_schema_drift(
     )
 
 
-def test_detect_biome_false_when_no_configs_or_no_drift(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_detect_biome_false_when_no_configs_or_no_drift(tmp_path: Path, make_workspace) -> None:
     # No biome.json at all.
     _write_pkg(tmp_path, {"devDependencies": {"@biomejs/biome": "1.5.0"}})
     assert (

@@ -41,16 +41,12 @@ def test_apply_npm_raises_on_ghost_bump_overrides_pin(
         patch(_RESOLVER_PATH, return_value="4.17.20"),
         pytest.raises(RuntimeError) as exc_info,
     ):
-        apply_npm(
-            make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo")
-        )
+        apply_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))
     assert "lodash" in str(exc_info.value)
     assert "4.17.20" in str(exc_info.value)
 
 
-def test_apply_npm_targeted_bump_defers_ghost_to_retry(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_apply_npm_targeted_bump_defers_ghost_to_retry(tmp_path: Path, make_workspace) -> None:
     """Targeted bump mode sends a ghost target to the per-package retry."""
     change = Change("lodash", "4.17.20", "4.17.21")
     with (
@@ -78,9 +74,7 @@ def test_apply_npm_ok_when_resolved_at_target(tmp_path: Path, make_workspace) ->
     for resolved in ("4.17.21", "4.17.22"):
         with (
             patch("repo_ops_js_npm.npm.run", _fake_run_ok),
-            patch(
-                _OUTDATED, return_value=([Change("lodash", "4.17.20", "4.17.21")], [])
-            ),
+            patch(_OUTDATED, return_value=([Change("lodash", "4.17.20", "4.17.21")], [])),
             patch(_RESOLVER_PATH, return_value=resolved),
         ):
             apply_npm(
@@ -100,18 +94,14 @@ def test_apply_npm_noop_when_nothing_outdated(tmp_path: Path, make_workspace) ->
         patch("repo_ops_js_npm.npm.run", fake_run),
         patch(_OUTDATED, return_value=([], [])),
     ):
-        apply_npm(
-            make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo")
-        )
+        apply_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))
 
     # When outdated returns no changes, apply_npm still runs npm update/install
     # (it doesn't short-circuit like bun does), but the guard is skipped.
     assert any(c[:2] == ["npm", "update"] for c in calls)
 
 
-def test_apply_npm_guard_skipped_when_resolver_returns_none(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_apply_npm_guard_skipped_when_resolver_returns_none(tmp_path: Path, make_workspace) -> None:
     """When node_modules is absent/unreadable, the guard skips without raising."""
     with (
         patch("repo_ops_js_npm.npm.run", _fake_run_ok),
@@ -123,9 +113,7 @@ def test_apply_npm_guard_skipped_when_resolver_returns_none(
         )  # must not raise
 
 
-def test_apply_npm_audit_override_absent_from_outdated(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_apply_npm_audit_override_absent_from_outdated(tmp_path: Path, make_workspace) -> None:
     """#140: audit-safe pin must install even when outdated reports nothing."""
     calls: list[list[str]] = []
 
@@ -140,15 +128,11 @@ def test_apply_npm_audit_override_absent_from_outdated(
             patch(_OUTDATED, return_value=([], [])),
             patch(_RESOLVER_PATH, return_value="1.2.3"),
         ):
-            apply_npm(
-                make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo")
-            )
+            apply_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))
     finally:
         clear_npm_audit_version_overrides()
 
-    install_cmds = [
-        c for c in calls if c[:2] == ["npm", "install"] and "pkg@1.2.3" in c
-    ]
+    install_cmds = [c for c in calls if c[:2] == ["npm", "install"] and "pkg@1.2.3" in c]
     assert install_cmds, f"expected npm install pkg@1.2.3, got {calls}"
     # No bare npm update when only audit overrides were applied.
     assert not any(c == ["npm", "update"] for c in calls)

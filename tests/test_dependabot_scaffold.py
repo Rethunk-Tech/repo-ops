@@ -202,9 +202,7 @@ def test_generate_dependabot_yml_has_repo_ops_comment() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_dependabot_scaffold_dry_run(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_dependabot_scaffold_dry_run(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """--scaffold without --write prints content but does not write the file."""
     (tmp_path / "package.json").write_text("{}", encoding="utf-8")
     # Need a valid git repo for discover_repos — mock it
@@ -323,9 +321,7 @@ def test_dependabot_scaffold_prunes_undetected_ecosystems(tmp_path: Path) -> Non
     assert "cargo" not in content
 
 
-def test_dependabot_scaffold_no_repos(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_dependabot_scaffold_no_repos(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Empty repo list → graceful message, exit 0."""
     from unittest.mock import patch
 

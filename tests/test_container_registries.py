@@ -66,13 +66,9 @@ def _make_http_response(
     return resp
 
 
-def _make_http_error(
-    code: int, headers: dict[str, str] | None = None
-) -> urllib.error.HTTPError:
+def _make_http_error(code: int, headers: dict[str, str] | None = None) -> urllib.error.HTTPError:
     hdrs: Any = MagicMock()
-    hdrs.get = (
-        (lambda h, d="": (headers or {}).get(h, d)) if headers else (lambda h, d="": d)
-    )
+    hdrs.get = (lambda h, d="": (headers or {}).get(h, d)) if headers else (lambda h, d="": d)
     return urllib.error.HTTPError(url="http://x", code=code, msg="", hdrs=hdrs, fp=None)
 
 
@@ -108,9 +104,7 @@ def test_parse_www_authenticate(header: str, expected: dict[str, str]) -> None:
 
 
 def test_parse_www_authenticate_no_scope() -> None:
-    header = (
-        'Bearer realm="https://auth.example.com/token",service="registry.example.com"'
-    )
+    header = 'Bearer realm="https://auth.example.com/token",service="registry.example.com"'
     result = _parse_www_authenticate(header)
     assert "scope" not in result
 
@@ -162,9 +156,7 @@ def test_fetch_token_docker_io_direct() -> None:
     token_resp = _make_http_response(json.dumps({"token": "mytoken123"}).encode())
 
     with patch("urllib.request.urlopen", return_value=token_resp) as mock_open:
-        result = _fetch_token_for_registry(
-            "registry-1.docker.io", "library/nginx", None
-        )
+        result = _fetch_token_for_registry("registry-1.docker.io", "library/nginx", None)
 
     assert result == "mytoken123"
     # Should have called the Docker auth endpoint directly
@@ -216,9 +208,7 @@ def test_fetch_token_with_basic_auth_forwarded() -> None:
     token_resp = _make_http_response(json.dumps({"token": "authed_token"}).encode())
 
     with patch("urllib.request.urlopen", return_value=token_resp) as mock_open:
-        result = _fetch_token_for_registry(
-            "registry-1.docker.io", "library/nginx", basic_auth
-        )
+        result = _fetch_token_for_registry("registry-1.docker.io", "library/nginx", basic_auth)
 
     assert result == "authed_token"
     # Verify Authorization header was passed
@@ -235,9 +225,7 @@ def test_fetch_tags_challenge_flow_quay(tmp_path: Path) -> None:
     """_fetch_tags for quay.io: probe→401→token→tags/list success."""
     probe_error = _make_http_error(
         401,
-        headers={
-            "WWW-Authenticate": 'Bearer realm="https://quay.io/v2/auth",service="quay.io"'
-        },
+        headers={"WWW-Authenticate": 'Bearer realm="https://quay.io/v2/auth",service="quay.io"'},
     )
     token_resp = _make_http_response(json.dumps({"token": "quay_token"}).encode())
     tags_resp = _make_http_response(
@@ -332,8 +320,7 @@ def test_fetch_tags_challenge_flow_mcr(tmp_path: Path) -> None:
         401,
         headers={
             "WWW-Authenticate": (
-                'Bearer realm="https://mcr.microsoft.com/v2/auth",'
-                'service="mcr.microsoft.com"'
+                'Bearer realm="https://mcr.microsoft.com/v2/auth",service="mcr.microsoft.com"'
             )
         },
     )
@@ -405,9 +392,7 @@ def test_fetch_tags_creds_store_only_still_works_anonymously(tmp_path: Path) -> 
     # ghcr.io: probe → 401 → token fetch (anonymous) → tags
     probe_error = _make_http_error(
         401,
-        headers={
-            "WWW-Authenticate": 'Bearer realm="https://ghcr.io/token",service="ghcr.io"'
-        },
+        headers={"WWW-Authenticate": 'Bearer realm="https://ghcr.io/token",service="ghcr.io"'},
     )
     token_resp = _make_http_response(json.dumps({"token": "anon_token"}).encode())
     tags_resp = _make_http_response(json.dumps({"tags": ["1.0"]}).encode())
@@ -633,8 +618,7 @@ def test_digest_refresh_check_multi_stage_stale_occurrence_detected(
     """
     monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
     (tmp_path / "Dockerfile").write_text(
-        f"FROM nginx:1.25@{_NEW_DIGEST} AS build\n"
-        f"FROM nginx:1.25@{_OLD_DIGEST} AS runtime\n"
+        f"FROM nginx:1.25@{_NEW_DIGEST} AS build\nFROM nginx:1.25@{_OLD_DIGEST} AS runtime\n"
     )
 
     with patch(
@@ -682,8 +666,7 @@ def test_digest_refresh_apply_same_stale_digest_on_all_lines(
     monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
-        f"FROM nginx:1.25@{_OLD_DIGEST} AS build\n"
-        f"FROM nginx:1.25@{_OLD_DIGEST} AS runtime\n"
+        f"FROM nginx:1.25@{_OLD_DIGEST} AS build\nFROM nginx:1.25@{_OLD_DIGEST} AS runtime\n"
     )
 
     with patch(
@@ -724,11 +707,7 @@ def test_compose_build_mapping_with_dockerfile(tmp_path: Path) -> None:
 
     compose = tmp_path / "docker-compose.yml"
     compose.write_text(
-        "services:\n"
-        "  app:\n"
-        "    build:\n"
-        "      context: .\n"
-        "      dockerfile: Dockerfile.prod\n"
+        "services:\n  app:\n    build:\n      context: .\n      dockerfile: Dockerfile.prod\n"
     )
 
     result = _compose_build_dockerfiles(compose)

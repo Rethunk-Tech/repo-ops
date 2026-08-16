@@ -43,9 +43,7 @@ def test_discover_repos_finds_submodule_via_file_git(tmp_path: Path) -> None:
     superproject = tmp_path / "superproject"
     _init_repo(superproject)
     submodule = superproject / "sub"
-    _init_gitlink_submodule(
-        submodule, str((superproject / ".git" / "modules" / "sub").resolve())
-    )
+    _init_gitlink_submodule(submodule, str((superproject / ".git" / "modules" / "sub").resolve()))
 
     with patch(
         "repo_ops_core.discovery.git_common_dir",
@@ -53,9 +51,7 @@ def test_discover_repos_finds_submodule_via_file_git(tmp_path: Path) -> None:
     ):
         found = discover_repos([str(tmp_path)])
 
-    assert str(submodule.resolve()) in found.values(), (
-        f"submodule not discovered; found: {found}"
-    )
+    assert str(submodule.resolve()) in found.values(), f"submodule not discovered; found: {found}"
     assert str(superproject.resolve()) in found.values()
 
 
@@ -66,9 +62,7 @@ def test_discover_repos_finds_nested_submodule_of_submodule(tmp_path: Path) -> N
     superproject = tmp_path / "superproject"
     _init_repo(superproject)
     submodule = superproject / "sub"
-    _init_gitlink_submodule(
-        submodule, str((superproject / ".git" / "modules" / "sub").resolve())
-    )
+    _init_gitlink_submodule(submodule, str((superproject / ".git" / "modules" / "sub").resolve()))
     nested = submodule / "deep"
     _init_gitlink_submodule(nested, str(submodule / ".git" / "modules" / "deep"))
 

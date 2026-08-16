@@ -308,9 +308,7 @@ def cache_record_behind_latest(
         if key not in existing and count <= 0:
             return
         new_run = key not in _BEHIND_RUN_SEEN
-        entry = record_behind_latest(
-            state, repo_path, manager, count, today, new_run=new_run
-        )
+        entry = record_behind_latest(state, repo_path, manager, count, today, new_run=new_run)
         if entry is not None:
             _BEHIND_RUN_SEEN.add(key)
         _DIRTY = True
@@ -339,9 +337,7 @@ def cache_get_staleness(repo_path: str | Path, today: date) -> dict[str, Any] | 
         if not isinstance(entry, dict):
             return None
         by_manager = {
-            str(k): v
-            for k, v in (entry.get("by_manager") or {}).items()
-            if isinstance(v, int)
+            str(k): v for k, v in (entry.get("by_manager") or {}).items() if isinstance(v, int)
         }
         total = sum(by_manager.values())
         first_behind = entry.get("first_behind") if total > 0 else None

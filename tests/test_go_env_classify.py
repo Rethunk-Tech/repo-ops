@@ -272,9 +272,7 @@ def test_go_work_sync_off_no_retry(tmp_path: Path) -> None:
         patch.dict("os.environ", {GO_WORK_SYNC_ENV: "0"}),
         patch("repo_ops_go.go.run", side_effect=fake_run),
     ):
-        result = _run_with_go_work_retry(
-            ["go", "list", "-m", "-u", "-json", "all"], ws, timeout=60
-        )
+        result = _run_with_go_work_retry(["go", "list", "-m", "-u", "-json", "all"], ws, timeout=60)
 
     # No retry: run() called exactly once
     assert call_count == 1
@@ -313,9 +311,7 @@ def test_go_work_sync_on_retries_once_on_mismatch(tmp_path: Path) -> None:
         patch.dict("os.environ", {GO_WORK_SYNC_ENV: "1"}),
         patch("repo_ops_go.go.run", side_effect=fake_run),
     ):
-        result = _run_with_go_work_retry(
-            ["go", "list", "-m", "-u", "-json", "all"], ws, timeout=60
-        )
+        result = _run_with_go_work_retry(["go", "list", "-m", "-u", "-json", "all"], ws, timeout=60)
 
     assert ["go", "work", "use"] in run_calls, "go work use was not called"
     # run_calls includes: original cmd, go work use, retry cmd
@@ -342,9 +338,7 @@ def test_go_work_sync_on_no_retry_for_unrelated_error(tmp_path: Path) -> None:
         patch.dict("os.environ", {GO_WORK_SYNC_ENV: "1"}),
         patch("repo_ops_go.go.run", side_effect=fake_run),
     ):
-        _run_with_go_work_retry(
-            ["go", "list", "-m", "-u", "-json", "all"], ws, timeout=60
-        )
+        _run_with_go_work_retry(["go", "list", "-m", "-u", "-json", "all"], ws, timeout=60)
 
     assert call_count == 1
 
@@ -375,9 +369,7 @@ def test_go_work_sync_on_no_retry_when_go_work_use_fails(tmp_path: Path) -> None
         patch.dict("os.environ", {GO_WORK_SYNC_ENV: "1"}),
         patch("repo_ops_go.go.run", side_effect=fake_run),
     ):
-        result = _run_with_go_work_retry(
-            ["go", "list", "-m", "-u", "-json", "all"], ws, timeout=60
-        )
+        result = _run_with_go_work_retry(["go", "list", "-m", "-u", "-json", "all"], ws, timeout=60)
 
     # go work use was attempted, but retry should not have been issued
     # (only 2 calls: original + go work use)
@@ -403,9 +395,7 @@ def test_classify_errors_propagated_via_check_go(tmp_path: Path) -> None:
         )()
 
     with (
-        patch.dict(
-            "os.environ", {"REPO_OPS_GO_UPGRADE_MODE": "patch", GO_WORK_SYNC_ENV: "0"}
-        ),
+        patch.dict("os.environ", {"REPO_OPS_GO_UPGRADE_MODE": "patch", GO_WORK_SYNC_ENV: "0"}),
         patch("repo_ops_go.go.run", side_effect=fake_run),
         pytest.raises(RuntimeError, match=r"\[env\]"),
     ):

@@ -25,9 +25,7 @@ def _install_target(ws_path: Path) -> str:
     ``"."`` when none of those groups exist or the file is absent/malformed.
     """
     data = read_toml_file(ws_path / "pyproject.toml") or {}
-    extras: dict[str, object] = (data.get("project") or {}).get(
-        "optional-dependencies"
-    ) or {}
+    extras: dict[str, object] = (data.get("project") or {}).get("optional-dependencies") or {}
     for group in _EXTRAS_PREFERENCE:
         if group in extras:
             return f".[{group}]"
@@ -77,9 +75,7 @@ def check_hatch(ws: Workspace) -> list[Change]:
                 env={"VIRTUAL_ENV": str(venv_dir)},
             )
             if install_proc.returncode != 0:
-                raise RuntimeError(
-                    install_proc.stderr.strip() or "uv pip install failed"
-                )
+                raise RuntimeError(install_proc.stderr.strip() or "uv pip install failed")
             proc = run(
                 ["uv", "pip", "list", "--outdated"],
                 ws.path,
@@ -87,9 +83,7 @@ def check_hatch(ws: Workspace) -> list[Change]:
                 env={"VIRTUAL_ENV": str(venv_dir)},
             )
             if proc.returncode != 0:
-                raise RuntimeError(
-                    proc.stderr.strip() or "uv pip list --outdated failed"
-                )
+                raise RuntimeError(proc.stderr.strip() or "uv pip list --outdated failed")
             for line in proc.stdout.splitlines()[2:]:
                 parts = line.split()
                 if len(parts) >= 3:

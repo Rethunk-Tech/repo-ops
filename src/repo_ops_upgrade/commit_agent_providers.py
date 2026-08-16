@@ -42,9 +42,7 @@ def commit_agent_provider_name(repo_path: Path | None = None) -> str:
         )
     provider = raw_provider.strip().lower()
     if not provider:
-        raise RuntimeError(
-            f"{COMMIT_AGENT_PROVIDER_ENV} must be a non-empty provider identifier"
-        )
+        raise RuntimeError(f"{COMMIT_AGENT_PROVIDER_ENV} must be a non-empty provider identifier")
     return provider
 
 

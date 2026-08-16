@@ -21,9 +21,7 @@ logger = logging.getLogger(__name__)
 
 def target_within_hold(target: str, rule: HoldRule | None) -> bool:
     """Return whether *target* is allowed by *rule* (``None`` = no active hold)."""
-    return rule is None or version_satisfies_ceiling(
-        target.lstrip("v"), rule.max_version
-    )
+    return rule is None or version_satisfies_ceiling(target.lstrip("v"), rule.max_version)
 
 
 def resolve_hold_tag_target(
@@ -109,9 +107,7 @@ def resolve_hold_sha_target(
     matching_tags = matching_sha_tags(current_sha, refs, context=context)
     if not matching_tags:
         return None
-    current_version, current_tag, _ = max(
-        matching_tags, key=lambda item: (item[0], item[1])
-    )
+    current_version, current_tag, _ = max(matching_tags, key=lambda item: (item[0], item[1]))
     if version_satisfies_ceiling(current_tag.lstrip("v"), rule.max_version):
         return None
 
@@ -134,9 +130,7 @@ def resolve_hold_sha_target(
 
     if not candidates:
         return None
-    target_version, target_tag, target_sha = max(
-        candidates, key=lambda item: (item[0], item[1])
-    )
+    target_version, target_tag, target_sha = max(candidates, key=lambda item: (item[0], item[1]))
     if target_version >= current_version:
         return None
     return target_tag, target_sha

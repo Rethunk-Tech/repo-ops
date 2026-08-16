@@ -49,13 +49,9 @@ def _bundle(tmp_path: Path, *, label: str = "org/my-repo") -> RepoBundle:
 @pytest.mark.parametrize(
     ("label", "prefix", "expected"),
     [
-        pytest.param(
-            "org/my-repo", None, "repo-ops/deps/org-my-repo", id="slash_in_label"
-        ),
+        pytest.param("org/my-repo", None, "repo-ops/deps/org-my-repo", id="slash_in_label"),
         pytest.param("~/src/foo", None, "repo-ops/deps/src-foo", id="home_stripped"),
-        pytest.param(
-            "just-a-repo", None, "repo-ops/deps/just-a-repo", id="plain_label"
-        ),
+        pytest.param("just-a-repo", None, "repo-ops/deps/just-a-repo", id="plain_label"),
         pytest.param("org/repo", "bumps", "bumps/org-repo", id="custom_prefix"),
     ],
 )
@@ -96,9 +92,7 @@ def test_branch_name_empty_after_strip_uses_unnamed() -> None:
 
 
 def test_gh_available_true_when_installed(make_proc) -> None:
-    with patch(
-        "subprocess.run", return_value=make_proc(stdout="gh version 2.0.0")
-    ) as mock_run:
+    with patch("subprocess.run", return_value=make_proc(stdout="gh version 2.0.0")) as mock_run:
         result = gh_available()
     assert result is True
     mock_run.assert_called_once()
@@ -122,9 +116,7 @@ def test_gh_available_false_on_nonzero_exit(make_proc) -> None:
 
 
 def test_branch_exists_local_true(tmp_path: Path, make_proc) -> None:
-    with patch(
-        "repo_ops_upgrade.pr.run_git", return_value=make_proc(stdout="abc123")
-    ) as m:
+    with patch("repo_ops_upgrade.pr.run_git", return_value=make_proc(stdout="abc123")) as m:
         assert branch_exists_local(tmp_path, "repo-ops/deps/foo") is True
     m.assert_called_once_with(
         tmp_path, "rev-parse", "--verify", "refs/heads/repo-ops/deps/foo", timeout=10
@@ -154,9 +146,7 @@ def test_create_or_checkout_creates_new_branch(tmp_path: Path, make_proc) -> Non
         ok, err = create_or_checkout_branch(tmp_path, branch)
     assert ok is True
     assert err is None
-    assert mock_git.call_args_list[1] == call(
-        tmp_path, "checkout", "-b", branch, timeout=30
-    )
+    assert mock_git.call_args_list[1] == call(tmp_path, "checkout", "-b", branch, timeout=30)
 
 
 def test_create_or_checkout_switches_existing_branch(tmp_path: Path, make_proc) -> None:
@@ -216,9 +206,7 @@ def test_push_branch_failure(tmp_path: Path, make_proc) -> None:
 
 def test_gh_pr_exists_true(tmp_path: Path, make_proc) -> None:
     url = "https://github.com/org/repo/pull/42"
-    with patch(
-        "repo_ops_upgrade.pr._run_gh", return_value=make_proc(stdout=url + "\n")
-    ):
+    with patch("repo_ops_upgrade.pr._run_gh", return_value=make_proc(stdout=url + "\n")):
         exists, found_url = gh_pr_exists(tmp_path, "repo-ops/deps/x")
     assert exists is True
     assert found_url == url
@@ -246,9 +234,7 @@ def test_gh_pr_exists_false_empty_output(tmp_path: Path, make_proc) -> None:
 
 
 def test_detect_default_branch_from_gh(tmp_path: Path, make_proc) -> None:
-    with patch(
-        "repo_ops_upgrade.pr._run_gh", return_value=make_proc(stdout="develop\n")
-    ):
+    with patch("repo_ops_upgrade.pr._run_gh", return_value=make_proc(stdout="develop\n")):
         assert detect_default_branch(tmp_path) == "develop"
 
 
@@ -294,9 +280,7 @@ def test_open_or_update_pr_opens_when_none_exists(tmp_path: Path, make_proc) -> 
         return make_proc(stdout=url + "\n")  # pr create succeeds
 
     with patch("repo_ops_upgrade.pr._run_gh", side_effect=_gh_side):
-        status, result = open_or_update_pr(
-            tmp_path, "b", base="main", title="T", body="B"
-        )
+        status, result = open_or_update_pr(tmp_path, "b", base="main", title="T", body="B")
     assert status == "opened"
     assert result == url
 
@@ -315,9 +299,7 @@ def test_open_or_update_pr_noop_when_exists(tmp_path: Path, make_proc) -> None:
     assert url == existing_url
 
 
-def test_open_or_update_pr_returns_failed_on_create_error(
-    tmp_path: Path, make_proc
-) -> None:
+def test_open_or_update_pr_returns_failed_on_create_error(tmp_path: Path, make_proc) -> None:
     def _gh_side(cmd, **kw):
         if "view" in cmd:
             return make_proc(returncode=1, stderr="err")
@@ -554,9 +536,7 @@ def test_pr_flags_accepted_by_parser() -> None:
     from repo_ops_core.cli import build_upgrade_parser
 
     parser = build_upgrade_parser(apply=True)
-    args = parser.parse_args(
-        ["--pr", "--pr-base", "develop", "--branch-prefix", "bumps"]
-    )
+    args = parser.parse_args(["--pr", "--pr-base", "develop", "--branch-prefix", "bumps"])
     assert args.pr is True
     assert args.pr_base == "develop"
     assert args.branch_prefix == "bumps"

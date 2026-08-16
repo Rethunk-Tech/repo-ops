@@ -272,9 +272,7 @@ def _gh_list_dependabot_prs(
 
 def _gh_pr_body(owner_repo: str, pr_number: int) -> tuple[str, str]:
     """Return (body_text, error_string) for the given PR."""
-    proc, err = _gh(
-        ["pr", "view", str(pr_number), "--repo", owner_repo, "--json", "body"]
-    )
+    proc, err = _gh(["pr", "view", str(pr_number), "--repo", owner_repo, "--json", "body"])
     if proc is None:
         return "", err
     if proc.returncode != 0:
@@ -288,9 +286,7 @@ def _gh_pr_body(owner_repo: str, pr_number: int) -> tuple[str, str]:
 
 def _gh_close_pr(owner_repo: str, pr_number: int, comment: str) -> str:
     """Close *pr_number* with *comment*; return error string (empty = success)."""
-    proc, err = _gh(
-        ["pr", "close", str(pr_number), "--repo", owner_repo, "--comment", comment]
-    )
+    proc, err = _gh(["pr", "close", str(pr_number), "--repo", owner_repo, "--comment", comment])
     if proc is None:
         return err
     if proc.returncode != 0:
@@ -609,12 +605,7 @@ def _parse_group_body(body: str) -> list[GroupRow] | None:
             pkg = m3.group(1).strip().strip("`").strip()
             frm = m3.group(2).strip().strip("`").strip()
             to_ = m3.group(3).strip().strip("`").strip()
-            if (
-                pkg
-                and frm
-                and to_
-                and not re.match(r"package|dependency|name", pkg, re.I)
-            ):
+            if pkg and frm and to_ and not re.match(r"package|dependency|name", pkg, re.I):
                 rows.append(GroupRow(package=pkg, from_ver=frm, to_ver=to_))
             continue
 
@@ -624,12 +615,7 @@ def _parse_group_body(body: str) -> list[GroupRow] | None:
             pkg = m2.group(1).strip().strip("`").strip()
             frm = m2.group(2).strip().strip("`").strip()
             to_ = (m2.group(3) or "").strip().strip("`").strip()
-            if (
-                pkg
-                and frm
-                and to_
-                and not re.match(r"package|dependency|name", pkg, re.I)
-            ):
+            if pkg and frm and to_ and not re.match(r"package|dependency|name", pkg, re.I):
                 rows.append(GroupRow(package=pkg, from_ver=frm, to_ver=to_))
 
     if not in_table:
@@ -671,9 +657,7 @@ def scan_repos(
 ) -> list[RepoResult]:
     """Discover repos, list Dependabot PRs, check supersession."""
     if repo_paths is None:
-        repo_paths = list(
-            discover_repos(roots, follow_symlinks=follow_symlinks).values()
-        )
+        repo_paths = list(discover_repos(roots, follow_symlinks=follow_symlinks).values())
     results: list[RepoResult] = []
 
     for repo in sorted(repo_paths):
@@ -701,9 +685,7 @@ def scan_repos(
         # Resolve the default branch name for close comments.  None when
         # resolution fails — never assume "main" (wrong on master/trunk repos).
         default_branch: str | None = None
-        proc = run_git(
-            repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD", timeout=5
-        )
+        proc = run_git(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD", timeout=5)
         if proc.returncode == 0 and proc.stdout.strip():
             default_branch = proc.stdout.strip().replace("origin/", "")
 
@@ -729,9 +711,7 @@ def scan_repos(
                     parsed_rows = _parse_group_body(body)
                     if parsed_rows is None or len(parsed_rows) == 0:
                         pr.is_unparseable = True
-                        pr.unparseable_reason = (
-                            "could not parse update table in PR body"
-                        )
+                        pr.unparseable_reason = "could not parse update table in PR body"
                     else:
                         pr.group_rows = parsed_rows
                         # Check each row
@@ -763,8 +743,7 @@ def scan_repos(
                     pr.superseded = None
                 else:
                     all_ok = all(
-                        row.superseded is True and not row.low_confidence
-                        for row in pr.group_rows
+                        row.superseded is True and not row.low_confidence for row in pr.group_rows
                     )
                     pr.superseded = bool(all_ok)
             else:
@@ -804,8 +783,7 @@ def scan_repos(
                     )
                 else:
                     comment = (
-                        f"Superseded by repo-ops: {pkg_name} is at {current_ver}"
-                        f"{branch_clause}"
+                        f"Superseded by repo-ops: {pkg_name} is at {current_ver}{branch_clause}"
                     )
                 err = _gh_close_pr(owner_repo_str, pr.number, comment)
                 pr.close_error = err
@@ -828,26 +806,15 @@ def print_dependabot_report(
     action_verb = "Closed" if do_close else "Would close"
     total_prs = sum(len(r.prs) for r in results)
     superseded = sum(
-        1
-        for r in results
-        for pr in r.prs
-        if pr.superseded is True and not pr.low_confidence
+        1 for r in results for pr in r.prs if pr.superseded is True and not pr.low_confidence
     )
     not_superseded = sum(1 for r in results for pr in r.prs if pr.superseded is False)
-    unknown = sum(
-        1 for r in results for pr in r.prs if pr.superseded is None or pr.is_unparseable
-    )
+    unknown = sum(1 for r in results for pr in r.prs if pr.superseded is None or pr.is_unparseable)
     low_conf = sum(
-        1
-        for r in results
-        for pr in r.prs
-        if pr.superseded is True and pr.low_confidence
+        1 for r in results for pr in r.prs if pr.superseded is True and pr.low_confidence
     )
 
-    print(
-        f"Dependabot PR sweep across {len(results)} github.com repo(s); "
-        f"{total_prs} open PR(s)"
-    )
+    print(f"Dependabot PR sweep across {len(results)} github.com repo(s); {total_prs} open PR(s)")
     if exclude_patterns:
         print(f"  excluded: {excluded_count} repo(s)")
     print(
@@ -880,16 +847,9 @@ def print_dependabot_report(
             security_str = " [SECURITY]" if pr.is_security else ""
             grouped_str = " [grouped]" if pr.is_grouped else ""
             close_str = ""
-            if (
-                do_close
-                and pr.superseded
-                and not pr.low_confidence
-                and not pr.is_unparseable
-            ):
+            if do_close and pr.superseded and not pr.low_confidence and not pr.is_unparseable:
                 close_str = (
-                    " → closed"
-                    if not pr.close_error
-                    else f" → close FAILED: {pr.close_error}"
+                    " → closed" if not pr.close_error else f" → close FAILED: {pr.close_error}"
                 )
             print(
                 f"  #{pr.number:5d}  [{superseded_str}]{current_str}{security_str}"
@@ -898,14 +858,11 @@ def print_dependabot_report(
             if pr.is_grouped and pr.group_rows:
                 for row in pr.group_rows:
                     row_sup = (
-                        "ok"
-                        if row.superseded
-                        else ("pending" if row.superseded is False else "?")
+                        "ok" if row.superseded else ("pending" if row.superseded is False else "?")
                     )
                     lc_str = " [low-conf]" if row.low_confidence else ""
                     print(
-                        f"           {row.package} {row.from_ver}→{row.to_ver}"
-                        f" [{row_sup}{lc_str}]"
+                        f"           {row.package} {row.from_ver}→{row.to_ver} [{row_sup}{lc_str}]"
                     )
         print()
 
@@ -1060,9 +1017,7 @@ def scaffold_repos(
     Returns 0 on success.
     """
     if repo_paths is None:
-        repo_paths = list(
-            discover_repos(roots, follow_symlinks=follow_symlinks).values()
-        )
+        repo_paths = list(discover_repos(roots, follow_symlinks=follow_symlinks).values())
     if not repo_paths:
         print("No git repositories found under the specified roots.")
         return 0
@@ -1195,9 +1150,7 @@ def main(argv: list[str] | None = None) -> int:
         global_config = load_global_config()
         repo_config = load_repo_config(Path.cwd())
         config_exclude = (
-            repo_config["exclude"]
-            if "exclude" in repo_config
-            else global_config.get("exclude")
+            repo_config["exclude"] if "exclude" in repo_config else global_config.get("exclude")
         )
         exclude_patterns = merge_exclude_patterns(
             getattr(args, "exclude_patterns", None), config_exclude
@@ -1304,14 +1257,9 @@ def main(argv: list[str] | None = None) -> int:
                     for pr in r.prs
                     if pr.superseded is True and not pr.low_confidence
                 ),
-                "not_yet": sum(
-                    1 for r in results for pr in r.prs if pr.superseded is False
-                ),
+                "not_yet": sum(1 for r in results for pr in r.prs if pr.superseded is False),
                 "unknown": sum(
-                    1
-                    for r in results
-                    for pr in r.prs
-                    if pr.superseded is None or pr.is_unparseable
+                    1 for r in results for pr in r.prs if pr.superseded is None or pr.is_unparseable
                 ),
                 "low_confidence": sum(
                     1

@@ -88,9 +88,7 @@ def _parse_gitmodules_file(gitmodules_path: Path) -> list[tuple[str, str]]:
     return entries
 
 
-def discover_submodules_under_roots(
-    roots: list[str], *, flat: bool
-) -> list[SubmoduleLink]:
+def discover_submodules_under_roots(roots: list[str], *, flat: bool) -> list[SubmoduleLink]:
     """Find .gitmodules under scanned roots and resolve parent/child git repos."""
     links: list[SubmoduleLink] = []
     seen: set[tuple[str, str, str]] = set()
@@ -211,9 +209,7 @@ def _dirty_submodule_paths(parent: Path, submodule_paths: list[str]) -> list[str
             continue
         entry = line[3:].strip()
         # Submodule gitlink changes often appear as " M path" or "M  path"
-        if entry in path_set or any(
-            entry == p or entry.endswith(f"/{p}") for p in path_set
-        ):
+        if entry in path_set or any(entry == p or entry.endswith(f"/{p}") for p in path_set):
             dirty.append(entry)
             continue
         for p in path_set:
@@ -308,9 +304,7 @@ class SubmoduleTagBump:
         }
 
 
-def _fetch_remote_tags(
-    url: str, *, timeout: int = _LS_REMOTE_TIMEOUT
-) -> list[str] | None:
+def _fetch_remote_tags(url: str, *, timeout: int = _LS_REMOTE_TIMEOUT) -> list[str] | None:
     """Return annotated tag names for *url* via ``git ls-remote --tags --refs``.
 
     Results are cached in-process so repeated checks for the same URL cost only
@@ -382,14 +376,10 @@ def _resolve_latest_submodule_tag(
 
     See :func:`repo_ops_upgrade.tags.resolve_latest_tag` for matching rules.
     """
-    return tags.resolve_latest_tag(
-        current_tag, available_tags, allow_cross_major=allow_cross_major
-    )
+    return tags.resolve_latest_tag(current_tag, available_tags, allow_cross_major=allow_cross_major)
 
 
-def _resolve_sha_refresh(
-    current_sha: str, refs: list[tuple[str, str]]
-) -> tuple[str, str] | None:
+def _resolve_sha_refresh(current_sha: str, refs: list[tuple[str, str]]) -> tuple[str, str] | None:
     """Return the newest tag within the major and style resolved from a SHA."""
     resolved = tags.resolve_sha_refresh(current_sha, refs, context="submodule")
     if resolved is None:
@@ -420,9 +410,7 @@ def _target_within_hold(link: SubmoduleLink, target_tag: str) -> bool:
     return holds.target_within_hold(target_tag, _resolve_submodule_hold(link))
 
 
-def _resolve_hold_tag_target(
-    current_tag: str, tags: list[str], rule: HoldRule
-) -> str | None:
+def _resolve_hold_tag_target(current_tag: str, tags: list[str], rule: HoldRule) -> str | None:
     """Return the highest tag at or below *rule* when *current_tag* violates it."""
     return holds.resolve_hold_tag_target(current_tag, tags, rule, context="submodule")
 
@@ -438,9 +426,7 @@ def _resolve_hold_sha_target(
     current_sha: str, refs: list[tuple[str, str]], rule: HoldRule
 ) -> str | None:
     """Return the highest held tag when *current_sha* violates its hold."""
-    resolved = holds.resolve_hold_sha_target(
-        current_sha, refs, rule, context="submodule"
-    )
+    resolved = holds.resolve_hold_sha_target(current_sha, refs, rule, context="submodule")
     return None if resolved is None else resolved[0]
 
 
@@ -478,9 +464,7 @@ def check_submodule_tag_advances(
         hold = _resolve_submodule_hold(link)
 
         if current_tag is None:
-            current_sha = (
-                _current_submodule_sha(link.git_repo) if (hold or refresh_sha) else None
-            )
+            current_sha = _current_submodule_sha(link.git_repo) if (hold or refresh_sha) else None
             refs: list[tuple[str, str]] | None = None
             if hold is not None and current_sha:
                 refs = _fetch_remote_tag_refs(url)

@@ -101,9 +101,7 @@ def test_is_pnp_workspace(
 
 
 def _node_modules_yarnrc(tmp_path: Path) -> None:
-    (tmp_path / ".yarnrc.yml").write_text(
-        "nodeLinker: node-modules\n", encoding="utf-8"
-    )
+    (tmp_path / ".yarnrc.yml").write_text("nodeLinker: node-modules\n", encoding="utf-8")
 
 
 def _resolutions_pkg(tmp_path: Path) -> None:
@@ -144,9 +142,7 @@ def test_apply_yarn_guard_raises_on_blocked_target(
         patch(_RESOLVER_PATH, return_value="0.1.2"),  # still behind
     ):
         try:
-            apply_yarn(
-                make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test")
-            )
+            apply_yarn(make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test"))
         except RuntimeError as exc:
             assert "ghost bump" in str(exc)
             assert "is-odd" in str(exc)
@@ -154,9 +150,7 @@ def test_apply_yarn_guard_raises_on_blocked_target(
             raise AssertionError("expected ghost-bump RuntimeError")
 
 
-def test_apply_yarn_guard_ok_when_target_resolved(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_apply_yarn_guard_ok_when_target_resolved(tmp_path: Path, make_workspace) -> None:
     """No error when node_modules has the requested version (real upgrade)."""
     _node_modules_yarnrc(tmp_path)
     _resolutions_pkg(tmp_path)
@@ -198,18 +192,14 @@ def test_apply_yarn_guard_skipped_for_pnp_workspace(
         patch(_PLAN_PATH, return_value=planned),
         patch("repo_ops_js_yarn.yarn.assert_targets_resolved", fake_guard),
     ):
-        apply_yarn(
-            make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test")
-        )
+        apply_yarn(make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test"))
 
     assert guard_calls == [], "guard must not be called for PnP workspaces"
     captured = capsys.readouterr()
     assert "Plug'n'Play" in captured.err
 
 
-def test_apply_yarn_guard_not_called_when_no_targets(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_apply_yarn_guard_not_called_when_no_targets(tmp_path: Path, make_workspace) -> None:
     """No guardable changes (empty probe output) → assert_targets_resolved not called."""
     _node_modules_yarnrc(tmp_path)
     _resolutions_pkg(tmp_path)
@@ -227,9 +217,7 @@ def test_apply_yarn_guard_not_called_when_no_targets(
         patch(_PLAN_PATH, return_value=[]),
         patch("repo_ops_js_yarn.yarn.assert_targets_resolved", fake_guard),
     ):
-        apply_yarn(
-            make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test")
-        )
+        apply_yarn(make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test"))
 
     assert guard_calls == []
 
@@ -257,9 +245,7 @@ def _enter_check_patches(stack: contextlib.ExitStack, ws_path: Path) -> None:
     stack.enter_context(patch(_OVERRIDES_PATH, return_value=[]))
 
 
-def test_probe_cache_populated_by_check_skip_in_apply(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_probe_cache_populated_by_check_skip_in_apply(tmp_path: Path, make_workspace) -> None:
     """check_yarn_snapshot populates the cache; apply_yarn reuses it (probe not invoked)."""
     clear_probe_cache()
     _node_modules_yarnrc(tmp_path)
@@ -293,9 +279,7 @@ def test_probe_cache_populated_by_check_skip_in_apply(
     assert len(probe_calls) == 1, "apply should reuse cache — probe must not run again"
 
 
-def test_probe_cache_fallback_when_check_not_run(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_probe_cache_fallback_when_check_not_run(tmp_path: Path, make_workspace) -> None:
     """apply_yarn without a prior check falls back to _plan_without_resolutions."""
     clear_probe_cache()
     _node_modules_yarnrc(tmp_path)
@@ -327,12 +311,8 @@ def test_probe_cache_keyed_per_workspace(
     clear_probe_cache()
     ws_a_path = tmp_path
     ws_b_path = tmp_path_factory.mktemp("ws_b")
-    (ws_a_path / ".yarnrc.yml").write_text(
-        "nodeLinker: node-modules\n", encoding="utf-8"
-    )
-    (ws_b_path / ".yarnrc.yml").write_text(
-        "nodeLinker: node-modules\n", encoding="utf-8"
-    )
+    (ws_a_path / ".yarnrc.yml").write_text("nodeLinker: node-modules\n", encoding="utf-8")
+    (ws_b_path / ".yarnrc.yml").write_text("nodeLinker: node-modules\n", encoding="utf-8")
     _resolutions_pkg(ws_a_path)
     _resolutions_pkg(ws_b_path)
     ws_a = make_workspace(ws_a_path, ecosystem="node", manager="yarn", label="test")

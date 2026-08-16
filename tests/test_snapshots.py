@@ -102,6 +102,4 @@ def test_diff_workspace_snapshots_coarse_pdm_pipenv_deno(tmp_path: Path) -> None
     ):
         p = tmp_path / name
         changes = diff_workspace_snapshots({p: b"old"}, {p: b"new"}, manager)
-        assert any(c.name == name for c in changes), (
-            f"expected coarse change for {name}"
-        )
+        assert any(c.name == name for c in changes), f"expected coarse change for {name}"

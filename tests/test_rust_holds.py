@@ -188,9 +188,7 @@ def test_apply_rust_clamps_resolved_crate_above_ceiling(
     ):
         apply_rust(ws)
 
-    assert clamp_calls == [
-        ["cargo", "update", "-p", f"{_CRATE}@1.8.0", "--precise", "1.5.7"]
-    ]
+    assert clamp_calls == [["cargo", "update", "-p", f"{_CRATE}@1.8.0", "--precise", "1.5.7"]]
     assert versions[0] == "1.5.7"
 
 
@@ -230,9 +228,7 @@ def test_apply_rust_audit_override_wins_over_hold_ceiling(
     finally:
         clear_rust_audit_version_overrides()
 
-    assert override_calls == [
-        ["cargo", "update", "-p", f"{_CRATE}@2.1.0", "--precise", "2.0.0"]
-    ]
+    assert override_calls == [["cargo", "update", "-p", f"{_CRATE}@2.1.0", "--precise", "2.0.0"]]
     assert versions == ["2.0.0"]
 
 
@@ -272,9 +268,7 @@ def test_apply_rust_uses_highest_published_prefix_version(
     ):
         apply_rust(ws)
 
-    assert clamp_calls == [
-        ["cargo", "update", "-p", f"{_CRATE}@1.8.0", "--precise", "1.5.7"]
-    ]
+    assert clamp_calls == [["cargo", "update", "-p", f"{_CRATE}@1.8.0", "--precise", "1.5.7"]]
     assert versions[0] == "1.5.7"
 
 
@@ -314,9 +308,7 @@ def test_apply_rust_audit_override_without_hold(
     finally:
         clear_rust_audit_version_overrides()
 
-    assert override_calls == [
-        ["cargo", "update", "-p", f"{_CRATE}@2.1.0", "--precise", "2.0.0"]
-    ]
+    assert override_calls == [["cargo", "update", "-p", f"{_CRATE}@2.1.0", "--precise", "2.0.0"]]
     assert versions == ["2.0.0"]
 
 

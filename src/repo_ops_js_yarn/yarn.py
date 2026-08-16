@@ -63,8 +63,8 @@ FILE_PROTOCOL_RE = re.compile(r"^file:(\.\./.+?)(?:#.*)?$")
 # call and cleared in a finally block after.  Empty outside of audit --fix runs.
 _AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 
-set_yarn_audit_version_overrides, clear_yarn_audit_version_overrides = (
-    make_audit_override_api(_AUDIT_VERSION_OVERRIDES)
+set_yarn_audit_version_overrides, clear_yarn_audit_version_overrides = make_audit_override_api(
+    _AUDIT_VERSION_OVERRIDES
 )
 
 
@@ -124,9 +124,7 @@ def _yarn_extraction_slot() -> Iterator[None]:
     if _extraction_sem is None:
         with _extraction_sem_lock:
             if _extraction_sem is None:
-                _extraction_sem = threading.BoundedSemaphore(
-                    _resolve_yarn_max_concurrency()
-                )
+                _extraction_sem = threading.BoundedSemaphore(_resolve_yarn_max_concurrency())
     _extraction_sem.acquire()
     try:
         yield
@@ -249,9 +247,7 @@ def _yarn_up_cmd() -> list[str]:
 
 def _stderr_tail(proc: subprocess.CompletedProcess[str]) -> str:
     combined = (
-        (proc.stderr or "")
-        + ("\n" if proc.stderr and proc.stdout else "")
-        + (proc.stdout or "")
+        (proc.stderr or "") + ("\n" if proc.stderr and proc.stdout else "") + (proc.stdout or "")
     )
     lines = [ln for ln in combined.strip().splitlines() if ln.strip()]
     if not lines:
@@ -260,9 +256,7 @@ def _stderr_tail(proc: subprocess.CompletedProcess[str]) -> str:
     return f"{tail}\n" if tail else ""
 
 
-def _command_failure(
-    label: str, proc: subprocess.CompletedProcess[str]
-) -> RuntimeError:
+def _command_failure(label: str, proc: subprocess.CompletedProcess[str]) -> RuntimeError:
     detail = _stderr_tail(proc)
     msg = proc.stderr.strip() or label
     if detail and detail.strip() not in msg:
@@ -397,9 +391,7 @@ def _resolved_versions(lock_path: Path) -> dict[str, str]:
 def _latest_published(mdir: Path, name: str) -> str | None:
     """Latest published version via ``yarn npm info`` (None on any failure)."""
     try:
-        proc = run(
-            ["yarn", "npm", "info", name, "--json"], mdir, timeout=_TIMEOUT_NPM_INFO
-        )
+        proc = run(["yarn", "npm", "info", name, "--json"], mdir, timeout=_TIMEOUT_NPM_INFO)
     except Exception:
         return None
     if proc.returncode != 0 or not proc.stdout.strip():
@@ -480,9 +472,7 @@ def targeted_bump_behind(
         return [], behind
 
     def run_bump(name: str, version: str) -> bool:
-        up = run(
-            ["yarn", "up", f"{name}@{version}"], mdir, timeout=resolve_timeout_apply()
-        )
+        up = run(["yarn", "up", f"{name}@{version}"], mdir, timeout=resolve_timeout_apply())
         if up.returncode != 0:
             return False
         install = run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
@@ -526,9 +516,7 @@ def check_yarn_snapshot(
     snapshot_overrides: list[dict[str, str]] = []
     with (
         _yarn_extraction_slot(),
-        tempfile.TemporaryDirectory(
-            prefix="dep-refresh-yarn-", dir=_extraction_root()
-        ) as td,
+        tempfile.TemporaryDirectory(prefix="dep-refresh-yarn-", dir=_extraction_root()) as td,
     ):
         mdir = _copy_yarn_workspace_to_temp(ws, Path(td))
         before_snap = snapshot_workspace_files(mdir, "yarn")
@@ -544,9 +532,7 @@ def check_yarn_snapshot(
         pkg_path = mdir / "package.json"
         pkg_before = before_snap.get(pkg_path, b"")
         pkg_after = after_snap.get(pkg_path, b"")
-        if pkg_before != pkg_after and not any(
-            c.name == "package.json" for c in changes
-        ):
+        if pkg_before != pkg_after and not any(c.name == "package.json" for c in changes):
             changes.append(Change("package.json", "changed", "changed"))
         snapshot_overrides = overrides_audit(mdir, "yarn")
         behind = behind_after_up(mdir, ws=ws)
@@ -590,16 +576,12 @@ def _plan_without_resolutions(ws: Workspace) -> list[Change]:
     """
     with (
         _yarn_extraction_slot(),
-        tempfile.TemporaryDirectory(
-            prefix="dep-refresh-yarn-guard-", dir=_extraction_root()
-        ) as td,
+        tempfile.TemporaryDirectory(prefix="dep-refresh-yarn-guard-", dir=_extraction_root()) as td,
     ):
         mdir = _copy_yarn_workspace_to_temp(ws, Path(td))
         lock = mdir / "yarn.lock"
         # Capture resolved versions before stripping resolutions.
-        before_resolved: dict[str, str] = (
-            _resolved_versions(lock) if lock.is_file() else {}
-        )
+        before_resolved: dict[str, str] = _resolved_versions(lock) if lock.is_file() else {}
         # Strip resolutions from every package.json in the copy so yarn's
         # resolver can freely pick the newest in-range version.
         for pkg_path in package_json_paths(mdir):
@@ -622,9 +604,7 @@ def _plan_without_resolutions(ws: Workspace) -> list[Change]:
         proc2 = run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
         if proc2.returncode != 0:
             return []
-        after_resolved: dict[str, str] = (
-            _resolved_versions(lock) if lock.is_file() else {}
-        )
+        after_resolved: dict[str, str] = _resolved_versions(lock) if lock.is_file() else {}
     # Compare by name; only report concrete upward moves on direct deps.
     direct = _direct_dep_names(ws.path)
     result: list[Change] = []
@@ -727,9 +707,7 @@ def apply_yarn(ws: Workspace) -> list[Change]:
     return fold_held_into_behind(held, behind)
 
 
-def _yarn_hold_install(
-    mdir: Path, name: str, spec: str
-) -> subprocess.CompletedProcess[str]:
+def _yarn_hold_install(mdir: Path, name: str, spec: str) -> subprocess.CompletedProcess[str]:
     """Corrective ``yarn up <pkg>@<spec>`` + ``yarn install`` for ``enforce_holds``.
 
     Mirrors ``_apply_yarn_audit_overrides``'s two-step install shape; only the
@@ -758,9 +736,7 @@ def _apply_yarn_audit_overrides(ws: Workspace) -> set[str]:
             timeout=resolve_timeout_apply(),
         )
         if up.returncode != 0:
-            raise _command_failure(
-                f"yarn up {name}@{version} failed (audit override)", up
-            )
+            raise _command_failure(f"yarn up {name}@{version} failed (audit override)", up)
         proc = run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
         if proc.returncode != 0:
             raise _command_failure(

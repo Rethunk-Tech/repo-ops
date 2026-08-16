@@ -49,9 +49,7 @@ def _fail(stdout: str = "", stderr: str = "err") -> CompletedProcess[str]:
 
 
 class TestGoVerifyGates:
-    def test_go_build_runs_after_mod_verify(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_go_build_runs_after_mod_verify(self, tmp_path: Path, make_workspace) -> None:
         """go build ./... must be called after go mod verify when both pass."""
         calls: list[list[str]] = []
 
@@ -69,9 +67,7 @@ class TestGoVerifyGates:
         assert calls[0] == ["go", "mod", "verify"]
         assert calls[1] == ["go", "build", "./..."]
 
-    def test_go_mod_verify_failure_short_circuits(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_go_mod_verify_failure_short_circuits(self, tmp_path: Path, make_workspace) -> None:
         """go build must NOT run if go mod verify fails."""
         calls: list[list[str]] = []
 
@@ -91,9 +87,7 @@ class TestGoVerifyGates:
         assert "checksum" in result
         assert not any(c == ["go", "build", "./..."] for c in calls)
 
-    def test_go_build_failure_returns_error(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_go_build_failure_returns_error(self, tmp_path: Path, make_workspace) -> None:
         """go build failure must surface as an error string."""
 
         def fake_run(
@@ -137,9 +131,7 @@ class TestGoVerifyGates:
         assert cmd_strs.index("go mod verify") < cmd_strs.index("go build ./...")
         assert cmd_strs.index("go build ./...") < cmd_strs.index("go test ./...")
 
-    def test_go_build_skipped_when_mod_verify_fails(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_go_build_skipped_when_mod_verify_fails(self, tmp_path: Path, make_workspace) -> None:
         """go test must NOT run if go build fails."""
         called_test = False
 
@@ -193,9 +185,7 @@ class TestUvRuffGate:
     def _write_pyproject(self, path: Path, content: str) -> None:
         (path / "pyproject.toml").write_text(content, encoding="utf-8")
 
-    def test_hatch_fast_replaces_tool_ruff_only_gate(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_hatch_fast_replaces_tool_ruff_only_gate(self, tmp_path: Path, make_workspace) -> None:
         """uv uses the shared fast stack instead of a uv-only ruff branch."""
         self._write_pyproject(
             tmp_path,
@@ -218,9 +208,7 @@ class TestUvRuffGate:
         assert ["uv", "run", "check"] in calls
         assert not any(cmd[:4] == ["uv", "run", "ruff", "check"] for cmd in calls)
 
-    def test_ruff_runs_when_ruff_in_dev_deps(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_ruff_runs_when_ruff_in_dev_deps(self, tmp_path: Path, make_workspace) -> None:
         """ruff check must run when ruff appears in uv dev-dependencies."""
         self._write_pyproject(
             tmp_path,
@@ -241,9 +229,7 @@ class TestUvRuffGate:
         assert result is None
         assert any(cmd[:4] == ["uv", "run", "ruff", "check"] for cmd in calls)
 
-    def test_ruff_skipped_when_not_configured(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_ruff_skipped_when_not_configured(self, tmp_path: Path, make_workspace) -> None:
         """ruff check must NOT run when ruff is absent from pyproject.toml."""
         self._write_pyproject(tmp_path, '[project]\nname = "myapp"\n')
         calls: list[list[str]] = []
@@ -282,9 +268,7 @@ class TestUvRuffGate:
         assert result is not None
         assert "error" in result.lower() or "ruff" in result.lower()
 
-    def test_uv_sync_failure_short_circuits_ruff(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_uv_sync_failure_short_circuits_ruff(self, tmp_path: Path, make_workspace) -> None:
         """ruff check must NOT run when uv sync --locked fails."""
         self._write_pyproject(tmp_path, "[tool.ruff]\n")
         called_ruff = False
@@ -522,9 +506,7 @@ class TestNodeVerifyScriptEnv:
 
         assert result is None
         # npm ci (immutable install) must still have run
-        assert any("npm" in c and c[-1] == "ci" for c in calls), (
-            f"npm ci not called: {calls}"
-        )
+        assert any("npm" in c and c[-1] == "ci" for c in calls), f"npm ci not called: {calls}"
         # But no package.json script should have been run
         assert not any("echo" in str(c) for c in calls)
 
@@ -574,9 +556,7 @@ class TestNodeVerifyScriptEnv:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """Waterfall picks 'ci' over 'build' when both exist."""
-        self._write_pkg(
-            tmp_path, {"ci": "echo ci", "build": "echo build", "lint": "echo lint"}
-        )
+        self._write_pkg(tmp_path, {"ci": "echo ci", "build": "echo build", "lint": "echo lint"})
         monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         calls: list[list[str]] = []
 
@@ -591,9 +571,7 @@ class TestNodeVerifyScriptEnv:
             verify_node(ws)
 
         # Only 'ci' should have been run as the script step, not 'build' or 'lint'
-        script_step_calls = [
-            c for c in calls if len(c) > 1 and c[-1] in ("ci", "build", "lint")
-        ]
+        script_step_calls = [c for c in calls if len(c) > 1 and c[-1] in ("ci", "build", "lint")]
         assert script_step_calls[0][-1] == "ci"
         assert len([c for c in script_step_calls if c[-1] in ("build", "lint")]) == 0
 
@@ -678,13 +656,9 @@ class TestVerifyHatchFast:
         (path / "pyproject.toml").write_text(content, encoding="utf-8")
 
     def _hatch_ws(self, tmp_path: Path, make_workspace) -> Workspace:
-        return make_workspace(
-            tmp_path, manager="hatch", ecosystem="python", label="demo"
-        )
+        return make_workspace(tmp_path, manager="hatch", ecosystem="python", label="demo")
 
-    @pytest.mark.parametrize(
-        ("pyproject_content", "expected_cmd", "absent_cmd"), _HATCH_FAST_CASES
-    )
+    @pytest.mark.parametrize(("pyproject_content", "expected_cmd", "absent_cmd"), _HATCH_FAST_CASES)
     def test_hatch_fast_command_selection(
         self,
         tmp_path: Path,
@@ -711,9 +685,7 @@ class TestVerifyHatchFast:
         if absent_cmd is not None:
             assert absent_cmd not in calls
 
-    def test_check_script_failure_returns_error(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_check_script_failure_returns_error(self, tmp_path: Path, make_workspace) -> None:
         """check script failure must surface an error string."""
         self._write_pyproject(
             tmp_path,
@@ -771,21 +743,15 @@ class TestTimeoutEnvOverride:
         monkeypatch.setenv(env_var, str(override))
         assert resolve() == override
 
-    def test_invalid_env_falls_back_to_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_invalid_env_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(_TIMEOUT_VERIFY_ENV, "not_a_number")
         assert resolve_timeout_verify() == TIMEOUT_VERIFY
 
-    def test_zero_env_falls_back_to_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_zero_env_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(_TIMEOUT_VERIFY_ENV, "0")
         assert resolve_timeout_verify() == TIMEOUT_VERIFY
 
-    def test_negative_env_falls_back_to_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_negative_env_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(_TIMEOUT_CHECK_ENV, "-10")
         assert resolve_timeout_check() == TIMEOUT_CHECK
 

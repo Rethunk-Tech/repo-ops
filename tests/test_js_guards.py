@@ -16,9 +16,7 @@ def _workspace(tmp_path: Path) -> Workspace:
     )
 
 
-def test_unresolved_targets_accepts_resolved_target(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_unresolved_targets_accepts_resolved_target(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         "repo_ops_js.guards.resolved_version_from_node_modules",
         lambda _path, _name: "2.1.0",
@@ -28,9 +26,7 @@ def test_unresolved_targets_accepts_resolved_target(
     assert unresolved_targets(_workspace(tmp_path), [change]) == []
 
 
-def test_unresolved_targets_reports_ghost_blocked_target(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_unresolved_targets_reports_ghost_blocked_target(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         "repo_ops_js.guards.resolved_version_from_node_modules",
         lambda _path, _name: "1.9.0",
@@ -49,20 +45,14 @@ def test_unresolved_targets_reports_installed_prerelease_before_stable_target(
     )
     change = Change("pkg", "3.0.0", "4.0.0")
 
-    assert unresolved_targets(_workspace(tmp_path), [change]) == [
-        (change, "4.0.0-rc.1")
-    ]
+    assert unresolved_targets(_workspace(tmp_path), [change]) == [(change, "4.0.0-rc.1")]
 
 
-def test_unresolved_targets_skips_empty_and_unknown_targets(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_unresolved_targets_skips_empty_and_unknown_targets(tmp_path: Path, monkeypatch) -> None:
     def resolver(_path: Path, _name: str) -> str:
         raise AssertionError("skipped targets must not resolve node_modules")
 
-    monkeypatch.setattr(
-        "repo_ops_js.guards.resolved_version_from_node_modules", resolver
-    )
+    monkeypatch.setattr("repo_ops_js.guards.resolved_version_from_node_modules", resolver)
 
     requested = [
         Change("empty-target", "1.0.0", ""),

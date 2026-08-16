@@ -86,12 +86,7 @@ def versions_yarn_lock(p: Path) -> set[str]:
         header = None
         version = None
         for line in lines:
-            if (
-                header is None
-                and line
-                and not line.startswith(" ")
-                and not line.startswith("#")
-            ):
+            if header is None and line and not line.startswith(" ") and not line.startswith("#"):
                 header = line.rstrip(":").strip()
             m = re.match(r'^\s+version[:\s]+["\']?([^"\']+)["\']?', line)
             if m:
@@ -115,9 +110,7 @@ def _versions_pnpm_lock_regex_fallback(p: Path) -> set[str]:
     effort on the two notations we know about, same as the YAML path.
     """
     _re_at = re.compile(r"^  ['\"]?/?([@\w][^@:'\"]*@[^:'\"\s]+)['\"]?:\s*$")
-    _re_path = re.compile(
-        r"^  ['\"]?/((?:@[^/'\"@]+/)?[^/'\"@]+)/([^/:'\"\s]+)['\"]?:\s*$"
-    )
+    _re_path = re.compile(r"^  ['\"]?/((?:@[^/'\"@]+/)?[^/'\"@]+)/([^/:'\"\s]+)['\"]?:\s*$")
     out: set[str] = set()
     in_pkgs = False
     for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -219,9 +212,7 @@ def versions_bun_lock(p: Path) -> set[str]:
             key.startswith("@") and key.count("@") >= 2
         ):
             out.add(key)
-        elif (
-            isinstance(val, list) and val and isinstance(val[0], str) and "@" in val[0]
-        ):
+        elif isinstance(val, list) and val and isinstance(val[0], str) and "@" in val[0]:
             out.add(val[0])
     return out
 

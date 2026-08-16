@@ -263,9 +263,7 @@ def _run_upgrade_body(
 
     skip_remediations = set()
     if apply:
-        skip_remediations = {
-            s.strip() for s in args.skip_remediations.split(",") if s.strip()
-        }
+        skip_remediations = {s.strip() for s in args.skip_remediations.split(",") if s.strip()}
 
     use_json = args.json
     json_report_path = getattr(args, "json_report_path", None)
@@ -294,10 +292,7 @@ def _run_upgrade_body(
 
     _global_cfg: dict[str, Any] = getattr(args, "_repo_ops_global_config", {})
     _ambient_env: dict[str, str] = getattr(args, "_repo_ops_ambient_env", {})
-    _repo_cfgs = {
-        bundle.git_repo: load_repo_config(bundle.git_repo)
-        for bundle in bundles.values()
-    }
+    _repo_cfgs = {bundle.git_repo: load_repo_config(bundle.git_repo) for bundle in bundles.values()}
     exclude_patterns: list[str] = getattr(args, "exclude_patterns", None) or []
     kept_paths: list[Path] = []
     excluded_count = 0
@@ -315,9 +310,7 @@ def _run_upgrade_body(
 
     include_submodules = _cli_flag(args, "submodules")
     submodule_order = getattr(args, "submodule_order", "discovery")
-    need_submodule_scan = include_submodules or (
-        apply and submodule_order == "children-first"
-    )
+    need_submodule_scan = include_submodules or (apply and submodule_order == "children-first")
     submodule_links: list[submodules.SubmoduleLink] = []
     submodules_json: list[dict[str, str]] | None = None
     if need_submodule_scan:
@@ -390,9 +383,7 @@ def _run_upgrade_body(
     # already completed apply+commit in a previous run at their current HEAD.
     # The scope fingerprint ensures a differently-scoped resume (e.g. different
     # --filter) does not false-skip repos outside the prior run's scope.
-    _resume_mode = apply and (
-        os.environ.get("REPO_OPS_RESUME") == "1" or _cli_flag(args, "resume")
-    )
+    _resume_mode = apply and (os.environ.get("REPO_OPS_RESUME") == "1" or _cli_flag(args, "resume"))
     _checkpoint: dict[str, str] = {}
     _checkpoint_lock = threading.Lock()
     _scope = _scope_fingerprint(args)
@@ -430,9 +421,7 @@ def _run_upgrade_body(
     all_results: list[WorkspaceResult] = []
     if apply:
         ordered_bundles = [
-            bundles[key]
-            for key in bundle_order
-            if key in bundles and bundles[key].workspaces
+            bundles[key] for key in bundle_order if key in bundles and bundles[key].workspaces
         ]
         pending_bundles = ordered_bundles
 
@@ -447,9 +436,7 @@ def _run_upgrade_body(
             # Build a depth map: children have depth 0, parents have depth > 0.
             # Bundles at the same depth are independent and can run in parallel.
             pending_keys = [
-                key
-                for key in bundle_order
-                if key in bundles and bundles[key].workspaces
+                key for key in bundle_order if key in bundles and bundles[key].workspaces
             ]
             key_set_p = set(pending_keys)
             depth_map: dict[Path, int] = dict.fromkeys(pending_keys, 0)
@@ -466,9 +453,7 @@ def _run_upgrade_body(
                         depth_map[link.parent] = new_d
                         _changed = True
             sorted_keys = sorted(pending_keys, key=lambda k: depth_map.get(k, 0))
-            for _level, level_keys_iter in groupby(
-                sorted_keys, key=lambda k: depth_map.get(k, 0)
-            ):
+            for _level, level_keys_iter in groupby(sorted_keys, key=lambda k: depth_map.get(k, 0)):
                 if _FAIL_FAST.is_set():
                     break
                 level_keys = list(level_keys_iter)
@@ -653,9 +638,7 @@ def _run_upgrade_body(
             bundle.actions = bumps
             bundle.actions_workflows_scanned = count
 
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=args.jobs
-        ) as _actions_pool:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as _actions_pool:
             list(_actions_pool.map(_scan_one_bundle_actions, list(bundles.values())))
 
     # Display-only concern: the human renderer applies its own visibility gate,
@@ -741,9 +724,7 @@ def _run_upgrade_body(
             )
 
     if apply:
-        commit_mode: Literal["none", "conventional", "agent"] = getattr(
-            args, "commit", "none"
-        )
+        commit_mode: Literal["none", "conventional", "agent"] = getattr(args, "commit", "none")
         if commit_mode and commit_mode != "none":
             child_outcomes, commit_exit = post_apply_commit.run_post_apply_commits(
                 bundles,
@@ -753,9 +734,7 @@ def _run_upgrade_body(
                 commit_on_fail=_cli_flag(args, "commit_on_fail"),
                 quiet=args.quiet,
                 max_workers=args.jobs,
-                submodule_gitlink_map=submodule_gitlink_map
-                if submodule_gitlink_map
-                else None,
+                submodule_gitlink_map=submodule_gitlink_map if submodule_gitlink_map else None,
             )
             if commit_exit != 0:
                 exit_code = 1 if exit_code == 0 else exit_code
@@ -815,9 +794,7 @@ def _run_upgrade_body(
                     committed_repos = {
                         o.git_repo for o in child_outcomes if o.status == "committed"
                     }
-                    pr_prefix = getattr(
-                        args, "branch_prefix", _pr_mod.DEFAULT_BRANCH_PREFIX
-                    )
+                    pr_prefix = getattr(args, "branch_prefix", _pr_mod.DEFAULT_BRANCH_PREFIX)
                     pr_base = getattr(args, "pr_base", None)
                     for bundle in sorted(bundles.values(), key=lambda b: b.label):
                         if bundle.git_repo not in committed_repos:

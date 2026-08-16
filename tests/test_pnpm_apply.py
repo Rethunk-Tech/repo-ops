@@ -46,9 +46,7 @@ def test_apply_pnpm_raises_on_ghost_bump_overrides_pin(
         patch(_RESOLVER_PATH, return_value="1.6.0"),
         pytest.raises(RuntimeError) as exc_info,
     ):
-        apply_pnpm(
-            make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
-        )
+        apply_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
     assert "axios" in str(exc_info.value)
     assert "1.6.0" in str(exc_info.value)
 
@@ -120,9 +118,7 @@ def test_apply_pnpm_guard_skipped_when_resolver_returns_none(
         )  # must not raise
 
 
-def test_apply_pnpm_audit_override_absent_from_outdated(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_apply_pnpm_audit_override_absent_from_outdated(tmp_path: Path, make_workspace) -> None:
     """#140: audit-safe pin must install even when outdated reports nothing."""
     calls: list[list[str]] = []
 
@@ -137,9 +133,7 @@ def test_apply_pnpm_audit_override_absent_from_outdated(
             patch(_OUTDATED, return_value=([], [])),
             patch(_RESOLVER_PATH, return_value="1.2.3"),
         ):
-            apply_pnpm(
-                make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
-            )
+            apply_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
     finally:
         clear_pnpm_audit_version_overrides()
 

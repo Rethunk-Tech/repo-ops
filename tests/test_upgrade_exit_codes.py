@@ -82,9 +82,7 @@ with patch(
     assert proc.returncode == 1
 
 
-def test_apply_worker_exception_reports_fail_not_clean(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_apply_worker_exception_reports_fail_not_clean(tmp_path: Path, init_git_repo) -> None:
     """A worker that raises must surface as a FAILED workspace, not a silent
     clean exit 0 (#62). Exit code alone is insufficient: the defensive
     fallthrough would also yield rc=1, so the error text ("boom") pins that the
@@ -224,9 +222,7 @@ def test_strict_exit_counts_dirty_skip(tmp_path: Path, init_git_repo) -> None:
     assert rc_strict == 1
 
 
-def test_apply_snapshots_repo_dirty_state_once_per_bundle(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_apply_snapshots_repo_dirty_state_once_per_bundle(tmp_path: Path, init_git_repo) -> None:
     """Two sibling workspaces in the same repo must share one dirty snapshot,
     not each re-check the live git tree — otherwise an earlier sibling's own
     applied-but-uncommitted changes make every later sibling look dirty and get

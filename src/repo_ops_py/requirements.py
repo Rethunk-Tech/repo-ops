@@ -13,7 +13,5 @@ def parse_requirements_lines(text: str) -> dict[str, str]:
             continue
         m = re.match(r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*==\s*([^;\s]+)", line)
         if m:
-            versions[m.group(1).lower().replace("_", "-").replace(".", "-")] = m.group(
-                2
-            )
+            versions[m.group(1).lower().replace("_", "-").replace(".", "-")] = m.group(2)
     return versions

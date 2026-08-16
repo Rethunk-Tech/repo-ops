@@ -117,9 +117,7 @@ def probe_skill_drift() -> list[str]:
     bundled = bundled_skill_dir()
     drifted: list[str] = []
     for _, path in destinations_for("both", resolve_home(None)):
-        if (path.is_symlink() or path.exists()) and not check_installed_skill(
-            bundled, path
-        ):
+        if (path.is_symlink() or path.exists()) and not check_installed_skill(bundled, path):
             drifted.append(str(path))
     return drifted
 
@@ -293,15 +291,9 @@ def print_report(
     print()
     if gh_auth.checked:
         if gh_auth.authenticated is True:
-            print(
-                "gh auth: authenticated"
-                + (f" ({gh_auth.detail})" if gh_auth.detail else "")
-            )
+            print("gh auth: authenticated" + (f" ({gh_auth.detail})" if gh_auth.detail else ""))
         elif gh_auth.authenticated is False:
-            print(
-                "gh auth: NOT authenticated"
-                + (f" ({gh_auth.detail})" if gh_auth.detail else "")
-            )
+            print("gh auth: NOT authenticated" + (f" ({gh_auth.detail})" if gh_auth.detail else ""))
         else:
             print(f"gh auth: check failed ({gh_auth.detail or 'unknown error'})")
     else:
@@ -354,9 +346,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = _build_payload(results, gh_auth, skill_drift)
         json_report_path = getattr(args, "json_report_path", None)
         if json_report_path:
-            written = write_json_atomic(
-                Path(json_report_path), payload, compact=args.compact
-            )
+            written = write_json_atomic(Path(json_report_path), payload, compact=args.compact)
             print(written)
         else:
             print(json.dumps(payload, indent=None if args.compact else 2))

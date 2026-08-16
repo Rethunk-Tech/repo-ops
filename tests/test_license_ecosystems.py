@@ -49,9 +49,7 @@ def test_classify_license_text_mit_and_apache() -> None:
     )
     assert _classify_license_text(mit_text) == "MIT"
 
-    apache_text = (
-        "Apache License\nVersion 2.0, January 2004\nhttp://www.apache.org/licenses/"
-    )
+    apache_text = "Apache License\nVersion 2.0, January 2004\nhttp://www.apache.org/licenses/"
     assert _classify_license_text(apache_text) == "Apache-2.0"
 
     assert _classify_license_text("some unrecognisable text") == UNKNOWN_LICENSE
@@ -89,9 +87,9 @@ def test_classify_license_text_distinguishes_bsd2_and_bsd3() -> None:
 
 
 def test_classify_truncated_bsd3_as_bsd2_best_effort() -> None:
-    truncated_bsd3 = (
-        Path(__file__).parent / "fixtures" / "truncated-bsd3.txt"
-    ).read_text(encoding="utf-8")
+    truncated_bsd3 = (Path(__file__).parent / "fixtures" / "truncated-bsd3.txt").read_text(
+        encoding="utf-8"
+    )
 
     assert "endorse or promote products derived" not in truncated_bsd3.lower()
     assert classify_license_text(truncated_bsd3) == "BSD-2-Clause"
@@ -241,9 +239,7 @@ def test_scan_rust_licenses_skips_gracefully_without_cargo(
 # ---------------------------------------------------------------------------
 
 
-def _write_deno_npm_cache_pkg(
-    deno_dir: Path, name: str, version: str, lic: str
-) -> None:
+def _write_deno_npm_cache_pkg(deno_dir: Path, name: str, version: str, lic: str) -> None:
     pkg_dir = deno_dir / "npm" / "registry.npmjs.org" / name / version
     pkg_dir.mkdir(parents=True, exist_ok=True)
     (pkg_dir / "package.json").write_text(
@@ -261,9 +257,7 @@ def test_resolve_deno_npm_license_from_cache(tmp_path: Path) -> None:
 def test_resolve_deno_npm_license_missing_is_unknown(tmp_path: Path) -> None:
     deno_dir = tmp_path / "denodir"
     deno_dir.mkdir()
-    assert (
-        resolve_deno_npm_license("nope", "1.0.0", deno_dir=deno_dir) == UNKNOWN_LICENSE
-    )
+    assert resolve_deno_npm_license("nope", "1.0.0", deno_dir=deno_dir) == UNKNOWN_LICENSE
 
 
 def test_scan_deno_licenses_npm_and_jsr_specifiers(tmp_path: Path) -> None:
@@ -456,8 +450,7 @@ def test_enrich_license_reads_python_and_cargo_metadata(
         encoding="utf-8",
     )
     assert (
-        enrich_license("requests", "2.31.0", "pypi", tmp_path, allow_network=False)
-        == "Apache-2.0"
+        enrich_license("requests", "2.31.0", "pypi", tmp_path, allow_network=False) == "Apache-2.0"
     )
 
     cargo_home = tmp_path / "cargo"

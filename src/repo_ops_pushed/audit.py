@@ -104,14 +104,11 @@ def _github_repos_for_repo(repo: str) -> list[str]:
         try:
             urls = run_git(repo, "remote", "get-url", "--all", remote)
         except subprocess.TimeoutExpired as exc:
-            raise GhCollectionError(
-                f"reading remote {remote} for {repo} timed out"
-            ) from exc
+            raise GhCollectionError(f"reading remote {remote} for {repo} timed out") from exc
         if urls.returncode != 0:
             detail = urls.stderr.strip() if hasattr(urls, "stderr") else ""
             raise GhCollectionError(
-                f"reading remote {remote} for {repo} failed"
-                + (f": {detail}" if detail else "")
+                f"reading remote {remote} for {repo} failed" + (f": {detail}" if detail else "")
             )
         for url in urls.stdout.splitlines():
             slug = _github_repo_slug(url)
@@ -219,9 +216,7 @@ def _github_commit_matches(
 
     detail = _gh_api(f"repos/{repo_slug}/commits/{sha}")
     if not isinstance(detail, dict):
-        raise GhCollectionError(
-            f"gh api repos/{repo_slug}/commits/{sha} returned invalid commit"
-        )
+        raise GhCollectionError(f"gh api repos/{repo_slug}/commits/{sha} returned invalid commit")
     parents = detail.get("parents")
     return not isinstance(parents, list) or len(parents) < 2
 
@@ -287,9 +282,7 @@ def pushed_commits_for_repo_gh(repo: str, filters: Filters) -> dict[str, None]:
             if event.get("type") != "PushEvent":
                 continue
             timestamp = _event_unix(event.get("created_at"))
-            if timestamp is None or not (
-                filters.since_unix <= timestamp < filters.until_unix
-            ):
+            if timestamp is None or not (filters.since_unix <= timestamp < filters.until_unix):
                 continue
             payload = event.get("payload")
             if not isinstance(payload, dict):
@@ -315,9 +308,7 @@ def pushed_commits_for_repo_gh(repo: str, filters: Filters) -> dict[str, None]:
     return commits
 
 
-def _reflog_pre_sha(
-    repo: str, ref: str, new_sha: str, reflog_lines: list[str]
-) -> str | None:
+def _reflog_pre_sha(repo: str, ref: str, new_sha: str, reflog_lines: list[str]) -> str | None:
     """Return the OID ``ref`` pointed to immediately before ``new_sha`` was recorded.
 
     Uses ``git rev-parse ref@{n+1}`` for the reflog entry at ``@{n}`` whose new tip
@@ -366,9 +357,7 @@ def pushed_commits_for_repo(repo: str, filters: Filters) -> dict[str, None]:
 
     # dict preserves insertion order (chrono from rev-list --reverse) and deduplicates
     commits: dict[str, None] = {}
-    refs = [
-        line for line in proc.stdout.splitlines() if line and not line.endswith("/HEAD")
-    ]
+    refs = [line for line in proc.stdout.splitlines() if line and not line.endswith("/HEAD")]
 
     for ref in refs:
         try:
@@ -458,9 +447,7 @@ def collect_results(
         label_fn=lambda path: repo_label(str(path), repo_roots),
     )
     kept_set = set(kept_paths)
-    repos_sorted = sorted(
-        repo for repo in common_to_repo.values() if Path(repo) in kept_set
-    )
+    repos_sorted = sorted(repo for repo in common_to_repo.values() if Path(repo) in kept_set)
 
     scanner = pushed_commits_for_repo
     if source == "gh":
@@ -501,9 +488,7 @@ def resolve_subjects(per_repo: list[RepoResult]) -> dict[str, dict[str, str]]:
                 proc = run_git(r.path, "log", "-1", "--format=%s", sha)
                 subject = proc.stdout.strip() if proc.returncode == 0 else ""
             except subprocess.TimeoutExpired:
-                print(
-                    f"WARN: skipped {r.path} (log {sha[:8]}): timeout", file=sys.stderr
-                )
+                print(f"WARN: skipped {r.path} (log {sha[:8]}): timeout", file=sys.stderr)
                 subject = ""
             if len(subject) > 100:
                 subject = subject[:100] + "…"
@@ -528,14 +513,10 @@ def print_report(
     if source == "gh":
         print(f"Pushed commits in the last {window_desc} (GitHub PushEvent API)")
     else:
-        print(
-            f"Pushed commits in the last {window_desc} (local reflog: update by push)"
-        )
+        print(f"Pushed commits in the last {window_desc} (local reflog: update by push)")
     if source == "gh" and gh_missing_remote_count:
         print(
-            "WARNING: "
-            f"{gh_missing_remote_count} repo(s) had no GitHub remote; "
-            "see stderr warnings"
+            f"WARNING: {gh_missing_remote_count} repo(s) had no GitHub remote; see stderr warnings"
         )
     print(f"Scanned {len(roots)} root(s); {len(per_repo)} repo(s) with pushes")
     if show_excluded:
@@ -734,8 +715,7 @@ def main(argv: list[str] | None = None) -> int:
         # Both provided: explicit window; --hours is ignored
         if args.hours is not None:
             print(
-                "WARNING: --hours is ignored because --since and --until "
-                "are both provided",
+                "WARNING: --hours is ignored because --since and --until are both provided",
                 file=sys.stderr,
             )
         since_dt = args.since
@@ -777,9 +757,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.since is not None or args.until is not None:
         window_desc = f"{since_dt.isoformat()} to {until_dt.isoformat()}"
     else:
-        window_desc = f"{effective_hours:g} hour" + (
-            "" if effective_hours == 1 else "s"
-        )
+        window_desc = f"{effective_hours:g} hour" + ("" if effective_hours == 1 else "s")
 
     roots = resolve_scan_roots(list(args.roots), parser)
     follow_symlinks = bool(getattr(args, "follow_symlinks", False))
@@ -842,9 +820,7 @@ def main(argv: list[str] | None = None) -> int:
             payload["source"] = "gh"
         json_report_path = getattr(args, "json_report_path", None)
         if json_report_path:
-            written = write_json_atomic(
-                Path(json_report_path), payload, compact=args.compact
-            )
+            written = write_json_atomic(Path(json_report_path), payload, compact=args.compact)
             print(written)
         else:
             print(json.dumps(payload, indent=None if args.compact else 2))

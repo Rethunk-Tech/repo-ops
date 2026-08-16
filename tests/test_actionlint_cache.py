@@ -156,9 +156,7 @@ def test_cache_hit_skips_subprocess(tmp_path: Path) -> None:
         return _actionlint_pass()
 
     with (
-        patch(
-            "repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/actionlint"
-        ),
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/actionlint"),
         patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
         patch("repo_ops_upgrade.actions._get_actionlint_version", return_value=version),
     ):
@@ -176,9 +174,7 @@ def test_cache_miss_runs_subprocess_and_stores(tmp_path: Path) -> None:
     lint_cache: dict = {}
 
     with (
-        patch(
-            "repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/actionlint"
-        ),
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/actionlint"),
         patch("repo_ops_upgrade.actions.run", side_effect=_actionlint_fail),
         patch("repo_ops_upgrade.actions._get_actionlint_version", return_value=version),
     ):
@@ -199,9 +195,7 @@ def test_cache_pass_stored_as_none(tmp_path: Path) -> None:
     lint_cache: dict = {}
 
     with (
-        patch(
-            "repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/actionlint"
-        ),
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/actionlint"),
         patch("repo_ops_upgrade.actions.run", side_effect=_actionlint_pass),
         patch("repo_ops_upgrade.actions._get_actionlint_version", return_value=version),
     ):
@@ -224,9 +218,7 @@ def test_content_change_is_cache_miss(tmp_path: Path) -> None:
     lint_cache: dict = {}
 
     with (
-        patch(
-            "repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/actionlint"
-        ),
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/actionlint"),
         patch("repo_ops_upgrade.actions.run", side_effect=_actionlint_pass),
         patch("repo_ops_upgrade.actions._get_actionlint_version", return_value=version),
     ):
@@ -244,9 +236,7 @@ def test_content_change_is_cache_miss(tmp_path: Path) -> None:
         return _actionlint_pass()
 
     with (
-        patch(
-            "repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/actionlint"
-        ),
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/actionlint"),
         patch("repo_ops_upgrade.actions.run", side_effect=fake_run_counter),
         patch("repo_ops_upgrade.actions._get_actionlint_version", return_value=version),
     ):
@@ -263,9 +253,7 @@ def test_content_change_is_cache_miss(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_no_lint_cache_env_disables_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_no_lint_cache_env_disables_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """REPO_OPS_NO_LINT_CACHE=1 must bypass read and write."""
     monkeypatch.setenv("REPO_OPS_NO_LINT_CACHE", "1")
     wf = _wf(tmp_path)
@@ -282,9 +270,7 @@ def test_no_lint_cache_env_disables_cache(
         return _actionlint_pass()
 
     with (
-        patch(
-            "repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/actionlint"
-        ),
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/actionlint"),
         patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
         patch("repo_ops_upgrade.actions._get_actionlint_version", return_value=version),
     ):
@@ -334,9 +320,7 @@ def test_lint_level_off_no_cache_interaction(
 # ---------------------------------------------------------------------------
 
 
-def test_scan_actions_saves_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scan_actions_saves_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """scan_actions must write the lint cache file after processing workflows."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.delenv("REPO_OPS_NO_LINT_CACHE", raising=False)

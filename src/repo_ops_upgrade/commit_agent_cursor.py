@@ -29,9 +29,7 @@ def _resolve_agent_model(repo_path: Path | None = None) -> str:
         )
     model = raw_model.strip()
     if not model:
-        raise RuntimeError(
-            "REPO_OPS_COMMIT_AGENT_MODEL must be a non-empty model identifier"
-        )
+        raise RuntimeError("REPO_OPS_COMMIT_AGENT_MODEL must be a non-empty model identifier")
     return model
 
 

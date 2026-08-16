@@ -54,9 +54,7 @@ def _docker_cfg(tmp_path: Path, cfg: dict) -> None:
     (tmp_path / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
 
 
-def _make_http_response(
-    body: bytes, headers: dict[str, str] | None = None
-) -> MagicMock:
+def _make_http_response(body: bytes, headers: dict[str, str] | None = None) -> MagicMock:
     resp = MagicMock()
     resp.read.return_value = body
     resp.headers = MagicMock()
@@ -66,9 +64,7 @@ def _make_http_response(
     return resp
 
 
-def _make_http_error(
-    code: int, headers: dict[str, str] | None = None
-) -> urllib.error.HTTPError:
+def _make_http_error(code: int, headers: dict[str, str] | None = None) -> urllib.error.HTTPError:
     hdrs: Any = MagicMock()
     hdrs.get = lambda h, d="": (headers or {}).get(h, d)
     return urllib.error.HTTPError(url="http://x", code=code, msg="", hdrs=hdrs, fp=None)
@@ -262,9 +258,7 @@ def test_ecr_get_login_password_happy_path(make_proc: Any) -> None:
         pytest.param({"proc": (0, "")}, id="empty_output"),
     ],
 )
-def test_ecr_get_login_password_failure_paths(
-    run_spec: dict[str, Any], make_proc: Any
-) -> None:
+def test_ecr_get_login_password_failure_paths(run_spec: dict[str, Any], make_proc: Any) -> None:
     with patch("subprocess.run", **_run_kwargs(run_spec, make_proc)):
         assert _ecr_get_login_password("us-east-1") is None
 
@@ -298,9 +292,7 @@ def test_resolve_auth_inline_wins(tmp_path: Path) -> None:
 def test_resolve_auth_helper_when_no_inline(tmp_path: Path, make_proc: Any) -> None:
     """When inline auth is absent, credential helper is tried."""
     _docker_cfg(tmp_path, {"credHelpers": {"ghcr.io": "gh-token"}})
-    helper_proc = make_proc(
-        stdout=json.dumps({"Username": "x-token", "Secret": "ghs_abc"})
-    )
+    helper_proc = make_proc(stdout=json.dumps({"Username": "x-token", "Secret": "ghs_abc"}))
 
     with (
         patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}),
@@ -346,16 +338,12 @@ def test_resolve_auth_none_when_everything_fails(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_fetch_tags_uses_cred_helper_for_private_registry(
-    tmp_path: Path, make_proc: Any
-) -> None:
+def test_fetch_tags_uses_cred_helper_for_private_registry(tmp_path: Path, make_proc: Any) -> None:
     """_fetch_tags: credential-helper auth is used when bearer token is needed."""
     cred_b64 = base64.b64encode(b"myuser:mytoken").decode()
     _docker_cfg(tmp_path, {"credHelpers": {"private.reg.io": "myhelper"}})
 
-    helper_proc = make_proc(
-        stdout=json.dumps({"Username": "myuser", "Secret": "mytoken"})
-    )
+    helper_proc = make_proc(stdout=json.dumps({"Username": "myuser", "Secret": "mytoken"}))
 
     # Sequence: probe /v2/ → 401 challenge, token fetch, then tags/list
     probe_error = _make_http_error(

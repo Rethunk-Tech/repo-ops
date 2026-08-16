@@ -69,9 +69,7 @@ def test_json_out_requires_json(tmp_path: Path) -> None:
             raise AssertionError("expected SystemExit")
 
 
-def test_apply_json_out_keeps_colocated_npm_and_container(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_apply_json_out_keeps_colocated_npm_and_container(tmp_path: Path, init_git_repo) -> None:
     """Co-located ecosystems must both survive result reconciliation (#146).
 
     A directory with package.json + Dockerfile yields two WorkspaceResults that
@@ -204,9 +202,7 @@ def test_write_json_report_omits_exit_code_when_none(tmp_path: Path) -> None:
 # ---------- inventory / pushed json-out contracts (F089) ----------
 
 
-def test_inventory_json_out_writes_file_and_prints_path_only(
-    tmp_path: Path, capsys
-) -> None:
+def test_inventory_json_out_writes_file_and_prints_path_only(tmp_path: Path, capsys) -> None:
     from repo_ops_inventory.scan import main as inventory_main
 
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')

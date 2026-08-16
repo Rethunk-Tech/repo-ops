@@ -150,9 +150,7 @@ def test_plan_go_work_no_go_directive_in_work(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_check_go_includes_work_directive_change(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
+def test_check_go_includes_work_directive_change(tmp_path: Path, make_workspace, make_proc) -> None:
     """check_go prepends go.work directive change when go.work is stale."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     # Register a go.work dir and write fixture files.
@@ -184,9 +182,7 @@ def test_check_go_includes_work_directive_change(
 # ---------------------------------------------------------------------------
 
 
-def test_apply_go_work_directive_runs_when_stale(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
+def test_apply_go_work_directive_runs_when_stale(tmp_path: Path, make_workspace, make_proc) -> None:
     """_apply_go_work_directive calls go work use when go.work is behind a member."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     go_work_dir = tmp_path / "workspace"
@@ -294,9 +290,7 @@ def test_plan_fleet_directive_no_env_vars(tmp_path: Path, make_workspace) -> Non
     assert changes == []
 
 
-def test_plan_fleet_directive_go_upgrade_needed(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
+def test_plan_fleet_directive_go_upgrade_needed(tmp_path: Path, make_workspace, make_proc) -> None:
     """REPO_OPS_GO_DIRECTIVE=1.25 with module at 1.22 → one Change."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
@@ -315,9 +309,7 @@ def test_plan_fleet_directive_go_upgrade_needed(
     assert changes[0].to == "1.25"
 
 
-def test_plan_fleet_directive_already_current(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
+def test_plan_fleet_directive_already_current(tmp_path: Path, make_workspace, make_proc) -> None:
     """Module already at target → no change emitted."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
@@ -394,9 +386,7 @@ def test_plan_fleet_toolchain_no_existing_directive(
     assert changes[0].from_ver == "(none)"
 
 
-def test_plan_fleet_directive_both_vars(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
+def test_plan_fleet_directive_both_vars(tmp_path: Path, make_workspace, make_proc) -> None:
     """Both REPO_OPS_GO_DIRECTIVE and REPO_OPS_GO_TOOLCHAIN set → two changes."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
@@ -404,9 +394,7 @@ def test_plan_fleet_directive_both_vars(
         return make_proc(stdout=_gomod_json("1.22", toolchain="1.22.0"))
 
     with (
-        patch.dict(
-            "os.environ", {GO_DIRECTIVE_ENV: "1.25", GO_TOOLCHAIN_ENV: "1.25.10"}
-        ),
+        patch.dict("os.environ", {GO_DIRECTIVE_ENV: "1.25", GO_TOOLCHAIN_ENV: "1.25.10"}),
         patch("repo_ops_go.go.run", side_effect=fake_run),
     ):
         changes = _plan_fleet_directive_changes(ws)
@@ -421,9 +409,7 @@ def test_plan_fleet_directive_both_vars(
 # ---------------------------------------------------------------------------
 
 
-def test_apply_fleet_directive_runs_mod_edit_go(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
+def test_apply_fleet_directive_runs_mod_edit_go(tmp_path: Path, make_workspace, make_proc) -> None:
     """REPO_OPS_GO_DIRECTIVE triggers go mod edit -go=<ver> + go mod tidy."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     calls_recorded: list[list[str]] = []

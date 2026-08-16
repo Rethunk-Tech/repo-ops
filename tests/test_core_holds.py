@@ -151,9 +151,7 @@ def test_resolve_hold_ecosystem_filter() -> None:
 
 
 def test_resolve_hold_workspace_glob_scoping() -> None:
-    rules = [
-        HoldRule(package="typescript", max_version="7", workspace="packages/modern")
-    ]
+    rules = [HoldRule(package="typescript", max_version="7", workspace="packages/modern")]
     assert (
         resolve_hold(
             rules,

@@ -61,9 +61,7 @@ def test_latest_exact_style_targets_highest_exact(tmp_path: Path) -> None:
     wf = _write_workflow(tmp_path, "v4")
     tags_proc = _make_tags_proc("v4", "v6", "v6.0.1", "v6.1.0")
 
-    bumps, _ = _scan(
-        tmp_path, tags_proc, apply=True, upgrade_mode="latest", tag_style="exact"
-    )
+    bumps, _ = _scan(tmp_path, tags_proc, apply=True, upgrade_mode="latest", tag_style="exact")
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert checkout[0].latest == "v6.1.0"

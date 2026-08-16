@@ -36,9 +36,7 @@ def _write_global_hold(tmp_path: Path, **overrides) -> None:
     (cfg_dir / "config.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _dockerfile(
-    tmp_path, ref: str = "1.0.0", image: str = "docker.io/library/node"
-) -> object:
+def _dockerfile(tmp_path, ref: str = "1.0.0", image: str = "docker.io/library/node") -> object:
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
         f"FROM {image}:{ref}\n",
@@ -52,9 +50,7 @@ def test_check_container_surfaces_clamp_when_upstream_latest_exceeds_ceiling(
     make_workspace,
 ) -> None:
     _dockerfile(tmp_path, ref="1.5.0")
-    ws = make_workspace(
-        tmp_path, ecosystem="container", manager="container", label="repo"
-    )
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
     _write_global_hold(tmp_path)
 
     with patch.object(
@@ -75,9 +71,7 @@ def test_check_container_matches_fully_qualified_hold_for_short_image(
     make_workspace,
 ) -> None:
     _dockerfile(tmp_path, ref="1.5.0", image="node")
-    ws = make_workspace(
-        tmp_path, ecosystem="container", manager="container", label="repo"
-    )
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
     _write_global_hold(tmp_path)
 
     with patch.object(
@@ -98,9 +92,7 @@ def test_check_container_filters_digest_refresh_above_ceiling(
 ) -> None:
     digest = "a" * 64
     _dockerfile(tmp_path, ref=f"1.5.0@sha256:{digest}")
-    ws = make_workspace(
-        tmp_path, ecosystem="container", manager="container", label="repo"
-    )
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
     monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
     _write_global_hold(tmp_path)
 
@@ -118,9 +110,7 @@ def test_apply_container_clamps_tag_and_digest_to_ceiling(
     old_digest = "a" * 64
     new_digest = f"sha256:{'b' * 64}"
     dockerfile = _dockerfile(tmp_path, ref=f"1.5.0@sha256:{old_digest}")
-    ws = make_workspace(
-        tmp_path, ecosystem="container", manager="container", label="repo"
-    )
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
     monkeypatch.delenv("REPO_OPS_CONTAINER_REFRESH_SHA", raising=False)
     _write_global_hold(tmp_path)
 
@@ -143,13 +133,9 @@ def test_apply_container_clamps_tag_and_digest_to_ceiling(
     )
 
 
-def test_apply_container_raises_when_no_tag_satisfies_ceiling(
-    tmp_path, make_workspace
-) -> None:
+def test_apply_container_raises_when_no_tag_satisfies_ceiling(tmp_path, make_workspace) -> None:
     _dockerfile(tmp_path, ref="1.5.0")
-    ws = make_workspace(
-        tmp_path, ecosystem="container", manager="container", label="repo"
-    )
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
     _write_global_hold(tmp_path)
 
     with (
@@ -178,9 +164,7 @@ def test_apply_container_ignores_expired_hold_without_rewriting_config(
         encoding="utf-8",
     )
     original_hold_config = hold_config.read_bytes()
-    ws = make_workspace(
-        tmp_path, ecosystem="container", manager="container", label="repo"
-    )
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
 
     with patch.object(
         container,
@@ -189,7 +173,5 @@ def test_apply_container_ignores_expired_hold_without_rewriting_config(
     ):
         container.apply_container(ws)
 
-    assert dockerfile.read_text(encoding="utf-8") == (
-        "FROM docker.io/library/node:1.5.0\n"
-    )
+    assert dockerfile.read_text(encoding="utf-8") == ("FROM docker.io/library/node:1.5.0\n")
     assert hold_config.read_bytes() == original_hold_config

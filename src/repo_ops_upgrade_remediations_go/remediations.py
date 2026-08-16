@@ -39,9 +39,7 @@ from repo_ops_upgrade_remediations_core.remediations import (
 )
 
 # Directories that should never be scanned for //go:generate directives.
-_SKIP_DIRS: frozenset[str] = frozenset(
-    {"vendor", ".git", "node_modules", "testdata", "_vendor"}
-)
+_SKIP_DIRS: frozenset[str] = frozenset({"vendor", ".git", "node_modules", "testdata", "_vendor"})
 
 
 def _has_go_mod(path: Path) -> bool:
@@ -103,9 +101,7 @@ _gofmt_hook = make_fmt_hook(
     fail_label="gofmt",
     no_changes_apply_detail="gofmt: no changed .go source files (ok)",
     detailed_report=True,
-    no_changes_plan_detail=(
-        "REMEDIATE gofmt: no changed .go source files (would skip formatting)"
-    ),
+    no_changes_plan_detail=("REMEDIATE gofmt: no changed .go source files (would skip formatting)"),
 )
 detect_gofmt = _gofmt_hook.detect
 report_gofmt = _gofmt_hook.report
@@ -140,9 +136,7 @@ def detect_go_generate(ws: Workspace, ctx: dict[str, Any]) -> bool:
 
 
 def report_go_generate(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
-    return [
-        "REMEDIATE go_generate: would run go generate ./... (refresh generated code)"
-    ]
+    return ["REMEDIATE go_generate: would run go generate ./... (refresh generated code)"]
 
 
 def apply_go_generate(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
@@ -158,9 +152,7 @@ def apply_go_generate(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
 
 REMEDIATIONS: list[RemediationHook] = [
     _gofmt_hook,
-    RemediationHook(
-        "go_generate", detect_go_generate, report_go_generate, apply_go_generate
-    ),
+    RemediationHook("go_generate", detect_go_generate, report_go_generate, apply_go_generate),
 ]
 
 # Register all Go hooks in the global cross-ecosystem registry on import.

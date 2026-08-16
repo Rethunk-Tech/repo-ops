@@ -141,9 +141,7 @@ def _yaml_loader() -> YAML:
     return yaml
 
 
-def parse_workflow_uses(
-    path: Path, *, workflow_rel: str | None = None
-) -> list[UsesPin]:
+def parse_workflow_uses(path: Path, *, workflow_rel: str | None = None) -> list[UsesPin]:
     """Load workflow YAML and collect every ``uses:`` scalar (steps, jobs, etc.)."""
     rel = workflow_rel if workflow_rel is not None else path.name
     try:
@@ -192,18 +190,14 @@ def _apply_pin_to_line(line: str, action: str, old_pin: str, new_pin: str) -> st
     escaped_pin = re.escape(old_pin)
     # After the pin must come a non-word / non-dot character (whitespace, #,
     # newline) or end-of-string — prevents partial match of "v3" inside "v3.19.0".
-    pattern = re.compile(
-        r"(?<=" + escaped_action + r"@)" + escaped_pin + r"(?=[^\w.]|\Z)"
-    )
+    pattern = re.compile(r"(?<=" + escaped_action + r"@)" + escaped_pin + r"(?=[^\w.]|\Z)")
     new_line, count = pattern.subn(new_pin, line)
     if count:
         return new_line
     return line
 
 
-def _apply_comment_rewrite_to_line(
-    line: str, old_comment: str, new_comment: str
-) -> str:
+def _apply_comment_rewrite_to_line(line: str, old_comment: str, new_comment: str) -> str:
     """Return *line* with the first occurrence of *old_comment* replaced by *new_comment*.
 
     Used for cross-major SHA refreshes (#138): rewrites the trailing ``# vN``
@@ -281,9 +275,7 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
                 new_line = _apply_pin_to_line(lines[idx], action, old_pin, new_pin)
                 if repl.comment_rewrite is not None:
                     old_cmt, new_cmt = repl.comment_rewrite
-                    new_line = _apply_comment_rewrite_to_line(
-                        new_line, old_cmt, new_cmt
-                    )
+                    new_line = _apply_comment_rewrite_to_line(new_line, old_cmt, new_cmt)
                 if repl.set_comment is not None:
                     new_line = _apply_comment_to_line(new_line, repl.set_comment)
                 if new_line != lines[idx]:
@@ -295,9 +287,7 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
                 new_line = _apply_pin_to_line(line, action, old_pin, new_pin)
                 if repl.comment_rewrite is not None:
                     old_cmt, new_cmt = repl.comment_rewrite
-                    new_line = _apply_comment_rewrite_to_line(
-                        new_line, old_cmt, new_cmt
-                    )
+                    new_line = _apply_comment_rewrite_to_line(new_line, old_cmt, new_cmt)
                 if repl.set_comment is not None and new_line != line:
                     # Only when the pin substitution actually matched this
                     # line — set_comment is not content-scoped like

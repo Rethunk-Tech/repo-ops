@@ -13,9 +13,7 @@ from repo_ops_models import Workspace, WorkspaceResult
 from repo_ops_upgrade.orchestration import _emit_progress, _format_elapsed
 
 
-def _make_ws(
-    tmp_path: Path, *, label: str = "my-repo", manager: str = "npm"
-) -> Workspace:
+def _make_ws(tmp_path: Path, *, label: str = "my-repo", manager: str = "npm") -> Workspace:
     return Workspace(
         path=tmp_path,
         ecosystem="node",

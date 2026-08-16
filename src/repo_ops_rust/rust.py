@@ -85,15 +85,11 @@ def _cargo_registry_versions(crate_name: str) -> tuple[str, ...]:
                 )
             document = json.loads(response.read().decode("utf-8"))
         except (OSError, UnicodeError, ValueError) as exc:
-            raise RuntimeError(
-                f"registry lookup failed for {crate_name}: {exc}"
-            ) from exc
+            raise RuntimeError(f"registry lookup failed for {crate_name}: {exc}") from exc
         finally:
             connection.close()
         if not isinstance(document, dict):
-            raise RuntimeError(
-                f"registry lookup returned invalid data for {crate_name}"
-            )
+            raise RuntimeError(f"registry lookup returned invalid data for {crate_name}")
 
         before_count = len(versions)
         entries = document.get("versions")
@@ -113,9 +109,7 @@ def _cargo_registry_versions(crate_name: str) -> tuple[str, ...]:
         if next_page in (None, "") or next_page in seen_queries:
             break
         if not isinstance(next_page, str) or not next_page.startswith("?"):
-            raise RuntimeError(
-                f"registry lookup returned invalid pagination for {crate_name}"
-            )
+            raise RuntimeError(f"registry lookup returned invalid pagination for {crate_name}")
         query = next_page
     return tuple(versions)
 
@@ -201,9 +195,7 @@ def _filter_held_rust_changes(ws: Workspace, changes: list[Change]) -> list[Chan
             kept.append(Change(change.name, change.from_ver, audit_override))
             continue
         rule = _resolve_crate_hold(ws, change.name)
-        if rule is not None and not version_satisfies_ceiling(
-            change.to, rule.max_version
-        ):
+        if rule is not None and not version_satisfies_ceiling(change.to, rule.max_version):
             continue
         kept.append(change)
     return kept
@@ -263,13 +255,10 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
                 )
         landed = _cargo_resolved_versions(ws, timeout=timeout).get(crate_name, ())
         if audit_override is not None:
-            still_invalid = not landed or any(
-                version != audit_override for version in landed
-            )
+            still_invalid = not landed or any(version != audit_override for version in landed)
         elif rule is not None:
             still_invalid = not landed or any(
-                not version_satisfies_ceiling(version, rule.max_version)
-                for version in landed
+                not version_satisfies_ceiling(version, rule.max_version) for version in landed
             )
         else:
             still_invalid = True
@@ -332,12 +321,9 @@ def _cargo_latest_direct_changes_cached(
     dependencies = _cargo_manifest_dependencies(manifest)
     changes: list[Change] = []
     for crate_name, entries in sorted(dependencies.items()):
-        latest = max(
-            _cargo_registry_versions(crate_name), key=semver_tuple, default=None
-        )
+        latest = max(_cargo_registry_versions(crate_name), key=semver_tuple, default=None)
         if latest is None or all(
-            _cargo_requirement_satisfied(latest, requirement)
-            for _, requirement in entries
+            _cargo_requirement_satisfied(latest, requirement) for _, requirement in entries
         ):
             continue
         changes.append(Change(crate_name, entries[0][1], latest))
@@ -440,7 +426,9 @@ def _replace_cargo_requirement(
                 value,
             )
             if version and version.group(3) == old_requirement:
-                replacement = f"{version.group(1)}{version.group(2)}{new_requirement}{version.group(4)}"
+                replacement = (
+                    f"{version.group(1)}{version.group(2)}{new_requirement}{version.group(4)}"
+                )
                 lines[index] = (
                     line[: match.start(4)]
                     + value[: version.start()]
@@ -462,9 +450,7 @@ def _apply_cargo_targeted_bumps(
     remaining: list[Change] = []
     for candidate in candidates:
         rule = _resolve_crate_hold(ws, candidate.name)
-        if rule is not None and not version_satisfies_ceiling(
-            candidate.to, rule.max_version
-        ):
+        if rule is not None and not version_satisfies_ceiling(candidate.to, rule.max_version):
             remaining.append(candidate)
             continue
         manifest_snapshot = snapshot_file(manifest)
@@ -502,9 +488,7 @@ def _apply_cargo_targeted_bumps(
 def check_rust(
     ws: Workspace,
 ) -> list[Change] | tuple[list[Change], list[Change]]:
-    proc = run(
-        ["cargo", "update", "--dry-run"], ws.path, timeout=resolve_timeout_check()
-    )
+    proc = run(["cargo", "update", "--dry-run"], ws.path, timeout=resolve_timeout_check())
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "cargo update --dry-run failed")
     changes: list[Change] = []

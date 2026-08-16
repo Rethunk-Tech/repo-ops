@@ -25,9 +25,7 @@ def _seed(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text(
         json.dumps({"dependencies": {"react": "catalog:"}}), encoding="utf-8"
     )
-    (tmp_path / "pnpm-lock.yaml").write_text(
-        "lockfileVersion: '6.0'\n", encoding="utf-8"
-    )
+    (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: '6.0'\n", encoding="utf-8")
     (tmp_path / "pnpm-workspace.yaml").write_text(
         """\
 packages:
@@ -77,9 +75,7 @@ catalogs:
 """,
         encoding="utf-8",
     )
-    outdated = json.dumps(
-        {"react": {"current": "18.2.0", "wanted": "18.3.0", "latest": "19.0.0"}}
-    )
+    outdated = json.dumps({"react": {"current": "18.2.0", "wanted": "18.3.0", "latest": "19.0.0"}})
 
     def fake_run(cmd, cwd, timeout=600, env=None):
         return subprocess.CompletedProcess(cmd, 1, stdout=outdated, stderr="")
@@ -93,9 +89,7 @@ catalogs:
     assert behind == [Change("react", "18.2.0", "19.0.0")]
 
 
-def test_epoch_catalog_pin_is_not_treated_as_protocol(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_epoch_catalog_pin_is_not_treated_as_protocol(tmp_path: Path, make_workspace) -> None:
     (tmp_path / "pnpm-workspace.yaml").write_text(
         """\
 catalog:
@@ -116,9 +110,7 @@ def test_catalog_drift_is_behind_latest_without_targeted_bump(
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "0")
     monkeypatch.setenv("REPO_OPS_PNPM_UPDATE_LATEST", "0")
-    outdated = json.dumps(
-        {"react": {"current": "18.2.0", "wanted": "18.3.0", "latest": "19.0.0"}}
-    )
+    outdated = json.dumps({"react": {"current": "18.2.0", "wanted": "18.3.0", "latest": "19.0.0"}})
 
     def fake_run(cmd, cwd, timeout=600, env=None):
         return subprocess.CompletedProcess(cmd, 1, stdout=outdated, stderr="")
@@ -132,13 +124,9 @@ def test_catalog_drift_is_behind_latest_without_targeted_bump(
     assert behind == [Change("react", "18.2.0", "19.0.0")]
 
 
-def test_catalog_drift_does_not_double_count_in_range_bump(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_catalog_drift_does_not_double_count_in_range_bump(tmp_path: Path, make_workspace) -> None:
     _seed(tmp_path)
-    outdated = json.dumps(
-        {"react": {"current": "18.2.0", "wanted": "18.3.0", "latest": "18.3.0"}}
-    )
+    outdated = json.dumps({"react": {"current": "18.2.0", "wanted": "18.3.0", "latest": "18.3.0"}})
 
     def fake_run(cmd, cwd, timeout=600, env=None):
         return subprocess.CompletedProcess(cmd, 1, stdout=outdated, stderr="")
@@ -286,9 +274,7 @@ def test_targeted_catalog_bump_updates_default_and_named_tables(
     assert applied == [Change("react", "^18.2.0", "19.0.0")]
     assert behind == []
     assert commands == [["pnpm", "install"]]
-    assert (tmp_path / "pnpm-workspace.yaml").read_text(encoding="utf-8").count(
-        "^19.0.0"
-    ) == 2
+    assert (tmp_path / "pnpm-workspace.yaml").read_text(encoding="utf-8").count("^19.0.0") == 2
 
 
 def test_targeted_catalog_bump_restores_workspace_on_install_failure(
@@ -327,9 +313,7 @@ def test_targeted_catalog_bump_restores_ghost_install(
     lock_before = (tmp_path / "pnpm-lock.yaml").read_bytes()
     node_modules = tmp_path / "node_modules" / "react"
     node_modules.mkdir(parents=True)
-    (node_modules / "package.json").write_text(
-        json.dumps({"version": "18.2.0"}), encoding="utf-8"
-    )
+    (node_modules / "package.json").write_text(json.dumps({"version": "18.2.0"}), encoding="utf-8")
 
     def fake_run(cmd, cwd, timeout=600, env=None):
         (tmp_path / "pnpm-lock.yaml").write_text("mutated\n", encoding="utf-8")
@@ -381,14 +365,10 @@ def test_targeted_catalog_bump_applies_hold_ceiling_to_all_tables(
 
     assert applied == [Change("react", "^5.2.0", "6.0.0")]
     assert behind == []
-    assert (tmp_path / "pnpm-workspace.yaml").read_text(encoding="utf-8").count(
-        "<=6"
-    ) == 2
+    assert (tmp_path / "pnpm-workspace.yaml").read_text(encoding="utf-8").count("<=6") == 2
 
 
-def test_apply_pnpm_targets_catalog_drift(
-    tmp_path: Path, monkeypatch, make_workspace
-) -> None:
+def test_apply_pnpm_targets_catalog_drift(tmp_path: Path, monkeypatch, make_workspace) -> None:
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
@@ -405,9 +385,7 @@ def test_apply_pnpm_targets_catalog_drift(
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
-        patch(
-            "repo_ops_js_pnpm.pnpm._pnpm_outdated", return_value=([], [catalog_change])
-        ),
+        patch("repo_ops_js_pnpm.pnpm._pnpm_outdated", return_value=([], [catalog_change])),
         patch("repo_ops_js_pnpm.pnpm.run", side_effect=fake_run),
     ):
         behind = apply_pnpm(ws)

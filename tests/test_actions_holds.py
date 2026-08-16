@@ -52,14 +52,10 @@ def _write_global_hold(tmp_path: Path, **overrides) -> None:
 
 def _tag_info(tags: list[str], sha_to_tags: dict[str, list[str]] | None = None) -> dict:
     majors = {
-        int(match.group(1))
-        for tag in tags
-        if (match := re.fullmatch(r"v(\d+)", tag)) is not None
+        int(match.group(1)) for tag in tags if (match := re.fullmatch(r"v(\d+)", tag)) is not None
     }
     all_majors = {
-        int(match.group(1))
-        for tag in tags
-        if (match := re.match(r"^v(\d+)", tag)) is not None
+        int(match.group(1)) for tag in tags if (match := re.match(r"^v(\d+)", tag)) is not None
     }
     return {
         "bare_majors": majors,

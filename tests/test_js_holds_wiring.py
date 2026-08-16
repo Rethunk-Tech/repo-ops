@@ -117,16 +117,12 @@ def _seed_npm(tmp_path: Path) -> None:
 
 def _seed_pnpm(tmp_path: Path) -> None:
     _seed_bun(tmp_path)
-    (tmp_path / "pnpm-lock.yaml").write_text(
-        "lockfileVersion: '6.0'\n", encoding="utf-8"
-    )
+    (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: '6.0'\n", encoding="utf-8")
 
 
 def _seed_yarn(tmp_path: Path) -> None:
     _seed_bun(tmp_path)
-    (tmp_path / "yarn.lock").write_text(
-        _lock_with_typescript("6.5.0"), encoding="utf-8"
-    )
+    (tmp_path / "yarn.lock").write_text(_lock_with_typescript("6.5.0"), encoding="utf-8")
 
 
 class BumpCase(NamedTuple):
@@ -289,9 +285,7 @@ def test_check_does_not_promote_held_package_past_ceiling(
 ) -> None:
     _name, run_check = case
     with patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)):
-        changes, behind = run_check(
-            tmp_path, monkeypatch, make_workspace, make_proc, "7.0.0"
-        )
+        changes, behind = run_check(tmp_path, monkeypatch, make_workspace, make_proc, "7.0.0")
     assert "typescript" not in {c.name for c in changes}
     assert behind == [Change("typescript", "6.5.0", "7.0.0")]
 
@@ -303,9 +297,7 @@ def test_check_promotes_held_package_within_ceiling(
     """A target that stays within the ceiling is still promoted into changes."""
     _name, run_check = case
     with patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)):
-        changes, behind = run_check(
-            tmp_path, monkeypatch, make_workspace, make_proc, "6.9.0"
-        )
+        changes, behind = run_check(tmp_path, monkeypatch, make_workspace, make_proc, "6.9.0")
     assert "typescript" in {c.name for c in changes}
     assert behind == []
 
@@ -353,9 +345,7 @@ CLAMP_CASES = [
         None,
         f"{_module('yarn')}.corepack_prepare",
         apply_yarn,
-        lambda cmd: (
-            cmd[:2] == ["yarn", "up"] and len(cmd) > 2 and "typescript@" in cmd[2]
-        ),
+        lambda cmd: cmd[:2] == ["yarn", "up"] and len(cmd) > 2 and "typescript@" in cmd[2],
         "yarn.lock",
         _lock_with_typescript("6.5.0"),
     ),
@@ -370,9 +360,7 @@ def _seed_over_ceiling(tmp_path: Path, case: ClampCase) -> Path:
         (tmp_path / case.lock_name).write_text(case.lock_content, encoding="utf-8")
     nm_dir = tmp_path / "node_modules" / "typescript"
     nm_dir.mkdir(parents=True)
-    (nm_dir / "package.json").write_text(
-        json.dumps({"version": "7.2.0"}), encoding="utf-8"
-    )
+    (nm_dir / "package.json").write_text(json.dumps({"version": "7.2.0"}), encoding="utf-8")
     return nm_dir
 
 
@@ -402,9 +390,7 @@ def test_apply_clamps_package_already_past_ceiling(
 
     def _fake_run(cmd, cwd, timeout=None, env=None):
         if case.is_hold_install(list(cmd)):
-            (nm_dir / "package.json").write_text(
-                json.dumps({"version": "6.9.0"}), encoding="utf-8"
-            )
+            (nm_dir / "package.json").write_text(json.dumps({"version": "6.9.0"}), encoding="utf-8")
         return make_proc()
 
     with _apply_patches(case, _fake_run):
@@ -450,9 +436,7 @@ def _seed_pin_flat(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text(pkg, encoding="utf-8")
     nm_dir = tmp_path / "node_modules" / "is-odd"
     nm_dir.mkdir(parents=True)
-    (nm_dir / "package.json").write_text(
-        json.dumps({"version": "0.1.2"}), encoding="utf-8"
-    )
+    (nm_dir / "package.json").write_text(json.dumps({"version": "0.1.2"}), encoding="utf-8")
 
 
 def _seed_pin_npm(tmp_path: Path) -> None:
@@ -468,14 +452,10 @@ def _seed_pin_pnpm(tmp_path: Path) -> None:
         }
     )
     (tmp_path / "package.json").write_text(pkg, encoding="utf-8")
-    (tmp_path / "pnpm-lock.yaml").write_text(
-        "lockfileVersion: '6.0'\n", encoding="utf-8"
-    )
+    (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: '6.0'\n", encoding="utf-8")
     nm_dir = tmp_path / "node_modules" / "is-odd"
     nm_dir.mkdir(parents=True)
-    (nm_dir / "package.json").write_text(
-        json.dumps({"version": "0.1.2"}), encoding="utf-8"
-    )
+    (nm_dir / "package.json").write_text(json.dumps({"version": "0.1.2"}), encoding="utf-8")
 
 
 def _lock_with_is_odd(version: str) -> str:
@@ -505,9 +485,7 @@ def _mark_landed_nm(cmd: list[str], tmp_path: Path) -> None:
 
 def _mark_landed_yarn_lock(cmd: list[str], tmp_path: Path) -> None:
     if cmd[:2] == ["yarn", "up"]:
-        (tmp_path / "yarn.lock").write_text(
-            _lock_with_is_odd("1.0.0"), encoding="utf-8"
-        )
+        (tmp_path / "yarn.lock").write_text(_lock_with_is_odd("1.0.0"), encoding="utf-8")
 
 
 PIN_CASES = [
@@ -570,9 +548,7 @@ def test_targeted_bump_releases_unheld_pin(
         patch(_GLOBAL_HOLDS_CACHE, return_value=()),
         patch(_run_patch(case.name), side_effect=_fake_run),
     ):
-        applied, behind = case.call_bump(
-            tmp_path, ws, [Change("is-odd", "0.1.2", "1.0.0")]
-        )
+        applied, behind = case.call_bump(tmp_path, ws, [Change("is-odd", "0.1.2", "1.0.0")])
 
     assert not behind
     assert applied == [Change("is-odd", "0.1.2", "1.0.0")]
@@ -604,9 +580,7 @@ def test_targeted_bump_keeps_held_pin(
         )
         stack.enter_context(patch(_run_patch(case.name), side_effect=_fake_run))
         release_mock = (
-            stack.enter_context(patch(case.release_pin_patch))
-            if case.release_pin_patch
-            else None
+            stack.enter_context(patch(case.release_pin_patch)) if case.release_pin_patch else None
         )
         case.call_bump(tmp_path, ws, [Change("is-odd", "0.1.2", "1.0.0")])
 
@@ -698,15 +672,11 @@ def test_check_yarn_snapshot_does_not_promote_held_package_past_ceiling(
     def _fake_run(cmd, cwd, timeout=None, env=None):
         if cmd[:3] == ["yarn", "npm", "info"]:
             return make_proc(
-                stdout=json.dumps(
-                    {"version": "7.0.0", "dist-tags": {"latest": "7.0.0"}}
-                )
+                stdout=json.dumps({"version": "7.0.0", "dist-tags": {"latest": "7.0.0"}})
             )
         if cmd[:2] == ["yarn", "up"] and len(cmd) > 2 and "latest" in cmd[2]:
             # Would only be reached if the hold were NOT applied.
-            (tmp_path / "yarn.lock").write_text(
-                _lock_with_typescript("7.0.0"), encoding="utf-8"
-            )
+            (tmp_path / "yarn.lock").write_text(_lock_with_typescript("7.0.0"), encoding="utf-8")
         # Hold-ceiling install or `yarn install`: 6.5.0 already satisfies <=6
         # and nothing newer is under the ceiling, so the lockfile is unchanged.
         return make_proc()

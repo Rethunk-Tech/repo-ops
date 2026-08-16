@@ -94,9 +94,7 @@ def test_govulncheck_produces_parseable_result(tmp_path: Path) -> None:
 
     if proc.returncode != 0:
         combined = (proc.stdout + proc.stderr).lower()
-        if any(
-            kw in combined for kw in ("dial", "connect", "network", "timeout", "i/o")
-        ):
+        if any(kw in combined for kw in ("dial", "connect", "network", "timeout", "i/o")):
             pytest.skip(f"go mod download failed (network): {proc.stderr[:200]}")
         # If it failed for a non-network reason, fail the test with the message
         pytest.fail(f"go mod download failed: {proc.stderr[:400]}")
@@ -119,9 +117,7 @@ def test_govulncheck_produces_parseable_result(tmp_path: Path) -> None:
     if result.status == "vulns":
         # All govulncheck findings go into unknown bucket
         assert result.counts.unknown >= 0
-        assert result.counts.high == 0, (
-            "govulncheck findings must not land in 'high' bucket"
-        )
+        assert result.counts.high == 0, "govulncheck findings must not land in 'high' bucket"
         assert result.counts.critical == 0, (
             "govulncheck findings must not land in 'critical' bucket"
         )

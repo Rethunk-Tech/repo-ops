@@ -161,9 +161,7 @@ def _make_item(
     )
 
 
-def _mock_upgrade_result(
-    status: str = "ok", changes: int = 0, error: str = ""
-) -> MagicMock:
+def _mock_upgrade_result(status: str = "ok", changes: int = 0, error: str = "") -> MagicMock:
     """Build a mock WorkspaceResult (upgrade model) for process_workspace."""
     result = MagicMock()
     result.status = status
@@ -409,9 +407,7 @@ def test_fix_called_when_flag_passed_and_remediations_exist(
         patch("repo_ops_core.git.repo_label", return_value="ws"),
         patch("shutil.which", return_value="/usr/bin/uv"),
         patch("repo_ops_audit.audit._run", side_effect=_mock_run),
-        patch(
-            "repo_ops_audit.audit.apply_remediations", return_value=mock_outcomes
-        ) as mock_apply,
+        patch("repo_ops_audit.audit.apply_remediations", return_value=mock_outcomes) as mock_apply,
     ):
         main(["--fix", "--fail-on", "never", str(tmp_path)])
 

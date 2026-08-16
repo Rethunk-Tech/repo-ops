@@ -18,9 +18,7 @@ from repo_ops_js_yarn.yarn import (
 )
 from repo_ops_models import Change, Workspace
 
-_PKG_JSON = json.dumps(
-    {"dependencies": {"@sentry/nextjs": "^10.55.0", "next": "^16.2.7"}}
-)
+_PKG_JSON = json.dumps({"dependencies": {"@sentry/nextjs": "^10.55.0", "next": "^16.2.7"}})
 # Berry yarn.lock: @sentry/nextjs resolved at 10.55.0 (one minor behind), next current.
 _YARN_LOCK = (
     "__metadata:\n"
@@ -49,16 +47,12 @@ def _info_run(cmd: list[str], cwd: object, timeout: object = None) -> MagicMock:
     if cmd[:3] == ["yarn", "npm", "info"]:
         name = cmd[3]
         ver = _LATEST.get(name)
-        stdout = (
-            json.dumps({"version": ver, "dist-tags": {"latest": ver}}) if ver else ""
-        )
+        stdout = json.dumps({"version": ver, "dist-tags": {"latest": ver}}) if ver else ""
         return MagicMock(returncode=0, stdout=stdout, stderr="")
     return MagicMock(returncode=0, stdout="", stderr="")
 
 
-def test_behind_after_up_reports_packages_left_behind(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_behind_after_up_reports_packages_left_behind(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_YARN_UPDATE_LATEST", "1")
     with patch("repo_ops_js_yarn.yarn.run", side_effect=_info_run):
@@ -66,9 +60,7 @@ def test_behind_after_up_reports_packages_left_behind(
     assert behind == [Change("@sentry/nextjs", "10.55.0", "10.56.0")]
 
 
-def test_behind_after_up_disabled_in_conservative_mode(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_behind_after_up_disabled_in_conservative_mode(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path)
     monkeypatch.setenv("REPO_OPS_YARN_UPDATE_LATEST", "0")
     run_mock = MagicMock()
@@ -121,9 +113,7 @@ def _lock_with_sentry(version: str) -> str:
     )
 
 
-def _targeted_run(
-    tmp_path: Path, *, up_rc: int = 0, install_rc: int = 0, landed: str | None
-):
+def _targeted_run(tmp_path: Path, *, up_rc: int = 0, install_rc: int = 0, landed: str | None):
     """Fake `run`: a successful `yarn up <pkg>@latest` rewrites the lock to `landed`."""
     lock = tmp_path / "yarn.lock"
 
@@ -207,9 +197,7 @@ def test_apply_yarn_targeted_bump_clears_behind(tmp_path: Path, monkeypatch) -> 
             return _info_run(cmd, cwd, timeout)
         # ...then the targeted `yarn up @latest` lands 10.56.0.
         if cmd[:2] == ["yarn", "up"] and len(cmd) > 2 and cmd[2].endswith("@latest"):
-            (tmp_path / "yarn.lock").write_text(
-                _lock_with_sentry("10.56.0"), encoding="utf-8"
-            )
+            (tmp_path / "yarn.lock").write_text(_lock_with_sentry("10.56.0"), encoding="utf-8")
             return MagicMock(returncode=0, stdout="", stderr="")
         return MagicMock(returncode=0, stdout="", stderr="")
 

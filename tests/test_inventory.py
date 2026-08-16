@@ -67,9 +67,7 @@ dependencies = [
 
 
 def test_count_pdm_lock_edges(tmp_path: Path):
-    (tmp_path / "pdm.lock").write_text(
-        '[[package]]\nname = "requests"\nversion = "2.32.0"\n'
-    )
+    (tmp_path / "pdm.lock").write_text('[[package]]\nname = "requests"\nversion = "2.32.0"\n')
     _direct, versions, _tag = count_python(tmp_path)
     assert versions == {"requests@2.32.0"}
     assert count_dep_edges(tmp_path) == len(versions)
@@ -94,9 +92,7 @@ def test_count_python_pinned_requirements_versions(tmp_path: Path):
 
 
 def test_count_pyproject_edges_without_lock(tmp_path: Path):
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "x"\ndependencies = ["a", "b"]\n'
-    )
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\ndependencies = ["a", "b"]\n')
     assert count_dep_edges(tmp_path) == 2
 
 
@@ -249,17 +245,13 @@ def test_count_node_lockfile_precedence(tmp_path: Path) -> None:
     assert "b@2.0.1" in versions
 
 
-def test_count_node_bun_lockb_dump_success(
-    tmp_path: Path, monkeypatch, make_proc
-) -> None:
+def test_count_node_bun_lockb_dump_success(tmp_path: Path, monkeypatch, make_proc) -> None:
     """bun.lockb: successful bun dump → versions via yarn-compatible stdout."""
     import json
 
     from repo_ops_inventory import counting
 
-    (tmp_path / "package.json").write_text(
-        json.dumps({"dependencies": {"left-pad": "1.3.0"}})
-    )
+    (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"left-pad": "1.3.0"}}))
     (tmp_path / "bun.lockb").write_bytes(b"BUN\x00fake-binary")
 
     yarn_dump = 'left-pad@1.3.0:\n  version "1.3.0"\n'
@@ -275,17 +267,13 @@ def test_count_node_bun_lockb_dump_success(
     assert "left-pad@1.3.0" in versions
 
 
-def test_count_node_bun_lockb_unsupported_when_bun_missing(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_count_node_bun_lockb_unsupported_when_bun_missing(tmp_path: Path, monkeypatch) -> None:
     """bun.lockb without bun → explicit bun(bin:unsupported), not silent zeros kind."""
     import json
 
     from repo_ops_inventory import counting
 
-    (tmp_path / "package.json").write_text(
-        json.dumps({"dependencies": {"left-pad": "1.3.0"}})
-    )
+    (tmp_path / "package.json").write_text(json.dumps({"dependencies": {"left-pad": "1.3.0"}}))
     (tmp_path / "bun.lockb").write_bytes(b"BUN\x00fake")
 
     def boom(*_a, **_k):
@@ -321,9 +309,7 @@ def test_count_node_bun_lockb_unsupported_on_invalid_dump(
 # ---------- eco filter recomputes metrics (F080) ----------
 
 
-def test_filter_recomputes_metrics_for_matching_eco_only(
-    tmp_path: Path, capsys
-) -> None:
+def test_filter_recomputes_metrics_for_matching_eco_only(tmp_path: Path, capsys) -> None:
     """A node+precommit project filtered to precommit must drop node counts."""
     import json
 
@@ -374,9 +360,7 @@ def test_inventory_json_includes_manifests_and_summary(tmp_path: Path, capsys) -
 
     from repo_ops_inventory.scan import main as inventory_main
 
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "x"\ndependencies = ["a"]\n'
-    )
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\ndependencies = ["a"]\n')
     rc = inventory_main([str(tmp_path), "--flat", "--json"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
@@ -408,9 +392,7 @@ def test_inventory_json_out_writes_path_only(tmp_path: Path, capsys) -> None:
 
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
     out_file = tmp_path / "inv.json"
-    rc = inventory_main(
-        [str(tmp_path), "--flat", "--json", "--json-out", str(out_file)]
-    )
+    rc = inventory_main([str(tmp_path), "--flat", "--json", "--json-out", str(out_file)])
     assert rc == 0
     assert capsys.readouterr().out.strip() == str(out_file.resolve())
     payload = json.loads(out_file.read_text(encoding="utf-8"))
@@ -608,9 +590,7 @@ def test_count_python_pipfile_pdm_requirements_in_and_uv_lock(
     (tmp_path / "requirements.in").write_text(
         "httpx\n\n# local-only note\n-r requirements-base.in\nrich>=13\n"
     )
-    (tmp_path / "uv.lock").write_text(
-        '[[package]]\nname = "httpx"\nversion = "0.28.1"\n'
-    )
+    (tmp_path / "uv.lock").write_text('[[package]]\nname = "httpx"\nversion = "0.28.1"\n')
 
     direct, versions, tag = count_python(tmp_path)
 
@@ -630,9 +610,7 @@ def test_count_python_pdm_and_pipenv_locks(tmp_path: Path) -> None:
     pdm = tmp_path / "pdm"
     pdm.mkdir()
     (pdm / "pyproject.toml").write_text('[project]\ndependencies = ["requests"]\n')
-    (pdm / "pdm.lock").write_text(
-        '[[package]]\nname = "requests"\nversion = "2.32.0"\n'
-    )
+    (pdm / "pdm.lock").write_text('[[package]]\nname = "requests"\nversion = "2.32.0"\n')
     d, v, tag = count_python(pdm)
     assert d >= 1
     assert "pdm" in tag
@@ -653,12 +631,7 @@ def test_count_deno_jsonc_preserves_url_with_slashes(tmp_path: Path) -> None:
     from repo_ops_inventory.counting import count_deno
 
     (tmp_path / "deno.jsonc").write_text(
-        "{\n"
-        "  // real comment\n"
-        '  "imports": {\n'
-        '    "x": "https://example.com/path//pkg"\n'
-        "  }\n"
-        "}\n"
+        '{\n  // real comment\n  "imports": {\n    "x": "https://example.com/path//pkg"\n  }\n}\n'
     )
     direct, _versions = count_deno(tmp_path)
     assert direct == 1

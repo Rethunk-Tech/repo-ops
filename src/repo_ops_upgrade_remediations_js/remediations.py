@@ -187,9 +187,7 @@ def report_playwright(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
 
 def apply_playwright(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     prefix = pm_exec_prefix(ws.manager)
-    proc = run(
-        [*prefix, "playwright", "install"], ws.path, timeout=resolve_timeout_apply()
-    )
+    proc = run([*prefix, "playwright", "install"], ws.path, timeout=resolve_timeout_apply())
     cmd = f"{ws.manager} exec playwright install"
     if proc.returncode == 0:
         return True, f"{cmd} (ok)"
@@ -298,9 +296,7 @@ REMEDIATIONS: list[RemediationHook] = [
         apply_biome,
         files=_biome_files,
     ),
-    RemediationHook(
-        "playwright_browsers", detect_playwright, report_playwright, apply_playwright
-    ),
+    RemediationHook("playwright_browsers", detect_playwright, report_playwright, apply_playwright),
     RemediationHook("codegen", detect_codegen, report_codegen, apply_codegen),
     RemediationHook(
         "package_manager_pin",

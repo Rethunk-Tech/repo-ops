@@ -63,8 +63,8 @@ _BUN_TARGETED_BUMP_ENV = "REPO_OPS_BUN_TARGETED_BUMP"
 # workspaces sequentially. Empty outside of audit --fix runs.
 _AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 
-set_bun_audit_version_overrides, clear_bun_audit_version_overrides = (
-    make_audit_override_api(_AUDIT_VERSION_OVERRIDES)
+set_bun_audit_version_overrides, clear_bun_audit_version_overrides = make_audit_override_api(
+    _AUDIT_VERSION_OVERRIDES
 )
 
 
@@ -210,9 +210,7 @@ def check_bun(ws: Workspace) -> tuple[list[Change], list[Change]]:
     that have a newer ``latest`` version available but are not actioned when
     ``REPO_OPS_BUN_UPDATE_LATEST`` is unset.
     """
-    proc_json = run(
-        ["bun", "outdated", "--json"], ws.path, timeout=resolve_timeout_check()
-    )
+    proc_json = run(["bun", "outdated", "--json"], ws.path, timeout=resolve_timeout_check())
     if proc_json.returncode in (0, 1) and proc_json.stdout.strip():
         try:
             data = json.loads(proc_json.stdout)
@@ -223,15 +221,11 @@ def check_bun(ws: Workspace) -> tuple[list[Change], list[Change]]:
 
     proc = run(["bun", "outdated"], ws.path, timeout=resolve_timeout_check())
     if proc.returncode not in (0, 1):
-        raise RuntimeError(
-            proc.stderr.strip() or proc.stdout.strip() or "bun outdated failed"
-        )
+        raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "bun outdated failed")
     return _changes_from_bun_text(proc.stdout, ws=ws)
 
 
-def targeted_bump_behind(
-    ws: Workspace, behind: list[Change]
-) -> tuple[list[Change], list[Change]]:
+def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Change], list[Change]]:
     """Per-package ``bun add <pkg>@<version>`` fallback for still-behind deps.
 
     Mirrors npm's ``targeted_bump_behind``: for each behind-latest direct dep we
@@ -282,9 +276,7 @@ def targeted_bump_behind(
     return applied, still_behind
 
 
-def _finalize_bun_apply(
-    ws: Workspace, changes: list[Change], behind: list[Change]
-) -> list[Change]:
+def _finalize_bun_apply(ws: Workspace, changes: list[Change], behind: list[Change]) -> list[Change]:
     """Shared tail for every ``apply_bun`` exit path (bare/targeted/audit-only).
 
     Runs the still-behind targeted bump, then the end-of-apply hold safety
@@ -295,9 +287,9 @@ def _finalize_bun_apply(
     covers those since they won't appear in ``changes``/``behind`` either).
     """
     applied, behind = targeted_bump_behind(ws, behind)
-    candidate_names = direct_dependency_names(
-        read_json_file(ws.path / "package.json") or {}
-    ) | {c.name for c in (*changes, *applied, *behind)}
+    candidate_names = direct_dependency_names(read_json_file(ws.path / "package.json") or {}) | {
+        c.name for c in (*changes, *applied, *behind)
+    }
     held = enforce_holds(
         ws,
         candidate_names,
@@ -337,9 +329,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
         # active hold ceiling, then the raw check_bun-derived target.
         held_rule = resolve_package_hold(ws, name)
         hold_spec = hold_version_spec(held_rule) if held_rule is not None else None
-        version = (
-            _AUDIT_VERSION_OVERRIDES.get(name) or hold_spec or (ch.to or "").strip()
-        )
+        version = _AUDIT_VERSION_OVERRIDES.get(name) or hold_spec or (ch.to or "").strip()
         if not version or version in ("?", "latest", "|"):
             continue
         targets.append(f"{name}@{version}")
@@ -351,12 +341,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
     for name, safe_version in _AUDIT_VERSION_OVERRIDES.items():
         name = (name or "").strip()
         safe_version = (safe_version or "").strip()
-        if (
-            not name
-            or name in seen_names
-            or not safe_version
-            or not _valid_bun_package_name(name)
-        ):
+        if not name or name in seen_names or not safe_version or not _valid_bun_package_name(name):
             continue
         targets.append(f"{name}@{safe_version}")
         requested.append(Change(name, "", safe_version))
@@ -389,9 +374,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
             else:
                 assert_targets_resolved(ws, guardable, manager="bun")
         return _finalize_bun_apply(ws, changes, behind)
-    proc = run(
-        ["bun", "update", "--", *targets], ws.path, timeout=resolve_timeout_apply()
-    )
+    proc = run(["bun", "update", "--", *targets], ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
     if _bun_targeted_bump_enabled(ws):

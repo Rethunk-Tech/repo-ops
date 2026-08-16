@@ -53,9 +53,7 @@ def test_yarn_guard_fires_when_resolutions_block_upgrade(
 ) -> None:
     """assert_targets_resolved raises ghost-bump when resolutions pin keeps node_modules behind."""
     installed = json.loads(
-        (yarn_ghost_root / "node_modules" / "is-odd" / "package.json").read_text(
-            encoding="utf-8"
-        )
+        (yarn_ghost_root / "node_modules" / "is-odd" / "package.json").read_text(encoding="utf-8")
     )
     assert installed["version"] == IS_ODD_PIN, (
         f"pre-condition: resolutions should have held is-odd at {IS_ODD_PIN}, "
@@ -78,9 +76,7 @@ def test_yarn_apply_raises_ghost_bump_with_resolutions_pin(
     # test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising.
     monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "0")
 
-    ws = ghost_workspace(
-        yarn_ghost_apply_root, manager="yarn", label="yarn-ghost-apply-test"
-    )
+    ws = ghost_workspace(yarn_ghost_apply_root, manager="yarn", label="yarn-ghost-apply-test")
 
     with pytest.raises(RuntimeError, match="ghost bump"):
         apply_yarn(ws)
@@ -107,9 +103,7 @@ def test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising(
     behind = apply_yarn(ws)
 
     assert not any(c.name == "is-odd" for c in behind)
-    pkg_after = json.loads(
-        (yarn_ghost_apply_root / "package.json").read_text(encoding="utf-8")
-    )
+    pkg_after = json.loads((yarn_ghost_apply_root / "package.json").read_text(encoding="utf-8"))
     assert "is-odd" not in pkg_after.get("resolutions", {})
     installed = json.loads(
         (yarn_ghost_apply_root / "node_modules" / "is-odd" / "package.json").read_text(

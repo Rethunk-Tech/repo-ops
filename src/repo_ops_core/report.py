@@ -75,9 +75,7 @@ def build_audit_summary(
 
     lines.append("| Total | Clean | Vulns | Skipped | Errors |")
     lines.append("|-------|-------|-------|---------|--------|")
-    lines.append(
-        f"| {total} | {ok_count} | {vuln_count} | {skip_count} | {err_count} |"
-    )
+    lines.append(f"| {total} | {ok_count} | {vuln_count} | {skip_count} | {err_count} |")
     lines.append("")
 
     # ---- Vulnerable workspaces table ----------------------------------------
@@ -96,9 +94,7 @@ def build_audit_summary(
             unk = getattr(c, "unknown", "-") if c else "-"
             label = getattr(r, "label", getattr(r, "path", "?"))
             eco = getattr(r, "ecosystem", "?")
-            lines.append(
-                f"| `{label}` | {eco} | {crit} | {high} | {mod} | {low} | {unk} |"
-            )
+            lines.append(f"| `{label}` | {eco} | {crit} | {high} | {mod} | {low} | {unk} |")
         lines.append("")
 
     # ---- Remediations table -------------------------------------------------

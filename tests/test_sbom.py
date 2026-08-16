@@ -116,9 +116,7 @@ def test_collect_components_python(tmp_path: Path) -> None:
 def test_collect_components_deduplicates_by_purl(tmp_path: Path) -> None:
     # Two lockfiles with the same package → should appear only once
     (tmp_path / "package-lock.json").write_text(_NPM_LOCK_CONTENT, encoding="utf-8")
-    (tmp_path / "yarn.lock").write_text(
-        'lodash@^4.17.21:\n  version "4.17.21"\n', encoding="utf-8"
-    )
+    (tmp_path / "yarn.lock").write_text('lodash@^4.17.21:\n  version "4.17.21"\n', encoding="utf-8")
     components = collect_components(tmp_path)
     lodash = [c for c in components if c["name"] == "lodash"]
     assert len(lodash) == 1
@@ -238,8 +236,7 @@ def _assert_cyclonedx_tools_1_5(tools: object) -> None:
         assert isinstance(authors, list)
         assert authors
         assert all(
-            isinstance(author, dict) and isinstance(author.get("name"), str)
-            for author in authors
+            isinstance(author, dict) and isinstance(author.get("name"), str) for author in authors
         )
 
 
@@ -362,9 +359,7 @@ def test_sbom_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert "--output" in out
 
 
-def test_sbom_cyclonedx_stdout(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_sbom_cyclonedx_stdout(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     (tmp_path / "package-lock.json").write_text(_NPM_LOCK_CONTENT, encoding="utf-8")
     rc = main(["--format", "cyclonedx", "--compact", str(tmp_path)])
     assert rc == 0
@@ -539,9 +534,7 @@ def test_collect_components_logs_parse_failure(
     # Force a raising parser to exercise the _safe_parse exception path.
     from repo_ops_lockfiles import sbom as sbom_mod
 
-    (tmp_path / "go.sum").write_text(
-        "golang.org/x/net v0.17.0 h1:abc=\n", encoding="utf-8"
-    )
+    (tmp_path / "go.sum").write_text("golang.org/x/net v0.17.0 h1:abc=\n", encoding="utf-8")
 
     def _boom(_p: Path) -> set[str]:
         raise RuntimeError("simulated parse failure")

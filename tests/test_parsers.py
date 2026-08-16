@@ -66,9 +66,7 @@ def test_versions_yarn_lock_parses_basic():
 
 
 def test_versions_go_sum_strips_go_mod_suffix():
-    content = (
-        "golang.org/x/net v0.17.0 h1:abc=\ngolang.org/x/net v0.17.0/go.mod h1:xyz=\n"
-    )
+    content = "golang.org/x/net v0.17.0 h1:abc=\ngolang.org/x/net v0.17.0/go.mod h1:xyz=\n"
     with tempfile.TemporaryDirectory() as tmp:
         p = Path(tmp) / "go.sum"
         p.write_text(content)
@@ -184,9 +182,7 @@ packages:
             f"peer-suffix path line not parsed correctly; got: {result}"
         )
         # Plain name@version must still parse
-        assert "lodash@4.17.21" in result, (
-            f"plain name@version line broken; got: {result}"
-        )
+        assert "lodash@4.17.21" in result, f"plain name@version line broken; got: {result}"
         # Path-notation without peer suffix must still parse
         assert "lodash@4.17.21" in result
 

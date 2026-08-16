@@ -8,9 +8,7 @@ from unittest.mock import patch
 from repo_ops_upgrade.verify import verify_workspace
 
 
-def test_pip_tools_verify_detects_drift(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
+def test_pip_tools_verify_detects_drift(tmp_path: Path, make_workspace, make_proc) -> None:
     """verify_workspace must return an error string when requirements.txt drifts from compiled output."""
     req_in = tmp_path / "requirements.in"
     req_in.write_text("requests\n", encoding="utf-8")
@@ -29,9 +27,7 @@ def test_pip_tools_verify_detects_drift(
         ),
     ):
         result = verify_workspace(
-            make_workspace(
-                tmp_path, ecosystem="python", manager="pip-tools", label="demo"
-            ),
+            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"),
             verify_test=False,
         )
 
@@ -39,9 +35,7 @@ def test_pip_tools_verify_detects_drift(
     assert "requests" in result
 
 
-def test_pip_tools_verify_passes_when_in_sync(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
+def test_pip_tools_verify_passes_when_in_sync(tmp_path: Path, make_workspace, make_proc) -> None:
     """verify_workspace must return None when requirements.txt matches compiled output."""
     req_in = tmp_path / "requirements.in"
     req_in.write_text("requests\n", encoding="utf-8")
@@ -58,9 +52,7 @@ def test_pip_tools_verify_passes_when_in_sync(
         ),
     ):
         result = verify_workspace(
-            make_workspace(
-                tmp_path, ecosystem="python", manager="pip-tools", label="demo"
-            ),
+            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"),
             verify_test=False,
         )
 
@@ -82,9 +74,7 @@ def test_pip_tools_verify_compile_failure_returns_error(
         ),
     ):
         result = verify_workspace(
-            make_workspace(
-                tmp_path, ecosystem="python", manager="pip-tools", label="demo"
-            ),
+            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"),
             verify_test=False,
         )
 
@@ -92,9 +82,7 @@ def test_pip_tools_verify_compile_failure_returns_error(
     assert "compile" in result or "error" in result.lower()
 
 
-def test_pip_tools_verify_no_req_in_skips_silently(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_pip_tools_verify_no_req_in_skips_silently(tmp_path: Path, make_workspace) -> None:
     """verify_workspace must return None when requirements.in is absent (no-op gracefully)."""
     result = verify_workspace(
         make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"),

@@ -49,9 +49,7 @@ def test_check_uv_lock_runs_dry_run(tmp_path) -> None:
 
     if proc.returncode != 0:
         combined = (proc.stdout + proc.stderr).lower()
-        if any(
-            kw in combined for kw in ("dial", "connect", "network", "timeout", "i/o")
-        ):
+        if any(kw in combined for kw in ("dial", "connect", "network", "timeout", "i/o")):
             pytest.skip(f"uv lock failed (network): {proc.stderr[:200]}")
         pytest.fail(f"uv lock failed: {proc.stderr[:400]}")
 

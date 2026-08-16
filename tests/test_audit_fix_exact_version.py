@@ -162,9 +162,7 @@ def test_npm_targeted_bump_uses_safe_version_from_override(
         captured.append(list(cmd))
         nm = tmp_path / "node_modules" / "lodash"
         nm.mkdir(parents=True, exist_ok=True)
-        (nm / "package.json").write_text(
-            json.dumps({"version": "4.17.21"}), encoding="utf-8"
-        )
+        (nm / "package.json").write_text(json.dumps({"version": "4.17.21"}), encoding="utf-8")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     set_npm_audit_version_overrides({"lodash": "4.17.21"})
@@ -181,9 +179,7 @@ def test_npm_targeted_bump_uses_safe_version_from_override(
     assert install_cmds, "expected at least one npm install call"
     # Must use the advisory-safe version, NOT @latest.
     install_joined = " ".join(install_cmds[0])
-    assert "lodash@4.17.21" in install_joined, (
-        f"expected pkg@version in: {install_joined}"
-    )
+    assert "lodash@4.17.21" in install_joined, f"expected pkg@version in: {install_joined}"
     assert "lodash@latest" not in install_joined
     assert applied == [Change("lodash", "4.17.20", "4.17.21")]
     assert still_behind == []
@@ -204,9 +200,7 @@ def test_npm_targeted_bump_uses_latest_when_no_override(
         captured.append(list(cmd))
         nm = tmp_path / "node_modules" / "lodash"
         nm.mkdir(parents=True, exist_ok=True)
-        (nm / "package.json").write_text(
-            json.dumps({"version": "4.17.21"}), encoding="utf-8"
-        )
+        (nm / "package.json").write_text(json.dumps({"version": "4.17.21"}), encoding="utf-8")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     # Ensure no overrides are set (clear any residue from other tests).
@@ -243,9 +237,7 @@ def test_pnpm_targeted_bump_uses_pnpm_add_with_safe_version(
         captured.append(list(cmd))
         nm = tmp_path / "node_modules" / "lodash"
         nm.mkdir(parents=True, exist_ok=True)
-        (nm / "package.json").write_text(
-            json.dumps({"version": "4.17.21"}), encoding="utf-8"
-        )
+        (nm / "package.json").write_text(json.dumps({"version": "4.17.21"}), encoding="utf-8")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     set_pnpm_audit_version_overrides({"lodash": "4.17.21"})
@@ -284,9 +276,7 @@ def test_pnpm_targeted_bump_uses_update_latest_when_no_override(
         captured.append(list(cmd))
         nm = tmp_path / "node_modules" / "lodash"
         nm.mkdir(parents=True, exist_ok=True)
-        (nm / "package.json").write_text(
-            json.dumps({"version": "4.17.21"}), encoding="utf-8"
-        )
+        (nm / "package.json").write_text(json.dumps({"version": "4.17.21"}), encoding="utf-8")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     clear_pnpm_audit_version_overrides()

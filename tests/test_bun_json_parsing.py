@@ -262,11 +262,7 @@ def test_audit_bun_json_empty_stdout_falls_back_to_text_stderr() -> None:
 def test_audit_bun_zero_vulns_json() -> None:
     """JSON with zero counts + rc=0 → status ok."""
     clean_json = json.dumps(
-        {
-            "metadata": {
-                "vulnerabilities": {"critical": 0, "high": 0, "moderate": 0, "low": 0}
-            }
-        }
+        {"metadata": {"vulnerabilities": {"critical": 0, "high": 0, "moderate": 0, "low": 0}}}
     )
     with (
         patch("repo_ops_audit.audit.shutil.which", return_value="/usr/bin/bun"),

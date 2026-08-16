@@ -275,9 +275,7 @@ def test_collect_results_uses_discovery(tmp_path: Path, monkeypatch):
     assert len(per_repo) == 1
 
 
-def test_pushed_commits_non_oldest_uses_reflog_pre_sha_not_prev_push_tip(
-    monkeypatch, make_proc
-):
+def test_pushed_commits_non_oldest_uses_reflog_pre_sha_not_prev_push_tip(monkeypatch, make_proc):
     """Regression #92: non-oldest push entry uses _reflog_pre_sha, not previous push tip.
 
     Simulates two pushes with a fetch in between:
@@ -424,8 +422,7 @@ def test_print_report_overflow_shas_and_messages(
     """3 repos with top_n=2 exercises the '(N other repos)' overflow row, plus
     --show-shas/--show-messages per-commit dump (with and without a subject)."""
     repos = [
-        RepoResult(label=f"r{i}", path=f"/fake/r{i}", commits={f"{i:040x}": None})
-        for i in range(3)
+        RepoResult(label=f"r{i}", path=f"/fake/r{i}", commits={f"{i:040x}": None}) for i in range(3)
     ]
     all_commits: dict[str, None] = {}
     for r in repos:
@@ -434,9 +431,7 @@ def test_print_report_overflow_shas_and_messages(
     monkeypatch.setattr(
         audit,
         "resolve_subjects",
-        lambda per_repo: {
-            r.path: dict.fromkeys(r.commits, f"subject-{r.label}") for r in per_repo
-        },
+        lambda per_repo: {r.path: dict.fromkeys(r.commits, f"subject-{r.label}") for r in per_repo},
     )
 
     print_report(
@@ -476,9 +471,7 @@ def test_main_window_resolution_and_hours_warning(
     # --since only + --hours: existing warning ("without --until").
     assert main([root, "--since", "2026-01-01T00:00Z", "--hours", "3"]) == 0
     err = capsys.readouterr().err
-    assert (
-        "WARNING: --hours is ignored because --since is provided without --until" in err
-    )
+    assert "WARNING: --hours is ignored because --since is provided without --until" in err
 
     # --until only: window = [now - hours, until); --hours legitimately used, no warning.
     assert main([root, "--until", "2099-01-01T00:00Z", "--hours", "5"]) == 0
@@ -500,10 +493,7 @@ def test_main_window_resolution_and_hours_warning(
         == 0
     )
     err = capsys.readouterr().err
-    assert (
-        "WARNING: --hours is ignored because --since and --until are both provided"
-        in err
-    )
+    assert "WARNING: --hours is ignored because --since and --until are both provided" in err
 
 
 def test_main_json_out_requires_json_flag(tmp_path: Path) -> None:
@@ -514,9 +504,7 @@ def test_main_json_out_requires_json_flag(tmp_path: Path) -> None:
 def test_main_count_only_prints_total(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(
-        audit, "collect_results", lambda *a, **kw: ({"a": None, "b": None}, [])
-    )
+    monkeypatch.setattr(audit, "collect_results", lambda *a, **kw: ({"a": None, "b": None}, []))
     assert main([str(tmp_path), "--count-only"]) == 0
     assert capsys.readouterr().out.strip() == "2"
 
@@ -527,9 +515,7 @@ def test_main_json_out_writes_report_with_messages(
     import json
 
     repo = RepoResult(label="repo1", path="/fake/repo1", commits={"d" * 40: None})
-    monkeypatch.setattr(
-        audit, "collect_results", lambda *a, **kw: ({"d" * 40: None}, [repo])
-    )
+    monkeypatch.setattr(audit, "collect_results", lambda *a, **kw: ({"d" * 40: None}, [repo]))
     monkeypatch.setattr(
         audit,
         "resolve_subjects",
@@ -598,9 +584,7 @@ def test_pushed_show_shas_without_messages(
     """F090: --show-shas prints short SHAs without requiring --show-messages."""
     sha = "abcdef0123456789" + "0" * 24
     repo = RepoResult(label="repo1", path="/fake/repo1", commits={sha: None})
-    monkeypatch.setattr(
-        audit, "collect_results", lambda *a, **kw: ({sha: None}, [repo])
-    )
+    monkeypatch.setattr(audit, "collect_results", lambda *a, **kw: ({sha: None}, [repo]))
     assert main([str(tmp_path), "--show-shas"]) == 0
     out = capsys.readouterr().out
     assert "abcdef01" in out
@@ -618,9 +602,7 @@ def test_pushed_no_merges_and_author_passed_to_filters(
         return {}, []
 
     monkeypatch.setattr(audit, "collect_results", fake_collect)
-    assert (
-        main([str(tmp_path), "--author", "Alice", "--no-merges", "--count-only"]) == 0
-    )
+    assert main([str(tmp_path), "--author", "Alice", "--no-merges", "--count-only"]) == 0
     assert len(seen) == 1
     assert seen[0].author == "Alice"
     assert seen[0].no_merges is True
@@ -811,9 +793,7 @@ def test_pushed_source_gh_collects_push_event_commits(
     )
 
     assert audit.pushed_commits_for_repo_gh("/fake/repo", filters) == {sha: None}
-    assert commands == [
-        ["gh", "api", "--paginate", "repos/acme/project/events?per_page=100"]
-    ]
+    assert commands == [["gh", "api", "--paginate", "repos/acme/project/events?per_page=100"]]
 
 
 def test_pushed_source_gh_compare_fallback_for_empty_event_commits(

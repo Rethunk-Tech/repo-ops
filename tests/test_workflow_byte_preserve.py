@@ -85,9 +85,7 @@ def test_workflow_pin_update_changes_exactly_one_line() -> None:
             if b != a
         ]
 
-        assert len(changed) == 1, (
-            f"expected exactly 1 changed line, got {len(changed)}: {changed}"
-        )
+        assert len(changed) == 1, f"expected exactly 1 changed line, got {len(changed)}: {changed}"
 
         line_no, before_line, after_line = changed[0]
         # The rewritten line must contain the new pin and nothing else changed.

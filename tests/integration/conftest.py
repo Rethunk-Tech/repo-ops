@@ -42,9 +42,7 @@ if _COREPACK is not None:
         _COREPACK_OK = False
 
 COREPACK_SKIP_REASON = (
-    "corepack not on PATH"
-    if _COREPACK is None
-    else "corepack yarn --version probe failed"
+    "corepack not on PATH" if _COREPACK is None else "corepack yarn --version probe failed"
 )
 
 

@@ -64,9 +64,7 @@ def _poetry_seed(tmp_path: Path) -> None:
 
 
 def _pipenv_seed(tmp_path: Path) -> None:
-    (tmp_path / "Pipfile").write_text(
-        '[packages]\nrequests = "^2.28.0"\n', encoding="utf-8"
-    )
+    (tmp_path / "Pipfile").write_text('[packages]\nrequests = "^2.28.0"\n', encoding="utf-8")
     (tmp_path / "Pipfile.lock").write_text(
         '{"default": {"requests": {"version": "==2.31.0"}}, "develop": {}}',
         encoding="utf-8",
@@ -81,9 +79,7 @@ def _pip_tools_seed(tmp_path: Path) -> None:
 def _write_locked_version(path: Path, version: str) -> None:
     if path.name == "Pipfile.lock":
         path.write_text(
-            json.dumps(
-                {"default": {"requests": {"version": f"=={version}"}}, "develop": {}}
-            ),
+            json.dumps({"default": {"requests": {"version": f"=={version}"}}, "develop": {}}),
             encoding="utf-8",
         )
     else:
@@ -269,9 +265,7 @@ def test_check_reports_latest_direct_dependency(
     assert result == ([], [Change("requests", "2.31.0", "3.0.0")])
 
 
-def test_check_pipenv_reports_direct_constraint_bump(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_check_pipenv_reports_direct_constraint_bump(tmp_path: Path, make_workspace) -> None:
     _pipenv_seed(tmp_path)
 
     def fake_run(cmd, cwd, timeout=None):
@@ -304,9 +298,7 @@ def test_check_pip_tools_reports_direct_constraint_bump(
         return make_proc(stdout="requests==2.31.0\n")
 
     with (
-        patch(
-            "repo_ops_py_pip_tools.pip_tools.shutil.which", return_value="/usr/bin/uv"
-        ),
+        patch("repo_ops_py_pip_tools.pip_tools.shutil.which", return_value="/usr/bin/uv"),
         patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_run),
         patch(
             "repo_ops_py_pip_tools.pip_tools._pip_tools_targeted_bump_enabled",
@@ -315,9 +307,7 @@ def test_check_pip_tools_reports_direct_constraint_bump(
         patch("repo_ops_py_pip_tools.pip_tools._pypi_latest", return_value="3.0.0"),
     ):
         result = check_pip_tools(
-            make_workspace(
-                tmp_path, ecosystem="python", manager="pip-tools", label="demo"
-            )
+            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
         )
 
     assert result == ([], [Change("requests", "2.31.0", "3.0.0")])
@@ -366,9 +356,7 @@ def test_apply_restores_files_on_targeted_bump_failure(
                 )
             else:
                 lockfile.write_text("changed\n", encoding="utf-8")
-            return subprocess.CompletedProcess(
-                cmd, returncode, stdout="", stderr="failed"
-            )
+            return subprocess.CompletedProcess(cmd, returncode, stdout="", stderr="failed")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with _spec_patched(spec, fake_run):
@@ -382,9 +370,7 @@ def test_apply_restores_files_on_targeted_bump_failure(
 
 
 @pytest.mark.parametrize("spec", _ALL_SPECS)
-def test_apply_keeps_successful_targeted_bump(
-    tmp_path: Path, make_workspace, spec: _Spec
-) -> None:
+def test_apply_keeps_successful_targeted_bump(tmp_path: Path, make_workspace, spec: _Spec) -> None:
     spec.seed(tmp_path)
     calls: list[list[str]] = []
 
@@ -408,9 +394,7 @@ def test_apply_keeps_successful_targeted_bump(
 # ---------------------------------------------------------------------------
 
 
-def test_apply_pipenv_skips_targeted_install_without_venv(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_apply_pipenv_skips_targeted_install_without_venv(tmp_path: Path, make_workspace) -> None:
     _pipenv_seed(tmp_path)
     calls: list[list[str]] = []
     candidate = Change("requests", "2.31.0", "3.0.0")
@@ -502,9 +486,7 @@ def test_apply_pip_tools_restores_files_when_targeted_compile_fails(
         pytest.raises(RuntimeError, match="failed"),
     ):
         apply_pip_tools(
-            make_workspace(
-                tmp_path, ecosystem="python", manager="pip-tools", label="demo"
-            )
+            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
         )
 
     assert req_in.read_bytes() == in_before
@@ -541,9 +523,7 @@ def test_apply_pip_tools_uses_targeted_upgrade_package(
         ),
     ):
         remaining = apply_pip_tools(
-            make_workspace(
-                tmp_path, ecosystem="python", manager="pip-tools", label="demo"
-            )
+            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
         )
 
     assert remaining == []

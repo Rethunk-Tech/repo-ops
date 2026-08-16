@@ -20,9 +20,7 @@ from repo_ops_lockfiles.sbom import (
 
 
 def _write_dockerfile(root: Path) -> None:
-    (root / "Dockerfile").write_text(
-        "FROM nginx:1.25-alpine\nCOPY . /app\n", encoding="utf-8"
-    )
+    (root / "Dockerfile").write_text("FROM nginx:1.25-alpine\nCOPY . /app\n", encoding="utf-8")
 
 
 def _write_workflow(root: Path) -> None:
@@ -154,11 +152,7 @@ def test_container_and_actions_pins_present_in_spdx(tmp_path: Path) -> None:
     _write_workflow(tmp_path)
     components = collect_components(tmp_path)
     doc = emit_spdx(components, "myrepo")
-    purls = {
-        ref["referenceLocator"]
-        for pkg in doc["packages"]
-        for ref in pkg["externalRefs"]
-    }
+    purls = {ref["referenceLocator"] for pkg in doc["packages"] for ref in pkg["externalRefs"]}
     assert "pkg:oci/nginx@1.25-alpine" in purls
     assert "pkg:github/actions/checkout@v4" in purls
 

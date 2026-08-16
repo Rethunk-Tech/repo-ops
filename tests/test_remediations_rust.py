@@ -14,9 +14,7 @@ from repo_ops_upgrade_remediations_rust import remediations as rust_rem
 
 def _result(tmp_path: Path, make_workspace, ecosystem: str = "rust") -> WorkspaceResult:
     return WorkspaceResult(
-        workspace=make_workspace(
-            tmp_path, ecosystem=ecosystem, manager="cargo", label="test"
-        )
+        workspace=make_workspace(tmp_path, ecosystem=ecosystem, manager="cargo", label="test")
     )
 
 
@@ -67,9 +65,7 @@ def test_detect_cargo_fix(
 # ── report_cargo_fix ─────────────────────────────────────────────────────────
 
 
-def test_report_cargo_fix_returns_useful_message(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_report_cargo_fix_returns_useful_message(tmp_path: Path, make_workspace) -> None:
     ws = make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="test")
     ctx: dict[str, Any] = {"changes": [], "apply": False}
     lines = rust_rem.report_cargo_fix(ws, ctx)
@@ -96,9 +92,7 @@ def test_apply_cargo_fix_success(tmp_path: Path, make_workspace, make_proc) -> N
     assert cmd == ["cargo", "fmt"]
 
 
-def test_apply_cargo_fix_failure_captures_stderr(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
+def test_apply_cargo_fix_failure_captures_stderr(tmp_path: Path, make_workspace, make_proc) -> None:
     ws = make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="test")
     ctx: dict[str, Any] = {}
     fail_proc = make_proc(1, stderr="error: could not find `Cargo.toml`")
@@ -130,9 +124,7 @@ def test_apply_cargo_fix_uses_stdout_when_stderr_empty(
 # ── run_remediations integration ─────────────────────────────────────────────
 
 
-def test_run_remediations_plan_mode(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
+def test_run_remediations_plan_mode(tmp_path: Path, make_workspace, make_change) -> None:
     (tmp_path / "Cargo.toml").write_text("[package]\nname = 'foo'\n")
     result = _result(tmp_path, make_workspace=make_workspace)
     result.changes = [make_change("serde")]
@@ -176,9 +168,7 @@ def test_run_remediations_apply_mode(
     assert result.status == "ok"
 
 
-def test_cargo_fix_skipped_in_skip_set(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
+def test_cargo_fix_skipped_in_skip_set(tmp_path: Path, make_workspace, make_change) -> None:
     (tmp_path / "Cargo.toml").write_text("[package]\nname = 'foo'\n")
     result = _result(tmp_path, make_workspace=make_workspace)
     result.changes = [make_change("serde")]

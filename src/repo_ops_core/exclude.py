@@ -18,9 +18,7 @@ def repo_matches_exclude(label: str, path_str: str, patterns: list[str]) -> bool
     )
 
 
-def merge_exclude_patterns(
-    cli_patterns: list[str] | None, config_exclude: object
-) -> list[str]:
+def merge_exclude_patterns(cli_patterns: list[str] | None, config_exclude: object) -> list[str]:
     """Prefer non-empty CLI patterns, otherwise normalize config patterns."""
     if cli_patterns:
         return list(cli_patterns)

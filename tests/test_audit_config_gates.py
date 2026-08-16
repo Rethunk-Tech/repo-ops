@@ -36,9 +36,7 @@ def _results(**counts: int) -> list[WorkspaceResult]:
     ]
 
 
-def _run(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cli_args, counts: dict
-) -> int:
+def _run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cli_args, counts: dict) -> int:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     with (
         patch("repo_ops_audit.audit.discover_repos", return_value={}),
@@ -124,9 +122,7 @@ _CLI_OVERRIDES_CONFIG_CASES = [
 ]
 
 
-@pytest.mark.parametrize(
-    ("env_var", "env_value", "cli_args", "counts", "expected_rc"), _ENV_CASES
-)
+@pytest.mark.parametrize(("env_var", "env_value", "cli_args", "counts", "expected_rc"), _ENV_CASES)
 def test_env_applies_when_flag_absent(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -156,15 +152,11 @@ def test_config_file_applies_when_flag_absent(
     """A [tool.repo-ops]/config.toml value sets the gate when no flag or env wins first."""
     config_dir = tmp_path / "repo-ops"
     config_dir.mkdir()
-    (config_dir / "config.toml").write_text(
-        f"{config_key} = {toml_value}\n", encoding="utf-8"
-    )
+    (config_dir / "config.toml").write_text(f"{config_key} = {toml_value}\n", encoding="utf-8")
     assert _run(monkeypatch, tmp_path, cli_args, counts) == expected_rc
 
 
-@pytest.mark.parametrize(
-    ("env_var", "env_value", "cli_args", "counts"), _CLI_OVERRIDES_ENV_CASES
-)
+@pytest.mark.parametrize(("env_var", "env_value", "cli_args", "counts"), _CLI_OVERRIDES_ENV_CASES)
 def test_cli_flag_overrides_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -192,7 +184,5 @@ def test_cli_flag_overrides_config_file(
     """An explicit CLI flag wins over a lenient config.toml value."""
     config_dir = tmp_path / "repo-ops"
     config_dir.mkdir()
-    (config_dir / "config.toml").write_text(
-        f"{config_key} = {toml_value}\n", encoding="utf-8"
-    )
+    (config_dir / "config.toml").write_text(f"{config_key} = {toml_value}\n", encoding="utf-8")
     assert _run(monkeypatch, tmp_path, cli_args, counts) == 1

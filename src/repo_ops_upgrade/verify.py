@@ -122,17 +122,13 @@ def _verify_hatch_fast(
     if "test" in scripts:
         proc = run([*runner, "test"], ws.path, timeout=timeout)
         if proc.returncode != 0:
-            return (
-                proc.stderr or proc.stdout
-            ).strip() or f"{' '.join([*runner, 'test'])} failed"
+            return (proc.stderr or proc.stdout).strip() or f"{' '.join([*runner, 'test'])} failed"
         return None
     # pytest runner (explicit dep or tests/ dir)
     if "pytest" in dev or (ws.path / "tests").is_dir():
         proc = run([*runner, "pytest", "-q", "--co", "-q"], ws.path, timeout=timeout)
         if proc.returncode != 0:
-            return (
-                proc.stderr or proc.stdout
-            ).strip() or f"{' '.join([*runner, 'pytest'])} failed"
+            return (proc.stderr or proc.stdout).strip() or f"{' '.join([*runner, 'pytest'])} failed"
         return None
     # "check" or "typecheck" scripts (e.g. mypy / pyright wrappers)
     for script_key in ("check", "typecheck"):
@@ -147,9 +143,7 @@ def _verify_hatch_fast(
     if "mypy" in dev:
         proc = run([*runner, "mypy", "."], ws.path, timeout=timeout)
         if proc.returncode != 0:
-            return (
-                proc.stderr or proc.stdout
-            ).strip() or f"{' '.join([*runner, 'mypy'])} failed"
+            return (proc.stderr or proc.stdout).strip() or f"{' '.join([*runner, 'mypy'])} failed"
         return None
     # pyrefly in dev deps
     if "pyrefly" in dev:
@@ -204,11 +198,7 @@ def _resolve_verify_timeout_with_profile(profile: dict[str, Any]) -> int:
     """
     # Env var always wins (one-shot override for CI pipelines).
     ambient = ambient_env()
-    env_raw = (
-        (os.environ if ambient is None else ambient)
-        .get(_TIMEOUT_VERIFY_ENV, "")
-        .strip()
-    )
+    env_raw = (os.environ if ambient is None else ambient).get(_TIMEOUT_VERIFY_ENV, "").strip()
     if env_raw:
         try:
             val = float(env_raw)
@@ -393,9 +383,7 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
                 timeout=timeout,
             )
             if proc.returncode != 0:
-                return (
-                    proc.stderr or proc.stdout
-                ).strip() or "deno install --frozen failed"
+                return (proc.stderr or proc.stdout).strip() or "deno install --frozen failed"
             return None
         proc = run(["deno", "check", "."], ws.path, timeout=timeout)
         if proc.returncode != 0:
@@ -410,9 +398,7 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
             timeout=timeout,
         )
         if proc.returncode != 0:
-            return (
-                proc.stderr or proc.stdout
-            ).strip() or "pre-commit validate-config failed"
+            return (proc.stderr or proc.stdout).strip() or "pre-commit validate-config failed"
         return None
     # container: image builds are out of scope for v1 (see container.apply docstring).
     return None
@@ -465,11 +451,7 @@ def _verify_pip_tools(ws: Workspace, *, timeout: int | None = None) -> str | Non
     proposed = _parse_req_lines(compiled)
     if not proposed:
         return None
-    drift = {
-        pkg
-        for pkg in set(current) | set(proposed)
-        if current.get(pkg) != proposed.get(pkg)
-    }
+    drift = {pkg for pkg in set(current) | set(proposed) if current.get(pkg) != proposed.get(pkg)}
     if drift:
         return f"requirements.txt is out of sync: {', '.join(sorted(drift))}"
     return None

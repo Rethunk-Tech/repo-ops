@@ -11,9 +11,7 @@ from repo_ops_upgrade.discovery import DiscoveryDiagnostics, discover_all
 from repo_ops_upgrade.run import main_plan
 
 
-def test_discover_all_json_diagnostics_no_stderr(
-    tmp_path: Path, capsys, init_git_repo
-) -> None:
+def test_discover_all_json_diagnostics_no_stderr(tmp_path: Path, capsys, init_git_repo) -> None:
     init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"npm@10.0.0"}',
@@ -221,9 +219,7 @@ def test_inventory_json_compact_schema_contract(tmp_path: Path, capsys) -> None:
     assert "manifests" in payload["totals"]
 
 
-def test_pushed_json_compact_schema_contract(
-    tmp_path: Path, capsys, monkeypatch
-) -> None:
+def test_pushed_json_compact_schema_contract(tmp_path: Path, capsys, monkeypatch) -> None:
     """F088/F089: pushed --json --compact matches plan schema_version contract."""
     from repo_ops_pushed import audit
     from repo_ops_pushed.audit import main as pushed_main

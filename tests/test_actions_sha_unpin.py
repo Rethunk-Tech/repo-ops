@@ -198,9 +198,7 @@ def test_exact_tag_style(tmp_path: Path) -> None:
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, _ = scan_actions(
-            tmp_path, apply=False, keep_sha=False, tag_style="exact"
-        )
+        bumps, _ = scan_actions(tmp_path, apply=False, keep_sha=False, tag_style="exact")
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert len(checkout) == 1
@@ -222,9 +220,7 @@ def test_exact_tag_style_fallback_to_major(tmp_path: Path) -> None:
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, _ = scan_actions(
-            tmp_path, apply=False, keep_sha=False, tag_style="exact"
-        )
+        bumps, _ = scan_actions(tmp_path, apply=False, keep_sha=False, tag_style="exact")
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert len(checkout) == 1

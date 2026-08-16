@@ -48,9 +48,7 @@ def test_inventory_table_aligns_columns():
     out = buf.getvalue()
     header, sep, data, _sep2, total = out.strip().splitlines()
     assert len(sep) == len(header)
-    assert re.match(
-        r"^project\s+kinds\s+mans\s+direct\s+versions\s+on-disk\s+edges$", header
-    )
+    assert re.match(r"^project\s+kinds\s+mans\s+direct\s+versions\s+on-disk\s+edges$", header)
     assert data.startswith("repo-ops")
     assert "py(pyproject+uv)" in data
     assert total.startswith("TOTAL")

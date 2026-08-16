@@ -115,9 +115,7 @@ def test_check_hatch_raises_on_venv_failure(
 @pytest.mark.parametrize(
     ("optional_deps", "expected"),
     [
-        pytest.param(
-            'test = ["pytest"]\nlint = ["ruff"]\n', ".[test]", id="test_over_lint"
-        ),
+        pytest.param('test = ["pytest"]\nlint = ["ruff"]\n', ".[test]", id="test_over_lint"),
         pytest.param(
             'dev = ["pytest", "ruff"]\ntest = ["pytest"]\n',
             ".[dev]",
@@ -126,14 +124,10 @@ def test_check_hatch_raises_on_venv_failure(
         pytest.param("", ".", id="no_extras"),
     ],
 )
-def test_install_target_extras_detection(
-    tmp_path: Path, optional_deps: str, expected: str
-) -> None:
+def test_install_target_extras_detection(tmp_path: Path, optional_deps: str, expected: str) -> None:
     """Extras detection prefers ``[dev]`` over ``[test]``, and falls back to bare ``.`` with neither."""
     header = '[project]\nname = "demo"\nversion = "0.1.0"\n'
-    section = (
-        "[project.optional-dependencies]\n" + optional_deps if optional_deps else ""
-    )
+    section = "[project.optional-dependencies]\n" + optional_deps if optional_deps else ""
     (tmp_path / "pyproject.toml").write_text(header + section, encoding="utf-8")
     assert _install_target(tmp_path) == expected
 
@@ -332,12 +326,8 @@ def test_apply_hatch_no_uv_lock_with_flag_runs_uv_lock(
     ):
         apply_hatch(ws)
 
-    assert run_calls[0] == ["uv", "lock"], (
-        f"first call must be uv lock; got {run_calls}"
-    )
-    assert ["uv", "lock", "--upgrade"] in run_calls, (
-        f"uv lock --upgrade must run; got {run_calls}"
-    )
+    assert run_calls[0] == ["uv", "lock"], f"first call must be uv lock; got {run_calls}"
+    assert ["uv", "lock", "--upgrade"] in run_calls, f"uv lock --upgrade must run; got {run_calls}"
 
 
 def test_check_hatch_no_uv_lock_no_migrate_skips_actionable(
@@ -429,9 +419,7 @@ def test_apply_hatch_with_existing_uv_lock_runs_apply_uv_lock(
     assert ["uv", "sync"] in run_calls
 
 
-def test_check_hatch_with_uv_lock_delegates_to_check_uv_lock(
-    tmp_path: Path, make_proc
-) -> None:
+def test_check_hatch_with_uv_lock_delegates_to_check_uv_lock(tmp_path: Path, make_proc) -> None:
     """F155 — uv.lock present → check_uv_lock (uv lock --upgrade --dry-run)."""
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n',

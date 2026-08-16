@@ -397,16 +397,12 @@ def discover_workspaces_in_root(
     def consider_container(mdir: Path) -> None:
         if not is_container_workspace(mdir):
             return
-        _register_workspace(
-            mdir, "container", "container", record_skip=record_skip, found=found
-        )
+        _register_workspace(mdir, "container", "container", record_skip=record_skip, found=found)
 
     def consider_precommit(mdir: Path) -> None:
         if not is_precommit_workspace(mdir):
             return
-        _register_workspace(
-            mdir, "precommit", "precommit", record_skip=record_skip, found=found
-        )
+        _register_workspace(mdir, "precommit", "precommit", record_skip=record_skip, found=found)
 
     def consider_py(mdir: Path) -> None:
         pyp = mdir / "pyproject.toml"
@@ -567,9 +563,7 @@ def discover_all(
     return all_ws
 
 
-def group_by_repo(
-    workspaces: list[Workspace], roots: list[str]
-) -> dict[Path, RepoBundle]:
+def group_by_repo(workspaces: list[Workspace], roots: list[str]) -> dict[Path, RepoBundle]:
     bundles: dict[Path, RepoBundle] = {}
     for ws in workspaces:
         if ws.git_repo not in bundles:

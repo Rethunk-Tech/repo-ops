@@ -19,9 +19,7 @@ def test_check_npm_passes_timeout_check(tmp_path: Path, make_workspace) -> None:
         return type("Proc", (), {"returncode": 0, "stdout": "{}", "stderr": ""})()
 
     with patch("repo_ops_js_npm.npm.run", side_effect=fake_run):
-        check_npm(
-            make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo")
-        )
+        check_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))
 
     assert len(captured) == 1
     assert captured[0]["timeout"] == TIMEOUT_CHECK

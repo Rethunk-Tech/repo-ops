@@ -72,6 +72,4 @@ def test_skip_remediations_flag_accepted():
     args = parser.parse_args(["--skip-remediations", "go_generate,gofmt"])
     assert args.skip_remediations == "go_generate,gofmt"
     with pytest.raises(SystemExit):
-        build_upgrade_parser(apply=False).parse_args(
-            ["--skip-remediations", "go_generate"]
-        )
+        build_upgrade_parser(apply=False).parse_args(["--skip-remediations", "go_generate"])

@@ -66,10 +66,7 @@ def _pipenv_direct_dependencies(manifest: Path) -> dict[str, str]:
         for name, value in table.items():
             requirement: object = value
             if isinstance(value, dict):
-                if any(
-                    key in value
-                    for key in ("git", "path", "file", "editable", "ref", "index")
-                ):
+                if any(key in value for key in ("git", "path", "file", "editable", "ref", "index")):
                     continue
                 requirement = value.get("version")
             if isinstance(name, str) and isinstance(requirement, str):
@@ -80,9 +77,7 @@ def _pipenv_direct_dependencies(manifest: Path) -> dict[str, str]:
 def _pipenv_latest_direct_changes(ws: Workspace) -> list[Change]:
     lock_versions = _pipfile_lock_versions(ws)
     changes: list[Change] = []
-    for name, requirement in sorted(
-        _pipenv_direct_dependencies(ws.path / "Pipfile").items()
-    ):
+    for name, requirement in sorted(_pipenv_direct_dependencies(ws.path / "Pipfile").items()):
         locked = lock_versions.get(name)
         latest = _pypi_latest(name)
         if (
@@ -127,9 +122,7 @@ def _apply_pipenv_targeted_bumps(
     remaining: list[Change] = []
     for candidate in candidates:
         rule = resolve_package_hold(ws, candidate.name)
-        if rule is not None and not version_satisfies_ceiling(
-            candidate.to, rule.max_version
-        ):
+        if rule is not None and not version_satisfies_ceiling(candidate.to, rule.max_version):
             remaining.append(candidate)
             continue
         manifest_snapshot = snapshot_file(manifest)
@@ -202,9 +195,7 @@ def check_pipenv(
     try:
         pkgs = json.loads(proc.stdout)
         for entry in pkgs:
-            changes.append(
-                Change(entry["name"], entry["version"], entry["latest_version"])
-            )
+            changes.append(Change(entry["name"], entry["version"], entry["latest_version"]))
     except (json.JSONDecodeError, KeyError, TypeError):
         # Fallback: column format (older pip versions without JSON support)
         for line in proc.stdout.splitlines()[2:]:

@@ -57,13 +57,9 @@ def test_bun_apply_targeted_bump_releases_unheld_pin_instead_of_raising(
     behind = apply_bun(ws)
 
     assert not any(change.name == "is-odd" for change in behind)
-    pkg_after = json.loads(
-        (bun_ghost_root / "package.json").read_text(encoding="utf-8")
-    )
+    pkg_after = json.loads((bun_ghost_root / "package.json").read_text(encoding="utf-8"))
     assert "is-odd" not in pkg_after.get("overrides", {})
     installed = json.loads(
-        (bun_ghost_root / "node_modules" / "is-odd" / "package.json").read_text(
-            encoding="utf-8"
-        )
+        (bun_ghost_root / "node_modules" / "is-odd" / "package.json").read_text(encoding="utf-8")
     )
     assert installed["version"] != IS_ODD_PIN

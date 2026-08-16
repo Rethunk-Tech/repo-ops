@@ -175,9 +175,7 @@ def _resolve_precommit_hold(ws: Workspace, package: str) -> HoldRule | None:
 
 def _target_within_hold(ws: Workspace, package: str, target_version: str) -> bool:
     """Return whether a resolved tag target is allowed by its active hold."""
-    return holds.target_within_hold(
-        target_version, _resolve_precommit_hold(ws, package)
-    )
+    return holds.target_within_hold(target_version, _resolve_precommit_hold(ws, package))
 
 
 # ---------------------------------------------------------------------------
@@ -195,9 +193,7 @@ def _resolve_latest_precommit_rev(
 
     See :func:`repo_ops_upgrade.tags.resolve_latest_tag` for matching rules.
     """
-    return tag_utils.resolve_latest_tag(
-        current_rev, revs, allow_cross_major=allow_cross_major
-    )
+    return tag_utils.resolve_latest_tag(current_rev, revs, allow_cross_major=allow_cross_major)
 
 
 # ---------------------------------------------------------------------------
@@ -212,9 +208,7 @@ _TAG_REF_CACHE: dict[str, list[tuple[str, str]] | None] = {}
 _TAG_CACHE_LOCK = threading.Lock()
 
 
-def _fetch_tags_for_repo(
-    repo_url: str, *, timeout: int = _LS_REMOTE_TIMEOUT
-) -> list[str] | None:
+def _fetch_tags_for_repo(repo_url: str, *, timeout: int = _LS_REMOTE_TIMEOUT) -> list[str] | None:
     """Return the list of annotated tags for *repo_url* via ``git ls-remote``.
 
     Uses an in-process cache protected by a threading.Lock so concurrent callers
@@ -269,9 +263,7 @@ def _resolve_sha_refresh(
     return tag_utils.resolve_sha_refresh(current_sha, refs, context="pre-commit")
 
 
-def _resolve_hold_tag_target(
-    current_rev: str, tags: list[str], rule: HoldRule
-) -> str | None:
+def _resolve_hold_tag_target(current_rev: str, tags: list[str], rule: HoldRule) -> str | None:
     """Return the highest tag at or below *rule* when *current_rev* violates it."""
     return holds.resolve_hold_tag_target(current_rev, tags, rule, context="pre-commit")
 
@@ -287,9 +279,7 @@ def _resolve_hold_sha_target(
     current_sha: str, refs: list[tuple[str, str]], rule: HoldRule
 ) -> str | None:
     """Return the SHA for the highest held tag when *current_sha* violates it."""
-    resolved = holds.resolve_hold_sha_target(
-        current_sha, refs, rule, context="pre-commit"
-    )
+    resolved = holds.resolve_hold_sha_target(current_sha, refs, rule, context="pre-commit")
     return None if resolved is None else resolved[1]
 
 
@@ -393,9 +383,7 @@ def check_precommit(ws: Workspace) -> list[Change]:
                 changes.append(Change(name=label, from_ver=rev, to=hold_target))
                 continue
 
-        latest = _resolve_latest_precommit_rev(
-            rev, tags, allow_cross_major=allow_cross_major
-        )
+        latest = _resolve_latest_precommit_rev(rev, tags, allow_cross_major=allow_cross_major)
         if latest is None:
             continue  # already at latest or indeterminate
 
@@ -411,9 +399,7 @@ def check_precommit(ws: Workspace) -> list[Change]:
 # ---------------------------------------------------------------------------
 
 
-def _enforce_version_ceilings(
-    ws: Workspace, repos: list[dict[str, Any]]
-) -> dict[int, str]:
+def _enforce_version_ceilings(ws: Workspace, repos: list[dict[str, Any]]) -> dict[int, str]:
     """Return line replacements that clamp held pre-commit revs."""
     line_bumps: dict[int, str] = {}
     for entry in repos:
@@ -519,9 +505,7 @@ def apply_precommit(ws: Workspace) -> None:
                 resolved = _resolve_sha_refresh(from_ver, refs or [])
                 if resolved is not None:
                     new_sha, _current_tag, latest_tag = resolved
-                    if not _target_within_hold(
-                        ws, _repo_short_name(repo_url), latest_tag
-                    ):
+                    if not _target_within_hold(ws, _repo_short_name(repo_url), latest_tag):
                         continue
                     line_bumps[rev_line_no] = new_sha
             continue
@@ -533,12 +517,8 @@ def apply_precommit(ws: Workspace) -> None:
         if tags is None:
             continue
 
-        new_rev = _resolve_latest_precommit_rev(
-            from_ver, tags, allow_cross_major=allow_cross_major
-        )
-        if new_rev is not None and _target_within_hold(
-            ws, _repo_short_name(repo_url), new_rev
-        ):
+        new_rev = _resolve_latest_precommit_rev(from_ver, tags, allow_cross_major=allow_cross_major)
+        if new_rev is not None and _target_within_hold(ws, _repo_short_name(repo_url), new_rev):
             line_bumps[rev_line_no] = new_rev
 
     line_bumps.update(_enforce_version_ceilings(ws, repos))

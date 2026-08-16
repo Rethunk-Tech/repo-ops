@@ -151,9 +151,7 @@ def test_check_deno_parses_plain_four_column_behind(
     assert behind[0].to == "5.3.0"
 
 
-def test_check_deno_returns_empty_when_up_to_date(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_check_deno_returns_empty_when_up_to_date(tmp_path: Path, make_workspace) -> None:
     def fake_run(cmd, cwd, timeout=None):
         return subprocess.CompletedProcess(
             cmd, 0, stdout="All packages are up to date.\n", stderr=""
@@ -171,9 +169,7 @@ def test_check_deno_returns_empty_when_up_to_date(
     assert behind == []
 
 
-def test_check_deno_warns_when_deno_absent(
-    tmp_path: Path, capsys, make_workspace
-) -> None:
+def test_check_deno_warns_when_deno_absent(tmp_path: Path, capsys, make_workspace) -> None:
     """check_deno must not raise when deno is absent — returns [] + WARN."""
     with patch("repo_ops_js.deno.shutil.which", return_value=None):
         changes, behind = check_deno(
@@ -185,22 +181,16 @@ def test_check_deno_warns_when_deno_absent(
     assert "WARN" in capsys.readouterr().err
 
 
-def test_check_deno_raises_on_nonzero_returncode(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_check_deno_raises_on_nonzero_returncode(tmp_path: Path, make_workspace) -> None:
     def fake_run(cmd, cwd, timeout=None):
-        return subprocess.CompletedProcess(
-            cmd, 1, stdout="", stderr="deno: command failed"
-        )
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="deno: command failed")
 
     with (
         patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
         patch("repo_ops_js.deno.run", side_effect=fake_run),
     ):
         try:
-            check_deno(
-                make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo")
-            )
+            check_deno(make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"))
         except RuntimeError as exc:
             assert "deno" in str(exc).lower()
         else:
@@ -219,16 +209,12 @@ def test_check_deno_invokes_deno_outdated(tmp_path: Path, make_workspace) -> Non
         patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
         patch("repo_ops_js.deno.run", side_effect=fake_run),
     ):
-        check_deno(
-            make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo")
-        )
+        check_deno(make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"))
 
     assert captured == [["deno", "outdated"]]
 
 
-def test_apply_deno_runs_deno_outdated_update(
-    tmp_path: Path, monkeypatch, make_workspace
-) -> None:
+def test_apply_deno_runs_deno_outdated_update(tmp_path: Path, monkeypatch, make_workspace) -> None:
     monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
     captured: list[list[str]] = []
 
@@ -240,9 +226,7 @@ def test_apply_deno_runs_deno_outdated_update(
         patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
         patch("repo_ops_js.deno.run", side_effect=fake_run),
     ):
-        apply_deno(
-            make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo")
-        )
+        apply_deno(make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"))
 
     assert captured == [
         ["deno", "outdated"],
@@ -250,9 +234,7 @@ def test_apply_deno_runs_deno_outdated_update(
     ]
 
 
-def test_apply_deno_passes_latest_flag(
-    tmp_path: Path, monkeypatch, make_workspace
-) -> None:
+def test_apply_deno_passes_latest_flag(tmp_path: Path, monkeypatch, make_workspace) -> None:
     monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "1")
     captured: list[list[str]] = []
 
@@ -264,9 +246,7 @@ def test_apply_deno_passes_latest_flag(
         patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
         patch("repo_ops_js.deno.run", side_effect=fake_run),
     ):
-        apply_deno(
-            make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo")
-        )
+        apply_deno(make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"))
 
     assert ["deno", "outdated", "--update", "--latest"] in captured
 
@@ -274,9 +254,7 @@ def test_apply_deno_passes_latest_flag(
 def test_apply_deno_raises_when_deno_absent(tmp_path: Path, make_workspace) -> None:
     with patch("repo_ops_js.deno.shutil.which", return_value=None):
         try:
-            apply_deno(
-                make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo")
-            )
+            apply_deno(make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"))
         except RuntimeError as exc:
             assert "deno not on PATH" in str(exc)
         else:
@@ -301,13 +279,9 @@ def test_apply_deno_calls_ghost_bump_guard(tmp_path: Path, make_workspace) -> No
                 "npm:chalk@5.3.0",
             },
         ),
-        patch(
-            "repo_ops_js.guards.resolved_version_from_node_modules", return_value=None
-        ),
+        patch("repo_ops_js.guards.resolved_version_from_node_modules", return_value=None),
     ):
-        apply_deno(
-            make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo")
-        )
+        apply_deno(make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"))
 
 
 def test_apply_deno_rejects_lockfile_ghost_bump(
@@ -331,14 +305,10 @@ def test_apply_deno_rejects_lockfile_ghost_bump(
                 "npm:chalk@5.2.1",
             },
         ),
-        patch(
-            "repo_ops_js.guards.resolved_version_from_node_modules", return_value=None
-        ),
+        patch("repo_ops_js.guards.resolved_version_from_node_modules", return_value=None),
         pytest.raises(RuntimeError, match="ghost bump"),
     ):
-        apply_deno(
-            make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo")
-        )
+        apply_deno(make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"))
 
 
 def test_apply_deno_defers_lockfile_ghost_bump_with_targeted_bump(
@@ -359,9 +329,7 @@ def test_apply_deno_defers_lockfile_ghost_bump_with_targeted_bump(
             "repo_ops_js.deno.versions_deno_lock",
             return_value={"jsr:@std/assert@0.225.0"},
         ),
-        patch(
-            "repo_ops_js.guards.resolved_version_from_node_modules", return_value=None
-        ),
+        patch("repo_ops_js.guards.resolved_version_from_node_modules", return_value=None),
         patch(
             "repo_ops_js.deno.targeted_bump_behind",
             return_value=([], [ghost]),

@@ -112,9 +112,7 @@ def test_resolve_common_dirs_dedup_shortest_path_wins_same_common(
     with patch("repo_ops_core.discovery.git_common_dir", return_value=shared_common):
         result = _resolve_common_dirs([repo_long, repo_short])
 
-    assert result == {shared_common: repo_short}, (
-        f"shorter path must win dedup; got {result}"
-    )
+    assert result == {shared_common: repo_short}, f"shorter path must win dedup; got {result}"
 
 
 def test_resolve_common_dirs_empty_input_returns_empty() -> None:
@@ -154,9 +152,7 @@ def test_discover_repos_parallel_resolves_multiple_repos(tmp_path: Path) -> None
     with patch("repo_ops_core.discovery.git_common_dir", fake_git_common_dir):
         result = discover_repos([str(tmp_path)])
 
-    assert set(result.keys()) == set(commons), (
-        f"all repos must be discovered; got {result}"
-    )
+    assert set(result.keys()) == set(commons), f"all repos must be discovered; got {result}"
 
 
 def test_discover_repos_parallel_ordering_is_deterministic(tmp_path: Path) -> None:
@@ -179,6 +175,5 @@ def test_discover_repos_parallel_ordering_is_deterministic(tmp_path: Path) -> No
         result2 = discover_repos([str(tmp_path)])
 
     assert result1 == result2, (
-        "discover_repos must be deterministic across calls; "
-        f"first={result1} second={result2}"
+        f"discover_repos must be deterministic across calls; first={result1} second={result2}"
     )

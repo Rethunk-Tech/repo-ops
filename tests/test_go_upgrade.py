@@ -44,9 +44,7 @@ def test_changes_from_go_list_json_patch_filter(tmp_path) -> None:
             }
         ),
     ]
-    fake_run = _fake_run_with_gomod(
-        "\n".join(lines), ["example.com/a", "example.com/b"]
-    )
+    fake_run = _fake_run_with_gomod("\n".join(lines), ["example.com/a", "example.com/b"])
     with patch("repo_ops_go.go.run", side_effect=fake_run):
         changes = _changes_from_go_list_json(ws, patch_only=True)
     assert len(changes) == 1
@@ -315,9 +313,7 @@ def test_apply_go_mvs_mode_runs_get_u_t_all(tmp_path) -> None:
     assert ["go", "mod", "tidy"] in calls
 
 
-def test_go_upgrade_mode_invalid_env_falls_back_to_patch_with_warning(
-    caplog, monkeypatch
-) -> None:
+def test_go_upgrade_mode_invalid_env_falls_back_to_patch_with_warning(caplog, monkeypatch) -> None:
     """Typos in REPO_OPS_GO_UPGRADE_MODE warn and fall back to patch."""
     import logging
 
@@ -330,9 +326,7 @@ def test_go_upgrade_mode_invalid_env_falls_back_to_patch_with_warning(
     assert any("patxh" in r.message for r in caplog.records)
 
 
-def test_go_upgrade_mode_empty_env_is_patch_without_warning(
-    caplog, monkeypatch
-) -> None:
+def test_go_upgrade_mode_empty_env_is_patch_without_warning(caplog, monkeypatch) -> None:
     import logging
 
     from repo_ops_go.go import _go_upgrade_mode
@@ -340,6 +334,4 @@ def test_go_upgrade_mode_empty_env_is_patch_without_warning(
     monkeypatch.setenv("REPO_OPS_GO_UPGRADE_MODE", "   ")
     with caplog.at_level(logging.WARNING, logger="repo_ops_go.go"):
         assert _go_upgrade_mode() == "patch"
-    assert not any(
-        "invalid REPO_OPS_GO_UPGRADE_MODE" in r.message for r in caplog.records
-    )
+    assert not any("invalid REPO_OPS_GO_UPGRADE_MODE" in r.message for r in caplog.records)

@@ -31,11 +31,7 @@ def run_bounded_pool[T, R](
     pending: list[T] = list(items)
     futures: dict[concurrent.futures.Future[R], T] = {}
     while pending or futures:
-        while (
-            pending
-            and len(futures) < max_in_flight
-            and not (should_stop and should_stop())
-        ):
+        while pending and len(futures) < max_in_flight and not (should_stop and should_stop()):
             item = pending.pop(0)
             fut = pool.submit(fn, item)
             futures[fut] = item

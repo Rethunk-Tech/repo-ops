@@ -166,9 +166,7 @@ def test_process_workspace_plan_mode(tmp_path: Path) -> None:
     assert out.changes[0].name == "dep"
 
 
-def test_print_human_report_actions_dedup_and_no_op_filter(
-    tmp_path: Path, capsys
-) -> None:
+def test_print_human_report_actions_dedup_and_no_op_filter(tmp_path: Path, capsys) -> None:
     """No-op rows (pin==latest, ok) are omitted; same genuine action x3 prints once."""
     bundle = RepoBundle(
         git_repo=tmp_path,

@@ -133,13 +133,9 @@ def test_commit_agent_model_uses_repo_config_over_injected_env(
 # ---------------------------------------------------------------------------
 
 
-def test_run_upgrade_jobs_from_pyproject(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_upgrade_jobs_from_pyproject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """jobs = N in [tool.repo-ops] sets args.jobs for the run (no env var channel)."""
-    (tmp_path / "pyproject.toml").write_text(
-        "[tool.repo-ops]\njobs = 3\n", encoding="utf-8"
-    )
+    (tmp_path / "pyproject.toml").write_text("[tool.repo-ops]\njobs = 3\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     captured: list[int] = []
@@ -175,9 +171,7 @@ def test_run_upgrade_go_upgrade_mode_from_pyproject(
     assert captured["go_upgrade_mode"] == "explicit"
 
 
-def test_run_upgrade_env_wins_over_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_upgrade_env_wins_over_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """User-set env var takes precedence over [tool.repo-ops] config file key."""
     (tmp_path / "pyproject.toml").write_text(
         '[tool.repo-ops]\ngo_upgrade_mode = "explicit"\n', encoding="utf-8"
@@ -267,9 +261,7 @@ def _patch_fleet_discovery(
         "group_by_repo",
         lambda found, roots: bundles.copy(),
     )
-    monkeypatch.setattr(
-        run_mod.report, "print_json_report", lambda *args, **kwargs: None
-    )
+    monkeypatch.setattr(run_mod.report, "print_json_report", lambda *args, **kwargs: None)
 
 
 def test_fleet_run_resolves_config_per_checkout(
@@ -285,8 +277,7 @@ def test_fleet_run_resolves_config_per_checkout(
     repo_b = tmp_path / "repo-b"
     _write_repo_configs(
         {
-            launcher: '[tool.repo-ops]\nactions_lint_level = "launcher"\n'
-            "timeout_check = 99\n",
+            launcher: '[tool.repo-ops]\nactions_lint_level = "launcher"\ntimeout_check = 99\n',
             repo_a: '[tool.repo-ops]\nactions_lint_level = "block"\ntimeout_check = 11\n',
             repo_b: '[tool.repo-ops]\nactions_lint_level = "off"\ntimeout_check = 21\n',
         }
@@ -423,9 +414,7 @@ _SWEEP_FLAG_CASES = [
 ]
 
 
-@pytest.mark.parametrize(
-    "ecosystem,manager,config_keys,env_vars,resolve", _SWEEP_FLAG_CASES
-)
+@pytest.mark.parametrize("ecosystem,manager,config_keys,env_vars,resolve", _SWEEP_FLAG_CASES)
 def test_default_sweep_and_conservative_override_per_checkout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -496,9 +485,7 @@ def test_default_sweep_and_conservative_override_per_checkout(
     )
 
     def capture_flags(workspace_result: WorkspaceResult, **kwargs: object):
-        captured[workspace_result.workspace.git_repo] = resolve(
-            workspace_result.workspace
-        )
+        captured[workspace_result.workspace.git_repo] = resolve(workspace_result.workspace)
         return workspace_result
 
     monkeypatch.setattr(
@@ -506,9 +493,7 @@ def test_default_sweep_and_conservative_override_per_checkout(
         "process_workspace",
         capture_flags,
     )
-    monkeypatch.setattr(
-        run_mod.report, "print_json_report", lambda *args, **kwargs: None
-    )
+    monkeypatch.setattr(run_mod.report, "print_json_report", lambda *args, **kwargs: None)
 
     # --no-only-outdated: the default filter drops the clean ("ok", no
     # changes) mock WorkspaceResults our capture_flags returns; since
@@ -603,9 +588,7 @@ def test_default_sweep_respects_checkout_config_over_global(
 
     def capture_resolution(workspace_result: WorkspaceResult, **kwargs: object):
         captured["resolved"] = pnpm_mod._pnpm_update_latest_enabled(workspace)
-        captured["ambient_has_cli_key"] = "REPO_OPS_PNPM_UPDATE_LATEST" in (
-            ambient_env() or {}
-        )
+        captured["ambient_has_cli_key"] = "REPO_OPS_PNPM_UPDATE_LATEST" in (ambient_env() or {})
         return workspace_result
 
     monkeypatch.setattr(
@@ -613,9 +596,7 @@ def test_default_sweep_respects_checkout_config_over_global(
         "process_workspace",
         capture_resolution,
     )
-    monkeypatch.setattr(
-        run_mod.report, "print_json_report", lambda *args, **kwargs: None
-    )
+    monkeypatch.setattr(run_mod.report, "print_json_report", lambda *args, **kwargs: None)
 
     rc = run_mod.run_upgrade(
         apply=False,
@@ -746,9 +727,7 @@ def test_fleet_cli_go_upgrade_mode_overrides_checkout_config(
             workspace_result,
         )[1],
     )
-    monkeypatch.setattr(
-        run_mod.report, "print_json_report", lambda *args, **kwargs: None
-    )
+    monkeypatch.setattr(run_mod.report, "print_json_report", lambda *args, **kwargs: None)
 
     rc = run_mod.run_upgrade(
         apply=False,
@@ -768,15 +747,11 @@ def test_fleet_cli_go_upgrade_mode_overrides_checkout_config(
 
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
-def test_run_upgrade_global_config_applied(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_upgrade_global_config_applied(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Global config.toml key is applied when no pyproject.toml or CLI override."""
     cfg_dir = tmp_path / "repo-ops"
     cfg_dir.mkdir()
-    (cfg_dir / "config.toml").write_text(
-        'actions_lint_level = "off"\n', encoding="utf-8"
-    )
+    (cfg_dir / "config.toml").write_text('actions_lint_level = "off"\n', encoding="utf-8")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.delenv("REPO_OPS_ACTIONS_LINT_LEVEL", raising=False)
 
@@ -821,9 +796,7 @@ def test_exclude_from_pyproject_reaches_args(
     assert captured["exclude_patterns"] == ["vendor", "node_modules"]
 
 
-def test_cli_exclude_wins_over_config_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cli_exclude_wins_over_config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """CLI --exclude takes precedence over config-file 'exclude'."""
     (tmp_path / "pyproject.toml").write_text(
         '[tool.repo-ops]\nexclude = ["config_vendor"]\n', encoding="utf-8"
@@ -837,9 +810,7 @@ def test_cli_exclude_wins_over_config_file(
         return 0
 
     monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
-    run_mod.run_upgrade(
-        apply=False, argv=["--flat", "--exclude", "cli_vendor", str(tmp_path)]
-    )
+    run_mod.run_upgrade(apply=False, argv=["--flat", "--exclude", "cli_vendor", str(tmp_path)])
     # CLI value must win; config-file value must be ignored
     assert captured["exclude_patterns"] == ["cli_vendor"]
 
@@ -866,9 +837,7 @@ def test_git_timeout_from_config_reaches_env(
     assert captured["git_timeout"] == "30"
 
 
-def test_git_timeout_env_wins_over_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_git_timeout_env_wins_over_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Existing REPO_OPS_GIT_TIMEOUT env var is not overwritten by config."""
     (tmp_path / "pyproject.toml").write_text(
         "[tool.repo-ops]\ngit_timeout = 30\n", encoding="utf-8"

@@ -131,9 +131,7 @@ def test_dirty_submodule_pointer_hint(tmp_path: Path, init_git_repo) -> None:
     init_git_repo(child)
     _write_gitmodules(parent, "pkg", "https://example.com/pkg.git")
     (child / "README.md").write_text("child\n", encoding="utf-8")
-    subprocess.run(
-        ["git", "add", "README.md"], cwd=child, check=True, capture_output=True
-    )
+    subprocess.run(["git", "add", "README.md"], cwd=child, check=True, capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", "init"],
         cwd=child,
@@ -147,9 +145,7 @@ def test_dirty_submodule_pointer_hint(tmp_path: Path, init_git_repo) -> None:
         capture_output=True,
     )
     (child / "README.md").write_text("child v2\n", encoding="utf-8")
-    subprocess.run(
-        ["git", "add", "README.md"], cwd=child, check=True, capture_output=True
-    )
+    subprocess.run(["git", "add", "README.md"], cwd=child, check=True, capture_output=True)
     subprocess.run(
         ["git", "commit", "-m", "bump"],
         cwd=child,
@@ -192,9 +188,7 @@ def test_find_gitmodules_prunes_skip_dirs(tmp_path: Path, init_git_repo) -> None
     )
 
 
-def test_discover_rejects_self_referential_dot_path(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_discover_rejects_self_referential_dot_path(tmp_path: Path, init_git_repo) -> None:
     """Regression for #47: a .gitmodules entry with path='.' produces
     child_dir == parent; the existing guard (child_repo.resolve() != child_dir)
     passes because git_repo_for('.') == the repo itself, so an explicit check
@@ -209,6 +203,4 @@ def test_discover_rejects_self_referential_dot_path(
     )
 
     links = submodules.discover_submodules_under_roots([str(repo)], flat=True)
-    assert links == [], (
-        f"self-referential path='.' submodule must be rejected; got {links}"
-    )
+    assert links == [], f"self-referential path='.' submodule must be rejected; got {links}"

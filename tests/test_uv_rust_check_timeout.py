@@ -39,9 +39,7 @@ def test_dry_run_check_uses_timeout_check(
         return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     with patch(target, side_effect=fake_run):
-        check(
-            make_workspace(tmp_path, ecosystem=ecosystem, manager=manager, label="demo")
-        )
+        check(make_workspace(tmp_path, ecosystem=ecosystem, manager=manager, label="demo"))
 
     assert len(captured) == 1
     assert captured[0]["timeout"] == resolve_timeout_check()

@@ -177,9 +177,7 @@ def test_inventory_main_filter_precommit_excludes_node(tmp_path: Path, capsys):
     payload = json.loads(out)
     names = [r["name"] for r in payload["rows"]]
     # Only the precommit project should appear after filtering
-    assert not any("proj-node" in n for n in names), (
-        "node-only project must be filtered out"
-    )
+    assert not any("proj-node" in n for n in names), "node-only project must be filtered out"
     assert any("proj-pre" in n for n in names), "precommit project must appear"
 
 

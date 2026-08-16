@@ -321,10 +321,7 @@ def _detect_workspaces(repo: str) -> list[tuple[str, str, str]]:
                     continue
                 results.append((str(mdir), ecosystem, manager))
         if (
-            any(
-                name in names
-                for name in ("uv.lock", "poetry.lock", "pdm.lock", "Pipfile.lock")
-            )
+            any(name in names for name in ("uv.lock", "poetry.lock", "pdm.lock", "Pipfile.lock"))
             and "py" not in kinds
         ):
             manager = _detect_python_manager(mdir, names)
@@ -365,9 +362,7 @@ def _error(ws: str, ecosystem: str, manager: str, error: str) -> WorkspaceResult
     )
 
 
-def _run(
-    cmd: list[str], cwd: str, *, timeout: float | None = None
-) -> tuple[int, str, str]:
+def _run(cmd: list[str], cwd: str, *, timeout: float | None = None) -> tuple[int, str, str]:
     """Run *cmd* in *cwd*; return (returncode, stdout, stderr)."""
     cap = timeout if timeout is not None else _SUBPROCESS_TIMEOUT
     try:
@@ -389,9 +384,7 @@ def _audit_go(ws: str) -> WorkspaceResult:
     label = ws
     if shutil.which("govulncheck") is None:
         return _skip(ws, "go", "go", "govulncheck not on PATH")
-    rc, stdout, stderr = _run(
-        ["govulncheck", "-json", "./..."], ws, timeout=_GOVULNCHECK_TIMEOUT
-    )
+    rc, stdout, stderr = _run(["govulncheck", "-json", "./..."], ws, timeout=_GOVULNCHECK_TIMEOUT)
     counts = VulnCount()
     # govulncheck --json emits one JSON object per line.
     # govulncheck does NOT emit per-finding severity; all findings are counted
@@ -453,10 +446,7 @@ def _probe_bun_audit(ws: str) -> bool:
     # any other non-zero exit (e.g. no package.json) means the subcommand exists.
     return not (
         rc != 0
-        and any(
-            kw in combined
-            for kw in ("unknown command", "unrecognized", "no such subcommand")
-        )
+        and any(kw in combined for kw in ("unknown command", "unrecognized", "no such subcommand"))
     )
 
 
@@ -585,9 +575,7 @@ _DENO_SEVERITY_RE = re.compile(
     r"\b(?P<count>\d+)\s+(?P<severity>critical|high|moderate|medium|low)\b",
     re.IGNORECASE,
 )
-_DENO_FIXED_RE = re.compile(
-    r"^\s*(?P<package>\S+)\s+(?P<current>\S+)\s*->\s*(?P<fixed>\S+)\s*$"
-)
+_DENO_FIXED_RE = re.compile(r"^\s*(?P<package>\S+)\s+(?P<current>\S+)\s*->\s*(?P<fixed>\S+)\s*$")
 
 
 def _deno_json_unsupported(text: str) -> bool:
@@ -780,9 +768,7 @@ def _parse_deno_audit_text(
                 continue
             severity = match.group("severity").lower()
             severity = "moderate" if severity == "medium" else severity
-            setattr(
-                counts, severity, getattr(counts, severity) + int(match.group("count"))
-            )
+            setattr(counts, severity, getattr(counts, severity) + int(match.group("count")))
 
     return (
         counts,
@@ -949,9 +935,7 @@ def _parse_bun_audit_json(data: dict[str, Any]) -> VulnCount:
     return counts
 
 
-def _extract_findings_bun_audit_json(
-    data: dict[str, Any], ws: str
-) -> list[FindingItem]:
+def _extract_findings_bun_audit_json(data: dict[str, Any], ws: str) -> list[FindingItem]:
     """Extract per-advisory findings from bun's native ``bun audit --json`` shape.
 
     Bun's native JSON carries no fix/patched-version field (unlike npm/pnpm's),
@@ -1069,10 +1053,7 @@ def _apply_py_uv_targeted(ws_path: str, items: list[RemediationItem]) -> ApplyOu
             return ApplyOutcome(
                 workspace=ws_path,
                 status="fail",
-                error=(
-                    f"uv add {item.package}=={safe}: "
-                    f"{(stderr or _stdout or 'failed')[:200]}"
-                ),
+                error=(f"uv add {item.package}=={safe}: {(stderr or _stdout or 'failed')[:200]}"),
             )
         added.append(item.package)
     return ApplyOutcome(workspace=ws_path, status="ok", changes_count=len(added))
@@ -1101,10 +1082,7 @@ def _apply_go_targeted(ws_path: str, items: list[RemediationItem]) -> ApplyOutco
             return ApplyOutcome(
                 workspace=ws_path,
                 status="fail",
-                error=(
-                    f"go get {item.package}@{ver}: "
-                    f"{(stderr or _stdout or 'failed')[:200]}"
-                ),
+                error=(f"go get {item.package}@{ver}: {(stderr or _stdout or 'failed')[:200]}"),
             )
         updated.append(item.package)
     if updated:
@@ -1184,9 +1162,7 @@ def _apply_deno_audit(ws_path: str, *, do_verify: bool = True) -> ApplyOutcome:
             if verification.status != "ok":
                 _restore_deno_files(snapshot)
                 detail = verification.error or verification.status
-                return ApplyOutcome(
-                    ws_path, "fail", f"deno audit verification: {detail}"
-                )
+                return ApplyOutcome(ws_path, "fail", f"deno audit verification: {detail}")
         elif rc != 0:
             _restore_deno_files(snapshot)
             return ApplyOutcome(
@@ -1217,9 +1193,7 @@ def _plan_deno_fix(ws_path: str) -> list[RemediationItem]:
         try:
             data = json.loads(stdout)
         except (json.JSONDecodeError, ValueError, TypeError):
-            _counts, remediations, _findings = _parse_deno_audit_text(
-                stdout + stderr, ws_path
-            )
+            _counts, remediations, _findings = _parse_deno_audit_text(stdout + stderr, ws_path)
         else:
             _counts, remediations, _findings = _parse_deno_audit_json(data, ws_path)
         if rc != 0 and not remediations:
@@ -1275,16 +1249,12 @@ def _extract_remediations_pip_audit(
                         if fv > prev:
                             best[name] = fv
     return [
-        RemediationItem(
-            package=pkg, safe_version=ver, ecosystem=ecosystem, workspace=ws
-        )
+        RemediationItem(package=pkg, safe_version=ver, ecosystem=ecosystem, workspace=ws)
         for pkg, ver in sorted(best.items())
     ]
 
 
-def _extract_remediations_npm_json(
-    data: dict[str, Any], ws: str
-) -> list[RemediationItem]:
+def _extract_remediations_npm_json(data: dict[str, Any], ws: str) -> list[RemediationItem]:
     """Extract known-safe fix versions from npm/pnpm/yarn audit JSON.
 
     Handles two formats:
@@ -1333,9 +1303,7 @@ def _extract_remediations_npm_json(
     ]
 
 
-def _extract_remediations_cargo_json(
-    data: dict[str, Any], ws: str
-) -> list[RemediationItem]:
+def _extract_remediations_cargo_json(data: dict[str, Any], ws: str) -> list[RemediationItem]:
     """Extract patched-version requirements from cargo audit JSON.
 
     cargo audit JSON structure::
@@ -1361,9 +1329,7 @@ def _extract_remediations_cargo_json(
             continue
         # Package name: prefer advisory.package (str), fall back to package.name
         pkg_section = vuln.get("package", {})
-        name = str(
-            advisory.get("package") or (pkg_section or {}).get("name") or ""
-        ).strip()
+        name = str(advisory.get("package") or (pkg_section or {}).get("name") or "").strip()
         if not name:
             continue
         patched = advisory.get("patched") or {}
@@ -1438,9 +1404,7 @@ def _extract_findings_npm_json(data: dict[str, Any], ws: str) -> list[FindingIte
                 continue
             package = str(advisory.get("name") or pkg_name).strip()
             fix = advisory.get("fixAvailable")
-            safe_version = (
-                str(fix.get("version") or "").strip() if isinstance(fix, dict) else ""
-            )
+            safe_version = str(fix.get("version") or "").strip() if isinstance(fix, dict) else ""
             via = advisory.get("via", [])
             advisory_entries = [entry for entry in via if isinstance(entry, dict)]
             if not advisory_entries:
@@ -1522,11 +1486,7 @@ def _extract_findings_pip_audit(
                 if str(value).strip()
             ]
             is_cve = alias is not None
-            severity = (
-                "critical"
-                if is_cve and not fixes
-                else ("high" if is_cve else "moderate")
-            )
+            severity = "critical" if is_cve and not fixes else ("high" if is_cve else "moderate")
             safe_version = safe_versions.get(package)
             findings.append(
                 FindingItem(
@@ -1570,9 +1530,7 @@ def _extract_findings_cargo_json(data: dict[str, Any], ws: str) -> list[FindingI
         else:
             severity = "low"
         patched = advisory.get("patched") or {}
-        requirements = (
-            patched.get("requirements", []) if isinstance(patched, dict) else []
-        )
+        requirements = patched.get("requirements", []) if isinstance(patched, dict) else []
         safe_version = ", ".join(str(value) for value in requirements if value)
         findings.append(
             FindingItem(
@@ -1599,9 +1557,7 @@ def _extract_findings_govulncheck_json(
         trace = finding.get("trace") or []
         first_trace = trace[0] if trace and isinstance(trace[0], dict) else {}
         package = str(first_trace.get("module") or "").strip()
-        finding_id = str(
-            finding.get("osv") or finding.get("id") or f"govulncheck:{index}"
-        )
+        finding_id = str(finding.get("osv") or finding.get("id") or f"govulncheck:{index}")
         safe_version = str(finding.get("fixed_version") or "").strip()
         items.append(
             FindingItem(
@@ -1695,15 +1651,11 @@ def _audit_py_uv(ws: str) -> WorkspaceResult:
             "uv",
             "pip-audit not available (uv run pip-audit --version failed)",
         )
-    rc, stdout, stderr = _run(
-        ["uv", "run", "pip-audit", "--format", "json", "--skip-editable"], ws
-    )
+    rc, stdout, stderr = _run(["uv", "run", "pip-audit", "--format", "json", "--skip-editable"], ws)
     return _pip_audit_result(ws, "py-uv", "uv", rc, stdout, stderr)
 
 
-def _run_python_export(
-    ws: str, manager: str, requirements_path: Path
-) -> tuple[int, str, str]:
+def _run_python_export(ws: str, manager: str, requirements_path: Path) -> tuple[int, str, str]:
     """Export a manager's resolved environment to *requirements_path*."""
     output_commands: dict[str, list[str]] = {
         "poetry": [
@@ -1754,9 +1706,7 @@ def _audit_py_exported(ws: str, ecosystem: str, manager: str) -> WorkspaceResult
     else:
         temp_dir = tempfile.TemporaryDirectory(prefix="repo-ops-audit-")
         requirements_path = Path(temp_dir.name) / "requirements.txt"
-        rc_export, export_stdout, export_stderr = _run_python_export(
-            ws, manager, requirements_path
-        )
+        rc_export, export_stdout, export_stderr = _run_python_export(ws, manager, requirements_path)
     try:
         if rc_export != 0:
             return _error(
@@ -1906,9 +1856,7 @@ def _cvss_to_score(cvss_vector: str) -> float:
     scope_changed = scope == "C"
     av_val = _CVSS_AV.get(av, 0.0)
     ac_val = _CVSS_AC.get(ac, 0.0)
-    pr_val = (
-        _CVSS_PR_SCOPE_CHANGED if scope_changed else _CVSS_PR_SCOPE_UNCHANGED
-    ).get(pr, 0.0)
+    pr_val = (_CVSS_PR_SCOPE_CHANGED if scope_changed else _CVSS_PR_SCOPE_UNCHANGED).get(pr, 0.0)
     ui_val = _CVSS_UI.get(ui, 0.0)
     c_val = _CVSS_CIA.get(c, 0.0)
     i_val = _CVSS_CIA.get(i, 0.0)
@@ -2055,9 +2003,7 @@ def print_audit_report(
         return
 
     # Build table
-    all_results = sorted(
-        results, key=lambda r: (_SEV_RANK.get(r.counts.worst, 4), r.label)
-    )
+    all_results = sorted(results, key=lambda r: (_SEV_RANK.get(r.counts.worst, 4), r.label))
     labels = [r.label for r in all_results]
     ecosystems = [r.ecosystem for r in all_results]
     label_w = column_width(labels, "workspace")
@@ -2265,19 +2211,13 @@ def apply_remediations(
     _py_uv_ws_items: dict[str, list[RemediationItem]] = {}
     for item in remediations:
         if item.ecosystem == "node":
-            _js_ws_overrides.setdefault(item.workspace, {})[item.package] = (
-                item.safe_version
-            )
+            _js_ws_overrides.setdefault(item.workspace, {})[item.package] = item.safe_version
         elif item.ecosystem == "rust":
             safe_version = _extract_min_version_from_constraint(item.safe_version)
             if safe_version:
-                _rust_ws_overrides.setdefault(item.workspace, {})[item.package] = (
-                    safe_version
-                )
+                _rust_ws_overrides.setdefault(item.workspace, {})[item.package] = safe_version
         elif item.ecosystem == "deno":
-            _deno_ws_overrides.setdefault(item.workspace, {})[item.package] = (
-                item.safe_version
-            )
+            _deno_ws_overrides.setdefault(item.workspace, {})[item.package] = item.safe_version
         elif item.ecosystem == "go":
             _go_ws_items.setdefault(item.workspace, []).append(item)
         elif item.ecosystem == "py-uv":
@@ -2289,18 +2229,14 @@ def apply_remediations(
             if shutil.which("go") is None:
                 outcomes.append(ApplyOutcome(ws_path, "skip", "go not on PATH"))
             else:
-                outcomes.append(
-                    _apply_go_targeted(ws_path, _go_ws_items.get(ws_path, []))
-                )
+                outcomes.append(_apply_go_targeted(ws_path, _go_ws_items.get(ws_path, [])))
             continue
 
         if ecosystem == "py-uv":
             if shutil.which("uv") is None:
                 outcomes.append(ApplyOutcome(ws_path, "skip", "uv not on PATH"))
             else:
-                outcomes.append(
-                    _apply_py_uv_targeted(ws_path, _py_uv_ws_items.get(ws_path, []))
-                )
+                outcomes.append(_apply_py_uv_targeted(ws_path, _py_uv_ws_items.get(ws_path, [])))
             continue
 
         if ecosystem == "deno":
@@ -2334,9 +2270,7 @@ def apply_remediations(
 
         if not _try_register_manager(manager):
             outcomes.append(
-                ApplyOutcome(
-                    ws_path, "skip", f"manager {manager!r} package not available"
-                )
+                ApplyOutcome(ws_path, "skip", f"manager {manager!r} package not available")
             )
             continue
 

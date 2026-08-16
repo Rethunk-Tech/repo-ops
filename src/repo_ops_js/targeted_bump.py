@@ -60,9 +60,7 @@ def run_targeted_bump(
     """
     snap = snapshot_workspace_files(mdir, manager)
     audit_override = audit_overrides.get(change.name)
-    held_rule = (
-        None if audit_override or ws is None else resolve_package_hold(ws, change.name)
-    )
+    held_rule = None if audit_override or ws is None else resolve_package_hold(ws, change.name)
     if audit_override:
         target_ver = audit_override
     elif held_rule is not None:

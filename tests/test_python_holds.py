@@ -33,14 +33,10 @@ def _held_rule(package: str, **overrides) -> HoldRule:
 
 
 def _uv_ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path, ecosystem="py", manager="uv", git_repo=tmp_path, label="demo"
-    )
+    return Workspace(path=tmp_path, ecosystem="py", manager="uv", git_repo=tmp_path, label="demo")
 
 
-def test_check_uv_lock_filters_held_package_past_ceiling(
-    tmp_path: Path, make_proc
-) -> None:
+def test_check_uv_lock_filters_held_package_past_ceiling(tmp_path: Path, make_proc) -> None:
     from repo_ops_py import uv_lock
 
     stdout = "Resolved 10 packages\nwould upgrade typescript-stub 6.5 -> 7.0\n"
@@ -65,10 +61,7 @@ def test_apply_uv_lock_clamps_package_above_ceiling(tmp_path: Path, make_proc) -
 
     def _write_lock():
         lock_path.write_text(
-            "\n".join(
-                f'[[package]]\nname = "{n}"\nversion = "{v}"\n'
-                for n, v in versions.items()
-            ),
+            "\n".join(f'[[package]]\nname = "{n}"\nversion = "{v}"\n' for n, v in versions.items()),
             encoding="utf-8",
         )
 
@@ -157,9 +150,7 @@ def test_apply_uv_lock_raises_when_corrective_install_command_fails(
 
 
 def _pdm_ws(tmp_path: Path) -> Workspace:
-    return Workspace(
-        path=tmp_path, ecosystem="py", manager="pdm", git_repo=tmp_path, label="demo"
-    )
+    return Workspace(path=tmp_path, ecosystem="py", manager="pdm", git_repo=tmp_path, label="demo")
 
 
 # ---------------------------------------------------------------------------
@@ -406,14 +397,10 @@ def _pip_tools_ws(tmp_path: Path) -> Workspace:
     )
 
 
-def test_apply_pip_tools_passes_hold_constraints_file(
-    tmp_path: Path, make_proc
-) -> None:
+def test_apply_pip_tools_passes_hold_constraints_file(tmp_path: Path, make_proc) -> None:
     from repo_ops_py_pip_tools import pip_tools
 
-    (tmp_path / "requirements.in").write_text(
-        "typescript-stub\nother-pkg\n", encoding="utf-8"
-    )
+    (tmp_path / "requirements.in").write_text("typescript-stub\nother-pkg\n", encoding="utf-8")
     captured_cmds: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=None):
@@ -427,9 +414,7 @@ def test_apply_pip_tools_passes_hold_constraints_file(
             return_value=(_held_rule("typescript-stub"),),
         ),
         patch.object(core_holds, "_repo_holds_cached", return_value=()),
-        patch(
-            "repo_ops_py_pip_tools.pip_tools.shutil.which", return_value="/usr/bin/uv"
-        ),
+        patch("repo_ops_py_pip_tools.pip_tools.shutil.which", return_value="/usr/bin/uv"),
         patch.object(pip_tools, "run", side_effect=fake_run),
     ):
         pip_tools.apply_pip_tools(_pip_tools_ws(tmp_path))
@@ -447,9 +432,7 @@ def test_pip_tools_constraints_file_contains_only_held_direct_deps(
 ) -> None:
     from repo_ops_py_pip_tools import pip_tools
 
-    (tmp_path / "requirements.in").write_text(
-        "typescript-stub\nother-pkg\n", encoding="utf-8"
-    )
+    (tmp_path / "requirements.in").write_text("typescript-stub\nother-pkg\n", encoding="utf-8")
     ws = _pip_tools_ws(tmp_path)
     with (
         patch.object(
@@ -459,9 +442,7 @@ def test_pip_tools_constraints_file_contains_only_held_direct_deps(
         ),
         patch.object(core_holds, "_repo_holds_cached", return_value=()),
     ):
-        with pip_tools._hold_constraints_file(
-            ws, tmp_path / "requirements.in"
-        ) as constraints_path:
+        with pip_tools._hold_constraints_file(ws, tmp_path / "requirements.in") as constraints_path:
             assert constraints_path is not None
             content = constraints_path.read_text(encoding="utf-8")
             assert "typescript-stub<=6.999999.999999" in content

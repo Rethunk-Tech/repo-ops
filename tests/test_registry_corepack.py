@@ -154,9 +154,7 @@ def test_corepack_prepare_skips_bun(tmp_path: Path, capsys) -> None:
 
 
 @pytest.mark.parametrize("manager", ["yarn", "pnpm", "npm"])
-def test_corepack_prepare_activates_supported_managers(
-    manager: str, tmp_path: Path
-) -> None:
+def test_corepack_prepare_activates_supported_managers(manager: str, tmp_path: Path) -> None:
     _write_manifest(tmp_path, f"{manager}@1.2.3")
     calls: list[list[str]] = []
 

@@ -91,9 +91,7 @@ def test_check_pnpm_valid_json_no_warning(
     assert captured.err == ""
 
 
-def test_check_pnpm_bucketing_and_timeout(
-    tmp_path: Path, monkeypatch, make_workspace
-) -> None:
+def test_check_pnpm_bucketing_and_timeout(tmp_path: Path, monkeypatch, make_workspace) -> None:
     """#76 + #70 — in-range pkg → changes; out-of-range only → behind_latest;
     ``run`` called with ``timeout=TIMEOUT_CHECK``."""
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "0")
@@ -108,9 +106,7 @@ def test_check_pnpm_bucketing_and_timeout(
 
     def fake_run(cmd: list[str], cwd: Path, timeout: int | None = None, env=None):
         captured_timeout.append(timeout)
-        return subprocess.CompletedProcess(
-            cmd, 1, stdout=json.dumps(payload), stderr=""
-        )
+        return subprocess.CompletedProcess(cmd, 1, stdout=json.dumps(payload), stderr="")
 
     with patch("repo_ops_js_pnpm.pnpm.run", fake_run):
         changes, behind_latest = check_pnpm(
@@ -147,9 +143,7 @@ def test_check_pnpm_update_latest_env(
     """#91 — with REPO_OPS_PNPM_UPDATE_LATEST set, a package at current==wanted
     but latest>current lands in *changes*; without it, stays in *behind_latest*."""
     # current == wanted (no in-range bump), latest > current.
-    payload = {
-        "lodash": {"current": "4.17.20", "wanted": "4.17.20", "latest": "4.17.21"}
-    }
+    payload = {"lodash": {"current": "4.17.20", "wanted": "4.17.20", "latest": "4.17.21"}}
 
     # Targeted bump also promotes behind_latest into changes (#122) and
     # defaults on with the sweep (#136); pin it off so this test isolates

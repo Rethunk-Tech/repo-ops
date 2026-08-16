@@ -34,9 +34,7 @@ def test_resolve_default_is_four(monkeypatch: pytest.MonkeyPatch) -> None:
     ("raw", "expected"),
     [("1", 1), ("2", 2), ("0", 1), ("-3", 1), ("", 4), ("abc", 4)],
 )
-def test_resolve_env_override(
-    monkeypatch: pytest.MonkeyPatch, raw: str, expected: int
-) -> None:
+def test_resolve_env_override(monkeypatch: pytest.MonkeyPatch, raw: str, expected: int) -> None:
     monkeypatch.setenv("REPO_OPS_YARN_MAX_CONCURRENCY", raw)
     assert yarn._resolve_yarn_max_concurrency() == expected
 

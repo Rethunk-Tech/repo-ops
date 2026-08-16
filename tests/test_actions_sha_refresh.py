@@ -51,9 +51,7 @@ def test_refresh_advances_digest_within_major_and_keeps_comment(tmp_path: Path) 
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, scanned = scan_actions(
-            tmp_path, apply=True, keep_sha=True, refresh_sha=True
-        )
+        bumps, scanned = scan_actions(tmp_path, apply=True, keep_sha=True, refresh_sha=True)
 
     assert scanned == 1
     checkout = [b for b in bumps if b.action == "actions/checkout"]

@@ -47,9 +47,7 @@ def test_enforce_holds_raises_when_corrective_install_command_fails(
     nm_dir = tmp_path / "node_modules" / "typescript"
     nm_dir.mkdir(parents=True)
     (nm_dir / "package.json").write_text('{"version": "7.2.0"}', encoding="utf-8")
-    ws = Workspace(
-        path=tmp_path, ecosystem="node", manager="npm", git_repo=tmp_path, label="demo"
-    )
+    ws = Workspace(path=tmp_path, ecosystem="node", manager="npm", git_repo=tmp_path, label="demo")
     rule = HoldRule(package="typescript", max_version="6")
 
     def _failing_install(name: str, spec: str) -> subprocess.CompletedProcess[str]:

@@ -56,9 +56,7 @@ def test_workspace_result_behind_latest_field(tmp_path: Path, make_workspace) ->
     assert wr.status == "ok"
 
 
-def test_workspace_result_to_json_includes_behind_latest(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_workspace_result_to_json_includes_behind_latest(tmp_path: Path, make_workspace) -> None:
     ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     wr = WorkspaceResult(
         workspace=ws,
@@ -66,9 +64,7 @@ def test_workspace_result_to_json_includes_behind_latest(
     )
     j = wr.to_json()
     assert "behind_latest" in j
-    assert j["behind_latest"] == [
-        {"name": "@hono/node-server", "from": "1.19.14", "to": "2.0.4"}
-    ]
+    assert j["behind_latest"] == [{"name": "@hono/node-server", "from": "1.19.14", "to": "2.0.4"}]
     # Existing fields must remain unchanged.
     assert "changes" in j
     assert "status" in j
@@ -98,9 +94,7 @@ def test_build_run_summary_counts_behind_latest(tmp_path: Path, make_workspace) 
     assert summary["workspaces_fail"] == 0
 
 
-def test_behind_latest_does_not_affect_failure_count(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_behind_latest_does_not_affect_failure_count(tmp_path: Path, make_workspace) -> None:
     ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     wr = WorkspaceResult(
         workspace=ws,
@@ -268,9 +262,7 @@ def test_footer_per_manager_hints_npm_vs_latest(tmp_path: Path, monkeypatch) -> 
     assert "3 bun package(s) behind latest (targeted bump not attempted" in out
 
 
-def test_per_line_behind_latest_note_is_manager_aware(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_per_line_behind_latest_note_is_manager_aware(tmp_path: Path, monkeypatch) -> None:
     """#131: the per-workspace behind-latest line must not hardcode
 
     "(latest-mode off)". yarn leftovers surface only after the targeted bump
@@ -438,9 +430,7 @@ def test_sweep_env_vars_default_on_and_conservative_off(
         "repo_ops_upgrade.run.orchestration.process_workspace",
         side_effect=_capture("conservative"),
     ):
-        main_plan(
-            [str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"]
-        )
+        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"])
 
     assert all(v is None for v in seen["default"].values())
     assert all(resolved_default.values())
@@ -479,16 +469,12 @@ def test_default_sweep_sets_go_upgrade_mode_explicit(
         "repo_ops_upgrade.run.orchestration.process_workspace",
         side_effect=_capture("conservative"),
     ):
-        main_plan(
-            [str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"]
-        )
+        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"])
 
     assert seen == {"default": "explicit", "conservative": None}
 
 
-def test_latest_umbrella_flips_actions_mode(
-    tmp_path: Path, monkeypatch, init_git_repo
-) -> None:
+def test_latest_umbrella_flips_actions_mode(tmp_path: Path, monkeypatch, init_git_repo) -> None:
     """#106: the default sweep opts Actions into latest mode; --conservative
     reverts to normalize; an explicit --actions-upgrade-mode always wins."""
     for var in (

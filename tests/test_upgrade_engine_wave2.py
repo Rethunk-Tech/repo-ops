@@ -35,9 +35,7 @@ def _fail(stdout: str = "", stderr: str = "err") -> CompletedProcess[str]:
 
 def _go_ws_with_generate(tmp_path: Path, make_workspace) -> WorkspaceResult:
     (tmp_path / "go.mod").write_text("module example.com/m\n\ngo 1.21\n")
-    (tmp_path / "gen.go").write_text(
-        "package main\n//go:generate echo hi\n", encoding="utf-8"
-    )
+    (tmp_path / "gen.go").write_text("package main\n//go:generate echo hi\n", encoding="utf-8")
     ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
     result = WorkspaceResult(workspace=ws, status="ok")
     result.changes = [Change("golang.org/x/tools", "1", "2")]
@@ -50,13 +48,9 @@ def _go_ws_with_generate(tmp_path: Path, make_workspace) -> WorkspaceResult:
 
 
 class TestOrchestrationGoGenerateGate:
-    def test_dispatch_skips_go_generate_when_gate_off(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_dispatch_skips_go_generate_when_gate_off(self, tmp_path: Path, make_workspace) -> None:
         result = _go_ws_with_generate(tmp_path, make_workspace=make_workspace)
-        env_without = {
-            k: v for k, v in os.environ.items() if k != "REPO_OPS_REMEDIATE_GO_GENERATE"
-        }
+        env_without = {k: v for k, v in os.environ.items() if k != "REPO_OPS_REMEDIATE_GO_GENERATE"}
         with (
             patch.dict(os.environ, env_without, clear=True),
             patch("repo_ops_upgrade_remediations_go.remediations.run") as mock_run,
@@ -70,9 +64,7 @@ class TestOrchestrationGoGenerateGate:
         called = [c[0][0] for c in mock_run.call_args_list]
         assert ["go", "generate", "./..."] not in called
 
-    def test_dispatch_runs_go_generate_when_gate_on(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_dispatch_runs_go_generate_when_gate_on(self, tmp_path: Path, make_workspace) -> None:
         result = _go_ws_with_generate(tmp_path, make_workspace=make_workspace)
         with (
             patch.dict(os.environ, {"REPO_OPS_REMEDIATE_GO_GENERATE": "1"}),
@@ -125,17 +117,13 @@ class TestVerifyExtraManagers:
 
         ws = make_workspace(tmp_path, manager="pipenv", ecosystem=None, label="demo")
         with (
-            patch(
-                "repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/pipenv"
-            ),
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/pipenv"),
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
             assert verify_workspace(ws, verify_test=False) is None
         assert calls == [["pipenv", "verify"]]
 
-    def test_hatch_without_uv_lock_skips_sync_locked(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_hatch_without_uv_lock_skips_sync_locked(self, tmp_path: Path, make_workspace) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\nversion = "0.1.0"\n',
             encoding="utf-8",
@@ -153,9 +141,7 @@ class TestVerifyExtraManagers:
             assert verify_workspace(ws, verify_test=False) is None
         assert not any(c[:3] == ["uv", "sync", "--locked"] for c in calls)
 
-    def test_hatch_with_uv_lock_runs_sync_locked(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_hatch_with_uv_lock_runs_sync_locked(self, tmp_path: Path, make_workspace) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\nversion = "0.1.0"\n',
             encoding="utf-8",
@@ -174,9 +160,7 @@ class TestVerifyExtraManagers:
             assert verify_workspace(ws, verify_test=False) is None
         assert calls[0] == ["uv", "sync", "--locked"]
 
-    def test_deno_with_lock_runs_install_frozen(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_deno_with_lock_runs_install_frozen(self, tmp_path: Path, make_workspace) -> None:
         (tmp_path / "deno.lock").write_text("{}", encoding="utf-8")
         calls: list[list[str]] = []
 
@@ -203,9 +187,7 @@ class TestVerifyExtraManagers:
             calls.append(cmd)
             return _ok()
 
-        ws = make_workspace(
-            tmp_path, manager="precommit", ecosystem="precommit", label="demo"
-        )
+        ws = make_workspace(tmp_path, manager="precommit", ecosystem="precommit", label="demo")
         with (
             patch(
                 "repo_ops_upgrade.verify.shutil.which",
@@ -216,13 +198,9 @@ class TestVerifyExtraManagers:
             assert verify_workspace(ws, verify_test=False) is None
         assert calls == [["pre-commit", "validate-config"]]
 
-    def test_container_verify_is_intentional_noop(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_container_verify_is_intentional_noop(self, tmp_path: Path, make_workspace) -> None:
         """container v1: image builds out of scope — verify returns None."""
-        ws = make_workspace(
-            tmp_path, manager="container", ecosystem="container", label="demo"
-        )
+        ws = make_workspace(tmp_path, manager="container", ecosystem="container", label="demo")
         with patch("repo_ops_upgrade.verify.run") as mock_run:
             assert verify_workspace(ws, verify_test=False) is None
         mock_run.assert_not_called()
@@ -267,8 +245,7 @@ def test_filter_workspaces(
     tmp_path: Path, make_workspace, workspace_specs, eco, manager, expected
 ) -> None:
     workspaces = [
-        make_workspace(tmp_path, manager=m, ecosystem=e, label="demo")
-        for m, e in workspace_specs
+        make_workspace(tmp_path, manager=m, ecosystem=e, label="demo") for m, e in workspace_specs
     ]
     out = orchestration.filter_workspaces(workspaces, eco, manager)
     assert [w.manager for w in out] == expected
@@ -355,9 +332,7 @@ def test_missing_applier_maps_to_workspace_fail(tmp_path: Path, make_workspace) 
     assert "no applier" in (out.error or "")
 
 
-def test_registry_apply_workspace_raises_without_applier(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_registry_apply_workspace_raises_without_applier(tmp_path: Path, make_workspace) -> None:
     ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
     with (
         patch.dict(registry.APPLIERS, {}, clear=True),
@@ -372,9 +347,7 @@ def test_registry_apply_workspace_raises_without_applier(
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def test_revert_subprocess_timeout_sets_disposition(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_revert_subprocess_timeout_sets_disposition(tmp_path: Path, make_workspace) -> None:
     ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
     wr = WorkspaceResult(workspace=ws)
     before = {tmp_path / "package-lock.json": b"{}"}

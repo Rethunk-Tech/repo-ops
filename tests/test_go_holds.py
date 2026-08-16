@@ -53,9 +53,7 @@ def _fake_run_with_gomod(list_stdout: str, require_paths: list[str], make_proc):
         ("1.2.3", "<=v1.2.3"),
     ],
 )
-def test_go_ceiling_query_uses_shared_hold_padding(
-    max_version: str, expected: str
-) -> None:
+def test_go_ceiling_query_uses_shared_hold_padding(max_version: str, expected: str) -> None:
     assert _go_ceiling_query(max_version) == expected
 
 
@@ -81,9 +79,7 @@ def test_changes_from_go_list_json_then_filter_held_past_ceiling(
     assert filtered == []
 
 
-def test_filter_held_go_changes_keeps_within_ceiling(
-    tmp_path, make_workspace, make_proc
-) -> None:
+def test_filter_held_go_changes_keeps_within_ceiling(tmp_path, make_workspace, make_proc) -> None:
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     line = json.dumps(
         {
@@ -138,9 +134,7 @@ def test_enforce_version_ceilings_clamps_resolved_above_ceiling(
                 )
             )
         if cmd[:3] == ["go", "list", "-m"]:
-            return make_proc(
-                stdout=json.dumps({"Path": _MODULE, "Version": versions[_MODULE]})
-            )
+            return make_proc(stdout=json.dumps({"Path": _MODULE, "Version": versions[_MODULE]}))
         if cmd[:2] == ["go", "get"]:
             versions[_MODULE] = "v1.5.0"
             return make_proc()
@@ -287,9 +281,7 @@ def test_apply_go_patch_mode_invokes_enforce_ceilings(
     def fake_run(cmd, cwd, timeout=0, env=None):
         calls.append(cmd)
         if cmd[:3] == ["go", "mod", "edit"]:
-            return make_proc(
-                stdout=json.dumps({"Module": {"Path": "example.com/main"}})
-            )
+            return make_proc(stdout=json.dumps({"Module": {"Path": "example.com/main"}}))
         return make_proc()
 
     with (

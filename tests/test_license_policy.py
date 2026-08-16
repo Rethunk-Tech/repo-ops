@@ -213,9 +213,7 @@ def test_scan_python_licenses_basic(tmp_path: Path) -> None:
 
 
 def test_scan_python_licenses_no_name_skipped(tmp_path: Path) -> None:
-    (tmp_path / "pyproject.toml").write_text(
-        "[build-system]\nrequires = []\n", encoding="utf-8"
-    )
+    (tmp_path / "pyproject.toml").write_text("[build-system]\nrequires = []\n", encoding="utf-8")
     assert scan_python_licenses(tmp_path) == []
 
 
@@ -290,8 +288,7 @@ def test_scan_python_dep_licenses_uv_lock_with_venv(tmp_path: Path) -> None:
         sp,
         "coverage",
         "7.14.3",
-        "Metadata-Version: 2.1\nName: coverage\nVersion: 7.14.3\n"
-        "License: Apache-2.0\n\nbody\n",
+        "Metadata-Version: 2.1\nName: coverage\nVersion: 7.14.3\nLicense: Apache-2.0\n\nbody\n",
     )
     _write_dist_info(
         sp,
@@ -311,9 +308,7 @@ def test_scan_python_dep_licenses_uv_lock_with_venv(tmp_path: Path) -> None:
     assert by_name["packaging"].source == "uv.lock+dist-info"
     assert by_name["packaging"].version == "26.2"
     assert by_name["coverage"].license_id == "Apache-2.0"
-    assert by_name["typing-extensions"].license_id == (
-        "Python Software Foundation License"
-    )
+    assert by_name["typing-extensions"].license_id == ("Python Software Foundation License")
     assert by_name["certifi"].license_id == UNKNOWN_LICENSE
     assert by_name["certifi"].source == "uv.lock"
     assert all(p.ecosystem == "python" for p in results)
@@ -521,9 +516,7 @@ def test_license_exit_code(
 # ---------------------------------------------------------------------------
 
 
-def test_license_json_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_license_json_output(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _write_nm_pkg(tmp_path, "lodash", "4.17.21", "MIT")
     rc = main(["--json", "--compact", "--no-fail-unknown", str(tmp_path)])
     assert rc == 0
@@ -803,9 +796,7 @@ def test_network_only_enrichment_for_license_and_sbom(
 
 def test_license_parser_flags() -> None:
     parser = build_license_parser()
-    args = parser.parse_args(
-        ["--allow", "MIT,Apache-2.0", "--deny", "GPL", "--enrich-licenses"]
-    )
+    args = parser.parse_args(["--allow", "MIT,Apache-2.0", "--deny", "GPL", "--enrich-licenses"])
     assert args.allow == "MIT,Apache-2.0"
     assert args.deny == "GPL"
     assert args.enrich_licenses is True

@@ -113,9 +113,7 @@ def test_zero_behind_run_resets_aging_and_prunes(tmp_path, monkeypatch):
     _reset_module_cache()
 
 
-def test_process_workspace_records_plan_behind_latest(
-    tmp_path, monkeypatch, make_workspace
-):
+def test_process_workspace_records_plan_behind_latest(tmp_path, monkeypatch, make_workspace):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("REPO_OPS_NO_PROGRESS", "1")
     _reset_module_cache()
@@ -149,9 +147,7 @@ def test_process_workspace_records_plan_behind_latest(
     _reset_module_cache()
 
 
-def test_report_surfaces_score_delta_and_footer_top3(
-    tmp_path, monkeypatch, make_workspace
-):
+def test_report_surfaces_score_delta_and_footer_top3(tmp_path, monkeypatch, make_workspace):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     _reset_module_cache()
     repo = tmp_path / "repo"
@@ -167,8 +163,7 @@ def test_report_surfaces_score_delta_and_footer_top3(
             WorkspaceResult(
                 workspace=ws,
                 behind_latest=[
-                    Change(name=f"pkg{i}", from_ver="1.0.0", to="2.0.0")
-                    for i in range(4)
+                    Change(name=f"pkg{i}", from_ver="1.0.0", to="2.0.0") for i in range(4)
                 ],
             )
         ],
@@ -181,16 +176,12 @@ def test_report_surfaces_score_delta_and_footer_top3(
 
     buf = io.StringIO()
     with patch("sys.stdout", buf):
-        print_run_footer(
-            summary=build_run_summary({repo: bundle}), failures=[], exit_code=0
-        )
+        print_run_footer(summary=build_run_summary({repo: bundle}), failures=[], exit_code=0)
     assert "  staleness: test-repo 40.0 (behind-count x days-behind)" in buf.getvalue()
     _reset_module_cache()
 
 
-def test_empty_store_keeps_report_output_unchanged(
-    tmp_path, monkeypatch, make_workspace
-):
+def test_empty_store_keeps_report_output_unchanged(tmp_path, monkeypatch, make_workspace):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     _reset_module_cache()
     repo = tmp_path / "repo"
@@ -199,9 +190,7 @@ def test_empty_store_keeps_report_output_unchanged(
         label="test-repo",
         workspaces=[
             WorkspaceResult(
-                workspace=make_workspace(
-                    repo, ecosystem="node", manager="npm", label="test-repo"
-                ),
+                workspace=make_workspace(repo, ecosystem="node", manager="npm", label="test-repo"),
                 behind_latest=[Change(name="pkg", from_ver="1.0.0", to="2.0.0")],
             )
         ],

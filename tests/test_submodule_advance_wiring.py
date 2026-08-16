@@ -143,9 +143,7 @@ def test_apply_submodule_tag_advances_invoked_via_run(
         parent=repo.resolve(),
         url="https://example.com/sub.git",
     )
-    monkeypatch.setattr(
-        sub_mod, "discover_submodules_under_roots", lambda *a, **kw: [fake_link]
-    )
+    monkeypatch.setattr(sub_mod, "discover_submodules_under_roots", lambda *a, **kw: [fake_link])
 
     # run_upgrade with --submodules + apply (--flat so no two-level walk)
     import contextlib
@@ -199,16 +197,12 @@ def test_upgrade_scoped_paths_includes_gitlink(tmp_path: Path) -> None:
     assert "libs/child" not in scoped_without
 
     # With extra_gitlink_paths: gitlink IS included alongside the lockfile
-    scoped_with = upgrade_scoped_paths(
-        bundle, porcelain, extra_gitlink_paths={"libs/child"}
-    )
+    scoped_with = upgrade_scoped_paths(bundle, porcelain, extra_gitlink_paths={"libs/child"})
     assert "libs/child" in scoped_with
     assert "go.sum" in scoped_with
 
 
-def test_plan_repo_commit_includes_gitlink_via_extra_paths(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_plan_repo_commit_includes_gitlink_via_extra_paths(tmp_path: Path, init_git_repo) -> None:
     """plan_repo_commit stages gitlink paths passed via extra_gitlink_paths.
 
     Integration path: gitlink appears in the commit plan's files list so
@@ -251,9 +245,7 @@ def test_plan_repo_commit_includes_gitlink_via_extra_paths(
             extra_gitlink_paths={gitlink_path},
         )
 
-    assert plan.skipped_reason is None, (
-        f"plan should not be skipped: {plan.skipped_reason}"
-    )
+    assert plan.skipped_reason is None, f"plan should not be skipped: {plan.skipped_reason}"
     assert gitlink_path in plan.files, "gitlink path must appear in commit plan files"
 
 
@@ -288,9 +280,7 @@ def test_dirty_guard_prevents_checkout_when_dirty(tmp_path: Path, make_proc) -> 
         ),
         # Repo is dirty
         patch("repo_ops_upgrade.submodules.is_git_dirty", return_value=True),
-        patch(
-            "repo_ops_upgrade.submodules.run_git", return_value=make_proc()
-        ) as mock_git,
+        patch("repo_ops_upgrade.submodules.run_git", return_value=make_proc()) as mock_git,
     ):
         bumps = apply_submodule_tag_advances([link], allow_dirty=False)
 
@@ -300,9 +290,7 @@ def test_dirty_guard_prevents_checkout_when_dirty(tmp_path: Path, make_proc) -> 
     mock_git.assert_not_called()
 
 
-def test_dirty_guard_allows_checkout_when_allow_dirty(
-    tmp_path: Path, make_proc
-) -> None:
+def test_dirty_guard_allows_checkout_when_allow_dirty(tmp_path: Path, make_proc) -> None:
     """allow_dirty=True bypasses the dirty guard and proceeds with checkout."""
     link = SubmoduleLink(
         path="sub",
@@ -322,9 +310,7 @@ def test_dirty_guard_allows_checkout_when_allow_dirty(
             return_value=["v1.0.0", "v1.1.0"],
         ),
         patch("repo_ops_upgrade.submodules.is_git_dirty", return_value=True),
-        patch(
-            "repo_ops_upgrade.submodules.run_git", return_value=make_proc()
-        ) as mock_git,
+        patch("repo_ops_upgrade.submodules.run_git", return_value=make_proc()) as mock_git,
     ):
         bumps = apply_submodule_tag_advances([link], allow_dirty=True)
 
@@ -363,9 +349,7 @@ def test_checkout_uses_detach_with_full_tag_ref(tmp_path: Path, make_proc) -> No
             return_value=["v1.0.0", "v1.1.0"],
         ),
         patch("repo_ops_upgrade.submodules.is_git_dirty", return_value=False),
-        patch(
-            "repo_ops_upgrade.submodules.run_git", return_value=make_proc()
-        ) as mock_git,
+        patch("repo_ops_upgrade.submodules.run_git", return_value=make_proc()) as mock_git,
     ):
         apply_submodule_tag_advances([link], allow_dirty=False)
 
@@ -376,18 +360,14 @@ def test_checkout_uses_detach_with_full_tag_ref(tmp_path: Path, make_proc) -> No
     checkout_args = checkout_call[0]  # positional args to run_git
     # run_git(submod_dir, "checkout", "--detach", "refs/tags/v1.1.0", timeout=...)
     assert checkout_args[1] == "checkout"
-    assert "--detach" in checkout_args, (
-        f"--detach missing from checkout args: {checkout_args}"
-    )
+    assert "--detach" in checkout_args, f"--detach missing from checkout args: {checkout_args}"
     assert "refs/tags/v1.1.0" in checkout_args, (
         f"full tag ref missing from checkout args: {checkout_args}"
     )
     # Bare tag name must NOT appear (old ambiguous form)
     assert "v1.1.0" in str(checkout_args)  # present as refs/tags/v1.1.0
     # The old form would be just the tag name as second arg after "checkout"
-    assert checkout_args[2] == "--detach", (
-        "second arg must be --detach, not the bare tag"
-    )
+    assert checkout_args[2] == "--detach", "second arg must be --detach, not the bare tag"
 
 
 # ---------------------------------------------------------------------------
@@ -411,9 +391,7 @@ def test_run_post_apply_commits_passes_gitlink_map(tmp_path: Path) -> None:
 
     def _spy_plan(b, *, mode, allow_dirty, commit_on_fail, extra_gitlink_paths=None):
         captured_extra.append(extra_gitlink_paths)
-        return CommitPlan(
-            git_repo=b.git_repo, label=b.label, message="", skipped_reason="test"
-        )
+        return CommitPlan(git_repo=b.git_repo, label=b.label, message="", skipped_reason="test")
 
     with patch.object(post_apply_commit, "plan_repo_commit", side_effect=_spy_plan):
         post_apply_commit.run_post_apply_commits(

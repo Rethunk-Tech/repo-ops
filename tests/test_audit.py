@@ -296,9 +296,7 @@ def test_exit_code_fail_on_unknown_never_overrides_fail_on_never() -> None:
 def test_exit_code_for_threshold(
     status: str, counts: VulnCount | None, fail_on: str, expected: int
 ) -> None:
-    result = WorkspaceResult(
-        label="a", path="/a", ecosystem="go", manager="go", status=status
-    )
+    result = WorkspaceResult(label="a", path="/a", ecosystem="go", manager="go", status=status)
     if counts is not None:
         result.counts = counts
     assert _exit_code_for([result], fail_on) == expected
@@ -486,11 +484,7 @@ def test_audit_node_npm_skipped_when_npm_missing() -> None:
 
 def test_audit_node_npm_ok() -> None:
     npm_output = json.dumps(
-        {
-            "metadata": {
-                "vulnerabilities": {"critical": 0, "high": 0, "moderate": 0, "low": 0}
-            }
-        }
+        {"metadata": {"vulnerabilities": {"critical": 0, "high": 0, "moderate": 0, "low": 0}}}
     )
     with (
         patch("shutil.which", return_value="/usr/bin/npm"),
@@ -502,11 +496,7 @@ def test_audit_node_npm_ok() -> None:
 
 def test_audit_node_npm_vulns() -> None:
     npm_output = json.dumps(
-        {
-            "metadata": {
-                "vulnerabilities": {"critical": 0, "high": 2, "moderate": 0, "low": 0}
-            }
-        }
+        {"metadata": {"vulnerabilities": {"critical": 0, "high": 2, "moderate": 0, "low": 0}}}
     )
     with (
         patch("shutil.which", return_value="/usr/bin/npm"),

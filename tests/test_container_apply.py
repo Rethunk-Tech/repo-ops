@@ -84,9 +84,7 @@ def test_replace_tag_in_line_comment_untouched() -> None:
 
 def test_apply_dockerfile_single_bump(tmp_path: Path) -> None:
     dockerfile = tmp_path / "Dockerfile"
-    original = (
-        "# syntax=docker/dockerfile:1\nFROM nginx:1.25\nRUN apt-get update\nEXPOSE 80\n"
-    )
+    original = "# syntax=docker/dockerfile:1\nFROM nginx:1.25\nRUN apt-get update\nEXPOSE 80\n"
     dockerfile.write_text(original, encoding="utf-8")
 
     with patch(
@@ -153,9 +151,7 @@ def test_apply_dockerfile_multi_stage_only_target_lines_change(tmp_path: Path) -
 def test_apply_dockerfile_same_image_two_stages_both_bumped(tmp_path: Path) -> None:
     """Same outdated image:tag pinned at two FROM lines → both lines bump (#151)."""
     dockerfile = tmp_path / "Dockerfile"
-    dockerfile.write_text(
-        "FROM nginx:1.25 AS build\nFROM nginx:1.25 AS serve\n", encoding="utf-8"
-    )
+    dockerfile.write_text("FROM nginx:1.25 AS build\nFROM nginx:1.25 AS serve\n", encoding="utf-8")
 
     with patch(
         "repo_ops_container.container._fetch_tags",
@@ -169,7 +165,9 @@ def test_apply_dockerfile_same_image_two_stages_both_bumped(tmp_path: Path) -> N
 
 def test_apply_dockerfile_sha_pinned_untouched(tmp_path: Path) -> None:
     dockerfile = tmp_path / "Dockerfile"
-    original = "FROM nginx@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456ab12\n"
+    original = (
+        "FROM nginx@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456ab12\n"
+    )
     dockerfile.write_text(original, encoding="utf-8")
 
     with patch("repo_ops_container.container._fetch_tags", return_value=["1.26"]):
@@ -199,12 +197,7 @@ def test_apply_compose_file(tmp_path: Path) -> None:
     # function but the patch replaces the whole function.
     compose = tmp_path / "docker-compose.yml"
     original = (
-        "version: '3'\n"
-        "services:\n"
-        "  web:\n"
-        "    image: nginx:1.25\n"
-        "  db:\n"
-        "    image: postgres:15.3\n"
+        "version: '3'\nservices:\n  web:\n    image: nginx:1.25\n  db:\n    image: postgres:15.3\n"
     )
     compose.write_text(original, encoding="utf-8")
 
@@ -259,9 +252,7 @@ def test_apply_registry_fail_skips_image(tmp_path: Path) -> None:
     assert "FROM redis:7.4\n" in result  # bumped
 
 
-def test_apply_cross_major_when_env_set(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_apply_cross_major_when_env_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("REPO_OPS_CONTAINER_UPDATE_LATEST", "1")
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text("FROM nginx:1.25\n")

@@ -88,9 +88,7 @@ class TestRegistryCompleteness:
         assert "deno" in manifest_kinds({"deno.json"}), "deno.json not detected"
         assert "deno" in manifest_kinds({"deno.jsonc"}), "deno.jsonc not detected"
         assert "deno" in manifest_kinds({"deno.lock"}), "deno.lock not detected"
-        assert "deno" not in manifest_kinds({"package.json"}), (
-            "node-only dir should not emit deno"
-        )
+        assert "deno" not in manifest_kinds({"package.json"}), "node-only dir should not emit deno"
 
 
 # ---------------------------------------------------------------------------
@@ -104,9 +102,7 @@ class TestCheckWorkspaceReachability:
     def setup_method(self) -> None:
         register_all()
 
-    def test_check_workspace_pdm_reachable(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_check_workspace_pdm_reachable(self, tmp_path: Path, make_workspace) -> None:
         """check_workspace routes correctly to check_pdm after register_all()."""
         from repo_ops_upgrade.registry import check_workspace
 
@@ -118,9 +114,7 @@ class TestCheckWorkspaceReachability:
             patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
         ):
             result = check_workspace(
-                make_workspace(
-                    tmp_path, manager="pdm", ecosystem="py", label="test-pdm"
-                )
+                make_workspace(tmp_path, manager="pdm", ecosystem="py", label="test-pdm")
             )
 
         assert result.status != "skip", (
@@ -130,9 +124,7 @@ class TestCheckWorkspaceReachability:
             f"pdm checker not found in registry: {result.error}"
         )
 
-    def test_check_workspace_pipenv_reachable(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_check_workspace_pipenv_reachable(self, tmp_path: Path, make_workspace) -> None:
         """check_workspace routes correctly to check_pipenv after register_all()."""
         from repo_ops_upgrade.registry import check_workspace
 
@@ -143,22 +135,16 @@ class TestCheckWorkspaceReachability:
             call_n += 1
             if call_n == 1:
                 # venv probe succeeds
-                return subprocess.CompletedProcess(
-                    cmd, 0, stdout="/fake/.venv", stderr=""
-                )
+                return subprocess.CompletedProcess(cmd, 0, stdout="/fake/.venv", stderr="")
             # pip list returns empty JSON array
             return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
 
         with (
-            patch(
-                "repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"
-            ),
+            patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
             patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
         ):
             result = check_workspace(
-                make_workspace(
-                    tmp_path, manager="pipenv", ecosystem="py", label="test-pipenv"
-                )
+                make_workspace(tmp_path, manager="pipenv", ecosystem="py", label="test-pipenv")
             )
 
         assert result.status != "skip", (
@@ -168,9 +154,7 @@ class TestCheckWorkspaceReachability:
             f"pipenv checker not found in registry: {result.error}"
         )
 
-    def test_check_workspace_deno_reachable(
-        self, tmp_path: Path, make_workspace
-    ) -> None:
+    def test_check_workspace_deno_reachable(self, tmp_path: Path, make_workspace) -> None:
         """check_workspace routes correctly to check_deno after register_all()."""
         from repo_ops_upgrade.registry import check_workspace
 
@@ -182,9 +166,7 @@ class TestCheckWorkspaceReachability:
             patch("repo_ops_js.deno.run", side_effect=fake_run),
         ):
             result = check_workspace(
-                make_workspace(
-                    tmp_path, manager="deno", ecosystem="deno", label="test-deno"
-                )
+                make_workspace(tmp_path, manager="deno", ecosystem="deno", label="test-deno")
             )
 
         assert result.status != "skip", (

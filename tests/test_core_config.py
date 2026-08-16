@@ -74,9 +74,7 @@ def test_exclude_patterns_in_settings_map() -> None:
     assert env_var is None
     assert config_key == "exclude"
     assert default is None
-    assert resolve_setting("exclude_patterns", repo_cfg={"exclude": ["vendor"]}) == [
-        "vendor"
-    ]
+    assert resolve_setting("exclude_patterns", repo_cfg={"exclude": ["vendor"]}) == ["vendor"]
 
 
 def test_commit_agent_model_setting_default_and_override(
@@ -100,18 +98,14 @@ def test_commit_agent_model_setting_default_and_override(
 
 def test_load_repo_config_pyproject_wins_over_sidecar(tmp_path: Path) -> None:
     (tmp_path / ".repo-ops.toml").write_text("jobs = 3\nverbose = true\n", "utf-8")
-    (tmp_path / "pyproject.toml").write_text(
-        "[tool.repo-ops]\njobs = 9\n", encoding="utf-8"
-    )
+    (tmp_path / "pyproject.toml").write_text("[tool.repo-ops]\njobs = 9\n", encoding="utf-8")
     # pyproject wins per-key; sidecar-only keys still apply.
     assert load_repo_config(tmp_path) == {"jobs": 9, "verbose": True}
 
 
 def test_load_repo_config_reads_toml_with_shared_loader(tmp_path: Path) -> None:
     (tmp_path / ".repo-ops.toml").write_text("jobs = 3\n", encoding="utf-8")
-    (tmp_path / "pyproject.toml").write_text(
-        "[tool.repo-ops]\njobs = 9\n", encoding="utf-8"
-    )
+    (tmp_path / "pyproject.toml").write_text("[tool.repo-ops]\njobs = 9\n", encoding="utf-8")
 
     assert load_repo_config(tmp_path) == {"jobs": 9}
 

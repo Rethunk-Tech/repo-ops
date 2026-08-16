@@ -123,9 +123,7 @@ def test_no_checkpoint_written_before_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
 ) -> None:
     git_repo = tmp_path / "repo"
-    init_git_repo(
-        git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}'
-    )
+    init_git_repo(git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}')
     calls: list[Path] = []
 
     rc1 = _run_round(monkeypatch, git_repo, _bump_processor(calls), commit="none")
@@ -135,9 +133,7 @@ def test_no_checkpoint_written_before_commit(
         "no checkpoint entry may exist when the commit phase never ran"
     )
 
-    rc2 = _run_round(
-        monkeypatch, git_repo, _bump_processor(calls), commit="conventional"
-    )
+    rc2 = _run_round(monkeypatch, git_repo, _bump_processor(calls), commit="conventional")
     assert rc2 == 0
     assert calls == [git_repo, git_repo], (
         "repo must be re-applied on resume when no checkpoint exists"
@@ -156,9 +152,7 @@ def test_checkpoint_written_after_commit_and_resume_skips(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
 ) -> None:
     git_repo = tmp_path / "repo"
-    init_git_repo(
-        git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}'
-    )
+    init_git_repo(git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}')
     calls: list[Path] = []
 
     rc1 = _run_round(monkeypatch, git_repo, _bump_processor(calls))
@@ -171,9 +165,7 @@ def test_checkpoint_written_after_commit_and_resume_skips(
 
     rc2 = _run_round(monkeypatch, git_repo, _bump_processor(calls))
     assert rc2 == 0
-    assert calls == [git_repo], (
-        "repo with committed SHA in checkpoint must be skipped on resume"
-    )
+    assert calls == [git_repo], "repo with committed SHA in checkpoint must be skipped on resume"
 
 
 # ---------------------------------------------------------------------------
@@ -185,9 +177,7 @@ def test_dirty_skipped_repo_not_checkpointed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
 ) -> None:
     git_repo = tmp_path / "repo"
-    init_git_repo(
-        git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}'
-    )
+    init_git_repo(git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}')
     calls: list[Path] = []
 
     rc1 = _run_round(monkeypatch, git_repo, _dirty_skip_processor(calls))
@@ -213,9 +203,7 @@ def test_different_scope_discards_checkpoint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
 ) -> None:
     git_repo = tmp_path / "repo"
-    init_git_repo(
-        git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}'
-    )
+    init_git_repo(git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}')
     calls: list[Path] = []
 
     rc1 = _run_round(monkeypatch, git_repo, _bump_processor(calls), eco_filter="node")

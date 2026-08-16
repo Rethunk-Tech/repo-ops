@@ -81,9 +81,7 @@ def _requirements_in_constraints(req_in: Path) -> dict[str, str]:
 
 
 def _pip_tools_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
-    return resolve_bool_setting(
-        "pip_tools_targeted_bump", _PIP_TOOLS_TARGETED_BUMP_ENV, ws
-    )
+    return resolve_bool_setting("pip_tools_targeted_bump", _PIP_TOOLS_TARGETED_BUMP_ENV, ws)
 
 
 def _pip_tools_requirement_satisfied(version: str, requirement: str) -> bool:
@@ -128,9 +126,7 @@ def _hold_constraints_file(ws: Workspace, req_in: Path):
     if not lines:
         yield None
         return
-    fd, raw_path = tempfile.mkstemp(
-        prefix="repo-ops-hold-", suffix=".txt", dir=str(ws.path)
-    )
+    fd, raw_path = tempfile.mkstemp(prefix="repo-ops-hold-", suffix=".txt", dir=str(ws.path))
     path = Path(raw_path)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -155,9 +151,7 @@ def check_pip_tools(
     req_txt = ws.path / "requirements.txt"
     current: dict[str, str] = {}
     if req_txt.exists():
-        current = parse_requirements_lines(
-            req_txt.read_text(encoding="utf-8", errors="replace")
-        )
+        current = parse_requirements_lines(req_txt.read_text(encoding="utf-8", errors="replace"))
     proposed: dict[str, str] = {}
     uv_failed = False
     with _hold_constraints_file(ws, req_in) as constraints_path:
@@ -273,11 +267,7 @@ def _compile_requirements(
             [
                 "pip-compile",
                 "--upgrade",
-                *(
-                    ["--upgrade-package", upgrade_package]
-                    if upgrade_package is not None
-                    else []
-                ),
+                *(["--upgrade-package", upgrade_package] if upgrade_package is not None else []),
                 "-o",
                 str(out),
                 str(req_in),
@@ -327,9 +317,7 @@ def _rewrite_requirements_in(req_in: Path, name: str, latest: str) -> bool:
                 extras = constraint[: closing + 1]
                 constraint = constraint[closing + 1 :].strip()
         bumped = _pip_tools_bumped_requirement(constraint, latest)
-        output.append(
-            f"{match.group(1)}{name}{extras}{bumped}{marker}{comment}{newline}"
-        )
+        output.append(f"{match.group(1)}{name}{extras}{bumped}{marker}{comment}{newline}")
         rewritten = True
     if rewritten:
         req_in.write_text("".join(output), encoding="utf-8")
@@ -363,9 +351,9 @@ def _apply_pip_tools_targeted_bumps(
             restore_file(req_in, in_snapshot)
             restore_file(req_txt, txt_snapshot)
             raise
-        landed = parse_requirements_lines(
-            out.read_text(encoding="utf-8", errors="replace")
-        ).get(candidate.name)
+        landed = parse_requirements_lines(out.read_text(encoding="utf-8", errors="replace")).get(
+            candidate.name
+        )
         if landed == candidate.to:
             continue
         restore_file(req_in, in_snapshot)

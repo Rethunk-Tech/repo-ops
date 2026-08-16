@@ -27,9 +27,7 @@ def test_check_poetry_passes_timeout_check(tmp_path: Path, make_workspace) -> No
         patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry"),
         patch("repo_ops_py_poetry.poetry.run", fake_run),
     ):
-        check_poetry(
-            make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo")
-        )
+        check_poetry(make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo"))
 
     assert captured_timeout == [TIMEOUT_CHECK]
 
@@ -48,9 +46,7 @@ def test_check_poetry_tool_absent_warns_and_returns_empty(
     assert "poetry not on PATH" in capsys.readouterr().err
 
 
-def test_check_poetry_parses_updating_lines(
-    tmp_path: Path, monkeypatch, make_workspace
-) -> None:
+def test_check_poetry_parses_updating_lines(tmp_path: Path, monkeypatch, make_workspace) -> None:
     """Canned 'poetry update --dry-run' output parses into Change entries."""
     monkeypatch.setenv("REPO_OPS_POETRY_TARGETED_BUMP", "0")
     stdout = (
@@ -94,9 +90,7 @@ def test_check_poetry_raises_on_nonzero_dry_run(tmp_path: Path, make_workspace) 
         patch("repo_ops_py_poetry.poetry.run", fake_run),
         pytest.raises(RuntimeError, match="solver failed"),
     ):
-        check_poetry(
-            make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo")
-        )
+        check_poetry(make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo"))
 
 
 def test_check_poetry_parses_upgrading_stderr_lines(
@@ -141,16 +135,12 @@ def test_apply_poetry_runs_poetry_update(tmp_path: Path, make_workspace) -> None
         patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry"),
         patch("repo_ops_py_poetry.poetry.run", fake_run),
     ):
-        apply_poetry(
-            make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo")
-        )
+        apply_poetry(make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo"))
 
     assert captured == [["poetry", "update"]]
 
 
-def test_apply_poetry_absent_raises_without_warn_prefix(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_apply_poetry_absent_raises_without_warn_prefix(tmp_path: Path, make_workspace) -> None:
     """F157 — apply_poetry missing poetry raises plain error (no WARN prefix)."""
     from repo_ops_py_poetry.poetry import apply_poetry
 
@@ -158,6 +148,4 @@ def test_apply_poetry_absent_raises_without_warn_prefix(
         patch("repo_ops_py_poetry.poetry.shutil.which", return_value=None),
         pytest.raises(RuntimeError, match=r"^poetry not on PATH"),
     ):
-        apply_poetry(
-            make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo")
-        )
+        apply_poetry(make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo"))

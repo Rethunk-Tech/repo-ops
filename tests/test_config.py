@@ -42,9 +42,7 @@ def test_resolve_setting_global_config_wins_over_default(tmp_path):
 def test_resolve_setting_repo_config_wins_over_global(tmp_path):
     global_cfg = {"actions_lint_level": "warn"}
     repo_cfg = {"actions_lint_level": "off"}
-    result = resolve_setting(
-        "actions_lint_level", global_cfg=global_cfg, repo_cfg=repo_cfg
-    )
+    result = resolve_setting("actions_lint_level", global_cfg=global_cfg, repo_cfg=repo_cfg)
     assert result == "off"
 
 
@@ -153,9 +151,7 @@ ENV_SETTINGS = [
 
 
 @pytest.mark.parametrize(("key", "env_var", "value"), ENV_SETTINGS)
-def test_resolve_setting_reads_env_var(
-    monkeypatch, key: str, env_var: str, value: str
-) -> None:
+def test_resolve_setting_reads_env_var(monkeypatch, key: str, env_var: str, value: str) -> None:
     monkeypatch.setenv(env_var, value)
     assert resolve_setting(key) == value
 

@@ -243,8 +243,7 @@ def run_install(
                 codes.append(0)
             else:
                 print(
-                    f"warning: installed skill drift at {path}; "
-                    "run with --force to overwrite",
+                    f"warning: installed skill drift at {path}; run with --force to overwrite",
                     file=sys.stderr,
                 )
                 codes.append(1)

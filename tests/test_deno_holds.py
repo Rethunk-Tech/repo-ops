@@ -95,9 +95,7 @@ def test_check_deno_filters_past_ceiling_from_planned_and_behind(
     ]
 
 
-def test_filter_held_deno_changes_keeps_target_within_ceiling(
-    tmp_path, make_workspace
-) -> None:
+def test_filter_held_deno_changes_keeps_target_within_ceiling(tmp_path, make_workspace) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change(_PACKAGE, "1.0.0", "1.5.0")
     with patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)):
@@ -181,9 +179,7 @@ def test_targeted_bump_releases_unheld_import_map_pin(
         str(tmp_path / "import_map.json"),
         "npm:is-odd",
     ]
-    imports = json.loads((tmp_path / "import_map.json").read_text(encoding="utf-8"))[
-        "imports"
-    ]
+    imports = json.loads((tmp_path / "import_map.json").read_text(encoding="utf-8"))["imports"]
     assert imports["npm:is-odd"] == "npm:is-odd"
 
 
@@ -219,9 +215,7 @@ def test_targeted_bump_keeps_held_import_map_pin(
         str(tmp_path / "import_map.json"),
         "npm:is-odd@0.1.2",
     ]
-    imports = json.loads((tmp_path / "import_map.json").read_text(encoding="utf-8"))[
-        "imports"
-    ]
+    imports = json.loads((tmp_path / "import_map.json").read_text(encoding="utf-8"))["imports"]
     assert imports["npm:is-odd"] == "npm:is-odd@0.1.2"
 
 
@@ -254,9 +248,7 @@ def test_targeted_bump_releases_unheld_jsr_import_map_pin(
         str(tmp_path / "import_map.json"),
         "jsr:@std/assert",
     ]
-    imports = json.loads((tmp_path / "import_map.json").read_text(encoding="utf-8"))[
-        "imports"
-    ]
+    imports = json.loads((tmp_path / "import_map.json").read_text(encoding="utf-8"))["imports"]
     assert imports["jsr:@std/assert"] == "jsr:@std/assert"
 
 
@@ -292,9 +284,7 @@ def test_targeted_bump_keeps_held_jsr_import_map_pin(
         str(tmp_path / "import_map.json"),
         "jsr:@std/assert@1.1.0",
     ]
-    imports = json.loads((tmp_path / "import_map.json").read_text(encoding="utf-8"))[
-        "imports"
-    ]
+    imports = json.loads((tmp_path / "import_map.json").read_text(encoding="utf-8"))["imports"]
     assert imports["jsr:@std/assert"] == "jsr:@std/assert@1.0.0"
 
 
@@ -318,15 +308,11 @@ def test_apply_deno_audit_version_overrides_runs_without_targeted_bump(
     ]
 
 
-def test_snapshot_deno_workspace_includes_maps_and_configs(
-    tmp_path, make_workspace
-) -> None:
+def test_snapshot_deno_workspace_includes_maps_and_configs(tmp_path, make_workspace) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     import_map = tmp_path / "custom-map.json"
     import_map.write_bytes(b"{}")
-    (tmp_path / "deno.json").write_text(
-        '{"importMap":"custom-map.json"}', encoding="utf-8"
-    )
+    (tmp_path / "deno.json").write_text('{"importMap":"custom-map.json"}', encoding="utf-8")
     with patch("repo_ops_js.deno.snapshot_workspace_files", return_value={}):
         snapshot = _snapshot_deno_workspace(ws)
 
@@ -354,9 +340,7 @@ def test_deno_import_map_default_selection_is_stable(tmp_path, make_workspace) -
     assert _deno_import_map_paths(ws)[0] == first.resolve()
 
 
-def test_deno_import_map_rejects_parent_and_symlink_escape(
-    tmp_path, make_workspace
-) -> None:
+def test_deno_import_map_rejects_parent_and_symlink_escape(tmp_path, make_workspace) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     outside = tmp_path.parent / "outside-import-map.json"
     outside.write_bytes(b"{}")
@@ -371,9 +355,7 @@ def test_deno_import_map_rejects_parent_and_symlink_escape(
 
 
 @pytest.mark.parametrize("filename", ["deno.jsonc", "import_map.jsonc"])
-def test_release_unheld_deno_pin_handles_jsonc(
-    tmp_path, filename, make_workspace
-) -> None:
+def test_release_unheld_deno_pin_handles_jsonc(tmp_path, filename, make_workspace) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     (tmp_path / filename).write_text(
         """
@@ -476,9 +458,7 @@ def test_enforce_deno_version_ceilings_passes_default_import_map(
 
 
 def test_deno_flags_resolve_per_checkout_config(tmp_path, make_workspace) -> None:
-    latest_ws = make_workspace(
-        tmp_path / "latest", ecosystem="deno", manager="deno", label="deno"
-    )
+    latest_ws = make_workspace(tmp_path / "latest", ecosystem="deno", manager="deno", label="deno")
     targeted_ws = make_workspace(
         tmp_path / "targeted", ecosystem="deno", manager="deno", label="deno"
     )

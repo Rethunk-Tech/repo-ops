@@ -42,9 +42,7 @@ def _make_bundle(git_repo: Path) -> RepoBundle:
 # ---------------------------------------------------------------------------
 
 
-def test_checkpoint_save_and_load(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_checkpoint_save_and_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """save_checkpoint persists data; load_checkpoint reads it back."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)
@@ -55,18 +53,14 @@ def test_checkpoint_save_and_load(
     assert loaded == data
 
 
-def test_checkpoint_load_missing_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_checkpoint_load_missing_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """load_checkpoint returns empty dict when no checkpoint file exists."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)
     assert state_mod.load_checkpoint() == {}
 
 
-def test_checkpoint_no_state_disables_save(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_checkpoint_no_state_disables_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """REPO_OPS_NO_STATE=1 prevents checkpoint from being written."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     monkeypatch.setenv("REPO_OPS_NO_STATE", "1")
@@ -77,9 +71,7 @@ def test_checkpoint_no_state_disables_save(
     assert not checkpoint_file.exists()
 
 
-def test_checkpoint_no_state_disables_load(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_checkpoint_no_state_disables_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """REPO_OPS_NO_STATE=1 causes load_checkpoint to return empty dict."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)
@@ -185,9 +177,7 @@ def test_checkpoint_written_after_successful_apply(
     monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)
 
     git_repo = tmp_path / "repo"
-    init_git_repo(
-        git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}'
-    )
+    init_git_repo(git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}')
     bundle = _make_bundle(git_repo)
 
     def _apply(wr: WorkspaceResult, **_kwargs: object) -> WorkspaceResult:
@@ -226,9 +216,7 @@ def test_resume_skips_completed_repo(
     monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)
 
     git_repo = tmp_path / "repo"
-    init_git_repo(
-        git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}'
-    )
+    init_git_repo(git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}')
     head_sha = run_mod._get_head_sha(git_repo)
     # "_scope": "" matches the unfiltered run below, so the checkpoint isn't
     # discarded on the scope-mismatch check before the per-repo SHA check runs.
@@ -268,13 +256,9 @@ def test_resume_does_not_skip_on_changed_sha(
     monkeypatch.delenv("REPO_OPS_NO_STATE", raising=False)
 
     git_repo = tmp_path / "repo"
-    init_git_repo(
-        git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}'
-    )
+    init_git_repo(git_repo, commit=True, filename="package.json", content='{"version": "0.0.0"}')
     # Checkpoint holds a SHA that doesn't match the repo's real current HEAD.
-    state_mod.save_checkpoint(
-        {str(git_repo): "stale-sha-not-current-head", "_scope": ""}
-    )
+    state_mod.save_checkpoint({str(git_repo): "stale-sha-not-current-head", "_scope": ""})
 
     bundle = _make_bundle(git_repo)
     process_calls: list[Path] = []

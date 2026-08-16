@@ -115,10 +115,7 @@ def _purl_github(owner_repo: str, ref: str) -> str:
 
 def _is_local_action_ref(action: str) -> bool:
     """Return whether an Actions ``uses:`` value is a local or Docker ref."""
-    return (
-        action.startswith(("docker://", ".", "/", "~"))
-        or action.split("/", 1)[0] == ".."
-    )
+    return action.startswith(("docker://", ".", "/", "~")) or action.split("/", 1)[0] == ".."
 
 
 # ---------------------------------------------------------------------------
@@ -514,9 +511,7 @@ def build_sbom_parser() -> argparse.ArgumentParser:
     )
     add_roots_argument(
         parser,
-        help_text=(
-            "Root directory to scan for lockfiles. When omitted, uses DEFAULT_ROOTS."
-        ),
+        help_text=("Root directory to scan for lockfiles. When omitted, uses DEFAULT_ROOTS."),
     )
     parser.add_argument(
         "--format",
@@ -560,10 +555,7 @@ def build_sbom_parser() -> argparse.ArgumentParser:
         "--enrich-licenses-network",
         action="store_true",
         default=_env_flag("REPO_OPS_ENRICH_LICENSES_NETWORK"),
-        help=(
-            "Force registry network enrichment, even when local enrichment "
-            "is also enabled."
-        ),
+        help=("Force registry network enrichment, even when local enrichment is also enabled."),
     )
     add_verbose_argument(parser)
     return parser
@@ -584,13 +576,9 @@ def main(argv: list[str] | None = None) -> int:
         for comp in collect_components(
             Path(root_str),
             enrich_licenses=(
-                args.enrich_licenses
-                or args.enrich_licenses_local
-                or args.enrich_licenses_network
+                args.enrich_licenses or args.enrich_licenses_local or args.enrich_licenses_network
             ),
-            allow_network=(
-                args.enrich_licenses_network or not args.enrich_licenses_local
-            ),
+            allow_network=(args.enrich_licenses_network or not args.enrich_licenses_local),
         ):
             if comp["purl"] not in purl_seen:
                 purl_seen.add(comp["purl"])

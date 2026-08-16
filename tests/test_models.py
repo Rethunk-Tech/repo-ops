@@ -13,9 +13,7 @@ from repo_ops_models import (
 )
 
 
-def test_any_dirty_skip_true_when_marker_present(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_any_dirty_skip_true_when_marker_present(tmp_path: Path, make_workspace) -> None:
     wr = WorkspaceResult(
         workspace=make_workspace(tmp_path, ecosystem="py", manager="uv", label=""),
         status="skip",
@@ -25,9 +23,7 @@ def test_any_dirty_skip_true_when_marker_present(
     assert bundle.any_dirty_skip() is True
 
 
-def test_any_dirty_skip_false_when_marker_absent(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_any_dirty_skip_false_when_marker_absent(tmp_path: Path, make_workspace) -> None:
     wr = WorkspaceResult(
         workspace=make_workspace(tmp_path, ecosystem="py", manager="uv", label=""),
         status="skip",
@@ -64,9 +60,7 @@ def test_any_dirty_skip_uses_shared_constant_not_a_hardcoded_literal(
     assert bundle2.any_dirty_skip() is True
 
 
-def test_workspace_result_to_json_includes_started_dirty(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_workspace_result_to_json_includes_started_dirty(tmp_path: Path, make_workspace) -> None:
     wr = WorkspaceResult(
         workspace=make_workspace(tmp_path, ecosystem="py", manager="uv", label=""),
         status="ok",

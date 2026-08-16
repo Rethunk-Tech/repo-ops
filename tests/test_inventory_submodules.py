@@ -24,9 +24,7 @@ def test_count_submodule_finds_gitlink_pin(tmp_path: Path, init_git_repo) -> Non
     init_git_repo(repo)
 
     (repo / ".gitmodules").write_text(
-        '[submodule "vendor/sub"]\n'
-        "\tpath = vendor/sub\n"
-        "\turl = https://example.com/sub.git\n"
+        '[submodule "vendor/sub"]\n\tpath = vendor/sub\n\turl = https://example.com/sub.git\n'
     )
     _git(repo, "add", ".gitmodules")
     _git(repo, "update-index", "--add", "--cacheinfo", f"160000,{_FAKE_SHA},vendor/sub")
@@ -38,9 +36,7 @@ def test_count_submodule_finds_gitlink_pin(tmp_path: Path, init_git_repo) -> Non
     assert versions == {f"vendor/sub@{_FAKE_SHA}"}
 
 
-def test_count_submodule_no_gitmodules_returns_zero(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_count_submodule_no_gitmodules_returns_zero(tmp_path: Path, init_git_repo) -> None:
     repo = tmp_path / "repo"
     init_git_repo(repo)
     (repo / "README.md").write_text("hello\n")

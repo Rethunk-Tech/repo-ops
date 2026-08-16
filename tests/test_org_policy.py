@@ -313,27 +313,21 @@ def test_policy_local_only_cross_org_blocked() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_scan_no_gh_calls_when_env_off(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scan_no_gh_calls_when_env_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Default (REPO_OPS_ACTIONS_ORG_POLICY unset) → zero gh policy calls."""
     monkeypatch.delenv("REPO_OPS_ACTIONS_ORG_POLICY", raising=False)
     _wf(tmp_path, _CHECKOUT_WF)
     policy_store: dict = {}
     gh_calls: list[list] = []
 
-    def fake_subprocess_run(
-        cmd: list, **kw: object
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_subprocess_run(cmd: list, **kw: object) -> subprocess.CompletedProcess[str]:
         if "gh" in cmd[0]:
             gh_calls.append(cmd)
         return subprocess.CompletedProcess([], 0, stdout="", stderr="")
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
-        patch(
-            "repo_ops_upgrade.actions.subprocess.run", side_effect=fake_subprocess_run
-        ),
+        patch("repo_ops_upgrade.actions.subprocess.run", side_effect=fake_subprocess_run),
         patch("repo_ops_upgrade.actions.action_tag_info", return_value=None),
     ):
         bumps, _ = scan_actions(
@@ -351,9 +345,7 @@ def test_scan_no_gh_calls_when_env_off(
 # ---------------------------------------------------------------------------
 
 
-def test_scan_policy_enabled_false(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scan_policy_enabled_false(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """enabled=false in org policy → both actions in the workflow flagged as policy."""
     monkeypatch.setenv("REPO_OPS_ACTIONS_ORG_POLICY", "1")
     _wf(tmp_path, _CHECKOUT_WF)
@@ -392,9 +384,7 @@ def test_scan_policy_enabled_false(
 # ---------------------------------------------------------------------------
 
 
-def test_scan_policy_local_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scan_policy_local_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """local_only: same-org action allowed, cross-org flagged, path-local allowed."""
     monkeypatch.setenv("REPO_OPS_ACTIONS_ORG_POLICY", "1")
     _wf(tmp_path, _LOCAL_WF)
@@ -436,9 +426,7 @@ def test_scan_policy_local_only(
 # ---------------------------------------------------------------------------
 
 
-def test_scan_policy_selected_mixed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scan_policy_selected_mixed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """selected: github-owned allowed, patterns matched, others flagged."""
     monkeypatch.setenv("REPO_OPS_ACTIONS_ORG_POLICY", "1")
     _wf(tmp_path, _CHECKOUT_WF)  # actions/checkout@v4 + softprops/action-gh-release@v1
@@ -507,9 +495,7 @@ def test_scan_policy_selected_pattern_match(
 # ---------------------------------------------------------------------------
 
 
-def test_scan_policy_all_flags_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scan_policy_all_flags_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """allowed_actions=all → no policy violations emitted."""
     monkeypatch.setenv("REPO_OPS_ACTIONS_ORG_POLICY", "1")
     _wf(tmp_path, _CHECKOUT_WF)
@@ -543,9 +529,7 @@ def test_scan_policy_all_flags_nothing(
 # ---------------------------------------------------------------------------
 
 
-def test_scan_policy_user_account_404_skip(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scan_policy_user_account_404_skip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """User account (404 from gh api orgs/...) → skip silently, zero policy rows."""
     monkeypatch.setenv("REPO_OPS_ACTIONS_ORG_POLICY", "1")
     _wf(tmp_path, _CHECKOUT_WF)
@@ -553,9 +537,7 @@ def test_scan_policy_user_account_404_skip(
 
     gh_calls: list = []
 
-    def fake_subprocess_run(
-        cmd: list, **kw: object
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_subprocess_run(cmd: list, **kw: object) -> subprocess.CompletedProcess[str]:
         if "git" in cmd[0]:
             return subprocess.CompletedProcess(
                 [], 0, stdout="https://github.com/personal/repo.git\n", stderr=""
@@ -568,9 +550,7 @@ def test_scan_policy_user_account_404_skip(
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
-        patch(
-            "repo_ops_upgrade.actions.subprocess.run", side_effect=fake_subprocess_run
-        ),
+        patch("repo_ops_upgrade.actions.subprocess.run", side_effect=fake_subprocess_run),
         patch("repo_ops_upgrade.actions.action_tag_info", return_value=None),
     ):
         bumps, _ = scan_actions(
@@ -588,9 +568,7 @@ def test_scan_policy_user_account_404_skip(
 # ---------------------------------------------------------------------------
 
 
-def test_scan_policy_gh_missing_skip(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scan_policy_gh_missing_skip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """gh not on PATH → policy fetch skipped, zero policy rows."""
     monkeypatch.setenv("REPO_OPS_ACTIONS_ORG_POLICY", "1")
     _wf(tmp_path, _CHECKOUT_WF)

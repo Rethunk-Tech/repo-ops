@@ -180,9 +180,7 @@ def test_parse_real_ci_workflow(repo_ops_workflows: Path) -> None:
     assert re.fullmatch(r"[0-9a-f]{40}", checkout[0].pin), (
         f"repo ci.yml checkout should be SHA-pinned, got {checkout[0].pin!r}"
     )
-    assert checkout[0].comment and re.fullmatch(
-        r"v\d+\.\d+\.\d+", checkout[0].comment
-    ), (
+    assert checkout[0].comment and re.fullmatch(r"v\d+\.\d+\.\d+", checkout[0].comment), (
         f"repo ci.yml checkout should carry a # vN.M.P audit-hint comment, got {checkout[0].comment!r}"
     )
 
@@ -271,9 +269,7 @@ def test_pin_bump_produces_exactly_one_line_diff(tmp_path: Path) -> None:
     # The comment must be preserved.
     assert "# keep this comment" in after_line, after_line
     # Indentation must be unchanged.
-    assert before_line.index("uses:") == after_line.index("uses:"), (
-        "indentation shifted"
-    )
+    assert before_line.index("uses:") == after_line.index("uses:"), "indentation shifted"
 
 
 def test_pin_bump_preserves_unrelated_lines(tmp_path: Path) -> None:

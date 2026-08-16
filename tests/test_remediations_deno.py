@@ -14,9 +14,7 @@ from repo_ops_upgrade_remediations_deno import remediations as deno_rem
 
 def _result(tmp_path: Path, make_workspace, ecosystem: str = "deno") -> WorkspaceResult:
     return WorkspaceResult(
-        workspace=make_workspace(
-            tmp_path, ecosystem=ecosystem, manager="deno", label="test"
-        )
+        workspace=make_workspace(tmp_path, ecosystem=ecosystem, manager="deno", label="test")
     )
 
 
@@ -102,9 +100,7 @@ def test_apply_deno_fix_success(tmp_path: Path, make_workspace, make_proc) -> No
     assert cmd == ["deno", "fmt"]
 
 
-def test_apply_deno_fix_failure_captures_stderr(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
+def test_apply_deno_fix_failure_captures_stderr(tmp_path: Path, make_workspace, make_proc) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="test")
     ctx: dict[str, Any] = {}
     fail_proc = make_proc(1, stderr="error: could not find config file")
@@ -136,9 +132,7 @@ def test_apply_deno_fix_uses_stdout_when_stderr_empty(
 # ── run_remediations integration ─────────────────────────────────────────────
 
 
-def test_run_remediations_plan_mode(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
+def test_run_remediations_plan_mode(tmp_path: Path, make_workspace, make_change) -> None:
     (tmp_path / "deno.json").write_text("{}\n")
     result = _result(tmp_path, make_workspace=make_workspace)
     result.changes = [make_change("std")]
@@ -186,9 +180,7 @@ def test_run_remediations_apply_mode(
     assert result.status == "ok"
 
 
-def test_deno_fix_skipped_in_skip_set(
-    tmp_path: Path, make_workspace, make_change
-) -> None:
+def test_deno_fix_skipped_in_skip_set(tmp_path: Path, make_workspace, make_change) -> None:
     (tmp_path / "deno.json").write_text("{}\n")
     result = _result(tmp_path, make_workspace=make_workspace)
     result.changes = [make_change("std")]

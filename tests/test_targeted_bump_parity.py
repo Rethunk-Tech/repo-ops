@@ -123,9 +123,7 @@ def test_conservative_flag_zeroes_container_precommit_submodule_env_vars(
         "repo_ops_upgrade.run.orchestration.process_workspace",
         side_effect=_capture,
     ):
-        main_plan(
-            [str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"]
-        )
+        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"])
 
     assert seen == {
         "container": "0",
@@ -140,9 +138,7 @@ def test_conservative_flag_zeroes_container_precommit_submodule_env_vars(
 # ---------------------------------------------------------------------------
 
 
-def test_bun_targeted_bump_defaults_on(
-    tmp_path: Path, monkeypatch, init_git_repo
-) -> None:
+def test_bun_targeted_bump_defaults_on(tmp_path: Path, monkeypatch, init_git_repo) -> None:
     _clear_env(
         monkeypatch,
         ("REPO_OPS_BUN_TARGETED_BUMP", "REPO_OPS_BUN_UPDATE_LATEST"),
@@ -184,9 +180,7 @@ def test_bun_targeted_bump_conservative_flag_disables_it(
         "repo_ops_upgrade.run.orchestration.process_workspace",
         side_effect=_capture,
     ):
-        main_plan(
-            [str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"]
-        )
+        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"])
 
     assert seen == {"bun_targeted_bump": "0"}
 
@@ -284,9 +278,7 @@ _BEHIND_LATEST_HINT_CASES = [
         for manager, _, requested, _ in _BEHIND_LATEST_HINT_CASES
     ],
 )
-def test_behind_latest_hint(
-    monkeypatch, manager, env_var, requested, expected_fragments
-) -> None:
+def test_behind_latest_hint(monkeypatch, manager, env_var, requested, expected_fragments) -> None:
     monkeypatch.setenv(env_var, "1" if requested else "0")
     hint = _behind_latest_hint(manager)
     for fragment in expected_fragments:
@@ -305,9 +297,7 @@ def test_behind_latest_hint(
 # ---------------------------------------------------------------------------
 
 
-def test_bun_targeted_bump_restores_snapshot_when_guard_raises(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_bun_targeted_bump_restores_snapshot_when_guard_raises(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
     (tmp_path / "package.json").write_text(
         json.dumps({"dependencies": {"zod": "^3.25.76"}}), encoding="utf-8"
@@ -340,9 +330,7 @@ def test_bun_targeted_bump_restores_snapshot_when_guard_raises(
         ),
         patch("repo_ops_js_bun.bun.assert_targets_resolved", fake_guard),
     ):
-        applied, still_behind = bun_targeted_bump_behind(
-            ws, [Change("zod", "3.25.76", "4.0.0")]
-        )
+        applied, still_behind = bun_targeted_bump_behind(ws, [Change("zod", "3.25.76", "4.0.0")])
 
     assert applied == []
     assert still_behind == [Change("zod", "3.25.76", "4.0.0")]

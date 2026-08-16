@@ -27,9 +27,7 @@ def test_pipfile_only_produces_accurate_skip(tmp_path: Path, init_git_repo) -> N
     py_skips = [s for s in diags.skipped if s["ecosystem"] == "py"]
     assert py_skips, "Pipfile-only repo must be recorded as a skip"
     reason = py_skips[0]["reason"]
-    assert "pyproject.toml" not in reason, (
-        f"misleading skip reason still present: {reason!r}"
-    )
+    assert "pyproject.toml" not in reason, f"misleading skip reason still present: {reason!r}"
     assert "pipenv" in reason.lower() or "Pipfile" in reason, (
         f"expected Pipfile/pipenv in skip reason; got {reason!r}"
     )
@@ -57,9 +55,7 @@ def test_discover_pdm_with_pdm_lock(tmp_path: Path, init_git_repo) -> None:
     assert pdm_found[0].path == repo.resolve()
 
 
-def test_discover_pdm_lock_without_pyproject_triggers_py(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_discover_pdm_lock_without_pyproject_triggers_py(tmp_path: Path, init_git_repo) -> None:
     """pdm.lock alone (no pyproject.toml) also triggers consider_py and yields pdm."""
     repo = tmp_path / "org" / "pdm-lock-only"
     init_git_repo(repo)
@@ -87,9 +83,7 @@ def test_discover_pdm_tool_section_without_lock_skips_accurately(
     found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
 
     py_found = [ws for ws in found if ws.ecosystem == "py"]
-    assert py_found == [], (
-        f"must not produce a workspace without pdm.lock; got {py_found}"
-    )
+    assert py_found == [], f"must not produce a workspace without pdm.lock; got {py_found}"
 
     py_skips = [s for s in diags.skipped if s["ecosystem"] == "py"]
     assert py_skips, "must record a skip"
@@ -115,16 +109,12 @@ def test_discover_pipenv_with_lock(tmp_path: Path, init_git_repo) -> None:
     found = discover_all([str(tmp_path)], flat=False)
     pipenv_found = [ws for ws in found if ws.manager == "pipenv"]
 
-    assert len(pipenv_found) == 1, (
-        f"expected one pipenv workspace; found={pipenv_found}"
-    )
+    assert len(pipenv_found) == 1, f"expected one pipenv workspace; found={pipenv_found}"
     assert pipenv_found[0].ecosystem == "py"
     assert pipenv_found[0].path == repo.resolve()
 
 
-def test_discover_pipenv_no_lock_skips_with_pipenv_reason(
-    tmp_path: Path, init_git_repo
-) -> None:
+def test_discover_pipenv_no_lock_skips_with_pipenv_reason(tmp_path: Path, init_git_repo) -> None:
     """Pipfile without Pipfile.lock → skip with Pipfile/pipenv reason (not pyproject msg)."""
     repo = tmp_path / "org" / "pipenv-no-lock"
     init_git_repo(repo)

@@ -64,9 +64,7 @@ def detect_ruff(ws: Workspace, ctx: dict[str, Any]) -> bool:
 
 
 def report_ruff(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
-    return [
-        "REMEDIATE ruff: would run ruff check --fix (auto-fixable lint) + ruff format"
-    ]
+    return ["REMEDIATE ruff: would run ruff check --fix (auto-fixable lint) + ruff format"]
 
 
 def apply_ruff(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
@@ -77,13 +75,9 @@ def apply_ruff(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
         return True, "ruff check --fix && ruff format (ok)"
     err_parts: list[str] = []
     if fix_proc.returncode != 0:
-        err_parts.append(
-            f"check --fix: {stderr_tail(fix_proc.stderr or fix_proc.stdout or '')}"
-        )
+        err_parts.append(f"check --fix: {stderr_tail(fix_proc.stderr or fix_proc.stdout or '')}")
     if fmt_proc.returncode != 0:
-        err_parts.append(
-            f"format: {stderr_tail(fmt_proc.stderr or fmt_proc.stdout or '')}"
-        )
+        err_parts.append(f"format: {stderr_tail(fmt_proc.stderr or fmt_proc.stdout or '')}")
     return False, f"ruff (failed: {'; '.join(err_parts)})"
 
 

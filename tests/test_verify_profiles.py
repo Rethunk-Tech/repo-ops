@@ -70,9 +70,7 @@ class TestDotRepoOpsToml:
         assert verify.get("skip") is False
 
     def test_invalid_toml_returns_empty(self, tmp_path: Path) -> None:
-        (tmp_path / ".repo-ops.toml").write_text(
-            "not valid toml ][[\n", encoding="utf-8"
-        )
+        (tmp_path / ".repo-ops.toml").write_text("not valid toml ][[\n", encoding="utf-8")
         cfg = load_dot_repo_ops_config(tmp_path)
         assert cfg == {}
 
@@ -106,21 +104,15 @@ class TestSidecarPrecedence:
     def test_no_sidecar_no_pyproject_returns_empty(self, tmp_path: Path) -> None:
         assert load_repo_config(tmp_path) == {}
 
-    def test_pyproject_without_tool_repo_ops_falls_back_to_sidecar(
-        self, tmp_path: Path
-    ) -> None:
+    def test_pyproject_without_tool_repo_ops_falls_back_to_sidecar(self, tmp_path: Path) -> None:
         (tmp_path / ".repo-ops.toml").write_text("jobs = 3\n", encoding="utf-8")
-        (tmp_path / "pyproject.toml").write_text(
-            '[project]\nname = "myapp"\n', encoding="utf-8"
-        )
+        (tmp_path / "pyproject.toml").write_text('[project]\nname = "myapp"\n', encoding="utf-8")
         cfg = load_repo_config(tmp_path)
         assert cfg.get("jobs") == 3
 
     def test_verify_subtable_merged(self, tmp_path: Path) -> None:
         """verify.timeout from sidecar is preserved when pyproject only sets verify.skip."""
-        (tmp_path / ".repo-ops.toml").write_text(
-            "[verify]\ntimeout = 45\n", encoding="utf-8"
-        )
+        (tmp_path / ".repo-ops.toml").write_text("[verify]\ntimeout = 45\n", encoding="utf-8")
         (tmp_path / "pyproject.toml").write_text(
             "[tool.repo-ops]\n[tool.repo-ops.verify]\nskip = false\n", encoding="utf-8"
         )
@@ -173,9 +165,7 @@ class TestVerifyScriptFromConfig:
         """verify.script = '' in config skips the script step (immutable install still runs)."""
         monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         _write_pkg(tmp_path, {"ci": "echo ci"})
-        (tmp_path / ".repo-ops.toml").write_text(
-            '[verify]\nscript = ""\n', encoding="utf-8"
-        )
+        (tmp_path / ".repo-ops.toml").write_text('[verify]\nscript = ""\n', encoding="utf-8")
         calls: list[list[str]] = []
 
         def fake_run(
@@ -199,9 +189,7 @@ class TestVerifyScriptFromConfig:
     ) -> None:
         monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         _write_pkg(tmp_path, {"gate": "echo gate"})
-        (tmp_path / ".repo-ops.toml").write_text(
-            '[verify]\nscript = "gate"\n', encoding="utf-8"
-        )
+        (tmp_path / ".repo-ops.toml").write_text('[verify]\nscript = "gate"\n', encoding="utf-8")
 
         def fake_run(
             cmd: list[str], cwd: Path, timeout: int | None = None
@@ -226,9 +214,7 @@ class TestVerifyScriptFromConfig:
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 class TestVerifySkip:
     def test_skip_true_returns_none(self, tmp_path: Path, make_workspace) -> None:
-        (tmp_path / ".repo-ops.toml").write_text(
-            "[verify]\nskip = true\n", encoding="utf-8"
-        )
+        (tmp_path / ".repo-ops.toml").write_text("[verify]\nskip = true\n", encoding="utf-8")
         called: list[bool] = []
 
         def fake_run(
@@ -250,9 +236,7 @@ class TestVerifySkip:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
-        (tmp_path / ".repo-ops.toml").write_text(
-            "[verify]\nskip = false\n", encoding="utf-8"
-        )
+        (tmp_path / ".repo-ops.toml").write_text("[verify]\nskip = false\n", encoding="utf-8")
         _write_pkg(tmp_path, {"ci": "echo ci"})
         calls: list[list[str]] = []
 
@@ -301,9 +285,7 @@ class TestVerifyTimeout:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         monkeypatch.delenv("REPO_OPS_TIMEOUT_VERIFY", raising=False)
-        (tmp_path / ".repo-ops.toml").write_text(
-            "[verify]\ntimeout = 42\n", encoding="utf-8"
-        )
+        (tmp_path / ".repo-ops.toml").write_text("[verify]\ntimeout = 42\n", encoding="utf-8")
         captured: list[dict] = []
 
         def fake_run(
@@ -316,9 +298,7 @@ class TestVerifyTimeout:
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             verify_workspace(ws, verify_test=False)
 
-        build_call = next(
-            (c for c in captured if c["cmd"] == ["go", "build", "./..."]), None
-        )
+        build_call = next((c for c in captured if c["cmd"] == ["go", "build", "./..."]), None)
         assert build_call is not None
         assert build_call["timeout"] == 42
 
@@ -326,9 +306,7 @@ class TestVerifyTimeout:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         monkeypatch.setenv("REPO_OPS_TIMEOUT_VERIFY", "99")
-        (tmp_path / ".repo-ops.toml").write_text(
-            "[verify]\ntimeout = 42\n", encoding="utf-8"
-        )
+        (tmp_path / ".repo-ops.toml").write_text("[verify]\ntimeout = 42\n", encoding="utf-8")
         captured: list[dict] = []
 
         def fake_run(
@@ -341,9 +319,7 @@ class TestVerifyTimeout:
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             verify_workspace(ws, verify_test=False)
 
-        build_call = next(
-            (c for c in captured if c["cmd"] == ["go", "build", "./..."]), None
-        )
+        build_call = next((c for c in captured if c["cmd"] == ["go", "build", "./..."]), None)
         assert build_call is not None
         # env var (99) beats config (42)
         assert build_call["timeout"] == 99

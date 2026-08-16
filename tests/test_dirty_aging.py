@@ -122,9 +122,7 @@ def test_load_state_disabled_by_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert state == {}
 
 
-def test_save_state_disabled_by_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_save_state_disabled_by_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("REPO_OPS_NO_STATE", "1")
     with patch.dict(os.environ, {"XDG_CACHE_HOME": str(tmp_path / "cache")}):
         save_state({"dirty_skips": {"/x": {"first_seen": "2026-06-01", "runs": 1}}})
@@ -185,9 +183,7 @@ def _make_ws(tmp_path: Path, *, manager: str = "npm"):
     )
 
 
-def test_dirty_skip_records_in_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_dirty_skip_records_in_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Dirty-skip in process_workspace records an entry in the module cache."""
     _reset_module_cache()
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
@@ -273,19 +269,13 @@ def test_repo_started_dirty_override_proceeds_even_when_live_check_is_dirty(
         # Live check says dirty (simulating an earlier sibling's uncommitted
         # apply) — the explicit snapshot value must win instead.
         patch("repo_ops_upgrade.orchestration.is_git_dirty", return_value=True),
-        patch(
-            "repo_ops_upgrade.orchestration.snapshot_workspace_files", return_value={}
-        ),
-        patch(
-            "repo_ops_upgrade.orchestration.diff_workspace_snapshots", return_value=[]
-        ),
+        patch("repo_ops_upgrade.orchestration.snapshot_workspace_files", return_value={}),
+        patch("repo_ops_upgrade.orchestration.diff_workspace_snapshots", return_value=[]),
         patch(
             "repo_ops_upgrade.orchestration.collect_changes_after_apply",
             return_value=[],
         ),
-        patch(
-            "repo_ops_upgrade.orchestration.ecosystems.apply_workspace", return_value=[]
-        ),
+        patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", return_value=[]),
         patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
         patch.dict(os.environ, {"REPO_OPS_NO_PROGRESS": "1"}),
     ):
@@ -304,9 +294,7 @@ def test_repo_started_dirty_override_proceeds_even_when_live_check_is_dirty(
     _reset_module_cache()
 
 
-def test_clean_run_clears_cache_entry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_clean_run_clears_cache_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A clean (non-dirty) apply run removes any existing dirty-skip entry."""
     _reset_module_cache()
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
@@ -323,19 +311,13 @@ def test_clean_run_clears_cache_entry(
     with (
         patch("repo_ops_upgrade.orchestration.should_exclude", return_value=False),
         patch("repo_ops_upgrade.orchestration.is_git_dirty", return_value=False),
-        patch(
-            "repo_ops_upgrade.orchestration.snapshot_workspace_files", return_value={}
-        ),
-        patch(
-            "repo_ops_upgrade.orchestration.diff_workspace_snapshots", return_value=[]
-        ),
+        patch("repo_ops_upgrade.orchestration.snapshot_workspace_files", return_value={}),
+        patch("repo_ops_upgrade.orchestration.diff_workspace_snapshots", return_value=[]),
         patch(
             "repo_ops_upgrade.orchestration.collect_changes_after_apply",
             return_value=[],
         ),
-        patch(
-            "repo_ops_upgrade.orchestration.ecosystems.apply_workspace", return_value=[]
-        ),
+        patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", return_value=[]),
         patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
         patch.dict(os.environ, {"REPO_OPS_NO_PROGRESS": "1"}),
     ):
@@ -358,9 +340,7 @@ def test_clean_run_clears_cache_entry(
 # ---------------------------------------------------------------------------
 
 
-def test_human_report_skip_shows_aging(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_human_report_skip_shows_aging(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Human report skip line includes dirty-since + runs when state has an entry."""
     _reset_module_cache()
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
@@ -456,9 +436,7 @@ def test_human_report_skip_no_aging_when_no_state(
 # ---------------------------------------------------------------------------
 
 
-def test_json_payload_dirty_skip_fields(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_json_payload_dirty_skip_fields(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """JSON workspace entry gains dirty_since + dirty_skip_runs on dirty skip."""
     _reset_module_cache()
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
@@ -485,9 +463,7 @@ def test_json_payload_dirty_skip_fields(
             )
         ],
     )
-    payload = build_json_payload(
-        {tmp_path: bundle}, roots=[str(tmp_path)], mode="apply"
-    )
+    payload = build_json_payload({tmp_path: bundle}, roots=[str(tmp_path)], mode="apply")
     ws_entry = payload["repos"][0]["workspaces"][0]
     assert ws_entry.get("dirty_since") == "2026-06-01"
     assert ws_entry.get("dirty_skip_runs") == 1

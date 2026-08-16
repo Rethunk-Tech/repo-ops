@@ -55,16 +55,12 @@ def _tag_info_checkout(action: str, **_: object) -> dict | None:
     return None
 
 
-def _actionlint_fail(
-    *_args: object, **_kwargs: object
-) -> subprocess.CompletedProcess[str]:
+def _actionlint_fail(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
     """Simulate actionlint returning a non-zero exit code (e.g. SC2034 hit)."""
     return subprocess.CompletedProcess([], 1, stdout="", stderr="SC2034: var unused")
 
 
-def _actionlint_pass(
-    *_args: object, **_kwargs: object
-) -> subprocess.CompletedProcess[str]:
+def _actionlint_pass(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess([], 0, stdout="", stderr="")
 
 
@@ -78,9 +74,7 @@ def test_lint_level_block_skips_pin_bumps(tmp_path: Path) -> None:
     repo, wf = _wf_dir(tmp_path)
     original = wf.read_text(encoding="utf-8")
 
-    def fake_run(
-        cmd: list[str], *a: object, **kw: object
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_run(cmd: list[str], *a: object, **kw: object) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
             return _actionlint_fail()
         return _actionlint_pass()
@@ -91,9 +85,7 @@ def test_lint_level_block_skips_pin_bumps(tmp_path: Path) -> None:
             side_effect=lambda n: f"/usr/bin/{n}",
         ),
         patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
-        patch(
-            "repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout
-        ),
+        patch("repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout),
     ):
         bumps, scanned = scan_actions(repo, apply=True, lint_level="block")
 
@@ -118,9 +110,7 @@ def test_lint_level_warn_proceeds_with_bumps(tmp_path: Path) -> None:
     """warn: actionlint failure records fail row but pin bumps still run."""
     repo, _wf = _wf_dir(tmp_path)
 
-    def fake_run(
-        cmd: list[str], *a: object, **kw: object
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_run(cmd: list[str], *a: object, **kw: object) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
             return _actionlint_fail()
         return _actionlint_pass()
@@ -131,9 +121,7 @@ def test_lint_level_warn_proceeds_with_bumps(tmp_path: Path) -> None:
             side_effect=lambda n: f"/usr/bin/{n}",
         ),
         patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
-        patch(
-            "repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout
-        ),
+        patch("repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout),
     ):
         bumps, scanned = scan_actions(repo, apply=True, lint_level="warn")
 
@@ -151,9 +139,7 @@ def test_lint_level_warn_applies_rewrite(tmp_path: Path) -> None:
     """warn: actionlint failure + apply=True still rewrites the workflow."""
     repo, wf = _wf_dir(tmp_path)
 
-    def fake_run(
-        cmd: list[str], *a: object, **kw: object
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_run(cmd: list[str], *a: object, **kw: object) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
             return _actionlint_fail()
         return _actionlint_pass()
@@ -164,9 +150,7 @@ def test_lint_level_warn_applies_rewrite(tmp_path: Path) -> None:
             side_effect=lambda n: f"/usr/bin/{n}",
         ),
         patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
-        patch(
-            "repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout
-        ),
+        patch("repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout),
     ):
         scan_actions(repo, apply=True, lint_level="warn")
 
@@ -182,9 +166,7 @@ def test_lint_level_warn_prints_warn_message(
     """warn: a WARN message is printed to stderr when lint fails but bumps proceed."""
     repo, _ = _wf_dir(tmp_path)
 
-    def fake_run(
-        cmd: list[str], *a: object, **kw: object
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_run(cmd: list[str], *a: object, **kw: object) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
             return _actionlint_fail()
         return _actionlint_pass()
@@ -195,9 +177,7 @@ def test_lint_level_warn_prints_warn_message(
             side_effect=lambda n: f"/usr/bin/{n}",
         ),
         patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
-        patch(
-            "repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout
-        ),
+        patch("repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout),
     ):
         scan_actions(repo, apply=False, lint_level="warn")
 
@@ -216,9 +196,7 @@ def test_lint_level_off_skips_actionlint(tmp_path: Path) -> None:
     repo, _wf = _wf_dir(tmp_path)
     actionlint_called = []
 
-    def fake_run(
-        cmd: list[str], *a: object, **kw: object
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_run(cmd: list[str], *a: object, **kw: object) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
             actionlint_called.append(True)
             return _actionlint_fail()
@@ -230,9 +208,7 @@ def test_lint_level_off_skips_actionlint(tmp_path: Path) -> None:
             side_effect=lambda n: f"/usr/bin/{n}",
         ),
         patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
-        patch(
-            "repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout
-        ),
+        patch("repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout),
     ):
         bumps, scanned = scan_actions(repo, apply=True, lint_level="off")
 
@@ -255,9 +231,7 @@ def test_lint_level_off_applies_rewrite(tmp_path: Path) -> None:
             "repo_ops_upgrade.actions.shutil.which",
             side_effect=lambda n: f"/usr/bin/{n}",
         ),
-        patch(
-            "repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout
-        ),
+        patch("repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout),
     ):
         scan_actions(repo, apply=True, lint_level="off")
 
@@ -279,8 +253,7 @@ _SC_WARNING_STDERR = (
 
 # A native actionlint finding (no "shellcheck reported issue").
 _NATIVE_ERROR_STDERR = (
-    ".github/workflows/ci.yml:10:9: "
-    'property "foo" is not defined in object type {} [expression]'
+    '.github/workflows/ci.yml:10:9: property "foo" is not defined in object type {} [expression]'
 )
 
 # A shellcheck finding with severity:error (not :warning:).
@@ -297,13 +270,9 @@ def test_lint_level_block_shellcheck_warning_is_nonfatal(
     monkeypatch.setenv("REPO_OPS_NO_LINT_CACHE", "1")
     repo, wf = _wf_dir(tmp_path)
 
-    def fake_run(
-        cmd: list[str], *a: object, **kw: object
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_run(cmd: list[str], *a: object, **kw: object) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
-            return subprocess.CompletedProcess(
-                [], 1, stdout="", stderr=_SC_WARNING_STDERR
-            )
+            return subprocess.CompletedProcess([], 1, stdout="", stderr=_SC_WARNING_STDERR)
         return _actionlint_pass()
 
     with (
@@ -312,9 +281,7 @@ def test_lint_level_block_shellcheck_warning_is_nonfatal(
             side_effect=lambda n: f"/usr/bin/{n}",
         ),
         patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
-        patch(
-            "repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout
-        ),
+        patch("repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout),
     ):
         bumps, scanned = scan_actions(repo, apply=True, lint_level="block")
 
@@ -342,13 +309,9 @@ def test_lint_level_block_native_actionlint_error_is_fatal(
     repo, wf = _wf_dir(tmp_path)
     original = wf.read_text(encoding="utf-8")
 
-    def fake_run(
-        cmd: list[str], *a: object, **kw: object
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_run(cmd: list[str], *a: object, **kw: object) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
-            return subprocess.CompletedProcess(
-                [], 1, stdout="", stderr=_NATIVE_ERROR_STDERR
-            )
+            return subprocess.CompletedProcess([], 1, stdout="", stderr=_NATIVE_ERROR_STDERR)
         return _actionlint_pass()
 
     with (
@@ -357,9 +320,7 @@ def test_lint_level_block_native_actionlint_error_is_fatal(
             side_effect=lambda n: f"/usr/bin/{n}",
         ),
         patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
-        patch(
-            "repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout
-        ),
+        patch("repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout),
     ):
         bumps, scanned = scan_actions(repo, apply=True, lint_level="block")
 
@@ -442,9 +403,7 @@ def test_lint_level_env_used_when_param_absent(
     repo, _wf = _wf_dir(tmp_path)
     actionlint_called = []
 
-    def fake_run(
-        cmd: list[str], *a: object, **kw: object
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_run(cmd: list[str], *a: object, **kw: object) -> subprocess.CompletedProcess[str]:
         if cmd and cmd[0] == "actionlint":
             actionlint_called.append(True)
         return _actionlint_pass()
@@ -455,9 +414,7 @@ def test_lint_level_env_used_when_param_absent(
             side_effect=lambda n: f"/usr/bin/{n}",
         ),
         patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
-        patch(
-            "repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout
-        ),
+        patch("repo_ops_upgrade.actions.action_tag_info", side_effect=_tag_info_checkout),
     ):
         scan_actions(repo, apply=False)  # no lint_level arg → reads env
 

@@ -196,9 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     scanned_roots = list(roots)
     all_rows = []
     for root_path in roots:
-        all_rows.extend(
-            scan(Path(root_path), flat=args.flat, go_cache=go_cache, jobs=args.jobs)
-        )
+        all_rows.extend(scan(Path(root_path), flat=args.flat, go_cache=go_cache, jobs=args.jobs))
 
     if not args.no_cache and go_cache is not None:
         save_go_cache(cache_path, go_cache)
@@ -245,9 +243,7 @@ def main(argv: list[str] | None = None) -> int:
         }
         json_report_path = getattr(args, "json_report_path", None)
         if json_report_path:
-            written = write_json_atomic(
-                Path(json_report_path), payload, compact=args.compact
-            )
+            written = write_json_atomic(Path(json_report_path), payload, compact=args.compact)
             print(written)
         else:
             print(json.dumps(payload, indent=None if args.compact else 2))

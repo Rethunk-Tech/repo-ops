@@ -42,8 +42,8 @@ _NPM_TARGETED_BUMP_ENV = "REPO_OPS_NPM_TARGETED_BUMP"
 # Not thread-safe, but apply_remediations processes workspaces sequentially.
 _AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 
-set_npm_audit_version_overrides, clear_npm_audit_version_overrides = (
-    make_audit_override_api(_AUDIT_VERSION_OVERRIDES)
+set_npm_audit_version_overrides, clear_npm_audit_version_overrides = make_audit_override_api(
+    _AUDIT_VERSION_OVERRIDES
 )
 
 
@@ -91,9 +91,7 @@ def _save_flag_for(name: str, pkg_data: dict[str, object]) -> list[str]:
     return flags
 
 
-def targeted_bump_behind(
-    ws: Workspace, behind: list[Change]
-) -> tuple[list[Change], list[Change]]:
+def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Change], list[Change]]:
     """Per-package ``npm install <pkg>@latest`` fallback for still-behind deps (#122).
 
     Mirrors yarn's ``targeted_bump_behind``: for each behind-latest direct dep we
@@ -207,9 +205,7 @@ def check_npm(ws: Workspace) -> tuple[list[Change], list[Change]]:
         still_behind: list[Change] = []
         for c in behind:
             held_rule = resolve_package_hold(ws, c.name)
-            if held_rule is not None and not version_satisfies_ceiling(
-                c.to, held_rule.max_version
-            ):
+            if held_rule is not None and not version_satisfies_ceiling(c.to, held_rule.max_version):
                 still_behind.append(c)
                 continue
             promoted.append(c)
@@ -236,13 +232,10 @@ def _apply_npm_audit_overrides(ws: Workspace) -> set[str]:
         )
         if proc.returncode != 0:
             raise RuntimeError(
-                proc.stderr.strip()
-                or f"npm install {name}@{version} failed (audit override)"
+                proc.stderr.strip() or f"npm install {name}@{version} failed (audit override)"
             )
 
-    return apply_audit_overrides(
-        ws, _AUDIT_VERSION_OVERRIDES, manager="npm", install=install
-    )
+    return apply_audit_overrides(ws, _AUDIT_VERSION_OVERRIDES, manager="npm", install=install)
 
 
 def apply_npm(ws: Workspace) -> list[Change]:
@@ -282,9 +275,9 @@ def apply_npm(ws: Workspace) -> list[Change]:
             else:
                 assert_targets_resolved(ws, changes, manager="npm")
     applied, behind = targeted_bump_behind(ws, behind)
-    candidate_names = direct_dependency_names(
-        read_json_file(ws.path / "package.json") or {}
-    ) | {c.name for c in (*changes, *applied, *behind)}
+    candidate_names = direct_dependency_names(read_json_file(ws.path / "package.json") or {}) | {
+        c.name for c in (*changes, *applied, *behind)
+    }
     held = enforce_holds(
         ws,
         candidate_names,

@@ -126,9 +126,7 @@ def test_install_skill_check_reports_drift_without_writing(
     assert "drift" in capsys.readouterr().err
 
 
-def test_install_skill_home_layout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_install_skill_home_layout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(install_skill, "resolve_home", lambda _home=None: tmp_path)
     code = main(["--target", "cursor"])
     assert code == 0
@@ -158,9 +156,7 @@ def test_install_skill_home_flag_overrides_default(
     assert (home / ".cursor" / "skills" / "repo-ops" / "SKILL.md").is_file()
 
 
-def test_install_skill_repo_ops_home_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_install_skill_repo_ops_home_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "env-home"
     monkeypatch.setenv("REPO_OPS_HOME", str(home))
     code = main(["--target", "claude"])

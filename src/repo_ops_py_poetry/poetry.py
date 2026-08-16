@@ -142,9 +142,7 @@ def _apply_poetry_targeted_bumps(
             remaining.append(candidate)
             continue
         rule = resolve_package_hold(ws, candidate.name)
-        if rule is not None and not version_satisfies_ceiling(
-            candidate.to, rule.max_version
-        ):
+        if rule is not None and not version_satisfies_ceiling(candidate.to, rule.max_version):
             remaining.append(candidate)
             continue
         manifest_snapshot = snapshot_file(manifest)
@@ -175,16 +173,12 @@ def check_poetry(
     if not shutil.which("poetry"):
         print(f"WARN {ws.path}: poetry not on PATH", file=sys.stderr)
         return ([], []) if _poetry_targeted_bump_enabled(ws) else []
-    proc = run(
-        ["poetry", "update", "--dry-run"], ws.path, timeout=resolve_timeout_check()
-    )
+    proc = run(["poetry", "update", "--dry-run"], ws.path, timeout=resolve_timeout_check())
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "poetry update --dry-run failed")
     changes: list[Change] = []
     for line in (proc.stdout + proc.stderr).splitlines():
-        m = re.search(
-            r"(?:Updating|Upgrading)\s+(\S+)\s+\(([^)]+)\s+->\s+([^)]+)\)", line
-        )
+        m = re.search(r"(?:Updating|Upgrading)\s+(\S+)\s+\(([^)]+)\s+->\s+([^)]+)\)", line)
         if m:
             changes.append(Change(m.group(1), m.group(2), m.group(3)))
     in_range = _filter_held_changes(ws, changes)

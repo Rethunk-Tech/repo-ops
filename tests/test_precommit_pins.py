@@ -246,9 +246,7 @@ def test_is_sha_rev_tag_not_sha() -> None:
 def test_resolve_latest_precommit_rev(
     current: str, tags: list[str], allow_cross_major: bool, expected: str | None
 ) -> None:
-    result = _resolve_latest_precommit_rev(
-        current, tags, allow_cross_major=allow_cross_major
-    )
+    result = _resolve_latest_precommit_rev(current, tags, allow_cross_major=allow_cross_major)
     assert result == expected
 
 
@@ -271,9 +269,7 @@ def test_fetch_tags_git_not_found() -> None:
 
 
 def test_fetch_tags_timeout() -> None:
-    with patch(
-        "subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=[], timeout=30)
-    ):
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=[], timeout=30)):
         assert _fetch_tags_for_repo("https://github.com/org/repo") is None
 
 
@@ -492,13 +488,7 @@ def test_apply_precommit_preserves_crlf(tmp_path: Path) -> None:
 
 
 def test_apply_precommit_preserves_single_quote(tmp_path: Path) -> None:
-    original = (
-        "repos:\n"
-        "- repo: https://github.com/org/tool\n"
-        "  rev: 'v1.0.0'\n"
-        "  hooks:\n"
-        "  - id: x\n"
-    )
+    original = "repos:\n- repo: https://github.com/org/tool\n  rev: 'v1.0.0'\n  hooks:\n  - id: x\n"
     cfg = tmp_path / ".pre-commit-config.yaml"
     cfg.write_text(original, encoding="utf-8")
 
@@ -511,13 +501,7 @@ def test_apply_precommit_preserves_single_quote(tmp_path: Path) -> None:
 
 
 def test_apply_precommit_no_change_when_at_latest(tmp_path: Path) -> None:
-    original = (
-        "repos:\n"
-        "- repo: https://github.com/org/tool\n"
-        "  rev: v2.0.0\n"
-        "  hooks:\n"
-        "  - id: x\n"
-    )
+    original = "repos:\n- repo: https://github.com/org/tool\n  rev: v2.0.0\n  hooks:\n  - id: x\n"
     cfg = tmp_path / ".pre-commit-config.yaml"
     cfg.write_text(original, encoding="utf-8")
 
@@ -535,13 +519,7 @@ def test_apply_precommit_sha_pin_not_modified(
     # test exercises the plain SHA-pin-untouched path.
     monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "0")
     sha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
-    original = (
-        f"repos:\n"
-        f"- repo: https://github.com/org/tool\n"
-        f"  rev: {sha}\n"
-        f"  hooks:\n"
-        f"  - id: x\n"
-    )
+    original = f"repos:\n- repo: https://github.com/org/tool\n  rev: {sha}\n  hooks:\n  - id: x\n"
     cfg = tmp_path / ".pre-commit-config.yaml"
     cfg.write_text(original, encoding="utf-8")
 
@@ -560,11 +538,7 @@ def test_apply_precommit_refreshes_sha_pin_with_opt_in(
     current_sha = "a" * 40
     latest_sha = "b" * 40
     original = (
-        "repos:\n"
-        "- repo: https://github.com/org/tool\n"
-        f"  rev: {current_sha}\n"
-        "  hooks:\n"
-        "  - id: x\n"
+        f"repos:\n- repo: https://github.com/org/tool\n  rev: {current_sha}\n  hooks:\n  - id: x\n"
     )
     cfg = tmp_path / ".pre-commit-config.yaml"
     cfg.write_text(original, encoding="utf-8")
@@ -612,9 +586,7 @@ def test_apply_precommit_rev_collision_two_repos_get_own_target(tmp_path: Path) 
         apply_precommit(_make_ws(tmp_path))
 
     result = cfg.read_text(encoding="utf-8")
-    rev_lines = [
-        ln.strip() for ln in result.splitlines() if ln.strip().startswith("rev:")
-    ]
+    rev_lines = [ln.strip() for ln in result.splitlines() if ln.strip().startswith("rev:")]
     assert len(rev_lines) == 2
     # Each repo must receive its own distinct bump, not the same value.
     assert "rev: v1.1.0" in rev_lines, f"repo-a target missing from: {rev_lines}"
@@ -630,8 +602,7 @@ def test_fetch_tags_cache_lock_deduplicates_concurrent() -> None:
     with patch("subprocess.run", return_value=proc) as mock_run:
         with ThreadPoolExecutor(max_workers=4) as ex:
             futures = [
-                ex.submit(_fetch_tags_for_repo, "https://github.com/org/repo")
-                for _ in range(4)
+                ex.submit(_fetch_tags_for_repo, "https://github.com/org/repo") for _ in range(4)
             ]
         results = [f.result() for f in futures]
 

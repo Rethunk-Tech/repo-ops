@@ -106,8 +106,6 @@ def register_one(manager: str) -> bool:
         else:
             return False
     except ImportError:
-        logger.warning(
-            "manager %r package is not installed; audit --fix will skip it", manager
-        )
+        logger.warning("manager %r package is not installed; audit --fix will skip it", manager)
         return False
     return True

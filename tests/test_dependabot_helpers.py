@@ -168,9 +168,7 @@ def test_resolve_package_version_uv_lock_high_confidence(tmp_path: Path) -> None
 
     # PEP 503 normalization: PR titles may use underscores where uv.lock
     # stores hyphens.
-    ver, high_conf = dependabot._resolve_package_version(
-        "typing_extensions", resolved, set(), {}
-    )
+    ver, high_conf = dependabot._resolve_package_version("typing_extensions", resolved, set(), {})
     assert ver == "4.12.2"
     assert high_conf is True
 
@@ -203,9 +201,7 @@ def test_lockfile_resolved_parses_poetry_lock(tmp_path: Path) -> None:
     assert poetry_parser.call_count == 2
     poetry_parser.assert_any_call(poetry_lock)
     uv_parser.assert_not_called()
-    ver, high_conf = dependabot._resolve_package_version(
-        "poetry_core", resolved, set(), {}
-    )
+    ver, high_conf = dependabot._resolve_package_version("poetry_core", resolved, set(), {})
     assert ver == "2.1.3"
     assert high_conf is True
 
@@ -224,9 +220,7 @@ def test_lockfile_resolved_parses_pdm_lock(tmp_path: Path) -> None:
     resolved = dependabot._lockfile_resolved(str(tmp_path))
 
     assert resolved["pdm-backend"] == "2.4.3"
-    ver, high_conf = dependabot._resolve_package_version(
-        "pdm_backend", resolved, set(), {}
-    )
+    ver, high_conf = dependabot._resolve_package_version("pdm_backend", resolved, set(), {})
     assert ver == "2.4.3"
     assert high_conf is True
 
@@ -243,8 +237,6 @@ def test_lockfile_resolved_parses_pipfile_lock(tmp_path: Path) -> None:
 
     assert resolved["requests"] == "2.32.4"
     assert resolved["pytest"] == "8.4.1"
-    ver, high_conf = dependabot._resolve_package_version(
-        "requests", resolved, set(), {}
-    )
+    ver, high_conf = dependabot._resolve_package_version("requests", resolved, set(), {})
     assert ver == "2.32.4"
     assert high_conf is True

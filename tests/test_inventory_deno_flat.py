@@ -68,9 +68,7 @@ def test_scan_flat_mixed_deno_and_python(tmp_path: Path) -> None:
             }
         )
     )
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "x"\ndependencies = ["a"]\n'
-    )
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\ndependencies = ["a"]\n')
 
     rows = scan(tmp_path, flat=True)
     assert len(rows) == 1

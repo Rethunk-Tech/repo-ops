@@ -22,9 +22,7 @@ def test_parse_requirements_lines_basic():
 
 def test_parse_requirements_lines_extras_and_markers():
     """#87 — extras must not drop the package; inline markers must not bleed into version."""
-    text = (
-        'requests[security]==2.31.0\nflask==3.0.0;sys_platform=="win32"\nplain==1.0.0\n'
-    )
+    text = 'requests[security]==2.31.0\nflask==3.0.0;sys_platform=="win32"\nplain==1.0.0\n'
     result = parse_requirements_lines(text)
     # extras: key is bare name, version is clean
     assert result["requests"] == "2.31.0"
@@ -183,9 +181,7 @@ def test_apply_rust_invokes_cargo_update(monkeypatch):
     ]
 
     def fake_run_fail(cmd, cwd, timeout=600, env=None):
-        return subprocess.CompletedProcess(
-            cmd, 1, stdout="", stderr="error: no Cargo.toml found"
-        )
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="error: no Cargo.toml found")
 
     with (
         patch("repo_ops_rust.rust.run", fake_run_fail),

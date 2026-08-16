@@ -104,9 +104,7 @@ def test_conservative_ignores_ambient_targeted_bump_env_var(
         "repo_ops_upgrade.run.orchestration.process_workspace",
         side_effect=_capture,
     ):
-        main_plan(
-            [str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"]
-        )
+        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"])
 
     assert resolved == {"yarn_targeted_bump": False}
     assert os.environ["REPO_OPS_YARN_TARGETED_BUMP"] == "0"

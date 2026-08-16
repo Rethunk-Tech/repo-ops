@@ -90,9 +90,7 @@ def load_repo_config(repo_root: Path) -> dict[str, Any]:
         return sidecar_cfg
     raw = _load_toml(pyproject)
     tool_section: dict[str, Any] = cast(dict[str, Any], raw.get("tool", {}))
-    pyproject_cfg: dict[str, Any] = cast(
-        dict[str, Any], tool_section.get("repo-ops", {})
-    )
+    pyproject_cfg: dict[str, Any] = cast(dict[str, Any], tool_section.get("repo-ops", {}))
 
     if not sidecar_cfg:
         return pyproject_cfg
@@ -252,8 +250,7 @@ _SETTINGS_MAP: dict[str, tuple[str | None, str, Any]] = {
 
 # Public table for documentation generation: (setting, flag, env_var, config_key, default).
 SETTINGS_TABLE: list[tuple[str, str, str, str, str]] = [
-    (s.name, s.flag, s.env_var or "(none)", s.config_key, s.default_doc)
-    for s in _SETTINGS
+    (s.name, s.flag, s.env_var or "(none)", s.config_key, s.default_doc) for s in _SETTINGS
 ]
 
 

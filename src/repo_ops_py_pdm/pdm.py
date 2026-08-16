@@ -97,9 +97,9 @@ def _pdm_latest_direct_changes(ws: Workspace) -> list[Change]:
             latest = _pdm_latest_version(name)
         except RuntimeError:
             continue
-        if semver_tuple(latest) > semver_tuple(
-            resolved
-        ) and not _pdm_requirement_satisfied(latest, requirement):
+        if semver_tuple(latest) > semver_tuple(resolved) and not _pdm_requirement_satisfied(
+            latest, requirement
+        ):
             changes.append(Change(name, resolved, latest))
     return changes
 
@@ -127,9 +127,7 @@ def _apply_pdm_targeted_bumps(
             remaining.append(candidate)
             continue
         rule = resolve_package_hold(ws, candidate.name)
-        if rule is not None and not version_satisfies_ceiling(
-            candidate.to, rule.max_version
-        ):
+        if rule is not None and not version_satisfies_ceiling(candidate.to, rule.max_version):
             remaining.append(candidate)
             continue
         manifest_snapshot = snapshot_file(manifest)

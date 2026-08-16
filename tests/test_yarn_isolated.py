@@ -36,11 +36,7 @@ def test_file_protocol_targets_resolve_sibling(tmp_path: Path) -> None:
     (sibling / "package.json").write_text("{}", encoding="utf-8")
     (ws / "package.json").write_text(
         json.dumps(
-            {
-                "dependencies": {
-                    "@rechat/voice-interface": "file:../react-voice-interface#abc"
-                }
-            }
+            {"dependencies": {"@rechat/voice-interface": "file:../react-voice-interface#abc"}}
         ),
         encoding="utf-8",
     )
