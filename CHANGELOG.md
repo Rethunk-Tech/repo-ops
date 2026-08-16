@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A container registry could point the token fetch at any URL scheme.** The bearer-challenge flow takes its token realm from the `WWW-Authenticate` header the registry itself returns, and that URL went straight into `urllib.request.urlopen` — a `file:` or `ftp:` realm would have been opened as such. Every registry and package-metadata fetch now goes through one opener that refuses anything but http/https before the request is built.
+
 ### Changed
 
+- **Swallowed exceptions in the actionlint cache, the inventory counters and the org allowed-actions probe now name what they catch and log it at debug level.** Each was a bare `except Exception: pass`, so a systematically failing cache or an unreadable manifest looked identical to a clean scan. Behaviour is unchanged — these paths are still best-effort and still non-fatal — but the failure is now visible with `-vv`, and an unexpected exception type propagates instead of being counted as "nothing here".
+- **`deptry` runs as a gate.** Imports must resolve from a declared dependency and declared dependencies must be imported; it is wired into `.gate.toml` since dependency hygiene is not something a project's manifests declare on their own.
 - **Bundled agent skill ships `REFERENCE.md` instead of `AGENTS.md`.** Cursor auto-applies any `AGENTS.md` in a workspace, so installing the contributor guide into `~/.claude/skills/repo-ops` loaded release-cut and PyPI notes on every harness-editing session. `install-skill` now copies operator quick reference as `REFERENCE.md` and ignores `AGENTS.md`. Checkout `AGENTS.md` is unchanged.
 
 ## [0.23.0] - 2026-08-15

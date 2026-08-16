@@ -40,7 +40,13 @@ Issues = "https://github.com/Rethunk-Tech/repo-ops/issues"
 Changelog = "https://github.com/Rethunk-Tech/repo-ops/blob/main/CHANGELOG.md"
 
 [dependency-groups]
-dev = ["ruff>=0.11.0", "pytest>=8", "pytest-cov>=5.0", "pyrefly>=0.1"]
+dev = [
+  "ruff>=0.11.0",
+  "pytest>=8",
+  "pytest-cov>=5.0",
+  "pyrefly>=0.1",
+  "deptry>=0.25.1",
+]
 
 # One distribution, many top-level modules. The module split is a code-layout
 # choice; it deliberately does not imply separately installable distributions —
@@ -80,6 +86,19 @@ module-name = [
   "repo_ops_dependabot",
   "repo_ops_doctor",
 ]
+
+# deptry runs as `deptry src` (see .gate.toml). The module roots are under
+# src/, and naming that directory as the scan root is what makes the 31
+# repo_ops_* packages resolve as first-party — the alternative is listing every
+# one of them in known_first_party by hand.
+[tool.deptry.package_module_name_map]
+# Neither import name is derivable from its package name, and deptry can only
+# read the real one from installed metadata: ruamel.yaml installs into the
+# `ruamel` namespace package, and cursor-sdk is an optional extra that is
+# normally absent. Stating both keeps the gate's verdict the same whether or
+# not the environment happens to have them.
+ruamel-yaml = ["ruamel"]
+cursor-sdk = ["cursor_sdk"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

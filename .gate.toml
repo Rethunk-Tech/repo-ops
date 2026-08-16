@@ -1,0 +1,9 @@
+# Dependency hygiene: imports must resolve from declared dependencies, and
+# declared dependencies must be imported. Detection cannot infer this one, so
+# it is declared here.
+#
+# The scan root is src/ rather than "." — that is what makes the repo's own
+# repo_ops_* packages resolve as first-party. See [tool.deptry] in
+# pyproject.toml.
+[gates.deps]
+run = "uv run deptry src"
