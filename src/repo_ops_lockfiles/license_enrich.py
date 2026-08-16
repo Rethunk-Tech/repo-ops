@@ -13,11 +13,11 @@ import json
 import os
 import re
 import urllib.parse
-import urllib.request
 from pathlib import Path
 from typing import Any
 
 from repo_ops_core.filesystem import read_toml_file
+from repo_ops_core.http import open_url
 
 UNKNOWN_LICENSE = "UNKNOWN"
 
@@ -154,10 +154,7 @@ def classify_license_text(text: str) -> str | None:
         ),
     )
     for identifier, needles in signatures:
-        if (
-            identifier == "BSD-2-Clause"
-            and "ENDORSE OR PROMOTE PRODUCTS DERIVED" in upper
-        ):
+        if identifier == "BSD-2-Clause" and "ENDORSE OR PROMOTE PRODUCTS DERIVED" in upper:
             continue
         if all(needle in upper for needle in needles):
             return identifier
@@ -191,9 +188,7 @@ def _cache_path(cache_dir: Path, url: str) -> Path:
     return cache_dir / f"{digest}.json"
 
 
-def _registry_json(
-    url: str, cache_dir: Path, *, allow_network: bool
-) -> dict[str, Any] | None:
+def _registry_json(url: str, cache_dir: Path, *, allow_network: bool) -> dict[str, Any] | None:
     """Read a cached registry response, fetching it only when enabled."""
     cache_file = _cache_path(cache_dir, url)
     try:
@@ -207,15 +202,15 @@ def _registry_json(
     if urllib.parse.urlparse(url).scheme != "https":
         return None
 
-    request = urllib.request.Request(  # noqa: S310
-        url,
-        headers={
-            "Accept": "application/json",
-            "User-Agent": "repo-ops license enrichment",
-        },
-    )
     try:
-        with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
+        with open_url(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "repo-ops license enrichment",
+            },
+            timeout=5,
+        ) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (OSError, ValueError, json.JSONDecodeError):
         return None
@@ -279,9 +274,7 @@ def _npm_local_license(root: Path, name: str, version: str) -> str | None:
             candidates.append(package_json)
     for package_json in candidates:
         try:
-            data = json.loads(
-                package_json.read_text(encoding="utf-8", errors="replace")
-            )
+            data = json.loads(package_json.read_text(encoding="utf-8", errors="replace"))
         except (OSError, json.JSONDecodeError):
             continue
         if data.get("name") != name or str(data.get("version") or "") != version:
@@ -330,17 +323,13 @@ def _jsr_registry_license(
     encoded_version = urllib.parse.quote(version, safe="")
     base_url = f"https://jsr.io/@{encoded_scope}/{encoded_package}/{encoded_version}"
 
-    meta = _registry_json(
-        f"{base_url}_meta.json", cache_dir, allow_network=allow_network
-    )
+    meta = _registry_json(f"{base_url}_meta.json", cache_dir, allow_network=allow_network)
     license_id = _json_license(meta)
     if license_id:
         return license_id
 
     for filename in ("jsr.json", "deno.json"):
-        data = _registry_json(
-            f"{base_url}/{filename}", cache_dir, allow_network=allow_network
-        )
+        data = _registry_json(f"{base_url}/{filename}", cache_dir, allow_network=allow_network)
         license_id = _json_license(data)
         if license_id:
             return license_id
@@ -363,10 +352,7 @@ def _dist_info_license(root: Path, name: str, version: str) -> str | None:
                     message = email.message_from_string(text)
                 except OSError:
                     continue
-                if (
-                    re.sub(r"[-_.]+", "-", message.get("Name", "")).lower()
-                    != normalized_name
-                ):
+                if re.sub(r"[-_.]+", "-", message.get("Name", "")).lower() != normalized_name:
                     continue
                 if version and message.get("Version", "") != version:
                     continue
@@ -391,9 +377,7 @@ def _pypi_registry_license(
 
 
 def _cargo_local_license(name: str, version: str) -> str | None:
-    cargo_home = Path(
-        os.environ.get("CARGO_HOME", "").strip() or Path.home() / ".cargo"
-    )
+    cargo_home = Path(os.environ.get("CARGO_HOME", "").strip() or Path.home() / ".cargo")
     sources = cargo_home / "registry" / "src"
     if not sources.is_dir():
         return None
@@ -460,9 +444,7 @@ def enrich_license(
         local = _cargo_local_license(name, version)
         if local:
             return local
-        return _cargo_registry_license(
-            name, version, cache, allow_network=allow_network
-        )
+        return _cargo_registry_license(name, version, cache, allow_network=allow_network)
     return None
 
 

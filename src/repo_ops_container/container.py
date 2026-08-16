@@ -50,7 +50,6 @@ import re
 import subprocess
 import urllib.error
 import urllib.parse
-import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +61,7 @@ from repo_ops_core.config import (
     resolve_setting,
 )
 from repo_ops_core.holds import HoldRule, resolve_package_hold
+from repo_ops_core.http import open_url
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 
@@ -150,12 +150,8 @@ _COMPOSE_BUILD_STR_RE = re.compile(
 )
 # Matches «  build:» (block form — next lines have context/dockerfile keys)
 _COMPOSE_BUILD_BLOCK_RE = re.compile(r"^(?P<indent>[ \t]*)build:\s*$")
-_COMPOSE_CONTEXT_RE = re.compile(
-    r'^[ \t]+context:\s*["\']?(?P<path>[^\s"\']+)["\']?\s*$'
-)
-_COMPOSE_DOCKERFILE_RE = re.compile(
-    r'^[ \t]+dockerfile:\s*["\']?(?P<path>[^\s"\']+)["\']?\s*$'
-)
+_COMPOSE_CONTEXT_RE = re.compile(r'^[ \t]+context:\s*["\']?(?P<path>[^\s"\']+)["\']?\s*$')
+_COMPOSE_DOCKERFILE_RE = re.compile(r'^[ \t]+dockerfile:\s*["\']?(?P<path>[^\s"\']+)["\']?\s*$')
 
 
 def _compose_build_dockerfiles(compose_path: Path) -> list[Path]:
@@ -278,9 +274,7 @@ def _parse_from_lines(text: str) -> list[dict[str, Any]]:
         if alias_m:
             defined_stages.add(alias_m.group(1).lower())
 
-        is_stage_ref = (
-            image.lower() in _SCRATCH_NAMES or image.lower() in defined_stages
-        )
+        is_stage_ref = image.lower() in _SCRATCH_NAMES or image.lower() in defined_stages
         results.append(
             {
                 "line_no": i,
@@ -477,9 +471,7 @@ def _basic_auth_for_host(host: str) -> str | None:
 _CRED_HELPER_TIMEOUT = 5  # seconds
 
 # ECR registry hostname pattern: <account>.dkr.ecr.<region>.amazonaws.com
-_ECR_HOST_RE = re.compile(
-    r"^(?P<account>\d+)\.dkr\.ecr\.(?P<region>[a-z0-9-]+)\.amazonaws\.com$"
-)
+_ECR_HOST_RE = re.compile(r"^(?P<account>\d+)\.dkr\.ecr\.(?P<region>[a-z0-9-]+)\.amazonaws\.com$")
 
 
 def _ecr_region_for_host(host: str) -> str | None:
@@ -659,8 +651,7 @@ def _fetch_bearer_token(
     if basic_auth:
         headers["Authorization"] = basic_auth
     try:
-        req = urllib.request.Request(url, headers=headers)  # noqa: S310
-        with urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT) as resp:  # noqa: S310
+        with open_url(url, headers=headers, timeout=_REGISTRY_TIMEOUT) as resp:
             data: dict[str, Any] = json.loads(resp.read())
             token = data.get("token") or data.get("access_token")
             return str(token) if token else None
@@ -668,9 +659,7 @@ def _fetch_bearer_token(
         return None
 
 
-def _fetch_token_for_registry(
-    host: str, repo: str, basic_auth: str | None
-) -> str | None:
+def _fetch_token_for_registry(host: str, repo: str, basic_auth: str | None) -> str | None:
     """Fetch an anonymous/basic-auth bearer token using the OCI challenge flow.
 
     For docker.io: uses the known auth endpoint directly (avoids an extra RTT).
@@ -688,10 +677,13 @@ def _fetch_token_for_registry(
     # Generic: probe /v2/ to trigger the 401 challenge.
     probe_url = f"https://{host}/v2/"
     try:
-        req = urllib.request.Request(probe_url, headers={"Accept": "application/json"})
-        urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT)  # noqa: S310
-        # 200 OK → no auth needed (unauthenticated push, rare)
-        return None
+        with open_url(
+            probe_url,
+            headers={"Accept": "application/json"},
+            timeout=_REGISTRY_TIMEOUT,
+        ):
+            # 200 OK → no auth needed (unauthenticated push, rare)
+            return None
     except urllib.error.HTTPError as exc:
         if exc.code != 401:
             return None
@@ -739,8 +731,7 @@ def _fetch_tags(image: str) -> list[str] | None:
 
     url = f"https://{host}/v2/{repo}/tags/list"
     try:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT) as resp:  # noqa: S310
+        with open_url(url, headers=headers, timeout=_REGISTRY_TIMEOUT) as resp:
             data = json.loads(resp.read())
             tags = data.get("tags")
             if isinstance(tags, list):
@@ -780,8 +771,7 @@ def _fetch_manifest_digest(image: str, tag: str) -> str | None:
     # Try HEAD first (cheaper), fall back to GET if HEAD not supported
     for method in ("HEAD", "GET"):
         try:
-            req = urllib.request.Request(url, headers=headers, method=method)
-            with urllib.request.urlopen(req, timeout=_REGISTRY_TIMEOUT) as resp:  # noqa: S310
+            with open_url(url, headers=headers, method=method, timeout=_REGISTRY_TIMEOUT) as resp:
                 digest = resp.headers.get("Docker-Content-Digest", "")
                 if digest:
                     return str(digest)
@@ -859,9 +849,7 @@ def _resolve_latest_tag(
     candidates.sort(key=lambda x: x[0], reverse=True)
 
     try:
-        ver_part = (
-            current_tag[: len(current_tag) - len(suffix)] if suffix else current_tag
-        )
+        ver_part = current_tag[: len(current_tag) - len(suffix)] if suffix else current_tag
         current_tup = semver_tuple(ver_part)
     except Exception:
         return None
@@ -871,9 +859,7 @@ def _resolve_latest_tag(
     if not allow_cross_major:
         # Same major only
         same_major = [
-            (tup, t)
-            for tup, t in candidates
-            if tup and current_tup and tup[0] == current_tup[0]
+            (tup, t) for tup, t in candidates if tup and current_tup and tup[0] == current_tup[0]
         ]
         if not same_major:
             return None
@@ -919,9 +905,7 @@ def _target_within_hold(ws: Workspace, package: str, target_tag: str) -> bool:
     )
 
 
-def _resolve_hold_tag_target(
-    current_tag: str, tags: list[str], rule: HoldRule
-) -> str | None:
+def _resolve_hold_tag_target(current_tag: str, tags: list[str], rule: HoldRule) -> str | None:
     """Return the highest tag at or below *rule* when *current_tag* violates it."""
     current_version = _tag_version_for_hold(current_tag)
     if current_version is None:
@@ -1107,9 +1091,7 @@ def check_container(ws: Workspace) -> list[Change]:
                     )
                     continue
 
-            latest = _resolve_latest_tag(
-                tag, available, allow_cross_major=allow_cross_major
-            )
+            latest = _resolve_latest_tag(tag, available, allow_cross_major=allow_cross_major)
             if latest is None:
                 # Already at latest or indeterminate
                 continue
@@ -1184,9 +1166,7 @@ def _enforce_version_ceilings(
         if rule is None:
             continue
         current_version = _tag_version_for_hold(current_tag)
-        if current_version is None or version_satisfies_ceiling(
-            current_version, rule.max_version
-        ):
+        if current_version is None or version_satisfies_ceiling(current_version, rule.max_version):
             continue
 
         tags = _fetch_tags(image)
@@ -1281,9 +1261,7 @@ def apply_container(ws: Workspace) -> None:
 
         for image, tag, old_sha, new_sha in sha_bumps:
             for i, line in enumerate(lines):
-                updated = _replace_image_ref_in_line(
-                    line, image, tag, old_sha, tag, new_sha
-                )
+                updated = _replace_image_ref_in_line(line, image, tag, old_sha, tag, new_sha)
                 if updated != line:
                     lines[i] = updated
                     changed = True
