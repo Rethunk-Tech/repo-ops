@@ -714,7 +714,7 @@ def test_main_exclude_uses_repo_config(
     assert payload["summary"]["excluded"] == 1
 
 
-def test_main_exclude_cli_wins_over_config(
+def test_main_exclude_unions_cli_and_config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / "pyproject.toml").write_text(
@@ -747,8 +747,8 @@ def test_main_exclude_cli_wins_over_config(
 
     assert main(["--exclude", "cli-excluded", str(tmp_path)]) == 0
 
-    assert "Excluded repos: 1" in capsys.readouterr().out
-    assert set(seen) == {str(config_excluded), str(kept)}
+    assert "Excluded repos: 2" in capsys.readouterr().out
+    assert set(seen) == {str(kept)}
 
 
 def test_main_exclude_prints_zero_when_nothing_matches(

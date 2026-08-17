@@ -13,10 +13,12 @@ def test_repo_matches_exclude_supports_substrings_and_globs() -> None:
     assert not repo_matches_exclude("org/keep-repo", "/src/keep-repo", ["vendor"])
 
 
-def test_merge_exclude_patterns_prefers_non_empty_cli() -> None:
-    assert merge_exclude_patterns(["cli"], ["config"]) == ["cli"]
+def test_merge_exclude_patterns_unions_cli_and_config() -> None:
+    assert merge_exclude_patterns(["cli"], ["config"]) == ["cli", "config"]
     assert merge_exclude_patterns([], ["config"]) == ["config"]
     assert merge_exclude_patterns(None, "config") == ["config"]
+    assert merge_exclude_patterns(["cli"], ["repo"], ["global"]) == ["cli", "repo", "global"]
+    assert merge_exclude_patterns(["dup"], ["dup"], None) == ["dup"]
 
 
 def test_filter_repo_paths_returns_kept_paths_and_count(tmp_path: Path) -> None:

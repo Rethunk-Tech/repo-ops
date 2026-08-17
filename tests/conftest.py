@@ -191,6 +191,9 @@ def _isolate_state_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     state_mod._DIRTY = False
     state_mod._BEHIND_RUN_SEEN.clear()
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+    # Same reasoning for the config dir: the operator's real
+    # ~/.config/repo-ops/config.toml must never reach a test's settings.
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
 
 
 @pytest.fixture(autouse=True)

@@ -480,7 +480,7 @@ def test_dependabot_parser_exclude_patterns() -> None:
     assert args.exclude_patterns == ["vendor", "archive"]
 
 
-def test_dependabot_exclude_cli_wins_over_config(
+def test_dependabot_exclude_unions_cli_and_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -520,8 +520,8 @@ def test_dependabot_exclude_cli_wins_over_config(
         assert main(["--exclude", "cli-excluded", str(tmp_path)]) == 0
 
     scanned_paths = {call.args[0] for call in mock_remote.call_args_list}
-    assert scanned_paths == {config_excluded, kept}
-    assert "excluded: 1 repo(s)" in capsys.readouterr().out
+    assert scanned_paths == {kept}
+    assert "excluded: 2 repo(s)" in capsys.readouterr().out
 
     with (
         patch(
@@ -544,7 +544,7 @@ def test_dependabot_exclude_cli_wins_over_config(
     ):
         assert main(["--exclude", "cli-excluded", "--json", str(tmp_path)]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["summary"]["excluded"] == 1
+    assert payload["summary"]["excluded"] == 2
 
 
 def test_dependabot_exclude_filters_repositories_from_config(

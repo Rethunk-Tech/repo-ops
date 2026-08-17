@@ -18,15 +18,20 @@ def repo_matches_exclude(label: str, path_str: str, patterns: list[str]) -> bool
     )
 
 
-def merge_exclude_patterns(cli_patterns: list[str] | None, config_exclude: object) -> list[str]:
-    """Prefer non-empty CLI patterns, otherwise normalize config patterns."""
-    if cli_patterns:
-        return list(cli_patterns)
-    if isinstance(config_exclude, list):
-        return [str(pattern) for pattern in config_exclude]
-    if isinstance(config_exclude, str) and config_exclude:
-        return [config_exclude]
-    return []
+def merge_exclude_patterns(cli_patterns: list[str] | None, *config_excludes: object) -> list[str]:
+    """Union CLI and every config layer's patterns, preserving first-seen order.
+
+    Config exclusions are standing policy — a repo listed there is one a sweep
+    must never touch — so an ad-hoc ``--exclude`` adds to them rather than
+    replacing them.
+    """
+    merged: list[str] = list(cli_patterns or [])
+    for config_exclude in config_excludes:
+        if isinstance(config_exclude, list):
+            merged.extend(str(pattern) for pattern in config_exclude)
+        elif isinstance(config_exclude, str) and config_exclude:
+            merged.append(config_exclude)
+    return list(dict.fromkeys(merged))
 
 
 def filter_repo_paths(

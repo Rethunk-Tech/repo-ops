@@ -796,8 +796,10 @@ def test_exclude_from_pyproject_reaches_args(
     assert captured["exclude_patterns"] == ["vendor", "node_modules"]
 
 
-def test_cli_exclude_wins_over_config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """CLI --exclude takes precedence over config-file 'exclude'."""
+def test_cli_exclude_unions_with_config_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLI --exclude adds to config-file 'exclude' rather than replacing it."""
     (tmp_path / "pyproject.toml").write_text(
         '[tool.repo-ops]\nexclude = ["config_vendor"]\n', encoding="utf-8"
     )
@@ -811,8 +813,8 @@ def test_cli_exclude_wins_over_config_file(tmp_path: Path, monkeypatch: pytest.M
 
     monkeypatch.setattr(run_mod, "_run_upgrade_body", _fake_body)
     run_mod.run_upgrade(apply=False, argv=["--flat", "--exclude", "cli_vendor", str(tmp_path)])
-    # CLI value must win; config-file value must be ignored
-    assert captured["exclude_patterns"] == ["cli_vendor"]
+    # An ad-hoc CLI pattern must not un-exclude what the config file protects.
+    assert captured["exclude_patterns"] == ["cli_vendor", "config_vendor"]
 
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")

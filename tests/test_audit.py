@@ -841,7 +841,7 @@ def test_audit_exclude_filters_repositories_from_config(
     assert payload["summary"]["excluded"] == 1
 
 
-def test_audit_exclude_cli_wins_over_config(
+def test_audit_exclude_unions_cli_and_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     cli_excluded = tmp_path / "cli-excluded"
@@ -883,5 +883,5 @@ def test_audit_exclude_cli_wins_over_config(
     monkeypatch.setattr("repo_ops_audit.audit.audit_workspace", fake_audit)
 
     assert main(["--exclude", "cli-excluded", str(tmp_path)]) == 0
-    assert set(seen) == {str(config_excluded), str(kept)}
-    assert "Excluded repos: 1" in capsys.readouterr().out
+    assert set(seen) == {str(kept)}
+    assert "Excluded repos: 2" in capsys.readouterr().out

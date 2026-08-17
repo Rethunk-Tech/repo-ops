@@ -879,15 +879,11 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
         args.jobs = min(16, os.cpu_count() or 4)
 
     # ``exclude_patterns`` has no env-var channel (lists don't serialize well
-    # to env vars). Merge CLI and config directly before scanning.
-    _excl_cfg: object = None
-    if _r_cfg and "exclude" in _r_cfg:
-        _excl_cfg = _r_cfg["exclude"]
-    elif _g_cfg and "exclude" in _g_cfg:
-        _excl_cfg = _g_cfg["exclude"]
+    # to env vars). Merge CLI and every config layer directly before scanning.
     args.exclude_patterns = merge_exclude_patterns(
         getattr(args, "exclude_patterns", None),
-        _excl_cfg,
+        (_r_cfg or {}).get("exclude"),
+        (_g_cfg or {}).get("exclude"),
     )
 
     follow_symlinks = _cli_flag(args, "follow_symlinks")
