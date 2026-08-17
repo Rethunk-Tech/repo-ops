@@ -35,8 +35,18 @@ from repo_ops_models import Workspace
         ({"app.dockerfile": "FROM alpine:3.19\n"}, True),
         ({"docker-compose.yml": "version: '3'\n"}, True),
         ({"compose.yaml": "services:\n  app:\n    image: nginx:1.25\n"}, True),
+        ({"Containerfile": "FROM scratch\n"}, True),
+        ({"Containerfile.build": "FROM fedora:44\n"}, True),
+        ({"system-scope.Containerfile": "FROM fedora:44\n"}, True),
+        ({"llama-cpp.compose.yml": "services:\n  s:\n    image: nginx:1.25\n"}, True),
         ({}, False),
         ({"README.md": "# readme\n", "main.go": "package main\n"}, False),
+        # Any `.<suffix>` counts, so Containerfile.md matches exactly as
+        # Dockerfile.md always has — the suffix rule is what makes
+        # Dockerfile.prod work and it does not inspect the suffix.
+        ({"Containerfile.md": "# notes\n"}, True),
+        # But a name that merely contains the word must not qualify.
+        ({"compose-notes.md": "# notes\n", "my-dockerfile-guide.txt": "x\n"}, False),
     ],
 )
 def test_is_container_workspace(files: dict[str, str], expected: bool, tmp_path: Path) -> None:

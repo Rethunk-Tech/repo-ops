@@ -3,9 +3,9 @@
 Design notes
 ------------
 * Discovery: a directory is a container workspace when it contains any of
-  ``Dockerfile``, ``Dockerfile.<suffix>``, ``*.dockerfile``,
-  ``docker-compose.yml``, ``docker-compose.yaml``, ``compose.yml``,
-  ``compose.yaml``.
+  ``Dockerfile``, ``Containerfile``, either with a ``.<suffix>``,
+  ``*.dockerfile``, ``*.containerfile``, ``compose.yml``/``.yaml``,
+  ``docker-compose.yml``/``.yaml``, or ``<name>.compose.yml``/``.yaml``.
 * Check (read-only): parses FROM lines and compose ``image:`` values, queries
   the registry over anonymous HTTP (urllib, stdlib-only), returns Change
   objects.  Network failures and non-semver tags are recorded report-only
@@ -69,15 +69,23 @@ from repo_ops_models import Change, Workspace
 # File patterns that signal a container workspace
 # ---------------------------------------------------------------------------
 
-_DOCKERFILE_RE = re.compile(r"^(Dockerfile(\..+)?|.+\.dockerfile)$", re.IGNORECASE)
-_COMPOSE_NAMES = frozenset(
-    {
-        "docker-compose.yml",
-        "docker-compose.yaml",
-        "compose.yml",
-        "compose.yaml",
-    }
+# ``Containerfile`` is the Podman/buildah spelling of the same file; a repo that
+# uses it is otherwise invisible to every sweep.
+_DOCKERFILE_RE = re.compile(
+    r"^((Dockerfile|Containerfile)(\..+)?|.+\.(dockerfile|containerfile))$",
+    re.IGNORECASE,
 )
+# The canonical four names, plus the ``<service>.compose.yml`` style used when a
+# repo keeps several compose files side by side.
+_COMPOSE_RE = re.compile(
+    r"^((docker-)?compose\.(yml|yaml)|.+\.compose\.(yml|yaml))$",
+    re.IGNORECASE,
+)
+
+
+def _is_compose_name(name: str) -> bool:
+    """Whether *name* is a compose file this checker should scan."""
+    return _COMPOSE_RE.match(name) is not None
 
 
 def _container_flag_enabled(setting: str, env_var: str, ws: Workspace) -> bool:
@@ -100,7 +108,7 @@ def is_container_workspace(directory: Path) -> bool:
             if entry.is_file():
                 if _DOCKERFILE_RE.match(entry.name):
                     return True
-                if entry.name in _COMPOSE_NAMES:
+                if _is_compose_name(entry.name):
                     return True
     except PermissionError:
         pass
@@ -108,7 +116,9 @@ def is_container_workspace(directory: Path) -> bool:
 
 
 def find_container_files(directory: Path) -> list[Path]:
-    """Return all Dockerfile* and compose files in *directory* (non-recursive).
+    """Return all Dockerfile/Containerfile and compose files in *directory*.
+
+    Non-recursive.
 
     Also resolves any Dockerfiles referenced via compose ``build:`` keys and
     adds them to the result (deduped by resolved path).
@@ -120,7 +130,7 @@ def find_container_files(directory: Path) -> list[Path]:
         for entry in sorted(directory.iterdir()):
             if not entry.is_file():
                 continue
-            if _DOCKERFILE_RE.match(entry.name) or entry.name in _COMPOSE_NAMES:
+            if _DOCKERFILE_RE.match(entry.name) or _is_compose_name(entry.name):
                 rp = entry.resolve()
                 if rp not in resolved_paths:
                     resolved_paths.add(rp)
@@ -130,7 +140,7 @@ def find_container_files(directory: Path) -> list[Path]:
 
     # For each compose file found, also collect referenced build Dockerfiles.
     for cf in list(found):
-        if cf.name in _COMPOSE_NAMES or "compose" in cf.name.lower():
+        if _is_compose_name(cf.name) or "compose" in cf.name.lower():
             for extra in _compose_build_dockerfiles(cf):
                 rp = extra.resolve()
                 if rp not in resolved_paths:
@@ -332,7 +342,7 @@ def _parse_image_refs(path: Path) -> list[dict[str, Any]]:
     """Parse image references from *path* (auto-detects Dockerfile vs compose)."""
     text = path.read_text(encoding="utf-8", errors="replace")
     name = path.name.lower()
-    if name in _COMPOSE_NAMES or "compose" in name:
+    if _is_compose_name(name) or "compose" in name:
         return _parse_compose_images(text)
     return _parse_from_lines(text)
 

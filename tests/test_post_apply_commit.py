@@ -1022,9 +1022,12 @@ def test_upgrade_scoped_paths_includes_container_files(tmp_path: Path, init_git_
 
     Container files have no fixed basename set, so before this they matched
     neither the root-basename nor the subdirectory-prefix rule and a digest
-    bump was applied to the tree but never staged. The symlink case is the
-    one seen in the wild: discovery finds `Dockerfile`, the write lands on
-    the `Containerfile` it points at, and git reports the latter.
+    bump was applied to the tree but never staged.
+
+    The repo here carries both names for one file, the shape seen in the
+    wild. Discovery dedupes by resolved path, so only one of them comes
+    back; what matters is that the path git reports as modified — the
+    symlink's target — is the one that gets staged.
     """
     init_git_repo(tmp_path)
     (tmp_path / "Containerfile").write_text("FROM fedora:44\n", encoding="utf-8")
@@ -1044,5 +1047,4 @@ def test_upgrade_scoped_paths_includes_container_files(tmp_path: Path, init_git_
         bundle, ["Containerfile", "Dockerfile", "unrelated.txt"]
     )
     assert "Containerfile" in scoped
-    assert "Dockerfile" in scoped
     assert "unrelated.txt" not in scoped

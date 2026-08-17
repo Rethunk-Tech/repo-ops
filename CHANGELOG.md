@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A container registry could point the token fetch at any URL scheme.** The bearer-challenge flow takes its token realm from the `WWW-Authenticate` header the registry itself returns, and that URL went straight into `urllib.request.urlopen` — a `file:` or `ftp:` realm would have been opened as such. Every registry and package-metadata fetch now goes through one opener that refuses anything but http/https before the request is built.
 
+### Added
+
+- **Container discovery recognizes `Containerfile` and `<name>.compose.yml`.** The patterns matched `Dockerfile*` and four exact compose names, so a Podman-native repo was invisible to every sweep unless it happened to also carry a `Dockerfile` symlink — one such file had silently drifted to a stale base-image digest. Now matches `Containerfile`, `Containerfile.<suffix>`, `*.containerfile`, and `<name>.compose.yml`/`.yaml` alongside the existing names. A `.<suffix>` is still not inspected, so `Containerfile.md` qualifies exactly as `Dockerfile.md` always has.
+
 ### Fixed
 
 - **A container image bump was applied to the tree but never committed, and reported as a lockfile change.** `snapshot_workspace_files` and the commit-scope basename maps are keyed by manager, and `container` fell through to an empty set in both: the snapshot diff saw nothing, so the workspace's changes came from the post-apply fallback (which reports the directory's *lockfiles* — a container workspace at a repo root got a `uv.lock` entry), and `upgrade_scoped_paths` matched no Dockerfile or compose path, so `--commit` staged everything except the file that actually changed. Both now use the container module's own `find_container_files` discovery rather than a basename list. The scope also covers each file's resolved target, since a repo may ship `Dockerfile` as a symlink to `Containerfile` and the write through the link is what git reports as modified.
