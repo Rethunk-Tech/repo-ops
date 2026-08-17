@@ -44,6 +44,9 @@ dev = [
   "ruff>=0.11.0",
   "pytest>=8",
   "pytest-cov>=5.0",
+  # The suite is wait-bound (subprocess tool probes, temp git repos), so it parallelises well:
+  # ~14s serial down to ~10s. See addopts below.
+  "pytest-xdist>=3.6",
   "pyrefly>=0.1",
   "deptry>=0.25.1",
 ]
@@ -101,6 +104,9 @@ ruamel-yaml = ["ruamel"]
 cursor-sdk = ["cursor_sdk"]
 
 [tool.pytest.ini_options]
+# -n auto: mostly subprocess and filesystem waiting, so workers cost little. Pass -n0 for a
+# debugging run, since --pdb needs a single process.
+addopts = "-n auto"
 testpaths = ["tests"]
 pythonpath = []
 markers = [
