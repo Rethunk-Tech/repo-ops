@@ -140,6 +140,10 @@ def upgrade_scoped_paths(
       root match excludes. Scoped to the root workspace's own declared
       ``workspaces`` globs so unrelated dirty manifests are never swept in.
       Issue #153.
+    - Dockerfile/compose files a container workspace repinned, taken from the
+      container module's own discovery. They have no fixed basename set, so
+      neither the root-basename nor the subdirectory-prefix match sees them and
+      a digest bump would otherwise be applied but left uncommitted.
     - Files an applied remediation hook declares it touched (its own ``files``
       callback, e.g. ``biome_schema`` rewriting ``biome.json``'s schema URL),
       matched by exact repo-relative path. A remediation writes files outside
@@ -161,6 +165,12 @@ def upgrade_scoped_paths(
     # remediation_paths: exact repo-relative paths an applied remediation hook
     # declared it wrote via its own `files` callback.
     remediation_paths: set[str] = set()
+    # container_paths: exact repo-relative paths of the Dockerfile/compose files
+    # a container workspace pins images in. They have no fixed basename set to
+    # match on, and a compose ``build:`` key can reference a Dockerfile outside
+    # the workspace directory, so the container module's own discovery is the
+    # only thing that knows the full set.
+    container_paths: set[str] = set()
 
     for wr in bundle.workspaces:
         if not (wr.changes or wr.remediations):
@@ -183,6 +193,19 @@ def upgrade_scoped_paths(
             # Subdirectory workspace: scope by prefix with a strict "/" boundary
             # so "packages/foo" cannot match "packages/foobar". Issue #116.
             sub_prefixes.add(str(rel).replace("\\", "/"))
+        if wr.workspace.manager == "container":
+            from repo_ops_container.container import find_container_files
+
+            for cf in find_container_files(wr.workspace.path):
+                # Both the discovered name and what it resolves to: a repo may
+                # ship `Dockerfile` as a symlink to `Containerfile`, and a write
+                # through the link is what git reports as modified.
+                for candidate in (cf, cf.resolve()):
+                    try:
+                        cf_rel = candidate.relative_to(bundle.git_repo.resolve())
+                    except ValueError:
+                        continue
+                    container_paths.add(str(cf_rel).replace("\\", "/"))
         for entry in wr.remediations:
             if entry.get("status") != "applied":
                 continue
@@ -220,6 +243,10 @@ def upgrade_scoped_paths(
             continue
         # File an applied remediation hook declared it touched. Issue #154.
         if norm in remediation_paths:
+            scoped.append(path)
+            continue
+        # Dockerfile/compose file a container workspace repinned.
+        if norm in container_paths:
             scoped.append(path)
             continue
         # Subdirectory workspace: prefix must match with a "/" boundary.

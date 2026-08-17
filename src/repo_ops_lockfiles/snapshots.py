@@ -88,6 +88,13 @@ def _diff_lock_text(before: str, after: str) -> list[Change]:
 
 
 def snapshot_workspace_files(mdir: Path, manager: str) -> dict[Path, bytes]:
+    if manager == "container":
+        # Container files are discovered, not a fixed basename set (compose
+        # ``build:`` keys can point at Dockerfiles the directory listing misses),
+        # so ask the container module rather than duplicating the rules here.
+        from repo_ops_container.container import find_container_files
+
+        return {p: p.read_bytes() for p in find_container_files(mdir) if p.is_file()}
     names: tuple[str, ...]
     if manager in ("yarn", "npm", "pnpm", "bun"):
         names = NODE_LOCKFILES
@@ -174,6 +181,12 @@ def diff_workspace_snapshots(
                 if c.name not in seen:
                     seen.add(c.name)
                     changes.append(c)
+        elif manager == "container" and path.name not in seen:
+            # Container files carry image pins, not packages; report the file so
+            # the entry names what actually moved instead of falling through to
+            # the post-apply fallback, which reports the workspace's lockfiles.
+            seen.add(path.name)
+            changes.append(Change(path.name, "changed", "changed"))
         elif path.name in _COARSE_DIFF_LOCKFILES and path.name not in seen:
             seen.add(path.name)
             changes.append(Change(path.name, "changed", "changed"))

@@ -1010,3 +1010,39 @@ def test_pipenv_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_
     )
     assert plan.skipped_reason is None
     assert set(plan.files) == {"Pipfile.lock", "Pipfile"}
+
+
+# ---------------------------------------------------------------------------
+# Container image pins applied but left uncommitted
+# ---------------------------------------------------------------------------
+
+
+def test_upgrade_scoped_paths_includes_container_files(tmp_path: Path, init_git_repo) -> None:
+    """A container workspace's repinned image file must reach the commit.
+
+    Container files have no fixed basename set, so before this they matched
+    neither the root-basename nor the subdirectory-prefix rule and a digest
+    bump was applied to the tree but never staged. The symlink case is the
+    one seen in the wild: discovery finds `Dockerfile`, the write lands on
+    the `Containerfile` it points at, and git reports the latter.
+    """
+    init_git_repo(tmp_path)
+    (tmp_path / "Containerfile").write_text("FROM fedora:44\n", encoding="utf-8")
+    (tmp_path / "Dockerfile").symlink_to("Containerfile")
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="container",
+        manager="container",
+        git_repo=tmp_path,
+        label="root",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("registry.fedoraproject.org/fedora:44", "sha256:old", "sha256:new")]
+    bundle = RepoBundle(git_repo=tmp_path, label="root", workspaces=[wr])
+
+    scoped = post_apply_commit.upgrade_scoped_paths(
+        bundle, ["Containerfile", "Dockerfile", "unrelated.txt"]
+    )
+    assert "Containerfile" in scoped
+    assert "Dockerfile" in scoped
+    assert "unrelated.txt" not in scoped

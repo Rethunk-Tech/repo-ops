@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A container registry could point the token fetch at any URL scheme.** The bearer-challenge flow takes its token realm from the `WWW-Authenticate` header the registry itself returns, and that URL went straight into `urllib.request.urlopen` — a `file:` or `ftp:` realm would have been opened as such. Every registry and package-metadata fetch now goes through one opener that refuses anything but http/https before the request is built.
 
+### Fixed
+
+- **A container image bump was applied to the tree but never committed, and reported as a lockfile change.** `snapshot_workspace_files` and the commit-scope basename maps are keyed by manager, and `container` fell through to an empty set in both: the snapshot diff saw nothing, so the workspace's changes came from the post-apply fallback (which reports the directory's *lockfiles* — a container workspace at a repo root got a `uv.lock` entry), and `upgrade_scoped_paths` matched no Dockerfile or compose path, so `--commit` staged everything except the file that actually changed. Both now use the container module's own `find_container_files` discovery rather than a basename list. The scope also covers each file's resolved target, since a repo may ship `Dockerfile` as a symlink to `Containerfile` and the write through the link is what git reports as modified.
+
 ### Changed
 
 - **`--exclude` now unions with the config layers instead of replacing them.** `merge_exclude_patterns` preferred non-empty CLI patterns, and the global/per-repo merge in `run.py` picked one layer with an `elif` — so an ad-hoc `repo-ops apply --exclude foo` discarded the standing `exclude` list in `~/.config/repo-ops/config.toml` and swept every repo that list existed to protect. CLI, per-repo `exclude`, and global `exclude` are now unioned (first-seen order, deduped). Excluding a repo for one run still works; it just can no longer un-exclude the others.
