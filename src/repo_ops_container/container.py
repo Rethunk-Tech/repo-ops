@@ -703,8 +703,12 @@ def _fetch_token_for_registry(host: str, repo: str, basic_auth: str | None) -> s
         params = _parse_www_authenticate(www_auth)
         realm = params.get("realm", "")
         service = params.get("service", host)
-        # Use repo-scoped scope from the challenge or build a default
-        scope = params.get("scope", f"repository:{repo}:pull")
+        # Scope comes from the repo being queried, never from the challenge: the
+        # probe is against /v2/, which is not repo-specific, so a registry can
+        # only answer with a placeholder. ghcr.io returns a literal
+        # `repository:user/image:pull`, and a token minted for that grants no
+        # access to the real repo — every ghcr.io digest refresh failed closed.
+        scope = f"repository:{repo}:pull"
         if not realm:
             return None
         return _fetch_bearer_token(realm, service, scope, basic_auth)

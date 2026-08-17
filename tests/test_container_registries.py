@@ -190,6 +190,44 @@ def test_fetch_token_generic_registry_challenge_flow() -> None:
     assert call_count == 2  # probe + token fetch
 
 
+def test_fetch_token_ignores_placeholder_scope_in_challenge() -> None:
+    """Scope must come from the repo queried, not the /v2/ challenge.
+
+    The probe is against /v2/, which is not repo-specific, so a registry can
+    only advertise a placeholder. ghcr.io returns a literal
+    `repository:user/image:pull`; a token minted for that grants no access to
+    the real repo, so every ghcr.io digest refresh failed closed.
+    """
+    probe_error = _make_http_error(
+        401,
+        headers={
+            "WWW-Authenticate": (
+                'Bearer realm="https://ghcr.io/token",service="ghcr.io",'
+                'scope="repository:user/image:pull"'
+            )
+        },
+    )
+    token_resp = _make_http_response(json.dumps({"token": "ghcr_token"}).encode())
+    requested_urls: list[str] = []
+
+    def side_effect(req: Any, timeout: int = 10) -> Any:
+        requested_urls.append(req.full_url)
+        if len(requested_urls) == 1:
+            raise probe_error
+        return token_resp
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        result = _fetch_token_for_registry("ghcr.io", "ggml-org/llama.cpp", None)
+
+    assert result == "ghcr_token"
+    token_url = requested_urls[1]
+    assert "repository%3Aggml-org%2Fllama.cpp%3Apull" in token_url or (
+        "repository:ggml-org/llama.cpp:pull" in token_url
+    )
+    assert "user%2Fimage" not in token_url
+    assert "user/image" not in token_url
+
+
 def test_fetch_token_generic_registry_200_probe_returns_none() -> None:
     """If /v2/ returns 200 (no auth needed), token is None."""
     probe_resp = _make_http_response(b"{}")
