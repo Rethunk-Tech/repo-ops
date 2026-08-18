@@ -571,8 +571,8 @@ def test_audit_node_bun_text_parse() -> None:
 
 
 def test_audit_node_bun_json_extracts_remediations() -> None:
-    """If bun ever emits npm-advisory-shaped JSON (it did not as of 1.3.14,
-    see test_audit_node_bun_native_json_real_shape below), a known-safe fix
+    """When bun emits npm-advisory-shaped JSON (today it uses a different native
+    shape; see test_audit_node_bun_native_json_real_shape below), a known-safe fix
     version must still surface as a RemediationItem the same way npm/pnpm/yarn
     do, otherwise apply_remediations never sees a bun workspace to apply
     overrides to."""

@@ -170,7 +170,13 @@ opt-out, per ecosystem behavior described in its own column.
 
 #### Hatch and `--migrate-to-uv-lock`
 
-Hatch workspaces without a `uv.lock` get one created on apply by default (`--migrate-to-uv-lock`, also `REPO_OPS_HATCH_MIGRATE_UV_LOCK=1`); `--no-migrate-to-uv-lock` skips such projects instead, leaving them permanently outside the sweep. On apply **verify**, when hatch has no `uv.lock`, verify intentionally skips `uv sync --locked` (nothing to lock against until migration) and runs only hatch fast gates (`check`/`typecheck` scripts, ruff, mypy, and pyrefly when configured). When `[tool.pyrefly]` configures `project-excludes` or `project-includes`, verify passes those paths as pyrefly CLI flags so the project-defined scope is honored without hardcoded exclusions. After a successful lock gate, **uv** and **hatch** workspaces run the fast gate stack via `uv run`; **poetry**, **pdm**, and **pipenv** invoke it via `poetry run`, `pdm run`, and `pipenv run`, respectively. Missing manager binaries fail closed with a clear reason.
+| Topic | Behavior |
+| ------ | --------- |
+| Lock creation | Hatch workspaces without `uv.lock` get one on apply by default (`--migrate-to-uv-lock`, `REPO_OPS_HATCH_MIGRATE_UV_LOCK=1`); `--no-migrate-to-uv-lock` skips them permanently |
+| Verify without lock | Skips `uv sync --locked`; runs hatch fast gates only (`check`/`typecheck`, ruff, mypy, pyrefly when configured) |
+| Pyrefly scope | `[tool.pyrefly]` `project-excludes` / `project-includes` passed as CLI flags |
+| Fast gates | **uv**/**hatch** via `uv run`; **poetry**/**pdm**/**pipenv** via their `run` subcommands |
+| Missing binaries | Fail closed with a clear reason |
 
 ### Go modules
 
@@ -190,13 +196,30 @@ Isolated snapshots copy `.yarn/releases/` (Berry) and `file:../…` siblings fro
 
 #### Targeted bump fallback
 
-`yarn up -R '*'` delegates to yarn's resolver, which keeps peer/group-constrained direct deps below their newest release; `behind_latest` reports those. By default, repo-ops *moves* the gap instead of only reporting it: for each `behind_latest` dep, it snapshots the lockfile/manifests, runs a targeted `yarn up <pkg>@latest` + `yarn install`, and keeps the result only when install succeeds **and** the resolved version actually advances. Any failure — install break, or a ghost bump where the lock churns but the resolver holds the old version — restores the snapshot, so the dep stays in `behind_latest` and nothing broken is committed. Successful bumps become normal planned changes (visible in `plan`, applied by `apply`). Same shape for every other package manager; `--conservative` disables the fallback everywhere and leaves gaps report-only.
+`yarn up -R '*'` keeps peer/group-constrained direct deps below their newest release; `behind_latest` reports the gap. By default repo-ops closes it:
 
-A `resolutions`/`overrides`/`pnpm.overrides` manifest pin blocking the target is not automatically a hard stop: if no [package hold](#package-holds--capping-a-packages-version-temporarily) covers the package, the retry releases that pin first (it predates the hold feature, or was a one-off fix never promoted to a tracked hold) before running the install — reverted along with everything else in the snapshot if the retry still doesn't land. A package covered by an active hold keeps its pin untouched and is bumped only up to the hold's ceiling. This applies to the *initial* bulk-update ghost-bump guard too (yarn/bun): a blocked target from that first pass is handed to this retry instead of failing the whole workspace outright — the guard only raises immediately when `--conservative` leaves no targeted-bump fallback to hand it to. Deno uses the same fallback shape (selective `deno update <pkg>` with lock/import-map snapshot restore).
+1. Snapshot lockfile/manifests.
+2. Run targeted `yarn up <pkg>@latest` + `yarn install`.
+3. Keep only when install succeeds **and** the resolved version advances.
+
+Failures (install break, ghost bump) restore the snapshot. Successful bumps appear in `plan`/`apply`. Same shape for every package manager; `--conservative` disables the fallback.
+
+| Case | Behavior |
+| ------ | ---------- |
+| Manifest pin (`resolutions`/`overrides`/`pnpm.overrides`) | Released before retry when no [package hold](#package-holds--capping-a-packages-version-temporarily) covers the package; reverted on failure |
+| Active hold | Pin kept; bump only up to hold ceiling |
+| Ghost-bump guard (yarn/bun) | Blocked targets handed to this retry; raises only when `--conservative` leaves no fallback |
+| Deno | Selective `deno update <pkg>` with lock/import-map snapshot restore |
 
 ### Submodule tag-advance
 
-`--submodules` is active by default, so `plan` detects available semver tag advances for each discovered submodule (comparing the current registered commit against upstream tags); `--no-submodules` skips the scan. By default, both within-major and **cross-major** tag advances are surfaced and applied, and SHA-only HEADs are refreshed when the same `.gitmodules` URL resolves their tagged major. `--conservative` restricts advances to within-major and leaves SHA-only HEADs report-only. `apply` applies submodule pointer updates before parent umbrella commits by default (`--submodule-order=children-first`); `--submodule-order=discovery` restores plain scan order.
+| Setting | Behavior |
+| --------- | ---------- |
+| Default | `--submodules` on: semver tag advances detected per submodule |
+| Cross-major | Surfaced and applied by default; SHA-only HEADs refreshed when upstream tags resolve |
+| `--conservative` | Within-major only; SHA-only HEADs report-only |
+| Apply order | Submodule pointers updated before parent commits (`--submodule-order=children-first`; `discovery` restores scan order) |
+| Opt out | `--no-submodules` skips the scan |
 
 ### Apply resume
 
@@ -357,26 +380,26 @@ excluded from this bucket).
 | container | no local license source (always unknown; does not trigger exit `2`) |
 
 Poetry, PDM, and pipenv lockfiles without an installed venv may report unknown
-for Python packages. BSD text classification is best-effort: `BSD-3-Clause`
-requires the endorse/promote clause, and truncated text missing it is
-indistinguishable from `BSD-2-Clause` and classifies as such. See `repo-ops license --help` epilog for SPDX compound-expression handling.
+for Python packages. BSD classification caveats:
+
+| License | Rule |
+| --------- | ------ |
+| `BSD-3-Clause` | Requires the endorse/promote clause |
+| `BSD-2-Clause` | Truncated text missing that clause classifies here |
+| SPDX compounds | See `repo-ops license --help` epilog |
 
 ### `doctor` — toolchain/auth preflight
 
-`repo-ops doctor` probes the binaries repo-ops shells out to across all
-ecosystems (read-only; no scan roots, no `root_dir` arguments): `git`, `gh`,
-`uv`, `pip-compile`, `poetry`, `pipenv`, `pdm`, `pip-audit`, `pyrefly`, `ruff`, `hatch`,
-`pre-commit`, `npm`, `pnpm`, `yarn`, `bun`, `corepack`, `deno`, `go`, `gofmt`,
-`govulncheck`, `cargo`, `cargo-audit` (via `cargo audit --version`), `actionlint`. Each is resolved via
-`shutil.which`; found binaries also get a
-best-effort version string (first line of `<tool> --version`, timeout-guarded).
-`gh` additionally gets a `gh auth status` check so agents can tell "not
-installed" apart from "installed but unauthenticated" before a
-`dependabot`/`pr`-mode run fails partway through.
-Doctor also warns when installed Cursor/Claude skill copies drift from the
-bundled skill; JSON output includes these rows in the `skill_drift` array. Use
-`repo-ops install-skill --check` for a read-only check, then
-`repo-ops install-skill --force` to overwrite drifted copies.
+`repo-ops doctor` probes binaries repo-ops shells out to (read-only; no scan roots):
+
+| Category | Tools |
+| ---------- | ------- |
+| VCS / GitHub | `git`, `gh` (+ `gh auth status`) |
+| Python | `uv`, `pip-compile`, `poetry`, `pipenv`, `pdm`, `pip-audit`, `pyrefly`, `ruff`, `hatch` |
+| JS | `npm`, `pnpm`, `yarn`, `bun`, `corepack` |
+| Other | `pre-commit`, `deno`, `go`, `gofmt`, `govulncheck`, `cargo`, `cargo-audit`, `actionlint` |
+
+Each tool: `shutil.which` + best-effort `--version` (timeout-guarded). Doctor also warns when installed Cursor/Claude skill copies drift from the bundled skill (`skill_drift` in JSON). Use `repo-ops install-skill --check` read-only, then `--force` to overwrite.
 
 - `--strict` — exit `1` when any probed binary is missing (default: exit `0`
   regardless of missing binaries).

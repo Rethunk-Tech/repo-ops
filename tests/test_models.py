@@ -48,7 +48,7 @@ def test_any_dirty_skip_uses_shared_constant_not_a_hardcoded_literal(
         error="dirty git worktree (use --allow-dirty)",
     )
     bundle = RepoBundle(git_repo=Path("/tmp/repo"), label="", workspaces=[wr])
-    # Old literal no longer matches the (patched) constant.
+    # Monkeypatched constant; fixture uses a mismatched skip marker.
     assert bundle.any_dirty_skip() is False
 
     wr2 = WorkspaceResult(

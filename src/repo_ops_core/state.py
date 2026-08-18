@@ -245,11 +245,11 @@ def record_behind_latest(
 ) -> dict[str, Any] | None:
     """Record a workspace's behind-latest *count* for *repo_path* in *state*.
 
-    ``new_run=True`` rotates the entry first: the previous run's total moves
+    ``new_run=True`` rotates the entry first: the prior run total moves
     to ``prev_total``, per-manager counts reset, the run counter increments,
-    and ``first_behind`` is popped when the previous run reported 0 behind.
-    A rotated entry left with nothing behind, nothing previously behind and
-    no first-behind date is pruned entirely.
+    and ``first_behind`` is popped when ``prev_total`` was 0.
+    A rotated entry with nothing behind, ``prev_total`` of 0,
+    and no first-behind date is pruned entirely.
 
     Never creates an entry for a repo with nothing behind.  Returns the
     surviving entry, or ``None`` when pruned, absent, or state is disabled.

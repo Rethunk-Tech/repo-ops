@@ -121,7 +121,7 @@ def test_checkpoint_should_not_skip_if_repo_absent(
     git_repo = tmp_path / "myrepo"
     git_repo.mkdir()
     bundle = _make_bundle(git_repo)
-    checkpoint: dict[str, str] = {}  # empty — repo not previously completed
+    checkpoint: dict[str, str] = {}  # repo absent from checkpoint
 
     monkeypatch.setattr(run_mod, "_get_head_sha", lambda p: "abc123")
     assert run_mod._checkpoint_should_skip(bundle, checkpoint) is False
