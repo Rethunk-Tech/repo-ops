@@ -245,7 +245,7 @@ lockfiles; no auto-commit).
 | Ecosystem | Tool required | Notes |
 | ----------- | -------------- | ------- |
 | `go` | `govulncheck` | `govulncheck -json ./...`; workspace skipped if not on PATH |
-| `node` | `npm` / `yarn` / `pnpm` / `bun` | detected from lockfile; `bun audit` text-parsed (no `--json`) |
+| `node` | `npm` / `yarn` / `pnpm` / `bun` | detected from lockfile; `bun audit --json` preferred, ANSI text fallback when JSON unavailable |
 | `py-uv` | `uv` + `pip-audit` | `uv run pip-audit --format json`; skipped when pip-audit not importable. When `uv.lock` and hatchling metadata both exist, `uv.lock` wins (`py-uv` / `uv`). |
 | `py-poetry` / `py-pdm` / `py-pipenv` / `py-hatch` / `py-pip-tools` | manager + `pip-audit` | manager-native export then `pip-audit`; JSON `skip_reason` when export/tool missing (never false-clean `ok`). `py-hatch` only when hatch signals exist and no competing lock (`uv.lock` / poetry / pdm / Pipfile). |
 | `rust` | `cargo` + `cargo-audit` | `cargo audit --json`; skipped if `cargo audit --version` fails |
