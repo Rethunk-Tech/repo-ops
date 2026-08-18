@@ -9,7 +9,7 @@ uv sync --locked --group dev
 uv run ruff check .
 uv run ruff format --check .
 uv run pyrefly check . --project-excludes 'tests/**' 'scripts/**'
-uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=78
+uv run pytest -q --cov --cov-report=term-missing --cov-fail-under=78
 uv build
 ```
 
@@ -17,7 +17,8 @@ The pyrefly check scope mirrors `[tool.pyrefly] project-includes` in root `pypro
 
 ## Test layout
 
-Every test lives in `tests/` — one `testpaths` entry, so a bare `uv run pytest` runs the whole suite.
+Every test lives in `tests/` — one `testpaths` entry. A bare `uv run pytest` runs the blocking
+non-integration lane; pass `-m integration` to run the advisory integration lane.
 
 Config: root `pyproject.toml` `[tool.pytest.ini_options]`. CI runs the same checks on Python 3.12–3.14; tag `v*` triggers [release.yml](../.github/workflows/release.yml). When changing Markdown tiers, run the doc-audit skill on the repo root (e.g. `~/.cursor/skills/doc-audit` or `~/.claude/skills/doc-audit`).
 
@@ -38,10 +39,10 @@ The `integration` marker flags tests that require real external tools (bun, yarn
 
 The advisory `integration` job installs govulncheck (`go install golang.org/x/vuln/cmd/govulncheck@latest`), enables Corepack for yarn, and runs only `pytest -m integration` — it does not run the blocking lint, pyrefly, or coverage gates.
 
-To skip integration tests during rapid iteration:
+The default pytest configuration skips integration tests:
 
 ```bash
-uv run pytest -q -m "not integration"
+uv run pytest -q
 ```
 
 To run integration tests locally (match CI toolchain):
