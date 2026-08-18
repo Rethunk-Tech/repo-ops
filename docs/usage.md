@@ -21,7 +21,18 @@ Subcommands (entry point in `src/repo_ops`):
 
 Default scan roots: [`DEFAULT_ROOTS`](../src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. Discovery flags (`--flat`, `--follow-symlinks`, actions-only repos): [Security and discovery](#security-and-discovery).
 
-`--json` is available on every subcommand except `sbom` (which emits its report via `--format`/`--output` instead). `--json-out PATH` (writes the report atomically to `PATH`; stdout prints only that path) is available on `inventory`, `plan`, `apply`, `pushed`, and `doctor` — for `plan`/`apply`, stdout is otherwise one JSON object. JSON reports include top-level `summary` counts (mirroring the human footer roll-up). Discovery notes live in `skipped` / `warnings` for JSON modes; human mode prints discovery lines to stderr. `--filter ECO` limits to one ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, or `deno`. `--manager MANAGER` narrows `plan`/`apply` to one package manager (`bun`, `npm`, `pnpm`, `yarn`, `uv`, `poetry`, `pip-tools`, `hatch`, `pdm`, `pipenv`, `deno`, `go`, `rust`, `container`, `precommit`). `--log-level {debug,info,warning,error}` sets the stdlib root logger level; `--verbose` / `-v` enables subprocess echo and implies `debug` when `--log-level` is absent. `--log-file PATH` writes `plan`/`apply`'s combined stdout/stderr transcript to `PATH` (no shell pipe needed). `--submodules` (default on, detection only) adds `submodules[]` to plan/apply JSON; `--no-submodules` skips the scan. `apply` processes child git repos before parent umbrellas whenever `.gitmodules` is present, via the default `--submodule-order=children-first`; `--submodule-order=discovery` restores plain scan order.
+Flags shared across subcommands (`repo-ops <subcommand> --help` is authoritative):
+
+| Flag | Effect |
+| ------ | -------- |
+| `--json` | JSON instead of human output. Every subcommand except `sbom`, which uses `--format`/`--output`. Reports carry a top-level `summary` mirroring the human footer, and discovery notes in `skipped`/`warnings`. |
+| `--json-out PATH` | Write the report to `PATH` atomically; stdout prints only the path. `inventory`, `plan`, `apply`, `pushed`, `doctor`. |
+| `--filter ECO` | One ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, `deno`. |
+| `--manager MANAGER` | `plan`/`apply` only. One package manager: `bun`, `npm`, `pnpm`, `yarn`, `uv`, `poetry`, `pip-tools`, `hatch`, `pdm`, `pipenv`, `deno`, `go`, `rust`, `container`, `precommit`. |
+| `--log-level LEVEL` | `debug`/`info`/`warning`/`error`. `--verbose`/`-v` echoes subprocesses and implies `debug`. |
+| `--log-file PATH` | `plan`/`apply` transcript (stdout + stderr) to `PATH`, no shell pipe needed. |
+| `--no-submodules` | Skip the submodule scan. Detection is on by default and adds `submodules[]` to plan/apply JSON. |
+| `--submodule-order` | `children-first` (default when `.gitmodules` exists) applies child repos before parent umbrellas; `discovery` restores plain scan order. |
 
 ### `inventory` — dependency footprint
 
@@ -249,7 +260,6 @@ whether the bump is already satisfied by local lockfiles or manifests.
 
 **Default (dry-run):** prints the "would-close" list with supersession status.
 **`--close`:** closes superseded PRs via `gh pr close <n> --comment "Superseded..."`.
-Mutually exclusive with **`--scaffold`** (scaffold mode does not scan PRs).
 
 **Scaffold mode** (generate `.github/dependabot.yml` from detected ecosystems):
 
@@ -260,11 +270,8 @@ Mutually exclusive with **`--scaffold`** (scaffold mode does not scan PRs).
 Scaffold detection covers npm, pnpm (`pnpm-lock.yaml` → `package-ecosystem: pnpm`),
 Bun lockfiles (`package-ecosystem: bun`), Deno, pre-commit, pip, Go modules, Cargo,
 Docker (`Dockerfile`, `docker-compose.yml` / `.yaml`, `compose.yml` / `.yaml`),
-and GitHub Actions. This is separate
-from supersession parsing, which determines whether existing Dependabot PRs are
-already satisfied by local manifests or lockfiles.
-
-`--json` and `--close` are invalid with `--scaffold`.
+and GitHub Actions. Scaffold mode does not scan PRs, so `--json` and `--close`
+are invalid alongside `--scaffold`.
 
 Precision caveats:
 
@@ -284,9 +291,6 @@ Precision caveats:
   with an error and skipped.
 
 `--json` emits per-repo PR lists with `superseded`, `current_ver`, `low_confidence`, and `closed` fields.
-
-The shared `--exclude PATTERN` filter also applies to this sweep and to
-`pushed`; repeat it to skip repositories whose label or absolute path matches.
 
 ### `sbom` — CycloneDX/SPDX SBOM export
 
@@ -328,15 +332,11 @@ policy violations (read-only). Offline by default.
 - `--enrich-licenses` — same opt-in enrichment as `sbom` (env twin
   `REPO_OPS_ENRICH_LICENSES`); can reduce UNKNOWN for npm/PyPI/crates/JSR when
   metadata or cache hits exist.
-- `--enrich-licenses-local` — local/cache-only enrichment (env twin
-  `REPO_OPS_ENRICH_LICENSES_LOCAL`); when both enrichment flags (or both
-  environment variables) are set, local mode wins unless network mode is
-  explicitly forced. `--enrich-licenses-network` — force registry network
-  enrichment even when LOCAL env/flag is set; wins over
-  `--enrich-licenses-local` (`REPO_OPS_ENRICH_LICENSES_NETWORK=1`). BSD text
-  classification is best-effort: `BSD-3-Clause` requires the endorse/promote
-  clause; truncated BSD-3 text missing that clause is indistinguishable from
-  `BSD-2-Clause` and classifies as `BSD-2-Clause`.
+- `--enrich-licenses-local` — local/cache-only enrichment
+  (`REPO_OPS_ENRICH_LICENSES_LOCAL`).
+- `--enrich-licenses-network` — force registry network enrichment
+  (`REPO_OPS_ENRICH_LICENSES_NETWORK`). Set together with the local flag, network
+  wins; otherwise local wins.
 - `--json` — emit JSON instead of human-readable output (`--compact` for
   single-line).
 
@@ -357,7 +357,9 @@ excluded from this bucket).
 | container | no local license source (always unknown; does not trigger exit `2`) |
 
 Poetry, PDM, and pipenv lockfiles without an installed venv may report unknown
-for Python packages. See `repo-ops license --help` epilog for SPDX compound-expression handling.
+for Python packages. BSD text classification is best-effort: `BSD-3-Clause`
+requires the endorse/promote clause, and truncated text missing it is
+indistinguishable from `BSD-2-Clause` and classifies as such. See `repo-ops license --help` epilog for SPDX compound-expression handling.
 
 ### `doctor` — toolchain/auth preflight
 
@@ -397,91 +399,57 @@ Run `repo-ops <subcommand> --help` for all flags.
 
 One layered lookup per setting: **CLI flag** → **env var** → **config file** → **default**.
 
-Config files (TOML):
+Every setting's env var is `REPO_OPS_<NAME>` and its config key is `<name>`, so
+only the flag and the default are worth tabulating. The two exceptions are
+`jobs` and `exclude_patterns`, which have no env var (arrays and run-wide values
+do not serialize to one). [`SETTINGS_TABLE`](../src/repo_ops_core/config.py) is
+canonical if this page and the code ever disagree.
 
-- **Global:** `~/.config/repo-ops/config.toml` (or `$XDG_CONFIG_HOME/repo-ops/config.toml`)
-- **Per-repo:** `[tool.repo-ops]` table in `pyproject.toml` at the repo root, or
-  flat keys in `.repo-ops.toml` for repositories without a suitable pyproject
+Config files are TOML, read via stdlib `tomllib`:
 
-TOML parsing uses the stdlib `tomllib`.
+- **Global:** `~/.config/repo-ops/config.toml` (or `$XDG_CONFIG_HOME/...`)
+- **Per-repo:** `[tool.repo-ops]` in the repo root `pyproject.toml`, or flat keys
+  in `.repo-ops.toml` for repositories without a suitable pyproject
 
-For multi-root `plan` and `apply` runs, repository exclusions, Actions
-lint/policy levels, Go upgrade mode, `go_work_sync`, `go_directive`, and
-`go_toolchain` are resolved from each checkout's config; the launch checkout's
-config is not inherited by the rest of the fleet. CLI flags and caller-provided
-environment variables retain precedence. `timeout_check`, `timeout_apply`,
-`timeout_verify`, `find_timeout`, and `git_timeout` are also resolved from each
-checkout's config, as is `node_verify_script`.
+**Scope.** Settings resolve from *each checkout's* config during multi-root
+`plan`/`apply` — the launch checkout's config is not inherited by the fleet. The
+exceptions are `jobs` and `yarn_max_concurrency`, which apply to the whole run.
+CLI flags and caller-provided env vars outrank config everywhere.
 
-Config scope is explicit:
+**The `--conservative` family.** 22 settings share one flag and one
+default of `1`: the full sweep is on unless `--conservative` turns it off. They
+are the per-ecosystem `*_update_latest`, `*_targeted_bump`, and `*_refresh_sha`
+keys, plus `actions_pin_sha`. Set one to `0` in config to opt a single ecosystem
+out while the rest of the sweep stays on.
 
-- **Per-checkout:** `*_update_latest`, `*_targeted_bump`, and the
-  config-backed refresh keys (`container_refresh_sha`, `precommit_refresh_sha`,
-  and `submodule_refresh_sha`) are read from each checkout. The Deno
-  `deno_update_latest` and `deno_targeted_bump` settings follow the same rule.
-- **Invocation-scoped:** `jobs` and `yarn_max_concurrency` apply to the whole
-  run. CLI flags and caller-provided environment variables override the
-  corresponding config value for every checkout.
-
-For `apply --commit=agent`, `REPO_OPS_COMMIT_AGENT_MODEL` or the
-`commit_agent_model` config key selects the agent model; the default is
-`composer-2.5`.
-
-The `*_update_latest`, `*_targeted_bump`, `precommit_refresh_sha`, and
-`submodule_refresh_sha` settings below have no CLI flag of their own — each
-env var's own default is `0` (in-range), but `plan`/`apply` set all of them to
-`1` automatically as part of the default full sweep. `--conservative` is the
-single flag that leaves them unset, restoring each one's own `0` default.
-
-| Setting | Flag | Env var | Config key | Default |
-| --------- | ------ | --------- | ------------ | --------- |
-| jobs | `--jobs` | (none) | `jobs` | `min(16, cpu_count)` |
-| yarn_max_concurrency | (none) | `REPO_OPS_YARN_MAX_CONCURRENCY` | `yarn_max_concurrency` | `4` |
-| go_upgrade_mode | `--go-upgrade-mode` | `REPO_OPS_GO_UPGRADE_MODE` | `go_upgrade_mode` | `patch` (full sweep sets `explicit` unless overridden) |
-| actions_lint_level | `--actions-lint-level` | `REPO_OPS_ACTIONS_LINT_LEVEL` | `actions_lint_level` | `block` |
-| timeout_check | (none) | `REPO_OPS_TIMEOUT_CHECK` | `timeout_check` | `60` |
-| timeout_apply | (none) | `REPO_OPS_TIMEOUT_APPLY` | `timeout_apply` | `60` |
-| timeout_verify | (none) | `REPO_OPS_TIMEOUT_VERIFY` | `timeout_verify` | `60` |
-| find_timeout | (none) | `REPO_OPS_FIND_TIMEOUT` | `find_timeout` | `60` |
-| git_timeout | (none) | `REPO_OPS_GIT_TIMEOUT` | `git_timeout` | `10` |
-| bun_update_latest | (none) | `REPO_OPS_BUN_UPDATE_LATEST` | `bun_update_latest` | `0` |
-| pnpm_update_latest | (none) | `REPO_OPS_PNPM_UPDATE_LATEST` | `pnpm_update_latest` | `0` |
-| yarn_update_latest | (none) | `REPO_OPS_YARN_UPDATE_LATEST` | `yarn_update_latest` | `0` |
-| deno_update_latest | (none) | `REPO_OPS_DENO_UPDATE_LATEST` | `deno_update_latest` | `0` |
-| yarn_targeted_bump | (none) | `REPO_OPS_YARN_TARGETED_BUMP` | `yarn_targeted_bump` | `0` |
-| npm_targeted_bump | (none) | `REPO_OPS_NPM_TARGETED_BUMP` | `npm_targeted_bump` | `0` |
-| pnpm_targeted_bump | (none) | `REPO_OPS_PNPM_TARGETED_BUMP` | `pnpm_targeted_bump` | `0` |
-| bun_targeted_bump | (none) | `REPO_OPS_BUN_TARGETED_BUMP` | `bun_targeted_bump` | `0` |
-| deno_targeted_bump | (none) | `REPO_OPS_DENO_TARGETED_BUMP` | `deno_targeted_bump` | `0` |
-| rust_targeted_bump | (none) | `REPO_OPS_RUST_TARGETED_BUMP` | `rust_targeted_bump` | `0` |
-| poetry_targeted_bump | (none) | `REPO_OPS_POETRY_TARGETED_BUMP` | `poetry_targeted_bump` | `0` |
-| pdm_targeted_bump | (none) | `REPO_OPS_PDM_TARGETED_BUMP` | `pdm_targeted_bump` | `0` |
-| pipenv_targeted_bump | (none) | `REPO_OPS_PIPENV_TARGETED_BUMP` | `pipenv_targeted_bump` | `0` |
-| pip_tools_targeted_bump | (none) | `REPO_OPS_PIP_TOOLS_TARGETED_BUMP` | `pip_tools_targeted_bump` | `0` |
-| go_work_sync | (none) | `REPO_OPS_GO_WORK_SYNC` | `go_work_sync` | `0` |
-| no_progress | (none) | `REPO_OPS_NO_PROGRESS` | `no_progress` | `0` |
-| no_state | (none) | `REPO_OPS_NO_STATE` | `no_state` | `0` |
-| no_lint_cache | (none) | `REPO_OPS_NO_LINT_CACHE` | `no_lint_cache` | `0` |
-| go_directive | (none) | `REPO_OPS_GO_DIRECTIVE` | `go_directive` | (none) |
-| go_toolchain | (none) | `REPO_OPS_GO_TOOLCHAIN` | `go_toolchain` | (none) |
-| node_verify_script | (none) | `REPO_OPS_NODE_VERIFY_SCRIPT` | `node_verify_script` | (none) |
-| commit_agent_provider | (none) | `REPO_OPS_COMMIT_AGENT_PROVIDER` | `commit_agent_provider` | `cursor` |
-| commit_agent_model | (none) | `REPO_OPS_COMMIT_AGENT_MODEL` | `commit_agent_model` | `composer-2.5` |
-| exclude_patterns | `--exclude` | (none) | `exclude` | `[]` |
-| commit_umbrella | `--commit-umbrella` | `REPO_OPS_COMMIT_UMBRELLA` | `commit_umbrella` | `0` |
-| actions_org_policy | `--actions-org-policy` | `REPO_OPS_ACTIONS_ORG_POLICY` | `actions_org_policy` | `0` (auto-enabled whenever `gh` is authenticated) |
-| actions_policy_level | `--actions-policy-level` | `REPO_OPS_ACTIONS_POLICY_LEVEL` | `actions_policy_level` | `report` |
-| container_update_latest | (none) | `REPO_OPS_CONTAINER_UPDATE_LATEST` | `container_update_latest` | `0` |
-| container_refresh_sha | (none) | `REPO_OPS_CONTAINER_REFRESH_SHA` | `container_refresh_sha` | `0` |
-| hatch_migrate_uv_lock | `--migrate-to-uv-lock` | `REPO_OPS_HATCH_MIGRATE_UV_LOCK` | `hatch_migrate_uv_lock` | `1` |
-| precommit_update_latest | (none) | `REPO_OPS_PRECOMMIT_UPDATE_LATEST` | `precommit_update_latest` | `0` |
-| precommit_refresh_sha | (none) | `REPO_OPS_PRECOMMIT_REFRESH_SHA` | `precommit_refresh_sha` | `0` |
-| submodule_update_latest | (none) | `REPO_OPS_SUBMODULE_UPDATE_LATEST` | `submodule_update_latest` | `0` |
-| submodule_refresh_sha | (none) | `REPO_OPS_SUBMODULE_REFRESH_SHA` | `submodule_refresh_sha` | `0` |
-| resume | (none) | `REPO_OPS_RESUME` | `resume` | `0` |
-| remediate_go_generate | (none) | `REPO_OPS_REMEDIATE_GO_GENERATE` | (none) | `0` |
-| audit_fail_on | `--fail-on` | `REPO_OPS_AUDIT_FAIL_ON` | `audit_fail_on` | `high` |
-| audit_fail_on_unknown | `--fail-on-unknown` | `REPO_OPS_AUDIT_FAIL_ON_UNKNOWN` | `audit_fail_on_unknown` | `0` |
+| Setting | Flag | Default |
+| --------- | ------ | --------- |
+| `actions_lint_level` | `--actions-lint-level` | `block` |
+| `actions_org_policy` | `--actions-org-policy` | `0` |
+| `actions_policy_level` | `--actions-policy-level` | `report` |
+| `audit_fail_on` | `--fail-on` | `high` |
+| `audit_fail_on_unknown` | `--fail-on-unknown` | `0` |
+| `commit_agent_model` | `(none)` | `composer-2.5` |
+| `commit_agent_provider` | `(none)` | `cursor` |
+| `commit_umbrella` | `--commit-umbrella` | `0` |
+| `exclude_patterns` | `--exclude` | `[]` |
+| `find_timeout` | `(none)` | `60` |
+| `git_timeout` | `(none)` | `10` |
+| `go_directive` | `(none)` | `(none)` |
+| `go_toolchain` | `(none)` | `(none)` |
+| `go_upgrade_mode` | `--go-upgrade-mode` | `patch` |
+| `go_work_sync` | `(none)` | `0` |
+| `hatch_migrate_uv_lock` | `--migrate-to-uv-lock` | `1` |
+| `jobs` | `--jobs` | `min(16, cpu_count)` |
+| `no_lint_cache` | `(none)` | `0` |
+| `no_progress` | `(none)` | `0` |
+| `no_state` | `(none)` | `0` |
+| `node_verify_script` | `(none)` | `(none)` |
+| `resume` | `(none)` | `0` |
+| `timeout_apply` | `(none)` | `60` |
+| `timeout_check` | `(none)` | `60` |
+| `timeout_verify` | `(none)` | `60` |
+| `yarn_max_concurrency` | `(none)` | `4` |
 
 ## Package holds — capping a package's version temporarily
 
@@ -540,71 +508,26 @@ max_version = "99"          # effectively unbounded — the workspace override
 workspace = "packages/modern-app"
 ```
 
-**Enforcement scope (this release):** JS (npm, yarn, pnpm, bun), Deno, Go,
-Rust/Cargo, the Python managers (uv, hatch, pdm, pipenv, poetry, pip-tools),
-pre-commit, GitHub Actions, containers, and submodules. `audit --fix`
-advisory overrides take precedence over active holds for JS, Deno, Rust/Cargo,
-and Python pin remediations, so a known-safe advisory target can lift a hold
-for that remediation only.
+**Enforcement scope:** JS (npm, yarn, pnpm, bun), Deno, Go, Rust/Cargo, the
+Python managers (uv, hatch, pdm, pipenv, poetry, pip-tools), pre-commit, GitHub
+Actions, containers, and submodules. An advisory-safe version from `audit --fix`
+overrides an active hold for that remediation only.
 
-**How it's enforced, per ecosystem:**
+**How it's enforced.** One rule everywhere: bump targets above the ceiling are
+filtered out of `plan`, and refs *already* above it (a hold added after the
+fact) are surfaced as actionable plan entries and clamped on `apply` to the
+highest available version within the ceiling. What differs per ecosystem is only
+what `package` matches, and the handful of deviations below.
 
-- **npm / yarn / pnpm / bun** — a held package's cross-range/targeted bump
-  targets the ceiling instead of `latest`, and a held package already
-  resolved above its ceiling (e.g. a hold added after the fact) is clamped
-  back down at the end of `apply` via a targeted install. Shows up in the
-  existing `behind_latest` report bucket, not a new field.
-- **deno** — `package` matches Deno outdated identities (`npm:…`, `jsr:…`).
-  Outdated/planned and `behind_latest` targets above the ceiling are filtered;
-  targeted bumps refuse to land above the ceiling; already-above-ceiling
-  packages are clamped post-apply via selective `deno update` to a version
-  within the ceiling; a prefix ceiling does not require its exact `.0` patch
-  to exist. An advisory-safe version supplied by `audit --fix` overrides the
-  hold for that remediation.
-- **go** — Go's own resolver never crosses a major version boundary on its
-  own (major ≥2 lives in the import path, e.g. `.../v2`), so a Go hold caps
-  a same-major minor/patch version. Enforced the same way: filtered out of
-  reported changes, and clamped back down post-apply via `go get
-  <path>@<=ceiling>`.
-- **rust** — `package` is the Cargo crate name. Planned `cargo update`
-  bumps above the ceiling are filtered from check; post-apply clamp uses
-  `cargo update -p <crate> --precise <version>` with the highest published
-  registry version within a prefix ceiling. If no such version can be
-  resolved, the clamp fails clearly and suggests an exact three-component
-  `max_version`; it does not assume that `1.5.0` exists for a `1.5` ceiling.
-  An advisory-safe version supplied by `audit --fix` overrides the hold for
-  that crate and is used as the exact Cargo target.
-- **uv / hatch / pdm / pipenv / poetry** — none of these has a per-package
-  targeted install (`apply` regenerates the whole lockfile), so the
-  post-apply clamp-down (read the lockfile, `<manager> add pkg<=ceiling` to
-  correct) is the *only* enforcement mechanism here, not a safety net.
-- **pip-tools** — compiles `requirements.txt` from a source manifest rather
-  than an installed tree, so a hold is enforced by passing an ephemeral pip
-  constraints file (`name<=ceiling` for held direct deps) to the compile
-  step — `requirements.in` itself is never modified.
-- **pre-commit** — `package` is the hook repo id (e.g. `example/hook`). Tag
-  rev bumps and SHA-refresh targets whose resolved tag version exceeds a hold
-  ceiling are filtered out of check and apply. Existing tag revs, and
-  resolvable SHA revs, already above a ceiling are surfaced as actionable
-  plan entries and clamped on apply to the highest available tag within the
-  ceiling.
-- **actions** — `package` is the action repo id (e.g. `actions/checkout`).
-  Outbound tag bumps and SHA-refresh targets above the ceiling are filtered.
-  Pins already above the ceiling (tag or resolvable SHA) are surfaced as
-  actionable plan entries and clamped on apply to the highest available tag
-  within the ceiling (SHA pins keep digest form when a matching tag exists).
-  An active hold also blocks normalize-to-floating-`@vN` when the exact pin
-  exceeds the ceiling. Holds do not change the default keep-SHA / unpin
-  policy. Workspace-scoped holds use repo root (`.`); per-workflow path
-  scoping is not supported.
-- **container** — `package` is the image name without tag or digest. Hold
-  lookup canonicalizes Docker Hub aliases, so `docker.io/library/node`
-  matches `FROM node:…` / `library/node:…`. Tag bumps and tagged digest
-  refreshes whose tag semver exceeds the ceiling are filtered; above-ceiling
-  tagged refs are surfaced in plan and clamped on apply. SHA-only pins
-  without tag intent stay report-only.
-- **submodule** — `package` is the submodule path from `.gitmodules`. Tag
-  advances and SHA-refresh targets above the ceiling are filtered.
-  Above-ceiling tagged or resolvable SHA refs are surfaced as actionable
-  plan entries and clamped on apply to the highest available tag within the
-  ceiling.
+| Ecosystem | `package` matches | Deviation from the rule |
+| ----------- | ------------------- | ------------------------- |
+| npm / yarn / pnpm / bun | package name | none — clamp is a targeted install |
+| deno | Deno outdated identity (`npm:…`, `jsr:…`) | a prefix ceiling does not require its exact `.0` patch to exist |
+| go | module path | Go's resolver never crosses a major on its own (major ≥2 lives in the path), so a hold caps a same-major minor/patch |
+| rust | Cargo crate name | clamp uses `cargo update --precise`; if no published version fits a prefix ceiling it fails and asks for an exact three-component `max_version` rather than assuming `1.5.0` exists for `1.5` |
+| uv / hatch / pdm / pipenv / poetry | distribution name | no per-package targeted install exists, so the post-apply clamp is the *only* enforcement, not a safety net |
+| pip-tools | distribution name | enforced by passing an ephemeral pip constraints file to the compile step; `requirements.in` is never modified |
+| pre-commit | hook repo id (`example/hook`) | none |
+| actions | action repo id (`actions/checkout`) | also blocks normalize-to-floating-`@vN` above the ceiling; SHA pins keep digest form when a matching tag exists; workspace scoping is repo-root only |
+| container | image name, no tag or digest | Docker Hub aliases canonicalize, so `docker.io/library/node` matches `FROM node:…`; SHA-only pins without tag intent stay report-only |
+| submodule | submodule path from `.gitmodules` | none |

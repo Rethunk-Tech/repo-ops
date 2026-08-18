@@ -13,7 +13,7 @@ uv run pytest -q --cov --cov-report=term-missing --cov-fail-under=78
 uv build
 ```
 
-The pyrefly check scope mirrors `[tool.pyrefly] project-includes` in root `pyproject.toml` (authoritative when they diverge from CI YAML). `pyrefly check .` runs in single-file mode, which ignores `project-includes`/`project-excludes` from the config file entirely — the `--project-excludes` flag on the command line is what actually keeps `tests/`/`scripts/` out of scope, matching what `[tool.mypy] packages` covered before this migration. Hatch fast verification applies the same rule per target workspace, forwarding configured `project-includes` and `project-excludes` values to pyrefly rather than hard-coding repository paths.
+`pyrefly check .` runs in single-file mode, which ignores `project-includes`/`project-excludes` from the config file entirely — the command-line `--project-excludes` flag is what actually keeps `tests/`/`scripts/` out of scope. Root `pyproject.toml` `[tool.pyrefly]` is authoritative where it and the CI YAML diverge. Hatch fast verification forwards each workspace's configured values rather than hard-coding paths.
 
 ## Test layout
 
@@ -24,7 +24,7 @@ Config: root `pyproject.toml` `[tool.pytest.ini_options]`. CI runs the same chec
 
 ## Coverage floor
 
-Current ratchet: **78 %** (raised from 68 % when the package collapse and duplicate removal took actual coverage to ~84 %; floor = floor(actual) − 5 at time of raise). Update `[tool.coverage.report] fail_under` in `pyproject.toml` and `--cov-fail-under` in both `.github/workflows/ci.yml` and `.github/workflows/release.yml` together whenever the floor is raised.
+Current ratchet: **78 %**; a raise sets the floor to `floor(actual) − 5`. Update `[tool.coverage.report] fail_under` in `pyproject.toml` and `--cov-fail-under` in both `.github/workflows/ci.yml` and `.github/workflows/release.yml` together.
 
 Coverage source (`[tool.coverage.run] source` in root `pyproject.toml`) is `src`, which covers every module in the package.
 
@@ -37,20 +37,10 @@ The `integration` marker flags tests that require real external tools (bun, yarn
 | `ci` | `-m "not integration"` | Yes (PR gate) | Python matrix only |
 | `integration` | `-m integration` | No (`continue-on-error: true`) | Node 24 + Corepack (yarn), bun, Go stable, govulncheck |
 
-The advisory `integration` job installs govulncheck (`go install golang.org/x/vuln/cmd/govulncheck@latest`), enables Corepack for yarn, and runs only `pytest -m integration` — it does not run the blocking lint, pyrefly, or coverage gates.
-
-The default pytest configuration skips integration tests:
-
-```bash
-uv run pytest -q
-```
-
-To run integration tests locally (match CI toolchain):
+The advisory job runs only `pytest -m integration` — not the blocking lint, pyrefly, or coverage gates. To match its toolchain locally:
 
 ```bash
 corepack enable
 go install golang.org/x/vuln/cmd/govulncheck@latest
 uv run pytest -q -m integration
 ```
-
-Pull requests welcome via repository issues.

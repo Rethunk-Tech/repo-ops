@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The settings table in `docs/usage.md` had drifted from `SETTINGS_TABLE`.** It was a hand-maintained copy of a code structure: two settings were missing (`actions_pin_sha`, `actions_refresh_sha`), one that no longer exists was still listed (`remediate_go_generate`), and 42 values disagreed — every `--conservative` setting was documented as flagless with default `0` when the code says `--conservative` and `1`, with a paragraph above the table explaining that the table was not to be believed. Replaced by the naming rule (`REPO_OPS_<NAME>` / `<name>`, with `jobs` and `exclude_patterns` the only exceptions), one sentence for the 22-setting `--conservative` family, and a table of the rest. A test now asserts the page and the code agree.
+- **A broken link in `.github/pull_request_template.md`.** `docs/testing.md` resolved relative to `.github/`. A test now walks every tracked Markdown file and checks each relative link and `#anchor` resolves.
+
+### Changed
+
+- **Documentation trimmed by ~19 % (2,400 words) without losing behaviour.** The cuts were duplication and restatement, not detail: package-hold enforcement stated one shared rule plus a per-ecosystem deviations table instead of repeating the rule eleven times; `AGENTS.md` and the bundled `REFERENCE.md` no longer carry 53 % identical text; `programmatic-imports.md` collapsed fifteen rows that each said `register()`; the global-flag paragraph became a table. Also corrected the stale "org/proj two-level walk" description of `--flat` left behind by the git-aware discovery change, dropped release history from `docs/testing.md` (docs describe current state), and removed a footer of seven tracking issues, six of them closed.
+
 ## [0.24.0] - 2026-08-18
 
 ### Security
