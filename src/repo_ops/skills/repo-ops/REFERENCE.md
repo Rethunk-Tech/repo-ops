@@ -2,7 +2,7 @@
 
 Operator invocations for the `repo-ops` CLI. Changing repo-ops itself: the checkout [AGENTS.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/AGENTS.md).
 
-**Install and environment:** [HUMANS.md](HUMANS.md). **CLI flags (authoritative):** `repo-ops <subcommand> --help`. **Deep reference:** [docs/usage.md](docs/usage.md), [docs/bulk-maintenance.md](docs/bulk-maintenance.md).
+**Install and environment:** [HUMANS.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/HUMANS.md). **CLI flags (authoritative):** `repo-ops <subcommand> --help`. **Deep reference:** [docs/usage.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/usage.md), [docs/bulk-maintenance.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/bulk-maintenance.md).
 
 ## Run it directly
 
@@ -27,7 +27,7 @@ When the user names a command, run it — default roots apply when paths are omi
 
 ## DEFAULT_ROOTS
 
-With no trailing `root_dir`, every subcommand except `install-skill` and `doctor` scans [`DEFAULT_ROOTS`](src/repo_ops_core/constants.py): `/usr/local/src`, `~/Projects`, `~/Documents`, `~/Apps`. Pass explicit paths to narrow. `--flat` treats the root itself as one project instead of discovering the checkouts under it.
+With no trailing `root_dir`, every subcommand except `install-skill` and `doctor` scans [`DEFAULT_ROOTS`](https://github.com/Rethunk-Tech/repo-ops/blob/main/src/repo_ops_core/constants.py): `/usr/local/src`, `~/Projects`, `~/Documents`, `~/Apps`. Pass explicit paths to narrow. `--flat` treats the root itself as one project instead of discovering the checkouts under it.
 
 ## Workflow
 
@@ -35,4 +35,4 @@ With no trailing `root_dir`, every subcommand except `install-skill` and `doctor
 2. **Dirty worktrees** are skipped; `--allow-dirty` only when intentional — never to sweep up work you did not mean to include.
 3. **Verify failure** → `--on-verify-fail=revert` (default) rolls back lockfiles and manifests; `keep` leaves them to inspect. Check toolchain, env, and flaky tests before blaming the bump.
 4. **Commits** are fleet canon (`~/.claude/CLAUDE.md` § Git & GitHub); headless: `apply --commit=conventional|agent`, preview with `--commit-dry-run`. Never push unless asked.
-5. **Multi-repo playbook** — [docs/bulk-maintenance.md](docs/bulk-maintenance.md).
+5. **Multi-repo playbook** — [docs/bulk-maintenance.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/bulk-maintenance.md).
