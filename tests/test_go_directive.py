@@ -1,4 +1,4 @@
-"""Tests for go.py directive management (issue #120).
+"""Tests for go.py directive management.
 
 Covers:
   - go.work directive sync: plan (_plan_go_work_directive_changes) and apply
@@ -6,7 +6,7 @@ Covers:
   - Fleet directive bumps: plan (_plan_fleet_directive_changes) and apply
     (_apply_fleet_directive) paths via REPO_OPS_GO_DIRECTIVE /
     REPO_OPS_GO_TOOLCHAIN env vars.
-  - Issue #118: timeout calls use resolve_timeout_check / resolve_timeout_apply.
+  - timeout calls use resolve_timeout_check / resolve_timeout_apply.
 """
 
 from __future__ import annotations
@@ -590,7 +590,7 @@ def test_apply_go_fleet_directive_runs_before_dep_upgrade(
 
 
 # ---------------------------------------------------------------------------
-# Issue #118 — resolve_timeout_check/apply used (not bare constants)
+# resolve_timeout_check/apply used (not bare constants)
 # ---------------------------------------------------------------------------
 
 

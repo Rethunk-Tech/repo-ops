@@ -415,10 +415,12 @@ def test_check_precommit_cross_major_opt_in(
 
 
 def test_precommit_and_submodule_refresh_sha_flags_removed() -> None:
-    """#136: --precommit-refresh-sha/--submodule-refresh-sha no longer exist as
-    parse-time argparse flags — refresh-sha behavior is now part of the default
-    full sweep in run.py, opt-out via --conservative (env-var wiring covered by
-    tests/test_run_targeted_bump_getattr.py)."""
+    """--precommit-refresh-sha/--submodule-refresh-sha are not argparse flags.
+
+    Refresh-sha runs as part of the default full sweep in run.py; --conservative
+    is the opt-out (env-var wiring covered by
+    tests/test_run_targeted_bump_getattr.py).
+    """
     parser = build_upgrade_parser(apply=False)
     with pytest.raises(SystemExit):
         parser.parse_args(["--precommit-refresh-sha"])
@@ -515,7 +517,7 @@ def test_apply_precommit_no_change_when_at_latest(tmp_path: Path) -> None:
 def test_apply_precommit_sha_pin_not_modified(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Digest refresh defaults on with the sweep (#136); pin it off so this
+    # Digest refresh defaults on with the sweep; pin it off so this
     # test exercises the plain SHA-pin-untouched path.
     monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "0")
     sha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"

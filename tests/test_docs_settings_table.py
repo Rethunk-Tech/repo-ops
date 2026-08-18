@@ -1,9 +1,8 @@
 """The settings table in docs/usage.md must match SETTINGS_TABLE.
 
-The doc table was hand-maintained and had drifted: two settings missing, one
-listed that no longer existed, and 42 values disagreeing with the code. A doc
-that confidently states a wrong default is worse than no doc, so the agreement
-is asserted rather than trusted.
+A hand-maintained copy of a code table drifts, and a doc that confidently
+states a wrong default is worse than no doc — so the agreement is asserted
+rather than trusted.
 """
 
 from __future__ import annotations
@@ -16,8 +15,7 @@ from repo_ops_core.config import SETTINGS_TABLE
 _USAGE = Path(__file__).resolve().parents[1] / "docs" / "usage.md"
 _ROW = re.compile(r"^\| `(?P<name>\w+)` \| (?P<flag>.+?) \| `(?P<default>.*?)` \|$")
 
-#: Settings sharing the --conservative flag are described in prose, not rows —
-#: 22 identical rows carry no information the sentence above them does not.
+#: Settings sharing the --conservative flag are described in prose, not rows#: 22 identical rows carry no information the sentence above them does not.
 CONSERVATIVE = frozenset(r[0] for r in SETTINGS_TABLE if r[1] == "--conservative")
 
 

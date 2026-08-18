@@ -120,7 +120,7 @@ def test_lockfile_resolved_skips_bun_lockb_without_bun(tmp_path: Path) -> None:
 
 
 def test_lockfile_resolved_parses_uv_lock(tmp_path: Path) -> None:
-    """uv.lock [[package]] entries feed the high-confidence path (#150)."""
+    """uv.lock [[package]] entries feed the high-confidence path."""
     (tmp_path / "uv.lock").write_text(
         textwrap.dedent("""\
             version = 1

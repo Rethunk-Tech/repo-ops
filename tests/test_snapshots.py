@@ -1,4 +1,4 @@
-"""Tests for lockfile snapshot diffing (#56 — in-range yarn.lock bumps detected)."""
+"""Tests for lockfile snapshot diffing."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from repo_ops_lockfiles.snapshots import (
 
 
 def test_resolved_version_bare_scope_does_not_crash() -> None:
-    """#81 — bare-scope name like '@types' must not raise ValueError."""
+    """Bare-scope name like '@types' must not raise ValueError."""
     with tempfile.TemporaryDirectory() as tmp:
         mdir = Path(tmp)
         # No node_modules present; function must return None without crashing.
@@ -24,7 +24,7 @@ def test_resolved_version_bare_scope_does_not_crash() -> None:
 
 
 def test_diff_lock_text_detects_in_range_version_bump() -> None:
-    """#56 — a same-range bump (4.17.20→4.17.21) must produce a Change."""
+    """A same-range bump (4.17.20→4.17.21) must produce a Change."""
     before = """\
 "lodash@npm:^4.17.0":
   version "4.17.20"

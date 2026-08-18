@@ -89,7 +89,7 @@ def test_default_sweep_sets_container_precommit_submodule_env_vars(
         main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
 
     assert ran, "the run never reached a workspace"
-    # #136: run.py no longer force-writes these to "1" — each key's
+    # run.py does not force-write these to "1" — each key's
     # settings-table default is already "1", so with nothing overriding it
     # (env cleared above, no config file) every gate must still resolve on.
     for name in (
@@ -104,7 +104,7 @@ def test_default_sweep_sets_container_precommit_submodule_env_vars(
 def test_conservative_flag_zeroes_container_precommit_submodule_env_vars(
     tmp_path: Path, monkeypatch, init_git_repo
 ) -> None:
-    """#136: --conservative writes each gate to "0" explicitly (not merely
+    """--conservative writes each gate to "0" explicitly (not merely
     unset) so an ambient REPO_OPS_*=1 can't outrank it."""
     _clear_env(monkeypatch, _LATEST_UMBRELLA_VARS)
     _bun_workspace(tmp_path, init_git_repo=init_git_repo)
@@ -159,7 +159,7 @@ def test_bun_targeted_bump_defaults_on(tmp_path: Path, monkeypatch, init_git_rep
         main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
 
     assert ran, "the run never reached a workspace"
-    # #136: no force-write — the settings-table default ("1") must resolve on.
+    # no force-write — the settings-table default ("1") must resolve on.
     assert coerce_bool_setting(resolve_setting("bun_targeted_bump")) is True
 
 
@@ -190,7 +190,7 @@ def test_bun_targeted_bump_conservative_flag_disables_it(
 # ---------------------------------------------------------------------------
 
 # Managers whose targeted bump has no separate --<manager>-targeted-bump CLI
-# flag (only npm, per #136) name "no latest mode" in the not-requested hint;
+# flag (only npm) name "no latest mode" in the not-requested hint;
 # py managers with no latest-mode concept at all still say so but skip the
 # generic "bump manually" close since it duplicates that sentence for them.
 _TRIED_FRAGMENT = "the targeted bump was attempted but could not move them"

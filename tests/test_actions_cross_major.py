@@ -1,4 +1,4 @@
-"""Cross-major GitHub Actions bumps under latest mode (issue #106)."""
+"""Cross-major GitHub Actions bumps under latest mode."""
 
 from __future__ import annotations
 
@@ -124,7 +124,7 @@ def test_default_mode_keeps_cross_major_report_only(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Cross-major SHA-pin refresh (#138)
+# Cross-major SHA-pin refresh
 # Extends coverage for the keep-sha + latest interaction from the cross-major
 # perspective (SHA-specific depth is in test_actions_sha_refresh.py).
 # ---------------------------------------------------------------------------

@@ -222,8 +222,7 @@ def test_print_human_report_actions_dedup_and_no_op_filter(tmp_path: Path, capsy
 
 
 def test_print_human_report_report_only_marker(tmp_path: Path, capsys) -> None:
-    """Rows apply never rewrites (detail says report only) must not print [ok] —
-    a default-mode run printed `codecov-action@v6 → v7 [ok]` while writing nothing."""
+    """Rows apply never rewrites (detail says report only) must not print [ok]    a default-mode run printed `codecov-action@v6 → v7 [ok]` while writing nothing."""
     bundle = RepoBundle(
         git_repo=tmp_path,
         label="demo",
@@ -260,7 +259,7 @@ def test_print_human_report_report_only_marker(tmp_path: Path, capsys) -> None:
 
 
 def test_only_outdated_human_report_sort_suppress_align(tmp_path: Path, capsys) -> None:
-    """#103: --only-outdated sorts heaviest-first, suppresses empty headers,
+    """--only-outdated sorts heaviest-first, suppresses empty headers,
     and aligns change rows; build_run_summary carries packages_upgraded."""
     heavy_repo = tmp_path / "heavy"
     light_repo = tmp_path / "light"

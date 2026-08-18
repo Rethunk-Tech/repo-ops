@@ -177,7 +177,7 @@ def test_install_skill_help_exits_zero() -> None:
     assert exc_info.value.code == 0
 
 
-# --- source-overlap guard (issue #40) ---
+# --- source-overlap guard ---
 
 
 def test_validate_dest_rejects_dest_equal_to_src(tmp_path: Path) -> None:
@@ -191,7 +191,7 @@ def test_validate_dest_rejects_dest_equal_to_src(tmp_path: Path) -> None:
 def test_validate_dest_rejects_dest_ancestor_of_src(tmp_path: Path) -> None:
     """dest is an ancestor of src: rmtree(dest) removes src recursively.
 
-    This is the exact scenario from issue #40 — the user passes
+    The scenario: the user passes
     ``--dest /path/to/checkout/repo-ops --force`` where src lives inside
     that checkout dir.
     """

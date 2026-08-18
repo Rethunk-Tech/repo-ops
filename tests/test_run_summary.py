@@ -1,4 +1,4 @@
-"""End-of-run roll-up summary (#14)."""
+"""End-of-run roll-up summary."""
 
 from __future__ import annotations
 
@@ -149,7 +149,7 @@ def test_build_json_payload_generated_at_and_exit_code(tmp_path: Path) -> None:
 
 
 def test_print_run_footer_includes_actions_failures_row(tmp_path: Path) -> None:
-    """#48 — actions_failures must appear in the footer summary table."""
+    """actions_failures must appear in the footer summary table."""
     summary = {
         "workspaces_ok": 1,
         "workspaces_fail": 0,
@@ -202,7 +202,7 @@ def test_print_run_footer_caps_failure_list(tmp_path: Path) -> None:
 
 def test_actions_summary_dedupes_bumps_by_action_pin(tmp_path: Path) -> None:
     # Same (action, pin) across two workflow files yields a single deduped
-    # report row, so the bump counter must also count it once (issue #65).
+    # report row, so the bump counter must also count it once.
     bundle = _bundle(
         tmp_path,
         actions=[

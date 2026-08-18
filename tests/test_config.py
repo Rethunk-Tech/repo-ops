@@ -162,7 +162,7 @@ def test_settings_table_maps_key_to_env_var(key: str, env_var: str, value: str) 
     assert row[2] == env_var
 
 
-# --- New env-gate settings (#138) ---
+# --- New env-gate settings ---
 
 
 def test_settings_table_has_new_env_gate_entries() -> None:

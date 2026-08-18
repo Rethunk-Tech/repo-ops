@@ -1,4 +1,4 @@
-"""YAML-based GitHub Actions uses: discovery and apply (issue #19)."""
+"""YAML-based GitHub Actions uses: discovery and apply."""
 
 from __future__ import annotations
 
@@ -175,8 +175,7 @@ def test_parse_real_ci_workflow(repo_ops_workflows: Path) -> None:
     assert checkout, "expected actions/checkout in repo ci.yml"
     # Policy dogfood: this repo's own workflows are SHA-pinned (via
     # --actions-pin-sha, #NNN) with a # vN.M.P audit-hint comment, matching
-    # the supply-chain-hardening posture this repo enforces on every caller —
-    # assert the shape, not a frozen value.
+    # the supply-chain-hardening posture this repo enforces on every caller    # assert the shape, not a frozen value.
     assert re.fullmatch(r"[0-9a-f]{40}", checkout[0].pin), (
         f"repo ci.yml checkout should be SHA-pinned, got {checkout[0].pin!r}"
     )
@@ -211,7 +210,7 @@ def test_update_workflow_pins_noop_minimal_diff(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Issue #117 — byte-preserving pin edits (no YAML reformat)
+# byte-preserving pin edits (no YAML reformat)
 # ---------------------------------------------------------------------------
 
 _SIX_SPACE_WORKFLOW = """\
@@ -230,7 +229,7 @@ jobs:
 
 
 def test_pin_bump_produces_exactly_one_line_diff(tmp_path: Path) -> None:
-    """Bumping one pin must produce a single-line diff (issue #117).
+    """Bumping one pin must produce a single-line diff.
 
     A workflow with 6-space-indented steps and inline comments must have
     exactly one line changed (and only the @ref portion of that line) after

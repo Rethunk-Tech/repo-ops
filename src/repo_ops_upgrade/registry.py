@@ -27,7 +27,7 @@ Checker = Callable[
     | tuple[list[Change], list[Change]]
     | tuple[list[Change], list[dict[str, str]], list[Change]],
 ]
-# An applier returns None, or the behind_latest gaps it observed (yarn, issue #110).
+# An applier returns None, or the behind_latest gaps it observed (yarn).
 Applier = Callable[[Workspace], list[Change] | None]
 
 CHECKERS: dict[str, Checker] = {}

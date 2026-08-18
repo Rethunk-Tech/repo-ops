@@ -44,12 +44,12 @@ from repo_ops_models import Change, Workspace
 #
 # The column separator depends on bun's terminal capability detection: Unicode
 # box drawing (`│`) on a UTF-8-capable terminal, plain ASCII pipes (`|`)
-# otherwise — CI runners and minimal containers get the ASCII table (#145).
+# otherwise — CI runners and minimal containers get the ASCII table.
 # Both dialects share the same cell structure, so rows are split on whichever
 # separator leads the line.
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _BOX_V = "│"  # │ box drawings light vertical (column separator)
-_ASCII_V = "|"  # ASCII fallback separator on non-UTF-8 terminals (#145)
+_ASCII_V = "|"  # ASCII fallback separator on non-UTF-8 terminals
 _DEP_GROUP_SUFFIX_RE = re.compile(r"\s*\((?:dev|peer|optional)\)\s*$")
 _PKG_NAME_RE = re.compile(r"^(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+$")
 _BUN_UPDATE_LATEST_ENV = "REPO_OPS_BUN_UPDATE_LATEST"
@@ -95,7 +95,7 @@ def _valid_bun_package_name(name: str) -> bool:
     # Reject only the table header (``Package``) and dash-led junk. A real npm
     # dependency literally named ``bun`` is valid: the ``bun outdated`` banner is
     # filtered by STRUCTURE (it is not a ``│``-delimited row) in
-    # ``_changes_from_bun_text``, not by excluding the name ``bun`` here (#67).
+    # ``_changes_from_bun_text``, not by excluding the name ``bun`` here.
     if not n or n.startswith("-") or n == "Package":
         return False
     return bool(_PKG_NAME_RE.match(n))
@@ -156,7 +156,7 @@ def _changes_from_bun_text(
     separator-delimited data rows are read, so the banner, the ``Resolving…``
     line, the box borders, and the ``Package`` header are all skipped.  On
     non-UTF-8 terminals (CI runners, minimal containers) bun renders the same
-    table with ASCII ``|`` separators (#145); ASCII border rows
+    table with ASCII ``|`` separators; ASCII border rows
     (``|-----|-----|``) split into dash-led cells that
     ``_valid_bun_package_name`` rejects.
 
@@ -308,8 +308,8 @@ def apply_bun(ws: Workspace) -> list[Change]:
     by ``repo_ops_audit.audit.apply_remediations`` during ``audit --fix``) are
     applied independent of ``check_bun``'s findings: an overridden package is
     targeted at its safe version even when ``bun outdated`` reports it as
-    already in-range (empty ``changes``) or only behind on ``latest`` — dropping
-    it in that case was the #140 silent-skip bug.
+    already in-range (empty ``changes``) or only behind on ``latest``; dropping
+    it in that case would silently skip an advisory fix.
 
     With ``REPO_OPS_BUN_TARGETED_BUMP`` set, each dep that ``check_bun`` left
     behind_latest gets a reversible targeted ``bun add <pkg>@latest``; only
@@ -337,7 +337,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
         seen_names.add(name)
     # Advisory-safe overrides for packages check_bun did NOT report as changed
     # (already satisfies its declared range, or only behind_latest) must still
-    # be targeted explicitly here — silently dropping them is the #140 bug.
+    # be targeted explicitly here — silently dropping them skips the fix.
     for name, safe_version in _AUDIT_VERSION_OVERRIDES.items():
         name = (name or "").strip()
         safe_version = (safe_version or "").strip()
@@ -350,7 +350,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
         return _finalize_bun_apply(ws, changes, behind)
     if not targets:
         # Bare ``bun update`` — no per-package target args; the guard is still
-        # applied to any changes whose target version IS known (task #3: skip
+        # applied to any changes whose target version IS known (skip
         # unparseable '?' entries but guard what IS known from the original
         # check output).
         proc = run(["bun", "update"], ws.path, timeout=resolve_timeout_apply())

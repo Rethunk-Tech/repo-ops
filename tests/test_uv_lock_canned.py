@@ -53,7 +53,7 @@ def test_check_uv_lock_raises_runtime_error_on_nonzero_exit(tmp_path: Path, make
 
 
 def test_check_uv_lock_parses_prerelease_versions(tmp_path: Path, make_workspace) -> None:
-    """F214 — pre-release / local version identifiers must parse."""
+    """Pre-release / local version identifiers must parse."""
     stdout = "would upgrade foo 1.0.0a1 -> 1.0.0b2\nwould upgrade bar 1.0.0+local -> 1.0.1\n"
     with patch.object(uv_lock, "run", _fake_run(stdout=stdout)):
         changes = uv_lock.check_uv_lock(
@@ -66,7 +66,7 @@ def test_check_uv_lock_parses_prerelease_versions(tmp_path: Path, make_workspace
 
 
 def test_apply_uv_lock_runs_upgrade_then_sync(tmp_path: Path, make_workspace) -> None:
-    """F153 — apply_uv_lock success path: uv lock --upgrade then uv sync."""
+    """apply_uv_lock success path: uv lock --upgrade then uv sync."""
     calls: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=None, env=None):
@@ -80,7 +80,7 @@ def test_apply_uv_lock_runs_upgrade_then_sync(tmp_path: Path, make_workspace) ->
 
 
 def test_apply_uv_lock_raises_on_upgrade_failure(tmp_path: Path, make_workspace) -> None:
-    """F153 — nonzero uv lock --upgrade raises RuntimeError."""
+    """Nonzero uv lock --upgrade raises RuntimeError."""
     with (
         patch.object(uv_lock, "run", _fake_run(stderr="upgrade failed", returncode=1)),
         pytest.raises(RuntimeError, match="upgrade failed"),
@@ -89,7 +89,7 @@ def test_apply_uv_lock_raises_on_upgrade_failure(tmp_path: Path, make_workspace)
 
 
 def test_apply_uv_lock_raises_on_sync_failure(tmp_path: Path, make_workspace) -> None:
-    """F153 — uv sync failure after successful lock upgrade raises."""
+    """Uv sync failure after successful lock upgrade raises."""
     call_n = 0
 
     def fake_run(cmd, cwd, timeout=None, env=None):

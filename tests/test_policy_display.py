@@ -1,4 +1,4 @@
-"""Tests for policy-row display and policy_violations counter (#125)."""
+"""Tests for policy-row display and policy_violations counter."""
 
 from __future__ import annotations
 
@@ -335,7 +335,7 @@ def test_actions_org_policy_wires_env(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
 
 # ---------------------------------------------------------------------------
-# SETTINGS_TABLE: new v0.15.0 entries
+# SETTINGS_TABLE entries
 # ---------------------------------------------------------------------------
 
 

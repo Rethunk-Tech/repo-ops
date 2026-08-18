@@ -219,7 +219,7 @@ def _run_upgrade_body(
     roots: list[str],
     follow_symlinks: bool = False,
 ) -> int:
-    # Full sweep is the default (#136): every ecosystem crosses ranges and every
+    # Full sweep is the default: every ecosystem crosses ranges and every
     # package manager gets its per-package targeted fallback. --conservative is
     # the single opt-out for a run that must stay inside declared constraints.
     # Targeted bumps are safe to default on because each one snapshots the
@@ -230,7 +230,7 @@ def _run_upgrade_body(
     # --conservative is an explicit CLI instruction, so it is written
     # unconditionally (beats env/config, same as any other CLI override).
     # The non-conservative "on" case is NOT written here: each of these keys'
-    # settings-table default is already "1" (#136 sweep-on-by-default), so
+    # settings-table default is already "1", so
     # leaving the var unset lets the user's own REPO_OPS_*=0 env var or
     # [tool.repo-ops] config entry override the default through the normal
     # CLI > env > config > default layering instead of being silently
@@ -240,10 +240,10 @@ def _run_upgrade_body(
             _set_cli_env(_var, "0")
     if latest:
         os.environ.setdefault("REPO_OPS_GO_UPGRADE_MODE", "explicit")
-    # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects (#132).
+    # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects.
     if _cli_flag(args, "migrate_to_uv_lock"):
         _set_cli_env("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
-    # --commit-umbrella: opt in to post-commit umbrella pointer bumps (#125).
+    # --commit-umbrella: opt in to post-commit umbrella pointer bumps.
     if _cli_flag(args, "commit_umbrella"):
         _set_cli_env("REPO_OPS_COMMIT_UMBRELLA", "1")
     # Org allowed-actions policy. Enabled whenever a GitHub token is available,
@@ -268,7 +268,7 @@ def _run_upgrade_body(
     use_json = args.json
     json_report_path = getattr(args, "json_report_path", None)
     # Always collect discovery diagnostics so found-but-unactionable manifests are
-    # counted (and surfaced) in human runs too, not only under --json (#24).
+    # counted (and surfaced) in human runs too, not only under --json.
     diagnostics = DiscoveryDiagnostics()
     found: list[Workspace] = workspace_discovery.discover_all(
         roots,
@@ -335,7 +335,7 @@ def _run_upgrade_body(
     ) -> WorkspaceResult:
         # Guard the worker body: a raising worker must surface as a FAILED
         # workspace, not get silently dropped from results and reported clean
-        # with exit 0 (#62). Mutate and return the input result so its
+        # with exit 0. Mutate and return the input result so its
         # workspace.path still matches in reconciliation below.
         with checkout_config_scope(
             global_cfg=_global_cfg,
@@ -369,7 +369,7 @@ def _run_upgrade_body(
             # workspaces in a bundle share bundle.git_repo and share one commit at
             # the end of the run, so an earlier sibling's own already-applied (not
             # yet committed) changes must not make a later sibling look dirty and
-            # get skipped outright. Issue #152.
+            # get skipped outright.
             repo_started_dirty = is_git_dirty(bundle.git_repo) if apply else None
             for wr in bundle.workspaces:
                 updated = _process_one(wr, repo_started_dirty=repo_started_dirty)
@@ -408,7 +408,7 @@ def _run_upgrade_body(
         after the commit phase completes successfully (see the post-commit block
         in _run_upgrade_body).  This ensures a crash before commit leaves no
         checkpoint entry, so the repo is correctly re-applied on the next resume
-        rather than being silently skipped with uncommitted changes.  (Bug #17.1)
+        rather than being silently skipped with uncommitted changes.
         """
         if _resume_mode and _checkpoint_should_skip(bundle, _checkpoint):
             for wr in bundle.workspaces:
@@ -514,7 +514,7 @@ def _run_upgrade_body(
 
     # Key by (path, manager): a single directory can host multiple ecosystems
     # (e.g. npm + container). Path-only keys let the last worker overwrite the
-    # earlier result, dropping non-container workspaces from --json/--json-out (#146).
+    # earlier result, dropping non-container workspaces from --json/--json-out.
     path_to_result = {(r.workspace.path, r.workspace.manager): r for r in all_results}
     for bundle in bundles.values():
         updated: list[WorkspaceResult] = []
@@ -529,7 +529,7 @@ def _run_upgrade_body(
             else:
                 # No result and not fail-fast: the worker crashed and dropped
                 # this workspace. Mark it failed rather than re-appending the
-                # original (default-status) result as a silent clean pass (#62).
+                # original (default-status) result as a silent clean pass.
                 wr.status = "fail"
                 wr.error = "worker crashed (no result returned)"
                 updated.append(wr)
@@ -539,8 +539,8 @@ def _run_upgrade_body(
         # SHA pins are preserved by default (supply-chain hardening).
         # Only unpin when the user explicitly opts in via --actions-unpin-sha.
         keep_sha = not _cli_flag(args, "actions_unpin_sha")
-        # Digest refresh (#109): only meaningful while staying SHA-pinned.
-        # No CLI flag of its own (#136 follow-up) — --conservative is passed
+        # Digest refresh: only meaningful while staying SHA-pinned.
+        # No CLI flag of its own — --conservative is passed
         # through as an explicit CLI override (cli_value wins ahead of
         # env/config) rather than a real flag, so REPO_OPS_ACTIONS_REFRESH_SHA
         # / [tool.repo-ops] actions_refresh_sha still take effect whenever the
@@ -553,7 +553,7 @@ def _run_upgrade_body(
                 env=_ambient_env,
             )
         )
-        # Pin-to-SHA (#136): a floating tag pin is invisible to refresh_sha,
+        # Pin-to-SHA: a floating tag pin is invisible to refresh_sha,
         # so leaving it opt-in meant the common case — an Action that was
         # never SHA-pinned at all — was silently never hardened.
         pin_sha = keep_sha and coerce_bool_setting(
@@ -566,7 +566,7 @@ def _run_upgrade_body(
         )
         _raw_tag_style = getattr(args, "actions_tag_style", "major")
         tag_style: actions.TagStyle = "exact" if _raw_tag_style == "exact" else "major"
-        # Cross-major apply (#106): explicit --actions-upgrade-mode wins; otherwise
+        # Cross-major apply: explicit --actions-upgrade-mode wins; otherwise
         # A default sweep also opts Actions into latest mode.
         _raw_actions_mode = getattr(args, "actions_upgrade_mode", None)
         if not isinstance(_raw_actions_mode, str):
@@ -648,7 +648,7 @@ def _run_upgrade_body(
 
     # Submodule tag advances (apply-only, opt-in via --submodules).
     # Runs BEFORE pointer_hints so that staged gitlinks are visible to the
-    # hint scan and are committed by the post-apply commit phase.  Task #18.
+    # hint scan and are committed by the post-apply commit phase.
     submodule_gitlink_map: dict[Path, set[str]] = {}
     if apply and include_submodules and submodule_links:
         _sub_bumps = submodules.apply_submodule_tag_advances(
@@ -743,9 +743,9 @@ def _run_upgrade_body(
             # before reaching this block leaves no entry and the repo is
             # correctly re-applied on the next resume run.  Only "committed"
             # outcomes are recorded — skipped/failed repos are never checkpointed
-            # (fixes bugs #17.1 and #17.2).  Lock is held across the disk write
+            # .  Lock is held across the disk write
             # to prevent a lost-update race between concurrent checkpoint saves
-            # (fixes bug #17.4).
+            # .
             if _resume_mode:
                 from repo_ops_core import state as _cpt_state
 

@@ -90,7 +90,7 @@ def test_scan_flat_non_directory_root_returns_empty(tmp_path: Path) -> None:
 
 
 def test_flat_project_name_dotted_directory_fallback(tmp_path: Path) -> None:
-    """Directory names starting with '.' skip the fast-path return (#101)."""
+    """Directory names starting with '.' skip the fast-path return."""
     hidden = tmp_path / ".hidden-project"
     hidden.mkdir()
     assert _flat_project_name(hidden) == ".hidden-project"

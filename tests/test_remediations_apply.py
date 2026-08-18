@@ -1,4 +1,4 @@
-"""Remediation plan vs apply reporting (issue #11)."""
+"""Remediation plan vs apply reporting."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def test_run_remediations_plan_vs_apply_detail(tmp_path: Path) -> None:
 
 
 def test_verbose_flag_observed_live(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """process.VERBOSE rebind is visible to run_remediations (issue #68).
+    """process.VERBOSE rebind is visible to run_remediations.
 
     A by-value import of VERBOSE would freeze it at False; the module-level
     reference fix (process.VERBOSE) must read the live global.

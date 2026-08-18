@@ -1,4 +1,4 @@
-"""Regression #99: verify_workspace must dispatch to pip-tools branch (not silently return None)."""
+"""verify_workspace must dispatch to pip-tools branch (not silently return None)."""
 
 from __future__ import annotations
 

@@ -10,7 +10,7 @@ Scope (best-effort)
   scanned tree (the repo's own package manifests), plus the locked third-party
   dependency set of each ``uv.lock`` / ``poetry.lock`` / ``pdm.lock`` /
   ``Pipfile.lock``, resolving license ids from an adjacent virtualenv's
-  ``*.dist-info/METADATA`` when one exists (#144).  Offline-first: locked
+  ``*.dist-info/METADATA`` when one exists.  Offline-first: locked
   packages without installed metadata are reported as UNKNOWN rather than
   resolved over the network.  ``setup.cfg`` is not read.
 - Go: go.sum module@version pairs resolved via LICENSE* files in the local
@@ -336,7 +336,7 @@ def scan_python_licenses(root: Path) -> list[PackageLicense]:
 
 # ---------------------------------------------------------------------------
 # Python: resolve locked third-party dependency licenses from uv.lock plus an
-# adjacent virtualenv's *.dist-info/METADATA (#144).  Offline-first: no
+# adjacent virtualenv's *.dist-info/METADATA.  Offline-first: no
 # network; locked packages without installed metadata stay UNKNOWN.
 # ---------------------------------------------------------------------------
 

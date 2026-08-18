@@ -49,7 +49,7 @@ def test_unchanged_optional_dep_not_emitted() -> None:
 
 
 def test_diff_coarse_includes_deno_pdm_pipfile(tmp_path: Path) -> None:
-    """Snapshot diff emits coarse Change rows for deno/pdm/Pipfile locks (F076)."""
+    """Snapshot diff emits coarse Change rows for deno/pdm/Pipfile locks."""
     for name in ("deno.lock", "pdm.lock", "Pipfile.lock"):
         p = tmp_path / name
         changes = diff_workspace_snapshots({p: b"v1"}, {p: b"v2"}, "uv")

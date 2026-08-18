@@ -119,8 +119,8 @@ def test_scan_non_flat_missing_root_returns_empty(tmp_path: Path):
 
 
 def test_nested_node_modules_counting(tmp_path: Path) -> None:
-    """#69: count_installed_node descends into nested node_modules.
-    #75: count_dep_edges does NOT descend into node_modules.
+    """count_installed_node descends into nested node_modules.
+    count_dep_edges does NOT descend into node_modules.
 
     Fixture layout:
       package.json          <- root manifest, 2 direct deps
@@ -151,16 +151,16 @@ def test_nested_node_modules_counting(tmp_path: Path) -> None:
         json.dumps({"name": "pkg-b", "dependencies": {"semver": "^7.0.0"}})
     )
 
-    # #69: both nested packages are counted (unfixed = 1, pkg-a only)
+    # both nested packages are counted (unfixed = 1, pkg-a only)
     assert count_installed_node(tmp_path) == 2
 
-    # #75: only root's 2 direct deps count; node_modules is pruned entirely
+    # only root's 2 direct deps count; node_modules is pruned entirely
     # (unfixed = 4: root 2 + pkg-a 1 + pkg-b 1)
     assert count_dep_edges(tmp_path) == 2
 
 
 def test_count_dep_edges_skips_vendor_and_yarn(tmp_path: Path) -> None:
-    """#96: count_dep_edges must not descend into vendor/ or .yarn/ dirs.
+    """count_dep_edges must not descend into vendor/ or .yarn/ dirs.
 
     Layout:
       uv.lock                          <- root lock, 1 edge (counted)
@@ -208,7 +208,7 @@ def test_go_cache_roundtrip_and_invalid(tmp_path: Path):
     assert load_go_cache(bad) == {}
 
 
-# ---------- count_node lockfile precedence + bun.lockb (F014, F085) ----------
+# ---------- count_node lockfile precedence + bun.lockb ----------
 
 
 def test_count_node_lockfile_precedence(tmp_path: Path) -> None:
@@ -306,7 +306,7 @@ def test_count_node_bun_lockb_unsupported_on_invalid_dump(
     assert lock == "bun(bin:unsupported)"
 
 
-# ---------- eco filter recomputes metrics (F080) ----------
+# ---------- eco filter recomputes metrics ----------
 
 
 def test_filter_recomputes_metrics_for_matching_eco_only(
@@ -354,7 +354,7 @@ def test_filter_recomputes_metrics_for_matching_eco_only(
     assert row["edges"] == 0
 
 
-# ---------- JSON schema: manifests + summary (F081, F082) ----------
+# ---------- JSON schema: manifests + summary ----------
 
 
 def test_inventory_json_includes_manifests_and_summary(tmp_path: Path, capsys) -> None:
@@ -377,7 +377,7 @@ def test_inventory_json_includes_manifests_and_summary(tmp_path: Path, capsys) -
 
 
 def test_inventory_json_out_requires_json(tmp_path: Path) -> None:
-    """F083: --json-out without --json is a parser error."""
+    """--json-out without --json is a parser error."""
     import pytest
 
     from repo_ops_inventory.scan import main as inventory_main
@@ -387,7 +387,7 @@ def test_inventory_json_out_requires_json(tmp_path: Path) -> None:
 
 
 def test_inventory_json_out_writes_path_only(tmp_path: Path, capsys) -> None:
-    """F087: --json --json-out writes atomically; stdout is the path only."""
+    """--json --json-out writes atomically; stdout is the path only."""
     import json
 
     from repo_ops_inventory.scan import main as inventory_main
@@ -404,7 +404,7 @@ def test_inventory_json_out_writes_path_only(tmp_path: Path, capsys) -> None:
 
 
 def test_inventory_compact_schema_version_first(tmp_path: Path, capsys) -> None:
-    """F086: --compact is single-line; schema_version is the first key."""
+    """--compact is single-line; schema_version is the first key."""
     import json
 
     from repo_ops_inventory.scan import main as inventory_main
@@ -419,11 +419,11 @@ def test_inventory_compact_schema_version_first(tmp_path: Path, capsys) -> None:
     assert payload["schema_version"] == 1
 
 
-# ---------- count_go pool failure + sort/top/jobs/no-cache (F084, F173, F174) ----------
+# ---------- count_go pool failure + sort/top/jobs/no-cache ----------
 
 
 def test_scan_go_pool_failure_yields_zero_deps(tmp_path: Path, monkeypatch) -> None:
-    """F084: ThreadPoolExecutor swallows count_go exceptions as zero deps."""
+    """ThreadPoolExecutor swallows count_go exceptions as zero deps."""
     from repo_ops_inventory import counting
 
     (tmp_path / "go.mod").write_text("module example.com/x\n\ngo 1.22\n")
@@ -575,7 +575,7 @@ def test_inventory_no_cache_bypasses_go_cache(tmp_path: Path, monkeypatch) -> No
 
 
 def test_inventory_jobs_flag_accepted(tmp_path: Path) -> None:
-    """F174: --jobs is accepted and forwarded to scan pool sizing."""
+    """--jobs is accepted and forwarded to scan pool sizing."""
     from repo_ops_inventory.scan import build_inventory_parser
     from repo_ops_inventory.scan import main as inventory_main
 
@@ -608,7 +608,7 @@ def test_count_python_pipfile_pdm_requirements_in_and_uv_lock(
     assert "uv" in tag
 
 
-# ---------- count_python pdm/pipenv (F175) + deno jsonc (F176) ----------
+# ---------- count_python pdm/pipenv + deno jsonc ----------
 
 
 def test_count_python_pdm_and_pipenv_locks(tmp_path: Path) -> None:
@@ -634,7 +634,7 @@ def test_count_python_pdm_and_pipenv_locks(tmp_path: Path) -> None:
 
 
 def test_count_deno_jsonc_preserves_url_with_slashes(tmp_path: Path) -> None:
-    """F176: // inside import URL strings must not be treated as comments."""
+    """// inside import URL strings must not be treated as comments."""
     from repo_ops_inventory.counting import count_deno
 
     (tmp_path / "deno.jsonc").write_text(

@@ -1,4 +1,4 @@
-"""Tests for SHA-pin resolution (issue #21): unpin SHA-pinned Actions to version tags."""
+"""Tests for SHA-pin resolution: unpin SHA-pinned Actions to version tags."""
 
 from __future__ import annotations
 
@@ -260,16 +260,15 @@ def test_keep_sha_noop(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# (f) Security regression: default settings NEVER unpin SHA pins (issue #25)
+# (f) Security regression: default settings NEVER unpin SHA pins
 # ---------------------------------------------------------------------------
 
 
 def test_default_settings_do_not_unpin_sha(tmp_path: Path) -> None:
     """Default scan_actions (keep_sha=True) must NOT rewrite a SHA pin.
 
-    This is the core regression test for issue #25: the old default was
-    keep_sha=False, which silently downgraded supply-chain-hardened SHA pins
-    to floating major tags on every apply run.
+    keep_sha=False would silently downgrade supply-chain-hardened SHA pins to
+    floating major tags on every apply run, so the default must stay True.
     """
     wf = _wf(
         tmp_path,
@@ -331,7 +330,7 @@ def test_comment_hint_preserved_on_unpin(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# (g) Issue #61 — short-SHA prefix resolution
+# (g) short-SHA prefix resolution
 # ---------------------------------------------------------------------------
 
 # Full 40-char SHA used as the key in sha_to_tags (as the real API returns).

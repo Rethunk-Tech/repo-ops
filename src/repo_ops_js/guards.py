@@ -1,6 +1,6 @@
 """Post-apply ghost-bump resolution guard (shared across JS package managers).
 
-Bug #112: a ``bun update`` (or ``npm update`` / ``pnpm update``) can churn the
+a ``bun update`` (or ``npm update`` / ``pnpm update``) can churn the
 lockfile while an ``overrides``/``resolutions``/``pnpm.overrides`` entry or an
 exact-pin dependency range keeps the OLD version installed.  ``verify``
 (build/test) then passes against the un-upgraded tree and the bump is reported
@@ -150,7 +150,7 @@ def assert_targets_resolved(
     *,
     fallback_resolver: Callable[[Workspace, str], str | None] | None = None,
 ) -> None:
-    """Guard against #112 ghost bumps.
+    """Guard against ghost bumps.
 
     An ``overrides``/``resolutions`` entry, an exact-pin dependency range, or
     a peer/transitive constraint can shadow a package-manager update command:

@@ -84,7 +84,7 @@ with patch(
 
 def test_apply_worker_exception_reports_fail_not_clean(tmp_path: Path, init_git_repo) -> None:
     """A worker that raises must surface as a FAILED workspace, not a silent
-    clean exit 0 (#62). Exit code alone is insufficient: the defensive
+    clean exit 0. Exit code alone is insufficient: the defensive
     fallthrough would also yield rc=1, so the error text ("boom") pins that the
     guard path in _process_one actually ran and recorded the exception."""
     _npm_workspace(tmp_path, init_git_repo=init_git_repo)
@@ -226,7 +226,7 @@ def test_apply_snapshots_repo_dirty_state_once_per_bundle(tmp_path: Path, init_g
     """Two sibling workspaces in the same repo must share one dirty snapshot,
     not each re-check the live git tree — otherwise an earlier sibling's own
     applied-but-uncommitted changes make every later sibling look dirty and get
-    skipped outright, even though the repo was clean at run-start. Issue #152.
+    skipped outright, even though the repo was clean at run-start.
     """
     _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")

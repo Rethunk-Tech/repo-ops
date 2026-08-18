@@ -1,11 +1,11 @@
-"""Regression tests for behind-latest disposition (#22, #42).
+"""Regression tests for behind-latest disposition.
 
 Verifies that workspaces with newer-than-installed packages when latest-mode
 is off, and Actions with a newer major available, are reported as a distinct
 ``behind_latest`` disposition (NOT ok / NOT fail), do not change exit code,
 and appear in the footer hint.
 
-Also covers #42: node/bun tuple-checker with empty behind_latest still triggers
+Also covers: node/bun tuple-checker with empty behind_latest still triggers
 ``overrides_audit`` (the empty list must NOT suppress the call).
 """
 
@@ -143,7 +143,7 @@ def test_actions_summary_counts_newer_major_as_behind_latest(tmp_path: Path) -> 
 def test_actions_summary_dedupes_behind_latest_across_workflows(
     tmp_path: Path,
 ) -> None:
-    """Same action@pin with newer major across N workflows → behind_latest == 1 (#74)."""
+    """Same action@pin with newer major across N workflows → behind_latest == 1."""
     bundle = _bundle(
         tmp_path,
         actions=[
@@ -224,17 +224,17 @@ def test_footer_hint_appears_for_packages_behind_latest(tmp_path: Path) -> None:
     out = buf.getvalue()
     assert "behind-latest" in out
     assert "3 package(s)" in out
-    # #102/#136: remediation advice points at --conservative (a real flag);
+    # remediation advice points at --conservative (a real flag);
     # no manager breakdown in this summary, so the default hint is used.
     assert "--conservative" in out
 
 
 def test_footer_per_manager_hints_npm_vs_latest(tmp_path: Path, monkeypatch) -> None:
-    """#102: each manager gets its own correct remediation hint.
+    """Each manager gets its own correct remediation hint.
 
     npm has no latest mode (bump manually); bun's targeted bump is pinned off
     here so the "not attempted" hint is exercised rather than the "tried but
-    could not move them" one (the sweep default, #136).
+    could not move them" one (the sweep default).
     """
     monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "0")
     monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "0")
@@ -263,12 +263,12 @@ def test_footer_per_manager_hints_npm_vs_latest(tmp_path: Path, monkeypatch) -> 
 
 
 def test_per_line_behind_latest_note_is_manager_aware(tmp_path: Path, monkeypatch) -> None:
-    """#131: the per-workspace behind-latest line must not hardcode
+    """The per-workspace behind-latest line must not hardcode
 
     "(latest-mode off)". yarn leftovers surface only after the targeted bump
     ran, so that label was misleading; the note now matches the
     manager-aware footer hint. Each manager's targeted bump is pinned off
-    here (the sweep default, #136) so the "not attempted" hints are
+    here (the sweep default) so the "not attempted" hints are
     exercised rather than the "tried but could not move them" ones.
     """
     monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "0")
@@ -336,7 +336,7 @@ def test_per_line_behind_latest_note_is_manager_aware(tmp_path: Path, monkeypatc
 def test_yarn_behind_latest_note_when_targeted_bump_already_requested(
     tmp_path: Path, monkeypatch
 ) -> None:
-    """#131: once --yarn-targeted-bump was requested, the yarn behind-latest note
+    """Once --yarn-targeted-bump was requested, the yarn behind-latest note
 
     must report the fallback was tried and could not move the leftovers, instead
     of re-suggesting the flag the operator already passed.
@@ -376,7 +376,7 @@ def test_yarn_behind_latest_note_when_targeted_bump_already_requested(
 def test_sweep_env_vars_default_on_and_conservative_off(
     tmp_path: Path, monkeypatch, init_git_repo
 ) -> None:
-    """#136: every _SWEEP_ENV_VARS gate defaults on with no flag needed.
+    """Every _SWEEP_ENV_VARS gate defaults on with no flag needed.
 
     run.py writes "0" for each on --conservative (an explicit CLI instruction
     outranks env/config), but leaves the default "on" case unwritten — each
@@ -440,7 +440,7 @@ def test_sweep_env_vars_default_on_and_conservative_off(
 def test_default_sweep_sets_go_upgrade_mode_explicit(
     tmp_path: Path, monkeypatch, init_git_repo
 ) -> None:
-    """#102: the default sweep sets REPO_OPS_GO_UPGRADE_MODE=explicit via
+    """The default sweep sets REPO_OPS_GO_UPGRADE_MODE=explicit via
     setdefault before workers run; --conservative skips that setdefault so a
     per-checkout go_upgrade_mode config still decides (see test_config_e2e.py's
     ``test_fleet_run_resolves_go_upgrade_mode_per_checkout``)."""
@@ -475,7 +475,7 @@ def test_default_sweep_sets_go_upgrade_mode_explicit(
 
 
 def test_latest_umbrella_flips_actions_mode(tmp_path: Path, monkeypatch, init_git_repo) -> None:
-    """#106: the default sweep opts Actions into latest mode; --conservative
+    """The default sweep opts Actions into latest mode; --conservative
     reverts to normalize; an explicit --actions-upgrade-mode always wins."""
     for var in (
         "REPO_OPS_BUN_UPDATE_LATEST",
@@ -526,7 +526,7 @@ def test_footer_hint_appears_for_actions_behind_latest(tmp_path: Path) -> None:
     out = buf.getvalue()
     assert "behind-latest" in out
     assert "2 action(s)" in out
-    # #106: footer now points operators at the apply path for cross-major bumps.
+    # footer now points operators at the apply path for cross-major bumps.
     assert "--actions-upgrade-mode=latest" in out
 
 
@@ -598,7 +598,7 @@ def test_behind_latest_workspace_does_not_change_plan_exit_code(
 
 
 # ---------------------------------------------------------------------------
-# #42 — node tuple-checkers always call overrides_audit even when behind_latest
+# node tuple-checkers always call overrides_audit even when behind_latest
 # is empty (the common case that triggered the regression)
 # ---------------------------------------------------------------------------
 
@@ -606,7 +606,7 @@ def test_behind_latest_workspace_does_not_change_plan_exit_code(
 def test_check_workspace_calls_overrides_audit_when_behind_latest_empty(
     tmp_path: Path,
 ) -> None:
-    """Regression #42: bun checker returning ([], []) must still invoke overrides_audit."""
+    """Bun checker returning ([], []) must still invoke overrides_audit."""
     ws = Workspace(
         path=tmp_path,
         ecosystem="node",

@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Removed historic tombstones and ticket provenance from comments and docstrings.** 368 issue/task citations (`Issue #108`, `Task #18`, `(#136)`), 73 audit finding IDs (`F041`, `F145`), and every audit-wave label (`TASK A:`, `Task 1 —`) are gone from `src/` and `tests/`, per the standing rule that a comment explains non-obvious *why*, never history. Where a comment described how the code used to behave — "the old default was `keep_sha=False`", "`#136` deleted every `--*-targeted-bump` flag", "dropping them when outdated is empty was the silent-skip bug" — it now states the requirement in the present tense, so it reads as a rule to keep rather than an incident to remember. No behaviour changed; the descriptive half of every comment was preserved.
+
 ### Fixed
 
 - **The settings table in `docs/usage.md` had drifted from `SETTINGS_TABLE`.** It was a hand-maintained copy of a code structure: two settings were missing (`actions_pin_sha`, `actions_refresh_sha`), one that no longer exists was still listed (`remediate_go_generate`), and 42 values disagreed — every `--conservative` setting was documented as flagless with default `0` when the code says `--conservative` and `1`, with a paragraph above the table explaining that the table was not to be believed. Replaced by the naming rule (`REPO_OPS_<NAME>` / `<name>`, with `jobs` and `exclude_patterns` the only exceptions), one sentence for the 22-setting `--conservative` family, and a table of the rest. A test now asserts the page and the code agree.
+- **A drifted comment and a misplaced setting in `config.py`.** The sweep-defaults block was annotated "these 20 keys" when it governs 22, and `yarn_max_concurrency` — which is invocation-scoped, not a sweep gate — sat inside it. The comment no longer hardcodes a count, and the setting moved next to `jobs` where it belongs.
 - **A broken link in `.github/pull_request_template.md`.** `docs/testing.md` resolved relative to `.github/`. A test now walks every tracked Markdown file and checks each relative link and `#anchor` resolves.
 
 ### Changed

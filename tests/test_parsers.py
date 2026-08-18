@@ -158,7 +158,7 @@ packages:
 
 
 def test_versions_pnpm_lock_v5_peer_suffix_not_swallowed():
-    """v5 path lines with @peer-suffix must parse correctly via _RE_PATH — closes #53.
+    """V5 path lines with @peer-suffix must parse correctly via _RE_PATH —.
 
     Before the fix _RE_AT matched these first and emitted a garbled token.
     A plain name@version line must still parse correctly too.
@@ -188,7 +188,7 @@ packages:
 
 
 def test_versions_pnpm_lock_v6_peer_suffix_stripped():
-    """#79 — pnpm v6 peer-dep suffix must not appear in emitted token."""
+    """Pnpm v6 peer-dep suffix must not appear in emitted token."""
     content = """lockfileVersion: '6.0'
 
 packages:
@@ -206,7 +206,7 @@ packages:
 
 
 def test_versions_yarn_lock_skips_metadata_block():
-    """#79 — Berry __metadata preamble must not emit a bogus __metadata@6 token."""
+    """Berry __metadata preamble must not emit a bogus __metadata@6 token."""
     content = """\
 __metadata:
   version: 6

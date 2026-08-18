@@ -1,4 +1,4 @@
-"""Tests for the actionlint content-hash result cache (issue #123)."""
+"""Tests for the actionlint content-hash result cache."""
 
 from __future__ import annotations
 

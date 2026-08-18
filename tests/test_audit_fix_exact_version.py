@@ -409,7 +409,7 @@ _OVERRIDE_CASES = [
         overrides_module="repo_ops_js_pnpm.pnpm",
     ),
     _OverrideCase(
-        # #140: the missing `elif manager == "bun"` branch was the reported
+        # the missing `elif manager == "bun"` branch was the reported
         # silent-skip bug -- bun must wire overrides the same as npm/pnpm.
         ecosystem="node",
         manager="bun",

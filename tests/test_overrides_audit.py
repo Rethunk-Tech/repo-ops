@@ -1,4 +1,4 @@
-"""Regression tests for overrides_audit protocol-pin false-positive (issue #27).
+"""Regression tests for overrides_audit protocol-pin false-positive.
 
 workspace:*, file:, and other protocol pins must never produce a stale warning.
 A genuinely stale semver override (pinned < resolved) still must fire.
@@ -28,7 +28,7 @@ def _install_pkg(mdir: Path, pkg_name: str, version: str) -> None:
 
 
 def test_workspace_star_pin_produces_no_stale_warning(tmp_path: Path) -> None:
-    """workspace:* override must not fire any stale warning (issue #27)."""
+    """Workspace:* override must not fire any stale warning."""
     _write_pkg_json(tmp_path, {"@my/shared": "workspace:*"})
     results = overrides_audit(tmp_path, "pnpm")
     stale = [r for r in results if "stale" in r.get("detail", "")]
@@ -36,7 +36,7 @@ def test_workspace_star_pin_produces_no_stale_warning(tmp_path: Path) -> None:
 
 
 def test_file_protocol_pin_produces_no_stale_warning(tmp_path: Path) -> None:
-    """file:../shared override must not fire any stale warning (issue #27)."""
+    """file:../shared override must not fire any stale warning."""
     _write_pkg_json(tmp_path, {"my-lib": "file:../shared"})
     results = overrides_audit(tmp_path, "npm")
     stale = [r for r in results if "stale" in r.get("detail", "")]
@@ -72,7 +72,7 @@ def test_semver_stale_override_still_fires(tmp_path: Path) -> None:
 
 
 def test_npm_and_catalog_protocol_pins_produce_no_warning(tmp_path: Path) -> None:
-    """npm: alias and catalog: protocol pins must produce no warnings — closes #50."""
+    """Npm: alias and catalog: protocol pins must produce no warnings —."""
     _write_pkg_json(
         tmp_path,
         {
@@ -89,7 +89,7 @@ def test_npm_and_catalog_protocol_pins_produce_no_warning(tmp_path: Path) -> Non
 def test_range_override_in_range_resolution_produces_no_stale_warning(
     tmp_path: Path,
 ) -> None:
-    """^1.2.3 override with tree at 1.2.5 (in-range) must not fire stale — closes #78.
+    """^1.2.3 override with tree at 1.2.5 (in-range) must not fire stale —.
 
     Also asserts that an exact-pin mismatch (1.2.3 pinned, 1.2.5 resolved) still
     fires a stale warning, proving the equality check is not simply disabled.
@@ -113,7 +113,7 @@ def test_range_override_in_range_resolution_produces_no_stale_warning(
 
 
 def test_overrides_audit_scans_workspace_member_manifests(tmp_path: Path) -> None:
-    """Monorepo pins in packages/*/package.json must surface (F150)."""
+    """Monorepo pins in packages/*/package.json must surface."""
     root = tmp_path
     (root / "package.json").write_text(
         json.dumps(

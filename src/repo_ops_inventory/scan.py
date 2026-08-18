@@ -303,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         ]
         totals = _totals(all_rows)
         # Build the payload once so the stdout and --json-out paths can never
-        # diverge on schema_version/roots/totals (#101 + #104).
+        # diverge on schema_version/roots/totals.
         # ``summary`` mirrors the human footer roll-up (docs/usage.md JSON contract).
         payload = {
             "schema_version": 1,

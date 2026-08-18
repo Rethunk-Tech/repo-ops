@@ -184,7 +184,7 @@ def _process_workspace_body(
         # committed) changes, which would otherwise make every later sibling look
         # dirty and skip outright even though the repo was clean at run-start.
         # Falls back to a live check when the caller has no bundle context
-        # (e.g. direct process_workspace callers/tests). Issue #152.
+        # (e.g. direct process_workspace callers/tests).
         result.started_dirty = (
             is_git_dirty(ws.git_repo) if repo_started_dirty is None else repo_started_dirty
         )
@@ -199,7 +199,7 @@ def _process_workspace_body(
         try:
             behind_after = ecosystems.apply_workspace(ws)
             if behind_after:
-                # Direct deps a latest-mode apply left behind (yarn, issue #110).
+                # Direct deps a latest-mode apply left behind (yarn).
                 result.behind_latest = behind_after
             after_snap = snapshot_workspace_files(ws.path, ws.manager)
             result.changes = diff_workspace_snapshots(before_snap, after_snap, ws.manager)

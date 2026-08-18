@@ -199,7 +199,7 @@ def _under(rel: str, prefix: str) -> bool:
     """True when *rel* equals *prefix* or sits under it on a path boundary.
 
     Separator-aware so ``packages/foo`` does not match the sibling
-    ``packages/foobar`` (#59).
+    ``packages/foobar``.
     """
     prefix = prefix.rstrip("/")
     return rel == prefix or rel.startswith(prefix + "/")
@@ -221,7 +221,7 @@ class DiscoveryDiagnostics:
 
         Every manifest on disk maps to exactly one of ok / skip / error; a
         silent drop here would make a coverage gap indistinguishable from
-        "nothing to upgrade" (see #24). Deduped by (path, ecosystem) so a
+        "nothing to upgrade". Deduped by (path, ecosystem) so a
         manifest reachable through two overlapping repo walks (e.g. a nested
         git repo) is not double-counted in ``discovery skipped``.
         """
@@ -292,7 +292,7 @@ def discover_workspaces_in_root(
     def record_skip(mdir: Path, ecosystem: str, reason: str) -> None:
         """A manifest was found but is not actionable — count it, never drop it.
 
-        Silent omission (the core defect in #24) makes a coverage gap read
+        Silent omission makes a coverage gap read
         identically to "nothing to upgrade".
         """
         if diagnostics is not None:
@@ -308,7 +308,7 @@ def discover_workspaces_in_root(
         # packageManager field) is suppressed silently instead of being recorded
         # as an unactionable skip. Mirrors the uv_roots check in consider_py.
         # The walk is top-down, so a workspace root is always registered before
-        # its members are visited. (closes #49)
+        # its members are visited.
         for wr, members in node_workspace_roots.items():
             if mdir != wr and path_is_yarn_workspace_child(mdir, wr, members):
                 return
@@ -373,7 +373,7 @@ def discover_workspaces_in_root(
         # Suppress Cargo workspace members before any lockfile/package checks,
         # mirroring the uv_roots / node_workspace_roots pattern. A member dir
         # has a Cargo.toml with [package] but no own Cargo.lock; without this
-        # guard every member surfaced as a standalone rust workspace. (closes #52)
+        # guard every member surfaced as a standalone rust workspace.
         for cr, members in cargo_roots.items():
             if mdir != cr and path_is_cargo_workspace_child(mdir, cr, members):
                 return
@@ -490,7 +490,7 @@ def discover_workspaces_in_root(
         # (``discover_repos``), then recursively scan each repo so that *every*
         # manifest in the tree is enumerated — multiple ecosystems and sub-apps
         # within one repo (e.g. a Go module at the root plus a node app in
-        # ``web/``), not just one workspace per repo (#24). Walking each repo
+        # ``web/``), not just one workspace per repo. Walking each repo
         # (rather than ``root`` wholesale) keeps the scan scoped to real repos
         # and lets per-repo workspace-member suppression run in tree order.
         dir_iter = []
@@ -527,7 +527,7 @@ def discover_workspaces_in_root(
         # added) so that skip-only dirs are deduped across nested-repo overlap.
         # Without this, a dir that produces only a record_skip is walked a
         # second time by the overlapping repo walk, printing SKIP twice on
-        # stderr (diagnostics._seen_skips dedupes --json only). (closes #46)
+        # stderr (diagnostics._seen_skips dedupes --json only).
         seen_paths.add(key)
 
     return found

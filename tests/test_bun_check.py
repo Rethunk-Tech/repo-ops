@@ -96,7 +96,7 @@ def test_check_bun_latest_column_when_opted_in(monkeypatch, tmp_path: Path, make
     assert behind_latest == []
 
 
-# Regression #45: a package where current < update < latest (all distinct) must
+# a package where current < update < latest (all distinct) must
 # land in EXACTLY ONE bucket — changes — matching the JSON parser's if/elif
 # semantics.  The old text parser appended to changes AND then also to
 # behind_latest via a separate trailing `if`, causing double-counting.
@@ -112,7 +112,7 @@ _TABLE_CURRENT_LT_UPDATE_LT_LATEST = (
 def test_text_parser_no_double_count_when_current_lt_update_lt_latest(
     monkeypatch, tmp_path: Path, make_workspace
 ) -> None:
-    """Regression #45: current < update < latest → changes only, not both buckets."""
+    """Current < update < latest → changes only, not both buckets."""
     monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
     changes, behind_latest = _patched_check(
         _TABLE_CURRENT_LT_UPDATE_LT_LATEST, tmp_path, make_workspace
@@ -127,7 +127,7 @@ def test_text_parser_no_double_count_when_current_lt_update_lt_latest(
     assert behind_latest == [], f"expected empty behind_latest, got {behind_latest}"
 
 
-# Regression #67: a real npm dependency literally named ``bun`` must be detected
+# a real npm dependency literally named ``bun`` must be detected
 # as a Change, while the ``bun outdated vX (hash)`` banner on the same output is
 # still NOT emitted. The discriminator is structural — the banner is not a
 # ``│``-delimited table row — not a by-name exclusion of "bun".
@@ -142,7 +142,7 @@ _TABLE_WITH_REAL_BUN_DEP = (
 
 
 def test_check_bun_detects_real_bun_dep_but_not_banner(tmp_path: Path, make_workspace) -> None:
-    """Regression #67: real `bun` dep detected; `(hash)` banner still filtered."""
+    """Real `bun` dep detected; `(hash)` banner still filtered."""
     changes, _behind = _patched_check(_TABLE_WITH_REAL_BUN_DEP, tmp_path, make_workspace)
 
     # (a) The real `bun` dependency is detected as an in-range upgrade.
@@ -151,7 +151,7 @@ def test_check_bun_detects_real_bun_dep_but_not_banner(tmp_path: Path, make_work
     assert all("0d9b296a" not in c.to for c in changes)
 
 
-# Regression #145: on a non-UTF-8 terminal (GitHub Actions runners, minimal
+# on a non-UTF-8 terminal (GitHub Actions runners, minimal
 # containers) bun renders the SAME outdated table with ASCII ``|`` separators
 # instead of Unicode ``│`` box drawing.  The old parser only recognised ``│``
 # rows, so CI parsed ZERO changes and apply_bun returned early — the ghost-bump
@@ -168,7 +168,7 @@ _ASCII_PIPE_TABLE = (
 
 
 def test_check_bun_parses_ascii_pipe_table(monkeypatch, tmp_path: Path, make_workspace) -> None:
-    """Regression #145: ASCII-pipe table (CI/non-UTF-8 terminal) must parse."""
+    """ASCII-pipe table (CI/non-UTF-8 terminal) must parse."""
     monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
     changes, behind_latest = _patched_check(_ASCII_PIPE_TABLE, tmp_path, make_workspace)
 
@@ -179,7 +179,7 @@ def test_check_bun_parses_ascii_pipe_table(monkeypatch, tmp_path: Path, make_wor
 
 
 def test_check_bun_passes_timeout_check(tmp_path: Path, make_workspace) -> None:
-    """#90 — both bun outdated calls must use TIMEOUT_CHECK (600s), not the default 300s."""
+    """Both bun outdated calls must use TIMEOUT_CHECK (600s), not the default 300s."""
     captured: list[dict] = []
 
     def fake_run(cmd, cwd, timeout=None):

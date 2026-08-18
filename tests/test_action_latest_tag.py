@@ -1,4 +1,4 @@
-"""GitHub Actions tag-info helper and floating-major pin policy (issue #20)."""
+"""GitHub Actions tag-info helper and floating-major pin policy."""
 
 from __future__ import annotations
 
@@ -115,9 +115,9 @@ def test_gh_absent_skips_pin(tmp_path: Path) -> None:
 def test_shared_tag_cache_resolves_action_once_across_repos(tmp_path: Path) -> None:
     """A shared tag_cache means the GitHub API is called only once for the same action.
 
-    Regression for issue #31: scan_actions used to create a fresh dict per call,
-    so ``actions/checkout`` was re-fetched from the GitHub API for every repo in
-    a multi-repo run.  With a caller-supplied cache the resolver is invoked once.
+    Without a caller-supplied cache, scan_actions builds a fresh dict per call
+    and re-fetches ``actions/checkout`` from the GitHub API for every repo in a
+    multi-repo run. A shared cache invokes the resolver once.
     """
     wf_content = "jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@v4.2.1\n"
 

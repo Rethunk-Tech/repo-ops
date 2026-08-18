@@ -1,11 +1,11 @@
-"""Tests for verify gate enhancements (tasks 1-5).
+"""Per-ecosystem verify gates.
 
-Task 1 — Go: go build ./... runs after go mod verify, before optional go test.
-Task 2 — uv: ruff check runs after uv sync --locked when ruff is configured.
-Task 3 — Node: REPO_OPS_NODE_VERIFY_SCRIPT overrides the waterfall; empty = skip.
-Task 4 — Hatch: _verify_hatch_fast recognises "check"/"typecheck" scripts and
-         mypy in dev deps.
-Task 5 — Timeouts: TIMEOUT_CHECK/APPLY/VERIFY are env-overridable.
+- Go: ``go build ./...`` runs after ``go mod verify``, before optional ``go test``.
+- uv: ``ruff check`` runs after ``uv sync --locked`` when ruff is configured.
+- Node: ``REPO_OPS_NODE_VERIFY_SCRIPT`` overrides the waterfall; empty = skip.
+- Hatch: ``_verify_hatch_fast`` recognises "check"/"typecheck" scripts and mypy
+  in dev deps.
+- Timeouts: ``TIMEOUT_CHECK``/``APPLY``/``VERIFY`` are env-overridable.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def _fail(stdout: str = "", stderr: str = "err") -> CompletedProcess[str]:
 
 
 # ---------------------------------------------------------------------------
-# Task 1 — Go: go build ./... gate
+# Go: go build ./... gate
 # ---------------------------------------------------------------------------
 
 
@@ -177,7 +177,7 @@ class TestRustVerifyGates:
 
 
 # ---------------------------------------------------------------------------
-# Task 2 — uv: ruff check after uv sync --locked
+# uv: ruff check after uv sync --locked
 # ---------------------------------------------------------------------------
 
 
@@ -453,7 +453,7 @@ class TestPythonManagerFastGates:
 
 
 # ---------------------------------------------------------------------------
-# Task 3 — Node: REPO_OPS_NODE_VERIFY_SCRIPT override
+# Node: REPO_OPS_NODE_VERIFY_SCRIPT override
 # ---------------------------------------------------------------------------
 
 
@@ -577,7 +577,7 @@ class TestNodeVerifyScriptEnv:
 
 
 # ---------------------------------------------------------------------------
-# Task 4 — Hatch: _verify_hatch_fast extended heuristics
+# Hatch: _verify_hatch_fast extended heuristics
 # ---------------------------------------------------------------------------
 
 

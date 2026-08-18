@@ -100,7 +100,7 @@ def test_plan_json_stdout_parses_without_skip_warn_lines(
 def test_plan_json_v1_schema_compact_and_null_omission(
     tmp_path: Path, capsys, init_git_repo
 ) -> None:
-    """#101: schema_version first, --compact single-line, null error keys omitted."""
+    """schema_version first, --compact single-line, null error keys omitted."""
     init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","packageManager":"npm@10.0.0"}',
@@ -204,7 +204,7 @@ def test_plan_exclude_filters_repositories_from_config(
 
 
 def test_inventory_json_compact_schema_contract(tmp_path: Path, capsys) -> None:
-    """F086/F089: inventory --json --compact matches plan schema_version contract."""
+    """Inventory --json --compact matches plan schema_version contract."""
     from repo_ops_inventory.scan import main as inventory_main
 
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
@@ -220,7 +220,7 @@ def test_inventory_json_compact_schema_contract(tmp_path: Path, capsys) -> None:
 
 
 def test_pushed_json_compact_schema_contract(tmp_path: Path, capsys, monkeypatch) -> None:
-    """F088/F089: pushed --json --compact matches plan schema_version contract."""
+    """Pushed --json --compact matches plan schema_version contract."""
     from repo_ops_pushed import audit
     from repo_ops_pushed.audit import main as pushed_main
 

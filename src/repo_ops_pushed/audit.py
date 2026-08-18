@@ -368,10 +368,10 @@ def pushed_commits_for_repo(repo: str, filters: Filters) -> dict[str, None]:
         if rl.returncode != 0 or not rl.stdout.strip():
             continue
 
-        # Fetch the plain reflog (no --date=unix) once per ref so that _reflog_pre_sha
-        # can use the sequential @{n} indices for ref@{n+1} resolution.  This replaces
-        # the per-push-entry subprocess that _reflog_pre_sha previously spawned itself,
-        # reducing from O(pushes x refs) to O(refs) reflog subprocess calls.
+        # Fetch the plain reflog (no --date=unix) once per ref so _reflog_pre_sha
+        # can use the sequential @{n} indices for ref@{n+1} resolution. Fetching
+        # per ref rather than per push entry keeps this at O(refs) subprocess
+        # calls instead of O(pushes x refs).
         try:
             rl_plain = run_git(repo, "reflog", "show", ref)
         except subprocess.TimeoutExpired:
@@ -391,7 +391,7 @@ def pushed_commits_for_repo(repo: str, filters: Filters) -> dict[str, None]:
             if not (filters.since_unix <= ts < filters.until_unix):
                 # Non-monotonic timestamps (clock skew): skip, don't stop
                 continue
-            # Fix #92: use _reflog_pre_sha for ALL entries, not just the oldest.
+            # Use _reflog_pre_sha for ALL entries, not just the oldest.
             # entries[i+1][1] (previous push tip) is wrong when a git fetch advanced
             # the remote-tracking ref between two pushes — the fetched commits would
             # be included in the range and miscounted as this push's commits.

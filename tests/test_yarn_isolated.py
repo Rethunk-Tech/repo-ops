@@ -1,4 +1,4 @@
-"""Tests for Yarn isolated plan snapshots (issue #6)."""
+"""Tests for Yarn isolated plan snapshots."""
 
 from __future__ import annotations
 

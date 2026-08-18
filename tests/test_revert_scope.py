@@ -290,7 +290,7 @@ def test_revert_preserves_preexisting_dirty_artifact_not_in_snapshot(
 
 
 # ---------------------------------------------------------------------------
-# Snapshot scope: pdm / pipenv / deno managers capture their lockfiles (F012)
+# Snapshot scope: pdm / pipenv / deno managers capture their lockfiles
 # ---------------------------------------------------------------------------
 
 

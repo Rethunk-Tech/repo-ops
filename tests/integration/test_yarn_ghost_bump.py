@@ -1,4 +1,4 @@
-"""Integration test: yarn ghost-bump guard via resolutions pin (issue #121).
+"""Integration test: yarn ghost-bump guard via resolutions pin.
 
 Design
 ------
@@ -69,8 +69,8 @@ def test_yarn_guard_fires_when_resolutions_block_upgrade(
 def test_yarn_apply_raises_ghost_bump_with_resolutions_pin(
     yarn_ghost_apply_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """apply_yarn raises ghost-bump when resolutions block an in-range upgrade (#121)."""
-    # yarn_targeted_bump defaults on (settings-table default, #136) — this test
+    """apply_yarn raises ghost-bump when resolutions block an in-range upgrade."""
+    # yarn_targeted_bump defaults on (settings-table default) — this test
     # covers the hard-raise path (assert_targets_resolved), which only runs
     # with targeted-bump off. The opt-in retry path is covered separately by
     # test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising.
@@ -85,9 +85,9 @@ def test_yarn_apply_raises_ghost_bump_with_resolutions_pin(
 def test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising(
     yarn_ghost_apply_root: Path, monkeypatch
 ) -> None:
-    """With ``--yarn-targeted-bump``, an unheld resolutions pin no longer hard-fails
-    the whole workspace (#121 regression) — it gets released and retried instead,
-    same as any other targeted-bump gap.
+    """With ``--yarn-targeted-bump``, an unheld resolutions pin must not hard-fail
+    the whole workspace — it gets released and retried, the same as any other
+    targeted-bump gap.
 
     No ``.repo-ops.toml``/global hold covers ``is-odd`` here, so this pin is
     exactly the "legacy debt" case the release path targets.

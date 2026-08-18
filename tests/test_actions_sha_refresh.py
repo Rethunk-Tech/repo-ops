@@ -1,5 +1,5 @@
-"""Tests for SHA-pin digest refresh within a major (issue #109) and cross-major
-re-pin under --latest (issue #138).
+"""Tests for SHA-pin digest refresh within a major and cross-major
+re-pin under --latest.
 
 Keeps an action pinned by commit digest (supply-chain hardening) but advances
 the SHA to the newest vN.M.P release within its current major — the same kind of
@@ -18,7 +18,7 @@ from repo_ops_upgrade.actions import scan_actions
 _OLD = "de0fac2e4500dabe0009e67214ff5f5447ce83dd"
 _NEW = "11bd71901bbe5b1630ceea73d27597364c9af683"
 _OTHER = "ffffffffffffffffffffffffffffffffffffffff"
-# v7.0.1 commit — the cross-major target for #138 tests.
+# v7.0.1 commit — the cross-major target for cross-major tests.
 _V7 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 
@@ -138,7 +138,7 @@ def test_refresh_off_by_default_keeps_report_only(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Cross-major SHA re-pin tests (#138)
+# Cross-major SHA re-pin tests
 # ---------------------------------------------------------------------------
 
 

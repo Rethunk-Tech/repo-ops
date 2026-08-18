@@ -225,7 +225,7 @@ def _gomod_require_paths(ws: Workspace) -> set[str] | None:
 
     ``go list -m -u all`` enumerates the full module graph, including modules
     no package of the build actually needs; upgrading those is undone by
-    ``go mod tidy``, so reporting them produces ghost upgrades (issue #113).
+    ``go mod tidy``, so reporting them produces ghost upgrades.
     Returns None when go.mod cannot be read (callers then skip filtering).
     """
     proc = run(["go", "mod", "edit", "-json"], ws.path, timeout=resolve_timeout_check())

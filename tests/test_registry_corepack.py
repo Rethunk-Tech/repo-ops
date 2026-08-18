@@ -59,7 +59,7 @@ def test_apply_workspace_still_calls_corepack_prepare(tmp_path: Path):
 
 
 def test_check_workspace_three_tuple_sets_overrides_and_behind(tmp_path: Path) -> None:
-    """#110: yarn's (changes, overrides_audit, behind_latest) 3-tuple is unpacked."""
+    """Yarn's (changes, overrides_audit, behind_latest) 3-tuple is unpacked."""
     ws = Workspace(
         path=tmp_path,
         ecosystem="node",
@@ -85,7 +85,7 @@ def test_check_workspace_three_tuple_sets_overrides_and_behind(tmp_path: Path) -
 
 
 def test_apply_workspace_returns_applier_behind_latest(tmp_path: Path) -> None:
-    """#110: apply_workspace surfaces the behind_latest list an applier returns."""
+    """apply_workspace surfaces the behind_latest list an applier returns."""
     ws = Workspace(
         path=tmp_path,
         ecosystem="node",

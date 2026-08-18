@@ -96,7 +96,7 @@ def _manifest_names_for_manager(manager: str) -> frozenset[str]:
     Used only for root workspaces (``rel == "."``), where there is no directory
     prefix to scope by, so the manifest must be matched by name to avoid a partial
     commit (lockfile staged, manifest dropped). A subdirectory workspace's prefix
-    already captures its manifest. Issue #108.
+    already captures its manifest.
     """
     if manager in ("yarn", "npm", "pnpm", "bun"):
         names = {"package.json"}
@@ -125,13 +125,13 @@ def upgrade_scoped_paths(
     Only paths this run actually modified are included:
     - Root-workspace lockfiles/manifests matched by basename (no prefix ambiguity).
     - Subdirectory-workspace files matched by directory prefix with a "/" boundary
-      so "packages/foo" never matches "packages/foobar". Issue #116 / #prefix-boundary.
+      so "packages/foo" never matches "packages/foobar".
     - Workflow files explicitly bumped by an actions run (exact path match).
     - When the bundle has actions bumps but no workspaces, only the bumped workflow
-      file(s) are staged — pre-existing dirty files are never swept in. Issue #116.
+      file(s) are staged — pre-existing dirty files are never swept in.
     - Submodule gitlink paths explicitly advanced by apply_submodule_tag_advances
       (passed via ``extra_gitlink_paths``) so pointer bumps are committed alongside
-      dependency updates rather than left staged-but-uncommitted. Task #18.
+      dependency updates rather than left staged-but-uncommitted.
     - Nested package.json files belonging to a declared yarn/npm/pnpm/bun
       workspace member, when the *scanned* workspace is the monorepo root
       (``rel == "."``) — a root-scoped install/upgrade can resolve a
@@ -139,7 +139,7 @@ def upgrade_scoped_paths(
       and that manifest carries a directory component the basename-only
       root match excludes. Scoped to the root workspace's own declared
       ``workspaces`` globs so unrelated dirty manifests are never swept in.
-      Issue #153.
+
     - Dockerfile/compose files a container workspace repinned, taken from the
       container module's own discovery. They have no fixed basename set, so
       neither the root-basename nor the subdirectory-prefix match sees them and
@@ -151,7 +151,7 @@ def upgrade_scoped_paths(
       nor the subdirectory-prefix match sees them when the *scanned* workspace
       is the monorepo root. Sourced from the hook's own declaration rather than
       hand-enumerated per manager, so it also covers future remediations that
-      write a root-level file. Issue #154.
+      write a root-level file.
     """
     # root_wanted: basenames valid at the repo root (no subdirectory prefix).
     root_wanted: set[str] = set()
@@ -182,7 +182,7 @@ def upgrade_scoped_paths(
         if rel == Path("."):
             # Root workspace: scope by basename only; also include the manifest
             # so a root bump never commits the lockfile while dropping the manifest
-            # (partial commit). Issue #108.
+            # (partial commit).
             root_wanted.update(_lockfile_names_for_manager(wr.workspace.manager))
             root_wanted.update(_manifest_names_for_manager(wr.workspace.manager))
             if wr.workspace.manager in ("yarn", "npm", "pnpm", "bun"):
@@ -191,7 +191,7 @@ def upgrade_scoped_paths(
                     node_workspace_roots.append((wr.workspace.path.resolve(), members))
         else:
             # Subdirectory workspace: scope by prefix with a strict "/" boundary
-            # so "packages/foo" cannot match "packages/foobar". Issue #116.
+            # so "packages/foo" cannot match "packages/foobar".
             sub_prefixes.add(str(rel).replace("\\", "/"))
         if wr.workspace.manager == "container":
             from repo_ops_container.container import find_container_files
@@ -241,7 +241,7 @@ def upgrade_scoped_paths(
         if extra_gitlink_paths and norm in extra_gitlink_paths:
             scoped.append(path)
             continue
-        # File an applied remediation hook declared it touched. Issue #154.
+        # File an applied remediation hook declared it touched.
         if norm in remediation_paths:
             scoped.append(path)
             continue
@@ -260,7 +260,7 @@ def upgrade_scoped_paths(
             continue
         # Nested workspace-member package.json touched by a root-scanned node
         # workspaces monorepo apply (e.g. yarn resolving a peer/group-constrained
-        # bump into a member package). Issue #153.
+        # bump into a member package).
         if base == "package.json" and node_workspace_roots:
             member_dir = (bundle.git_repo / norm).resolve().parent
             for root_path, members in node_workspace_roots:
@@ -329,7 +329,7 @@ def _bundle_apply_ok(
         # Actions-only repo (workflows but no package manifest): still committable
         # when an action bump was actually applied. The porcelain check downstream
         # is the real arbiter, so a report-only bump (pin == latest) still skips as
-        # "no changes to commit". Issue #107.
+        # "no changes to commit".
         if any(ab.status == "ok" and ab.pin != ab.latest for ab in bundle.actions):
             return True, None
         return False, "no workspaces"
@@ -338,7 +338,7 @@ def _bundle_apply_ok(
         # sibling's bump still commits. The dirty workspace contributes no
         # wr.changes, so upgrade_scoped_paths excludes it and its dirty files are
         # never staged; if every workspace was skipped, scoping yields nothing and
-        # the commit skips as "no upgrade-scoped changes". Issue #108. (fail-fast,
+        # the commit skips as "no upgrade-scoped changes". (fail-fast,
         # which signals an aborted run, still vetoes.)
         if wr.status == "skip" and wr.error == "fail-fast":
             return False, "fail-fast"
@@ -367,7 +367,7 @@ def classify_commit_subject(files: list[str]) -> str:
 
     Enumerates ALL matched ecosystems so mixed commits are not misattributed to
     whichever ecosystem happened to be checked first (e.g. a yarn.lock + workflow
-    commit must not become "chore(ci): bump GitHub Actions pins"). Issue #116.
+    commit must not become "chore(ci): bump GitHub Actions pins").
     Single-ecosystem commits keep the same subjects as before so existing callers
     are unaffected. Mixed commits produce a compound subject with scope "deps,ci"
     or "deps" as appropriate.
@@ -485,7 +485,7 @@ def plan_repo_commit(
         return CommitPlan(repo, bundle.label, "", skipped_reason="clean worktree")
     # Always scope to paths this run actually modified so that pre-existing dirty
     # files (e.g. an operator-kept yarn.lock) are never swept into a commit, even
-    # when the repo was clean at run-start. Issue #116 generalises Issue #108.
+    # when the repo was clean at run-start.
     scoped = upgrade_scoped_paths(bundle, files, extra_gitlink_paths=extra_gitlink_paths)
     if not scoped:
         skip_reason = (
@@ -590,7 +590,7 @@ def run_post_apply_commits(
     ``submodule_gitlink_map`` maps a parent git_repo path to the set of submodule
     relative paths whose gitlinks were staged by apply_submodule_tag_advances.
     These paths are passed to upgrade_scoped_paths so pointer bumps are committed
-    alongside dependency updates rather than left staged-but-uncommitted. Task #18.
+    alongside dependency updates rather than left staged-but-uncommitted.
     """
     if mode == "none":
         return [], 0

@@ -1,4 +1,4 @@
-"""Unit test: workflow YAML byte-preservation on pin update (issue #117).
+"""Unit test: workflow YAML byte-preservation on pin update.
 
 A real YAML fixture with 6-space indentation and a trailing comment is written to
 disk.  ``scan_actions`` runs with ``apply=True`` and a pre-populated ``tag_cache``

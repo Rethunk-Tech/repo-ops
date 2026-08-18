@@ -1,4 +1,4 @@
-"""yarn latest-mode behind-after-up surfacing (issue #110).
+"""Yarn latest-mode behind-after-up surfacing.
 
 After ``yarn up -R '*'``, peer/group-constrained direct deps can be left below
 their newest published version. repo-ops now reports those as ``behind_latest``
@@ -97,7 +97,7 @@ def test_apply_yarn_returns_behind_in_latest_mode(tmp_path: Path, monkeypatch) -
     assert behind == [Change("@sentry/nextjs", "10.55.0", "10.56.0")]
 
 
-# --- issue #111: per-package targeted bump fallback -------------------------
+# --- per-package targeted bump fallback -------------------------
 
 _SENTRY_BEHIND = [Change("@sentry/nextjs", "10.55.0", "10.56.0")]
 

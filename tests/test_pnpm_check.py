@@ -1,4 +1,4 @@
-"""Regression tests for ``check_pnpm`` outdated parsing (#76, #70, #91)."""
+"""Regression tests for ``check_pnpm`` outdated parsing."""
 
 from __future__ import annotations
 
@@ -92,7 +92,7 @@ def test_check_pnpm_valid_json_no_warning(
 
 
 def test_check_pnpm_bucketing_and_timeout(tmp_path: Path, monkeypatch, make_workspace) -> None:
-    """#76 + #70 — in-range pkg → changes; out-of-range only → behind_latest;
+    """In-range pkg → changes; out-of-range only → behind_latest;
     ``run`` called with ``timeout=TIMEOUT_CHECK``."""
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "0")
     monkeypatch.setenv("REPO_OPS_PNPM_UPDATE_LATEST", "0")
@@ -140,13 +140,13 @@ def test_check_pnpm_update_latest_env(
     tmp_path: Path,
     make_workspace,
 ) -> None:
-    """#91 — with REPO_OPS_PNPM_UPDATE_LATEST set, a package at current==wanted
+    """With REPO_OPS_PNPM_UPDATE_LATEST set, a package at current==wanted
     but latest>current lands in *changes*; without it, stays in *behind_latest*."""
     # current == wanted (no in-range bump), latest > current.
     payload = {"lodash": {"current": "4.17.20", "wanted": "4.17.20", "latest": "4.17.21"}}
 
-    # Targeted bump also promotes behind_latest into changes (#122) and
-    # defaults on with the sweep (#136); pin it off so this test isolates
+    # Targeted bump also promotes behind_latest into changes and
+    # defaults on with the sweep; pin it off so this test isolates
     # REPO_OPS_PNPM_UPDATE_LATEST specifically.
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "0")
     if env_value:

@@ -1,4 +1,4 @@
-"""Tests for npm targeted behind-latest bumps (issue #122)."""
+"""Tests for npm targeted behind-latest bumps."""
 
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def test_save_flag_for_unknown_package_defaults_to_save() -> None:
 
 
 def test_targeted_bump_enabled_by_default(tmp_path: Path, monkeypatch, make_workspace) -> None:
-    """#136: the sweep default is on, so no env var needed to attempt it."""
+    """The sweep default is on, so no env var needed to attempt it."""
     _seed(tmp_path)
     monkeypatch.delenv("REPO_OPS_NPM_TARGETED_BUMP", raising=False)
     run_mock = patch("repo_ops_js_npm.npm.run", _fake_run_ok)

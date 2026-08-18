@@ -1,4 +1,4 @@
-"""Tests for pip-tools check/apply (#54 — check must use --upgrade)."""
+"""Tests for pip-tools check/apply."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from repo_ops_py_pip_tools.pip_tools import (
 
 
 def test_check_pip_tools_uv_path_uses_upgrade(tmp_path: Path, make_workspace) -> None:
-    """#54 — uv pip compile in check must include --upgrade so proposed reflects apply."""
+    """Uv pip compile in check must include --upgrade so proposed reflects apply."""
     req_in = tmp_path / "requirements.in"
     req_in.write_text("requests\n")
 
@@ -46,7 +46,7 @@ def test_check_pip_tools_pip_compile_fallback_dry_run_uses_upgrade(
     tmp_path: Path,
     make_workspace,
 ) -> None:
-    """#73 — pip-compile fallback dry-run in check must include --upgrade so plan matches apply."""
+    """Pip-compile fallback dry-run in check must include --upgrade so plan matches apply."""
     req_in = tmp_path / "requirements.in"
     req_in.write_text("requests\n")
 

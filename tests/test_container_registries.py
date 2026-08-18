@@ -641,7 +641,7 @@ def test_digest_refresh_apply_env_zero_disables_it_untouched(
 
 
 # ---------------------------------------------------------------------------
-# Digest refresh — multi-stage: same image pinned at different digests (#151)
+# Digest refresh — multi-stage: same image pinned at different digests
 # ---------------------------------------------------------------------------
 
 

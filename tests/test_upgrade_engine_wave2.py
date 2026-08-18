@@ -43,7 +43,7 @@ def _go_ws_with_generate(tmp_path: Path, make_workspace) -> WorkspaceResult:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# F001 — go_generate env gate on orchestration dispatch path
+# go_generate env gate on orchestration dispatch path
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -84,7 +84,7 @@ class TestOrchestrationGoGenerateGate:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# F042 / F047 / F048 — verify gates
+# verify gates
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -213,7 +213,7 @@ class TestVerifyExtraManagers:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# F145 — filter_workspaces
+# filter_workspaces
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -252,7 +252,7 @@ def test_filter_workspaces(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# F137 — remediations skipped after apply fail
+# remediations skipped after apply fail
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -296,7 +296,7 @@ def test_remediations_not_run_after_apply_fail(tmp_path: Path, make_workspace) -
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# F144 — missing applier RuntimeError → workspace fail
+# missing applier RuntimeError → workspace fail
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -343,7 +343,7 @@ def test_registry_apply_workspace_raises_without_applier(tmp_path: Path, make_wo
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# F136 — revert catches SubprocessError
+# revert catches SubprocessError
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -393,7 +393,7 @@ def test_revert_subprocess_timeout_sets_disposition(tmp_path: Path, make_workspa
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# F139 — Cargo auto-discovery gap documented + tested
+# Cargo auto-discovery gap documented + tested
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -406,12 +406,12 @@ def test_cargo_implicit_members_not_treated_as_children(tmp_path: Path) -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# F043 — worker-crash reconciliation (unit of the path_to_result merge)
+# worker-crash reconciliation (unit of the path_to_result merge)
 # ══════════════════════════════════════════════════════════════════════════════
 
 
 def test_worker_crash_reconciliation_marks_fail(tmp_path: Path, make_workspace) -> None:
-    """Mirrors run.py path_to_result merge when a worker drops a result (#62)."""
+    """Mirrors run.py path_to_result merge when a worker drops a result."""
     ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
     wr = WorkspaceResult(workspace=ws, status="ok")
     bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])

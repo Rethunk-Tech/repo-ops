@@ -16,7 +16,16 @@ _HEADING = re.compile(r"^#{1,6}\s+(?P<text>.+?)\s*$", re.MULTILINE)
 _FENCE = re.compile(r"```.*?```", re.DOTALL)
 
 #: Directories that are scratch or vendored rather than repository documentation.
-SKIP_DIRS = {".git", ".venv", "node_modules", ".orchestrate", "dist", ".mypy_cache"}
+SKIP_DIRS = {
+    ".git",
+    ".venv",
+    "node_modules",
+    ".orchestrate",
+    "dist",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+}
 
 #: The bundled skill ships standalone; `install-skill` rewrites its relative
 #: links to github.com URLs at copy time, so they are not expected to resolve

@@ -48,9 +48,8 @@ def test_manifest_kinds_detects_ecosystems():
 
 
 def test_discover_all_finds_repo_below_org_proj_depth(tmp_path: Path, init_git_repo):
-    """Regression for #23: a repo sitting deeper than the old two-level
-    ``<root>/<org>/<proj>`` walk (here ``<root>/com.github/<org>/<repo>``,
-    three levels down) must still be discovered in non-flat mode."""
+    """A repo three levels below the root (``<root>/com.github/<org>/<repo>``)
+    must be discovered in non-flat mode."""
     repo = tmp_path / "com.github" / "Acme" / "widget"
     init_git_repo(repo)
     (repo / "pyproject.toml").write_text("[project]\nname = 'widget'\n")
@@ -63,7 +62,7 @@ def test_discover_all_finds_repo_below_org_proj_depth(tmp_path: Path, init_git_r
 
 
 def test_discover_all_enumerates_multiple_and_subdir_workspaces(tmp_path: Path, init_git_repo):
-    """Regression for #24 (points 3 + subdir-only): a single repo with a Go
+    """(points 3 + subdir-only): a single repo with a Go
     module at its root AND a node app in ``web/`` yields BOTH workspaces, and a
     repo whose only manifest sits in a subdir is still discovered."""
     org = tmp_path / "com.github" / "Acme"
@@ -91,7 +90,7 @@ def test_discover_all_enumerates_multiple_and_subdir_workspaces(tmp_path: Path, 
 
 
 def test_discover_all_suppresses_uv_workspace_members(tmp_path: Path, init_git_repo):
-    """Regression for #24 (explosion guard): uv workspace members (governed by
+    """(explosion guard): uv workspace members (governed by
     the root ``uv.lock``) must NOT each surface as standalone workspaces."""
     repo = tmp_path / "com.github" / "Acme" / "monorepo"
     init_git_repo(repo)
@@ -112,7 +111,7 @@ def test_discover_all_suppresses_uv_workspace_members(tmp_path: Path, init_git_r
 
 
 def test_discover_all_records_skip_for_unactionable_manifest(tmp_path: Path, init_git_repo):
-    """Regression for #24 (point 2): a manifest found but not actionable is
+    """(point 2): a manifest found but not actionable is
     recorded as a counted skip with a reason, never silently dropped."""
     repo = tmp_path / "com.github" / "Acme" / "nolock"
     init_git_repo(repo)
@@ -129,7 +128,7 @@ def test_discover_all_records_skip_for_unactionable_manifest(tmp_path: Path, ini
 
 
 def test_discover_all_records_skip_for_requirements_txt_only(tmp_path: Path, init_git_repo):
-    """Regression for #133: a repo with requirements.txt but no requirements.in
+    """A repo with requirements.txt but no requirements.in
     must be recorded as a discovery skip (unactionable), NOT silently ok.
 
     pip-tools cannot compute upgrades without requirements.in; returning [] from
@@ -155,9 +154,9 @@ def test_discover_all_records_skip_for_requirements_txt_only(tmp_path: Path, ini
 
 
 def test_discover_all_finds_requirements_txt_only_repo(tmp_path: Path, init_git_repo):
-    """Regression for #32: a repo with requirements.txt triggers consider_py so
+    """A repo with requirements.txt triggers consider_py so
     the manifest is reached.  Without requirements.in the repo is now recorded
-    as an unactionable discovery skip (see #133) rather than a false-green
+    as an unactionable discovery skip rather than a false-green
     workspace — assert the discovery skip is recorded but no workspace is added."""
     repo = tmp_path / "com.github" / "Acme" / "legacy"
     init_git_repo(repo)
@@ -167,7 +166,7 @@ def test_discover_all_finds_requirements_txt_only_repo(tmp_path: Path, init_git_
     found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
     py = [ws for ws in found if ws.ecosystem == "py"]
 
-    # #133: requirements.txt-only → skip, not a workspace
+    # requirements.txt-only → skip, not a workspace
     assert py == [], f"expected no py workspace (skip), got {[str(w.path) for w in py]}"
     assert any(s["ecosystem"] == "py" for s in diags.skipped), (
         f"expected a py discovery skip; skipped={diags.skipped}"
@@ -202,7 +201,7 @@ def test_iter_scanned_dirs_skips_wailsjs(tmp_path: Path) -> None:
 
 
 def test_discover_node_workspace_member_not_recorded_as_skip(tmp_path: Path, init_git_repo):
-    """Regression for #49: a yarn/npm workspace member (no own lockfile, no
+    """A yarn/npm workspace member (no own lockfile, no
     packageManager field) must be silently suppressed, NOT recorded as a skip."""
     repo = tmp_path / "com.github" / "Acme" / "frontend"
     init_git_repo(repo)
@@ -233,7 +232,7 @@ def test_discover_node_workspace_member_not_recorded_as_skip(tmp_path: Path, ini
 def test_discover_skip_only_dir_not_double_printed_in_nested_repo(
     tmp_path: Path, capsys, init_git_repo
 ):
-    """Regression for #46: a dir that yields only a skip (no actionable workspace)
+    """A dir that yields only a skip (no actionable workspace)
     must not emit SKIP twice on stderr when it appears in two overlapping repo
     walks (outer repo walk + inner repo walk both visit it).
 
@@ -262,7 +261,7 @@ def test_discover_skip_only_dir_not_double_printed_in_nested_repo(
 
 
 def test_discover_cargo_workspace_members_not_enumerated_standalone(tmp_path: Path, init_git_repo):
-    """Regression for #52: Cargo workspace members must NOT surface as separate
+    """Cargo workspace members must NOT surface as separate
     rust workspaces; only the root (which owns Cargo.lock) should be returned."""
     repo = tmp_path / "com.github" / "Acme" / "crates"
     init_git_repo(repo)
@@ -452,7 +451,7 @@ def test_discover_repos_find_timeout_is_tunable(
 def test_discover_repos_git_common_dir_timeout_skips_and_warns(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Regression for #71: TimeoutExpired from git_common_dir must be caught,
+    """TimeoutExpired from git_common_dir must be caught,
     emit a WARN to stderr, and allow discover_repos to continue (not raise)."""
     repo_dir = tmp_path / "myorg" / "myrepo"
     (repo_dir / ".git").mkdir(parents=True)
@@ -473,7 +472,7 @@ def test_discover_repos_git_common_dir_timeout_skips_and_warns(
 def test_discover_repos_find_nonzero_with_stdout_still_discovers(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Regression for #94: when find exits non-zero (e.g. permission-denied subdir)
+    """When find exits non-zero (e.g. permission-denied subdir)
     but still prints .git paths to stdout, those repos must be discovered and a
     WARN must be emitted to stderr."""
     repo_dir = tmp_path / "myorg" / "myrepo"
@@ -502,7 +501,7 @@ def test_discover_repos_find_nonzero_with_stdout_still_discovers(
 def test_discover_repos_git_common_dir_fnf_skips_and_warns(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Regression for #95: FileNotFoundError from git_common_dir (repo vanished
+    """FileNotFoundError from git_common_dir (repo vanished
     between find and git_common_dir) must be caught, emit a WARN, and allow the
     scan to continue — other repos in the same root must still be returned."""
     # Two repos under the same root.
@@ -537,7 +536,7 @@ def test_discover_repos_git_common_dir_fnf_skips_and_warns(
     ],
 )
 def test_workspace_member_match_is_separator_bound(matcher: str):
-    """#59 — prefix match must respect a path boundary in all three packages.
+    """Prefix match must respect a path boundary in all three packages.
 
     A sibling dir (``packages/foobar``) must not be matched as a child of the
     member pattern ``packages/foo``; the same for ``apps`` vs ``apps-legacy``.

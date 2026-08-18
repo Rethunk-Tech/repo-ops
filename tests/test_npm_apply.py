@@ -114,7 +114,7 @@ def test_apply_npm_guard_skipped_when_resolver_returns_none(tmp_path: Path, make
 
 
 def test_apply_npm_audit_override_absent_from_outdated(tmp_path: Path, make_workspace) -> None:
-    """#140: audit-safe pin must install even when outdated reports nothing."""
+    """Audit-safe pin must install even when outdated reports nothing."""
     calls: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=600, env=None):

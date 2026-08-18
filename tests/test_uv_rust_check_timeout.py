@@ -1,4 +1,4 @@
-"""#64 — uv/rust dry-run checks must pass TIMEOUT_CHECK, not run()'s 300s default."""
+"""uv/rust dry-run checks must pass TIMEOUT_CHECK, not run()'s 300s default."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def test_dry_run_check_uses_timeout_check(
     make_workspace,
     monkeypatch,
 ) -> None:
-    # Targeted bump defaults on (#136) and, for rust, would read a Cargo.toml
+    # Targeted bump defaults on and, for rust, would read a Cargo.toml
     # this fixture never creates — irrelevant to what this test checks
     # (the timeout passed through to run()), so pin it off here.
     monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")

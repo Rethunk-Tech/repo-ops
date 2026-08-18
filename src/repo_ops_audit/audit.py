@@ -1839,12 +1839,11 @@ def _cvss_to_score(cvss_vector: str) -> float:
     exploitability + impact vector (AV/AC/PR/UI/Scope + C/I/A) — not just an
     average of the Confidentiality/Integrity/Availability impact letters.
 
-    A C/I/A-only average previously under-scored network-exploitable,
-    no-privilege, no-interaction vulnerabilities: e.g.
-    ``C:H/I:N/A:N`` with ``AV:N/AC:L/PR:N/UI:N/S:U`` computed to ~3.3
-    (moderate bucket) under the old approximation, when its real CVSS v3.1
-    base score is ~7.5 (high) — allowing a real High-severity vuln to pass
-    ``--fail-on high`` undetected (repo-ops#142).
+    A C/I/A-only average under-scores network-exploitable, no-privilege,
+    no-interaction vulnerabilities: ``C:H/I:N/A:N`` with
+    ``AV:N/AC:L/PR:N/UI:N/S:U`` averages to ~3.3 (moderate) when its real
+    CVSS v3.1 base score is ~7.5 (high), which would let a High-severity
+    vuln pass ``--fail-on high`` undetected.
 
     Returns ``5.0`` (moderate bucket) when the vector is missing or cannot be
     parsed.

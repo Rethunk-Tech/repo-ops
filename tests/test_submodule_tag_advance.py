@@ -430,7 +430,7 @@ def test_apply_skips_git_ops_for_report_only(
 ) -> None:
     """No fetch/checkout/add calls for non-actionable (SHA-only) bumps.
 
-    Digest refresh defaults on with the sweep (#136); pin it off so this test
+    Digest refresh defaults on with the sweep; pin it off so this test
     exercises the plain report-only path rather than an actual refresh.
     """
     monkeypatch.setenv("REPO_OPS_SUBMODULE_REFRESH_SHA", "0")

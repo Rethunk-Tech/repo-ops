@@ -1,6 +1,6 @@
-"""Parse and update GitHub Actions ``uses:`` pins (issue #19).
+"""Parse and update GitHub Actions ``uses:`` pins.
 
-Pin rewrites use byte-preserving targeted line edits (issue #117): only the
+Pin rewrites use byte-preserving targeted line edits: only the
 ``@old_pin`` portion of a ``uses:`` line is substituted; all other bytes
 (indentation, comments, quoting, line endings) are left untouched.
 """
@@ -163,7 +163,7 @@ class PinReplacement:
     pin: str
     latest: str
     line: int | None = None
-    # Optional comment rewrite for cross-major SHA refresh (#138): when set,
+    # Optional comment rewrite for cross-major SHA refresh: when set,
     # the first element is the old comment text and the second is the new comment
     # text.  Applied on the same line as the pin replacement (e.g. ``"# v6"``
     # → ``"# v7"`` when a SHA pin crosses a major boundary).
@@ -180,7 +180,7 @@ def _apply_pin_to_line(line: str, action: str, old_pin: str, new_pin: str) -> st
 
     Matches the ``uses:`` value on the line and replaces only the ``@<ref>``
     portion, leaving every other byte (indentation, comments, quoting, line
-    endings) untouched (issue #117).
+    endings) untouched.
 
     The match is anchored to the action name and uses a negative lookahead for
     ``.`` and word characters so that a v3 → v3.19.0 bump does not
@@ -200,7 +200,7 @@ def _apply_pin_to_line(line: str, action: str, old_pin: str, new_pin: str) -> st
 def _apply_comment_rewrite_to_line(line: str, old_comment: str, new_comment: str) -> str:
     """Return *line* with the first occurrence of *old_comment* replaced by *new_comment*.
 
-    Used for cross-major SHA refreshes (#138): rewrites the trailing ``# vN``
+    Used for cross-major SHA refreshes: rewrites the trailing ``# vN``
     audit hint when the pin advances to a different major.  Only replaces the
     exact string (word-boundary anchored so ``# v6`` does not clobber
     ``# v6.0.3``).
@@ -240,7 +240,7 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
 
     Only the ``@old_pin`` portion of each matching ``uses:`` line is
     substituted; all other bytes (indentation, comments, quoting, line
-    endings) are left untouched (issue #117).
+    endings) are left untouched.
 
     When a ``PinReplacement`` carries a ``line`` number, only that line is
     edited.  When ``line`` is ``None``, every line containing the action@pin
@@ -249,7 +249,7 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
 
     When ``comment_rewrite`` is set, the old comment text is also replaced by
     the new comment text on the same line after the pin replacement — used for
-    cross-major SHA refreshes (#138) to keep the ``# vN`` audit hint accurate.
+    cross-major SHA refreshes to keep the ``# vN`` audit hint accurate.
     """
     if not replacements:
         return False

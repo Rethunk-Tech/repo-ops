@@ -23,9 +23,8 @@ DEFAULT_MAX_FAILURE_LINES = 20
 
 # Per-manager remediation advice for packages reported behind latest, used
 # when that manager's targeted-bump setting is OFF this run (--conservative,
-# or an explicit per-manager override). go keeps a real CLI flag; the rest
-# have none any more (#136 deleted every --*-targeted-bump / --latest flag),
-# so the note points at the env var / config key and --conservative instead.
+# or an explicit per-manager override). go has a real CLI flag; the rest have
+# none, so their note points at the env var / config key and --conservative.
 _LATEST_HINT_NO_MODE = (
     "no latest mode; targeted bump not attempted this run — drop "
     "--conservative to attempt it, or bump manually"
@@ -38,7 +37,7 @@ _LATEST_HINT_DEFAULT = (
 # unlike bun/pnpm/deno/yarn/npm's targeted bump, which stands in for one).
 _NO_LATEST_MODE_MANAGERS = frozenset({"rust", "poetry", "pdm", "pipenv", "pip-tools", "npm"})
 _LATEST_HINT_BY_MANAGER: dict[str, str] = {
-    # yarn's leftovers are specifically peer/group-constrained (#110, #111).
+    # yarn's leftovers are specifically peer/group-constrained.
     "yarn": (
         "peer/group-constrained; targeted bump not attempted this run — "
         "drop --conservative, or set REPO_OPS_YARN_TARGETED_BUMP=1, to "
@@ -50,10 +49,9 @@ _LATEST_HINT_BY_MANAGER: dict[str, str] = {
 # Per-manager behind-latest note when that manager's targeted bump WAS
 # attempted this run (the sweep default, unless --conservative or an
 # explicit per-manager override turned it off): the leftovers are packages
-# the fallback could not move, not packages nobody tried to move (#131,
-# extended to npm/pnpm/bun/deno once they gained the same fallback, and
-# updated for #136 — the sweep now attempts this by default, so "attempted"
-# is the common case rather than something the operator had to opt into).
+# the fallback could not move, not packages nobody tried to move. The sweep
+# attempts this by default for every manager, so "attempted" is the common
+# case rather than something the operator opts into.
 _TARGETED_TRIED_HINT: dict[str, str] = {
     "yarn": (
         "peer/group-constrained; the targeted bump was attempted but could "
@@ -118,11 +116,11 @@ _TARGETED_BUMP_ENV: dict[str, str] = {
 def _targeted_bump_requested(manager: str) -> bool:
     """True when this run's targeted-bump setting for *manager* resolves on.
 
-    Routes through the settings layer (CLI > env > config > default) via
-    ``resolve_bool_setting`` rather than a direct env read: the sweep default
-    (#136) now lives in the settings table, not always in the process
-    environment, so a plain ``os.environ`` check would wrongly report
-    "not requested" for the common default-on case where nothing is set.
+       Routes through the settings layer (CLI > env > config > default) via
+       ``resolve_bool_setting`` rather than a direct env read: the sweep default
+    now lives in the settings table, not always in the process
+       environment, so a plain ``os.environ`` check would wrongly report
+       "not requested" for the common default-on case where nothing is set.
     """
     env_var = _TARGETED_BUMP_ENV.get(manager)
     if not env_var:
@@ -132,13 +130,13 @@ def _targeted_bump_requested(manager: str) -> bool:
 
 
 def _behind_latest_hint(manager: str) -> str:
-    """Per-manager remediation note for behind-latest packages (#102, #131).
+    """Per-manager remediation note for behind-latest packages.
 
     Shared by the per-workspace line and the run footer so the two never
     disagree — and so neither prints a misleading "(latest-mode off)" for
-    packages that latest mode genuinely could not move (#131).
+    packages that latest mode genuinely could not move.
 
-    A default sweep already attempts every manager's targeted bump (#136), so
+    A default sweep already attempts every manager's targeted bump, so
     a behind-latest entry usually means the resolver genuinely refused to
     move it (peer/group constraints, a failed install, or a stuck lockfile),
     not that the operator forgot a flag — the flags this used to point at no
@@ -246,8 +244,7 @@ def build_run_summary(
     }
     # Top-3 staleness scores (behind-count x days-behind, from the state
     # store).  Only attached when at least one repo scores above zero, so an
-    # empty store leaves the summary dict — and every consumer's output —
-    # byte-identical to before this field existed.
+    # empty store leaves the summary dict — and every consumer's output    # byte-identical to before this field existed.
     staleness_top = _collect_staleness_top(bundles)
     if staleness_top:
         summary["staleness_top"] = staleness_top
@@ -449,7 +446,7 @@ def print_human_report(
 
     if only_outdated:
         # Heaviest-first so the most-outdated repos surface at the top;
-        # tie-break alphabetically for stable output (#103).
+        # tie-break alphabetically for stable output.
         ordered = sorted(
             bundles.values(),
             key=lambda b: (-_bundle_upgrade_count(b), b.label),
@@ -459,7 +456,7 @@ def print_human_report(
 
     def _is_visible(wr: WorkspaceResult) -> bool:
         # Single display gate shared by header suppression and the row loop so
-        # they never disagree (#103). A clean ok workspace is hidden under
+        # they never disagree. A clean ok workspace is hidden under
         # --only-outdated; everything else is shown.
         return not (
             only_outdated
@@ -472,7 +469,7 @@ def print_human_report(
     for repo in ordered:
         visible = [wr for wr in repo.workspaces if _is_visible(wr)]
         # Under --only-outdated --skip-actions a bundle that renders no rows and
-        # no actions gets no header (and no trailing blank) at all (#103).
+        # no actions gets no header (and no trailing blank) at all.
         if not visible and not include_actions:
             continue
         print(f"## {repo.label}")
@@ -651,7 +648,7 @@ def print_run_footer(
     for label, count in rows:
         print(f"  {label:<{width}}  {count}")
 
-    # Sentence-form total package-upgrade count across all workspaces (#103).
+    # Sentence-form total package-upgrade count across all workspaces.
     pkgs = summary.get("packages_upgraded", 0)
     workspaces_total = (
         summary["workspaces_ok"] + summary["workspaces_fail"] + summary["workspaces_skip"]

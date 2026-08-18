@@ -1,4 +1,4 @@
-"""Tests for the REPO_OPS_RESUME checkpoint feature (Task B / #17).
+"""Tests for the REPO_OPS_RESUME checkpoint feature.
 
 Covers:
   - state.load_checkpoint / state.save_checkpoint round-trip and no-state bypass

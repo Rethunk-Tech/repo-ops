@@ -46,7 +46,7 @@ def test_apply_bun_updates_reported_packages_not_latest_flag(monkeypatch) -> Non
 
 
 def test_apply_bun_uses_advisory_safe_override_absent_from_check_bun() -> None:
-    """#140: an audit-flagged safe version must not be silently dropped.
+    """An audit-flagged safe version must not be silently dropped.
 
     ``check_bun`` reports nothing outdated (empty changes/behind) — e.g. the
     installed range already resolves in-range from bun's perspective — but
@@ -149,7 +149,7 @@ def _ghost_ws() -> Workspace:
 
 
 def test_apply_bun_raises_on_ghost_bump_resolved_behind_target(monkeypatch) -> None:
-    """#112: bun.lock churns but an override/pin keeps the old version installed.
+    """bun.lock churns but an override/pin keeps the old version installed.
 
     Resolved version stays behind requested target → fail loudly so workspace
     is reported blocked, never a false-green successful upgrade. Targeted bump
@@ -305,12 +305,12 @@ def test_apply_bun_noop_when_nothing_outdated(monkeypatch) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Task 3: fallback bare-update path guards known-version changes
+# fallback bare-update path guards known-version changes
 # ---------------------------------------------------------------------------
 
 
 def test_apply_bun_fallback_guard_called_for_known_versions() -> None:
-    """Task #3: assert_targets_resolved is invoked in the fallback path.
+    """assert_targets_resolved is invoked in the fallback path.
 
     Version '?' forces the fallback (no targets built).  The guard is wired
     after bare ``bun update``; this confirms the call site exists.  guardable
@@ -343,7 +343,7 @@ def test_apply_bun_fallback_guard_called_for_known_versions() -> None:
 
 
 def test_apply_bun_fallback_guard_fires_when_guardable_nonempty(monkeypatch) -> None:
-    """Task #3: guard IS called in fallback when a change has a real known version.
+    """Guard IS called in fallback when a change has a real known version.
 
     We force the fallback by providing only changes that skip target-building
     (all have version '?'), except one that has a valid name + real version.
@@ -390,14 +390,14 @@ def test_apply_bun_fallback_guard_fires_when_guardable_nonempty(monkeypatch) -> 
 
 
 # ---------------------------------------------------------------------------
-# Task 4: pre-release escape — installed pre-release must NOT satisfy stable target
+# pre-release escape — installed pre-release must NOT satisfy stable target
 # ---------------------------------------------------------------------------
 
 
 def test_apply_bun_prerelease_installed_does_not_satisfy_stable_target(
     monkeypatch,
 ) -> None:
-    """Task #4: 4.0.0-rc.1 installed against target 4.0.0 is a ghost bump.
+    """4.0.0-rc.1 installed against target 4.0.0 is a ghost bump.
 
     Before the fix, normalize_version stripped the pre-release suffix so
     4.0.0-rc.1 became '4.0.0' == '4.0.0' → no error (false-green). Targeted
@@ -428,7 +428,7 @@ def test_apply_bun_prerelease_installed_does_not_satisfy_stable_target(
 
 
 def test_apply_bun_stable_installed_satisfies_stable_target() -> None:
-    """Task #4: stable 4.0.0 installed against stable target 4.0.0 is OK."""
+    """Stable 4.0.0 installed against stable target 4.0.0 is OK."""
 
     def fake_run(cmd, cwd, timeout=600, env=None):
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
@@ -445,7 +445,7 @@ def test_apply_bun_stable_installed_satisfies_stable_target() -> None:
 
 
 def test_apply_bun_higher_prerelease_does_not_trigger_guard() -> None:
-    """Task #4: 4.1.0-rc.1 installed > target 4.0.0 — not a ghost bump."""
+    """4.1.0-rc.1 installed > target 4.0.0 — not a ghost bump."""
 
     def fake_run(cmd, cwd, timeout=600, env=None):
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")

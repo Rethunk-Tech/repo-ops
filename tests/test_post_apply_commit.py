@@ -1,4 +1,4 @@
-"""Post-apply commit automation (#15)."""
+"""Post-apply commit automation."""
 
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ def test_parse_porcelain_staged_and_rename() -> None:
 
 
 def test_parse_porcelain_paths_with_spaces_and_rename() -> None:
-    # Regression #72 (superseded by the -z rewrite): with -z, git emits paths
+    # (superseded by the -z rewrite): with -z, git emits paths
     # verbatim — no quoting or octal escaping — even when they contain spaces.
     # Also verifies a rename entry returns only the new (right-hand) path.
     out = " M path with spaces.txt\0R  new dir/b.txt\0old dir/a.txt\0"
@@ -91,7 +91,7 @@ def test_unstaged_go_change_classifies_as_go_modules() -> None:
 
 
 def test_classify_bun_lock_text_format_is_node() -> None:
-    """Issue #80: bun.lock (Bun >=1.0 text format) must classify as Node, not generic."""
+    """bun.lock (Bun >=1.0 text format) must classify as Node, not generic."""
     assert post_apply_commit.classify_commit_subject(["bun.lock"]) == (
         "chore(deps): update Node lockfiles and manifests"
     )
@@ -116,7 +116,7 @@ def test_skips_verify_fail_by_default(tmp_path: Path, init_git_repo) -> None:
 
 
 def test_commit_on_fail_true_proceeds_after_verify_fail(tmp_path: Path, init_git_repo) -> None:
-    """--commit-on-fail allows commits when verify_error is set (F041)."""
+    """--commit-on-fail allows commits when verify_error is set."""
     bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
     bundle.workspaces[0].status = "fail"
     bundle.workspaces[0].verify_error = "build failed"
@@ -151,7 +151,7 @@ def test_pnpm_root_workspace_yaml_in_commit_scope() -> None:
 
 
 def test_dirty_start_no_upgrade_changes_skips(tmp_path: Path, init_git_repo) -> None:
-    # #108: when the repo started dirty but no workspace produced changes, the
+    # when the repo started dirty but no workspace produced changes, the
     # commit is scoped to upgrade paths (none here), so it skips rather than
     # sweeping the stray dirty file into a commit.
     bundle = _bundle(tmp_path, started_dirty=True, init_git_repo=init_git_repo)
@@ -163,7 +163,7 @@ def test_dirty_start_no_upgrade_changes_skips(tmp_path: Path, init_git_repo) -> 
 
 
 def test_dirty_sibling_does_not_block_clean_workspace_commit(tmp_path: Path, init_git_repo) -> None:
-    # #108: a dirty sibling file must not block committing a clean workspace's
+    # a dirty sibling file must not block committing a clean workspace's
     # applied bump. The root workspace's manifest AND lockfile are both scoped
     # (the manifest fix prevents a partial commit); the unrelated dirty file is
     # never staged. Fails without the root-manifest scoping fix.
@@ -182,7 +182,7 @@ def test_dirty_sibling_does_not_block_clean_workspace_commit(tmp_path: Path, ini
 def test_skipped_dirty_sibling_workspace_does_not_block_commit(
     tmp_path: Path, init_git_repo
 ) -> None:
-    # #108 (real repro): a *sibling workspace* skipped as dirty (status="skip",
+    # a *sibling workspace* skipped as dirty (status="skip",
     # error "dirty git worktree") must not veto committing a clean workspace's
     # applied bump. Exercises the second gate (_bundle_apply_ok), which the
     # original fix left in place — fails before the skip-dirty veto was removed.
@@ -213,8 +213,8 @@ def test_skipped_dirty_sibling_workspace_does_not_block_commit(
 
 
 def test_actions_only_repo_commits(tmp_path: Path, init_git_repo) -> None:
-    # #107: a repo with workflow bumps but no package workspaces must still
-    # commit; _bundle_apply_ok previously bailed with "no workspaces".
+    # A repo with workflow bumps but no package workspaces must still commit:
+    # _bundle_apply_ok must not treat "no workspaces" as nothing to do.
     from repo_ops_models import ActionBump
 
     init_git_repo(tmp_path)
@@ -288,7 +288,7 @@ def test_agent_non_runtime_error_skips_instead_of_propagating(
     tmp_path: Path,
     init_git_repo,
 ) -> None:
-    """Regression #84: non-RuntimeError from Agent.prompt must not crash plan_repo_commit.
+    """Non-RuntimeError from Agent.prompt must not crash plan_repo_commit.
 
     A network/transport error (ConnectionError, TimeoutError, etc.) raised inside
     draft_message_with_commit_agent must degrade to a skipped-commit result with a
@@ -414,7 +414,7 @@ def test_cursor_provider_missing_sdk_message(
 
 
 def test_collect_changes_no_phantom_downgrade(tmp_path: Path) -> None:
-    """Regression #63: removed (-) package.json lines must not produce phantom Changes."""
+    """Removed (-) package.json lines must not produce phantom Changes."""
     # Use a subdirectory workspace so rel_s ("app") is a real prefix of the
     # path returned by git diff --name-only ("app/package.json").
     app_dir = tmp_path / "app"
@@ -458,7 +458,7 @@ def test_collect_changes_no_phantom_downgrade(tmp_path: Path) -> None:
 def test_collect_changes_root_workspace_and_non_dep_fields_excluded(
     tmp_path: Path,
 ) -> None:
-    """Issues #82 + #83: root workspace (rel_s==".") must not drop diff paths,
+    """Root workspace (rel_s==".") must not drop diff paths,
     and non-dependency fields (version, name, scripts) must not appear as Changes."""
     # Root workspace: path == git_repo so relative_to yields "."
     ws = Workspace(
@@ -495,14 +495,14 @@ def test_collect_changes_root_workspace_and_non_dep_fields_excluded(
         changes = collect_changes_after_apply(ws)
 
     names = {c.name for c in changes}
-    # "react" dep bump captured (#83 root-workspace fix makes this reachable)
+    # "react" dep bump captured
     assert "react" in names, f"expected react dep in changes, got {changes}"
-    # "version" top-level field must not appear (#82 scoping fix)
+    # "version" top-level field must not appear
     assert "version" not in names, f"version field leaked into changes: {changes}"
 
 
 def test_collect_changes_json_yaml_lockb_fallback(tmp_path: Path) -> None:
-    """Regression #89: package-lock.json, pnpm-lock.yaml, bun.lockb must appear in fallback changes.
+    """package-lock.json, pnpm-lock.yaml, bun.lockb must appear in fallback changes.
 
     These filenames don't match .endswith(".lock") but are in NODE_LOCKFILES, so
     the git diff --name-only gate already filters to them. The elif must use
@@ -536,12 +536,12 @@ def test_collect_changes_json_yaml_lockb_fallback(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Issue #116 — Actions-only commit must not sweep pre-dirty files
+# Actions-only commit must not sweep pre-dirty files
 # ---------------------------------------------------------------------------
 
 
 def test_actions_only_does_not_sweep_predirty_lockfile(tmp_path: Path, init_git_repo) -> None:
-    """#116: an actions-only pin bump must stage only the workflow file, not a
+    """An actions-only pin bump must stage only the workflow file, not a
     pre-existing dirty yarn.lock that was never touched by this run."""
     from repo_ops_models import ActionBump
 
@@ -583,12 +583,12 @@ def test_actions_only_does_not_sweep_predirty_lockfile(tmp_path: Path, init_git_
 
 
 # ---------------------------------------------------------------------------
-# Issue #116 — prefix-boundary bug in upgrade_scoped_paths
+# prefix-boundary bug in upgrade_scoped_paths
 # ---------------------------------------------------------------------------
 
 
 def test_upgrade_scoped_paths_prefix_boundary(tmp_path: Path, init_git_repo) -> None:
-    """#116: 'packages/foo' prefix must not match 'packages/foobar/yarn.lock'."""
+    """'packages/foo' prefix must not match 'packages/foobar/yarn.lock'."""
     init_git_repo(tmp_path)
     foo_dir = tmp_path / "packages" / "foo"
     foo_dir.mkdir(parents=True)
@@ -641,7 +641,7 @@ def test_upgrade_scoped_paths_root_exact_path(tmp_path: Path, init_git_repo) -> 
 
 
 # ---------------------------------------------------------------------------
-# Issue #153 — nested yarn-workspace package.json dropped from root-scoped commit
+# nested yarn-workspace package.json dropped from root-scoped commit
 # ---------------------------------------------------------------------------
 
 
@@ -652,7 +652,7 @@ def test_upgrade_scoped_paths_includes_nested_yarn_workspace_member(
     """A root-scanned yarn workspaces monorepo whose install resolves a bump
     into a nested member's package.json must stage that manifest alongside the
     root yarn.lock — not silently drop it and leave lockfile/manifest out of
-    sync on main. Issue #153."""
+    sync on main."""
     init_git_repo(tmp_path)
     (tmp_path / "package.json").write_text(
         '{"name":"root","workspaces":["apps/*"]}', encoding="utf-8"
@@ -706,7 +706,7 @@ def test_upgrade_scoped_paths_excludes_non_member_nested_package_json(
 
 
 # ---------------------------------------------------------------------------
-# Issue #154 — remediation-written files (e.g. biome_schema's biome.json)
+# remediation-written files (e.g. biome_schema's biome.json)
 # dropped from root-workspace commits
 # ---------------------------------------------------------------------------
 
@@ -718,7 +718,7 @@ def test_upgrade_scoped_paths_includes_applied_remediation_file(
     """A root-scanned workspace's applied biome_schema remediation rewrites
     biome.json's $schema URL — a third file class outside the manager's own
     manifest/lockfile — and it must be staged alongside the lockfile rather
-    than silently dropped and left dirty on main. Issue #154."""
+    than silently dropped and left dirty on main."""
     init_git_repo(tmp_path)
     ws = Workspace(
         path=tmp_path,
@@ -815,7 +815,7 @@ def test_upgrade_scoped_paths_includes_nested_remediation_file(
 
 
 # ---------------------------------------------------------------------------
-# Issue #116 — classify_commit_subject multi-ecosystem
+# classify_commit_subject multi-ecosystem
 # ---------------------------------------------------------------------------
 
 
@@ -859,13 +859,13 @@ def test_classify_mixed_rust_and_ci_pins() -> None:
 
 
 def test_classify_mixed_node_and_ci_pins() -> None:
-    """#116: yarn.lock + workflow file must not collapse to chore(ci)-only subject."""
+    """yarn.lock + workflow file must not collapse to chore(ci)-only subject."""
     files = ["yarn.lock", ".github/workflows/ci.yml"]
     subject = post_apply_commit.classify_commit_subject(files)
     # Must mention both Node lockfiles and CI pins.
     assert "Node" in subject
     assert "CI" in subject
-    # Must NOT be pure chore(ci) (that was the misattribution bug).
+    # Must NOT be pure chore(ci) — that would misattribute the lockfile bumps.
     assert subject != "chore(ci): bump GitHub Actions pins"
 
 
@@ -891,7 +891,7 @@ def test_classify_single_ecosystem_unchanged() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Issue #116 — run_post_apply_commits parallelism
+# run_post_apply_commits parallelism
 # ---------------------------------------------------------------------------
 
 
@@ -936,7 +936,7 @@ def test_run_post_apply_commits_max_workers_accepted(tmp_path: Path, init_git_re
 
 
 def test_collect_changes_no_diff_reports_nothing(tmp_path: Path) -> None:
-    """#113 — a clean git diff means no changes were applied. The removed
+    """A clean git diff means no changes were applied. The removed
     checker fallback used to re-run the ecosystem checker here and report
     still-available updates as applied (ghost upgrades)."""
     ws = Workspace(
@@ -957,7 +957,7 @@ def test_collect_changes_no_diff_reports_nothing(tmp_path: Path) -> None:
 
 
 def test_pdm_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_repo) -> None:
-    """pdm.lock + pyproject.toml are staged for root pdm workspaces (F049)."""
+    """pdm.lock + pyproject.toml are staged for root pdm workspaces."""
     init_git_repo(tmp_path)
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
@@ -987,7 +987,7 @@ def test_pdm_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_rep
 
 
 def test_pipenv_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_repo) -> None:
-    """Pipfile.lock + Pipfile are staged for root pipenv workspaces (F049)."""
+    """Pipfile.lock + Pipfile are staged for root pipenv workspaces."""
     init_git_repo(tmp_path)
     (tmp_path / "Pipfile").write_text('[packages]\nrequests = "*"\n', encoding="utf-8")
     (tmp_path / "Pipfile.lock").write_text('{"default":{}}', encoding="utf-8")

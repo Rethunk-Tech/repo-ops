@@ -1,6 +1,6 @@
-"""End-to-end tests: [tool.repo-ops] config file keys reach run.py / os.environ.
+"""End-to-end: [tool.repo-ops] config keys reach run.py / os.environ.
 
-Task 1: resolve_setting / apply_config_to_env wiring (#TASK-1).
+Covers the resolve_setting / apply_config_to_env wiring.
 """
 
 from __future__ import annotations
@@ -424,8 +424,7 @@ def test_default_sweep_and_conservative_override_per_checkout(
     env_vars: tuple[str, ...],
     resolve,
 ) -> None:
-    """#136: the default sweep no longer force-writes these flags to "1" —
-    each key's settings-table default is already "1", so per-checkout
+    """The default sweep does not force-write these flags to "1"    each key's settings-table default is already "1", so per-checkout
     [tool.repo-ops] settings are genuinely respected (repo_a's explicit
     ``true``s and repo_b's explicit ``false``s both resolve as configured).
     ``--conservative`` still writes an explicit CLI-tier "0" for every key,
@@ -539,7 +538,7 @@ def test_default_sweep_and_conservative_override_per_checkout(
 def test_default_sweep_respects_checkout_config_over_global(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#136: the default sweep force-writes nothing, so normal CLI > env >
+    """The default sweep force-writes nothing, so normal CLI > env >
     repo config > global config > default layering applies — a per-checkout
     ``false`` wins over a global ``true`` (and over the settings-table
     default), exactly as it would for any other setting."""
@@ -771,7 +770,7 @@ def test_run_upgrade_global_config_applied(tmp_path: Path, monkeypatch: pytest.M
 
 
 # ---------------------------------------------------------------------------
-# Task A residuals: exclude_patterns + git_timeout (#14)
+# exclude_patterns + git_timeout
 # ---------------------------------------------------------------------------
 
 

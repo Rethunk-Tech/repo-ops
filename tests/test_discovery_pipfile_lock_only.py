@@ -14,7 +14,7 @@ from repo_ops_upgrade.discovery import discover_all
 
 
 def test_pipfile_lock_only_discovered_as_pipenv(tmp_path: Path, init_git_repo) -> None:
-    """Pipfile.lock without Pipfile must be discovered as manager=pipenv (regression #20)."""
+    """Pipfile.lock without Pipfile must be discovered as manager=pipenv."""
     repo = tmp_path / "org" / "pipfile-lock-only"
     init_git_repo(repo)
     # Only the lockfile exists — no Pipfile, no pyproject.toml

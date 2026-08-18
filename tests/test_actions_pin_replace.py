@@ -1,4 +1,4 @@
-"""Regression tests for GitHub Actions pin apply (issues #5, #19, #77)."""
+"""Regression tests for GitHub Actions pin apply."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def test_update_pin_same_file_mixed_pins(tmp_path: Path) -> None:
 def test_update_workflow_pins_write_oserror_raises_parse_error(
     tmp_path: Path,
 ) -> None:
-    """Issue #77: OSError on write must be caught and re-raised as WorkflowParseError."""
+    """OSError on write must be caught and re-raised as WorkflowParseError."""
     wf = tmp_path / "wf.yml"
     wf.write_text("uses: actions/checkout@v3\n", encoding="utf-8")
     # ruamel.yaml.load uses Path.open internally; patch only write mode so load succeeds.
@@ -90,7 +90,7 @@ def test_update_workflow_pins_write_oserror_raises_parse_error(
 def test_update_workflow_pins_load_oserror_raises_parse_error(
     tmp_path: Path,
 ) -> None:
-    """Issue #77: OSError on load (file vanished) must be caught and re-raised as WorkflowParseError."""
+    """OSError on load (file vanished) must be caught and re-raised as WorkflowParseError."""
     missing = tmp_path / "nonexistent.yml"
     with pytest.raises(WorkflowParseError):
         update_workflow_pins(

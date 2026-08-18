@@ -60,7 +60,7 @@ def test_upgrade_parser_rejects_non_positive_jobs():
 
 
 def test_upgrade_parser_rejects_non_positive_top():
-    """Regression #88: --top accepted negative integers, corrupting change list slices."""
+    """--top accepted negative integers, corrupting change list slices."""
     parser = build_upgrade_parser(apply=False)
     with pytest.raises(SystemExit):
         parser.parse_args(["--top", "-1"])
@@ -127,8 +127,8 @@ def test_dispatcher_apply_help_lists_conservative_flag(capsys) -> None:
 
     assert cli.main(["apply", "--help"]) == 0
     out = capsys.readouterr().out
-    # #136: the 16 --latest/--full/per-manager-targeted-bump/refresh-sha flags
-    # collapsed into one opt-out; the sweep itself is on by default.
+    # The sweep is on by default and --conservative is its single opt-out;
+    # there are no per-manager targeted-bump or refresh-sha flags.
     assert "--conservative" in out
     assert "full sweep" in out
     assert "cargo test" in out
@@ -159,7 +159,7 @@ def test_dispatcher_forwards_empty_list_for_bare_subcommand() -> None:
 
 
 def test_cli_version_flag_short_circuits(capsys) -> None:
-    """#104: repo-ops --version prints the installed version and exits 0."""
+    """Repo-ops --version prints the installed version and exits 0."""
     from repo_ops import cli
 
     with pytest.raises(SystemExit) as exc_info:
@@ -182,7 +182,7 @@ def test_cli_handler_dicts_have_matching_keys() -> None:
 
 
 def test_manager_filter_choices_match_registry() -> None:
-    """#104: --manager choices stay in sync with the registry's CHECKERS keys.
+    """--manager choices stay in sync with the registry's CHECKERS keys.
 
     The choices are a static tuple in core to avoid a core->upgrade circular
     import; this guard fails loudly if a new manager is registered but the
@@ -195,7 +195,7 @@ def test_manager_filter_choices_match_registry() -> None:
 
 
 def test_upgrade_parser_accepts_104_and_102_flags() -> None:
-    """#104/#102: plan parser accepts policy and scope flags."""
+    """Plan parser accepts policy and scope flags."""
     parser = build_upgrade_parser(apply=False)
     args = parser.parse_args(
         [
@@ -212,7 +212,7 @@ def test_upgrade_parser_accepts_104_and_102_flags() -> None:
 
 
 def test_upgrade_parser_accepts_actions_upgrade_mode() -> None:
-    """#106: plan parser accepts --actions-upgrade-mode; defaults to None (umbrella)."""
+    """Plan parser accepts --actions-upgrade-mode; defaults to None (umbrella)."""
     parser = build_upgrade_parser(apply=False)
     assert parser.parse_args([]).actions_upgrade_mode is None
     args = parser.parse_args(["--actions-upgrade-mode", "latest"])
@@ -239,7 +239,7 @@ def test_upgrade_parser_exclude_repeatable():
 
 
 def test_upgrade_parser_conservative_replaces_targeted_bump_flags() -> None:
-    """#136: the 16 --latest/--full/per-manager-targeted-bump/refresh-sha flags
+    """The 16 --latest/--full/per-manager-targeted-bump/refresh-sha flags
     collapsed into one --conservative opt-out; the sweep is on by default and
     none of those argparse options exist anymore."""
     parser = build_upgrade_parser(apply=False)

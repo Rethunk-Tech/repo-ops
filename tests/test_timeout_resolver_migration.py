@@ -1,4 +1,4 @@
-"""#118 — env-overridable timeout resolvers apply to all migrated plugins.
+"""Env-overridable timeout resolvers apply to all migrated plugins.
 
 Verifies that REPO_OPS_TIMEOUT_CHECK and REPO_OPS_TIMEOUT_APPLY are respected
 at call-time in the migrated check/apply functions — not frozen at import time.

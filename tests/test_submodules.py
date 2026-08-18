@@ -1,4 +1,4 @@
-"""Submodule umbrella workflow (#13)."""
+"""Submodule umbrella workflow."""
 
 from __future__ import annotations
 
@@ -95,10 +95,10 @@ def test_plan_json_includes_submodules(tmp_path: Path, capsys, init_git_repo) ->
 def test_sort_bundles_self_referential_link_terminates(tmp_path: Path) -> None:
     """A self-referential SubmoduleLink (git_repo == parent) must not hang.
 
-    This is the regression case for issue #36: an uninitialized submodule
-    causes git_repo_for to walk up and return the parent repo, producing a
-    link where git_repo == parent.  The fix-point loop in
-    sort_bundles_children_first would previously spin forever on such a link.
+    An uninitialized submodule causes git_repo_for to walk up and return the
+    parent repo, producing a link where git_repo == parent. The fix-point loop
+    in sort_bundles_children_first must terminate on such a link rather than
+    spinning forever.
     """
     p = (tmp_path / "repo").resolve()
     p.mkdir()
@@ -161,7 +161,7 @@ def test_dirty_submodule_pointer_hint(tmp_path: Path, init_git_repo) -> None:
 
 
 def test_find_gitmodules_prunes_skip_dirs(tmp_path: Path, init_git_repo) -> None:
-    """Regression for #43: _find_gitmodules must not descend into SKIP_DIRS
+    """_find_gitmodules must not descend into SKIP_DIRS
     (e.g. node_modules) and must not register a .gitmodules found inside them."""
     root = tmp_path / "repo"
     root.mkdir()
@@ -189,7 +189,7 @@ def test_find_gitmodules_prunes_skip_dirs(tmp_path: Path, init_git_repo) -> None
 
 
 def test_discover_rejects_self_referential_dot_path(tmp_path: Path, init_git_repo) -> None:
-    """Regression for #47: a .gitmodules entry with path='.' produces
+    """A .gitmodules entry with path='.' produces
     child_dir == parent; the existing guard (child_repo.resolve() != child_dir)
     passes because git_repo_for('.') == the repo itself, so an explicit check
     for child_repo.resolve() == parent is required to reject it."""

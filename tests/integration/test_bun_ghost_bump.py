@@ -1,4 +1,4 @@
-"""Integration test: bun ghost-bump guard (issue #112).
+"""Integration test: bun ghost-bump guard.
 
 Fixture: package.json with ``>=0.1.0 <2.0.0`` range plus an ``overrides`` entry
 pinning ``is-odd`` to ``0.1.2``.  ``bun outdated`` reports Update=1.0.0 but
@@ -25,7 +25,7 @@ def test_bun_ghost_bump_overrides_raises(
     bun_ghost_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """apply_bun raises ghost-bump error when overrides block the real upgrade."""
-    # bun_targeted_bump defaults on (settings-table default, #136) — this test
+    # bun_targeted_bump defaults on (settings-table default) — this test
     # covers the hard-raise path (assert_targets_resolved), which only runs
     # with targeted-bump off. The opt-in retry path is covered separately by
     # test_bun_apply_targeted_bump_releases_unheld_pin_instead_of_raising.

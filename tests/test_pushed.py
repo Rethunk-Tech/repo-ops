@@ -213,7 +213,7 @@ def test_pushed_commits_for_repo_from_push_reflog(monkeypatch, make_proc):
 
 
 def test_timeout_in_reflog_pre_sha_does_not_abort_scan(monkeypatch, make_proc):
-    """Regression #41: TimeoutExpired in _reflog_pre_sha must not propagate through
+    """TimeoutExpired in _reflog_pre_sha must not propagate through
     future.result() and abort the whole scan; pushed_commits_for_repo returns gracefully.
 
     Setup: single ref, single oldest push entry. pushed_commits_for_repo fetches the
@@ -276,7 +276,7 @@ def test_collect_results_uses_discovery(tmp_path: Path, monkeypatch):
 
 
 def test_pushed_commits_non_oldest_uses_reflog_pre_sha_not_prev_push_tip(monkeypatch, make_proc):
-    """Regression #92: non-oldest push entry uses _reflog_pre_sha, not previous push tip.
+    """Non-oldest push entry uses _reflog_pre_sha, not previous push tip.
 
     Simulates two pushes with a fetch in between:
       full reflog: @{0} push2  @{1} fetch (colleague)  @{2} push1
@@ -477,7 +477,7 @@ def test_main_window_resolution_and_hours_warning(
     assert main([root, "--until", "2099-01-01T00:00Z", "--hours", "5"]) == 0
     assert "WARNING" not in capsys.readouterr().err
 
-    # --since + --until + --hours: --hours silently dropped previously; now warns (the fix).
+    # --since + --until + --hours: --hours is ignored, and must say so.
     assert (
         main(
             [
@@ -544,7 +544,7 @@ def test_main_json_out_writes_report_with_messages(
 def test_pushed_compact_schema_version_first(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """F088: --compact is single-line; schema_version is the first key."""
+    """--compact is single-line; schema_version is the first key."""
     import json
 
     monkeypatch.setattr(audit, "collect_results", lambda *a, **kw: ({}, []))
@@ -559,13 +559,13 @@ def test_pushed_compact_schema_version_first(
 
 
 def test_pushed_empty_author_rejected(tmp_path: Path) -> None:
-    """F090: empty --author is a parser error."""
+    """Empty --author is a parser error."""
     with pytest.raises(SystemExit):
         main([str(tmp_path), "--author", ""])
 
 
 def test_pushed_since_after_until_rejected(tmp_path: Path) -> None:
-    """F090: since >= until is a parser error."""
+    """Since >= until is a parser error."""
     with pytest.raises(SystemExit):
         main(
             [
@@ -581,7 +581,7 @@ def test_pushed_since_after_until_rejected(tmp_path: Path) -> None:
 def test_pushed_show_shas_without_messages(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """F090: --show-shas prints short SHAs without requiring --show-messages."""
+    """--show-shas prints short SHAs without requiring --show-messages."""
     sha = "abcdef0123456789" + "0" * 24
     repo = RepoResult(label="repo1", path="/fake/repo1", commits={sha: None})
     monkeypatch.setattr(audit, "collect_results", lambda *a, **kw: ({sha: None}, [repo]))
@@ -594,7 +594,7 @@ def test_pushed_show_shas_without_messages(
 def test_pushed_no_merges_and_author_passed_to_filters(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """F090: --author and --no-merges reach Filters."""
+    """--author and --no-merges reach Filters."""
     seen: list[Filters] = []
 
     def fake_collect(roots, filters, **kwargs):

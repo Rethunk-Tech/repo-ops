@@ -237,10 +237,10 @@ def _yarn_up_cmd() -> list[str]:
 
     Bare ``yarn up`` (no patterns) is a no-op in Yarn 4 — it resolves and
     installs but upgrades nothing, so conservative mode never moved a single
-    in-range bump (issue #114). ``-R '*'`` re-resolves every dependency to the
+    in-range bump. ``-R '*'`` re-resolves every dependency to the
     newest version satisfying the existing package.json range without touching
     the range itself. Latest mode differs downstream, not here: it adds
-    behind-latest reporting (#110) and targeted range-breaking bumps (#111).
+    behind-latest reporting and targeted range-breaking bumps.
     """
     return ["yarn", "up", "-R", "*"]
 
@@ -414,7 +414,7 @@ def behind_after_up(mdir: Path, *, ws: Workspace | None = None) -> list[Change]:
 
     yarn's resolver (especially under ``yarn up -R '*'``) can keep a package below
     its newest release for peer/group constraints, and repo-ops lands exactly what
-    yarn produces — silently. This surfaces those gaps (issue #110) as ``behind_latest``
+    yarn produces — silently. This surfaces those gaps as ``behind_latest``
     so a supersede run reads honestly instead of "everything is current".
 
     Only runs in latest mode (``--latest`` / REPO_OPS_YARN_UPDATE_LATEST), where the
@@ -446,9 +446,9 @@ def behind_after_up(mdir: Path, *, ws: Workspace | None = None) -> list[Change]:
 def targeted_bump_behind(
     mdir: Path, behind: list[Change], *, ws: Workspace | None = None
 ) -> tuple[list[Change], list[Change]]:
-    """Per-package ``yarn up <pkg>@latest`` fallback for still-behind deps (issue #111).
+    """Per-package ``yarn up <pkg>@latest`` fallback for still-behind deps.
 
-    Option 2 of #110: rather than only reporting the gap ``behind_after_up`` found,
+    Rather than only reporting the gap ``behind_after_up`` found,
     optionally *move* it. For each still-behind direct dep we snapshot the workspace's
     lockfile/manifests, run a targeted ``yarn up <pkg>@latest`` + ``yarn install``, and
     keep the bump only if install succeeds **and** the resolved version actually advanced
@@ -537,7 +537,7 @@ def check_yarn_snapshot(
         snapshot_overrides = overrides_audit(mdir, "yarn")
         behind = behind_after_up(mdir, ws=ws)
         # Optionally move (not just report) the gap; applied bumps become planned
-        # changes so plan previews what apply will land (issue #111).
+        # changes so plan previews what apply will land.
         applied, behind = targeted_bump_behind(mdir, behind, ws=ws)
         for c in applied:
             # Defense in depth: targeted_bump_behind already targets the hold
@@ -625,22 +625,22 @@ def _plan_without_resolutions(ws: Workspace) -> list[Change]:
 def apply_yarn(ws: Workspace) -> list[Change]:
     """Apply in workspace; matches check policy (see ``_yarn_up_cmd``).
 
-    Returns the direct deps a latest-mode ``yarn up`` left behind (issue #110);
-    empty in conservative mode or when nothing is behind. With ``--yarn-targeted-bump``
-    (issue #111), each still-behind dep gets a reversible targeted bump first, so only
-    the deps that truly could not move are returned.
+        Returns the direct deps a latest-mode ``yarn up`` left behind;
+        empty in conservative mode or when nothing is behind. With ``--yarn-targeted-bump``
+    , each still-behind dep gets a reversible targeted bump first, so only
+        the deps that truly could not move are returned.
 
-    Ghost-bump guard (#121): before running the real apply, this function
-    probes what packages *would* move in an isolated copy with ``resolutions``
-    stripped.  After the real apply completes (with resolutions in place),
-    those intended targets are verified against the installed versions in
-    ``node_modules``.  Any package that was blocked by a pin raises
-    ``RuntimeError("ghost bump: …")`` so the workspace is marked ``fail``
-    instead of silently succeeding.
+        Ghost-bump guard: before running the real apply, this function
+        probes what packages *would* move in an isolated copy with ``resolutions``
+        stripped.  After the real apply completes (with resolutions in place),
+        those intended targets are verified against the installed versions in
+        ``node_modules``.  Any package that was blocked by a pin raises
+        ``RuntimeError("ghost bump: …")`` so the workspace is marked ``fail``
+        instead of silently succeeding.
 
-    Plug'n'Play repos are skipped: PnP installs have no ``node_modules``
-    directory, so the guard cannot read installed versions.  A diagnostic
-    note is written to stderr in that case.
+        Plug'n'Play repos are skipped: PnP installs have no ``node_modules``
+        directory, so the guard cannot read installed versions.  A diagnostic
+        note is written to stderr in that case.
     """
     # --- ghost-bump guard: plan what *should* move without resolutions --------
     # Check whether check_yarn_snapshot already ran the probe in this process
@@ -658,7 +658,7 @@ def apply_yarn(ws: Workspace) -> list[Change]:
 
     # --- real apply -----------------------------------------------------------
     corepack_prepare("yarn", ws.path)
-    # Advisory-safe pins from audit --fix (#140 parity with bun): apply even
+    # Advisory-safe pins from audit --fix: apply even
     # when check/behind reported nothing and REPO_OPS_YARN_TARGETED_BUMP is off.
     audit_handled = _apply_yarn_audit_overrides(ws)
     proc = run(_yarn_up_cmd(), ws.path, timeout=resolve_timeout_apply())

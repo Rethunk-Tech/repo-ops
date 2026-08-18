@@ -132,7 +132,7 @@ def test_scan_npm_licenses_no_node_modules(tmp_path: Path) -> None:
 
 
 def test_scan_npm_licenses_lockfile_fallback_package_lock(tmp_path: Path) -> None:
-    """Without node_modules, package-lock.json packages are still scanned (F010)."""
+    """Without node_modules, package-lock.json packages are still scanned."""
     (tmp_path / "package-lock.json").write_text(
         json.dumps(
             {
@@ -226,7 +226,7 @@ def test_scan_python_licenses_unknown_when_no_license(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Unit: scan_python_dep_licenses (uv.lock + venv dist-info, #144)
+# Unit: scan_python_dep_licenses (uv.lock + venv dist-info)
 # ---------------------------------------------------------------------------
 
 # Header formats verbatim from real dist-info METADATA files (uv-managed venv):

@@ -46,7 +46,7 @@ def collect_changes_after_apply(ws: Workspace) -> list[Change]:
     Only reports changes evidenced by the git diff of lockfiles/manifests.
     Never falls back to the ecosystem checker: checker output is "updates
     still available", not "changes applied", and reporting it here counted
-    graph-only upgrades that go mod tidy had already dropped (issue #113).
+    graph-only upgrades that go mod tidy had already dropped.
     """
     repo = ws.git_repo
     rel = ws.path

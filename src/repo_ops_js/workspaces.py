@@ -150,7 +150,7 @@ def _under(rel: str, prefix: str) -> bool:
     """True when *rel* equals *prefix* or sits under it on a path boundary.
 
     Separator-aware so ``packages/foo`` does not match the sibling
-    ``packages/foobar`` (#59).
+    ``packages/foobar``.
     """
     prefix = prefix.rstrip("/")
     return rel == prefix or rel.startswith(prefix + "/")

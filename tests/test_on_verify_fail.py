@@ -1,4 +1,4 @@
-"""--on-verify-fail=revert|keep after verify failure (#9)."""
+"""--on-verify-fail=revert|keep after verify failure."""
 
 from __future__ import annotations
 

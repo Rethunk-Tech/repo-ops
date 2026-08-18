@@ -1,4 +1,4 @@
-"""Integration test: npm ghost-bump guard (issue #112, npm sibling).
+"""Integration test: npm ghost-bump guard (npm sibling).
 
 Exercises ``assert_targets_resolved`` against a real ``node_modules`` directory
 populated by ``npm install``.  The guard is the core of the ghost-bump fix; this

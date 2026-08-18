@@ -283,7 +283,7 @@ def _make_ws(path: Path) -> Workspace:
         ("FROM ubuntu\n", [], [], {}),
         ("FROM nginx:1.25\n", None, ["registry query failed"], {}),
         (
-            # Digest refresh defaults on with the sweep (#136); pin it off so this
+            # Digest refresh defaults on with the sweep; pin it off so this
             # exercises the plain report-only path rather than an actual digest fetch.
             "FROM nginx:1.25@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456ab12\n",
             ["1.26"],

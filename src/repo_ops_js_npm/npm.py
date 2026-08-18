@@ -92,7 +92,7 @@ def _save_flag_for(name: str, pkg_data: dict[str, object]) -> list[str]:
 
 
 def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Change], list[Change]]:
-    """Per-package ``npm install <pkg>@latest`` fallback for still-behind deps (#122).
+    """Per-package ``npm install <pkg>@latest`` fallback for still-behind deps.
 
     Mirrors yarn's ``targeted_bump_behind``: for each behind-latest direct dep we
     snapshot the workspace's lockfile/manifests, run a targeted
@@ -217,7 +217,7 @@ def check_npm(ws: Workspace) -> tuple[list[Change], list[Change]]:
 
 
 def _apply_npm_audit_overrides(ws: Workspace) -> set[str]:
-    """Install advisory-safe pins from ``_AUDIT_VERSION_OVERRIDES`` (#140 / bun parity).
+    """Install advisory-safe pins from ``_AUDIT_VERSION_OVERRIDES``.
 
     Independent of ``REPO_OPS_NPM_TARGETED_BUMP`` so ``audit --fix`` pins are not
     silently skipped when the user did not also opt into targeted bump.
@@ -244,7 +244,8 @@ def apply_npm(ws: Workspace) -> list[Change]:
     Advisory-safe version overrides (``set_npm_audit_version_overrides``, wired
     by ``repo_ops_audit.audit.apply_remediations`` during ``audit --fix``) are
     applied independent of ``check_npm``'s findings and of the targeted-bump
-    flag — dropping them when outdated is empty was the silent-skip bug (#140).
+    flag: an empty ``outdated`` must still install them, or an advisory fix is
+    silently skipped.
 
     With ``REPO_OPS_NPM_TARGETED_BUMP`` set, each dep that ``npm update`` left
     behind_latest gets a reversible targeted ``npm install <pkg>@latest``; only

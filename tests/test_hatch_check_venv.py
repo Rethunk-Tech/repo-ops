@@ -1,4 +1,4 @@
-"""check_hatch must not create .dep_refresh_venv in the workspace (#70)."""
+"""check_hatch must not create .dep_refresh_venv in the workspace."""
 
 from __future__ import annotations
 
@@ -197,7 +197,7 @@ def test_check_hatch_uses_detected_extras(
 def test_check_hatch_uv_lock_without_uv_warns_and_returns_empty(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ):
-    """#66 — a uv.lock project with uv absent from PATH must warn + return [], not crash."""
+    """A uv.lock project with uv absent from PATH must warn + return [], not crash."""
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n',
         encoding="utf-8",
@@ -218,7 +218,7 @@ def test_check_hatch_uv_lock_without_uv_warns_and_returns_empty(
 
 
 def test_check_uv_lock_passes_timeout_check(tmp_path: Path, make_proc) -> None:
-    """#70 — check_uv_lock must call ``run`` with ``timeout=TIMEOUT_CHECK``."""
+    """check_uv_lock must call ``run`` with ``timeout=TIMEOUT_CHECK``."""
     ws = _make_ws(tmp_path)
     captured_timeout: list[int | None] = []
 
@@ -237,7 +237,7 @@ def test_check_uv_lock_passes_timeout_check(tmp_path: Path, make_proc) -> None:
 def test_check_hatch_pip_install_uses_timeout_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
-    """#93 — venv-path ``uv pip install -e`` must use TIMEOUT_CHECK, not hardcoded 300."""
+    """Venv-path ``uv pip install -e`` must use TIMEOUT_CHECK, not hardcoded 300."""
     monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n',
@@ -268,14 +268,14 @@ def test_check_hatch_pip_install_uses_timeout_check(
 
 
 # ---------------------------------------------------------------------------
-# Issue #132 — gate uv.lock creation behind REPO_OPS_HATCH_MIGRATE_UV_LOCK
+# gate uv.lock creation behind REPO_OPS_HATCH_MIGRATE_UV_LOCK
 # ---------------------------------------------------------------------------
 
 
 def test_apply_hatch_no_uv_lock_no_flag_is_noop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
-    """#132 — no uv.lock + flag unset → apply_hatch returns without creating uv.lock."""
+    """No uv.lock + flag unset → apply_hatch returns without creating uv.lock."""
     monkeypatch.delenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", raising=False)
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n',
@@ -304,7 +304,7 @@ def test_apply_hatch_no_uv_lock_no_flag_is_noop(
 def test_apply_hatch_no_uv_lock_with_flag_runs_uv_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
-    """#132 — no uv.lock + flag set → apply_hatch runs uv lock then uv lock --upgrade."""
+    """No uv.lock + flag set → apply_hatch runs uv lock then uv lock --upgrade."""
     monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n',
@@ -333,7 +333,7 @@ def test_apply_hatch_no_uv_lock_with_flag_runs_uv_lock(
 def test_check_hatch_no_uv_lock_no_migrate_skips_actionable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """F002 — no uv.lock + migrate unset → [] + migrate-needed WARN (no temp-venv drift)."""
+    """No uv.lock + migrate unset → [] + migrate-needed WARN (no temp-venv drift)."""
     monkeypatch.delenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", raising=False)
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n',
@@ -358,7 +358,7 @@ def test_check_hatch_no_uv_lock_no_migrate_skips_actionable(
 def test_check_hatch_no_uv_warns_without_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """F152 — no uv.lock + migrate set + uv absent → WARN + []."""
+    """No uv.lock + migrate set + uv absent → WARN + []."""
     monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n',
@@ -375,7 +375,7 @@ def test_check_hatch_no_uv_warns_without_lock(
 def test_apply_hatch_no_uv_warns_and_returns(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """F152 — apply_hatch with uv absent → WARN and return (no raise)."""
+    """apply_hatch with uv absent → WARN and return (no raise)."""
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n',
         encoding="utf-8",
@@ -391,7 +391,7 @@ def test_apply_hatch_no_uv_warns_and_returns(
 def test_apply_hatch_with_existing_uv_lock_runs_apply_uv_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
-    """F154 — existing uv.lock → skip uv lock creation, run apply_uv_lock only."""
+    """Existing uv.lock → skip uv lock creation, run apply_uv_lock only."""
     monkeypatch.delenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", raising=False)
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n',
@@ -420,7 +420,7 @@ def test_apply_hatch_with_existing_uv_lock_runs_apply_uv_lock(
 
 
 def test_check_hatch_with_uv_lock_delegates_to_check_uv_lock(tmp_path: Path, make_proc) -> None:
-    """F155 — uv.lock present → check_uv_lock (uv lock --upgrade --dry-run)."""
+    """uv.lock present → check_uv_lock (uv lock --upgrade --dry-run)."""
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n',
         encoding="utf-8",
@@ -449,7 +449,7 @@ def test_check_hatch_with_uv_lock_delegates_to_check_uv_lock(tmp_path: Path, mak
 def test_check_hatch_venv_and_list_use_timeout_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
-    """F151 — uv venv and uv pip list --outdated use resolve_timeout_check."""
+    """Uv venv and uv pip list --outdated use resolve_timeout_check."""
     monkeypatch.setenv("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n',

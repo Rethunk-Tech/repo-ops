@@ -1,4 +1,4 @@
-"""Exact tag pins advance within their major when no floating vN exists (issue #115)."""
+"""Exact tag pins advance within their major when no floating vN exists."""
 
 from __future__ import annotations
 

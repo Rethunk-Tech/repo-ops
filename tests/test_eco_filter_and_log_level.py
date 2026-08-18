@@ -1,5 +1,4 @@
-"""Tests for TASK A (ECO_FILTER_CHOICES + inventory new ecosystems) and
-TASK B (--log-level / -v) from issues #16 and #22."""
+"""ECO_FILTER_CHOICES, inventory coverage for new ecosystems, and --log-level / -v."""
 
 from __future__ import annotations
 
@@ -25,12 +24,12 @@ from repo_ops_inventory.scan import build_inventory_parser
 from repo_ops_inventory.scan import main as inventory_main
 
 # ---------------------------------------------------------------------------
-# TASK A: ECO_FILTER_CHOICES coverage
+# ECO_FILTER_CHOICES coverage
 # ---------------------------------------------------------------------------
 
 
 def test_eco_filter_choices_includes_precommit_and_actions():
-    """precommit and actions must appear in ECO_FILTER_CHOICES (#16)."""
+    """Precommit and actions must appear in ECO_FILTER_CHOICES."""
     assert "precommit" in ECO_FILTER_CHOICES
     assert "actions" in ECO_FILTER_CHOICES
 
@@ -51,14 +50,14 @@ def test_eco_filter_choices_includes_precommit_and_actions():
     ],
 )
 def test_filter_flag_accepted(parser_builder, filter_value):
-    """--filter precommit/actions must parse without error on inventory and plan/apply (#16)."""
+    """--filter precommit/actions must parse without error on inventory and plan/apply."""
     parser = parser_builder()
     args = parser.parse_args(["--filter", filter_value])
     assert args.eco_filter == filter_value
 
 
 # ---------------------------------------------------------------------------
-# TASK A: inventory counting for new ecosystems
+# inventory counting for new ecosystems
 # ---------------------------------------------------------------------------
 
 
@@ -182,7 +181,7 @@ def test_inventory_main_filter_precommit_excludes_node(tmp_path: Path, capsys, i
 
 
 # ---------------------------------------------------------------------------
-# TASK B: --log-level / -v
+# --log-level / -v
 # ---------------------------------------------------------------------------
 
 

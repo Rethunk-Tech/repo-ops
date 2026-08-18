@@ -1,4 +1,4 @@
-"""Regression coverage for untrusted `.gitmodules` URL injection (issue #139).
+"""Regression coverage for untrusted `.gitmodules` URL injection.
 
 A `.gitmodules` file in a *scanned target repo* is untrusted content. Its
 ``url`` field must never reach a subprocess without a ``--`` separator (to

@@ -1,11 +1,9 @@
 """CLI-entrypoint coverage for the repo-ops license subcommand.
 
 Targets ``license_policy.main()`` end to end (argument parsing, scan
-dispatch, both output modes, exit-code selection) — the entrypoint itself
-had no direct coverage previously (unit tests exercised scan/policy helpers
-individually, and the human-output happy/violation paths, but never the
-JSON *and* human code paths together against a single realistic fixture
-tree with both an allow-list violation and an unknown license present).
+dispatch, both output modes, exit-code selection) against a single realistic
+fixture tree carrying both an allow-list violation and an unknown license, so
+the JSON and human paths are exercised together rather than separately.
 
 Uses in-memory tmp_path fixtures; no network or subprocess calls.
 """

@@ -1,4 +1,4 @@
-"""Tests for pnpm targeted behind-latest bumps (issue #122)."""
+"""Tests for pnpm targeted behind-latest bumps."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def _seed(d: Path) -> None:
 
 
 def test_targeted_bump_enabled_by_default(tmp_path: Path, monkeypatch, make_workspace) -> None:
-    """#136: the sweep default is on, so no env var needed to attempt it."""
+    """The sweep default is on, so no env var needed to attempt it."""
     _seed(tmp_path)
     monkeypatch.delenv("REPO_OPS_PNPM_TARGETED_BUMP", raising=False)
     run_mock = patch("repo_ops_js_pnpm.pnpm.run", _fake_run_ok)
@@ -236,7 +236,7 @@ def test_apply_pnpm_targeted_clears_behind(tmp_path: Path, monkeypatch, make_wor
 def test_pnpm_targeted_bump_restores_snapshot_when_guard_raises(
     tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
-    """Guard raise must restore lockfile (npm/bun parity — F046)."""
+    """Guard raise must restore lockfile (npm/bun parity)."""
     monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     _seed(tmp_path)
     original_lock = (tmp_path / "pnpm-lock.yaml").read_bytes()

@@ -75,7 +75,7 @@ def test_default_sweep_sets_policy_env_and_refreshes_actions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The default full sweep composes latest, digest refresh, and targeted
-    bump policy across every _SWEEP_ENV_VARS gate — no flag needed (#136)."""
+    bump policy across every _SWEEP_ENV_VARS gate — no flag needed."""
     env_names = [*run_mod._SWEEP_ENV_VARS, "REPO_OPS_GO_UPGRADE_MODE"]
     for name in env_names:
         monkeypatch.delenv(name, raising=False)
@@ -112,8 +112,7 @@ def test_default_sweep_sets_policy_env_and_refreshes_actions(
 
     assert rc == 0
     assert os.environ["REPO_OPS_GO_UPGRADE_MODE"] == "patch"
-    # #136: the default sweep no longer force-writes _SWEEP_ENV_VARS to "1" —
-    # each key's settings-table default is already "1", so an unset var must
+    # the default sweep no longer force-writes _SWEEP_ENV_VARS to "1"    # each key's settings-table default is already "1", so an unset var must
     # still resolve enabled (and stays unset, so a user's own env/config can
     # still override it on a real run).
     env_var_to_setting = {
@@ -140,7 +139,7 @@ def _npm_ws(path: Path, label: str = "demo") -> Workspace:
 def test_exclude_drops_matching_bundles(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """--exclude removes matching bundles and prints footer count (F140)."""
+    """--exclude removes matching bundles and prints footer count."""
     keep = tmp_path / "keep-repo"
     drop = tmp_path / "vendor-repo"
     keep.mkdir()
@@ -187,7 +186,7 @@ def test_exclude_drops_matching_bundles(
 def test_skip_remediations_passed_to_process_workspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """--skip-remediations CSV is forwarded into process_workspace (F044)."""
+    """--skip-remediations CSV is forwarded into process_workspace."""
     ws = _npm_ws(tmp_path)
     wr = WorkspaceResult(workspace=ws)
     bundles = {tmp_path: RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])}
@@ -217,7 +216,7 @@ def test_skip_remediations_passed_to_process_workspace(
 def test_children_first_processes_child_depth_before_parent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """children-first level scheduling waits for child depth (F143)."""
+    """Children-first level scheduling waits for child depth."""
     parent = tmp_path / "parent"
     child = tmp_path / "child"
     parent.mkdir()
@@ -274,7 +273,7 @@ def test_children_first_processes_child_depth_before_parent(
 def test_pr_dry_run_skips_run_pr_flow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """--pr with --commit-dry-run prints skip and does not call run_pr_flow (F141)."""
+    """--pr with --commit-dry-run prints skip and does not call run_pr_flow."""
     ws = _npm_ws(tmp_path)
     wr = WorkspaceResult(workspace=ws, status="ok")
     wr.changes = [Change("pkg", "1", "2")]
@@ -329,7 +328,7 @@ def test_pr_dry_run_skips_run_pr_flow(
 
 
 def test_pr_failed_outcome_sets_exit_code(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """run_pr_flow status=failed propagates to exit_code (F141)."""
+    """run_pr_flow status=failed propagates to exit_code."""
     ws = _npm_ws(tmp_path)
     wr = WorkspaceResult(workspace=ws, status="ok")
     wr.changes = [Change("pkg", "1", "2")]

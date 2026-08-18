@@ -411,7 +411,7 @@ def test_sbom_empty_dir(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> N
 
 
 # ---------------------------------------------------------------------------
-# Multi-ecosystem collect_components wiring (F075, F073, F074, F077)
+# Multi-ecosystem collect_components wiring
 # ---------------------------------------------------------------------------
 
 
@@ -527,7 +527,7 @@ def test_emit_spdx_includes_license_concluded() -> None:
 def test_collect_components_logs_parse_failure(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Corrupt lockfiles log at debug instead of vanishing silently (F071)."""
+    """Corrupt lockfiles log at debug instead of vanishing silently."""
     import logging
 
     (tmp_path / "pdm.lock").write_text("not: valid: [[[toml", encoding="utf-8")

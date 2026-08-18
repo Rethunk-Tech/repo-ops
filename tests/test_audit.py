@@ -188,7 +188,7 @@ def test_cvss_to_score_missing_vector_returns_moderate() -> None:
 
 
 def test_cvss_to_score_confidentiality_only_lands_in_high_bucket() -> None:
-    """#142: a C/I/A-only average previously scored this vector ~3.3 (moderate),
+    """A C/I/A-only average previously scored this vector ~3.3 (moderate),
     letting a real High-severity vuln pass ``--fail-on high``. Its actual CVSS
     v3.1 base score (full AV/AC/PR/UI/Scope + impact vector) is ~7.5 (high)."""
     score = _cvss_to_score("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N")
@@ -510,7 +510,7 @@ def test_audit_node_npm_vulns() -> None:
 def test_audit_node_yarn_ndjson_vulns() -> None:
     """Real ``yarn npm audit --json`` (yarn berry v4) emits newline-delimited
     JSON, one advisory object per line — a single ``json.loads`` over the
-    whole output raises JSONDecodeError, which previously fell straight to
+    whole output raises JSONDecodeError, which must not be reported as
     "error" (rc != 0) instead of parsing the real findings."""
     yarn_output = "\n".join(
         [
@@ -605,8 +605,8 @@ def test_audit_node_bun_native_json_real_shape() -> None:
     """Real ``bun audit --json`` (bun 1.3.14) is package-name -> list[advisory]
     with a flat "severity" field, NOT npm's "vulnerabilities"/"via" schema.
     Feeding that shape into _parse_npm_audit_json silently returns all-zero
-    counts, which previously made a real 5-vuln finding masquerade as an
-    "error" carrying only the "bun audit vX.Y.Z (hash)" stderr banner."""
+    counts, which would make a real 5-vuln finding masquerade as an "error"
+    carrying only the "bun audit vX.Y.Z (hash)" stderr banner."""
     bun_output = json.dumps(
         {
             "adm-zip": [{"id": 1, "severity": "high", "url": "https://x/1"}],

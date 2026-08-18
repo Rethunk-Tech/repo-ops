@@ -1,4 +1,4 @@
-"""Integration tests for Task #17 resume/checkpoint correctness.
+"""Integration tests for resume/checkpoint correctness.
 
 These tests drive the real ``run_upgrade`` → ``_run_upgrade_body`` →
 ``post_apply_commit`` pipeline end to end (real git repos, real commits,

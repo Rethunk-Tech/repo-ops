@@ -1,4 +1,4 @@
-"""Focused unit tests for uv workspace helpers (F156)."""
+"""Focused unit tests for uv workspace helpers."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def test_uv_workspace_members_empty_when_not_workspace(tmp_path: Path) -> None:
 
 
 def test_under_prefix_boundary() -> None:
-    """#59 — packages/foo must not match sibling packages/foobar."""
+    """packages/foo must not match sibling packages/foobar."""
     assert _under("packages/foo", "packages/foo") is True
     assert _under("packages/foo/bar", "packages/foo") is True
     assert _under("packages/foobar", "packages/foo") is False

@@ -149,7 +149,7 @@ def test_apply_dockerfile_multi_stage_only_target_lines_change(tmp_path: Path) -
 
 
 def test_apply_dockerfile_same_image_two_stages_both_bumped(tmp_path: Path) -> None:
-    """Same outdated image:tag pinned at two FROM lines → both lines bump (#151)."""
+    """Same outdated image:tag pinned at two FROM lines → both lines bump."""
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text("FROM nginx:1.25 AS build\nFROM nginx:1.25 AS serve\n", encoding="utf-8")
 

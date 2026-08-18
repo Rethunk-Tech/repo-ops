@@ -7,12 +7,12 @@ from pathlib import Path
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics, discover_all
 
 # ---------------------------------------------------------------------------
-# Task A: Pipfile without Pipfile.lock → accurate skip reason
+# Pipfile without Pipfile.lock → accurate skip reason
 # ---------------------------------------------------------------------------
 
 
 def test_pipfile_only_produces_accurate_skip(tmp_path: Path, init_git_repo) -> None:
-    """Regression for #15: a Pipfile-only repo must NOT emit the misleading
+    """A Pipfile-only repo must NOT emit the misleading
     'pyproject.toml without a recognized manager' skip reason."""
     repo = tmp_path / "org" / "pipfile-only"
     init_git_repo(repo)

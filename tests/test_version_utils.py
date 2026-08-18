@@ -34,8 +34,7 @@ def test_semver_tuple_v_prefixed():
 
 
 def test_semver_tuple_uppercase_V_prefix():
-    # V1.2.3 must parse as (1,2,3), not (0,2,3) — closes #58
-    assert semver_tuple("V1.2.3") == (1, 2, 3)
+    # V1.2.3 must parse as (1,2,3), not (0,2,3)    assert semver_tuple("V1.2.3") == (1, 2, 3)
     assert normalize_version("V1.2.3") == "1.2.3"
 
 
@@ -46,9 +45,7 @@ def test_hold_ceiling_spec_pads_to_three_components():
 
 
 def test_normalize_version_space_after_operator_and_build_metadata():
-    # ">= 1.2.3": operator then space — closes #60
-    assert normalize_version(">= 1.2.3") == "1.2.3"
+    # ">= 1.2.3": operator then space    assert normalize_version(">= 1.2.3") == "1.2.3"
     assert semver_tuple(">= 1.2.3") == (1, 2, 3)
-    # "1.2.3+build.1": build metadata must be stripped — closes #60
-    assert normalize_version("1.2.3+build.1") == "1.2.3"
+    # "1.2.3+build.1": build metadata must be stripped    assert normalize_version("1.2.3+build.1") == "1.2.3"
     assert semver_tuple("1.2.3+build.1") == (1, 2, 3)

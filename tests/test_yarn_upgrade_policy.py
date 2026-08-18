@@ -24,7 +24,7 @@ _PLAN_PATH = "repo_ops_js_yarn.yarn._plan_without_resolutions"
 
 
 def test_yarn_up_cmd_in_range_refresh_by_default(monkeypatch) -> None:
-    """#114 — bare `yarn up` is a Yarn 4 no-op; conservative mode must pass
+    """Bare `yarn up` is a Yarn 4 no-op; conservative mode must pass
     `-R '*'` to actually re-resolve in-range bumps."""
     monkeypatch.delenv("REPO_OPS_YARN_UPDATE_LATEST", raising=False)
     assert _yarn_up_cmd() == ["yarn", "up", "-R", "*"]
@@ -64,7 +64,7 @@ def test_apply_yarn_uses_in_range_refresh_cmd(tmp_path: Path, monkeypatch) -> No
 
 
 # ---------------------------------------------------------------------------
-# PnP detection (#121)
+# PnP detection
 # ---------------------------------------------------------------------------
 
 
@@ -96,7 +96,7 @@ def test_is_pnp_workspace(
 
 
 # ---------------------------------------------------------------------------
-# Ghost-bump guard wired into apply_yarn (#121)
+# Ghost-bump guard wired into apply_yarn
 # ---------------------------------------------------------------------------
 
 
@@ -223,7 +223,7 @@ def test_apply_yarn_guard_not_called_when_no_targets(tmp_path: Path, make_worksp
 
 
 # ---------------------------------------------------------------------------
-# Probe cache (#127)
+# Probe cache
 # ---------------------------------------------------------------------------
 
 # Patch target for the snapshot/diff helpers inside check_yarn_snapshot.

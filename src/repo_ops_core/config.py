@@ -180,7 +180,7 @@ _SETTINGS: tuple[_Setting, ...] = (
     _s("find_timeout", FIND_TIMEOUT, "(none)", str(FIND_TIMEOUT)),
     _s("git_timeout", GIT_TIMEOUT, "(none)", str(GIT_TIMEOUT)),
     # Feature flags
-    # Sweep-default settings (#136): these 20 keys back off/on the default full
+    # Sweep-default settings: these 20 keys back off/on the default full
     # sweep and default to "1" (on). --conservative is the only way to flip
     # them all to "0" at once; each is still individually overridable via its
     # own env var or [tool.repo-ops] config key, which is the entire point of

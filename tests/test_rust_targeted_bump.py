@@ -76,7 +76,7 @@ def test_cargo_latest_changes_cache_keys_on_manifest_digest(tmp_path: Path, make
 def test_check_rust_targeted_bump_defaults_on_without_config(
     tmp_path: Path, monkeypatch, make_workspace, make_proc
 ) -> None:
-    """#136: the sweep default is on, so no env var/config needed to attempt it."""
+    """The sweep default is on, so no env var/config needed to attempt it."""
     (tmp_path / "Cargo.toml").write_text(
         '[package]\nname = "demo"\nversion = "0.1.0"\n\n[dependencies]\nserde = "1.0"\n',
         encoding="utf-8",

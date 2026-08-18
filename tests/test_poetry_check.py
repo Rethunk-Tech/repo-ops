@@ -1,4 +1,4 @@
-"""Tests for check_poetry (#70 — must pass TIMEOUT_CHECK to run)."""
+"""Tests for check_poetry."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from repo_ops_py_poetry.poetry import check_poetry
 
 
 def test_check_poetry_passes_timeout_check(tmp_path: Path, make_workspace) -> None:
-    """#70 — poetry update --dry-run must be called with timeout=TIMEOUT_CHECK."""
+    """Poetry update --dry-run must be called with timeout=TIMEOUT_CHECK."""
     captured_timeout: list[int | None] = []
 
     def fake_run(
@@ -78,7 +78,7 @@ def test_check_poetry_parses_updating_lines(tmp_path: Path, monkeypatch, make_wo
 
 
 def test_check_poetry_raises_on_nonzero_dry_run(tmp_path: Path, make_workspace) -> None:
-    """F158 — non-zero poetry update --dry-run raises RuntimeError."""
+    """Non-zero poetry update --dry-run raises RuntimeError."""
 
     def fake_run(
         cmd: list[str], cwd: Path, timeout: int | None = None, env: object = None
@@ -96,7 +96,7 @@ def test_check_poetry_raises_on_nonzero_dry_run(tmp_path: Path, make_workspace) 
 def test_check_poetry_parses_upgrading_stderr_lines(
     tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
-    """F158 — Upgrading lines on stderr are parsed into Change entries."""
+    """Upgrading lines on stderr are parsed into Change entries."""
     monkeypatch.setenv("REPO_OPS_POETRY_TARGETED_BUMP", "0")
     stderr = "  - Upgrading certifi (2022.12.7 -> 2023.7.22)\n"
 
@@ -120,7 +120,7 @@ def test_check_poetry_parses_upgrading_stderr_lines(
 
 
 def test_apply_poetry_runs_poetry_update(tmp_path: Path, make_workspace) -> None:
-    """F158 — apply_poetry success path invokes poetry update."""
+    """apply_poetry success path invokes poetry update."""
     from repo_ops_py_poetry.poetry import apply_poetry
 
     captured: list[list[str]] = []
@@ -141,7 +141,7 @@ def test_apply_poetry_runs_poetry_update(tmp_path: Path, make_workspace) -> None
 
 
 def test_apply_poetry_absent_raises_without_warn_prefix(tmp_path: Path, make_workspace) -> None:
-    """F157 — apply_poetry missing poetry raises plain error (no WARN prefix)."""
+    """apply_poetry missing poetry raises plain error (no WARN prefix)."""
     from repo_ops_py_poetry.poetry import apply_poetry
 
     with (

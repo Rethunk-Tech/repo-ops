@@ -1,4 +1,4 @@
-"""Shared behind-latest single-package retry (#122/#111).
+"""Shared behind-latest single-package retry.
 
 Every JS package manager runs the same reversible retry when a bulk update
 leaves a direct dependency behind: snapshot, pick a target version, release

@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 _TAG_CACHE: dict[str, dict | None] = {}
 
 # ---------------------------------------------------------------------------
-# Org allowed-actions policy cache (issue #124)
+# Org allowed-actions policy cache
 # ---------------------------------------------------------------------------
 
 # In-process cache: owner → policy dict (or None when not applicable/accessible).
@@ -55,7 +55,7 @@ _MAJOR_TAG_RE = re.compile(r"^v(\d+)(?:\.|$)")
 _SHA_RE = re.compile(r"^(?:sha[0-9a-f]+|[0-9a-f]{7,40})$", re.IGNORECASE)
 
 # ---------------------------------------------------------------------------
-# actionlint severity classification (issue #117)
+# actionlint severity classification
 # ---------------------------------------------------------------------------
 
 # Matches the shellcheck severity token inside an actionlint finding line,
@@ -95,7 +95,7 @@ TagStyle = Literal["major", "exact"]
 # How the Actions upgrader treats a pin whose major is behind the newest upstream
 # major line. ``normalize`` (default) only collapses to the current floating major
 # and reports newer majors (report only). ``latest`` also rewrites the pin to the
-# newest available major (issue #106), subject to the same tag-style + bare-major
+# newest available major, subject to the same tag-style + bare-major
 # safety rules used elsewhere.
 ActionsUpgradeMode = Literal["normalize", "latest"]
 
@@ -121,7 +121,7 @@ ActionsPolicyLevel = Literal["block", "warn", "report"]
 _DEFAULT_POLICY_LEVEL: ActionsPolicyLevel = "report"
 
 # ---------------------------------------------------------------------------
-# Actionlint result cache (issue #123)
+# Actionlint result cache
 # ---------------------------------------------------------------------------
 
 # Maximum age (seconds) for a cache entry before it is pruned on write.
@@ -645,7 +645,7 @@ def _resolve_sha_major(sha: str, *, comment_hint: str | None, info: dict | None)
 def _highest_exact_digest_in_major(info: dict, major: int) -> tuple[str, str] | None:
     """Return ``(commit_sha, tag)`` for the highest ``vN.M.P`` tag within ``major``.
 
-    Used by SHA-pin digest refresh (#109): keeps an action digest-pinned but
+    Used by SHA-pin digest refresh: keeps an action digest-pinned but
     advances the SHA to the newest release within its current major, matching how
     Dependabot security-pins by commit. ``None`` when no exact tag exists in major.
     """
@@ -993,11 +993,11 @@ def scan_actions(
         stays SHA-pinned (``keep_sha=True``), advance the digest to the
         commit of the newest
         ``vN.M.P`` release within the pin's resolved major, preserving the digest
-        pin and the ``# vN`` comment (Dependabot-compatible, issue #109). When
+        pin and the ``# vN`` comment (Dependabot-compatible). When
         combined with ``upgrade_mode="latest"``, the digest may also cross a major
         boundary: if the newest major has a real ``vN.M.P`` release the pin is
         re-pinned to that commit and the ``# vN`` comment is updated to the new
-        major (#138). Ignored when ``keep_sha=False`` (the unpin path takes over).
+        major. Ignored when ``keep_sha=False`` (the unpin path takes over).
         No-op when the major cannot be resolved or no newer digest exists.
     pin_sha:
         When True (env: ``REPO_OPS_ACTIONS_PIN_SHA``, config key
@@ -1155,7 +1155,7 @@ def scan_actions(
             # SHA-pinned: attempt to resolve to a version tag (unless keep_sha).
             if _SHA_RE.fullmatch(pin):
                 if keep_sha:
-                    # Digest refresh (#109): stay SHA-pinned but advance the digest
+                    # Digest refresh: stay SHA-pinned but advance the digest
                     # to the newest in-major release, preserving the # vN comment.
                     if refresh_sha:
                         info = action_tag_info(action, cache=_cache)
@@ -1164,7 +1164,7 @@ def scan_actions(
                             if info is not None
                             else None
                         )
-                        # Cross-major SHA refresh (#138): when upgrade_mode=latest,
+                        # Cross-major SHA refresh: when upgrade_mode=latest,
                         # advance to max_major if it has a real vN.M.P release.
                         # Falls back to the current major when the newest major has
                         # no exact tag (same safety check as the unpin path).
@@ -1394,7 +1394,7 @@ def scan_actions(
                     continue
 
             # In latest mode, a newer major upstream is rewritten (not just
-            # reported), provided it can be safely targeted (#106).
+            # reported), provided it can be safely targeted.
             newer_major = max_major is not None and max_major > M
             latest_target = (
                 _resolve_latest_target(info, tag_style)
@@ -1474,7 +1474,7 @@ def scan_actions(
                         )
                 else:
                     # No bare major tag upstream — cannot collapse to floating.
-                    # Advance the exact pin within its major instead (#115):
+                    # Advance the exact pin within its major instead:
                     # e.g. astral-sh/setup-uv publishes only vN.M.P tags, so
                     # v8.1.0 would otherwise never move while v8.2.0 exists.
                     in_major = _highest_exact_in_major(info, M)

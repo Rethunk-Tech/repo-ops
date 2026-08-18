@@ -66,7 +66,7 @@ def _find_gitmodules(root: Path, *, max_depth: int = 32) -> list[Path]:
                 # Prune well-known noise dirs (node_modules, target, .venv, …)
                 # to match iter_scanned_dirs behaviour and avoid registering a
                 # .gitmodules found inside a vendored or generated subtree.
-                # (closes #43)
+                #
                 if entry.name in SKIP_DIRS:
                     continue
                 stack.append((entry, depth + 1))
@@ -118,7 +118,7 @@ def discover_submodules_under_roots(roots: list[str], *, flat: bool) -> list[Sub
                 # to the parent itself, git_repo_for returns the parent repo,
                 # so child_repo.resolve() == child_dir passes the first check
                 # but would produce SubmoduleLink(git_repo=parent, parent=parent).
-                # (closes #47)
+                #
                 if child_repo is None or child_repo.resolve() != child_dir:
                     continue
                 if child_repo.resolve() == parent:
@@ -641,7 +641,7 @@ def apply_submodule_tag_advances(
 
         try:
             # Use --detach with the full refs/tags/<tag> ref to avoid ambiguity
-            # when a branch name shadows a tag name (ENH #18).
+            # when a branch name shadows a tag name.
             checkout_proc = run_git(
                 submod_dir,
                 "checkout",

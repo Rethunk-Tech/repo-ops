@@ -1,4 +1,4 @@
-"""Tests for REPO_OPS_ACTIONS_LINT_LEVEL / lint_level parameter (issue #117).
+"""Tests for REPO_OPS_ACTIONS_LINT_LEVEL / lint_level parameter.
 
 Regression: SC2034 in an unrelated ``run:`` block used to silently block a
 softprops/action-gh-release bump because actionlint all-or-nothing ``continue``

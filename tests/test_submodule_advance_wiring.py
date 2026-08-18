@@ -1,4 +1,4 @@
-"""Integration tests for Task #18 submodule tag-advance apply wiring.
+"""Integration tests for submodule tag-advance apply wiring.
 
 These tests verify the WIRING between apply_submodule_tag_advances, the
 dirty-tree guard, the --detach checkout, and the commit phase (gitlink
@@ -96,7 +96,7 @@ def test_apply_submodule_tag_advances_invoked_via_run(
 ) -> None:
     """apply_submodule_tag_advances is called when --submodules + apply.
 
-    Verifies the dead-code wiring bug (Task #18.1) is fixed: the function
+    Verifies the dead-code wiring bug (1) is fixed: the function
     must be reachable from the normal apply flow.
     """
     import repo_ops_upgrade.run as run_mod
@@ -169,7 +169,7 @@ def test_upgrade_scoped_paths_includes_gitlink(tmp_path: Path) -> None:
     """upgrade_scoped_paths includes staged gitlink paths from extra_gitlink_paths.
 
     This verifies that the commit phase picks up pointer bumps rather than
-    leaving them staged-but-uncommitted (Task #18.2).
+    leaving them staged-but-uncommitted (2).
     """
     git_repo = tmp_path / "parent"
     git_repo.mkdir()

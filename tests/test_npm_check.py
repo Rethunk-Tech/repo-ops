@@ -1,4 +1,4 @@
-"""Tests for npm check (#57, #76)."""
+"""Tests for npm check."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from repo_ops_js_npm.npm import check_npm
 
 
 def test_check_npm_passes_timeout_check(tmp_path: Path, make_workspace) -> None:
-    """#57 — npm outdated call must use TIMEOUT_CHECK (600s), not the default 300s."""
+    """Npm outdated call must use TIMEOUT_CHECK (600s), not the default 300s."""
     captured: list[dict] = []
 
     def fake_run(cmd, cwd, timeout=None):
@@ -26,7 +26,7 @@ def test_check_npm_passes_timeout_check(tmp_path: Path, make_workspace) -> None:
 
 
 def test_check_npm_bucketing(tmp_path: Path, monkeypatch, make_workspace) -> None:
-    """#76 — in-range pkg → changes; out-of-range only → behind_latest."""
+    """In-range pkg → changes; out-of-range only → behind_latest."""
     monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "0")
     # react: wanted == current (no in-range bump), latest > current → behind_latest.
     # lodash: wanted > current (in-range bump) → changes.

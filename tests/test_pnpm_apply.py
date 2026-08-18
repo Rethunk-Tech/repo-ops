@@ -25,7 +25,7 @@ def _fake_run_ok(cmd, cwd, timeout=600, env=None):
 
 
 # ---------------------------------------------------------------------------
-# Task 2: ghost-bump guard wired into apply_pnpm
+# ghost-bump guard wired into apply_pnpm
 # ---------------------------------------------------------------------------
 
 
@@ -119,7 +119,7 @@ def test_apply_pnpm_guard_skipped_when_resolver_returns_none(
 
 
 def test_apply_pnpm_audit_override_absent_from_outdated(tmp_path: Path, make_workspace) -> None:
-    """#140: audit-safe pin must install even when outdated reports nothing."""
+    """Audit-safe pin must install even when outdated reports nothing."""
     calls: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=600, env=None):
@@ -143,14 +143,14 @@ def test_apply_pnpm_audit_override_absent_from_outdated(tmp_path: Path, make_wor
 
 
 # ---------------------------------------------------------------------------
-# Task 5: _bucket_pnpm_pkg latest-mode omission fix
+# _bucket_pnpm_pkg latest-mode omission fix
 # ---------------------------------------------------------------------------
 
 
 def test_bucket_pnpm_pkg_latest_mode_falls_through_when_latest_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """#5: with REPO_OPS_PNPM_UPDATE_LATEST set, latest=='?' must fall through
+    """With REPO_OPS_PNPM_UPDATE_LATEST set, latest=='?' must fall through
     to the wanted check so a package with a known in-range bump is not omitted.
 
     Before the fix: the early ``return`` after the ``latest not in ('?','')``

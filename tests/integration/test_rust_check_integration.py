@@ -27,7 +27,7 @@ _CARGO = shutil.which("cargo")
 @pytest.mark.skipif(_CARGO is None, reason="cargo not on PATH")
 def test_check_rust_runs_cargo_dry_run(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     """check_rust completes against a real Cargo.toml without crashing."""
-    # rust_targeted_bump defaults on (settings-table default, #136), which
+    # rust_targeted_bump defaults on (settings-table default), which
     # makes check_rust return a (changes, behind) tuple instead of a bare
     # list. This test's assertion is specifically the bare-list return shape,
     # so pin the flag off rather than widen the assertion to accept both.

@@ -220,7 +220,7 @@ def test_repo_started_dirty_override_skips_even_when_live_check_is_clean(
 ) -> None:
     """An explicit repo_started_dirty=True is authoritative over a live-clean
     is_git_dirty check — this is what lets the caller snapshot dirty state once
-    per bundle. Issue #152."""
+    per bundle."""
     _reset_module_cache()
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     from repo_ops_models import WorkspaceResult
@@ -255,7 +255,7 @@ def test_repo_started_dirty_override_proceeds_even_when_live_check_is_dirty(
     """An explicit repo_started_dirty=False is authoritative over a live-dirty
     is_git_dirty check — this is the actual bug fix: a later sibling workspace
     must not be skipped just because an earlier sibling in the same bundle
-    already applied its own (not yet committed) changes. Issue #152."""
+    already applied its own (not yet committed) changes."""
     _reset_module_cache()
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     from repo_ops_models import WorkspaceResult

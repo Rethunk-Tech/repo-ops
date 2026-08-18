@@ -70,7 +70,7 @@ def test_json_out_requires_json(tmp_path: Path) -> None:
 
 
 def test_apply_json_out_keeps_colocated_npm_and_container(tmp_path: Path, init_git_repo) -> None:
-    """Co-located ecosystems must both survive result reconciliation (#146).
+    """Co-located ecosystems must both survive result reconciliation.
 
     A directory with package.json + Dockerfile yields two WorkspaceResults that
     share a path. Path-only keys in the post-pool map used to overwrite the
@@ -199,7 +199,7 @@ def test_write_json_report_omits_exit_code_when_none(tmp_path: Path) -> None:
     assert "exit_code" not in on_disk
 
 
-# ---------- inventory / pushed json-out contracts (F089) ----------
+# ---------- inventory / pushed json-out contracts ----------
 
 
 def test_inventory_json_out_writes_file_and_prints_path_only(tmp_path: Path, capsys) -> None:

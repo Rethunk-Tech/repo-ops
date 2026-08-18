@@ -262,7 +262,7 @@ def _bucket_pnpm_pkg(
     """
     # Treat latest as the upgrade target — mirrors apply_pnpm --latest. An
     # unknown latest ('?') falls through to the wanted check below so a known
-    # in-range bump is not silently omitted (#5).
+    # in-range bump is not silently omitted.
     if _pnpm_update_latest_enabled(ws) and latest not in ("?", "") and cur != latest:
         held_rule = resolve_package_hold(ws, name) if ws is not None else None
         if held_rule is not None and not is_within_ceiling(latest, held_rule):
@@ -408,7 +408,7 @@ def check_pnpm(ws: Workspace) -> tuple[list[Change], list[Change]]:
 
 
 def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Change], list[Change]]:
-    """Per-package ``pnpm update --latest <pkg>`` fallback for still-behind deps (#122).
+    """Per-package ``pnpm update --latest <pkg>`` fallback for still-behind deps.
 
     Mirrors yarn's ``targeted_bump_behind``: for each behind-latest direct dep we
     snapshot the workspace's lockfile/manifests, run a targeted
@@ -513,7 +513,7 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
 
 
 def _apply_pnpm_audit_overrides(ws: Workspace) -> set[str]:
-    """Install advisory-safe pins from ``_AUDIT_VERSION_OVERRIDES`` (#140 / bun parity).
+    """Install advisory-safe pins from ``_AUDIT_VERSION_OVERRIDES``.
 
     Independent of ``REPO_OPS_PNPM_TARGETED_BUMP`` so ``audit --fix`` pins are not
     silently skipped when the user did not also opt into targeted bump.
@@ -539,7 +539,8 @@ def apply_pnpm(ws: Workspace) -> list[Change]:
     Advisory-safe version overrides (``set_pnpm_audit_version_overrides``, wired
     by ``repo_ops_audit.audit.apply_remediations`` during ``audit --fix``) are
     applied independent of ``check_pnpm``'s findings and of the targeted-bump
-    flag — dropping them when outdated is empty was the silent-skip bug (#140).
+    flag: an empty ``outdated`` must still install them, or an advisory fix is
+    silently skipped.
 
     With ``REPO_OPS_PNPM_TARGETED_BUMP`` set, each dep that ``pnpm update`` left
     behind_latest gets a reversible targeted ``pnpm update --latest <pkg>``; only

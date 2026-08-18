@@ -9,7 +9,7 @@ from repo_ops_core.parallel import run_bounded_pool
 
 
 def test_run_bounded_pool_raising_task_does_not_abort_pool(caplog):
-    """#51 — a raising worker must not abort the pool; other results are returned."""
+    """A raising worker must not abort the pool; other results are returned."""
     import logging
 
     def worker(x: int) -> int:

@@ -526,7 +526,7 @@ def add_upgrade_common_arguments(
     )
     # --only-outdated applies to both plan and apply: the filter logic in run.py
     # and the human report are mode-agnostic (both read it via getattr), so it is
-    # registered unconditionally (#103).
+    # registered unconditionally.
     out.add_argument(
         "--only-outdated",
         action=argparse.BooleanOptionalAction,

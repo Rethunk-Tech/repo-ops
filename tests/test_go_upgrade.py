@@ -1,4 +1,4 @@
-"""Tests for Go upgrade mode alignment (issue #7)."""
+"""Tests for Go upgrade mode alignment."""
 
 from __future__ import annotations
 
@@ -116,7 +116,7 @@ def test_explicit_go_get_targets(tmp_path) -> None:
 
 
 def test_graph_only_modules_excluded(tmp_path) -> None:
-    """#113 — modules outside go.mod's Require list are ghost upgrades:
+    """Modules outside go.mod's Require list are ghost upgrades:
     go get bumps them in the graph, go mod tidy drops them, net diff zero.
     Neither check output nor explicit go get targets may include them."""
     ws = Workspace(
@@ -151,7 +151,7 @@ def test_graph_only_modules_excluded(tmp_path) -> None:
 
 
 def test_unreadable_gomod_skips_filtering(tmp_path) -> None:
-    """#113 — when go mod edit -json fails, fail open: report all updates."""
+    """When go mod edit -json fails, fail open: report all updates."""
     ws = Workspace(
         path=tmp_path,
         ecosystem="go",
@@ -263,7 +263,7 @@ def test_apply_go_explicit_mode_uses_get_separator(tmp_path) -> None:
 
 
 def test_check_go_passes_timeout_check(tmp_path) -> None:
-    """#57 — check_go must pass TIMEOUT_CHECK to run(), not the 300s default."""
+    """check_go must pass TIMEOUT_CHECK to run(), not the 300s default."""
     from repo_ops_core.constants import TIMEOUT_CHECK
     from repo_ops_go.go import check_go
 

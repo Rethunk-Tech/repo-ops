@@ -1,4 +1,4 @@
-"""Regression tests for --on-verify-fail=revert silent-failure fixes (#26).
+"""Regression tests for --on-verify-fail=revert silent-failure fixes.
 
 Covers:
   (a) A failed git checkout during revert results in reverted_ok=False and the

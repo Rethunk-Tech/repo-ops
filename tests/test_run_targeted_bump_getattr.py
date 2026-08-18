@@ -44,7 +44,7 @@ def test_magicmock_args_default_to_full_sweep(monkeypatch):
 
     run._run_upgrade_body(apply=False, args=args, roots=[])
 
-    # #136: the default sweep no longer force-writes these to "1" — each
+    # The default sweep does not force-write these to "1" — each
     # key's settings-table default is already "1", so an unset var must still
     # resolve enabled (and stays unset, so a user's own env/config can still
     # override it on a real run).
