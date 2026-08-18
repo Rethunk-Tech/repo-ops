@@ -21,8 +21,9 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core.constants import SKIP_DIRS
+from repo_ops_core.discovery import discover_repos
 from repo_ops_core.filesystem import read_toml_file, write_json_atomic
-from repo_ops_core.git import git_repo_for, run_git
+from repo_ops_core.git import git_repo_for, repo_label, run_git
 from repo_ops_core.process import run
 from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
 from repo_ops_lockfiles.parsers import (
@@ -138,13 +139,10 @@ def _python_edges(mdir: Path, names: set[str]) -> int:
     return _count_python_manifest_edges(mdir, names)
 
 
-def count_dep_edges(proj: Path) -> int:
+def count_dep_edges(proj: Path, *, prune: frozenset[str] | None = None) -> int:
     """Sum dependency edges under proj (Node package.json + Python lock/manifests)."""
     total = 0
-    for dirpath, dirnames, filenames in os.walk(proj):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        names = set(filenames)
-        mdir = Path(dirpath)
+    for mdir, names in iter_scanned_dirs(proj, prune=prune):
         if "package.json" in names:
             total += parse_package_json_direct(mdir / "package.json")
         total += _python_edges(mdir, names)
@@ -738,8 +736,12 @@ def count_deno(mdir: Path) -> tuple[int, set[str]]:
 # ---------- Walk ----------
 
 
-def find_manifests(root: Path) -> Iterator[tuple[Path, list[str]]]:
-    for mdir, names in iter_scanned_dirs(root):
+def find_manifests(
+    root: Path,
+    *,
+    prune: frozenset[str] | None = None,
+) -> Iterator[tuple[Path, list[str]]]:
+    for mdir, names in iter_scanned_dirs(root, prune=prune):
         kinds = manifest_kinds(names)
         if kinds:
             yield mdir, kinds
@@ -831,6 +833,7 @@ def _make_row(
     proj: Path,
     go_tasks: list[tuple[dict, Path, dict | None]],
     go_cache: dict | None,
+    prune: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     """Build a single project row dict, queuing Go tasks for parallel execution."""
     row: dict[str, Any] = {
@@ -843,8 +846,8 @@ def _make_row(
         "manifests": 0,
         "by_eco": {},
     }
-    row["edges"] = count_dep_edges(proj)
-    for mdir, kinds in find_manifests(proj):
+    row["edges"] = count_dep_edges(proj, prune=prune)
+    for mdir, kinds in find_manifests(proj, prune=prune):
         row["manifests"] += 1
         if "node" in kinds:
             d, v, lock = count_node(mdir)
@@ -928,7 +931,16 @@ def scan(
     flat: bool = False,
     go_cache: dict | None = None,
     jobs: int = 8,
+    follow_symlinks: bool = False,
 ) -> list[dict[str, Any]]:
+    """Build one row per git checkout under *root* (or one row for *root* if flat).
+
+    Rows are git repositories, not directory pairs: a checkout is a project
+    wherever it sits in the tree, which is what lets submodules and repos that
+    are not exactly two levels deep appear at all. Each row's manifest walk
+    prunes the nested checkouts that have rows of their own, so a superproject
+    is not also credited with its submodules' dependencies.
+    """
     rows: list[dict[str, Any]] = []
     go_tasks: list[tuple[dict, Path, dict | None]] = []
 
@@ -940,14 +952,22 @@ def scan(
     else:
         if not root.is_dir():
             return rows
-        for org in sorted(root.iterdir()):
-            if not org.is_dir() or org.name.startswith("."):
-                continue
-            for proj in sorted(org.iterdir()):
-                if not proj.is_dir() or proj.name.startswith("."):
-                    continue
-                row = _make_row(f"{org.name}/{proj.name}", proj, go_tasks, go_cache)
-                rows.append(row)
+        roots = [str(root)]
+        worktrees = sorted(set(discover_repos(roots, follow_symlinks=follow_symlinks).values()))
+        all_repos = frozenset(os.path.realpath(w) for w in worktrees)
+        for worktree in worktrees:
+            proj = Path(worktree)
+            # Prune every *other* checkout, not this one: pruning self would
+            # skip the whole walk and zero the row.
+            prune = frozenset(all_repos - {os.path.realpath(worktree)})
+            row = _make_row(
+                repo_label(proj, roots),
+                proj,
+                go_tasks,
+                go_cache,
+                prune=prune,
+            )
+            rows.append(row)
 
     if go_tasks:
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:

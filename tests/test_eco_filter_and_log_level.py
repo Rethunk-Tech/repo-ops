@@ -155,15 +155,15 @@ def test_kind_matches_new_ecosystems():
     assert not _kind_matches({"-"}, "actions")
 
 
-def test_inventory_main_filter_precommit_excludes_node(tmp_path: Path, capsys):
+def test_inventory_main_filter_precommit_excludes_node(tmp_path: Path, capsys, init_git_repo):
     """inventory --filter precommit suppresses rows that have only node kind."""
     org = tmp_path / "myorg"
     proj_node = org / "proj-node"
-    proj_node.mkdir(parents=True)
+    init_git_repo(proj_node)
     (proj_node / "package.json").write_text(json.dumps({"dependencies": {"a": "^1"}}))
 
     proj_pre = org / "proj-pre"
-    proj_pre.mkdir(parents=True)
+    init_git_repo(proj_pre)
     (proj_pre / ".pre-commit-config.yaml").write_text(
         "repos:\n"
         "  - repo: https://github.com/pre-commit/pre-commit-hooks\n"

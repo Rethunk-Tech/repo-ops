@@ -309,14 +309,16 @@ def test_count_node_bun_lockb_unsupported_on_invalid_dump(
 # ---------- eco filter recomputes metrics (F080) ----------
 
 
-def test_filter_recomputes_metrics_for_matching_eco_only(tmp_path: Path, capsys) -> None:
+def test_filter_recomputes_metrics_for_matching_eco_only(
+    tmp_path: Path, capsys, init_git_repo
+) -> None:
     """A node+precommit project filtered to precommit must drop node counts."""
     import json
 
     from repo_ops_inventory.scan import main as inventory_main
 
     proj = tmp_path / "org" / "mixed"
-    proj.mkdir(parents=True)
+    init_git_repo(proj)
     (proj / "package.json").write_text(
         json.dumps({"dependencies": {"a": "^1", "b": "^2", "c": "^3"}})
     )
@@ -437,7 +439,7 @@ def test_scan_go_pool_failure_yields_zero_deps(tmp_path: Path, monkeypatch) -> N
     assert "go" in rows[0]["kinds"]
 
 
-def test_inventory_sort_direct_descending(tmp_path: Path, capsys) -> None:
+def test_inventory_sort_direct_descending(tmp_path: Path, capsys, init_git_repo) -> None:
     import json
 
     from repo_ops_inventory.scan import main as inventory_main
@@ -445,8 +447,8 @@ def test_inventory_sort_direct_descending(tmp_path: Path, capsys) -> None:
     org = tmp_path / "org"
     low = org / "low"
     high = org / "high"
-    low.mkdir(parents=True)
-    high.mkdir(parents=True)
+    init_git_repo(low)
+    init_git_repo(high)
     (low / "pyproject.toml").write_text('[project]\ndependencies = ["a"]\n')
     (high / "pyproject.toml").write_text('[project]\ndependencies = ["a", "b", "c"]\n')
 
@@ -467,7 +469,12 @@ def test_inventory_sort_direct_descending(tmp_path: Path, capsys) -> None:
     ],
 )
 def test_inventory_sort_remaining_columns(
-    tmp_path: Path, capsys, sort_key: str, row_key: str, expected_names: list[str]
+    tmp_path: Path,
+    capsys,
+    init_git_repo,
+    sort_key: str,
+    row_key: str,
+    expected_names: list[str],
 ) -> None:
     import json
 
@@ -476,8 +483,8 @@ def test_inventory_sort_remaining_columns(
     org = tmp_path / "org"
     alpha = org / "alpha"
     zeta = org / "zeta"
-    alpha.mkdir(parents=True)
-    zeta.mkdir(parents=True)
+    init_git_repo(alpha)
+    init_git_repo(zeta)
 
     (alpha / "package.json").write_text(json.dumps({"dependencies": {"a": "^1.0.0"}}))
     (alpha / "package-lock.json").write_text(
@@ -524,13 +531,13 @@ def test_inventory_sort_remaining_columns(
         assert rows[0][row_key] > rows[1][row_key]
 
 
-def test_inventory_top_truncates_human_output(tmp_path: Path, capsys) -> None:
+def test_inventory_top_truncates_human_output(tmp_path: Path, capsys, init_git_repo) -> None:
     from repo_ops_inventory.scan import main as inventory_main
 
     org = tmp_path / "org"
     for name in ("a", "b", "c"):
         p = org / name
-        p.mkdir(parents=True)
+        init_git_repo(p)
         (p / "pyproject.toml").write_text('[project]\nname = "x"\n')
 
     rc = inventory_main([str(tmp_path), "--top", "2"])
