@@ -33,6 +33,7 @@ instead, moving only what each manifest's own constraints already allow.
 | Goal | Command |
 | ------ | --------- |
 | Dependency footprint (read-only) | `repo-ops inventory` |
+| Branch / dirty / ahead / behind per repo | `repo-ops inventory --status` |
 | Plan drift (no writes) | `repo-ops plan` |
 | Apply updates + verify | `repo-ops apply` |
 | Pushed-commit audit | `repo-ops pushed` |

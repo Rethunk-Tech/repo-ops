@@ -1,7 +1,8 @@
 ---
 name: repo-ops
 description: >-
-  Dependency inventory, lockfile audit, plan/apply upgrades, Actions pins.
+  Dependency inventory, repo status (ahead/behind/dirty), lockfile audit,
+  plan/apply upgrades, Actions pins.
   Trigger: repo-ops, Dependabot, SBOM.
 ---
 

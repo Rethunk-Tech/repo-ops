@@ -8,7 +8,7 @@ Subcommands (entry point in `src/repo_ops`):
 
 | Subcommand | Purpose |
 | ------------ | --------- |
-| `inventory` | Read-only dependency footprint |
+| `inventory` | Read-only dependency footprint, or working-tree drift with `--status` |
 | `plan` | Outdated deps, Actions pin drift, remediations (no writes) |
 | `apply` | Apply updates, Actions bumps, remediations, verify gates |
 | `pushed` | Commits in a time window from local remote-tracking reflogs (default) or GitHub PushEvents (`--source=gh`) |
@@ -27,8 +27,39 @@ Default scan roots: [`DEFAULT_ROOTS`](../src/repo_ops_core/constants.py) (`/usr/
 
 `repo-ops inventory [root_dir ...]` reports read-only dependency counts per workspace.
 
+Rows are git checkouts. A repository is a row wherever it sits in the tree, so
+submodules and nested checkouts each get their own, and a plain directory that
+is not a repository never becomes one. Each row's manifest walk prunes the
+nested checkouts that have rows of their own, so a superproject is not also
+credited with its submodules' dependencies.
+
 - `--sort {name,direct,versions,on-disk,edges}` — sort column; `name` sorts ascending, every other column sorts descending (default: `name`).
 - `--no-cache` — bypass the XDG Go module result cache.
+- `--follow-symlinks` — traverse symlinked `.git` directories during discovery.
+
+#### `--status` — working-tree drift
+
+`repo-ops inventory --status` reports where each checkout stands relative to its
+upstream instead of counting dependencies, and skips manifest scanning entirely:
+
+```
+repo                                      branch  dirty  ahead  behind
+--------------------------------------------------------------------
+com.github/Rethunk-Tech/repo-ops          main        7     15       0
+com.github/Rethunk-Tech/sagaforge-ts      main        0     38       0
+```
+
+- `dirty` counts working-tree entries (a rename is one entry, not two).
+- `ahead`/`behind` compare `HEAD` against its upstream. A branch with no
+  configured upstream falls back to `origin/HEAD`; a detached `HEAD` does not,
+  because a submodule parked at its parent's pin has not drifted. Repos with no
+  comparison ref print `-`, which is distinct from a measured `0`.
+- Counts read remote-tracking refs as they stand on disk, so they are only as
+  fresh as each repo's last fetch. `--fetch` refreshes first (`--fetch` without
+  `--status` is rejected); repos whose fetch fails are reported on stderr and
+  keep their stale counts.
+- `--json` emits `mode: "status"`, a `fetched` flag, per-repo `upstream`,
+  `empty`, and `error` fields, and a `summary` roll-up.
 
 ### `pushed` — local reflog or GitHub PushEvent
 
@@ -93,9 +124,9 @@ pushes.
 ### Security and discovery
 
 - **Scan roots:** `resolve_scan_roots` expands paths, requires existing directories, and rejects tokens that look like `find(1)` predicates (for example `-name`).
-- **Symlinks:** `find` does not follow symlinks by default. Pass `--follow-symlinks` on `plan`, `apply`, or `pushed` when symlinked `.git` dirs must be traversed (`find -L`).
+- **Symlinks:** `find` does not follow symlinks by default. Pass `--follow-symlinks` on `inventory`, `plan`, `apply`, or `pushed` when symlinked `.git` dirs must be traversed (`find -L`).
 - **Actions-only repos:** Git repos with workflow files but no dependency workspaces still appear in plan/apply (Actions pin audit only).
-- **`--flat`:** On `inventory` and upgrade `plan`/`apply`, skips the org/proj two-level walk when scanning a single root (not used by `pushed`).
+- **`--flat`:** On `inventory` and upgrade `plan`/`apply`, treats each root as a single project rather than discovering the checkouts beneath it (not used by `pushed`).
 - **Node `packageManager`:** Only `npm`, `pnpm`, `yarn`, and `bun` with `name@version` form are accepted; path-like or unknown names are skipped with diagnostics.
 - **`--exclude PATTERN`:** Repeatable on `plan`, `apply`, `audit`, `dependabot`, and `pushed`. A repository is skipped when a pattern substring- or fnmatch-matches its label or absolute path. Unlike every other setting, `--exclude` does not override the config layers — CLI, per-repo `exclude`, and global `exclude` are unioned, so an ad-hoc flag cannot silently pull a permanently-excluded repo back into a sweep.
 

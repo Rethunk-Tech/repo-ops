@@ -12,6 +12,7 @@ Package `__init__.py` files typically export only `main` (CLI entry) and `regist
 | Upgrade orchestration | `repo_ops_upgrade.orchestration`, `repo_ops_upgrade.registry`, `repo_ops_upgrade.discovery`, `repo_ops_upgrade.actions`, `repo_ops_upgrade.verify`, `repo_ops_upgrade.pr` | Plan/apply pipeline |
 | Models | `repo_ops_models` | Shared dataclasses (`Workspace`, `Change`, …) |
 | Inventory | `repo_ops_inventory.scan` | Dependency footprint |
+| Repo status | `repo_ops_status.status` | Branch, dirty count, ahead/behind per checkout |
 | Push audit | `repo_ops_pushed.audit` | Reflog window scan |
 | Audit | `repo_ops_audit.audit` | `RemediationItem`, `collect_all_remediations`, `run_audit`, `main` |
 | Dependabot | `repo_ops_dependabot.dependabot` | `detect_ecosystems`, supersession helpers, `main` |

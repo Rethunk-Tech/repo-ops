@@ -19,6 +19,11 @@ bumps, Actions pin/digest refresh, container digest refresh) is the default,
 no flags required. Pass `--conservative` to stay within existing manifest
 constraints instead.
 
+To see where every checkout stands rather than what it depends on, run
+`repo-ops inventory --status` — one row per repo with its branch, dirty file
+count, and commits ahead/behind upstream. Counts read remote-tracking refs as
+they stand on disk, so add `--fetch` when they need to be current.
+
 `--verify-test` enables Go and Rust tests during apply verification. Hatch
 verification includes mypy and pyrefly when configured; pyrefly project
 excludes are passed through as CLI flags. `doctor` checks for `pyrefly`, `ruff`, `hatch`,
