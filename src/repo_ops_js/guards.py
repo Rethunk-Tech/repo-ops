@@ -1,6 +1,6 @@
 """Post-apply ghost-bump resolution guard (shared across JS package managers).
 
-a ``bun update`` (or ``npm update`` / ``pnpm update``) can churn the
+A ``bun update`` (or ``npm update`` / ``pnpm update``) can churn the
 lockfile while an ``overrides``/``resolutions``/``pnpm.overrides`` entry or an
 exact-pin dependency range keeps the OLD version installed.  ``verify``
 (build/test) then passes against the un-upgraded tree and the bump is reported

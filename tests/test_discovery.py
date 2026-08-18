@@ -62,9 +62,9 @@ def test_discover_all_finds_repo_below_org_proj_depth(tmp_path: Path, init_git_r
 
 
 def test_discover_all_enumerates_multiple_and_subdir_workspaces(tmp_path: Path, init_git_repo):
-    """(points 3 + subdir-only): a single repo with a Go
-    module at its root AND a node app in ``web/`` yields BOTH workspaces, and a
-    repo whose only manifest sits in a subdir is still discovered."""
+    """A single repo with a Go module at its root AND a node app in ``web/``
+    yields BOTH workspaces, and a repo whose only manifest sits in a subdir is
+    still discovered."""
     org = tmp_path / "com.github" / "Acme"
 
     multi = org / "kui"
@@ -90,8 +90,8 @@ def test_discover_all_enumerates_multiple_and_subdir_workspaces(tmp_path: Path, 
 
 
 def test_discover_all_suppresses_uv_workspace_members(tmp_path: Path, init_git_repo):
-    """(explosion guard): uv workspace members (governed by
-    the root ``uv.lock``) must NOT each surface as standalone workspaces."""
+    """uv workspace members (governed by the root ``uv.lock``) must NOT each
+    surface as standalone workspaces."""
     repo = tmp_path / "com.github" / "Acme" / "monorepo"
     init_git_repo(repo)
     (repo / "pyproject.toml").write_text(
@@ -111,8 +111,8 @@ def test_discover_all_suppresses_uv_workspace_members(tmp_path: Path, init_git_r
 
 
 def test_discover_all_records_skip_for_unactionable_manifest(tmp_path: Path, init_git_repo):
-    """(point 2): a manifest found but not actionable is
-    recorded as a counted skip with a reason, never silently dropped."""
+    """A manifest found but not actionable is recorded as a counted skip with a
+    reason, never silently dropped."""
     repo = tmp_path / "com.github" / "Acme" / "nolock"
     init_git_repo(repo)
     # package.json with neither a lockfile nor a packageManager field.
