@@ -15,18 +15,24 @@ Columns:
   on-disk   Actual node_modules/**/package.json instance count (true sprawl,
             includes nested duplicates from version conflicts).
   manifests Number of manifest files found (depth ≥ 1).
+
+Rows are git checkouts, discovered wherever they sit in the tree. Pass --status
+for working-tree drift instead of dependency counts: repo, branch, dirty file
+count, and commits ahead/behind upstream.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
 from repo_ops_core.cli import (
     add_eco_filter_argument,
     add_flat_argument,
+    add_follow_symlinks_argument,
     add_json_argument,
     add_json_out_argument,
     add_roots_argument,
@@ -35,6 +41,7 @@ from repo_ops_core.cli import (
     resolve_scan_roots,
     wire_verbose,
 )
+from repo_ops_core.discovery import discover_repos
 from repo_ops_core.filesystem import write_json_atomic
 from repo_ops_core.table import column_width, format_cell, join_row
 from repo_ops_inventory.counting import (
@@ -45,6 +52,8 @@ from repo_ops_inventory.counting import (
     save_go_cache,
     scan,
 )
+from repo_ops_status.report import print_status_table, status_payload
+from repo_ops_status.status import collect_all, repo_paths_to_labels
 
 
 def _totals(rows: list[dict]) -> dict[str, int]:
@@ -171,6 +180,23 @@ def _add_inventory_arguments(parser: argparse.ArgumentParser) -> None:
     )
     add_eco_filter_argument(parser)
     add_flat_argument(parser)
+    add_follow_symlinks_argument(parser)
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help=(
+            "Report working-tree status per repo (repo/branch/dirty/ahead/behind) "
+            "instead of dependency counts. Skips manifest scanning entirely."
+        ),
+    )
+    parser.add_argument(
+        "--fetch",
+        action="store_true",
+        help=(
+            "With --status: refresh remote-tracking refs first. Without it, "
+            "ahead/behind reflect each repo's last fetch."
+        ),
+    )
     parser.add_argument(
         "--no-cache",
         dest="no_cache",
@@ -180,12 +206,52 @@ def _add_inventory_arguments(parser: argparse.ArgumentParser) -> None:
     add_verbose_argument(parser)
 
 
+def _run_status(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """Render the status mode: one row per discovered git checkout."""
+    roots = resolve_scan_roots(list(args.roots), parser)
+    follow = bool(getattr(args, "follow_symlinks", False))
+    if args.flat:
+        # --flat names each root itself as the project, so discovery is skipped.
+        labelled = [(Path(root).resolve().name, str(Path(root).resolve())) for root in roots]
+    else:
+        labelled = repo_paths_to_labels(
+            discover_repos(roots, follow_symlinks=follow),
+            roots,
+        )
+
+    rows, failed_fetches = collect_all(labelled, jobs=args.jobs, fetch=args.fetch)
+    if failed_fetches:
+        print(
+            f"WARNING: {failed_fetches} repo(s) failed to fetch; their counts are stale",
+            file=sys.stderr,
+        )
+
+    if args.json_out:
+        payload = status_payload(rows, roots, fetched=bool(args.fetch))
+        json_report_path = getattr(args, "json_report_path", None)
+        if json_report_path:
+            print(write_json_atomic(Path(json_report_path), payload, compact=args.compact))
+        else:
+            print(json.dumps(payload, indent=None if args.compact else 2))
+        return 0
+
+    if not args.fetch:
+        print("Counts are relative to each repo's last fetch; pass --fetch to refresh.")
+    print_status_table(rows, top=args.top)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_inventory_parser()
     args = parser.parse_args(argv)
     wire_verbose(args)
     if getattr(args, "json_report_path", None) and not args.json_out:
         parser.error("--json-out requires --json")
+
+    if args.fetch and not args.status:
+        parser.error("--fetch requires --status")
+    if args.status:
+        return _run_status(args, parser)
 
     cache_path = _go_cache_path()
     go_cache: dict | None = None
@@ -196,7 +262,15 @@ def main(argv: list[str] | None = None) -> int:
     scanned_roots = list(roots)
     all_rows = []
     for root_path in roots:
-        all_rows.extend(scan(Path(root_path), flat=args.flat, go_cache=go_cache, jobs=args.jobs))
+        all_rows.extend(
+            scan(
+                Path(root_path),
+                flat=args.flat,
+                go_cache=go_cache,
+                jobs=args.jobs,
+                follow_symlinks=bool(getattr(args, "follow_symlinks", False)),
+            )
+        )
 
     if not args.no_cache and go_cache is not None:
         save_go_cache(cache_path, go_cache)
