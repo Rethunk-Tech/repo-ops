@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "repo-ops"
-version = "0.23.0"
+version = "0.24.0"
 description = "Repository operations and dependency maintenance tools for Rethunk-Tech."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -66,6 +66,7 @@ module-name = [
   "repo_ops_js_bun",
   "repo_ops_js_yarn",
   "repo_ops_go",
+  "repo_ops_status",
   "repo_ops_rust",
   "repo_ops_container",
   "repo_ops_py",
