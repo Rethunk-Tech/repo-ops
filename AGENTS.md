@@ -71,4 +71,4 @@ Releases cut on `v*` tag push — `release.yml` creates the GitHub Release and u
 5. Annotated tag `git tag -a vX.Y.Z`; push commit, then tag (FF-only).
 6. Reinstall `uv tool install --force .` (uv tool, not pipx); verify `repo-ops --version` and smoke new subcommands.
 
-**PyPI publish is intentionally deferred** ([#124](https://github.com/Rethunk-Tech/repo-ops/issues/124)). OIDC exchange fails with "valid token, but no corresponding publisher" — an operator action on PyPI's publishing settings, **not a CI defect; do not re-diagnose.**
+**PyPI publish is intentionally deferred.** OIDC exchange fails with "valid token, but no corresponding publisher" — an operator action on PyPI's publishing settings, **not a CI defect; do not re-diagnose.**

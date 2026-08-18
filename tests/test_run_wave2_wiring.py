@@ -1,4 +1,4 @@
-"""Run-path wiring tests for W7 findings (exclude, skip-remediations, PR, levels)."""
+"""Run-path wiring tests for exclude, skip-remediations, PR, and level scheduling."""
 
 from __future__ import annotations
 

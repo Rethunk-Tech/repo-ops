@@ -1,9 +1,7 @@
-"""Wave-2 upgrade-engine coverage (W7 findings).
-
-Covers orchestration go_generate gate, verify gates for pdm/pipenv/hatch/deno/
-precommit, filter_workspaces, apply-fail remediations skip, missing applier,
-worker-crash reconciliation helpers, exclude filtering, and children-first
-level scheduling seams exercised via focused unit tests.
+"""Upgrade-engine coverage for orchestration go_generate gate, verify gates for
+pdm/pipenv/hatch/deno/precommit, filter_workspaces, apply-fail remediations skip,
+missing applier, worker-crash reconciliation helpers, exclude filtering, and
+children-first level scheduling seams exercised via focused unit tests.
 """
 
 from __future__ import annotations
