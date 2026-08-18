@@ -112,7 +112,8 @@ def test_default_sweep_sets_policy_env_and_refreshes_actions(
 
     assert rc == 0
     assert os.environ["REPO_OPS_GO_UPGRADE_MODE"] == "patch"
-    # the default sweep no longer force-writes _SWEEP_ENV_VARS to "1"    # each key's settings-table default is already "1", so an unset var must
+    # The default sweep does not force-write _SWEEP_ENV_VARS to "1" —
+    # each key's settings-table default is already "1", so an unset var must
     # still resolve enabled (and stays unset, so a user's own env/config can
     # still override it on a real run).
     env_var_to_setting = {

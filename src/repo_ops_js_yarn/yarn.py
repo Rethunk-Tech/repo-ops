@@ -53,9 +53,6 @@ from repo_ops_lockfiles.snapshots import (
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import YARN_ISOLATED_COPY_SKIP, YARN_ISOLATED_YARN_SKIP
 
-# Compat alias: tests historically imported the private yarn helper.
-_package_json_paths = package_json_paths
-
 FILE_PROTOCOL_RE = re.compile(r"^file:(\.\./.+?)(?:#.*)?$")
 
 # Audit version overrides: package → advisory-safe version to use instead of @latest.

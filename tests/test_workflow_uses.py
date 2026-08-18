@@ -174,8 +174,9 @@ def test_parse_real_ci_workflow(repo_ops_workflows: Path) -> None:
     checkout = [p for p in pins if p.action == "actions/checkout"]
     assert checkout, "expected actions/checkout in repo ci.yml"
     # Policy dogfood: this repo's own workflows are SHA-pinned (via
-    # --actions-pin-sha, #NNN) with a # vN.M.P audit-hint comment, matching
-    # the supply-chain-hardening posture this repo enforces on every caller    # assert the shape, not a frozen value.
+    # --actions-pin-sha) with a # vN.M.P audit-hint comment, matching the
+    # supply-chain-hardening posture this repo enforces on every caller —
+    # assert the shape, not a frozen value.
     assert re.fullmatch(r"[0-9a-f]{40}", checkout[0].pin), (
         f"repo ci.yml checkout should be SHA-pinned, got {checkout[0].pin!r}"
     )

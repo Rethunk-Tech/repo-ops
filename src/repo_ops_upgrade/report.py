@@ -244,7 +244,8 @@ def build_run_summary(
     }
     # Top-3 staleness scores (behind-count x days-behind, from the state
     # store).  Only attached when at least one repo scores above zero, so an
-    # empty store leaves the summary dict — and every consumer's output    # byte-identical to before this field existed.
+    # empty store leaves the summary dict — and every consumer's output —
+    # unchanged when no repo has a score.
     staleness_top = _collect_staleness_top(bundles)
     if staleness_top:
         summary["staleness_top"] = staleness_top

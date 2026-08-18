@@ -9,8 +9,8 @@ from repo_ops_js_yarn.yarn import (
     _file_protocol_targets,
     _isolated_yarn_ignore,
     _layout_root,
-    _package_json_paths,
     _workspace_declares_resolutions,
+    package_json_paths,
 )
 from repo_ops_models import Workspace
 from repo_ops_upgrade.constants import YARN_ISOLATED_COPY_SKIP
@@ -62,7 +62,7 @@ def test_package_json_paths_includes_workspace_packages(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (pkg / "package.json").write_text("{}", encoding="utf-8")
-    paths = _package_json_paths(root)
+    paths = package_json_paths(root)
     assert root / "package.json" in paths
     assert pkg / "package.json" in paths
 

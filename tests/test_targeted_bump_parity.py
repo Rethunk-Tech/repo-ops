@@ -1,10 +1,9 @@
-"""Coverage for the wave-1 upgrade-parity gaps (contracts 1-3).
+"""Upgrade-parity coverage across managers.
 
-1. The default full sweep also flips the container/pre-commit/submodule
-   cross-major gates (previously only bun/pnpm/yarn + go were wired);
-   ``--conservative`` flips all of them off.
-2. ``REPO_OPS_BUN_TARGETED_BUMP`` defaults on with the sweep (mirrors the
-   existing yarn/npm/pnpm wiring); ``--conservative`` disables it.
+1. The default full sweep flips the container/pre-commit/submodule cross-major
+   gates alongside bun/pnpm/yarn and go; ``--conservative`` flips all off.
+2. ``REPO_OPS_BUN_TARGETED_BUMP`` defaults on with the sweep, matching the
+   yarn/npm/pnpm wiring; ``--conservative`` disables it.
 3. ``_behind_latest_hint`` gives npm/pnpm/bun the same "flag not passed ->
    name the flag; flag passed -> targeted bump was tried" treatment yarn
    already had.
