@@ -369,40 +369,32 @@ def test_fix_called_when_flag_passed_and_remediations_exist(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """--fix calls apply_remediations when remediations are present."""
-    pip_audit_out = json.dumps(
-        [
-            {
-                "name": "Pillow",
-                "version": "9.0.0",
-                "vulns": [
-                    {
-                        "id": "GHSA-001",
-                        "aliases": ["CVE-2023-001"],
-                        "fix_versions": ["9.1.0"],
-                    }
-                ],
-            }
-        ]
+    (tmp_path / "uv.lock").write_text("", encoding="utf-8")
+    uv_audit_out = json.dumps(
+        {
+            "vulnerabilities": [
+                {
+                    "dependency": {"name": "Pillow", "version": "9.0.0"},
+                    "id": "GHSA-001",
+                    "aliases": ["CVE-2023-001"],
+                    "fix_versions": ["9.1.0"],
+                }
+            ]
+        }
     )
 
     def _mock_run(cmd, cwd):
-        # Check --version FIRST: both the probe (`pip-audit --version`) and the
-        # real audit call (`pip-audit --format json ...`) contain the literal
-        # "pip-audit" list element, so the version probe must be disambiguated
-        # before the broader "pip-audit" membership check.
-        if "--version" in cmd:
-            return 0, "pip-audit 2.7.0", ""
-        if "pip-audit" in cmd:
-            return 0, pip_audit_out, ""
+        if "audit" in cmd:
+            return 0, uv_audit_out, ""
         return 0, "", ""
 
-    mock_outcomes = [ApplyOutcome(workspace="/ws", status="ok", changes_count=1)]
+    mock_outcomes = [ApplyOutcome(workspace=str(tmp_path), status="ok", changes_count=1)]
 
     with (
-        patch("repo_ops_audit.audit.discover_repos", return_value={"/ws": "/ws"}),
+        patch("repo_ops_audit.audit.discover_repos", return_value={str(tmp_path): str(tmp_path)}),
         patch(
             "repo_ops_audit.audit._detect_workspaces",
-            return_value=[("/ws", "py-uv", "uv")],
+            return_value=[(str(tmp_path), "py-uv", "uv")],
         ),
         patch("repo_ops_core.git.repo_label", return_value="ws"),
         patch("shutil.which", return_value="/usr/bin/uv"),
@@ -439,40 +431,32 @@ def test_fix_json_output_includes_apply_outcomes(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """--fix --json includes 'apply_outcomes' key in the JSON payload."""
-    pip_audit_out = json.dumps(
-        [
-            {
-                "name": "Pillow",
-                "version": "9.0.0",
-                "vulns": [
-                    {
-                        "id": "GHSA-001",
-                        "aliases": ["CVE-2023-001"],
-                        "fix_versions": ["9.1.0"],
-                    }
-                ],
-            }
-        ]
+    (tmp_path / "uv.lock").write_text("", encoding="utf-8")
+    uv_audit_out = json.dumps(
+        {
+            "vulnerabilities": [
+                {
+                    "dependency": {"name": "Pillow", "version": "9.0.0"},
+                    "id": "GHSA-001",
+                    "aliases": ["CVE-2023-001"],
+                    "fix_versions": ["9.1.0"],
+                }
+            ]
+        }
     )
 
     def _mock_run(cmd, cwd):
-        # Check --version FIRST: both the probe (`pip-audit --version`) and the
-        # real audit call (`pip-audit --format json ...`) contain the literal
-        # "pip-audit" list element, so the version probe must be disambiguated
-        # before the broader "pip-audit" membership check.
-        if "--version" in cmd:
-            return 0, "pip-audit 2.7.0", ""
-        if "pip-audit" in cmd:
-            return 0, pip_audit_out, ""
+        if "audit" in cmd:
+            return 0, uv_audit_out, ""
         return 0, "", ""
 
-    mock_outcomes = [ApplyOutcome(workspace="/ws", status="ok", changes_count=1)]
+    mock_outcomes = [ApplyOutcome(workspace=str(tmp_path), status="ok", changes_count=1)]
 
     with (
-        patch("repo_ops_audit.audit.discover_repos", return_value={"/ws": "/ws"}),
+        patch("repo_ops_audit.audit.discover_repos", return_value={str(tmp_path): str(tmp_path)}),
         patch(
             "repo_ops_audit.audit._detect_workspaces",
-            return_value=[("/ws", "py-uv", "uv")],
+            return_value=[(str(tmp_path), "py-uv", "uv")],
         ),
         patch("repo_ops_core.git.repo_label", return_value="ws"),
         patch("shutil.which", return_value="/usr/bin/uv"),

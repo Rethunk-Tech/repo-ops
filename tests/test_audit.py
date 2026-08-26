@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from repo_ops_audit.audit import (
+    RemediationItem,
     VulnCount,
     WorkspaceResult,
     _audit_go,
@@ -374,61 +375,90 @@ def test_audit_py_uv_skipped_when_uv_missing() -> None:
     assert result.status == "skipped"
 
 
-def test_audit_py_uv_skipped_when_pip_audit_not_available() -> None:
-    """pip-audit unavailable via uv run pip-audit --version → skip."""
+def test_audit_py_uv_skipped_when_uv_lock_missing(tmp_path: Path) -> None:
+    """No uv.lock in the workspace → skip without running uv audit."""
     with (
         patch("shutil.which", return_value="/usr/bin/uv"),
-        patch(
-            "repo_ops_audit.audit._probe_pip_audit",
-            return_value=False,
-        ),
+        patch("repo_ops_audit.audit._run") as mock_run,
     ):
-        result = _audit_py_uv("/some/repo")
+        result = _audit_py_uv(str(tmp_path))
+    mock_run.assert_not_called()
     assert result.status == "skipped"
-    assert "pip-audit" in result.skip_reason
+    assert "uv.lock" in result.skip_reason
 
 
-def test_audit_py_uv_ok_no_vulns() -> None:
-    pip_audit_out = json.dumps([{"name": "requests", "version": "2.31.0", "vulns": []}])
-    with (
-        patch("shutil.which", return_value="/usr/bin/uv"),
-        patch("repo_ops_audit.audit._probe_pip_audit", return_value=True),
-        patch(
-            "repo_ops_audit.audit._run",
-            return_value=(0, pip_audit_out, ""),
-        ),
-    ):
-        result = _audit_py_uv("/some/repo")
-    assert result.status == "ok"
-
-
-def test_audit_py_uv_vulns() -> None:
-    pip_audit_out = json.dumps(
-        [
-            {
-                "name": "Pillow",
-                "version": "9.0.0",
-                "vulns": [
-                    {
-                        "id": "GHSA-001",
-                        "aliases": ["CVE-2023-001"],
-                        "fix_versions": ["9.1.0"],
-                    }
-                ],
-            }
-        ]
+def test_audit_py_uv_ok_no_vulns(tmp_path: Path) -> None:
+    (tmp_path / "uv.lock").write_text("", encoding="utf-8")
+    uv_audit_out = json.dumps(
+        {
+            "schema": {"version": "preview"},
+            "summary": {"audited_packages": 25, "vulnerabilities": 0, "adverse_statuses": 0},
+            "vulnerabilities": [],
+            "adverse_statuses": [],
+        }
     )
     with (
         patch("shutil.which", return_value="/usr/bin/uv"),
-        patch("repo_ops_audit.audit._probe_pip_audit", return_value=True),
         patch(
             "repo_ops_audit.audit._run",
-            return_value=(0, pip_audit_out, ""),
+            return_value=(0, uv_audit_out, ""),
         ),
     ):
-        result = _audit_py_uv("/some/repo")
+        result = _audit_py_uv(str(tmp_path))
+    assert result.status == "ok"
+
+
+def test_audit_py_uv_vulns(tmp_path: Path) -> None:
+    (tmp_path / "uv.lock").write_text("", encoding="utf-8")
+    uv_audit_out = json.dumps(
+        {
+            "schema": {"version": "preview"},
+            "summary": {"audited_packages": 5, "vulnerabilities": 1, "adverse_statuses": 0},
+            "vulnerabilities": [
+                {
+                    "dependency": {"name": "idna", "version": "2.7"},
+                    "id": "GHSA-65pc-fj4g-8rjx",
+                    "display_id": "GHSA-65pc-fj4g-8rjx",
+                    "aliases": ["CVE-2026-45409", "PYSEC-2026-215"],
+                    "summary": "denial-of-service in idna.encode()",
+                    "fix_versions": ["3.15"],
+                }
+            ],
+            "adverse_statuses": [],
+        }
+    )
+    with (
+        patch("shutil.which", return_value="/usr/bin/uv"),
+        patch(
+            "repo_ops_audit.audit._run",
+            return_value=(0, uv_audit_out, ""),
+        ),
+    ):
+        result = _audit_py_uv(str(tmp_path))
     assert result.status == "vulns"
     assert result.counts.high == 1
+    assert result.remediations == [
+        RemediationItem(
+            package="idna", safe_version="3.15", ecosystem="py-uv", workspace=str(tmp_path)
+        )
+    ]
+
+
+def test_audit_py_uv_invokes_uv_audit_never_pip_audit(tmp_path: Path) -> None:
+    """py-uv path must shell out to `uv audit`, never `pip-audit`."""
+    (tmp_path / "uv.lock").write_text("", encoding="utf-8")
+    uv_audit_out = json.dumps({"vulnerabilities": []})
+    with (
+        patch("shutil.which", return_value="/usr/bin/uv"),
+        patch(
+            "repo_ops_audit.audit._run",
+            return_value=(0, uv_audit_out, ""),
+        ) as mock_run,
+    ):
+        _audit_py_uv(str(tmp_path))
+    (cmd, _cwd), _kwargs = mock_run.call_args
+    assert cmd == ["uv", "audit", "--frozen", "--output-format", "json"]
+    assert "pip-audit" not in cmd
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ subcommands, then runs the native auditor for each ecosystem:
 
   go      → govulncheck ./...
   node    → npm audit --json / yarn npm audit --json / pnpm audit --json / bun audit
+  py-uv   → uv audit --frozen --output-format json
   py-*    → manager export + pip-audit --format json, else skipped
   rust    → cargo audit --json
   deno    → deno audit
@@ -34,7 +35,7 @@ Each ecosystem maps its own severity vocabulary to the canonical four buckets:
     reported in a separate ``unknown`` bucket.  Use ``--fail-on-unknown`` to
     treat unknown-severity findings as failures.
 
-  pip-audit
+  uv audit / pip-audit
     CVE alias present, no fix   → critical
     CVE alias present, fix known → high
     no CVE alias                → moderate
@@ -1573,6 +1574,154 @@ def _extract_findings_govulncheck_json(
     return items
 
 
+def _extract_remediations_uv_audit(
+    data: dict[str, Any], ws: str, ecosystem: str = "py-uv"
+) -> list[RemediationItem]:
+    """Extract (package → highest known-safe fix_version) from ``uv audit`` JSON.
+
+    ``uv audit`` JSON structure (schema version ``"preview"``, unstable)::
+
+        {"vulnerabilities": [{"dependency": {"name": "idna", "version": "2.7"},
+                               "id": "GHSA-...", "aliases": ["CVE-..."],
+                               "fix_versions": ["3.15"]}]}
+
+    Same highest-fix-wins reduction as ``_extract_remediations_pip_audit``, just
+    against the vulnerability-per-entry (rather than package-per-entry) shape.
+    """
+    best: dict[str, str] = {}
+    for vuln in data.get("vulnerabilities", []):
+        if not isinstance(vuln, dict):
+            continue
+        dependency = vuln.get("dependency")
+        name = str(dependency.get("name") or "").strip() if isinstance(dependency, dict) else ""
+        if not name:
+            continue
+        for fv in vuln.get("fix_versions", []):
+            fv = str(fv).strip()
+            if not fv:
+                continue
+            prev = best.get(name)
+            if prev is None:
+                best[name] = fv
+            else:
+                try:
+                    if tuple(int(x) for x in fv.split(".")) > tuple(
+                        int(x) for x in prev.split(".")
+                    ):
+                        best[name] = fv
+                except (ValueError, TypeError):
+                    if fv > prev:
+                        best[name] = fv
+    return [
+        RemediationItem(package=pkg, safe_version=ver, ecosystem=ecosystem, workspace=ws)
+        for pkg, ver in sorted(best.items())
+    ]
+
+
+def _extract_findings_uv_audit(
+    data: dict[str, Any], ws: str, ecosystem: str = "py-uv"
+) -> list[FindingItem]:
+    """Extract one finding for each ``uv audit`` vulnerability entry."""
+    safe_versions = {
+        item.package: item.safe_version
+        for item in _extract_remediations_uv_audit(data, ws, ecosystem)
+    }
+    findings: list[FindingItem] = []
+    for index, vuln in enumerate(data.get("vulnerabilities", [])):
+        if not isinstance(vuln, dict):
+            continue
+        dependency = vuln.get("dependency")
+        package = str(dependency.get("name") or "").strip() if isinstance(dependency, dict) else ""
+        if not package:
+            continue
+        aliases = vuln.get("aliases", [])
+        alias = next(
+            (str(value) for value in aliases if str(value).startswith("CVE-")),
+            None,
+        )
+        finding_id = str(vuln.get("id") or vuln.get("display_id") or alias or f"{package}:{index}")
+        fixes = [str(value).strip() for value in vuln.get("fix_versions", []) if str(value).strip()]
+        is_cve = alias is not None
+        severity = "critical" if is_cve and not fixes else ("high" if is_cve else "moderate")
+        findings.append(
+            FindingItem(
+                id=finding_id,
+                severity=severity,
+                package=package,
+                ecosystem=ecosystem,
+                workspace=ws,
+                fixed=bool(fixes),
+                safe_version=safe_versions.get(package),
+            )
+        )
+    return findings
+
+
+def _uv_audit_result(
+    ws: str,
+    ecosystem: str,
+    manager: str,
+    rc: int,
+    stdout: str,
+    stderr: str,
+) -> WorkspaceResult:
+    """Parse ``uv audit --output-format json`` output.
+
+    Unlike pip-audit's list-of-packages shape, ``uv audit`` returns a dict with
+    a top-level ``vulnerabilities`` list keyed by ``schema.version: "preview"``
+    — still unstable upstream, so any shape surprise falls through to
+    ``_error`` instead of raising.
+    """
+    del rc  # uv audit's exit status doesn't add signal beyond the JSON body
+    counts = VulnCount()
+    # Same severity mapping as pip-audit:
+    #   CVE alias present, no fix_versions  → critical
+    #   CVE alias present, fix_versions known → high
+    #   no CVE alias                        → moderate
+    remediations: list[RemediationItem] = []
+    findings: list[FindingItem] = []
+    try:
+        data = json.loads(stdout)
+        if not isinstance(data, dict):
+            raise TypeError("uv audit JSON must be an object")
+        vulnerabilities = data.get("vulnerabilities")
+        if not isinstance(vulnerabilities, list):
+            raise TypeError("uv audit JSON missing a 'vulnerabilities' list")
+        for vuln in vulnerabilities:
+            if not isinstance(vuln, dict):
+                continue
+            fix_versions = vuln.get("fix_versions", [])
+            aliases = vuln.get("aliases", [])
+            is_cve = any(str(a).startswith("CVE-") for a in aliases)
+            if is_cve and not fix_versions:
+                counts.critical += 1
+            elif is_cve:
+                counts.high += 1
+            else:
+                counts.moderate += 1
+        remediations = _extract_remediations_uv_audit(data, ws, ecosystem)
+        findings = _extract_findings_uv_audit(data, ws, ecosystem)
+    except (json.JSONDecodeError, ValueError, KeyError, TypeError, AttributeError):
+        return _error(
+            ws,
+            ecosystem,
+            manager,
+            (stderr or stdout or "uv audit parse error").strip()[:200],
+        )
+
+    status = "vulns" if counts.total > 0 else "ok"
+    return WorkspaceResult(
+        label=ws,
+        path=ws,
+        ecosystem=ecosystem,
+        manager=manager,
+        status=status,
+        counts=counts,
+        remediations=remediations,
+        findings=findings,
+    )
+
+
 def _probe_pip_audit(ws: str) -> bool:
     """Return True when pip-audit is available via ``uv run pip-audit --version``."""
     rc, stdout, _stderr = _run(["uv", "run", "pip-audit", "--version"], ws)
@@ -1644,15 +1793,12 @@ def _pip_audit_result(
 def _audit_py_uv(ws: str) -> WorkspaceResult:
     if shutil.which("uv") is None:
         return _skip(ws, "py-uv", "uv", "uv not on PATH")
-    if not _probe_pip_audit(ws):
-        return _skip(
-            ws,
-            "py-uv",
-            "uv",
-            "pip-audit not available (uv run pip-audit --version failed)",
-        )
-    rc, stdout, stderr = _run(["uv", "run", "pip-audit", "--format", "json", "--skip-editable"], ws)
-    return _pip_audit_result(ws, "py-uv", "uv", rc, stdout, stderr)
+    if not (Path(ws) / "uv.lock").is_file():
+        return _skip(ws, "py-uv", "uv", "no uv.lock found")
+    # --frozen (not --locked): this scans repos we don't own, so audit the
+    # lockfile as committed rather than mutating or failing on a stale one.
+    rc, stdout, stderr = _run(["uv", "audit", "--frozen", "--output-format", "json"], ws)
+    return _uv_audit_result(ws, "py-uv", "uv", rc, stdout, stderr)
 
 
 def _run_python_export(ws: str, manager: str, requirements_path: Path) -> tuple[int, str, str]:
@@ -2358,6 +2504,7 @@ severity buckets:
 tools used (must be on PATH or workspace is skipped):
   go      govulncheck
   node    npm / yarn / pnpm / bun (per lockfile)
+  py-uv   uv audit --frozen --output-format json
   py-*    manager-native export + pip-audit --format json
   rust    cargo audit
   deno    deno audit

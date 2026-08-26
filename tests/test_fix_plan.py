@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -405,56 +406,50 @@ def test_collect_all_remediations_no_remediations_on_results() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_audit_py_uv_remediations_populated() -> None:
-    pip_audit_out = json.dumps(
-        [
-            {
-                "name": "Pillow",
-                "version": "9.0.0",
-                "vulns": [
-                    {
-                        "id": "GHSA-001",
-                        "aliases": ["CVE-2023-001"],
-                        "fix_versions": ["9.1.0"],
-                    }
-                ],
-            }
-        ]
+def test_audit_py_uv_remediations_populated(tmp_path: Path) -> None:
+    (tmp_path / "uv.lock").write_text("", encoding="utf-8")
+    uv_audit_out = json.dumps(
+        {
+            "vulnerabilities": [
+                {
+                    "dependency": {"name": "Pillow", "version": "9.0.0"},
+                    "id": "GHSA-001",
+                    "aliases": ["CVE-2023-001"],
+                    "fix_versions": ["9.1.0"],
+                }
+            ]
+        }
     )
     with (
         patch("shutil.which", return_value="/usr/bin/uv"),
-        patch("repo_ops_audit.audit._probe_pip_audit", return_value=True),
-        patch("repo_ops_audit.audit._run", return_value=(0, pip_audit_out, "")),
+        patch("repo_ops_audit.audit._run", return_value=(0, uv_audit_out, "")),
     ):
-        result = _audit_py_uv("/some/repo")
+        result = _audit_py_uv(str(tmp_path))
     assert result.status == "vulns"
     assert len(result.remediations) == 1
     assert result.remediations[0].package == "Pillow"
     assert result.remediations[0].safe_version == "9.1.0"
 
 
-def test_audit_py_uv_no_remediations_when_no_fix_versions() -> None:
-    pip_audit_out = json.dumps(
-        [
-            {
-                "name": "cryptography",
-                "version": "1.0.0",
-                "vulns": [
-                    {
-                        "id": "GHSA-999",
-                        "aliases": ["CVE-2023-999"],
-                        "fix_versions": [],
-                    }
-                ],
-            }
-        ]
+def test_audit_py_uv_no_remediations_when_no_fix_versions(tmp_path: Path) -> None:
+    (tmp_path / "uv.lock").write_text("", encoding="utf-8")
+    uv_audit_out = json.dumps(
+        {
+            "vulnerabilities": [
+                {
+                    "dependency": {"name": "cryptography", "version": "1.0.0"},
+                    "id": "GHSA-999",
+                    "aliases": ["CVE-2023-999"],
+                    "fix_versions": [],
+                }
+            ]
+        }
     )
     with (
         patch("shutil.which", return_value="/usr/bin/uv"),
-        patch("repo_ops_audit.audit._probe_pip_audit", return_value=True),
-        patch("repo_ops_audit.audit._run", return_value=(0, pip_audit_out, "")),
+        patch("repo_ops_audit.audit._run", return_value=(0, uv_audit_out, "")),
     ):
-        result = _audit_py_uv("/some/repo")
+        result = _audit_py_uv(str(tmp_path))
     assert result.status == "vulns"
     assert result.remediations == []
 
@@ -575,34 +570,34 @@ def test_audit_fix_plan_json_exits_one_when_remediations(
     tmp_path: pytest.TempPathFactory, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """--fix-plan --json exits 1 when there are actionable remediations."""
-    pip_audit_out = json.dumps(
-        [
-            {
-                "name": "Pillow",
-                "version": "9.0.0",
-                "vulns": [
-                    {
-                        "id": "GHSA-001",
-                        "aliases": ["CVE-2023-001"],
-                        "fix_versions": ["9.1.0"],
-                    }
-                ],
-            }
-        ]
+    workspace = tmp_path
+    (workspace / "uv.lock").write_text("", encoding="utf-8")
+    uv_audit_out = json.dumps(
+        {
+            "vulnerabilities": [
+                {
+                    "dependency": {"name": "Pillow", "version": "9.0.0"},
+                    "id": "GHSA-001",
+                    "aliases": ["CVE-2023-001"],
+                    "fix_versions": ["9.1.0"],
+                }
+            ]
+        }
     )
 
     def _mock_run(cmd: list[str], cwd: str, **_kwargs: object) -> tuple[int, str, str]:
-        if "--version" in cmd:
-            return 0, "pip-audit 2.7.0", ""
-        if "pip-audit" in cmd:
-            return 0, pip_audit_out, ""
+        if "audit" in cmd:
+            return 0, uv_audit_out, ""
         return 0, "", ""
 
     with (
-        patch("repo_ops_audit.audit.discover_repos", return_value={"/ws": "/ws"}),
+        patch(
+            "repo_ops_audit.audit.discover_repos",
+            return_value={str(workspace): str(workspace)},
+        ),
         patch(
             "repo_ops_audit.audit._detect_workspaces",
-            return_value=[("/ws", "py-uv", "uv")],
+            return_value=[(str(workspace), "py-uv", "uv")],
         ),
         patch("repo_ops_core.git.repo_label", return_value="ws"),
         patch("shutil.which", return_value="/usr/bin/uv"),

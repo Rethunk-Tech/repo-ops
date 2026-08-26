@@ -246,15 +246,15 @@ lockfiles; no auto-commit).
 | ----------- | -------------- | ------- |
 | `go` | `govulncheck` | `govulncheck -json ./...`; workspace skipped if not on PATH |
 | `node` | `npm` / `yarn` / `pnpm` / `bun` | detected from lockfile; `bun audit --json` preferred, ANSI text fallback when JSON unavailable |
-| `py-uv` | `uv` + `pip-audit` | `uv run pip-audit --format json`; skipped when pip-audit not importable. When `uv.lock` and hatchling metadata both exist, `uv.lock` wins (`py-uv` / `uv`). |
+| `py-uv` | `uv` | `uv audit --frozen --output-format json`; audits the committed lockfile (not the installed environment); skipped when `uv.lock` is missing. When `uv.lock` and hatchling metadata both exist, `uv.lock` wins (`py-uv` / `uv`). |
 | `py-poetry` / `py-pdm` / `py-pipenv` / `py-hatch` / `py-pip-tools` | manager + `pip-audit` | manager-native export then `pip-audit`; JSON `skip_reason` when export/tool missing (never false-clean `ok`). `py-hatch` only when hatch signals exist and no competing lock (`uv.lock` / poetry / pdm / Pipfile). |
 | `rust` | `cargo` + `cargo-audit` | `cargo audit --json`; skipped if `cargo audit --version` fails |
 | `deno` | `deno` | `deno audit --json` when supported, otherwise `deno audit`; skipped when not on PATH |
 
 Counts are normalised to `{critical, high, moderate, low, unknown}` per workspace.
 CVSS severity: govulncheck findings default to `unknown` (use `--fail-on-unknown`);
-pip-audit maps CVE presence to `high`/`critical`; cargo audit maps CVSS vector
-C/I/A components.
+`uv audit`/pip-audit map CVE presence to `high`/`critical`; cargo audit maps CVSS
+vector C/I/A components.
 
 **Flags** (see `repo-ops audit --help` for the full list):
 

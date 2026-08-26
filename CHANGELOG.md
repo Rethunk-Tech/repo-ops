@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`repo-ops audit`'s `py-uv` path audited the installed environment, not the lockfile.** It shelled out to `uv run pip-audit`, so a project whose `uv.lock` was full of advisories but whose local `.venv` happened to have newer packages installed would report clean. Switched to `uv audit --frozen --output-format json`, which audits `uv.lock` as committed without mutating or failing on a stale lock. A missing `uv.lock` now skips with a clear reason instead of gating on pip-audit availability. The other Python managers (poetry/pdm/pipenv/hatch/pip-tools) still export a requirements file and audit that with pip-audit, which is unaffected.
+
 ### Changed
 
 - **Removed historic tombstones and ticket provenance from comments and docstrings.** 368 issue/task citations (`Issue #108`, `Task #18`, `(#136)`), 73 audit finding IDs (`F041`, `F145`), and every audit-wave label (`TASK A:`, `Task 1 —`) are gone from `src/` and `tests/`, per the standing rule that a comment explains non-obvious *why*, never history. Where a comment described how the code used to behave — "the old default was `keep_sha=False`", "`#136` deleted every `--*-targeted-bump` flag", "dropping them when outdated is empty was the silent-skip bug" — it now states the requirement in the present tense, so it reads as a rule to keep rather than an incident to remember. No behaviour changed; the descriptive half of every comment was preserved.
