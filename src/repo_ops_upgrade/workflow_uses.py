@@ -169,8 +169,8 @@ class PinReplacement:
     # → ``"# v7"`` when a SHA pin crosses a major boundary).
     comment_rewrite: tuple[str, str] | None = None
     # Set (replacing any existing trailing comment, or appending if none) when
-    # pinning a previously-floating tag to a SHA (#NNN) — the new SHA needs a
-    # ``# vN`` audit hint whether or not the original tag ref had one at all.
+    # pinning a floating tag to a SHA — the new SHA needs a ``# vN`` audit hint
+    # whether or not the original tag ref had one at all.
     # Unlike comment_rewrite, this does not require the old text to match.
     set_comment: str | None = None
 

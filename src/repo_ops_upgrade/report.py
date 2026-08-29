@@ -139,10 +139,11 @@ def _behind_latest_hint(manager: str) -> str:
     A default sweep already attempts every manager's targeted bump, so
     a behind-latest entry usually means the resolver genuinely refused to
     move it (peer/group constraints, a failed install, or a stuck lockfile),
-    not that the operator forgot a flag — the flags this used to point at no
-    longer exist. When the setting was off this run (--conservative, or an
-    explicit per-manager override), the note says so instead and points at
-    --conservative / the env var, which do exist.
+    not that the operator forgot a flag — per-manager targeted-bump flags were
+    removed; the default sweep is the remediation path. When the setting was off
+    this run (--conservative, or an explicit per-manager override), the note
+    says so instead and points at --conservative / the env var, which still
+    exist.
     """
     tried = _TARGETED_TRIED_HINT.get(manager)
     if tried and _targeted_bump_requested(manager):

@@ -1325,7 +1325,7 @@ def scan_actions(
                 # gh absent or API failed — skip this pin.
                 continue
 
-            # Pin a floating tag to a commit SHA (#NNN): governed by pin_sha
+            # Pin a floating tag to a commit SHA: governed by pin_sha
             # (REPO_OPS_ACTIONS_PIN_SHA / actions_pin_sha). Runs before the
             # tag-normalize logic below — once pinned to SHA, refresh_sha
             # (REPO_OPS_ACTIONS_REFRESH_SHA), not this path, governs future
