@@ -37,7 +37,7 @@ Full install, requirements, and operator runbook: [HUMANS.md](HUMANS.md).
 
 | Document | Purpose |
 | ---------- | --------- |
-| [Humans guide](HUMANS.md) | Quickstart, requirements, and doc index |
+| [Humans guide](HUMANS.md) | Quickstart, requirements, uninstall, and doc index |
 | [Agents guide](AGENTS.md) | Agent quick reference, coordination, and workflows |
 | [Contributing](CONTRIBUTING.md) | Contributor guidelines and code style |
 | [Security](SECURITY.md) | Vulnerability reporting |

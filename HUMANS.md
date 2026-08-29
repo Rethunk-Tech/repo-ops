@@ -42,7 +42,7 @@ When using `--commit=agent`, set `REPO_OPS_COMMIT_AGENT_MODEL` or the
 
 | Document | Purpose |
 | ---------- | --------- |
-| [Installation](docs/installation.md) | Runtime install, development setup, agent skill, verify install, environment |
+| [Installation](docs/installation.md) | Runtime install, uninstall, development setup, agent skill, verify install, environment |
 | [Usage](docs/usage.md) | Subcommands, JSON output, plan vs apply, security/discovery, ecosystem upgrade modes |
 | [Architecture](docs/architecture.md) | Module layout and filesystem map |
 | [Bulk maintenance](docs/bulk-maintenance.md) | Submodule umbrellas and multi-repo apply playbook |

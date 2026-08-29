@@ -90,6 +90,16 @@ repo-ops plan --skip-actions /path/to/checkout
 repo-ops pushed --count-only /path/to/checkout
 ```
 
+## Uninstall
+
+Remove the global tool install:
+
+```bash
+uv tool uninstall repo-ops
+```
+
+For an editable install from a clone, uninstall the tool then delete the clone when you no longer need it. Installed agent-skill copies under `~/.cursor/skills/` and `~/.claude/skills/` are not removed automatically — delete `repo-ops/` there if you want them gone.
+
 ## Environment
 
 - Python >= 3.12 (`.python-version` pins 3.14 for local/uv default)
