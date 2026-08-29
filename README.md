@@ -26,11 +26,10 @@ Full install, requirements, and operator runbook: [HUMANS.md](HUMANS.md).
 ## Highlights
 
 - Single CLI: `inventory`, `plan`, `apply`, `pushed`, `audit`, `dependabot`, `sbom`, `license`, `doctor`, and `install-skill` (bundled agent skill for Cursor/Claude)
-- `inventory --status`: per-repo branch, dirty count, and ahead/behind across every checkout under the scan roots (`--fetch` to refresh remotes first)
-- Plan is read-only; apply runs ecosystem updates, optional Corepack for Node, and verify gates
-- GitHub Actions pin drift in plan/apply by default (`--skip-actions` to omit); actions-only repos (workflows, no manifests) included
-- Discovery: validated scan roots, optional `--follow-symlinks`, `--flat` and actions-only repos; full-coverage cross-range sweep by default, `--conservative` to stay in-range (see [usage](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply))
-- uv-locked, single package (`uv_build`); Python >= 3.12; ecosystem plugins (Node, Go, Rust, Python) with remediations
+- `inventory --status`: per-repo branch, dirty count, and ahead/behind across scan roots (`--fetch` to refresh remotes first)
+- Read-only `plan`; `apply` runs ecosystem updates, Corepack, verify gates, and GitHub Actions pin sweep (`--skip-actions` to omit)
+- Discovery: validated scan roots, optional `--follow-symlinks`, `--flat` and actions-only repos; full sweep by default, `--conservative` to stay in-range ([usage](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply))
+- uv-locked single package (`uv_build`); Python >= 3.12; ecosystem plugins (Node, Go, Rust, Python) with remediations
 - Built for Rethunk-Tech monorepo and sibling checkout trees under shared roots
 
 ## Documentation

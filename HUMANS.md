@@ -1,52 +1,55 @@
-# Using repo-ops
+# repo-ops — operator runbook
 
-Entry doc for operators: quickstart, requirements, and links to the full reference.
-
-The repository is a single installable package (`repo-ops`), built from `src/`. Install the clone root or the git URL directly.
-
-## Quickstart
-
-```bash
-uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git"
-repo-ops doctor
-```
-
-## Common maintenance
-
-For routine maintenance, run `repo-ops plan` and review it before
-`repo-ops apply` — full-coverage sweeping (cross-range upgrades, targeted
-bumps, Actions pin/digest refresh, container digest refresh) is the default,
-no flags required. Pass `--conservative` to stay within existing manifest
-constraints instead.
-
-To see where every checkout stands rather than what it depends on, run
-`repo-ops inventory --status` — one row per repo with its branch, dirty file
-count, and commits ahead/behind upstream. Counts read remote-tracking refs as
-they stand on disk, so add `--fetch` when they need to be current.
-
-`--verify-test` enables Go and Rust tests during apply verification. Hatch
-verification includes mypy and pyrefly when configured; pyrefly project
-excludes are passed through as CLI flags. `doctor` checks for `pyrefly`, `ruff`, `hatch`,
-and `pre-commit` alongside the other toolchain binaries.
-
-When using `--commit=agent`, set `REPO_OPS_COMMIT_AGENT_MODEL` or the
-`commit_agent_model` config key to select the model (default: `composer-2.5`).
+Install, usage, verify, and uninstall for the `repo-ops` CLI. Deep reference: [docs/](docs/). Agents: [AGENTS.md](AGENTS.md).
 
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/) and Python >= 3.12
 - Git on `PATH`
-- Optional: ecosystem CLIs (`npm`, `yarn`, `pnpm`, `bun`, `go`, `cargo`, `uv`, `hatch`, `pyrefly`, `ruff`, `pre-commit`, …) and `gh` / `actionlint` for Actions pin audits — run `repo-ops doctor` to see which are found and whether `gh` is authenticated
+- Optional: ecosystem CLIs and `gh` / `actionlint` — run `repo-ops doctor`
 
-## Documentation
+## Install
 
-| Document | Purpose |
-| ---------- | --------- |
-| [Installation](docs/installation.md) | Runtime install, uninstall, development setup, agent skill, verify install, environment |
-| [Usage](docs/usage.md) | Subcommands, JSON output, plan vs apply, security/discovery, ecosystem upgrade modes |
-| [Architecture](docs/architecture.md) | Module layout and filesystem map |
-| [Bulk maintenance](docs/bulk-maintenance.md) | Submodule umbrellas and multi-repo apply playbook |
-| [Programmatic imports](docs/programmatic-imports.md) | Python module paths for programmatic use |
-| [Testing](docs/testing.md) | Verification and CI commands |
+```bash
+uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git"
+```
 
-Agents guide, contributing, security, code of conduct, changelog, license: [README.md — Documentation](README.md#documentation).
+Editable from a clone: `uv sync --group dev && uv tool install -e .`. Full steps: [docs/installation.md](docs/installation.md).
+
+## Usage
+
+| Command | Purpose |
+| --------- | --------- |
+| `repo-ops doctor` | Toolchain and auth preflight |
+| `repo-ops inventory` | Dependency footprint across scan roots |
+| `repo-ops inventory --status` | Branch, dirty, ahead/behind per repo (`--fetch` to refresh) |
+| `repo-ops plan` | Read-only upgrade preview (exit 1 on drift) |
+| `repo-ops apply` | Apply updates and verify gates |
+| `repo-ops pushed` | Pushed-commit audit |
+| `repo-ops audit` | Fleet vulnerability sweep |
+
+`plan`/`apply` run the full sweep by default; `--conservative` stays in-range. Subcommands and flags: [docs/usage.md](docs/usage.md).
+
+## Verify
+
+```bash
+repo-ops doctor
+repo-ops --version
+```
+
+Smoke: `repo-ops inventory --flat /path/to/checkout`. Install checks: [docs/installation.md § Verify install](docs/installation.md#verify-install).
+
+## Uninstall
+
+```bash
+uv tool uninstall repo-ops
+```
+
+Agent-skill copies under `~/.cursor/skills/` and `~/.claude/skills/` are not removed automatically — see [docs/installation.md § Uninstall](docs/installation.md#uninstall).
+
+## Environment
+
+- `REPO_OPS_FIND_TIMEOUT` — discovery `find` timeout in seconds (default 60)
+- `REPO_OPS_COMMIT_AGENT_MODEL` — model for `apply --commit=agent` (default `composer-2.5`)
+
+Full env and optional CLIs: [docs/installation.md § Environment](docs/installation.md#environment).
