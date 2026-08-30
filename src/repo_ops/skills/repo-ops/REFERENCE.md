@@ -11,7 +11,7 @@ When the user names a command, run it — default roots apply when paths are omi
 | Goal | Command |
 | ------ | --------- |
 | Preview drift (read-only, exit 1 on drift) | `repo-ops plan --log-file plan.log` |
-| Apply updates + verify | `repo-ops apply --log-file apply.log` |
+| Apply updates + verify (commits nothing; you commit after) | `repo-ops apply --log-file apply.log` |
 | One checkout | `repo-ops plan --flat /path` then `repo-ops apply --flat /path` |
 | JSON artifact | `repo-ops plan --json --json-out plan.json /path` |
 | Stay in-range instead of the full sweep | `repo-ops apply --conservative` |
@@ -35,4 +35,5 @@ With no trailing `root_dir`, every subcommand except `install-skill` and `doctor
 2. **Dirty worktrees** are skipped; `--allow-dirty` only when intentional — never to sweep up work you did not mean to include.
 3. **Verify failure** → `--on-verify-fail=revert` (default) rolls back lockfiles and manifests; `keep` leaves them to inspect. Check toolchain, env, and flaky tests before blaming the bump.
 4. **Commits** are fleet canon (`~/.claude/CLAUDE.md` § Git & GitHub); headless: `apply --commit=conventional|agent`, preview with `--commit-dry-run`. Never push unless asked.
+5. **Sweep the whole result.** `apply` leaves every repo it touched dirty. Enumerate them all, gate each, and commit each — a dirty repo after a sweep is this run's output. `--commit` gates only on an immutable install, so a repo's own gates still have to run when you commit by hand.
 5. **Multi-repo playbook** — [docs/bulk-maintenance.md](https://github.com/Rethunk-Tech/repo-ops/blob/main/docs/bulk-maintenance.md).
