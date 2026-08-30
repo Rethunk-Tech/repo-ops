@@ -276,7 +276,9 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
     return applied, still_behind
 
 
-def _finalize_bun_apply(ws: Workspace, changes: list[Change], behind: list[Change]) -> list[Change]:
+def _finalize_bun_apply(
+    ws: Workspace, changes: list[Change], behind: list[Change], *, mutated: bool
+) -> list[Change]:
     """Shared tail for every ``apply_bun`` exit path (bare/targeted/audit-only).
 
     Runs the still-behind targeted bump, then the end-of-apply hold safety
@@ -298,6 +300,14 @@ def _finalize_bun_apply(ws: Workspace, changes: list[Change], behind: list[Chang
             ["bun", "add", f"{name}@{spec}"], ws.path, timeout=resolve_timeout_apply()
         ),
     )
+    # bun records the *requested* spec in bun.lock's workspace mirror rather
+    # than the range it wrote to package.json, so a bare ``bun update --latest``
+    # leaves the mirror holding "latest" against a caret manifest. A plain
+    # install rewrites the mirror from package.json. Only worth doing when
+    # something actually mutated, and best-effort: a failure here leaves the
+    # cosmetic drift an apply would have left anyway.
+    if mutated or applied or held:
+        run(["bun", "install"], ws.path, timeout=resolve_timeout_apply())
     return fold_held_into_behind(held, behind)
 
 
@@ -347,7 +357,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
         requested.append(Change(name, "", safe_version))
         seen_names.add(name)
     if not changes and not targets:
-        return _finalize_bun_apply(ws, changes, behind)
+        return _finalize_bun_apply(ws, changes, behind, mutated=False)
     if not targets:
         # Bare ``bun update`` — no per-package target args; the guard is still
         # applied to any changes whose target version IS known (skip
@@ -373,7 +383,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
                 behind = fold_blocked_into_behind(blocked, behind)
             else:
                 assert_targets_resolved(ws, guardable, manager="bun")
-        return _finalize_bun_apply(ws, changes, behind)
+        return _finalize_bun_apply(ws, changes, behind, mutated=True)
     proc = run(["bun", "update", "--", *targets], ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
@@ -382,4 +392,4 @@ def apply_bun(ws: Workspace) -> list[Change]:
         behind = fold_blocked_into_behind(blocked, behind)
     else:
         assert_targets_resolved(ws, requested, manager="bun")
-    return _finalize_bun_apply(ws, changes, behind)
+    return _finalize_bun_apply(ws, changes, behind, mutated=True)

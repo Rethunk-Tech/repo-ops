@@ -41,7 +41,7 @@ def test_apply_bun_updates_reported_packages_not_latest_flag(monkeypatch) -> Non
     ):
         apply_bun(ws)
 
-    assert calls == [["bun", "update", "--", "foo@1.1.0"]]
+    assert calls == [["bun", "update", "--", "foo@1.1.0"], ["bun", "install"]]
     assert not any("--latest" in c for c in calls)
 
 
@@ -77,7 +77,7 @@ def test_apply_bun_uses_advisory_safe_override_absent_from_check_bun() -> None:
     finally:
         clear_bun_audit_version_overrides()
 
-    assert calls == [["bun", "update", "--", "pkg@1.2.3"]]
+    assert calls == [["bun", "update", "--", "pkg@1.2.3"], ["bun", "install"]]
 
 
 def test_apply_bun_override_replaces_check_derived_version() -> None:
@@ -109,7 +109,7 @@ def test_apply_bun_override_replaces_check_derived_version() -> None:
     finally:
         clear_bun_audit_version_overrides()
 
-    assert calls == [["bun", "update", "--", "foo@1.5.5"]]
+    assert calls == [["bun", "update", "--", "foo@1.5.5"], ["bun", "install"]]
 
 
 def test_apply_bun_rejects_dash_prefixed_package_names() -> None:
@@ -135,7 +135,7 @@ def test_apply_bun_rejects_dash_prefixed_package_names() -> None:
     ):
         apply_bun(ws)
 
-    assert calls == [["bun", "update"]]
+    assert calls == [["bun", "update"], ["bun", "install"]]
 
 
 def _ghost_ws() -> Workspace:
@@ -258,7 +258,7 @@ def test_apply_bun_bare_update_defers_ghost_to_retry(monkeypatch) -> None:
         behind = apply_bun(_ghost_ws())
 
     initial_guard.assert_not_called()
-    assert calls == [["bun", "update"]]
+    assert calls == [["bun", "update"], ["bun", "install"]]
     assert retry_inputs == [[blocked]]
     assert behind == [blocked]
 
@@ -337,7 +337,7 @@ def test_apply_bun_fallback_guard_called_for_known_versions() -> None:
     ):
         apply_bun(_ghost_ws())
 
-    assert calls == [["bun", "update"]]
+    assert calls == [["bun", "update"], ["bun", "install"]]
     # guardable empty ('?' excluded) → guard not called; that's correct behaviour
     assert guard_calls == []
 
