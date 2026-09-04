@@ -1,8 +1,9 @@
 """Tests for REPO_OPS_ACTIONS_LINT_LEVEL / lint_level parameter.
 
-Regression: SC2034 in an unrelated ``run:`` block used to silently block a
-softprops/action-gh-release bump because actionlint all-or-nothing ``continue``
-skipped ALL pin bumps for that workflow.
+Regression: SC2034 in an unrelated ``run:`` block must not silently block a
+softprops/action-gh-release bump — actionlint's all-or-nothing ``continue``
+skips ALL pin bumps for a workflow when any lint fails, unrelated or not, so
+the lint level must be adjustable.
 
 The ``warn`` level records the fail row + prints WARN but proceeds with bumps.
 The ``off`` level skips actionlint entirely.

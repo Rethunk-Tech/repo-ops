@@ -86,10 +86,10 @@ def test_conservative_ignores_ambient_targeted_bump_env_var(
     tmp_path: Path, monkeypatch, init_git_repo
 ) -> None:
     """Regression: an ambient REPO_OPS_YARN_TARGETED_BUMP=1 already set in the
-    operator's shell must not outrank --conservative. run.py used to leave a
-    conservative _SWEEP_ENV_VARS entry unset, which let the higher-priority
-    ambient value pass straight through resolve_setting; it must now force "0"
-    so the real resolver reports the setting disabled regardless of ambient."""
+    operator's shell must not outrank --conservative. run.py must force a
+    conservative _SWEEP_ENV_VARS entry to "0" — leaving it unset would let the
+    higher-priority ambient value pass straight through resolve_setting, so
+    the real resolver would report the setting enabled despite --conservative."""
     monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
     _bun_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()

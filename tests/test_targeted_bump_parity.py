@@ -287,12 +287,13 @@ def test_behind_latest_hint(monkeypatch, manager, env_var, requested, expected_f
 # ---------------------------------------------------------------------------
 # Regression: ghost-bump exception must not skip snapshot restore.
 #
-# ``targeted_bump_behind`` used to append the Change to ``applied`` and THEN
-# call ``assert_targets_resolved`` — if the guard raised RuntimeError (a
-# ghost bump discovered post-hoc), the exception propagated straight out of
-# the loop, skipping ``restore_workspace_snapshot`` and leaving a mutated
-# lockfile on disk. The fix wraps the guard call in try/except so a raise
-# restores the snapshot and records the package as still-behind instead.
+# ``targeted_bump_behind`` must wrap the ``assert_targets_resolved`` guard
+# call in try/except: appending the Change to ``applied`` and then calling
+# the guard unguarded would let a ghost-bump RuntimeError (discovered
+# post-hoc) propagate straight out of the loop, skipping
+# ``restore_workspace_snapshot`` and leaving a mutated lockfile on disk. A
+# raise must restore the snapshot and record the package as still-behind
+# instead.
 # ---------------------------------------------------------------------------
 
 

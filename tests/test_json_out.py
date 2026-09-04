@@ -73,8 +73,8 @@ def test_apply_json_out_keeps_colocated_npm_and_container(tmp_path: Path, init_g
     """Co-located ecosystems must both survive result reconciliation.
 
     A directory with package.json + Dockerfile yields two WorkspaceResults that
-    share a path. Path-only keys in the post-pool map used to overwrite the
-    earlier (npm) result with the later (container) one, so --json-out dropped
+    share a path. Path-only keys in the post-pool map must not overwrite the
+    earlier (npm) result with the later (container) one, or --json-out drops
     the non-container workspace.
     """
     init_git_repo(tmp_path)

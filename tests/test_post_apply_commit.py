@@ -936,9 +936,9 @@ def test_run_post_apply_commits_max_workers_accepted(tmp_path: Path, init_git_re
 
 
 def test_collect_changes_no_diff_reports_nothing(tmp_path: Path) -> None:
-    """A clean git diff means no changes were applied. The removed
-    checker fallback used to re-run the ecosystem checker here and report
-    still-available updates as applied (ghost upgrades)."""
+    """A clean git diff means no changes were applied. A checker fallback
+    must not re-run the ecosystem checker here, or still-available updates
+    get reported as applied (ghost upgrades)."""
     ws = Workspace(
         path=tmp_path,
         ecosystem="go",
