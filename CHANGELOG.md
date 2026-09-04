@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **`inventory --status` and the `repo_ops_status` package.** `project-register` answers the same question over the same fleet, and two installed tools answering "where does this checkout stand" is how they come to disagree. Coverage was measured before removing anything: over 48 repositories under one root, all 240 values (branch, upstream, ahead, behind, dirty) agree, and the two apparent differences are cases where `--status` was wrong — a repository with an unborn `HEAD` and a configured upstream had `main...origin/main [gone]` packed into its branch field and a null upstream, where `git status --porcelain=v2 --branch` reports `main` and `origin/main` separately. `--fetch` goes with it, having existed only to serve `--status`. `inventory` itself, and every dependency-footprint mode, is unchanged. `pushed` is **not** removed: it counts commits that reached a remote inside a rolling window, which nothing else on the machine answers.
+
 ### Fixed
 
 - **`repo-ops audit`'s `py-uv` path audited the installed environment, not the lockfile.** It shelled out to `uv run pip-audit`, so a project whose `uv.lock` was full of advisories but whose local `.venv` happened to have newer packages installed would report clean. Switched to `uv audit --frozen --output-format json`, which audits `uv.lock` as committed without mutating or failing on a stale lock. A missing `uv.lock` now skips with a clear reason instead of gating on pip-audit availability. The other Python managers (poetry/pdm/pipenv/hatch/pip-tools) still export a requirements file and audit that with pip-audit, which is unaffected.

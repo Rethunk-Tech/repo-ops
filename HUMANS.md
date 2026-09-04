@@ -22,7 +22,6 @@ Editable from a clone: `uv sync --group dev && uv tool install -e .`. Full steps
 | --------- | --------- |
 | `repo-ops doctor` | Toolchain and auth preflight |
 | `repo-ops inventory` | Dependency footprint across scan roots |
-| `repo-ops inventory --status` | Branch, dirty, ahead/behind per repo (`--fetch` to refresh) |
 | `repo-ops plan` | Read-only upgrade preview (exit 1 on drift) |
 | `repo-ops apply` | Apply updates and verify gates |
 | `repo-ops pushed` | Pushed-commit audit |

@@ -47,7 +47,7 @@ _SUBCOMMANDS: dict[str, _Subcommand] = {
     "inventory": _Subcommand(
         inventory_main,
         build_inventory_parser,
-        "Dependency footprint report (--status for branch/dirty/ahead/behind)",
+        "Dependency footprint report",
     ),
     "plan": _Subcommand(
         main_plan,
@@ -124,8 +124,6 @@ When no root_dir arguments are passed, subcommands scan DEFAULT_ROOTS
 _TOP_LEVEL_EPILOG = """\
 examples:
   repo-ops plan
-  repo-ops inventory --status
-  repo-ops inventory --status --fetch --json
   repo-ops apply --log-file apply.log
   repo-ops apply --conservative
   repo-ops inventory --flat /path/to/checkout

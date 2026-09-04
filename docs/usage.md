@@ -8,7 +8,7 @@ Subcommands (entry point in `src/repo_ops`):
 
 | Subcommand | Purpose |
 | ------------ | --------- |
-| `inventory` | Read-only dependency footprint, or working-tree drift with `--status` |
+| `inventory` | Read-only dependency footprint |
 | `plan` | Outdated deps, Actions pin drift, remediations (no writes) |
 | `apply` | Apply updates, Actions bumps, remediations, verify gates |
 | `pushed` | Commits in a time window from local remote-tracking reflogs (default) or GitHub PushEvents (`--source=gh`) |
@@ -47,30 +47,6 @@ credited with its submodules' dependencies.
 - `--sort {name,direct,versions,on-disk,edges}` — sort column; `name` sorts ascending, every other column sorts descending (default: `name`).
 - `--no-cache` — bypass the XDG Go module result cache.
 - `--follow-symlinks` — traverse symlinked `.git` directories during discovery.
-
-#### `--status` — working-tree drift
-
-`repo-ops inventory --status` reports where each checkout stands relative to its
-upstream instead of counting dependencies, and skips manifest scanning entirely:
-
-```
-repo                                      branch  dirty  ahead  behind
---------------------------------------------------------------------
-com.github/Rethunk-Tech/repo-ops          main        7     15       0
-com.github/Rethunk-Tech/sagaforge-ts      main        0     38       0
-```
-
-- `dirty` counts working-tree entries (a rename is one entry, not two).
-- `ahead`/`behind` compare `HEAD` against its upstream. A branch with no
-  configured upstream falls back to `origin/HEAD`; a detached `HEAD` does not,
-  because a submodule parked at its parent's pin has not drifted. Repos with no
-  comparison ref print `-`, which is distinct from a measured `0`.
-- Counts read remote-tracking refs as they stand on disk, so they are only as
-  fresh as each repo's last fetch. `--fetch` refreshes first (`--fetch` without
-  `--status` is rejected); repos whose fetch fails are reported on stderr and
-  keep their stale counts.
-- `--json` emits `mode: "status"`, a `fetched` flag, per-repo `upstream`,
-  `empty`, and `error` fields, and a `summary` roll-up.
 
 ### `pushed` — local reflog or GitHub PushEvent
 

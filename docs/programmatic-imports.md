@@ -17,7 +17,6 @@ Everything else:
 | Upgrade entrypoints | `repo_ops_upgrade` | `main_plan`, `main_apply` |
 | Upgrade pipeline | `repo_ops_upgrade.{orchestration,registry,discovery,actions,verify,pr}` | plan/apply stages |
 | Inventory | `repo_ops_inventory.scan` | dependency footprint |
-| Repo status | `repo_ops_status.status` | branch, dirty count, ahead/behind per checkout |
 | Push audit | `repo_ops_pushed.audit` | reflog window scan |
 | Audit | `repo_ops_audit.audit` | `RemediationItem`, `collect_all_remediations`, `run_audit` |
 | Dependabot | `repo_ops_dependabot.dependabot` | `detect_ecosystems`, supersession helpers |

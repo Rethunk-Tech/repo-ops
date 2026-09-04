@@ -12,7 +12,7 @@ Run the requested command directly. Do not `which repo-ops`, grep `src/` for fla
 | Apply + verify | `repo-ops apply --log-file apply.log` |
 | One checkout | `repo-ops plan --flat /path` then `apply --flat /path` |
 | JSON artifact | `repo-ops plan --json --json-out plan.json /path` |
-| Footprint / status | `repo-ops inventory` · `repo-ops inventory --status` |
+| Footprint | `repo-ops inventory` |
 | Audit / deps | `repo-ops pushed` · `repo-ops audit` · `repo-ops dependabot` · `repo-ops sbom` · `repo-ops license` |
 | Preflight | `repo-ops doctor` · `repo-ops install-skill` |
 
