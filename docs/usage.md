@@ -11,7 +11,6 @@ Subcommands (entry point in `src/repo_ops`):
 | `inventory` | Read-only dependency footprint |
 | `plan` | Outdated deps, Actions pin drift, remediations (no writes) |
 | `apply` | Apply updates, Actions bumps, remediations, verify gates |
-| `pushed` | Commits in a time window from local remote-tracking reflogs (default) or GitHub PushEvents (`--source=gh`) |
 | `audit` | Fleet vulnerability sweep per ecosystem (read-only unless `--fix`) |
 | `dependabot` | List/close Dependabot PRs superseded by local manifests |
 | `sbom` | Emit CycloneDX/SPDX SBOM from lockfile dependencies (read-only) |
@@ -26,7 +25,7 @@ Flags shared across subcommands (`repo-ops <subcommand> --help` is authoritative
 | Flag | Effect |
 | ------ | -------- |
 | `--json` | JSON instead of human output. Every subcommand except `sbom`, which uses `--format`/`--output`. Reports carry a top-level `summary` mirroring the human footer, and discovery notes in `skipped`/`warnings`. |
-| `--json-out PATH` | Write the report to `PATH` atomically; stdout prints only the path. `inventory`, `plan`, `apply`, `pushed`, `doctor`. |
+| `--json-out PATH` | Write the report to `PATH` atomically; stdout prints only the path. `inventory`, `plan`, `apply`, `doctor`. |
 | `--filter ECO` | One ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, `deno`. |
 | `--manager MANAGER` | `plan`/`apply` only. One package manager: `bun`, `npm`, `pnpm`, `yarn`, `uv`, `poetry`, `pip-tools`, `hatch`, `pdm`, `pipenv`, `deno`, `go`, `rust`, `container`, `precommit`. |
 | `--log-level LEVEL` | `debug`/`info`/`warning`/`error`. `--verbose`/`-v` echoes subprocesses and implies `debug`. |
@@ -47,30 +46,6 @@ credited with its submodules' dependencies.
 - `--sort {name,direct,versions,on-disk,edges}` — sort column; `name` sorts ascending, every other column sorts descending (default: `name`).
 - `--no-cache` — bypass the XDG Go module result cache.
 - `--follow-symlinks` — traverse symlinked `.git` directories during discovery.
-
-### `pushed` — local reflog or GitHub PushEvent
-
-`repo-ops pushed` defaults to this machine's `refs/remotes/*` reflog entries
-whose message is `update by push`. On that default (`--source=local`), a fresh
-clone, a push from another workstation, or a CI push can show zero even when
-GitHub records activity.
-
-Pass `--source=gh` to query authenticated GitHub `PushEvent` activity for each
-GitHub remote instead. When a PushEvent omits its `commits` array (common for
-large pushes), collection falls back to the authenticated compare API between
-`before` and `head`. Repos with no `github.com` remote emit a stderr warning
-and are called out in the human summary rather than looking like a true empty
-window. GitHub API or auth failures exit non-zero rather than reporting zero
-pushes.
-
-**Flags** (see `repo-ops pushed --help` for the full list):
-
-- `--hours HOURS` — rolling window length in hours; must be `> 0` (default: `24`).
-- `--since ISO8601` — window start (timezone required, e.g. `2026-05-26T00:00Z`).
-- `--until ISO8601` — window end (timezone required; defaults to now).
-- `--show-shas` — after the table, print each commit SHA (8 chars) grouped by repo.
-- `--show-messages` — implies `--show-shas`; also print each commit subject (max 100 chars).
-- `--count-only` — print only the total commit count.
 
 ### Plan vs apply
 
@@ -111,13 +86,13 @@ pushes.
 ### Security and discovery
 
 - **Scan roots:** `resolve_scan_roots` expands paths, requires existing directories, and rejects tokens that look like `find(1)` predicates (for example `-name`).
-- **Symlinks:** `find` does not follow symlinks by default. Pass `--follow-symlinks` on `inventory`, `plan`, `apply`, or `pushed` when symlinked `.git` dirs must be traversed (`find -L`).
+- **Symlinks:** `find` does not follow symlinks by default. Pass `--follow-symlinks` on `inventory`, `plan`, or `apply` when symlinked `.git` dirs must be traversed (`find -L`).
 - **Actions-only repos:** Git repos with workflow files but no dependency workspaces still appear in plan/apply (Actions pin audit only).
-- **`--flat`:** On `inventory` and upgrade `plan`/`apply`, treats each root as a single project rather than discovering the checkouts beneath it (not used by `pushed`).
+- **`--flat`:** On `inventory` and upgrade `plan`/`apply`, treats each root as a single project rather than discovering the checkouts beneath it.
 - **Node `packageManager`:** Only `npm`, `pnpm`, `yarn`, and `bun` with `name@version` form are accepted; path-like or unknown names are skipped with diagnostics.
-- **`--exclude PATTERN`:** Repeatable on `plan`, `apply`, `audit`, `dependabot`, and `pushed`. A repository is skipped when a pattern substring- or fnmatch-matches its label or absolute path. Unlike every other setting, `--exclude` does not override the config layers — CLI, per-repo `exclude`, and global `exclude` are unioned, so an ad-hoc flag cannot silently pull a permanently-excluded repo back into a sweep.
+- **`--exclude PATTERN`:** Repeatable on `plan`, `apply`, `audit`, and `dependabot`. A repository is skipped when a pattern substring- or fnmatch-matches its label or absolute path. Unlike every other setting, `--exclude` does not override the config layers — CLI, per-repo `exclude`, and global `exclude` are unioned, so an ad-hoc flag cannot silently pull a permanently-excluded repo back into a sweep.
 
-When JSON is enabled, audit and pushed report excluded repositories in
+When JSON is enabled, audit reports excluded repositories in
 `summary.excluded`; dependabot uses the same canonical `summary.excluded` key.
 
 ### Ecosystem upgrade modes (plan and apply)

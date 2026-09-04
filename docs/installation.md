@@ -87,7 +87,6 @@ Optional smoke checks (replace the path):
 ```bash
 repo-ops inventory --flat /path/to/checkout
 repo-ops plan --skip-actions /path/to/checkout
-repo-ops pushed --count-only /path/to/checkout
 ```
 
 ## Uninstall

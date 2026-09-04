@@ -1,4 +1,4 @@
-"""repo-ops dispatcher: inventory, plan, apply, pushed, audit, dependabot, sbom, license."""
+"""repo-ops dispatcher: inventory, plan, apply, audit, dependabot, sbom, license."""
 
 from __future__ import annotations
 
@@ -28,8 +28,6 @@ from repo_ops_lockfiles.license_policy import build_license_parser
 from repo_ops_lockfiles.license_policy import main as license_main
 from repo_ops_lockfiles.sbom import build_sbom_parser
 from repo_ops_lockfiles.sbom import main as sbom_main
-from repo_ops_pushed.audit import build_pushed_parser
-from repo_ops_pushed.audit import main as pushed_main
 from repo_ops_upgrade.run import main_apply, main_plan
 
 
@@ -59,7 +57,6 @@ _SUBCOMMANDS: dict[str, _Subcommand] = {
         lambda: build_upgrade_parser(apply=True),
         "Apply upgrades with verify gates",
     ),
-    "pushed": _Subcommand(pushed_main, build_pushed_parser, "Pushed commits audit"),
     "install-skill": _Subcommand(
         install_skill_main,
         build_install_skill_parser,
@@ -114,7 +111,7 @@ def _resolve_version() -> str:
 
 
 _TOP_LEVEL_DESCRIPTION = """\
-Repository operations for local monorepo roots (inventory, plan, apply, pushed,
+Repository operations for local monorepo roots (inventory, plan, apply,
 audit, dependabot, sbom, license, doctor).
 
 When no root_dir arguments are passed, subcommands scan DEFAULT_ROOTS

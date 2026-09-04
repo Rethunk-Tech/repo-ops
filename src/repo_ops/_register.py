@@ -17,7 +17,7 @@ def register_precommit() -> None:
 
 def register_all() -> None:
     # Imports stay function-local: most CLI subcommands (doctor, install-skill,
-    # license, sbom, pushed, dependabot) never touch the upgrade registry, and
+    # license, sbom, dependabot) never touch the upgrade registry, and
     # this keeps them from paying for every ecosystem plugin's import.
     from repo_ops_container.container import apply_container, check_container
     from repo_ops_go.go import apply_go, check_go

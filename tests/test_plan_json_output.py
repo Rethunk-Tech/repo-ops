@@ -217,19 +217,3 @@ def test_inventory_json_compact_schema_contract(tmp_path: Path, capsys) -> None:
     assert payload["schema_version"] == 1
     assert "summary" in payload
     assert "manifests" in payload["totals"]
-
-
-def test_pushed_json_compact_schema_contract(tmp_path: Path, capsys, monkeypatch) -> None:
-    """Pushed --json --compact matches plan schema_version contract."""
-    from repo_ops_pushed import audit
-    from repo_ops_pushed.audit import main as pushed_main
-
-    monkeypatch.setattr(audit, "collect_results", lambda *a, **kw: ({}, []))
-    rc = pushed_main([str(tmp_path), "--json", "--compact"])
-    assert rc == 0
-    out = capsys.readouterr().out.strip()
-    assert out.count("\n") == 0
-    payload = json.loads(out)
-    assert next(iter(payload)) == "schema_version"
-    assert payload["schema_version"] == 1
-    assert "summary" in payload

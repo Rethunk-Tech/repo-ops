@@ -25,7 +25,7 @@ Full install, requirements, and operator runbook: [HUMANS.md](HUMANS.md).
 
 ## Highlights
 
-- Single CLI: `inventory`, `plan`, `apply`, `pushed`, `audit`, `dependabot`, `sbom`, `license`, `doctor`, and `install-skill` (bundled agent skill for Cursor/Claude)
+- Single CLI: `inventory`, `plan`, `apply`, `audit`, `dependabot`, `sbom`, `license`, `doctor`, and `install-skill` (bundled agent skill for Cursor/Claude)
 - Read-only `plan`; `apply` runs ecosystem updates, Corepack, verify gates, and GitHub Actions pin sweep (`--skip-actions` to omit)
 - Discovery: validated scan roots, optional `--follow-symlinks`, `--flat` and actions-only repos; full sweep by default, `--conservative` to stay in-range ([usage](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply))
 - uv-locked single package (`uv_build`); Python >= 3.12; ecosystem plugins (Node, Go, Rust, Python) with remediations

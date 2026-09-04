@@ -23,7 +23,6 @@ _MAIN_HELP_TARGETS: list[tuple[str, str, list[str]]] = [
     ("repo_ops_inventory.scan", "main", []),
     ("repo_ops_upgrade.run", "main_plan", []),
     ("repo_ops_upgrade.run", "main_apply", []),
-    ("repo_ops_pushed.audit", "main", []),
     ("repo_ops.install_skill", "main", []),
     ("repo_ops_audit.audit", "main", []),
     ("repo_ops_dependabot.dependabot", "main", []),
@@ -90,8 +89,9 @@ def test_parse_iso8601_rejects_naive():
         parse_iso8601("2026-05-29T14:00:00")
 
 
-# test_parse_iso8601_rejects_invalid in tests/test_pushed.py already covers the
-# invalid-string case for this same parse_iso8601.
+def test_parse_iso8601_rejects_invalid():
+    with pytest.raises(argparse.ArgumentTypeError):
+        parse_iso8601("not-a-date")
 
 
 @pytest.mark.parametrize("module_name,func_name,prefix", _MAIN_HELP_TARGETS)
@@ -107,7 +107,6 @@ def test_repo_ops_dispatcher_subcommands_help(capsys) -> None:
         "inventory",
         "plan",
         "apply",
-        "pushed",
         "install-skill",
         "audit",
         "dependabot",

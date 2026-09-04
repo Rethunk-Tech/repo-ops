@@ -16,7 +16,6 @@ When the user names a command, run it — default roots apply when paths are omi
 | JSON artifact | `repo-ops plan --json --json-out plan.json /path` |
 | Stay in-range instead of the full sweep | `repo-ops apply --conservative` |
 | Dependency footprint | `repo-ops inventory` |
-| Pushed-commit audit | `repo-ops pushed` |
 | Fleet vulnerability sweep | `repo-ops audit` |
 | Close superseded Dependabot PRs | `repo-ops dependabot` |
 | SBOM / license scan | `repo-ops sbom` · `repo-ops license` |

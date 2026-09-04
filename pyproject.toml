@@ -83,7 +83,6 @@ module-name = [
   "repo_ops_upgrade_remediations_rust",
   "repo_ops_upgrade_remediations_deno",
   "repo_ops_inventory",
-  "repo_ops_pushed",
   "repo_ops_audit",
   "repo_ops_dependabot",
   "repo_ops_doctor",

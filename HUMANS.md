@@ -24,7 +24,6 @@ Editable from a clone: `uv sync --group dev && uv tool install -e .`. Full steps
 | `repo-ops inventory` | Dependency footprint across scan roots |
 | `repo-ops plan` | Read-only upgrade preview (exit 1 on drift) |
 | `repo-ops apply` | Apply updates and verify gates |
-| `repo-ops pushed` | Pushed-commit audit |
 | `repo-ops audit` | Fleet vulnerability sweep |
 
 `plan`/`apply` run the full sweep by default; `--conservative` stays in-range. Subcommands and flags: [docs/usage.md](docs/usage.md).

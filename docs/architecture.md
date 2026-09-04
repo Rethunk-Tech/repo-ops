@@ -20,7 +20,7 @@ module-name`.
 - `src/repo_ops_container/` — Dockerfile/compose image pin check and apply
 - `src/repo_ops_upgrade/` — plan/apply (`run.py`), `discovery`, `orchestration`, `registry`, `actions`, `verify`, `report`, `post_apply`, and `tags` (shared git-ls-remote tag resolution for submodule and pre-commit pins)
 - `src/repo_ops_upgrade_remediations_{core,js,go,py,rust,deno}/` — per-ecosystem remediations
-- `src/repo_ops_inventory/`, `src/repo_ops_pushed/` — inventory and push audit
+- `src/repo_ops_inventory/` — inventory
 - `src/repo_ops_audit/` — fleet vulnerability sweep across ecosystems
 - `src/repo_ops_dependabot/` — list/close Dependabot PRs superseded by local manifests
 - `src/repo_ops_doctor/` — toolchain/auth preflight: probe known binaries and `gh` auth
