@@ -107,7 +107,15 @@ def _verify_hatch_fast(
     *,
     timeout: int | None = None,
     runner: list[str] | None = None,
+    include_test: bool = True,
 ) -> str | None:
+    """Verify a Python workspace, preferring the gates it declares.
+
+    The ladder below is the fallback for a project ``gate`` cannot see: it
+    picks one command from what it can infer (a ``test`` script, pytest,
+    mypy, pyrefly, ruff) and stops there, so a project declaring more gates
+    than that gets the weaker check.
+    """
     d = read_toml_file(ws.path / "pyproject.toml")
     if not d:
         return None
@@ -118,6 +126,10 @@ def _verify_hatch_fast(
     dev = _pyproject_dev_deps(d)
     if timeout is None:
         timeout = resolve_timeout_verify()
+    # What the project declares outranks this module's guess at it.
+    handled, gate_err = _gate_verify(ws, timeout=timeout, include_test=include_test)
+    if handled:
+        return gate_err
     # "test" script wins outright
     if "test" in scripts:
         proc = run([*runner, "test"], ws.path, timeout=timeout)
@@ -404,34 +416,42 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
                 "hatch verify: no uv.lock at %s; skipping uv sync --locked",
                 ws.path,
             )
-            return _verify_hatch_fast(ws, timeout=timeout)
+            return _verify_hatch_fast(ws, timeout=timeout, include_test=verify_test)
         if not shutil.which("uv"):
             return "uv not on PATH"
+        # gate does not check that a lockfile is frozen-installable, so this
+        # runs whether or not the declared gates take over below.
         proc = run(["uv", "sync", "--locked"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "uv sync --locked failed"
-        return _verify_hatch_fast(ws, timeout=timeout)
+        return _verify_hatch_fast(ws, timeout=timeout, include_test=verify_test)
     if mgr == "poetry":
         if not shutil.which("poetry"):
             return "poetry not on PATH"
         proc = run(["poetry", "check"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "poetry check failed"
-        return _verify_hatch_fast(ws, timeout=timeout, runner=["poetry", "run"])
+        return _verify_hatch_fast(
+            ws, timeout=timeout, runner=["poetry", "run"], include_test=verify_test
+        )
     if mgr == "pdm":
         if not shutil.which("pdm"):
             return "pdm not on PATH"
         proc = run(["pdm", "sync", "--clean"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "pdm sync --clean failed"
-        return _verify_hatch_fast(ws, timeout=timeout, runner=["pdm", "run"])
+        return _verify_hatch_fast(
+            ws, timeout=timeout, runner=["pdm", "run"], include_test=verify_test
+        )
     if mgr == "pipenv":
         if not shutil.which("pipenv"):
             return "pipenv not on PATH"
         proc = run(["pipenv", "verify"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "pipenv verify failed"
-        return _verify_hatch_fast(ws, timeout=timeout, runner=["pipenv", "run"])
+        return _verify_hatch_fast(
+            ws, timeout=timeout, runner=["pipenv", "run"], include_test=verify_test
+        )
     if mgr == "pip-tools":
         return _verify_pip_tools(ws, timeout=timeout)
     if mgr == "deno":

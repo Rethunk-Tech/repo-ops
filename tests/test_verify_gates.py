@@ -3,8 +3,8 @@
 - Go: ``go build ./...`` runs after ``go mod verify``, before optional ``go test``.
 - uv: ``ruff check`` runs after ``uv sync --locked`` when ruff is configured.
 - Node: ``REPO_OPS_NODE_VERIFY_SCRIPT`` overrides the waterfall; empty = skip.
-- gate: the gates a project declares outrank the built-in waterfall, and its
-  absence degrades to that waterfall rather than failing.
+- gate: the gates a project declares outrank the built-in Node waterfall and
+  Python ladder, and its absence degrades to them rather than failing.
 - Hatch: ``_verify_hatch_fast`` recognises "check"/"typecheck" scripts and mypy
   in dev deps.
 - Timeouts: ``TIMEOUT_CHECK``/``APPLY``/``VERIFY`` are env-overridable.
@@ -338,7 +338,9 @@ class TestPythonManagerFastGates:
             result = verify_workspace(ws, verify_test=False)
 
         assert result is None
-        assert calls == [lock_cmd, fast_cmd]
+        # The gate probe may sit between them; the ordering that matters is
+        # that the lockfile gate precedes the fallback ladder.
+        assert [c for c in calls if c[0] != "gate"] == [lock_cmd, fast_cmd]
 
     @pytest.mark.parametrize(
         ("manager", "lock_cmd", "fast_cmd"),
@@ -939,4 +941,131 @@ class TestGateDelegation:
             "typecheck",
             "lint",
             "workflows",
+        ]
+
+
+_PYTHON_GATE_LIST = """project  /demo
+5 gate(s), 5 group(s) -- all concurrent
+  typecheck  uv run pyrefly check
+        from convention: python
+  lint       uv run ruff check .
+        from convention: python
+  workflows  /usr/bin/actionlint
+        from convention: .github/workflows
+  test       uv run pytest
+        from convention: python
+  vuln       uv audit --preview-features audit-command
+        from convention: python
+"""
+
+
+class TestPythonGateDelegation:
+    """The Python managers delegate to declared gates on the same terms as Node/Go/Rust."""
+
+    def _write_pyproject(self, path: Path) -> None:
+        (path / "pyproject.toml").write_text(
+            '[project]\nname = "demo"\n[project.scripts]\ncheck = "mypy ."\n',
+            encoding="utf-8",
+        )
+
+    def test_declared_gates_replace_the_hatch_ladder(self, tmp_path: Path, make_workspace) -> None:
+        """Every declared gate must run, not the one command the ladder infers."""
+        self._write_pyproject(tmp_path)
+        calls: list[list[str]] = []
+
+        ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
+            patch(
+                "repo_ops_upgrade.verify.run",
+                side_effect=_gate_aware_run(calls, _PYTHON_GATE_LIST),
+            ),
+        ):
+            result = verify_workspace(ws, verify_test=True)
+
+        assert result is None
+        # The lockfile gate is not something gate checks, so it still leads.
+        assert calls[0] == ["uv", "sync", "--locked"]
+        assert calls[-1] == [
+            "gate",
+            "--timeout",
+            "0",
+            "run",
+            "typecheck",
+            "lint",
+            "workflows",
+            "test",
+            "vuln",
+        ]
+        assert ["uv", "run", "check"] not in calls
+
+    def test_gate_failure_is_the_verify_error(self, tmp_path: Path, make_workspace) -> None:
+        """A failing gate run must surface gate's own output as the verify failure."""
+        self._write_pyproject(tmp_path)
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None
+        ) -> CompletedProcess[str]:
+            if cmd[:2] == ["gate", "--list"]:
+                return _ok(stdout=_PYTHON_GATE_LIST)
+            if cmd[0] == "gate":
+                return _fail(stderr="lint failed: 2 errors")
+            return _ok()
+
+        ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
+            patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
+        ):
+            result = verify_workspace(ws, verify_test=True)
+
+        assert result == "lint failed: 2 errors"
+
+    def test_ladder_still_runs_when_gate_is_absent(self, tmp_path: Path, make_workspace) -> None:
+        """Without the gate CLI, verify must degrade to the built-in ladder, not fail."""
+        self._write_pyproject(tmp_path)
+        calls: list[list[str]] = []
+
+        ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
+        with (
+            patch(
+                "repo_ops_upgrade.verify.shutil.which",
+                side_effect=lambda name: None if name == "gate" else "/usr/bin/tool",
+            ),
+            patch(
+                "repo_ops_upgrade.verify.run",
+                side_effect=_gate_aware_run(calls, _PYTHON_GATE_LIST),
+            ),
+        ):
+            result = verify_workspace(ws, verify_test=True)
+
+        assert result is None
+        assert ["uv", "run", "check"] in calls
+        assert not [c for c in calls if c[0] == "gate"]
+
+    def test_verify_test_off_drops_the_test_gate(self, tmp_path: Path, make_workspace) -> None:
+        """--verify-test stays meaningful across every Python runner, not just uv."""
+        self._write_pyproject(tmp_path)
+        calls: list[list[str]] = []
+
+        ws = make_workspace(tmp_path, manager="poetry", ecosystem="python", label="demo")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
+            patch(
+                "repo_ops_upgrade.verify.run",
+                side_effect=_gate_aware_run(calls, _PYTHON_GATE_LIST),
+            ),
+        ):
+            result = verify_workspace(ws, verify_test=False)
+
+        assert result is None
+        assert calls[-1] == [
+            "gate",
+            "--timeout",
+            "0",
+            "run",
+            "typecheck",
+            "lint",
+            "workflows",
+            "vuln",
         ]
