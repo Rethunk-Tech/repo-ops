@@ -7,8 +7,8 @@ reads a ``.repo-ops.toml`` sidecar at the repo root.  The ``[verify]`` table
 (or flat ``verify.*`` keys in the sidecar) supports three knobs:
 
 ``verify.script`` (str)
-    Overrides the Node.js waterfall (ci → ci:pushgate → build → lint) with a
-    specific package.json script name.  Empty string skips the script step
+    Overrides gate delegation and the Node.js waterfall (ci → ci:pushgate →
+    build → lint) with a specific package.json script name.  Empty string skips the script step
     (same as ``REPO_OPS_NODE_VERIFY_SCRIPT=""``).  Real-world use: Heroku
     repos that need ``yarn install --immutable && yarn build:production`` as
     their gate can declare ``script = "build:production"`` instead of
@@ -172,8 +172,56 @@ def _verify_hatch_fast(
 
 _NODE_VERIFY_SCRIPT_ENV = "REPO_OPS_NODE_VERIFY_SCRIPT"
 _TIMEOUT_VERIFY_ENV = "REPO_OPS_TIMEOUT_VERIFY"
-# Waterfall of default script candidates tried in order.
+# Waterfall of default script candidates tried in order. Only reached when the
+# gate CLI is unavailable or detects nothing there: gate ranks Makefile targets
+# and turbo tasks above package.json scripts, which this waterfall cannot see.
 _NODE_VERIFY_CANDIDATES = ("ci", "ci:pushgate", "build", "lint")
+
+# One declared gate per ``gate --list`` line: exactly two leading spaces, an
+# optional ``then`` marking it serial-after the previous one, the name, then
+# whitespace before the command. The continuation ``from ...`` line indents
+# past column two and so never matches.
+_GATE_LINE_RE = re.compile(r"^ {2}(?:then )?(\S+)\s+\S")
+
+
+def _gate_verify(
+    ws: Workspace,
+    *,
+    timeout: int,
+    include_test: bool = True,
+) -> tuple[bool, str | None]:
+    """Verify *ws* by running the gates the project itself declares.
+
+    Returns ``(handled, error)``. ``handled`` is False when the ``gate`` CLI is
+    absent or detects no gate here, which leaves the caller on its own gates.
+
+    ``gate --list`` executes nothing and exits 0 even when it detects nothing,
+    so it is both the availability probe and the gate set: a bare ``gate`` run
+    against a project declaring none exits 129, which is not a verify failure.
+    ``gate run NAME...`` filters that same detected set, so dropping ``test``
+    keeps ``--verify-test`` meaningful without re-deriving anything.
+    """
+    if not shutil.which("gate"):
+        # Audible at the default log level: this verify is weaker than what the
+        # project declares, and nothing else in the output would say so.
+        logger.warning(
+            "gate not on PATH; %s falls back to repo-ops' built-in verify gates",
+            ws.path,
+        )
+        return (False, None)
+    listing = run(["gate", "--list"], ws.path, timeout=timeout)
+    names = [m.group(1) for line in listing.stdout.splitlines() if (m := _GATE_LINE_RE.match(line))]
+    if not include_test:
+        names = [n for n in names if n != "test"]
+    if listing.returncode != 0 or not names:
+        logger.info("gate detects no gate for %s; falling back to built-in verify gates", ws.path)
+        return (False, None)
+    # gate's own per-gate timeout would race this process's; 0 disables it and
+    # leaves the caller's verify timeout the single authority.
+    proc = run(["gate", "--timeout", "0", "run", *names], ws.path, timeout=timeout)
+    if proc.returncode != 0:
+        return (True, (proc.stderr or proc.stdout).strip() or f"gate run {' '.join(names)} failed")
+    return (True, None)
 
 
 def _load_verify_profile(ws: Workspace) -> dict[str, Any]:
@@ -222,8 +270,11 @@ def verify_node(ws: Workspace) -> str | None:
 
     1. ``REPO_OPS_NODE_VERIFY_SCRIPT`` env var (empty → skip script step)
     2. ``verify.script`` in per-repo / global config (empty → skip script step)
-    3. Waterfall: ci → ci:pushgate → build → lint (first found in package.json)
-    4. Biome fallback (lint / biome:ci)
+    3. The gates the project declares, run through the ``gate`` CLI
+    4. Waterfall: ci → ci:pushgate → build → lint (first found in package.json)
+    5. Biome fallback (lint / biome:ci)
+
+    Steps 4 and 5 are reached only when ``gate`` is absent or detects nothing.
     """
     profile = _load_verify_profile(ws)
     mgr = ws.manager
@@ -265,6 +316,11 @@ def verify_node(ws: Workspace) -> str | None:
                 return None
             script_name = str(cfg_script).strip()
         else:
+            # No explicit override: what the project declares outranks this
+            # module's guess at it.
+            handled, gate_err = _gate_verify(ws, timeout=timeout)
+            if handled:
+                return gate_err
             script_name = None
             for candidate in _NODE_VERIFY_CANDIDATES:
                 if candidate in scripts:
@@ -315,6 +371,9 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
         proc = run(["go", "mod", "verify"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "go mod verify failed"
+        handled, gate_err = _gate_verify(ws, timeout=timeout, include_test=verify_test)
+        if handled:
+            return gate_err
         # Default post-upgrade build gate: catches API-breaking bumps that
         # go mod verify (checksum-only) would pass silently.
         proc_build = run(["go", "build", "./..."], ws.path, timeout=timeout)
@@ -326,6 +385,9 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
                 return proc2.stderr.strip() or "go test failed"
         return None
     if mgr == "rust":
+        handled, gate_err = _gate_verify(ws, timeout=timeout, include_test=verify_test)
+        if handled:
+            return gate_err
         proc = run(["cargo", "check"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "cargo check failed"

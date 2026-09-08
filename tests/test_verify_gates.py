@@ -3,6 +3,8 @@
 - Go: ``go build ./...`` runs after ``go mod verify``, before optional ``go test``.
 - uv: ``ruff check`` runs after ``uv sync --locked`` when ruff is configured.
 - Node: ``REPO_OPS_NODE_VERIFY_SCRIPT`` overrides the waterfall; empty = skip.
+- gate: the gates a project declares outrank the built-in waterfall, and its
+  absence degrades to that waterfall rather than failing.
 - Hatch: ``_verify_hatch_fast`` recognises "check"/"typecheck" scripts and mypy
   in dev deps.
 - Timeouts: ``TIMEOUT_CHECK``/``APPLY``/``VERIFY`` are env-overridable.
@@ -64,8 +66,12 @@ class TestGoVerifyGates:
             result = verify_workspace(ws, verify_test=False)
 
         assert result is None
-        assert calls[0] == ["go", "mod", "verify"]
-        assert calls[1] == ["go", "build", "./..."]
+        # The gate probe may sit between them; the ordering that matters is
+        # that the build gate never precedes the checksum gate.
+        assert [c for c in calls if c[0] == "go"] == [
+            ["go", "mod", "verify"],
+            ["go", "build", "./..."],
+        ]
 
     def test_go_mod_verify_failure_short_circuits(self, tmp_path: Path, make_workspace) -> None:
         """go build must NOT run if go mod verify fails."""
@@ -806,3 +812,131 @@ class TestTimeoutEnvOverride:
         )
         assert ruff_call is not None
         assert ruff_call["timeout"] == 55
+
+
+# ---------------------------------------------------------------------------
+# gate CLI delegation
+# ---------------------------------------------------------------------------
+
+_GATE_LIST = """project  /demo
+5 gate(s), 5 group(s) -- all concurrent
+  build      /demo/node_modules/.bin/turbo run build
+        from turbo.json task build
+  typecheck  /demo/node_modules/.bin/turbo run typecheck
+        from turbo.json task typecheck
+  lint       /demo/node_modules/.bin/turbo run lint
+        from turbo.json task lint
+  workflows  /usr/bin/actionlint
+        from convention: .github/workflows
+  test       /demo/node_modules/.bin/turbo run test
+        from turbo.json task test
+"""
+
+
+def _gate_aware_run(calls: list[list[str]], listing: str = _GATE_LIST):
+    """A ``run`` double that answers ``gate --list`` with *listing*."""
+
+    def fake_run(cmd: list[str], cwd: Path, timeout: int | None = None) -> CompletedProcess[str]:
+        calls.append(cmd)
+        return _ok(stdout=listing if cmd[:2] == ["gate", "--list"] else "")
+
+    return fake_run
+
+
+class TestGateDelegation:
+    def _write_pkg(self, path: Path) -> None:
+        import json
+
+        (path / "package.json").write_text(
+            json.dumps({"scripts": {"build": "vite build", "test": "bun test"}}),
+            encoding="utf-8",
+        )
+
+    def test_declared_gates_replace_the_node_waterfall(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
+        """Every gate the project declares must run, not the first script the waterfall finds."""
+        self._write_pkg(tmp_path)
+        calls: list[list[str]] = []
+
+        ws = make_workspace(tmp_path, manager="bun", ecosystem="node", label="demo")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/gate"),
+            patch("repo_ops_upgrade.verify.run", side_effect=_gate_aware_run(calls)),
+        ):
+            result = verify_node(ws)
+
+        assert result is None
+        assert calls[-1] == [
+            "gate",
+            "--timeout",
+            "0",
+            "run",
+            "build",
+            "typecheck",
+            "lint",
+            "workflows",
+            "test",
+        ]
+        assert ["bun", "run", "build"] not in calls
+
+    def test_gate_failure_is_the_verify_error(self, tmp_path: Path, make_workspace) -> None:
+        """A failing gate run must surface gate's own output as the verify failure."""
+        self._write_pkg(tmp_path)
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None
+        ) -> CompletedProcess[str]:
+            if cmd[:2] == ["gate", "--list"]:
+                return _ok(stdout=_GATE_LIST)
+            if cmd[0] == "gate":
+                return _fail(stderr="typecheck failed: 3 errors")
+            return _ok()
+
+        ws = make_workspace(tmp_path, manager="bun", ecosystem="node", label="demo")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/gate"),
+            patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
+        ):
+            result = verify_node(ws)
+
+        assert result == "typecheck failed: 3 errors"
+
+    def test_waterfall_still_runs_when_gate_is_absent(self, tmp_path: Path, make_workspace) -> None:
+        """Without the gate CLI, verify must degrade to the built-in waterfall, not fail."""
+        self._write_pkg(tmp_path)
+        calls: list[list[str]] = []
+
+        ws = make_workspace(tmp_path, manager="bun", ecosystem="node", label="demo")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value=None),
+            patch("repo_ops_upgrade.verify.run", side_effect=_gate_aware_run(calls)),
+        ):
+            result = verify_node(ws)
+
+        assert result is None
+        assert ["bun", "run", "build"] in calls
+        assert not [c for c in calls if c[0] == "gate"]
+
+    def test_verify_test_off_drops_the_test_gate(self, tmp_path: Path, make_workspace) -> None:
+        """--verify-test stays meaningful: the declared test gate is excluded when it is off."""
+        calls: list[list[str]] = []
+
+        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/gate"),
+            patch("repo_ops_upgrade.verify.run", side_effect=_gate_aware_run(calls)),
+        ):
+            result = verify_workspace(ws, verify_test=False)
+
+        assert result is None
+        assert calls[-1] == [
+            "gate",
+            "--timeout",
+            "0",
+            "run",
+            "build",
+            "typecheck",
+            "lint",
+            "workflows",
+        ]
