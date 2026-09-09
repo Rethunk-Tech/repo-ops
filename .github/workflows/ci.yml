@@ -29,10 +29,10 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: Rethunk-Tech/gh-actions/setup-python@5d07bd8adb2dda1caa11cacd886edf73e2e95afb # v1.10
         with:
           python-version: "3.14"
-          enable-cache: true
+          install-args: --locked --group dev
       - uses: Rethunk-Tech/gh-actions/setup-bun@45d60bff5148282bbbf11e6f2460829eab772cf2 # v1.9
         with:
           node-version: "24"
@@ -46,8 +46,6 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Add Go bin to PATH
         run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
-      - name: Sync locked dependencies
-        run: uv sync --locked --group dev
       - name: Integration tests (advisory)
         run: uv run pytest -q -m integration
 
@@ -56,11 +54,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      # Audits uv.lock rather than the installed environment, so pinned-but-uninstalled
+      # extras are covered and a lock full of advisories cannot pass. No sync: the audit
+      # reads the lockfile, not the environment.
+      - uses: Rethunk-Tech/gh-actions/setup-python@5d07bd8adb2dda1caa11cacd886edf73e2e95afb # v1.10
         with:
           python-version: "3.14"
-          enable-cache: true
-      - name: Audit dependencies for known CVEs
-        # Audits uv.lock rather than the installed environment, so pinned-but-
-        # uninstalled extras are covered and a lock full of advisories cannot pass.
-        run: uv audit --locked
+          skip-install: "true"
+          run-audit: "true"

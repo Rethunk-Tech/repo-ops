@@ -20,14 +20,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: Rethunk-Tech/gh-actions/setup-python@5d07bd8adb2dda1caa11cacd886edf73e2e95afb # v1.10
         with:
           python-version: ${{ inputs.python-version }}
-          enable-cache: true
-      - name: Sync locked dependencies
-        run: uv sync --locked --group dev
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
+          install-args: --locked --group dev
+          run-ruff: "true"
+          run-ruff-format: "true"
       - run: uv run pyrefly check . --project-excludes 'tests/**' 'scripts/**'
       - name: Run tests
         run: uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=78
