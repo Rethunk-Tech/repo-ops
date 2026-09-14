@@ -12,7 +12,7 @@ module-name`.
 - `src/repo_ops_core/` — shared constants, git, filesystem, process, CLI helpers, hold rules (global/repo version ceilings, including the cached resolver every ecosystem plugin uses), and targeted-bump requirement matching (`requirement.requirement_satisfied` is the caret/range helper — Cargo stays here rather than PEP 440 `SpecifierSet`)
 - `src/repo_ops_models/` — dataclasses
 - `src/repo_ops_lockfiles/` — lockfile parsers (`versions_*` including go.sum, Cargo.lock, requirements.txt) and snapshot diff; also hosts the `sbom` and `license` subcommands
-- `src/repo_ops_js/` — Node workspace helpers, overrides audit, Deno support, and the shared audit-override store
+- `src/repo_ops_js/` — Node workspace helpers, overrides audit, Expo SDK alignment (`expo.py`), Deno support, and the shared audit-override store
 - `src/repo_ops_js_{npm,pnpm,bun,yarn}/` — PM check/apply plugins with `register()`
 - `src/repo_ops_go/`, `src/repo_ops_rust/` — Go and Rust check/apply plugins
 - `src/repo_ops_py/` — Python workspace dispatch, plus the shared PyPI lookup and hold filter used by the PM plugins

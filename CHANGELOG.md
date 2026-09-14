@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Expo apps hold their SDK-coupled packages at the installed SDK's bundled versions.** A default `apply` over majordomo moved `react-native`, `react-native-gesture-handler` (`~2.32` to `3.3`) and nine more `apps/mobile` packages past what Expo SDK 57 bundles; `bun run ci:offline` passed and `check:native-config` (expo-doctor) broke, and the fix was 11 hand-written `[[hold]]` rules that go stale on every SDK bump. For a workspace depending on `expo`, every package listed in the installed `expo/bundledNativeModules.json` is now held at its bundled spec, apply writes that spec, `plan` proposes moving an out-of-spec package onto it, `expo` is held at its installed major, and `expo.install.exclude` opts out. Rows carry the reason (`expo SDK 57 bundles ~2.32.0`) in the human report and JSON `hold_reason`. Docs: [usage § Expo SDK alignment](docs/usage.md#expo-sdk-alignment).
+
 ### Removed
 
 - **`pushed` and the `repo_ops_pushed` package.** `project-register` answers it over the same fleet, from the same source — `update by push` entries in the `refs/remotes/*` reflog, windowed on when the push happened and counting the range each push delivered. Coverage was measured before removing anything: over 40 repositories with pushes in a 168-hour window, both tools report the same 40 repositories and the same 1843 commits, with zero disagreements. Every option is answered except `--source=gh`, which is deliberately out of scope there — the register's forge tier owns anything that costs a request, and this read stays answerable with the network gone. `--exclude`, `--follow-symlinks` and `--jobs` are settings the register holds in its own config rather than per-invocation flags. The two `pushed`-specific JSON tests were dropped because the `--json-out` and `--compact` contracts they covered are the same shared paths already asserted for `inventory` and `plan`; the `parse_iso8601` invalid-string case they carried moved into `tests/test_cli.py`, which had been deferring to them for it.

@@ -18,6 +18,7 @@ from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_js.audit_overrides import make_audit_override_api
+from repo_ops_js.expo import with_expo_alignment
 from repo_ops_js.guards import (
     assert_targets_resolved,
     fold_blocked_into_behind,
@@ -231,12 +232,14 @@ def _check_bun_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
         except json.JSONDecodeError:
             data = None
         if isinstance(data, dict):
-            return _changes_from_bun_json(proc_json.stdout, ws=ws)
+            changes, behind = _changes_from_bun_json(proc_json.stdout, ws=ws)
+            return with_expo_alignment(ws, changes), behind
 
     proc = run(["bun", "outdated"], ws.path, timeout=resolve_timeout_check())
     if proc.returncode not in (0, 1):
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "bun outdated failed")
-    return _changes_from_bun_text(proc.stdout, ws=ws)
+    changes, behind = _changes_from_bun_text(proc.stdout, ws=ws)
+    return with_expo_alignment(ws, changes), behind
 
 
 def _exact_flag(name: str, pkg_data: dict[str, object]) -> list[str]:
@@ -274,8 +277,10 @@ def targeted_bump_behind(
     pkg_data = read_json_file(ws.path / "package.json") or {}
 
     def run_bump(name: str, version: str) -> bool:
+        # A ``~``/``^`` target is a hold's install spec (Expo's), saved as written.
+        exact = [] if version[:1] in ("~", "^") else _exact_flag(name, pkg_data)
         install = run(
-            ["bun", "add", *_exact_flag(name, pkg_data), f"{name}@{version}"],
+            ["bun", "add", *exact, f"{name}@{version}"],
             ws.path,
             timeout=resolve_timeout_apply(),
         )

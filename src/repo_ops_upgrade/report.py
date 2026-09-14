@@ -12,10 +12,11 @@ from pathlib import Path
 from typing import Any, Literal
 
 from repo_ops_core.config import resolve_bool_setting
-from repo_ops_core.holds import HoldRule, resolve_package_hold
+from repo_ops_core.holds import HoldRule
 from repo_ops_core.state import cache_get_dirty_skip, cache_get_staleness
 from repo_ops_core.table import column_width, format_cell
-from repo_ops_models import DIRTY_SKIP_MARKER, RepoBundle, WorkspaceResult
+from repo_ops_js.holds import resolve_package_hold
+from repo_ops_models import DIRTY_SKIP_MARKER, Change, RepoBundle, WorkspaceResult
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 
 UpgradeMode = Literal["plan", "apply"]
@@ -164,11 +165,20 @@ def _behind_latest_holds(wr: WorkspaceResult) -> list[HoldRule | None]:
     Shared by the row annotation and the summary counter so "held" means the
     same thing in both places.
     """
+    return _holds(wr, wr.behind_latest)
+
+
+def _holds(wr: WorkspaceResult, changes: list[Change]) -> list[HoldRule | None]:
     ws = wr.workspace
     return [
         resolve_package_hold(replace(ws, path=ws.path / c.member) if c.member else ws, c.name)
-        for c in wr.behind_latest
+        for c in changes
     ]
+
+
+def _expo_reason(rule: HoldRule | None) -> str | None:
+    """Why an Expo-derived hold applies; configured holds keep their reason out of the report."""
+    return rule.reason if rule is not None and rule.source == "expo" else None
 
 
 def _format_behind_latest_annotation(rule: HoldRule | None) -> str:
@@ -177,6 +187,8 @@ def _format_behind_latest_annotation(rule: HoldRule | None) -> str:
     annotation = f"(latest; held <= {rule.max_version}"
     if rule.until:
         annotation += f", until {rule.until}"
+    if reason := _expo_reason(rule):
+        annotation += f", {reason}"
     return annotation + ")"
 
 
@@ -303,6 +315,11 @@ def _enrich_repo_json_with_aging(
         for entry, rule in zip(ws_json["behind_latest"], _behind_latest_holds(wr), strict=True):
             if rule is not None:
                 entry["held"] = rule.max_version
+            if reason := _expo_reason(rule):
+                entry["hold_reason"] = reason
+        for entry, rule in zip(ws_json["changes"], _holds(wr, wr.changes), strict=True):
+            if reason := _expo_reason(rule):
+                entry["hold_reason"] = reason
         if wr.status == "skip" and wr.error and DIRTY_SKIP_MARKER in wr.error:
             entry = cache_get_dirty_skip(wr.workspace.git_repo)
             if entry:
@@ -510,10 +527,12 @@ def print_human_report(
             if shown_changes:
                 name_w = column_width([c.name for c in shown_changes], "")
                 from_w = column_width([c.from_ver for c in shown_changes], "")
-                for c in shown_changes:
+                for c, rule in zip(shown_changes, _holds(wr, shown_changes), strict=True):
+                    reason = _expo_reason(rule)
                     print(
                         f"    {format_cell(c.name, name_w)} "
                         f"{format_cell(c.from_ver, from_w)} → {c.to}"
+                        + (f" ({reason})" if reason else "")
                     )
             if len(wr.changes) > top_n:
                 print(f"    ... and {len(wr.changes) - top_n} more")

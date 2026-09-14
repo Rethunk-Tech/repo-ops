@@ -501,6 +501,31 @@ max_version = "99"          # effectively unbounded — the workspace override
 workspace = "packages/modern-app"
 ```
 
+### Expo SDK alignment
+
+A JS workspace (root or member) whose `package.json` depends on `expo` gets holds
+without any config, read from the installed `expo/bundledNativeModules.json`
+(resolved from `node_modules` in the workspace, then the repo root) — the data
+`expo install --check`/`--fix` and expo-doctor validate against offline:
+
+- Each declared dependency or devDependency that file lists is held at its bundled
+  spec: `19.2.3` caps exactly, `~2.32.0` at `2.32`, `^15.0.2` at `15`. Apply
+  writes the bundled spec itself (`~` kept, exact stays exact), as `expo install` does.
+- A listed package installed outside its spec is proposed as a `plan` change to the
+  spec's floor in either direction (bun), e.g. `react-native 0.86.2 → 0.86.3`.
+- `expo` is held at its installed major with spec `~<installed>`: patches move, an
+  SDK upgrade stays a manual, reviewed change. `expo-*` packages the file lists
+  follow their bundled spec; unlisted ones are ordinary dependencies.
+- Names in the app's `expo.install.exclude` are skipped (a versioned entry counts
+  when it names the bundled spec).
+- The Expo hold wins over a `[[hold]]` rule for the same package. Rows it governs
+  carry the reason in the human report (`held <= 2.32, expo SDK 57 bundles ~2.32.0`,
+  and on change rows `(expo SDK 57 bundles 0.86.3)`) and in JSON `hold_reason`.
+
+Online, the Expo CLI also overlays api.expo.dev's per-SDK versions on the file, so a
+package that list names but the file does not (e.g. `@types/react`) still needs a
+`[[hold]]`.
+
 **Enforcement scope:** JS (npm, yarn, pnpm, bun), Deno, Go, Rust/Cargo, the
 Python managers (uv, hatch, pdm, pipenv, poetry, pip-tools), pre-commit, GitHub
 Actions, containers, and submodules. An advisory-safe version from `audit --fix`

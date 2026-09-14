@@ -16,8 +16,10 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import Protocol
 
-from repo_ops_core.holds import HoldRule, resolve_package_hold
+from repo_ops_core import holds as core_holds
+from repo_ops_core.holds import HoldRule
 from repo_ops_core.version_utils import version_satisfies_ceiling
+from repo_ops_js.expo import expo_hold
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
 
@@ -27,9 +29,18 @@ class _RunResult(Protocol):
     stderr: str
 
 
+def resolve_package_hold(ws: Workspace, package: str) -> HoldRule | None:
+    """The Expo SDK ceiling when Expo governs *package*, else the ``[[hold]]`` rules.
+
+    Expo's bundled spec wins over a configured hold: the app's native build accepts
+    only that spec, and ``expo.install.exclude`` is the documented opt-out.
+    """
+    return expo_hold(ws, package) or core_holds.resolve_package_hold(ws, package)
+
+
 def hold_version_spec(rule: HoldRule) -> str:
-    """npm-registry range spec for a rule's ceiling (e.g. ``pkg@"<=6"``)."""
-    return f"<={rule.max_version}"
+    """npm-registry spec for a rule: its own install spec, else the ceiling (``pkg@"<=6"``)."""
+    return rule.spec or f"<={rule.max_version}"
 
 
 def is_within_ceiling(resolved_version: str, rule: HoldRule) -> bool:

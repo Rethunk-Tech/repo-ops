@@ -45,7 +45,9 @@ class HoldRule:
     ecosystem: str | None = None
     workspace: str | None = None
     reason: str | None = None
-    source: str = "global"  # "global" | "repo" — precedence + debugging only
+    source: str = "global"  # "global" | "repo" | "expo" — precedence + debugging only
+    # Install spec to write instead of ``<=max_version`` when the source dictates one (Expo's bundled spec).
+    spec: str | None = None
 
 
 def _parse_hold_table(raw: Any, *, source: str) -> list[HoldRule]:
