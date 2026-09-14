@@ -47,6 +47,19 @@ def test_exact_pin_advances_within_major_without_floating_tag(tmp_path: Path) ->
     assert "astral-sh/setup-uv@v8.2.0" in wf.read_text(encoding="utf-8")
 
 
+def test_exact_pin_two_part_tags_advance_by_semver(tmp_path: Path) -> None:
+    """v1.9 → v1.10 (not lexically lower); v1.10.0 equals v1.10 so it is not rewritten."""
+    wf = _write_workflow(tmp_path, "v1.9")
+    bumps, _ = _scan(tmp_path, _make_tags_proc("v1.8", "v1.9", "v1.10"), apply=True)
+    assert [b.latest for b in bumps if b.action == "astral-sh/setup-uv"] == ["v1.10"]
+    assert "astral-sh/setup-uv@v1.10\n" in wf.read_text(encoding="utf-8")
+
+    wf.write_text(wf.read_text(encoding="utf-8").replace("@v1.10", "@v1.10.0"), encoding="utf-8")
+    bumps, _ = _scan(tmp_path, _make_tags_proc("v1.9", "v1.10"), apply=True)
+    rows = [b for b in bumps if b.action == "astral-sh/setup-uv"]
+    assert rows[0].latest == rows[0].pin == "v1.10.0"
+
+
 def test_exact_pin_already_highest_stays_report_only(tmp_path: Path) -> None:
     """Highest exact in major and no floating tag → report-only, file untouched."""
     wf = _write_workflow(tmp_path, "v8.2.0")

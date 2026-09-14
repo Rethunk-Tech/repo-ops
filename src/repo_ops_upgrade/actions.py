@@ -50,6 +50,9 @@ _TAG_CACHE: dict[str, dict | None] = {}
 _ORG_POLICY_CACHE: dict[str, dict | None] = {}
 
 _MAJOR_TAG_RE = re.compile(r"^v(\d+)(?:\.|$)")
+# A release tag names at least major.minor (Rethunk-Tech/gh-actions ships v1.10, not v1.10.0).
+# A bare vN floats between releases, so it never counts as one.
+_EXACT_TAG_RE = re.compile(r"v(\d+)\.\d+(?:[.+-].*)?")
 
 # Full 40-hex SHA or short sha<hex> prefix
 _SHA_RE = re.compile(r"^(?:sha[0-9a-f]+|[0-9a-f]{7,40})$", re.IGNORECASE)
@@ -565,43 +568,8 @@ def _resolve_sha_target(
     if tag_style == "major":
         return major_tag, f"unpin SHA to {major_tag} (via {source_desc})"
 
-    # exact: find highest vN.M.P within this major
-    exact_tag: str | None = None
-    if info is not None:
-        best_exact: str | None = None
-        best_exact_tup: tuple[int, ...] = ()
-        for sha_tags in info.get("sha_to_tags", {}).values():
-            for t in sha_tags:
-                m3 = _MAJOR_TAG_RE.match(t)
-                if not m3 or int(m3.group(1)) != resolved_major:
-                    continue
-                if re.fullmatch(r"v\d+\.\d+\.\d+.*", t):
-                    stripped = t.lstrip("v")
-                    tup = semver_tuple(stripped)
-                    if tup > best_exact_tup:
-                        best_exact_tup = tup
-                        best_exact = t
-        # Also scan all_majors tags from sha_to_tags full names list
-        # (may include tags on different commits within the same major)
-        # We need ALL tags for the major, not just ones mapping to this SHA.
-        # The info dict doesn't directly provide this, so we build it from sha_to_tags.
-        all_in_major: list[str] = []
-        for tags_list in info.get("sha_to_tags", {}).values():
-            for t in tags_list:
-                m4 = _MAJOR_TAG_RE.match(t)
-                if (
-                    m4
-                    and int(m4.group(1)) == resolved_major
-                    and re.fullmatch(r"v\d+\.\d+\.\d+.*", t)
-                ):
-                    all_in_major.append(t)
-        if all_in_major:
-            best_in_major = max(all_in_major, key=lambda t: semver_tuple(t.lstrip("v")))
-            best_in_major_tup = semver_tuple(best_in_major.lstrip("v"))
-            if best_in_major_tup > best_exact_tup:
-                best_exact = best_in_major
-        exact_tag = best_exact
-
+    digest = _highest_exact_digest_in_major(info, resolved_major) if info is not None else None
+    exact_tag = digest[1] if digest else None
     target = exact_tag if exact_tag else major_tag
     style_note = "exact" if exact_tag else "major (no exact tag found)"
     return target, f"unpin SHA to {target} ({style_note}; via {source_desc})"
@@ -642,8 +610,19 @@ def _resolve_sha_major(sha: str, *, comment_hint: str | None, info: dict | None)
     return best_major
 
 
+def _tag_version(tag: str) -> tuple[int, ...]:
+    """Semver tuple padded to three parts, so ``v1.10 == v1.10.0`` and ``v1.10 > v1.9``."""
+    parts = semver_tuple(tag.lstrip("v"))
+    return parts + (0,) * (3 - len(parts))
+
+
+def _exact_tag_major(tag: str) -> int | None:
+    m = _EXACT_TAG_RE.fullmatch(tag)
+    return int(m.group(1)) if m else None
+
+
 def _highest_exact_digest_in_major(info: dict, major: int) -> tuple[str, str] | None:
-    """Return ``(commit_sha, tag)`` for the highest ``vN.M.P`` tag within ``major``.
+    """Return ``(commit_sha, tag)`` for the highest exact release tag within ``major``.
 
     Used by SHA-pin digest refresh: keeps an action digest-pinned but
     advances the SHA to the newest release within its current major, matching how
@@ -654,10 +633,9 @@ def _highest_exact_digest_in_major(info: dict, major: int) -> tuple[str, str] | 
     best_tup: tuple[int, ...] = ()
     for sha, tags in info.get("sha_to_tags", {}).items():
         for t in tags:
-            m = re.fullmatch(r"v(\d+)\.\d+\.\d+.*", t)
-            if not m or int(m.group(1)) != major:
+            if _exact_tag_major(t) != major:
                 continue
-            tup = semver_tuple(t.lstrip("v"))
+            tup = _tag_version(t)
             if tup > best_tup:
                 best_tup = tup
                 best_tag = t
@@ -680,14 +658,13 @@ def _comment_rewrite_for(comment: str | None, tag: str) -> tuple[str, str] | Non
 
 
 def _highest_exact_in_major(info: dict, major: int) -> str | None:
-    """Return the highest ``vN.M.P`` tag within ``major`` from ``info['all_tags']``."""
+    """Return the highest exact release tag within ``major`` from ``info['all_tags']``."""
     best: str | None = None
     best_tup: tuple[int, ...] = ()
     for t in info.get("all_tags", ()):
-        m = re.fullmatch(r"v(\d+)\.\d+\.\d+.*", t)
-        if not m or int(m.group(1)) != major:
+        if _exact_tag_major(t) != major:
             continue
-        tup = semver_tuple(t.lstrip("v"))
+        tup = _tag_version(t)
         if tup > best_tup:
             best_tup = tup
             best = t
@@ -743,7 +720,7 @@ def _action_tag_version(tag: str) -> tuple[int, ...] | None:
     if not _MAJOR_TAG_RE.match(tag):
         return None
     try:
-        return semver_tuple(tag.lstrip("v"))
+        return _tag_version(tag)
     except Exception:
         return None
 
@@ -774,7 +751,7 @@ def _resolve_hold_action_tag_target(current_ref: str, tags: set[str], rule: Hold
 def _matching_action_sha_tags(
     current_sha: str, info: dict
 ) -> list[tuple[tuple[int, ...], str, str]]:
-    """Return semver tags attached to *current_sha*."""
+    """Return exact release tags attached to *current_sha* (a floating ``vN`` names no release)."""
     normalized = current_sha.lower()
     if normalized.startswith("sha"):
         normalized = normalized[3:]
@@ -790,9 +767,8 @@ def _matching_action_sha_tags(
     matching: list[tuple[tuple[int, ...], str, str]] = []
     for sha in matching_keys:
         for tag in sha_to_tags[sha]:
-            tag_version = _action_tag_version(tag)
-            if tag_version is not None:
-                matching.append((tag_version, tag, sha))
+            if _exact_tag_major(tag) is not None:
+                matching.append((_tag_version(tag), tag, sha))
     return matching
 
 
@@ -810,11 +786,10 @@ def _resolve_hold_action_sha_target(
     candidates: list[tuple[tuple[int, ...], str, str]] = []
     for sha, tags in info.get("sha_to_tags", {}).items():
         for tag in tags:
-            tag_version = _action_tag_version(tag)
-            if tag_version is None:
+            if _exact_tag_major(tag) is None:
                 continue
             if version_satisfies_ceiling(tag.lstrip("v"), rule.max_version):
-                candidates.append((tag_version, tag, sha))
+                candidates.append((_tag_version(tag), tag, sha))
     if not candidates:
         return None
     target_version, target_tag, target_sha = max(candidates, key=lambda item: (item[0], item[1]))
@@ -1475,7 +1450,11 @@ def scan_actions(
                     # e.g. astral-sh/setup-uv publishes only vN.M.P tags, so
                     # v8.1.0 would otherwise never move while v8.2.0 exists.
                     in_major = _highest_exact_in_major(info, M)
-                    if in_major and in_major != pin and _target_within_hold(repo, action, in_major):
+                    if (
+                        in_major
+                        and _tag_version(in_major) > _tag_version(pin)
+                        and _target_within_hold(repo, action, in_major)
+                    ):
                         detail = f"advance exact pin within v{M} (no floating major tag upstream)"
                         if newer_major:
                             detail += f"; newer major v{max_major} available"

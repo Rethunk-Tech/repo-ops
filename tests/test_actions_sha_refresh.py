@@ -154,6 +154,69 @@ def test_refresh_off_by_default_keeps_report_only(tmp_path: Path) -> None:
     assert wf.read_text(encoding="utf-8") == original
 
 
+def test_refresh_two_part_tags_orders_by_semver_and_rewrites_comment(tmp_path: Path) -> None:
+    """gh-actions case: v1.10 > v1.9 despite two-part tags; floating v1 still at v1.9."""
+    wf = _wf(
+        tmp_path,
+        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_OLD} # v1.9\n",
+    )
+    tags_proc = _make_tags_proc(f"v1.10 {_NEW}", f"v1.9 {_OLD}", f"v1.8 {_OTHER}", f"v1 {_OLD}")
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
+    ):
+        bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=True, refresh_sha=True)
+
+    checkout = [b for b in bumps if b.action == "actions/checkout"]
+    assert len(checkout) == 1, bumps
+    assert checkout[0].latest == _NEW
+    assert "refresh SHA digest to v1.10" in (checkout[0].detail or "")
+    assert wf.read_text(encoding="utf-8").endswith(f"@{_NEW} # v1.10\n")
+
+
+def test_refresh_mixed_two_and_three_part_tags_picks_highest(tmp_path: Path) -> None:
+    """v1.10 outranks v1.9.3; a bare floating v1 on a newer commit is never a release."""
+    wf = _wf(
+        tmp_path,
+        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_OLD} # v1.9.3\n",
+    )
+    tags_proc = _make_tags_proc(
+        f"v1 {_V7}", f"v1.9.3 {_OLD}", f"v1.10.0 {_NEW}", f"v1.10 {_NEW}", f"v1.9 {_OTHER}"
+    )
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
+    ):
+        bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=True, refresh_sha=True)
+
+    checkout = [b for b in bumps if b.action == "actions/checkout"]
+    assert checkout[0].latest == _NEW
+    assert _NEW in wf.read_text(encoding="utf-8")
+
+
+def test_refresh_bare_major_only_is_report_only(tmp_path: Path) -> None:
+    """A floating v1 on a newer commit with no newer vN.M release does not move the pin."""
+    wf = _wf(
+        tmp_path,
+        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_OLD} # v1.9\n",
+    )
+    original = wf.read_text(encoding="utf-8")
+    tags_proc = _make_tags_proc(f"v1 {_NEW}", f"v1.9 {_OLD}")
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
+    ):
+        bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=True, refresh_sha=True)
+
+    assert [b.detail for b in bumps if b.action == "actions/checkout"] == [
+        "SHA-pinned; report only"
+    ]
+    assert wf.read_text(encoding="utf-8") == original
+
+
 # ---------------------------------------------------------------------------
 # Cross-major SHA re-pin tests
 # ---------------------------------------------------------------------------

@@ -207,6 +207,23 @@ def test_exact_tag_style(tmp_path: Path) -> None:
     assert "report only" not in (b.detail or "").lower()
 
 
+def test_exact_tag_style_two_part_tags(tmp_path: Path) -> None:
+    """tag_style='exact' orders two-part tags by semver: v1.10 over v1.9, never bare v1."""
+    _wf(
+        tmp_path,
+        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_SHA}  # v1.9\n",
+    )
+    tags_proc = _make_tags_proc(f"v1 {_SHA}", f"v1.9 {_SHA}", f"v1.10 {_SHA2}")
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
+    ):
+        bumps, _ = scan_actions(tmp_path, apply=False, keep_sha=False, tag_style="exact")
+
+    assert [b.latest for b in bumps if b.action == "actions/checkout"] == ["v1.10"]
+
+
 def test_exact_tag_style_fallback_to_major(tmp_path: Path) -> None:
     """tag_style='exact' with keep_sha=False falls back to @vN when no vN.M.P tags exist."""
     _wf(
