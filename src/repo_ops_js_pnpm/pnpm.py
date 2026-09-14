@@ -40,6 +40,11 @@ from repo_ops_js.holds import (
 )
 from repo_ops_js.overrides import release_unheld_pin
 from repo_ops_js.targeted_bump import run_targeted_bump
+from repo_ops_js.workspaces import (
+    apply_with_members,
+    check_with_members,
+    member_audit_overrides,
+)
 from repo_ops_lockfiles.license_policy import _split_nv
 from repo_ops_lockfiles.parsers import versions_pnpm_lock
 from repo_ops_lockfiles.snapshots import (
@@ -374,7 +379,17 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
 
 
 def check_pnpm(ws: Workspace) -> tuple[list[Change], list[Change]]:
-    """Check for outdated pnpm packages.
+    """Check the root and every workspace member (see :func:`_check_pnpm_dir`).
+
+    ``pnpm outdated`` without ``-r`` reports only the cwd's project, and each
+    member is checked from its own directory so holds scope to it and a
+    targeted bump lands in the manifest that declares the dep.
+    """
+    return check_with_members(ws, _check_pnpm_dir)
+
+
+def _check_pnpm_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
+    """Check for outdated pnpm packages in one project directory.
 
     Returns ``(changes, behind_latest)`` where ``changes`` contains packages
     with in-range upgrades and ``behind_latest`` holds packages whose
@@ -407,7 +422,9 @@ def check_pnpm(ws: Workspace) -> tuple[list[Change], list[Change]]:
     return changes, behind
 
 
-def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Change], list[Change]]:
+def targeted_bump_behind(
+    ws: Workspace, behind: list[Change], *, root: Path | None = None
+) -> tuple[list[Change], list[Change]]:
     """Per-package ``pnpm update --latest <pkg>`` fallback for still-behind deps.
 
     Mirrors yarn's ``targeted_bump_behind``: for each behind-latest direct dep we
@@ -446,8 +463,14 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
         update = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
         return update.returncode == 0
 
+    # The lockfile lives at the monorepo root: snapshot there, and read its
+    # node_modules when the member directory has no linked copy.
+    mdir = root or ws.path
+
     def resolve_landed(name: str) -> str | None:
-        return resolved_version_from_node_modules(ws.path, name)
+        return resolved_version_from_node_modules(
+            ws.path, name
+        ) or resolved_version_from_node_modules(mdir, name)
 
     for change in behind:
         if change.name in catalog_names:
@@ -493,7 +516,7 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
             continue
         resolved = run_targeted_bump(
             ws,
-            ws.path,
+            mdir,
             change,
             manager="pnpm",
             audit_overrides=_AUDIT_VERSION_OVERRIDES,
@@ -512,8 +535,8 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
     return applied, still_behind
 
 
-def _apply_pnpm_audit_overrides(ws: Workspace) -> set[str]:
-    """Install advisory-safe pins from ``_AUDIT_VERSION_OVERRIDES``.
+def _apply_pnpm_audit_overrides(ws: Workspace, overrides: dict[str, str]) -> set[str]:
+    """Install advisory-safe pins from *overrides* (``_AUDIT_VERSION_OVERRIDES`` or a member's subset).
 
     Independent of ``REPO_OPS_PNPM_TARGETED_BUMP`` so ``audit --fix`` pins are not
     silently skipped when the user did not also opt into targeted bump.
@@ -530,11 +553,16 @@ def _apply_pnpm_audit_overrides(ws: Workspace) -> set[str]:
                 add.stderr.strip() or f"pnpm add {name}@{version} failed (audit override)"
             )
 
-    return apply_audit_overrides(ws, _AUDIT_VERSION_OVERRIDES, manager="pnpm", install=install)
+    return apply_audit_overrides(ws, overrides, manager="pnpm", install=install)
 
 
 def apply_pnpm(ws: Workspace) -> list[Change]:
-    """Apply pnpm upgrades; returns still-behind deps after optional targeted bumps.
+    """Apply at the root and in every workspace member (see :func:`_apply_pnpm_dir`)."""
+    return apply_with_members(ws, _apply_pnpm_dir)
+
+
+def _apply_pnpm_dir(ws: Workspace, root: Path) -> list[Change]:
+    """Apply pnpm upgrades in one directory; returns still-behind deps after targeted bumps.
 
     Advisory-safe version overrides (``set_pnpm_audit_version_overrides``, wired
     by ``repo_ops_audit.audit.apply_remediations`` during ``audit --fix``) are
@@ -550,7 +578,9 @@ def apply_pnpm(ws: Workspace) -> list[Change]:
     """
     # Raw outdated split — do not use check_pnpm (plan may promote behind→changes).
     changes, behind = _pnpm_outdated(ws)
-    handled = _apply_pnpm_audit_overrides(ws)
+    handled = _apply_pnpm_audit_overrides(
+        ws, member_audit_overrides(ws, root, _AUDIT_VERSION_OVERRIDES)
+    )
     if handled:
         changes = [c for c in changes if c.name not in handled]
         behind = [c for c in behind if c.name not in handled]
@@ -571,7 +601,7 @@ def apply_pnpm(ws: Workspace) -> list[Change]:
                 behind = fold_blocked_into_behind(blocked, behind)
             else:
                 assert_targets_resolved(ws, changes, manager="pnpm")
-    applied, behind = targeted_bump_behind(ws, behind)
+    applied, behind = targeted_bump_behind(ws, behind, root=root)
     # End-of-apply hold safety net: this is the PRIMARY mechanism protecting a
     # held package from `pnpm update -r --latest` above (a blanket, bulk
     # command with no per-package exclusion) — not just defense-in-depth like

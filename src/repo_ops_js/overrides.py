@@ -6,6 +6,9 @@ import json
 import re
 from pathlib import Path
 
+from ruamel.yaml import YAML
+from ruamel.yaml.error import YAMLError
+
 from repo_ops_core.filesystem import read_json_file, write_json_atomic
 from repo_ops_core.version_utils import normalize_version
 from repo_ops_js.guards import _semver_lt_pre
@@ -36,17 +39,30 @@ def package_json_paths(ws_path: Path) -> list[Path]:
         return paths
     workspaces = data.get("workspaces")
     if isinstance(workspaces, dict):
-        patterns = workspaces.get("packages") or []
+        patterns = list(workspaces.get("packages") or [])
     elif isinstance(workspaces, list):
-        patterns = workspaces
+        patterns = list(workspaces)
     else:
         patterns = []
+    pnpm_ws = ws_path / "pnpm-workspace.yaml"
+    if pnpm_ws.is_file():
+        try:
+            pnpm_data = YAML(typ="safe").load(pnpm_ws)
+        except (OSError, YAMLError):
+            pnpm_data = None
+        if isinstance(pnpm_data, dict) and isinstance(pnpm_data.get("packages"), list):
+            patterns.extend(pnpm_data["packages"])
     for pattern in patterns:
-        if not isinstance(pattern, str):
+        # A leading "!" is an exclusion, which Path.glob cannot express.
+        if not isinstance(pattern, str) or pattern.startswith("!"):
             continue
         for match in ws_path.glob(pattern):
             pkg = match / "package.json" if match.is_dir() else match
-            if pkg.is_file() and pkg not in paths:
+            if (
+                pkg.is_file()
+                and pkg not in paths
+                and "node_modules" not in pkg.relative_to(ws_path).parts
+            ):
                 paths.append(pkg)
     return paths
 

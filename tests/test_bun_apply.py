@@ -187,7 +187,7 @@ def test_apply_bun_targeted_bump_defers_ghost_to_retry(monkeypatch) -> None:
     def fake_run(cmd, cwd, timeout=600, env=None):
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    def fake_targeted_bump(ws, behind):
+    def fake_targeted_bump(ws, behind, *, root=None):
         retry_inputs.append(list(behind))
         return [], behind
 
@@ -230,7 +230,7 @@ def test_apply_bun_bare_update_defers_ghost_to_retry(monkeypatch) -> None:
         calls.append(list(cmd))
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    def fake_targeted_bump(ws, behind):
+    def fake_targeted_bump(ws, behind, *, root=None):
         retry_inputs.append(list(behind))
         return [], behind
 
@@ -459,3 +459,29 @@ def test_apply_bun_higher_prerelease_does_not_trigger_guard() -> None:
         patch(_RESOLVER_PATH, return_value="4.1.0-rc.1"),
     ):
         apply_bun(_ghost_ws())  # must not raise: 4.1.0-rc.1 has higher M.m.p
+
+
+def test_apply_bun_bumps_member_dep_from_member_directory(tmp_path: Path) -> None:
+    """bun rejects a member-only dep from the root, so the update runs in the member."""
+    (tmp_path / "package.json").write_text('{"workspaces": ["apps/*"]}')
+    web = tmp_path / "apps" / "web"
+    web.mkdir(parents=True)
+    (web / "package.json").write_text('{"dependencies": {"next": "16.3.0"}}')
+    calls: list[tuple[list[str], Path]] = []
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        calls.append((list(cmd), cwd))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    def fake_check(ws, *, members=True):
+        return ([Change("next", "16.3.0", "16.3.5")], []) if ws.path == web else ([], [])
+
+    ws = Workspace(path=tmp_path, ecosystem="node", manager="bun", git_repo=tmp_path, label="demo")
+    with (
+        patch("repo_ops_js_bun.bun.run", fake_run),
+        patch("repo_ops_js_bun.bun.check_bun", side_effect=fake_check),
+    ):
+        apply_bun(ws)
+
+    assert (["bun", "update", "--", "next@16.3.5"], web) in calls
+    assert not any("next@16.3.5" in " ".join(cmd) for cmd, cwd in calls if cwd == tmp_path)

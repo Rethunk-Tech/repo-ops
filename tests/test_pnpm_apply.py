@@ -61,7 +61,7 @@ def test_apply_pnpm_targeted_bump_defers_ghost_to_retry(
     blocked = Change("axios", "1.6.0", "1.7.0")
     retry_inputs: list[list[Change]] = []
 
-    def fake_targeted_bump(ws, behind):
+    def fake_targeted_bump(ws, behind, *, root=None):
         retry_inputs.append(list(behind))
         return [], behind
 

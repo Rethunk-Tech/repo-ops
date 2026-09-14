@@ -60,6 +60,17 @@ def direct_dependency_names(pkg_data: dict[str, object]) -> set[str]:
     return names
 
 
+def _resolved(ws: Workspace, name: str) -> str | None:
+    """Installed version from the workspace's ``node_modules``, else the repo root's.
+
+    A monorepo member's deps are usually hoisted to the root (npm, bun's hoisted
+    linker), so the member directory alone often has no copy.
+    """
+    return resolved_version_from_node_modules(ws.path, name) or (
+        resolved_version_from_node_modules(ws.git_repo, name) if ws.git_repo != ws.path else None
+    )
+
+
 def enforce_holds(
     ws: Workspace,
     candidate_names: Iterable[str],
@@ -96,7 +107,7 @@ def enforce_holds(
         rule = resolve_package_hold(ws, name)
         if rule is None:
             continue
-        resolved = resolved_version_from_node_modules(ws.path, name)
+        resolved = _resolved(ws, name)
         if resolved is None or is_within_ceiling(resolved, rule):
             continue
         over_ceiling = resolved
@@ -106,7 +117,7 @@ def enforce_holds(
                 f"hold: failed to clamp {name} back to <={rule.max_version} "
                 f"({manager}): {(proc.stderr or '').strip()}"
             )
-        landed = resolved_version_from_node_modules(ws.path, name)
+        landed = _resolved(ws, name)
         if landed is None or not is_within_ceiling(landed, rule):
             raise RuntimeError(
                 f"hold: {name} still at {landed or over_ceiling} after clamp "

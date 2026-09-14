@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
+from repo_ops_js.holds import direct_dependency_names
+from repo_ops_js.overrides import package_json_paths
+from repo_ops_models import Change, Workspace
 
 KNOWN_PACKAGE_MANAGERS = frozenset({"npm", "pnpm", "yarn", "bun"})
 
@@ -154,3 +159,56 @@ def _under(rel: str, prefix: str) -> bool:
     """
     prefix = prefix.rstrip("/")
     return rel == prefix or rel.startswith(prefix + "/")
+
+
+def member_workspaces(ws: Workspace) -> list[Workspace]:
+    """A monorepo root's members, each as a ``Workspace`` at its own directory.
+
+    Discovery folds members into the root (one shared lockfile), but bun and pnpm
+    scope ``outdated``/``add``/``update`` to the cwd's project and npm's targeted
+    install saves into the cwd's manifest, so member manifests are only reached
+    by running those from each member directory. ``path`` being the member also
+    scopes hold rules to it.
+    """
+    return [replace(ws, path=p.parent) for p in package_json_paths(ws.path)[1:]]
+
+
+def merge_changes(into: list[Change], more: list[Change]) -> None:
+    """Append *more* to *into*, dropping exact duplicates (one dep shared by members)."""
+    for change in more:
+        if change not in into:
+            into.append(change)
+
+
+def member_audit_overrides(ws: Workspace, root: Path, overrides: dict[str, str]) -> dict[str, str]:
+    """The advisory overrides a directory may install: all at the root, own deps in a member.
+
+    Installing from a member directory saves into that member's manifest, so an
+    undeclared name would become a new direct dependency of the member.
+    """
+    if ws.path == root:
+        return overrides
+    declared = direct_dependency_names(read_json_file(ws.path / "package.json") or {})
+    return {name: ver for name, ver in overrides.items() if name in declared}
+
+
+def check_with_members(
+    ws: Workspace, check_dir: Callable[[Workspace], tuple[list[Change], list[Change]]]
+) -> tuple[list[Change], list[Change]]:
+    """Run a one-directory check at *ws* and at each member, merging the results."""
+    changes, behind = check_dir(ws)
+    for member in member_workspaces(ws):
+        member_changes, member_behind = check_dir(member)
+        merge_changes(changes, member_changes)
+        merge_changes(behind, member_behind)
+    return changes, behind
+
+
+def apply_with_members(
+    ws: Workspace, apply_dir: Callable[[Workspace, Path], list[Change]]
+) -> list[Change]:
+    """Run a one-directory apply at *ws* and at each member; *apply_dir* gets the lockfile root."""
+    behind = apply_dir(ws, ws.path)
+    for member in member_workspaces(ws):
+        merge_changes(behind, apply_dir(member, ws.path))
+    return behind

@@ -201,3 +201,25 @@ def test_check_bun_passes_timeout_check(tmp_path: Path, make_workspace) -> None:
     assert captured[1]["timeout"] == TIMEOUT_CHECK, (
         f"text call used timeout={captured[1]['timeout']!r}, want {TIMEOUT_CHECK}"
     )
+
+
+def test_check_bun_checks_each_workspace_member(
+    monkeypatch, tmp_path: Path, make_workspace
+) -> None:
+    """`bun outdated` reports only the cwd's workspace; members are checked from their dirs."""
+    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
+    (tmp_path / "package.json").write_text(json.dumps({"workspaces": ["apps/*"]}))
+    web = tmp_path / "apps" / "web"
+    web.mkdir(parents=True)
+    (web / "package.json").write_text(json.dumps({"dependencies": {"next": "16.3.0"}}))
+    tables = {web: "│ Package │ Current │ Update │ Latest │\n│ next │ 16.3.0 │ 16.3.0 │ 16.3.5 │\n"}
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        if "--json" in cmd:
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout=tables.get(cwd, ""), stderr="")
+
+    with patch("repo_ops_js_bun.bun.run", fake_run):
+        changes, _behind = check_bun(make_workspace(tmp_path, manager="bun"))
+
+    assert [(c.name, c.from_ver, c.to) for c in changes] == [("next", "16.3.0", "16.3.5")]

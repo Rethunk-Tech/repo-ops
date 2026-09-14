@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 from repo_ops_core.config import (
     ambient_env,
@@ -32,6 +33,11 @@ from repo_ops_js.holds import (
 )
 from repo_ops_js.overrides import release_unheld_pin
 from repo_ops_js.targeted_bump import run_targeted_bump
+from repo_ops_js.workspaces import (
+    apply_with_members,
+    check_with_members,
+    member_audit_overrides,
+)
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
 
@@ -203,13 +209,21 @@ def _changes_from_bun_text(
     return changes, behind_latest
 
 
-def check_bun(ws: Workspace) -> tuple[list[Change], list[Change]]:
+def check_bun(ws: Workspace, *, members: bool = True) -> tuple[list[Change], list[Change]]:
     """Check for outdated bun packages.
 
     Returns ``(changes, behind_latest)`` where ``behind_latest`` holds packages
     that have a newer ``latest`` version available but are not actioned when
     ``REPO_OPS_BUN_UPDATE_LATEST`` is unset.
+
+    ``bun outdated`` reports only the workspace its cwd belongs to, so a monorepo
+    root also checks each member directory; ``members=False`` is the
+    one-directory form ``apply_bun`` runs per directory.
     """
+    return check_with_members(ws, _check_bun_dir) if members else _check_bun_dir(ws)
+
+
+def _check_bun_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
     proc_json = run(["bun", "outdated", "--json"], ws.path, timeout=resolve_timeout_check())
     if proc_json.returncode in (0, 1) and proc_json.stdout.strip():
         try:
@@ -225,7 +239,18 @@ def check_bun(ws: Workspace) -> tuple[list[Change], list[Change]]:
     return _changes_from_bun_text(proc.stdout, ws=ws)
 
 
-def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Change], list[Change]]:
+def _exact_flag(name: str, pkg_data: dict[str, object]) -> list[str]:
+    """``--exact`` for a dep pinned to one version; ``bun add`` otherwise saves ``^``."""
+    for section in ("dependencies", "devDependencies", "optionalDependencies"):
+        deps = pkg_data.get(section)
+        if isinstance(deps, dict) and name in deps:
+            return ["--exact"] if str(deps[name]).strip()[:1].isdigit() else []
+    return []
+
+
+def targeted_bump_behind(
+    ws: Workspace, behind: list[Change], *, root: Path | None = None
+) -> tuple[list[Change], list[Change]]:
     """Per-package ``bun add <pkg>@<version>`` fallback for still-behind deps.
 
     Mirrors npm's ``targeted_bump_behind``: for each behind-latest direct dep we
@@ -243,24 +268,30 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
     """
     if not behind or not _bun_targeted_bump_enabled(ws):
         return [], behind
+    # The lockfile lives at the monorepo root: snapshot there, and read its
+    # node_modules when the member directory has no linked copy.
+    mdir = root or ws.path
+    pkg_data = read_json_file(ws.path / "package.json") or {}
 
     def run_bump(name: str, version: str) -> bool:
         install = run(
-            ["bun", "add", f"{name}@{version}"],
+            ["bun", "add", *_exact_flag(name, pkg_data), f"{name}@{version}"],
             ws.path,
             timeout=resolve_timeout_apply(),
         )
         return install.returncode == 0
 
     def resolve_landed(name: str) -> str | None:
-        return resolved_version_from_node_modules(ws.path, name)
+        return resolved_version_from_node_modules(
+            ws.path, name
+        ) or resolved_version_from_node_modules(mdir, name)
 
     applied: list[Change] = []
     still_behind: list[Change] = []
     for change in behind:
         resolved = run_targeted_bump(
             ws,
-            ws.path,
+            mdir,
             change,
             manager="bun",
             audit_overrides=_AUDIT_VERSION_OVERRIDES,
@@ -277,7 +308,7 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
 
 
 def _finalize_bun_apply(
-    ws: Workspace, changes: list[Change], behind: list[Change], *, mutated: bool
+    ws: Workspace, changes: list[Change], behind: list[Change], *, mutated: bool, root: Path
 ) -> list[Change]:
     """Shared tail for every ``apply_bun`` exit path (bare/targeted/audit-only).
 
@@ -288,7 +319,7 @@ def _finalize_bun_apply(
     added* hold ceiling from before the hold existed (``direct_dependency_names``
     covers those since they won't appear in ``changes``/``behind`` either).
     """
-    applied, behind = targeted_bump_behind(ws, behind)
+    applied, behind = targeted_bump_behind(ws, behind, root=root)
     candidate_names = direct_dependency_names(read_json_file(ws.path / "package.json") or {}) | {
         c.name for c in (*changes, *applied, *behind)
     }
@@ -312,7 +343,12 @@ def _finalize_bun_apply(
 
 
 def apply_bun(ws: Workspace) -> list[Change]:
-    """Apply upgrades reported by ``check_bun`` without rewriting ranges to ``latest``.
+    """Apply at the root and in every workspace member (see :func:`_apply_bun_dir`)."""
+    return apply_with_members(ws, _apply_bun_dir)
+
+
+def _apply_bun_dir(ws: Workspace, root: Path) -> list[Change]:
+    """Apply upgrades ``check_bun`` reports for one directory, without rewriting ranges to ``latest``.
 
     Advisory-safe version overrides (``set_bun_audit_version_overrides``, wired
     by ``repo_ops_audit.audit.apply_remediations`` during ``audit --fix``) are
@@ -327,7 +363,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
     subset of behind_latest that could not be moved (empty when the flag is
     off or all behind deps were successfully targeted).
     """
-    changes, behind = check_bun(ws)
+    changes, behind = check_bun(ws, members=False)
     targets: list[str] = []
     requested: list[Change] = []
     seen_names: set[str] = set()
@@ -348,7 +384,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
     # Advisory-safe overrides for packages check_bun did NOT report as changed
     # (already satisfies its declared range, or only behind_latest) must still
     # be targeted explicitly here — silently dropping them skips the fix.
-    for name, safe_version in _AUDIT_VERSION_OVERRIDES.items():
+    for name, safe_version in member_audit_overrides(ws, root, _AUDIT_VERSION_OVERRIDES).items():
         name = (name or "").strip()
         safe_version = (safe_version or "").strip()
         if not name or name in seen_names or not safe_version or not _valid_bun_package_name(name):
@@ -357,7 +393,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
         requested.append(Change(name, "", safe_version))
         seen_names.add(name)
     if not changes and not targets:
-        return _finalize_bun_apply(ws, changes, behind, mutated=False)
+        return _finalize_bun_apply(ws, changes, behind, root=root, mutated=False)
     if not targets:
         # Bare ``bun update`` — no per-package target args; the guard is still
         # applied to any changes whose target version IS known (skip
@@ -383,7 +419,7 @@ def apply_bun(ws: Workspace) -> list[Change]:
                 behind = fold_blocked_into_behind(blocked, behind)
             else:
                 assert_targets_resolved(ws, guardable, manager="bun")
-        return _finalize_bun_apply(ws, changes, behind, mutated=True)
+        return _finalize_bun_apply(ws, changes, behind, root=root, mutated=True)
     proc = run(["bun", "update", "--", *targets], ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
@@ -392,4 +428,4 @@ def apply_bun(ws: Workspace) -> list[Change]:
         behind = fold_blocked_into_behind(blocked, behind)
     else:
         assert_targets_resolved(ws, requested, manager="bun")
-    return _finalize_bun_apply(ws, changes, behind, mutated=True)
+    return _finalize_bun_apply(ws, changes, behind, root=root, mutated=True)

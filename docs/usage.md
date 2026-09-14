@@ -102,6 +102,13 @@ Full coverage is the default: every ecosystem below crosses ranges and moves
 `behind_latest` gaps without any flag. `--conservative` is the single
 opt-out, per ecosystem behavior described in its own column.
 
+Node monorepos cover every workspace member (root `package.json` `workspaces`, or
+`pnpm-workspace.yaml` `packages`), not just the root manifest. npm, pnpm, and bun
+check and bump each member from its own directory, so a bump saves into the member's
+manifest, exact pins stay exact, and workspace-scoped holds match the member path.
+Yarn Berry's `yarn up` is already project-wide. Snapshots and the verify-fail revert
+include member manifests.
+
 | Ecosystem | Default (full sweep) | `--conservative` |
 | ----------- | ----------------------- | ------------------- |
 | **npm** | `npm update`, then a reversible per-package targeted bump (`npm install <pkg>@latest`) for any dep left `behind_latest` after the update | `npm update` only (semver ranges in manifests); gaps stay reported as `behind_latest` |

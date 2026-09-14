@@ -115,6 +115,13 @@ def snapshot_workspace_files(mdir: Path, manager: str) -> dict[Path, bytes]:
         p = mdir / name
         if p.exists():
             out[p] = p.read_bytes()
+    if manager in ("yarn", "npm", "pnpm", "bun"):
+        # Workspace-member manifests: a monorepo apply edits them, and a revert
+        # that skipped them would leave a bumped range beside a restored lockfile.
+        from repo_ops_js.overrides import package_json_paths
+
+        for p in package_json_paths(mdir)[1:]:
+            out[p] = p.read_bytes()
     return out
 
 

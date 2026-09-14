@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 from repo_ops_core.config import (
     ambient_env,
@@ -31,6 +32,13 @@ from repo_ops_js.holds import (
 )
 from repo_ops_js.overrides import release_unheld_pin
 from repo_ops_js.targeted_bump import run_targeted_bump
+from repo_ops_js.workspaces import (
+    apply_with_members,
+    check_with_members,
+    member_audit_overrides,
+    member_workspaces,
+    merge_changes,
+)
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
 
@@ -91,7 +99,9 @@ def _save_flag_for(name: str, pkg_data: dict[str, object]) -> list[str]:
     return flags
 
 
-def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Change], list[Change]]:
+def targeted_bump_behind(
+    ws: Workspace, behind: list[Change], *, root: Path | None = None
+) -> tuple[list[Change], list[Change]]:
     """Per-package ``npm install <pkg>@latest`` fallback for still-behind deps.
 
     Mirrors yarn's ``targeted_bump_behind``: for each behind-latest direct dep we
@@ -109,6 +119,9 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
     """
     if not behind or not _npm_targeted_bump_enabled(ws):
         return [], behind
+    # The lockfile and hoisted node_modules live at the monorepo root; the
+    # install runs in the member so it saves into the member's manifest.
+    mdir = root or ws.path
     pkg_data = read_json_file(ws.path / "package.json") or {}
 
     def run_bump(name: str, version: str) -> bool:
@@ -120,14 +133,16 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
         return install.returncode == 0
 
     def resolve_landed(name: str) -> str | None:
-        return resolved_version_from_node_modules(ws.path, name)
+        return resolved_version_from_node_modules(
+            ws.path, name
+        ) or resolved_version_from_node_modules(mdir, name)
 
     applied: list[Change] = []
     still_behind: list[Change] = []
     for change in behind:
         resolved = run_targeted_bump(
             ws,
-            ws.path,
+            mdir,
             change,
             manager="npm",
             audit_overrides=_AUDIT_VERSION_OVERRIDES,
@@ -163,25 +178,41 @@ def _npm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
             file=sys.stderr,
         )
         return [], []
+    # At a monorepo root npm also lists every member's deps; those are checked and
+    # bumped from their member directory so the bump saves into that manifest.
+    root_names = (
+        direct_dependency_names(read_json_file(ws.path / "package.json") or {})
+        if member_workspaces(ws)
+        else None
+    )
     changes: list[Change] = []
     behind_latest: list[Change] = []
     for name, meta in data.items():
-        if not isinstance(meta, dict):
+        if root_names is not None and name not in root_names:
             continue
-        cur = str(meta.get("current", "?"))
-        wanted = str(meta.get("wanted", "?"))
-        latest = str(meta.get("latest", "?"))
-        if cur != wanted and wanted not in ("?", ""):
-            # In-range upgrade available.
-            changes.append(Change(name, cur, wanted))
-        elif latest not in ("?", "") and cur != latest:
-            # latest exceeds current but wanted == current (out-of-range).
-            behind_latest.append(Change(name, cur, latest))
+        # A dep declared by several workspaces is a list, one entry per dependent.
+        for entry in meta if isinstance(meta, list) else [meta]:
+            if not isinstance(entry, dict):
+                continue
+            cur = str(entry.get("current", "?"))
+            wanted = str(entry.get("wanted", "?"))
+            latest = str(entry.get("latest", "?"))
+            if cur != wanted and wanted not in ("?", ""):
+                # In-range upgrade available.
+                merge_changes(changes, [Change(name, cur, wanted)])
+            elif latest not in ("?", "") and cur != latest:
+                # latest exceeds current but wanted == current (out-of-range).
+                merge_changes(behind_latest, [Change(name, cur, latest)])
     return changes, behind_latest
 
 
 def check_npm(ws: Workspace) -> tuple[list[Change], list[Change]]:
-    """Check for outdated npm packages.
+    """Check the root and every workspace member (see :func:`_check_npm_dir`)."""
+    return check_with_members(ws, _check_npm_dir)
+
+
+def _check_npm_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
+    """Check for outdated npm packages in one project directory.
 
     Returns ``(changes, behind_latest)`` where ``changes`` contains packages
     with in-range upgrades (``wanted`` > ``current``) and ``behind_latest``
@@ -216,8 +247,8 @@ def check_npm(ws: Workspace) -> tuple[list[Change], list[Change]]:
     return changes, behind
 
 
-def _apply_npm_audit_overrides(ws: Workspace) -> set[str]:
-    """Install advisory-safe pins from ``_AUDIT_VERSION_OVERRIDES``.
+def _apply_npm_audit_overrides(ws: Workspace, overrides: dict[str, str]) -> set[str]:
+    """Install advisory-safe pins from *overrides* (``_AUDIT_VERSION_OVERRIDES`` or a member's subset).
 
     Independent of ``REPO_OPS_NPM_TARGETED_BUMP`` so ``audit --fix`` pins are not
     silently skipped when the user did not also opt into targeted bump.
@@ -235,11 +266,16 @@ def _apply_npm_audit_overrides(ws: Workspace) -> set[str]:
                 proc.stderr.strip() or f"npm install {name}@{version} failed (audit override)"
             )
 
-    return apply_audit_overrides(ws, _AUDIT_VERSION_OVERRIDES, manager="npm", install=install)
+    return apply_audit_overrides(ws, overrides, manager="npm", install=install)
 
 
 def apply_npm(ws: Workspace) -> list[Change]:
-    """Apply npm upgrades; returns still-behind deps after optional targeted bumps.
+    """Apply at the root and in every workspace member (see :func:`_apply_npm_dir`)."""
+    return apply_with_members(ws, _apply_npm_dir)
+
+
+def _apply_npm_dir(ws: Workspace, root: Path) -> list[Change]:
+    """Apply npm upgrades in one directory; returns still-behind deps after targeted bumps.
 
     Advisory-safe version overrides (``set_npm_audit_version_overrides``, wired
     by ``repo_ops_audit.audit.apply_remediations`` during ``audit --fix``) are
@@ -255,7 +291,9 @@ def apply_npm(ws: Workspace) -> list[Change]:
     """
     # Raw outdated split — do not use check_npm (plan may promote behind→changes).
     changes, behind = _npm_outdated(ws)
-    handled = _apply_npm_audit_overrides(ws)
+    handled = _apply_npm_audit_overrides(
+        ws, member_audit_overrides(ws, root, _AUDIT_VERSION_OVERRIDES)
+    )
     if handled:
         changes = [c for c in changes if c.name not in handled]
         behind = [c for c in behind if c.name not in handled]
@@ -275,7 +313,7 @@ def apply_npm(ws: Workspace) -> list[Change]:
                 behind = fold_blocked_into_behind(blocked, behind)
             else:
                 assert_targets_resolved(ws, changes, manager="npm")
-    applied, behind = targeted_bump_behind(ws, behind)
+    applied, behind = targeted_bump_behind(ws, behind, root=root)
     candidate_names = direct_dependency_names(read_json_file(ws.path / "package.json") or {}) | {
         c.name for c in (*changes, *applied, *behind)
     }

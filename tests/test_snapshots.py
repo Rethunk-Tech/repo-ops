@@ -10,6 +10,7 @@ from repo_ops_lockfiles.snapshots import (
     _diff_lock_text,
     diff_workspace_snapshots,
     resolved_version_from_node_modules,
+    restore_workspace_snapshot,
     snapshot_workspace_files,
 )
 
@@ -103,3 +104,15 @@ def test_diff_workspace_snapshots_coarse_pdm_pipenv_deno(tmp_path: Path) -> None
         p = tmp_path / name
         changes = diff_workspace_snapshots({p: b"old"}, {p: b"new"}, manager)
         assert any(c.name == name for c in changes), f"expected coarse change for {name}"
+
+
+def test_restore_snapshot_covers_workspace_member_manifest(tmp_path: Path) -> None:
+    """A monorepo revert restores member manifests the apply edited, not only the root's."""
+    (tmp_path / "package.json").write_text('{"workspaces": ["apps/*"]}')
+    member = tmp_path / "apps" / "web" / "package.json"
+    member.parent.mkdir(parents=True)
+    member.write_text('{"dependencies": {"next": "16.3.0"}}')
+    snap = snapshot_workspace_files(tmp_path, "bun")
+    member.write_text('{"dependencies": {"next": "16.3.5"}}')
+    restore_workspace_snapshot(tmp_path, snap, "bun")
+    assert "16.3.0" in member.read_text()
