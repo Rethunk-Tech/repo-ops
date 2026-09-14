@@ -163,10 +163,8 @@ class PinReplacement:
     pin: str
     latest: str
     line: int | None = None
-    # Optional comment rewrite for cross-major SHA refresh: when set,
-    # the first element is the old comment text and the second is the new comment
-    # text.  Applied on the same line as the pin replacement (e.g. ``"# v6"``
-    # → ``"# v7"`` when a SHA pin crosses a major boundary).
+    # ``(old, new)`` version hint in the trailing comment (e.g. ``"v6.0.2"`` →
+    # ``"v6.0.3"``), so the hint keeps naming the release the new ref points at.
     comment_rewrite: tuple[str, str] | None = None
     # Set (replacing any existing trailing comment, or appending if none) when
     # pinning a floating tag to a SHA — the new SHA needs a ``# vN`` audit hint
@@ -197,22 +195,15 @@ def _apply_pin_to_line(line: str, action: str, old_pin: str, new_pin: str) -> st
     return line
 
 
-def _apply_comment_rewrite_to_line(line: str, old_comment: str, new_comment: str) -> str:
-    """Return *line* with the first occurrence of *old_comment* replaced by *new_comment*.
+def _apply_comment_rewrite_to_line(line: str, old_version: str, new_version: str) -> str:
+    """Return *line* with the ``# old_version`` hint rewritten to *new_version*.
 
-    Used for cross-major SHA refreshes: rewrites the trailing ``# vN``
-    audit hint when the pin advances to a different major.  Only replaces the
-    exact string (word-boundary anchored so ``# v6`` does not clobber
-    ``# v6.0.3``).
+    Spacing after ``#`` and any text after the version are kept.  The version
+    must be followed by neither a digit nor a dot, so ``v6`` never matches
+    inside ``v6.0.3``.
     """
-    escaped = re.escape(old_comment)
-    # The comment must be followed by a non-digit character or end-of-string so
-    # "# v6" does not partially match "# v6.0.3".
-    pattern = re.compile(escaped + r"(?=\D|\Z)")
-    new_line, count = pattern.subn(new_comment, line, count=1)
-    if count:
-        return new_line
-    return line
+    pattern = re.compile(r"(#\s*)" + re.escape(old_version) + r"(?![\d.])")
+    return pattern.sub(lambda m: m.group(1) + new_version, line, count=1)
 
 
 def _apply_comment_to_line(line: str, new_comment: str) -> str:

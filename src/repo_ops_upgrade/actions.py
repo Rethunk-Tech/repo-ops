@@ -667,6 +667,18 @@ def _highest_exact_digest_in_major(info: dict, major: int) -> tuple[str, str] | 
     return None
 
 
+def _comment_rewrite_for(comment: str | None, tag: str) -> tuple[str, str] | None:
+    """Return the ``(old, new)`` version-hint rewrite so the comment names *tag*.
+
+    A bare ``vN`` hint stays bare; a dotted hint becomes the full tag.
+    """
+    m = _MAJOR_TAG_RE.match(tag)
+    if not comment or m is None:
+        return None
+    new = tag if "." in comment else f"v{m.group(1)}"
+    return None if new == comment else (comment, new)
+
+
 def _highest_exact_in_major(info: dict, major: int) -> str | None:
     """Return the highest ``vN.M.P`` tag within ``major`` from ``info['all_tags']``."""
     best: str | None = None
@@ -843,23 +855,14 @@ def _enforce_version_ceilings(
                             "(actions): no available tag satisfies ceiling"
                         )
                 continue
-            target_sha, current_tag, target_tag = resolved
-            comment_rewrite: tuple[str, str] | None = None
-            if uses.comment:
-                current_major = _action_tag_version(current_tag)
-                target_major = _action_tag_version(target_tag)
-                if current_major and target_major and current_major[0] != target_major[0]:
-                    comment_rewrite = (
-                        f"# v{current_major[0]}",
-                        f"# v{target_major[0]}",
-                    )
+            target_sha, _, target_tag = resolved
             replacements.append(
                 PinReplacement(
                     action=action,
                     pin=pin,
                     latest=target_sha,
                     line=uses.line or None,
-                    comment_rewrite=comment_rewrite,
+                    comment_rewrite=_comment_rewrite_for(uses.comment, target_tag),
                 )
             )
             continue
@@ -1216,20 +1219,13 @@ def scan_actions(
                                         )
                                     )
                                 if apply and not policy_blocked:
-                                    comment_rewrite: tuple[str, str] | None = None
-                                    if cross_major and uses.comment:
-                                        # Rewrite the trailing # vN hint to the new major.
-                                        comment_rewrite = (
-                                            f"# v{major}",
-                                            f"# v{target_major}",
-                                        )
                                     replacements.append(
                                         PinReplacement(
                                             action=action,
                                             pin=pin,
                                             latest=new_sha,
                                             line=uses.line or None,
-                                            comment_rewrite=comment_rewrite,
+                                            comment_rewrite=_comment_rewrite_for(uses.comment, tag),
                                         )
                                     )
                                 continue
@@ -1309,6 +1305,7 @@ def scan_actions(
                             pin=pin,
                             latest=target_tag,
                             line=uses.line or None,
+                            comment_rewrite=_comment_rewrite_for(uses.comment, target_tag),
                         )
                     )
                 continue

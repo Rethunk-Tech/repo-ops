@@ -68,6 +68,23 @@ def test_refresh_advances_digest_within_major_and_keeps_comment(tmp_path: Path) 
     assert "# v6" in text  # digest stays pinned; audit hint preserved
 
 
+def test_refresh_rewrites_exact_comment_to_new_release(tmp_path: Path) -> None:
+    """# v6.0.2 hint on a within-major refresh to v6.0.3 → # v6.0.3; trailing text kept."""
+    wf = _wf(
+        tmp_path,
+        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_OLD} #v6.0.2 audited\n",
+    )
+    tags_proc = _make_tags_proc(f"v6.0.3 {_NEW}", f"v6.0.2 {_OLD}", f"v6 {_NEW}")
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
+    ):
+        scan_actions(tmp_path, apply=True, keep_sha=True, refresh_sha=True)
+
+    assert wf.read_text(encoding="utf-8").endswith(f"@{_NEW} #v6.0.3 audited\n")
+
+
 def test_refresh_resolves_major_via_tags_api_without_comment(tmp_path: Path) -> None:
     """No # vN comment: the major is resolved from the tags API, then refreshed."""
     wf = _wf(
