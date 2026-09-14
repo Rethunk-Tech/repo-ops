@@ -70,6 +70,7 @@ credited with its submodules' dependencies.
 | `playwright_browsers` | Node | Playwright browser remediation | on |
 | `codegen` | Node | Configured code-generation command | on |
 | `package_manager_pin` | Node | `packageManager` pin remediation | on |
+| `manifest_format` | Node | `biome format --write` on the `package.json` files apply rewrote, when a Biome config governs them | on |
 | `gofmt` | Go | `gofmt` remediation | on |
 | `go_generate` | Go | `go generate` remediation | off |
 | `ruff_fix` | Python | Ruff autofix remediation | on |

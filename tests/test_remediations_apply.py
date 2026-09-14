@@ -220,6 +220,37 @@ def test_apply_codegen_success(tmp_path: Path, make_proc) -> None:
     assert "generate:proto" in mock_run.call_args[0][0]
 
 
+def test_manifest_format_formats_only_rewritten_manifests(tmp_path: Path, make_proc) -> None:
+    (tmp_path / "biome.json").write_text("{}")
+    (tmp_path / "node_modules" / ".bin").mkdir(parents=True)
+    (tmp_path / "node_modules" / ".bin" / "biome").write_text("")
+    manifests = [
+        tmp_path / "package.json",
+        tmp_path / "packages" / "a" / "package.json",
+        tmp_path / "packages" / "b" / "package.json",
+    ]
+    for p in manifests:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text('{ "a": 1 }\n')
+    result = WorkspaceResult(workspace=_sample_workspace(tmp_path))
+    result.pre_apply_snapshot = {p: p.read_bytes() for p in manifests}
+    manifests[1].write_text('{\n  "a": 2\n}\n')
+
+    hook = next(h for h in remediations.REMEDIATIONS if h.id == "manifest_format")
+    with (
+        patch.object(remediations, "REMEDIATIONS", [hook]),
+        patch.object(remediations, "run", return_value=make_proc(0)) as mock_run,
+    ):
+        remediations.run_remediations(result, apply=True, skip=set())
+    assert result.remediations[0]["status"] == "applied"
+    assert mock_run.call_args[0][0][1:] == [
+        "format",
+        "--write",
+        "--no-errors-on-unmatched",
+        str(Path("packages/a/package.json")),
+    ]
+
+
 def test_apply_pm_pin_success(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_text(
         json.dumps({"packageManager": "bun@1.0.0"}, indent=2) + "\n"

@@ -284,6 +284,56 @@ def apply_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     return True, f"packageManager → {name}@{actual} (ok)"
 
 
+def _governed_by_biome(ws: Workspace) -> bool:
+    for d in (ws.path, *ws.path.parents):
+        if not d.is_relative_to(ws.git_repo):
+            return False
+        if any((d / name).exists() for name in ("biome.json", "biome.jsonc")):
+            return True
+    return False
+
+
+def _biome_bin(ws: Workspace) -> Path:
+    return ws.path / "node_modules" / ".bin" / "biome"
+
+
+def _rewritten_manifests(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
+    snap: dict[Path, bytes] = ctx.get("pre_apply_snapshot") or {}
+    return sorted(
+        str(p.relative_to(ws.path))
+        for p, before in snap.items()
+        if p.name == "package.json" and p.exists() and p.read_bytes() != before
+    )
+
+
+def detect_manifest_format(ws: Workspace, ctx: dict[str, Any]) -> bool:
+    if ws.ecosystem != "node" or not _governed_by_biome(ws) or not _biome_bin(ws).exists():
+        return False
+    if not ctx.get("apply", True):
+        return bool(ctx.get("changes"))
+    return bool(_rewritten_manifests(ws, ctx))
+
+
+def report_manifest_format(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
+    return ["REMEDIATE manifest_format: would run biome format --write on rewritten package.json"]
+
+
+def apply_manifest_format(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
+    """Restore the repo's Biome layout on manifests the package manager rewrote.
+
+    bun, npm and pnpm re-serialise package.json with every object expanded, so a
+    repo formatting JSON with ``expand: "never"`` fails lint on each one they write.
+    """
+    files = _rewritten_manifests(ws, ctx)
+    # A manifest the repo's own biome config ignores is left as written, not a failure.
+    cmd = [str(_biome_bin(ws)), "format", "--write", "--no-errors-on-unmatched", *files]
+    proc = run(cmd, ws.path, timeout=resolve_timeout_apply())
+    detail = f"biome format --write {' '.join(files)}"
+    if proc.returncode == 0:
+        return True, f"{detail} (ok)"
+    return False, f"{detail} (failed: {stderr_tail(proc.stderr or proc.stdout or '')})"
+
+
 def _biome_files(ws: Workspace) -> list[str]:
     return [str(p.relative_to(ws.path)) for p in _find_biome_configs(ws.path)]
 
@@ -304,6 +354,13 @@ REMEDIATIONS: list[RemediationHook] = [
         report_pm_pin,
         apply_pm_pin,
         files=lambda ws: ["package.json"],
+    ),
+    # Last, so it also formats a manifest package_manager_pin just rewrote.
+    RemediationHook(
+        "manifest_format",
+        detect_manifest_format,
+        report_manifest_format,
+        apply_manifest_format,
     ),
 ]
 

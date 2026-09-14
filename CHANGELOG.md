@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Apply no longer fails Biome lint on the manifests it bumps.** bun, npm and pnpm re-serialise `package.json` with every object expanded, so a repo whose Biome config sets `json.formatter.expand: "never"` failed verify on each member manifest a sweep touched (prepaudit: five). A new `manifest_format` remediation runs the repo's installed `biome format --write` on exactly the `package.json` files whose bytes the apply changed, and only when a `biome.json`/`biome.jsonc` governs the workspace. Root manifests rarely showed it because their dependency objects are too long to collapse and bun keeps short arrays inline.
+
 - **`repo-ops audit`'s `py-uv` path audited the installed environment, not the lockfile.** It shelled out to `uv run pip-audit`, so a project whose `uv.lock` was full of advisories but whose local `.venv` happened to have newer packages installed would report clean. Switched to `uv audit --frozen --output-format json`, which audits `uv.lock` as committed without mutating or failing on a stale lock. A missing `uv.lock` now skips with a clear reason instead of gating on pip-audit availability. The other Python managers (poetry/pdm/pipenv/hatch/pip-tools) still export a requirements file and audit that with pip-audit, which is unaffected.
 
 ### Changed

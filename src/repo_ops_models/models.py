@@ -44,6 +44,10 @@ class WorkspaceResult:
     started_dirty: bool = False
     reverted_ok: bool = True
     elapsed_s: float | None = None
+    # Pre-apply file bytes, so remediation hooks act only on what the apply
+    # rewrote. Cleared once hooks run: a fleet run keeps every result, and
+    # holding each workspace's lockfile bytes until the report is waste.
+    pre_apply_snapshot: dict[Path, bytes] = field(default_factory=dict, repr=False, compare=False)
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {

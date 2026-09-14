@@ -454,7 +454,7 @@ def add_upgrade_common_arguments(
             metavar="IDS",
             help=(
                 "Comma-separated remediation ids to skip "
-                "(biome_schema, playwright_browsers, codegen, package_manager_pin, "
+                "(biome_schema, playwright_browsers, codegen, package_manager_pin, manifest_format, "
                 "gofmt, go_generate, ruff_fix, cargo_fix, deno_fix)."
             ),
         )

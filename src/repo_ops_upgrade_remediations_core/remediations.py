@@ -214,7 +214,11 @@ def run_hooks(
     (plan mode) or applies (apply mode).  Exceptions are caught per-hook so
     one misbehaving hook cannot abort the others.
     """
-    ctx: dict[str, Any] = {"changes": result.changes, "apply": apply}
+    ctx: dict[str, Any] = {
+        "changes": result.changes,
+        "apply": apply,
+        "pre_apply_snapshot": result.pre_apply_snapshot,
+    }
     for hook in hooks:
         if hook.id in skip:
             continue

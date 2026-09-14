@@ -215,7 +215,9 @@ def _process_workspace_body(
         result = ecosystems.check_workspace(ws)
 
     if not (do_apply and result.status == "fail"):
+        result.pre_apply_snapshot = before_snap or {}
         remediations.run_remediations(result, apply=do_apply, skip=skip_remediations)
+        result.pre_apply_snapshot = {}
 
     if do_apply and do_verify and result.status != "fail":
         verr = verify_mod.verify_workspace(ws, verify_test=verify_test)
