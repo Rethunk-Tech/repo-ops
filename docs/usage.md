@@ -385,6 +385,9 @@ Config files are TOML, read via stdlib `tomllib`:
 - **Global:** `~/.config/repo-ops/config.toml` (or `$XDG_CONFIG_HOME/...`)
 - **Per-repo:** `[tool.repo-ops]` in the repo root `pyproject.toml`, or flat keys
   in `.repo-ops.toml` for repositories without a suitable pyproject
+- **Per-workspace:** the same two files in a workspace directory below the repo
+  root. Only their `[verify]` table is read there, and it wins over the repo's,
+  so `skip = true` opts out one workspace (e.g. a fixture broken on purpose)
 
 **Scope.** Settings resolve from *each checkout's* config during multi-root
 `plan`/`apply` — the launch checkout's config is not inherited by the fleet. The

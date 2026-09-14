@@ -237,18 +237,22 @@ def _gate_verify(
 
 
 def _load_verify_profile(ws: Workspace) -> dict[str, Any]:
-    """Return the ``[verify]`` sub-table from per-repo config for *ws*.
+    """Return the merged ``[verify]`` sub-table for *ws*.
 
-    Looks up ``ws.git_repo`` (the repo root) via the layered config module and
-    returns the ``verify`` sub-dict, merging global config as the base layer.
+    Layers, lowest first: global config, the repo root's config, then the
+    workspace directory's own config when it sits below the repo root. The last
+    layer lets one workspace opt out (a self-test fixture that is broken on
+    purpose) without skipping verify for its siblings.
     Keys: ``script`` (str), ``skip`` (bool), ``timeout`` (int seconds).
     """
-    global_cfg = load_global_config()
-    repo_cfg = load_repo_config(ws.git_repo)
-    # Per-repo [verify] wins over global [verify].
-    global_verify: dict[str, Any] = global_cfg.get("verify", {}) if global_cfg else {}
-    repo_verify: dict[str, Any] = repo_cfg.get("verify", {}) if repo_cfg else {}
-    return {**global_verify, **repo_verify}
+    layers = [load_global_config(), load_repo_config(ws.git_repo)]
+    if ws.path != ws.git_repo:
+        layers.append(load_repo_config(ws.path))
+    profile: dict[str, Any] = {}
+    for cfg in layers:
+        if cfg:
+            profile.update(cfg.get("verify", {}))
+    return profile
 
 
 def _resolve_verify_timeout_with_profile(profile: dict[str, Any]) -> int:

@@ -273,6 +273,30 @@ class TestVerifySkip:
         assert result is None
         assert calls
 
+    def test_workspace_sidecar_skips_only_that_workspace(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
+        broken = tmp_path / "fixtures" / "broken"
+        clean = tmp_path / "fixtures" / "clean"
+        broken.mkdir(parents=True)
+        clean.mkdir(parents=True)
+        (broken / ".repo-ops.toml").write_text("[verify]\nskip = true\n", encoding="utf-8")
+        calls: list[Path] = []
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None
+        ) -> CompletedProcess[str]:
+            calls.append(cwd)
+            return _ok()
+
+        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
+            for path in (broken, clean):
+                ws = make_workspace(path, git_repo=tmp_path, manager="go", ecosystem="go")
+                assert verify_workspace(ws, verify_test=False) is None
+
+        assert broken not in calls
+        assert clean in calls
+
 
 # ---------------------------------------------------------------------------
 # verify.timeout passed to run()
