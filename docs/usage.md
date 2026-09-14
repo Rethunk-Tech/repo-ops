@@ -501,7 +501,7 @@ what `package` matches, and the handful of deviations below.
 | ----------- | ------------------- | ------------------------- |
 | npm / yarn / pnpm / bun | package name | none — clamp is a targeted install |
 | deno | Deno outdated identity (`npm:…`, `jsr:…`) | a prefix ceiling does not require its exact `.0` patch to exist |
-| go | module path | Go's resolver never crosses a major on its own (major ≥2 lives in the path), so a hold caps a same-major minor/patch |
+| go | module path | Go's resolver never crosses a major on its own (major ≥2 lives in the path), so a hold caps a same-major minor/patch; an untagged module takes its exact pseudo-version as `max_version` (e.g. `v0.0.0-20260821135717-be32def86098`), ordered by base version then commit time, and the clamp pins that exact version |
 | rust | Cargo crate name | clamp uses `cargo update --precise`; if no published version fits a prefix ceiling it fails and asks for an exact three-component `max_version` rather than assuming `1.5.0` exists for `1.5` |
 | uv / hatch / pdm / pipenv / poetry | distribution name | no per-package targeted install exists, so the post-apply clamp is the *only* enforcement, not a safety net |
 | pip-tools | distribution name | enforced by passing an ephemeral pip constraints file to the compile step; `requirements.in` is never modified |

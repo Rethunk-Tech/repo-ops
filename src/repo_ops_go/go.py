@@ -23,6 +23,7 @@ from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import (
     hold_ceiling_spec,
+    is_go_pseudo_version,
     semver_tuple,
     version_satisfies_ceiling,
 )
@@ -263,7 +264,12 @@ def _go_ceiling_query(max_version: str) -> str:
     they're effectively unconstrained, matching ``version_satisfies_ceiling``'s
     "ceiling is a prefix" semantics (ceiling ``"6"`` allows any 6.x.y, not just
     exactly ``v6.0.0``).
+
+    A pseudo-version ceiling pins that exact version: Go's comparison queries
+    consider only tagged versions, so ``<=v0.0.0-<ts>-<rev>`` matches nothing.
     """
+    if is_go_pseudo_version(max_version):
+        return "v" + max_version.strip().lstrip("vV")
     return "<=v" + hold_ceiling_spec(max_version).removeprefix("<=")
 
 

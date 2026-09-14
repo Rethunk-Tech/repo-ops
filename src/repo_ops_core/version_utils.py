@@ -36,6 +36,32 @@ def version_parts(version: str) -> tuple[int, int, int]:
     return padded[0], padded[1], padded[2]
 
 
+# Mirrors golang.org/x/mod/module.IsPseudoVersion, with the leading "v" optional.
+_GO_PSEUDO_VERSION_RE = re.compile(
+    r"^[vV]?\d+\.(?:0\.0-|\d+\.\d+-(?:[^+]*\.)?0\.)\d{14}-[A-Za-z0-9]+(?:\+[0-9A-Za-z-]+)?$"
+)
+
+
+def is_go_pseudo_version(version: str) -> bool:
+    return _GO_PSEUDO_VERSION_RE.match(version.strip()) is not None
+
+
+def _semver_precedence(
+    version: str,
+) -> tuple[tuple[int, ...], bool, tuple[tuple[int, int, str], ...]]:
+    """Sort key following SemVer 2.0 precedence, prerelease identifiers included.
+
+    A Go pseudo-version is a prerelease whose identifiers end in a fixed-width
+    timestamp, so SemVer precedence alone orders it by base version, then time.
+    """
+    core, _, pre = version.strip().lstrip("vV").split("+")[0].partition("-")
+    nums = (*semver_tuple(core), 0, 0, 0)[:3]
+    ids = tuple(
+        (0, int(part), "") if part.isdigit() else (1, 0, part) for part in pre.split(".") if pre
+    )
+    return nums, not pre, ids
+
+
 def hold_ceiling_spec(max_version: str) -> str:
     """Return a PEP 440 upper-bound constraint for a hold ceiling."""
     parts = [p for p in max_version.strip().split(".") if p]
@@ -56,7 +82,13 @@ def version_satisfies_ceiling(version: str, ceiling: str) -> bool:
     Component-wise comparison against the ceiling's own length: the first
     differing component decides; if *version*'s prefix equals the ceiling
     exactly, it satisfies (remaining, unconstrained components are free).
+
+    A Go pseudo-version ceiling is an exact cap with full SemVer precedence:
+    its numeric prefix is shared by every later commit, so prefix semantics
+    would never block one.
     """
+    if is_go_pseudo_version(ceiling):
+        return _semver_precedence(version) <= _semver_precedence(ceiling)
     v_parts = semver_tuple(version)
     c_parts = semver_tuple(ceiling)
     for v_part, c_part in zip(v_parts, c_parts, strict=False):

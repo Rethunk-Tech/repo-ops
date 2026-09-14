@@ -32,6 +32,16 @@ from repo_ops_core.version_utils import version_satisfies_ceiling
         ("5.9.3", "5.9.2", False),
         ("5.9.1", "5.9.2", True),
         ("5", "5.9.2", True),
+        # Go pseudo-version ceilings order by base version, then commit timestamp.
+        ("v0.0.0-20260911000000-7970a1e00000", "0.0.0-20260821135717-be32def86098", False),
+        ("v0.0.0-20260821135717-be32def86098", "v0.0.0-20260821135717-be32def86098", True),
+        ("v0.0.0-20260101000000-aaaaaaaaaaaa", "v0.0.0-20260821135717-be32def86098", True),
+        ("v1.2.4-0.20260101000000-aaaaaaaaaaaa", "v1.2.4-0.20260821135717-be32def86098", True),
+        ("v1.2.4", "v1.2.4-0.20260821135717-be32def86098", False),
+        ("v1.2.3", "v1.2.4-0.20260821135717-be32def86098", True),
+        # Prerelease tags against plain ceilings keep prefix semantics.
+        ("7.0.0-beta.1", "6", False),
+        ("6.0.0-rc.1", "6", True),
     ],
 )
 def test_version_satisfies_ceiling(version: str, ceiling: str, expected: bool) -> None:

@@ -51,6 +51,9 @@ def _fake_run_with_gomod(list_stdout: str, require_paths: list[str], make_proc):
         ("6", "<=v6.999999.999999"),
         ("5.9", "<=v5.9.999999"),
         ("1.2.3", "<=v1.2.3"),
+        # Go version comparison queries skip pseudo-versions; pin the exact one.
+        ("0.0.0-20260821135717-be32def86098", "v0.0.0-20260821135717-be32def86098"),
+        ("v0.0.0-20260821135717-be32def86098", "v0.0.0-20260821135717-be32def86098"),
     ],
 )
 def test_go_ceiling_query_uses_shared_hold_padding(max_version: str, expected: str) -> None:
