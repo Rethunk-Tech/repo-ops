@@ -11,8 +11,9 @@ import io
 from pathlib import Path
 from unittest.mock import patch
 
+from repo_ops_js.workspaces import check_with_members
 from repo_ops_models import Change, RepoBundle, WorkspaceResult
-from repo_ops_upgrade.report import build_run_summary, print_human_report
+from repo_ops_upgrade.report import build_json_payload, build_run_summary, print_human_report
 
 
 def _bundle(tmp_path: Path, wr: WorkspaceResult) -> RepoBundle:
@@ -55,6 +56,32 @@ def test_held_behind_latest_row_header_and_summary(tmp_path: Path, make_workspac
     assert "→ 7.0.0 (latest; held <= 6, until 2026-11-01)" in out
     assert summary["packages_held"] == 1
     assert summary["packages_behind_latest"] == 1
+
+
+def test_member_scoped_hold_marks_member_behind_latest(tmp_path: Path, make_workspace) -> None:
+    """A hold scoped to a monorepo member is reported on that member's entry, not dropped."""
+    (tmp_path / ".repo-ops.toml").write_text(
+        '[[hold]]\npackage = "react"\nmax_version = "19.2"\nworkspace = "apps/mobile"\n'
+    )
+    (tmp_path / "package.json").write_text('{"workspaces": ["apps/*"]}')
+    mobile = tmp_path / "apps" / "mobile"
+    mobile.mkdir(parents=True)
+    (mobile / "package.json").write_text("{}")
+    root = make_workspace(tmp_path, manager="bun")
+
+    def check_dir(ws):
+        return [], [Change("react", "19.2.3", "19.3.0")] if ws.path == mobile else []
+
+    _changes, behind = check_with_members(root, check_dir)
+    bundle = _bundle(tmp_path, WorkspaceResult(workspace=root, behind_latest=behind))
+    out, summary = _render_and_summarize(tmp_path, bundle)
+    payload = build_json_payload({tmp_path: bundle}, roots=[str(tmp_path)], mode="plan")
+
+    assert "→ 19.3.0 (latest; held <= 19.2)" in out
+    assert summary["packages_held"] == 1
+    assert payload["repos"][0]["workspaces"][0]["behind_latest"] == [
+        {"name": "react", "from": "19.2.3", "to": "19.3.0", "member": "apps/mobile", "held": "19.2"}
+    ]
 
 
 def test_no_holds_configured_output_and_summary_unchanged(tmp_path: Path, make_workspace) -> None:

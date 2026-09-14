@@ -19,6 +19,14 @@ class Change:
     name: str
     from_ver: str
     to: str
+    # Monorepo member directory relative to the result's workspace; "" is the workspace itself.
+    member: str = ""
+
+    def to_json(self) -> dict[str, str]:
+        out = {"name": self.name, "from": self.from_ver, "to": self.to}
+        if self.member:
+            out["member"] = self.member
+        return out
 
 
 @dataclass
@@ -55,10 +63,8 @@ class WorkspaceResult:
             "ecosystem": self.workspace.ecosystem,
             "manager": self.workspace.manager,
             "status": self.status,
-            "changes": [{"name": c.name, "from": c.from_ver, "to": c.to} for c in self.changes],
-            "behind_latest": [
-                {"name": c.name, "from": c.from_ver, "to": c.to} for c in self.behind_latest
-            ],
+            "changes": [c.to_json() for c in self.changes],
+            "behind_latest": [c.to_json() for c in self.behind_latest],
             "overrides_audit": self.overrides_audit,
             "remediations": self.remediations,
         }

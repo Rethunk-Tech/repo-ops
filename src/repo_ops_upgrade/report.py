@@ -6,6 +6,7 @@ import contextlib
 import json
 import os
 import tempfile
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -163,7 +164,11 @@ def _behind_latest_holds(wr: WorkspaceResult) -> list[HoldRule | None]:
     Shared by the row annotation and the summary counter so "held" means the
     same thing in both places.
     """
-    return [resolve_package_hold(wr.workspace, c.name) for c in wr.behind_latest]
+    ws = wr.workspace
+    return [
+        resolve_package_hold(replace(ws, path=ws.path / c.member) if c.member else ws, c.name)
+        for c in wr.behind_latest
+    ]
 
 
 def _format_behind_latest_annotation(rule: HoldRule | None) -> str:
@@ -292,9 +297,12 @@ def _enrich_repo_json_with_aging(
     bundle: RepoBundle,
     repo_json: dict[str, Any],
 ) -> dict[str, Any]:
-    """Add dirty-skip aging fields to workspace entries that were dirty-skipped."""
+    """Add ``held`` to held behind-latest entries and aging fields to dirty-skipped workspaces."""
     ws_list = repo_json.get("workspaces", [])
     for ws_json, wr in zip(ws_list, bundle.workspaces, strict=False):
+        for entry, rule in zip(ws_json["behind_latest"], _behind_latest_holds(wr), strict=True):
+            if rule is not None:
+                entry["held"] = rule.max_version
         if wr.status == "skip" and wr.error and DIRTY_SKIP_MARKER in wr.error:
             entry = cache_get_dirty_skip(wr.workspace.git_repo)
             if entry:

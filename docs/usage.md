@@ -476,8 +476,10 @@ time an expired hold is skipped.
 behind-latest bucket as any other outdated package, but is named as such —
 its behind-latest line reads `held <= <max_version>` (plus `, until <date>`
 when the rule has one), the per-workspace `behind-latest:` header adds a
-`N held` count, and the plan/apply `summary` (JSON and human footer) carries
-a `packages_held` count alongside `packages_behind_latest`.
+`N held` count, its JSON `behind_latest` entry carries `"held": "<max_version>"`,
+and the plan/apply `summary` (JSON and human footer) carries a `packages_held`
+count alongside `packages_behind_latest`. An entry from a monorepo member names it
+in JSON `member`, and its hold is resolved at that member's path.
 
 Example — hold TypeScript fleet-wide at 6.x, but let one already-migrated
 workspace bump freely:

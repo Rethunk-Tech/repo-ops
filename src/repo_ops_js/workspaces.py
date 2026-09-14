@@ -192,6 +192,12 @@ def member_audit_overrides(ws: Workspace, root: Path, overrides: dict[str, str])
     return {name: ver for name, ver in overrides.items() if name in declared}
 
 
+def _in_member(changes: list[Change], root: Workspace, member: Workspace) -> list[Change]:
+    """Tag *changes* with their member so reporting resolves member-scoped holds there."""
+    rel = member.path.relative_to(root.path).as_posix()
+    return [replace(c, member=rel) for c in changes]
+
+
 def check_with_members(
     ws: Workspace, check_dir: Callable[[Workspace], tuple[list[Change], list[Change]]]
 ) -> tuple[list[Change], list[Change]]:
@@ -199,8 +205,8 @@ def check_with_members(
     changes, behind = check_dir(ws)
     for member in member_workspaces(ws):
         member_changes, member_behind = check_dir(member)
-        merge_changes(changes, member_changes)
-        merge_changes(behind, member_behind)
+        merge_changes(changes, _in_member(member_changes, ws, member))
+        merge_changes(behind, _in_member(member_behind, ws, member))
     return changes, behind
 
 
@@ -210,5 +216,5 @@ def apply_with_members(
     """Run a one-directory apply at *ws* and at each member; *apply_dir* gets the lockfile root."""
     behind = apply_dir(ws, ws.path)
     for member in member_workspaces(ws):
-        merge_changes(behind, apply_dir(member, ws.path))
+        merge_changes(behind, _in_member(apply_dir(member, ws.path), ws, member))
     return behind
