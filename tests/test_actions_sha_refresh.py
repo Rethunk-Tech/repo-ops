@@ -155,20 +155,25 @@ def test_refresh_off_by_default_keeps_report_only(tmp_path: Path) -> None:
 
 
 def test_refresh_two_part_tags_orders_by_semver_and_rewrites_comment(tmp_path: Path) -> None:
-    """gh-actions case: v1.10 > v1.9 despite two-part tags; floating v1 still at v1.9."""
+    """gh-actions case: v1.10 > v1.9 despite two-part tags; floating v1 still at v1.9.
+
+    The sub-path action's tags are fetched from its owner/repo.
+    """
+    action = "Rethunk-Tech/gh-actions/setup-go"
     wf = _wf(
         tmp_path,
-        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_OLD} # v1.9\n",
+        f"jobs:\n  ci:\n    steps:\n      - uses: {action}@{_OLD} # v1.9\n",
     )
     tags_proc = _make_tags_proc(f"v1.10 {_NEW}", f"v1.9 {_OLD}", f"v1.8 {_OTHER}", f"v1 {_OLD}")
 
     with (
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
-        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc) as run_mock,
     ):
         bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=True, refresh_sha=True)
 
-    checkout = [b for b in bumps if b.action == "actions/checkout"]
+    assert any("repos/Rethunk-Tech/gh-actions/tags" in c.args[0] for c in run_mock.call_args_list)
+    checkout = [b for b in bumps if b.action == action]
     assert len(checkout) == 1, bumps
     assert checkout[0].latest == _NEW
     assert "refresh SHA digest to v1.10" in (checkout[0].detail or "")

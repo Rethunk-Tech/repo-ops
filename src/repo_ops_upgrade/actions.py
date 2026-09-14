@@ -443,14 +443,16 @@ def action_tag_info(action: str, *, cache: dict[str, dict | None] | None = None)
     if not shutil.which("gh"):
         return None
     store = _TAG_CACHE if cache is None else cache
-    if action in store:
-        return store[action]
+    # Sub-path actions (owner/repo/setup-go) are tagged on owner/repo; the full path 404s.
+    repo = "/".join(action.split("/")[:2])
+    if repo in store:
+        return store[repo]
     try:
         proc = run(
             [
                 "gh",
                 "api",
-                f"repos/{action}/tags",
+                f"repos/{repo}/tags",
                 "--paginate",
                 "--jq",
                 r'.[] | "\(.name) \(.commit.sha)"',
@@ -459,7 +461,7 @@ def action_tag_info(action: str, *, cache: dict[str, dict | None] | None = None)
             timeout=30,
         )
         if proc.returncode != 0 or not proc.stdout.strip():
-            store[action] = None
+            store[repo] = None
             return None
         bare_majors: set[int] = set()
         all_majors: set[int] = set()
@@ -490,11 +492,11 @@ def action_tag_info(action: str, *, cache: dict[str, dict | None] | None = None)
             "all_tags": all_tags,
             "sha_to_tags": sha_to_tags,
         }
-        store[action] = result
+        store[repo] = result
         return result
     except subprocess.TimeoutExpired:
         print(f"WARN: gh api timed out for {action}", file=sys.stderr)
-    store[action] = None
+    store[repo] = None
     return None
 
 
