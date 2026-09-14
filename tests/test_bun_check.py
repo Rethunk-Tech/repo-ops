@@ -223,3 +223,55 @@ def test_check_bun_checks_each_workspace_member(
         changes, _behind = check_bun(make_workspace(tmp_path, manager="bun"))
 
     assert [(c.name, c.from_ver, c.to) for c in changes] == [("next", "16.3.0", "16.3.5")]
+
+
+def test_check_bun_proposes_private_member_peer_lockstep(
+    monkeypatch, tmp_path: Path, make_workspace
+) -> None:
+    """A private member's peer pin follows the version its own manifest depends on."""
+    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
+    (tmp_path / "package.json").write_text(json.dumps({"workspaces": ["packages/*"]}))
+    (tmp_path / ".repo-ops.toml").write_text(
+        '[[hold]]\npackage = "react-native"\nmax_version = "0.86"\nworkspace = "packages/ui"\n'
+    )
+    manifests = {
+        "auth": {"private": True, "devDependencies": {"next": "16.3.5"}},
+        "lib": {"devDependencies": {"next": "16.3.5"}},
+        "ui": {
+            "private": True,
+            "devDependencies": {
+                "react": "^19.3.0",
+                "react-dom": "^19.2.8",
+                "react-native": "0.87.1",
+            },
+            "peerDependencies": {
+                "react": "^19.2.8",
+                "react-dom": "^19.2.8",
+                "react-native": "0.86.0",
+            },
+        },
+    }
+    manifests["auth"]["peerDependencies"] = manifests["lib"]["peerDependencies"] = {
+        "next": "16.3.1"
+    }
+    for name, data in manifests.items():
+        (tmp_path / "packages" / name).mkdir(parents=True)
+        (tmp_path / "packages" / name / "package.json").write_text(json.dumps(data))
+    auth = tmp_path / "packages" / "auth"
+    tables = {
+        auth: "│ Package │ Current │ Update │ Latest │\n│ next │ 16.3.5 │ 16.3.5 │ 16.3.6 │\n"
+    }
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        if "--json" in cmd:
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout=tables.get(cwd, ""), stderr="")
+
+    with patch("repo_ops_js_bun.bun.run", fake_run):
+        changes, _behind = check_bun(make_workspace(tmp_path, manager="bun"))
+
+    assert {(c.name, c.from_ver, c.to, c.member) for c in changes} == {
+        ("next", "16.3.5", "16.3.6", "packages/auth"),
+        ("next", "16.3.1", "16.3.6", "packages/auth"),
+        ("react", "^19.2.8", "^19.3.0", "packages/ui"),
+    }

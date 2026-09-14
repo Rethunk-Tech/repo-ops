@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -11,7 +12,9 @@ from repo_ops_js_bun.bun import (
     clear_bun_audit_version_overrides,
     set_bun_audit_version_overrides,
 )
+from repo_ops_lockfiles.snapshots import restore_workspace_snapshot, snapshot_workspace_files
 from repo_ops_models import Change, Workspace
+from repo_ops_upgrade_remediations_js.remediations import _rewritten_manifests
 
 # Guard now lives in repo_ops_js.guards; patch the resolver there so all
 # managers' tests point at the same canonical location.
@@ -485,3 +488,33 @@ def test_apply_bun_bumps_member_dep_from_member_directory(tmp_path: Path) -> Non
 
     assert (["bun", "update", "--", "next@16.3.5"], web) in calls
     assert not any("next@16.3.5" in " ".join(cmd) for cmd, cwd in calls if cwd == tmp_path)
+
+
+def test_apply_bun_moves_stale_private_peer_pin_and_refreshes_lockfile(tmp_path: Path) -> None:
+    """The peer edit lands in the snapshot, the manifest_format file set, and bun.lock."""
+    (tmp_path / "package.json").write_text('{"workspaces": ["packages/*"]}')
+    member = tmp_path / "packages" / "auth" / "package.json"
+    member.parent.mkdir(parents=True)
+    member.write_text(
+        '{"private": true, "devDependencies": {"next": "16.3.5"}, "peerDependencies": {"next": "16.3.1"}}'
+    )
+    calls: list[tuple[list[str], Path]] = []
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        calls.append((list(cmd), cwd))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    ws = Workspace(path=tmp_path, ecosystem="node", manager="bun", git_repo=tmp_path, label="demo")
+    snap = snapshot_workspace_files(tmp_path, "bun")
+    with (
+        patch("repo_ops_js_bun.bun.run", fake_run),
+        patch("repo_ops_js.workspaces.run", fake_run),
+        patch("repo_ops_js_bun.bun.check_bun", return_value=([], [])),
+    ):
+        apply_bun(ws)
+
+    assert json.loads(member.read_text())["peerDependencies"] == {"next": "16.3.5"}
+    assert (["bun", "install"], tmp_path) in calls
+    assert _rewritten_manifests(ws, {"pre_apply_snapshot": snap}) == ["packages/auth/package.json"]
+    restore_workspace_snapshot(tmp_path, snap, "bun")
+    assert json.loads(member.read_text())["peerDependencies"] == {"next": "16.3.1"}

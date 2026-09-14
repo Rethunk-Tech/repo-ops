@@ -110,6 +110,11 @@ manifest, exact pins stay exact, and workspace-scoped holds match the member pat
 Yarn Berry's `yarn up` is already project-wide. Snapshots and the verify-fail revert
 include member manifests.
 
+A `"private": true` member's `peerDependencies` follow the version that same manifest
+depends on: an exact peer pin moves to it and a `^`/`~` floor is raised to it, never
+lowered, then the lockfile is reinstalled. Holds apply at the member's path. Published
+members' peer ranges, and peers the member does not also depend on, are left alone.
+
 | Ecosystem | Default (full sweep) | `--conservative` |
 | ----------- | ----------------------- | ------------------- |
 | **npm** | `npm update`, then a reversible per-package targeted bump (`npm install <pkg>@latest`) for any dep left `behind_latest` after the update | `npm update` only (semver ranges in manifests); gaps stay reported as `behind_latest` |
