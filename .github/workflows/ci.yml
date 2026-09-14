@@ -33,13 +33,13 @@ jobs:
         with:
           python-version: "3.14"
           install-args: --locked --group dev
-      - uses: Rethunk-Tech/gh-actions/setup-bun@45d60bff5148282bbbf11e6f2460829eab772cf2 # v1.9
+      - uses: Rethunk-Tech/gh-actions/setup-bun@5d07bd8adb2dda1caa11cacd886edf73e2e95afb # v1.10
         with:
           node-version: "24"
           skip-install: "true"
       - name: Enable Corepack (yarn)
         run: corepack enable
-      - uses: Rethunk-Tech/gh-actions/setup-go@45d60bff5148282bbbf11e6f2460829eab772cf2 # v1.9
+      - uses: Rethunk-Tech/gh-actions/setup-go@5d07bd8adb2dda1caa11cacd886edf73e2e95afb # v1.10
         with:
           go-version: "stable"
       - name: Install govulncheck
