@@ -119,6 +119,17 @@ def test_lockfile_resolved_skips_bun_lockb_without_bun(tmp_path: Path) -> None:
     assert resolved == {}
 
 
+def test_lockfile_skip_dirs_apply_only_below_the_repo(tmp_path: Path) -> None:
+    """A repo checked out under a SKIP_DIRS name still has its lockfiles read."""
+    repo = tmp_path / "build" / "repo"
+    (repo / "node_modules" / "dep").mkdir(parents=True)
+    lock = '[[package]]\nname = "{}"\nversion = "1.0.0"\n'
+    (repo / "uv.lock").write_text(lock.format("kept"), encoding="utf-8")
+    (repo / "node_modules" / "dep" / "uv.lock").write_text(lock.format("skipped"), encoding="utf-8")
+
+    assert dependabot._lockfile_resolved(str(repo)) == {"kept": "1.0.0"}
+
+
 def test_lockfile_resolved_parses_uv_lock(tmp_path: Path) -> None:
     """uv.lock [[package]] entries feed the high-confidence path."""
     (tmp_path / "uv.lock").write_text(

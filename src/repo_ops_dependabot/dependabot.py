@@ -319,6 +319,15 @@ def _lockfile_entry_parsers():
     )
 
 
+def _in_skip_dir(root: Path, lockfile: Path) -> bool:
+    """True when *lockfile* sits in a SKIP_DIRS directory inside *root*.
+
+    Only the path below *root* counts: a repo checked out under ``build/`` or
+    ``.claude/worktrees/`` would otherwise have every lockfile skipped.
+    """
+    return any(part in SKIP_DIRS for part in lockfile.relative_to(root).parts)
+
+
 def _iter_lockfile_entries(root: Path, filename: str, parser):
     """Yield raw ``name@version`` entries from every *filename* under *root*.
 
@@ -326,7 +335,7 @@ def _iter_lockfile_entries(root: Path, filename: str, parser):
     file doesn't block the rest of a monorepo scan.
     """
     for lockfile in root.rglob(filename):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
+        if _in_skip_dir(root, lockfile):
             continue
         with contextlib.suppress(Exception):
             yield from parser(lockfile)
@@ -359,7 +368,7 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
     # bun.lockb is bun's binary lockfile; skip when a bun.lock (text) sibling
     # already covers the same directory to avoid double-counting.
     for lockfile in root.rglob("bun.lockb"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
+        if _in_skip_dir(root, lockfile):
             continue
         if lockfile.with_name("bun.lock").exists():
             continue
@@ -373,7 +382,7 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
     # deno.lock entries carry an npm:/jsr: prefix; a jsr-scoped package also
     # registers under its unscoped name since Dependabot's PR title uses it.
     for lockfile in root.rglob("deno.lock"):
-        if any(part in SKIP_DIRS for part in lockfile.parts):
+        if _in_skip_dir(root, lockfile):
             continue
         with contextlib.suppress(Exception):
             for entry in versions_deno_lock(lockfile):
