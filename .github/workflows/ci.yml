@@ -40,12 +40,26 @@ jobs:
       - name: Enable Corepack (yarn)
         run: corepack enable
       - uses: Rethunk-Tech/gh-actions/setup-go@5d07bd8adb2dda1caa11cacd886edf73e2e95afb # v1.10
+        id: setup-go
         with:
           go-version: "stable"
+      # The integration tests shell out to a govulncheck binary, so the helper's run-govulncheck
+      # gate does not fit. Building it costs 26s; the key carries the Go version because the
+      # binary type-checks with the toolchain it was built by.
+      - name: Resolve govulncheck version
+        id: govulncheck
+        run: echo "version=$(go list -m -f '{{.Version}}' golang.org/x/vuln@latest)" >> "$GITHUB_OUTPUT"
+      - name: Cache govulncheck
+        id: govulncheck-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/bin/govulncheck
+          key: ${{ runner.os }}-govulncheck-${{ steps.govulncheck.outputs.version }}-go${{ steps.setup-go.outputs.go-version }}
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Add Go bin to PATH
-        run: echo "$HOME/go/bin" >> "$GITHUB_PATH"
+        if: steps.govulncheck-cache.outputs.cache-hit != 'true'
+        env:
+          GOVULNCHECK_VERSION: ${{ steps.govulncheck.outputs.version }}
+        run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
       - name: Integration tests (advisory)
         run: uv run pytest -q -m integration
 
