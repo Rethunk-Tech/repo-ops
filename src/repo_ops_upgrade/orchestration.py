@@ -28,6 +28,7 @@ from repo_ops_models import DIRTY_SKIP_MARKER, Workspace, WorkspaceResult
 from repo_ops_upgrade import registry as ecosystems
 from repo_ops_upgrade import verify as verify_mod
 from repo_ops_upgrade.post_apply import (
+    capture_worktree_state,
     classify_verify_fail_disposition,
     collect_changes_after_apply,
     revert_workspace_after_verify_fail,
@@ -177,6 +178,7 @@ def _process_workspace_body(
         return result
 
     before_snap: dict[Path, bytes] | None = None
+    before_tree = None
     if do_apply:
         # Snapshotted once per bundle by the caller when repo_started_dirty is
         # given, rather than re-checked live here — an earlier sibling workspace
@@ -195,6 +197,7 @@ def _process_workspace_body(
             return result
         # Repo processed cleanly — clear any stale dirty-skip entry.
         cache_clear_dirty_skip(ws.git_repo)
+        before_tree = capture_worktree_state(ws.git_repo)
         before_snap = snapshot_workspace_files(ws.path, ws.manager)
         try:
             behind_after = ecosystems.apply_workspace(ws)
@@ -220,7 +223,12 @@ def _process_workspace_body(
         result.pre_apply_snapshot = {}
 
     if do_apply and do_verify and result.status != "fail":
-        verr = verify_mod.verify_workspace(ws, verify_test=verify_test)
+        try:
+            verr = verify_mod.verify_workspace(ws, verify_test=verify_test)
+        except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as exc:
+            # A verify that cannot finish (e.g. a gate timeout) is a failed
+            # verify, and must reach the revert below like any other.
+            verr = str(exc)
         if verr:
             result.verify_error = verr
             result.status = "fail"
@@ -228,7 +236,9 @@ def _process_workspace_body(
                 reverted_ok = True
                 if on_verify_fail == "revert":
                     try:
-                        reverted_ok = revert_workspace_after_verify_fail(ws, before_snap)
+                        reverted_ok = revert_workspace_after_verify_fail(
+                            ws, before_snap, before_tree
+                        )
                     except (
                         RuntimeError,
                         OSError,

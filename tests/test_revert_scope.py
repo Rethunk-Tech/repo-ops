@@ -10,14 +10,15 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from subprocess import CompletedProcess
-from unittest.mock import patch
 
 import pytest
 
 from repo_ops_lockfiles.snapshots import snapshot_workspace_files
 from repo_ops_models import Workspace
-from repo_ops_upgrade.post_apply import revert_workspace_after_verify_fail
+from repo_ops_upgrade.post_apply import (
+    capture_worktree_state,
+    revert_workspace_after_verify_fail,
+)
 
 # ---------------------------------------------------------------------------
 # Shared fixture helpers
@@ -52,19 +53,20 @@ def test_revert_restores_modified_lockfile(tmp_path: Path, init_git_repo) -> Non
     """Tracked lockfile modified by apply (on disk, not staged) is restored.
 
     apply mutates files on disk without staging them.  restore_workspace_snapshot
-    handles the content restore from before_snap; the git checkout fallback
-    covers files not in the snapshot scope (e.g. pyproject.toml).
+    handles the content restore from before_snap; the worktree state restore
+    covers files outside the snapshot scope (e.g. pyproject.toml).
     """
     ws = _root_npm_workspace(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"
     original = lock.read_bytes()
 
     # Capture before-state then simulate apply mutating the lockfile on disk.
-    # Do NOT stage — apply never stages; git checkout restores from HEAD.
+    # Do NOT stage: apply never stages.
     before_snap = snapshot_workspace_files(ws.path, ws.manager)
+    before_tree = capture_worktree_state(ws.git_repo)
     lock.write_text('{"lockfileVersion":2,"mutated":true}', encoding="utf-8")
 
-    reverted_ok = revert_workspace_after_verify_fail(ws, before_snap)
+    reverted_ok = revert_workspace_after_verify_fail(ws, before_snap, before_tree)
 
     assert reverted_ok is True
     assert lock.read_bytes() == original, "revert must restore lockfile to pre-apply content"
@@ -89,54 +91,14 @@ def test_revert_preserves_preexisting_untracked_file(tmp_path: Path, init_git_re
 
     lock = tmp_path / "package-lock.json"
     before_snap = snapshot_workspace_files(ws.path, ws.manager)
+    before_tree = capture_worktree_state(ws.git_repo)
 
     # Simulate apply: mutate the lockfile.
     lock.write_text('{"lockfileVersion":2}', encoding="utf-8")
 
-    revert_workspace_after_verify_fail(ws, before_snap)
+    revert_workspace_after_verify_fail(ws, before_snap, before_tree)
 
     assert notes.exists(), "revert must not delete a pre-existing untracked file (notes.txt)"
-
-
-def test_revert_clean_skips_non_artifact_via_mock(tmp_path: Path, init_git_repo) -> None:
-    """git clean is called with only apply-created lockfile names, not notes.txt.
-
-    Mock test: ls-files returns [notes.txt, yarn.lock].
-    git clean must be invoked once and must not include notes.txt.
-    yarn.lock is a known artifact name absent from before_snap → eligible.
-    notes.txt is not a known artifact basename → must be excluded.
-    """
-    ws = _root_npm_workspace(tmp_path, init_git_repo=init_git_repo)
-    lock = tmp_path / "package-lock.json"
-    before_snap = {lock: lock.read_bytes()}
-
-    clean_calls: list[list[str]] = []
-
-    def _fake_run(cmd: list[str], cwd: Path, **kwargs: object) -> CompletedProcess[str]:
-        if cmd[:2] == ["git", "diff"]:
-            return CompletedProcess(cmd, 0, stdout="", stderr="")
-        if cmd[:2] == ["git", "ls-files"]:
-            # Pretend both a pre-existing operator file and an apply-created lockfile
-            # are untracked.
-            return CompletedProcess(cmd, 0, stdout="notes.txt\nyarn.lock\n", stderr="")
-        if cmd[:2] == ["git", "clean"]:
-            clean_calls.append(list(cmd))
-            return CompletedProcess(cmd, 0, stdout="", stderr="")
-        return CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    with patch("repo_ops_upgrade.post_apply.run", side_effect=_fake_run):
-        reverted_ok = revert_workspace_after_verify_fail(ws, before_snap)
-
-    assert reverted_ok is True
-    # git clean must have been called (yarn.lock is an apply artifact).
-    assert clean_calls, "expected git clean to be invoked for apply-created yarn.lock"
-    assert len(clean_calls) == 1
-    # notes.txt must not be in the clean invocation.
-    assert "notes.txt" not in clean_calls[0], (
-        "git clean must not include pre-existing non-artifact file notes.txt"
-    )
-    # yarn.lock (apply-created artifact) must be cleaned.
-    assert "yarn.lock" in clean_calls[0], "git clean must include the apply-created yarn.lock"
 
 
 # ---------------------------------------------------------------------------
@@ -169,54 +131,15 @@ def test_revert_preserves_preexisting_dirty_tracked_edit(tmp_path: Path, init_gi
     # Operator's pre-existing dirty edit (done before apply, with --allow-dirty).
     app_py.write_text("# version 2 (operator edit)\n", encoding="utf-8")
     dirty_content = app_py.read_bytes()
+    before_tree = capture_worktree_state(ws.git_repo)
 
     # Simulate apply mutating the lockfile.
     lock.write_text('{"lockfileVersion":2}', encoding="utf-8")
 
-    revert_workspace_after_verify_fail(ws, before_snap)
+    revert_workspace_after_verify_fail(ws, before_snap, before_tree)
 
     assert app_py.read_bytes() == dirty_content, (
         "revert must not discard a pre-existing dirty tracked edit (app.py)"
-    )
-
-
-def test_revert_checkout_skips_non_artifact_via_mock(tmp_path: Path, init_git_repo) -> None:
-    """git checkout is called with only artifact paths, not app.py.
-
-    Mock test: git diff returns [package-lock.json, app.py].
-    checkout must be invoked with only package-lock.json.
-    """
-    ws = _root_npm_workspace(tmp_path, init_git_repo=init_git_repo)
-    lock = tmp_path / "package-lock.json"
-    before_snap = {lock: lock.read_bytes()}
-
-    checkout_calls: list[list[str]] = []
-
-    def _fake_run(cmd: list[str], cwd: Path, **kwargs: object) -> CompletedProcess[str]:
-        if cmd[:2] == ["git", "diff"]:
-            # diff shows both lockfile and operator's source file as changed.
-            return CompletedProcess(cmd, 0, stdout="package-lock.json\napp.py\n", stderr="")
-        if cmd[:2] == ["git", "checkout"]:
-            checkout_calls.append(list(cmd))
-            return CompletedProcess(cmd, 0, stdout="", stderr="")
-        if cmd[:2] == ["git", "ls-files"]:
-            return CompletedProcess(cmd, 0, stdout="", stderr="")
-        return CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    with patch("repo_ops_upgrade.post_apply.run", side_effect=_fake_run):
-        reverted_ok = revert_workspace_after_verify_fail(ws, before_snap)
-
-    assert reverted_ok is True
-    assert checkout_calls, "expected git checkout to be invoked for package-lock.json"
-    assert len(checkout_calls) == 1
-    checkout_args = checkout_calls[0]
-    # app.py must not be in the checkout invocation.
-    assert "app.py" not in checkout_args, (
-        "git checkout must not include the operator's non-artifact dirty file app.py"
-    )
-    # package-lock.json (apply artifact) must be checked out.
-    assert "package-lock.json" in checkout_args, (
-        "git checkout must include the apply-modified package-lock.json"
     )
 
 
@@ -238,9 +161,8 @@ def test_revert_preserves_preexisting_dirty_artifact_not_in_snapshot(
       - subdir/requirements.txt still holds the operator's dirty content.
       - package-lock.json is restored to its pre-apply state.
 
-    This guards against the data-loss bug where the checkout path filtered by
-    _ARTIFACT_BASENAMES alone, causing any pre-existing dirty tracked file whose
-    basename matches an artifact name to be silently reverted.
+    Guards against reverting a pre-existing dirty tracked file only because its
+    basename matches a lockfile name.
     """
     ws = _root_npm_workspace(tmp_path, init_git_repo=init_git_repo)
 
@@ -269,19 +191,20 @@ def test_revert_preserves_preexisting_dirty_artifact_not_in_snapshot(
     # Operator dirty-edits requirements.txt before apply (simulates --allow-dirty run).
     req.write_text("flask==2.0.0\nrequests==2.28.0\n", encoding="utf-8")
     dirty_content = req.read_bytes()
+    before_tree = capture_worktree_state(ws.git_repo)
 
     # Simulate apply modifying only the lockfile.
     lock = tmp_path / "package-lock.json"
     original_lock = lock.read_bytes()
     lock.write_text('{"lockfileVersion":2,"mutated":true}', encoding="utf-8")
 
-    reverted_ok = revert_workspace_after_verify_fail(ws, before_snap)
+    reverted_ok = revert_workspace_after_verify_fail(ws, before_snap, before_tree)
 
     assert reverted_ok is True
     # Operator's pre-existing dirty edit must survive — apply never touched this file.
     assert req.read_bytes() == dirty_content, (
         "revert must not discard a pre-existing dirty tracked file whose basename is "
-        "in _ARTIFACT_BASENAMES but that apply never touched (subdir/requirements.txt)"
+        "a lockfile name but that apply never touched (subdir/requirements.txt)"
     )
     # The lockfile apply DID modify must be restored (via snapshot restore path).
     assert lock.read_bytes() == original_lock, (

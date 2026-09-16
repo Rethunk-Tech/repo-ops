@@ -470,13 +470,15 @@ def add_upgrade_common_arguments(
             dest="on_verify_fail",
             metavar="POLICY",
             help=(
-                "When verify fails after apply: revert only apply-artifact files "
-                "(lockfiles and manifests) under the workspace (default), or keep the "
-                "changes in the worktree to inspect them. Reverting is the default "
-                "because the cross-range bulk upgrade a sweep performs has no "
+                "When verify fails after apply: revert every file the workspace's "
+                "apply and remediations changed and reinstall from the restored "
+                "lockfile (default), or keep the changes in the worktree to inspect "
+                "them. With --commit, a failure also reverts the repo's passing "
+                "workspaces, since the failure vetoes the commit. Reverting is the "
+                "default because the cross-range bulk upgrade a sweep performs has no "
                 "per-package rollback of its own, so a failure would otherwise leave "
-                "the workspace broken. Pre-existing dirty edits and untracked files "
-                "outside the apply-artifact set are preserved either way."
+                "the workspace broken. Edits and untracked files present before apply "
+                "are preserved either way."
             ),
         )
         # ---- Resume / checkpoint (apply-only) --------------------------------

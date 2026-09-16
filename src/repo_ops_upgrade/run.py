@@ -45,6 +45,11 @@ from repo_ops_upgrade import (
 )
 from repo_ops_upgrade import discovery as workspace_discovery
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
+from repo_ops_upgrade.post_apply import (
+    capture_worktree_state,
+    reinstall_from_lockfile,
+    restore_worktree_state,
+)
 
 _FAIL_FAST = orchestration.FAIL_FAST_EVENT
 
@@ -185,6 +190,23 @@ def _github_token_available() -> bool:
     except (OSError, subprocess.SubprocessError):
         return False
     return proc.returncode == 0 and bool(proc.stdout.strip())
+
+
+def _rollback_vetoed_repo(
+    repo: Path,
+    repo_before: dict[str, bytes | None] | None,
+    results: list[WorkspaceResult],
+) -> None:
+    tree_ok = restore_worktree_state(repo, repo_before)
+    for wr in results:
+        # A verify-failed workspace already reverted and reinstalled itself.
+        if wr.status == "skip" or wr.verify_fail_disposition is not None:
+            continue
+        installed_ok = reinstall_from_lockfile(wr.workspace)
+        if wr.status == "ok":
+            wr.status = "skip"
+            wr.error = "reverted: another workspace in this repo failed"
+        wr.reverted_ok = wr.reverted_ok and tree_ok and installed_ok
 
 
 def _cli_flag(args: object, name: str) -> bool:
@@ -358,6 +380,16 @@ def _run_upgrade_body(
                 wr.error = str(exc)
                 return wr
 
+    # One failed workspace vetoes its repo's commit, so under revert the passing
+    # siblings roll back too; otherwise their edits stay behind uncommitted and
+    # the next sweep skips the repo as dirty.
+    rollback_on_veto = (
+        apply
+        and getattr(args, "on_verify_fail", "keep") == "revert"
+        and getattr(args, "commit", "none") in ("conventional", "agent")
+        and not _cli_flag(args, "commit_on_fail")
+    )
+
     def _process_repo(bundle: RepoBundle) -> list[WorkspaceResult]:
         with checkout_config_scope(
             global_cfg=_global_cfg,
@@ -371,12 +403,15 @@ def _run_upgrade_body(
             # yet committed) changes must not make a later sibling look dirty and
             # get skipped outright.
             repo_started_dirty = is_git_dirty(bundle.git_repo) if apply else None
+            repo_before = capture_worktree_state(bundle.git_repo) if rollback_on_veto else None
             for wr in bundle.workspaces:
                 updated = _process_one(wr, repo_started_dirty=repo_started_dirty)
                 results.append(updated)
                 if args.fail_fast and updated.status == "fail":
                     _FAIL_FAST.set()
                     break
+            if rollback_on_veto and any(r.status == "fail" for r in results):
+                _rollback_vetoed_repo(bundle.git_repo, repo_before, results)
             return results
 
     # Resume / checkpoint (REPO_OPS_RESUME=1 or --resume): skip repos that
