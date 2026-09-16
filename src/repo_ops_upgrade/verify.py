@@ -28,6 +28,7 @@ The env var always wins for one-shot overrides (CI pipelines).
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -189,12 +190,6 @@ _TIMEOUT_VERIFY_ENV = "REPO_OPS_TIMEOUT_VERIFY"
 # and turbo tasks above package.json scripts, which this waterfall cannot see.
 _NODE_VERIFY_CANDIDATES = ("ci", "ci:pushgate", "build", "lint")
 
-# One declared gate per ``gate --list`` line: exactly two leading spaces, an
-# optional ``then`` marking it serial-after the previous one, the name, then
-# whitespace before the command. The continuation ``from ...`` line indents
-# past column two and so never matches.
-_GATE_LINE_RE = re.compile(r"^ {2}(?:then )?(\S+)\s+\S")
-
 
 def _gate_verify(
     ws: Workspace,
@@ -207,7 +202,7 @@ def _gate_verify(
     Returns ``(handled, error)``. ``handled`` is False when the ``gate`` CLI is
     absent or detects no gate here, which leaves the caller on its own gates.
 
-    ``gate --list`` executes nothing and exits 0 even when it detects nothing,
+    ``gate --json`` executes nothing and exits 0 even when it detects nothing,
     so it is both the availability probe and the gate set: a bare ``gate`` run
     against a project declaring none exits 129, which is not a verify failure.
     ``gate run NAME...`` filters that same detected set, so dropping ``test``
@@ -221,8 +216,13 @@ def _gate_verify(
             ws.path,
         )
         return (False, None)
-    listing = run(["gate", "--list"], ws.path, timeout=timeout)
-    names = [m.group(1) for line in listing.stdout.splitlines() if (m := _GATE_LINE_RE.match(line))]
+    # JSON, not the --list text: a multi-line inline gate script prints lines
+    # indented like gate names, and scraping them ran ``gate run git``.
+    listing = run(["gate", "--json"], ws.path, timeout=timeout)
+    try:
+        names = [g["name"] for g in json.loads(listing.stdout).get("gates") or []]
+    except (ValueError, AttributeError, TypeError, KeyError):
+        names = []
     if not include_test:
         names = [n for n in names if n != "test"]
     if listing.returncode != 0 or not names:

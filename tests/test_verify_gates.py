@@ -820,27 +820,23 @@ class TestTimeoutEnvOverride:
 # gate CLI delegation
 # ---------------------------------------------------------------------------
 
-_GATE_LIST = """project  /demo
-5 gate(s), 5 group(s) -- all concurrent
-  build      /demo/node_modules/.bin/turbo run build
-        from turbo.json task build
-  typecheck  /demo/node_modules/.bin/turbo run typecheck
-        from turbo.json task typecheck
-  lint       /demo/node_modules/.bin/turbo run lint
-        from turbo.json task lint
-  workflows  /usr/bin/actionlint
-        from convention: .github/workflows
-  test       /demo/node_modules/.bin/turbo run test
-        from turbo.json task test
-"""
+
+def _gate_json(*names: str, display: str = "cmd") -> str:
+    """``gate --json`` output declaring *names*."""
+    import json
+
+    return json.dumps({"root": "/demo", "gates": [{"name": n, "display": display} for n in names]})
+
+
+_GATE_LIST = _gate_json("build", "typecheck", "lint", "workflows", "test")
 
 
 def _gate_aware_run(calls: list[list[str]], listing: str = _GATE_LIST):
-    """A ``run`` double that answers ``gate --list`` with *listing*."""
+    """A ``run`` double that answers ``gate --json`` with *listing*."""
 
     def fake_run(cmd: list[str], cwd: Path, timeout: int | None = None) -> CompletedProcess[str]:
         calls.append(cmd)
-        return _ok(stdout=listing if cmd[:2] == ["gate", "--list"] else "")
+        return _ok(stdout=listing if cmd[:2] == ["gate", "--json"] else "")
 
     return fake_run
 
@@ -889,7 +885,7 @@ class TestGateDelegation:
         def fake_run(
             cmd: list[str], cwd: Path, timeout: int | None = None
         ) -> CompletedProcess[str]:
-            if cmd[:2] == ["gate", "--list"]:
+            if cmd[:2] == ["gate", "--json"]:
                 return _ok(stdout=_GATE_LIST)
             if cmd[0] == "gate":
                 return _fail(stderr="typecheck failed: 3 errors")
@@ -920,6 +916,24 @@ class TestGateDelegation:
         assert ["bun", "run", "build"] in calls
         assert not [c for c in calls if c[0] == "gate"]
 
+    def test_multiline_gate_script_adds_no_phantom_gate(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
+        """An indented line inside an inline gate script is not a gate name."""
+        self._write_pkg(tmp_path)
+        calls: list[list[str]] = []
+        listing = _gate_json("build", "sqlfluff", display="full=x\n  git ls-files -- sql")
+
+        ws = make_workspace(tmp_path, manager="bun", ecosystem="node", label="demo")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/gate"),
+            patch("repo_ops_upgrade.verify.run", side_effect=_gate_aware_run(calls, listing)),
+        ):
+            result = verify_node(ws)
+
+        assert result is None
+        assert calls[-1] == ["gate", "--timeout", "0", "run", "build", "sqlfluff"]
+
     def test_verify_test_off_drops_the_test_gate(self, tmp_path: Path, make_workspace) -> None:
         """--verify-test stays meaningful: the declared test gate is excluded when it is off."""
         calls: list[list[str]] = []
@@ -944,19 +958,7 @@ class TestGateDelegation:
         ]
 
 
-_PYTHON_GATE_LIST = """project  /demo
-5 gate(s), 5 group(s) -- all concurrent
-  typecheck  uv run pyrefly check
-        from convention: python
-  lint       uv run ruff check .
-        from convention: python
-  workflows  /usr/bin/actionlint
-        from convention: .github/workflows
-  test       uv run pytest
-        from convention: python
-  vuln       uv audit --preview-features audit-command
-        from convention: python
-"""
+_PYTHON_GATE_LIST = _gate_json("typecheck", "lint", "workflows", "test", "vuln")
 
 
 class TestPythonGateDelegation:
@@ -1006,7 +1008,7 @@ class TestPythonGateDelegation:
         def fake_run(
             cmd: list[str], cwd: Path, timeout: int | None = None
         ) -> CompletedProcess[str]:
-            if cmd[:2] == ["gate", "--list"]:
+            if cmd[:2] == ["gate", "--json"]:
                 return _ok(stdout=_PYTHON_GATE_LIST)
             if cmd[0] == "gate":
                 return _fail(stderr="lint failed: 2 errors")
