@@ -31,7 +31,14 @@ Prefer `--log-file` over a shell pipe: it keeps the process exit code. If you do
 
 **Guardrails:** skips repos dirty at start unless `--allow-dirty`; never stages `.env`, credential-like paths, or key material; fails closed when verify failed.
 
-**Branch / PR mode:** `--pr` (with optional `--pr-base`, `--branch-prefix`) pushes a branch and opens a PR via authenticated `gh` instead of leaving commits on the current branch — [usage.md § Branch / PR workflow](usage.md#branch--pr-workflow-apply).
+**Branch / PR mode:** `--pr` (with optional `--pr-base`, `--branch-prefix`) pushes a branch and opens a PR via authenticated `gh` instead of leaving commits on the current branch — [usage.md § Branch / PR workflow](usage.md#branch--pr-workflow-apply). A checkout with no git remote has no push or PR flow at all; its commits stay local.
+
+## Apply traps
+
+- **Read the tree, not the roll-up.** `git status` each touched repo before planning commits — the Summary counts what apply attempted, and a lockfile can move without the headline dep changing.
+- **Actions majors report before they rewrite.** Rows printed `[report-only]` changed nothing; the Summary's `actions bumps` count is what actually landed.
+- **Yarn `file:` workspace links churn the lockfile.** A `file:../…` sibling rewrites resolution hashes with no version change — discard those commits rather than reading them as upgrades.
+- **`--latest` leaves companion ranges behind.** A lockfile-only bump of `vitest` with `@vitest/coverage-v8` still on its old `package.json` range breaks verify (YN0060); `playwright-core` vs `@playwright/test` has the same shape. Forward-align the companion range in the same change.
 
 ## Submodule umbrellas
 
