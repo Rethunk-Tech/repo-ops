@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.metadata
+import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -140,6 +141,12 @@ def _wants_subcommand_help(remainder: list[str]) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Parallel workers run `git status` in umbrella repos while sibling workers
+    # `git add` in their submodules; status's opportunistic index refresh
+    # recurses into submodules and takes their index.lock, failing the add
+    # (27/300 adds in a local repro, 0/300 with this set). Inherited by every
+    # git subprocess, including ones gates spawn.
+    os.environ.setdefault("GIT_OPTIONAL_LOCKS", "0")
     if (
         argv is not None
         and len(argv) >= 2
