@@ -1,14 +1,6 @@
 """Shared pytest fixtures for the top-level test suite.
 
-Isolates ``REPO_OPS_*`` environment variables between tests. Several code
-paths (notably ``repo_ops_upgrade.run``'s ``--latest`` handling) mutate
-``os.environ`` directly rather than going through a fixture, and existing
-tests that exercise those paths don't know to restore every var that might
-get set. Left unchecked, one test's ``REPO_OPS_*`` mutation leaks into the
-next test in the same pytest process (order-dependent failures that don't
-reproduce in isolation).
-
-Also isolates the persistent state store: ``process_workspace`` records
+Isolates the persistent state store: ``process_workspace`` records
 behind-latest history through ``repo_ops_core.state`` (atexit-flushed to
 ``$XDG_CACHE_HOME/repo-ops/state.json``), so without a per-test cache dir
 any test driving it would pollute the developer's real state file.
@@ -26,8 +18,6 @@ from unittest.mock import patch
 import pytest
 
 from repo_ops_models.models import Change, Workspace
-
-_ENV_PREFIX = "REPO_OPS_"
 
 
 @pytest.fixture
@@ -164,18 +154,6 @@ def _no_repo_holds(request: pytest.FixtureRequest) -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_ambient_config() -> Iterator[None]:
-    """Clear the process-wide config snapshot between tests."""
-    from repo_ops_core.config import set_ambient_env
-
-    set_ambient_env(None)
-    try:
-        yield
-    finally:
-        set_ambient_env(None)
-
-
-@pytest.fixture(autouse=True)
 def _isolate_state_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point the XDG cache (and thus the repo-ops state store) at a tmp dir.
 
@@ -215,12 +193,6 @@ def _disable_ambient_color() -> Iterator[None]:
     so a developer whose terminal exports it sees ANSI-wrapped help while CI
     sees plain text, and substring assertions pass in one place and fail in the
     other.
-
-    Saves and restores directly rather than taking ``monkeypatch``: requesting
-    it here would construct it earlier than ``_isolate_state_store`` does,
-    which inverts teardown order against ``_isolate_repo_ops_env`` and lets a
-    ``REPO_OPS_*`` value a test's own ``delenv`` captured get restored after
-    that fixture has already stripped it.
     """
     names = ("FORCE_COLOR", "CLICOLOR_FORCE", "COLORTERM", "NO_COLOR")
     before = {k: os.environ[k] for k in names if k in os.environ}
@@ -233,23 +205,3 @@ def _disable_ambient_color() -> Iterator[None]:
         for name in names:
             os.environ.pop(name, None)
         os.environ.update(before)
-
-
-@pytest.fixture(autouse=True)
-def _isolate_repo_ops_env() -> Iterator[None]:
-    """Snapshot all ``REPO_OPS_*`` env vars before a test and restore after.
-
-    Restores exactly the prior state: vars present before are put back to
-    their prior value, and any ``REPO_OPS_*`` var a test added (and didn't
-    clean up) is removed.
-    """
-    before = {k: v for k, v in os.environ.items() if k.startswith(_ENV_PREFIX)}
-    try:
-        yield
-    finally:
-        after = {k: v for k, v in os.environ.items() if k.startswith(_ENV_PREFIX)}
-        for key in after:
-            if key not in before:
-                del os.environ[key]
-        for key, value in before.items():
-            os.environ[key] = value

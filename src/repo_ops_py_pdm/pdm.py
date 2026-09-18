@@ -6,7 +6,7 @@ import re
 import shutil
 import sys
 
-from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
+from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_toml_file, restore_file, snapshot_file
 from repo_ops_core.holds import resolve_package_hold
 from repo_ops_core.process import run
@@ -135,7 +135,7 @@ def _apply_pdm_targeted_bumps(
                     else f"{candidate.name}{bumped}",
                 ],
                 ws.path,
-                timeout=resolve_timeout_apply(),
+                timeout=TIMEOUT_APPLY,
             )
         except Exception:
             restore_file(manifest, manifest_snapshot)
@@ -187,7 +187,7 @@ def check_pdm(
     proc = run(
         ["pdm", "update", "--dry-run"],
         ws.path,
-        timeout=resolve_timeout_check(),
+        timeout=TIMEOUT_CHECK,
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pdm update --dry-run failed")
@@ -207,7 +207,7 @@ def apply_pdm(ws: Workspace) -> list[Change] | None:
     """Run ``pdm update`` to upgrade all dependencies in the lockfile."""
     if not shutil.which("pdm"):
         raise RuntimeError(f"pdm not on PATH for {ws.path}")
-    proc = run(["pdm", "update"], ws.path, timeout=resolve_timeout_apply())
+    proc = run(["pdm", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pdm update failed")
     _enforce_version_ceilings(ws)

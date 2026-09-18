@@ -6,7 +6,6 @@ children-first level scheduling seams exercised via focused unit tests.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 from subprocess import CompletedProcess
@@ -38,47 +37,6 @@ def _go_ws_with_generate(tmp_path: Path, make_workspace) -> WorkspaceResult:
     result = WorkspaceResult(workspace=ws, status="ok")
     result.changes = [Change("golang.org/x/tools", "1", "2")]
     return result
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# go_generate env gate on orchestration dispatch path
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class TestOrchestrationGoGenerateGate:
-    def test_dispatch_skips_go_generate_when_gate_off(self, tmp_path: Path, make_workspace) -> None:
-        result = _go_ws_with_generate(tmp_path, make_workspace=make_workspace)
-        env_without = {k: v for k, v in os.environ.items() if k != "REPO_OPS_REMEDIATE_GO_GENERATE"}
-        with (
-            patch.dict(os.environ, env_without, clear=True),
-            patch("repo_ops_upgrade_remediations_go.remediations.run") as mock_run,
-            patch(
-                "repo_ops_upgrade_remediations_go.remediations.shutil.which",
-                return_value="/usr/bin/go",
-            ),
-        ):
-            orchestration.remediations.run_remediations(result, apply=True, skip=set())
-
-        called = [c[0][0] for c in mock_run.call_args_list]
-        assert ["go", "generate", "./..."] not in called
-
-    def test_dispatch_runs_go_generate_when_gate_on(self, tmp_path: Path, make_workspace) -> None:
-        result = _go_ws_with_generate(tmp_path, make_workspace=make_workspace)
-        with (
-            patch.dict(os.environ, {"REPO_OPS_REMEDIATE_GO_GENERATE": "1"}),
-            patch(
-                "repo_ops_upgrade_remediations_go.remediations.run",
-                return_value=_ok(),
-            ) as mock_run,
-            patch(
-                "repo_ops_upgrade_remediations_go.remediations.shutil.which",
-                return_value="/usr/bin/go",
-            ),
-        ):
-            orchestration.remediations.run_remediations(result, apply=True, skip=set())
-
-        called = [c[0][0] for c in mock_run.call_args_list]
-        assert ["go", "generate", "./..."] in called
 
 
 # ══════════════════════════════════════════════════════════════════════════════

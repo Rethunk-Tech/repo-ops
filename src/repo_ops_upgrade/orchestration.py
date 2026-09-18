@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import subprocess
 import sys
 import threading
@@ -43,19 +42,12 @@ load_ecosystem_hooks()
 logger = logging.getLogger(__name__)
 
 
-# Env gate for go generate on the production dispatch path (orchestration →
-# remediations-core.dispatch).  Kept here because go.run_remediations is not
-# on the apply path; do not weaken that helper's own effective_skip.
-_GO_GENERATE_ENV = "REPO_OPS_REMEDIATE_GO_GENERATE"
-
-
 class _RemediationsProxy:
     """Intentional test seam: tests patch ``orchestration.remediations.run_remediations``.
 
     # compat: patch site for test_progress_lines / test_staleness_state /
     # test_on_verify_fail — keep this proxy rather than migrating every call site.
-    Routes live calls through remediations-core.dispatch while enforcing the
-    go_generate env gate that go.run_remediations already applies.
+    Routes live calls through remediations-core.dispatch.
     """
 
     def run_remediations(
@@ -63,14 +55,8 @@ class _RemediationsProxy:
         result: WorkspaceResult,
         *,
         apply: bool,
-        skip: set[str],
     ) -> None:
-        effective_skip = set(skip)
-        # go_generate is default-off on the production dispatch path so
-        # //go:generate never runs during fleet apply unless explicitly opted in.
-        if os.environ.get(_GO_GENERATE_ENV, "") != "1":
-            effective_skip.add("go_generate")
-        _dispatch_remediations(result, apply=apply, skip=effective_skip)
+        _dispatch_remediations(result, apply=apply)
 
 
 # Module-level ``remediations`` attribute: existing tests patch
@@ -95,11 +81,8 @@ def _format_elapsed(elapsed_s: float) -> str:
 def _emit_progress(result: WorkspaceResult, *, elapsed_s: float) -> None:
     """Emit one [done] line to stderr if progress is enabled.
 
-    Suppressed by ``REPO_OPS_NO_PROGRESS=1``. The lock prevents torn lines under
-    parallel execution.
+    The lock prevents torn lines under parallel execution.
     """
-    if os.environ.get("REPO_OPS_NO_PROGRESS") == "1":
-        return
     ws = result.workspace
     label = ws.label or str(ws.path)
     n = len(result.changes)
@@ -204,7 +187,7 @@ def _process_workspace_body(
 
     if not (do_apply and result.status == "fail"):
         result.pre_apply_snapshot = before_snap or {}
-        remediations.run_remediations(result, apply=do_apply, skip=set())
+        remediations.run_remediations(result, apply=do_apply)
         result.pre_apply_snapshot = {}
 
     if do_apply and do_verify and result.status != "fail":

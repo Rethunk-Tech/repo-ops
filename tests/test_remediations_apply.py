@@ -33,13 +33,13 @@ def test_run_remediations_plan_vs_apply_detail(tmp_path: Path) -> None:
         lambda ws, _ctx: (True, f"{ws.manager} exec playwright install (ok)"),
     )
     with patch.object(remediations, "REMEDIATIONS", [fake]):
-        remediations.run_remediations(result, apply=False, skip=set())
+        remediations.run_remediations(result, apply=False)
     assert result.remediations[0]["status"] == "pending"
     assert "would run" in result.remediations[0]["detail"]
 
     result2 = WorkspaceResult(workspace=ws)
     with patch.object(remediations, "REMEDIATIONS", [fake]):
-        remediations.run_remediations(result2, apply=True, skip=set())
+        remediations.run_remediations(result2, apply=True)
     assert result2.remediations[0]["status"] == "applied"
     assert "would run" not in result2.remediations[0]["detail"]
     assert "(ok)" in result2.remediations[0]["detail"]
@@ -62,7 +62,7 @@ def test_verbose_flag_observed_live(tmp_path: Path, capsys: pytest.CaptureFixtur
     process.set_verbose(True)
     try:
         with patch.object(remediations, "REMEDIATIONS", [fake]):
-            remediations.run_remediations(result, apply=True, skip=set())
+            remediations.run_remediations(result, apply=True)
     finally:
         process.set_verbose(False)
 
@@ -241,7 +241,7 @@ def test_manifest_format_formats_only_rewritten_manifests(tmp_path: Path, make_p
         patch.object(remediations, "REMEDIATIONS", [hook]),
         patch.object(remediations, "run", return_value=make_proc(0)) as mock_run,
     ):
-        remediations.run_remediations(result, apply=True, skip=set())
+        remediations.run_remediations(result, apply=True)
     assert result.remediations[0]["status"] == "applied"
     assert mock_run.call_args[0][0][1:] == [
         "format",

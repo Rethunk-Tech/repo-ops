@@ -116,7 +116,7 @@ def test_run_remediations_no_detected(tmp_path: Path) -> None:
     ws = _sample_workspace(tmp_path)
     result = WorkspaceResult(workspace=ws)
     with patch.object(remediations, "REMEDIATIONS", []):
-        remediations.run_remediations(result, apply=False, skip=set())
+        remediations.run_remediations(result, apply=False)
     assert result.remediations == []
 
 

@@ -119,7 +119,6 @@ def test_apply_submodule_tag_advances_invoked_via_run(
     monkeypatch.setattr(sub_mod, "apply_submodule_tag_advances", _fake_apply)
 
     # Patch the heavy parts so the run doesn't need real workspaces/packages
-    monkeypatch.setenv("REPO_OPS_NO_STATE", "1")
 
     def _fake_discover(*args, **kwargs):
         return []

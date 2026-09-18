@@ -1,17 +1,14 @@
 """Safety-behaviour tests for Go/Rust/core remediation hooks.
 
-Covers the four verified defects:
-1. go_generate is default-off behind REPO_OPS_REMEDIATE_GO_GENERATE=1.
-2. gofmt/cargo fmt are scoped to files changed by the bump, not the whole
+Covers:
+1. gofmt/cargo fmt are scoped to files changed by the bump, not the whole
    workspace.
-3. Missing tools (shutil.which → None / FileNotFoundError) yield SKIP, not
+2. Missing tools (shutil.which → None / FileNotFoundError) yield SKIP, not
    fail, so an otherwise-successful dep bump is not marked failed.
-4. _has_go_generate prunes vendor/.git/node_modules/testdata directories.
 """
 
 from __future__ import annotations
 
-import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,198 +40,6 @@ def _git_commit_all(path: Path, message: str = "initial") -> None:
         check=True,
         capture_output=True,
     )
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Defect 1 — go_generate env gate
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class TestGoGenerateEnvGate:
-    """go_generate must be default-off; only run when REPO_OPS_REMEDIATE_GO_GENERATE=1."""
-
-    def _setup_ws(self, tmp_path: Path, make_workspace: Any, make_change: Any) -> WorkspaceResult:
-        (tmp_path / "go.mod").write_text("module example.com/m\n\ngo 1.21\n")
-        (tmp_path / "gen.go").write_text("package main\n//go:generate stringer -type=Foo\n")
-        result = _go_result(tmp_path, make_workspace)
-        result.changes = [make_change("golang.org/x/tools")]
-        return result
-
-    def test_go_generate_not_called_and_status_stays_ok_when_gate_off(
-        self, tmp_path: Path, make_workspace: Any, make_change: Any
-    ) -> None:
-        """Skipping go_generate via the absent env gate must not run it or fail the result."""
-        result = self._setup_ws(tmp_path, make_workspace, make_change)
-        fake_hook = go_rem.RemediationHook(
-            "go_generate",
-            go_rem.detect_go_generate,
-            go_rem.report_go_generate,
-            go_rem.apply_go_generate,
-        )
-        env_without_gate = {
-            k: v for k, v in os.environ.items() if k != "REPO_OPS_REMEDIATE_GO_GENERATE"
-        }
-        with (
-            patch.dict(os.environ, env_without_gate, clear=True),
-            patch.object(go_rem, "REMEDIATIONS", [fake_hook]),
-            patch("repo_ops_upgrade_remediations_go.remediations.run") as mock_run,
-        ):
-            go_rem.run_remediations(result, apply=True, skip=set())
-
-        called_cmds = [c[0][0] for c in mock_run.call_args_list]
-        assert ["go", "generate", "./..."] not in called_cmds, (
-            "go generate must not run when REPO_OPS_REMEDIATE_GO_GENERATE is unset"
-        )
-        assert result.status == "ok"
-
-    def test_go_generate_called_when_gate_set(
-        self, tmp_path: Path, make_workspace: Any, make_change: Any, make_proc: Any
-    ) -> None:
-        """go generate IS invoked when REPO_OPS_REMEDIATE_GO_GENERATE=1."""
-        result = self._setup_ws(tmp_path, make_workspace, make_change)
-        fake_hook = go_rem.RemediationHook(
-            "go_generate",
-            go_rem.detect_go_generate,
-            go_rem.report_go_generate,
-            go_rem.apply_go_generate,
-        )
-        with (
-            patch.dict(os.environ, {"REPO_OPS_REMEDIATE_GO_GENERATE": "1"}),
-            patch.object(go_rem, "REMEDIATIONS", [fake_hook]),
-            patch(
-                "repo_ops_upgrade_remediations_go.remediations.run",
-                return_value=make_proc(0),
-            ) as mock_run,
-        ):
-            go_rem.run_remediations(result, apply=True, skip=set())
-
-        called_cmds = [c[0][0] for c in mock_run.call_args_list]
-        assert ["go", "generate", "./..."] in called_cmds, (
-            "go generate must run when REPO_OPS_REMEDIATE_GO_GENERATE=1"
-        )
-
-
-class TestGoGenerateDispatchPathGate:
-    """Production path: orchestration remediations proxy / core.dispatch must gate go_generate."""
-
-    def _setup_ws(self, tmp_path: Path, make_workspace: Any, make_change: Any) -> WorkspaceResult:
-        (tmp_path / "go.mod").write_text("module example.com/m\n\ngo 1.21\n")
-        (tmp_path / "gen.go").write_text("package main\n//go:generate stringer -type=Foo\n")
-        result = _go_result(tmp_path, make_workspace)
-        result.changes = [make_change("golang.org/x/tools")]
-        return result
-
-    def test_core_dispatch_skips_go_generate_when_gate_off(
-        self, tmp_path: Path, make_workspace: Any, make_change: Any
-    ) -> None:
-        result = self._setup_ws(tmp_path, make_workspace, make_change)
-        fake_hook = go_rem.RemediationHook(
-            "go_generate",
-            go_rem.detect_go_generate,
-            go_rem.report_go_generate,
-            go_rem.apply_go_generate,
-        )
-        env_without_gate = {
-            k: v for k, v in os.environ.items() if k != "REPO_OPS_REMEDIATE_GO_GENERATE"
-        }
-        with (
-            patch.dict(os.environ, env_without_gate, clear=True),
-            patch("repo_ops_upgrade_remediations_go.remediations.run") as mock_run,
-            patch.object(go_rem.shutil, "which", return_value="/usr/bin/go"),
-        ):
-            core.dispatch(result, apply=True, skip=set(), _registry=[fake_hook])
-
-        called_cmds = [c[0][0] for c in mock_run.call_args_list]
-        assert ["go", "generate", "./..."] not in called_cmds
-
-    def test_core_dispatch_runs_go_generate_when_gate_set(
-        self, tmp_path: Path, make_workspace: Any, make_change: Any, make_proc: Any
-    ) -> None:
-        result = self._setup_ws(tmp_path, make_workspace, make_change)
-        fake_hook = go_rem.RemediationHook(
-            "go_generate",
-            go_rem.detect_go_generate,
-            go_rem.report_go_generate,
-            go_rem.apply_go_generate,
-        )
-        with (
-            patch.dict(os.environ, {"REPO_OPS_REMEDIATE_GO_GENERATE": "1"}),
-            patch(
-                "repo_ops_upgrade_remediations_go.remediations.run",
-                return_value=make_proc(0),
-            ) as mock_run,
-            patch.object(go_rem.shutil, "which", return_value="/usr/bin/go"),
-        ):
-            core.dispatch(result, apply=True, skip=set(), _registry=[fake_hook])
-
-        called_cmds = [c[0][0] for c in mock_run.call_args_list]
-        assert ["go", "generate", "./..."] in called_cmds
-
-    def test_orchestration_proxy_skips_go_generate_when_gate_off(
-        self, tmp_path: Path, make_workspace: Any, make_change: Any
-    ) -> None:
-        """orchestration.remediations.run_remediations routes through dispatch gate."""
-        from repo_ops_upgrade.orchestration import remediations as orch_rem
-
-        result = self._setup_ws(tmp_path, make_workspace, make_change)
-        fake_hook = go_rem.RemediationHook(
-            "go_generate",
-            go_rem.detect_go_generate,
-            go_rem.report_go_generate,
-            go_rem.apply_go_generate,
-        )
-        env_without_gate = {
-            k: v for k, v in os.environ.items() if k != "REPO_OPS_REMEDIATE_GO_GENERATE"
-        }
-        with (
-            patch.dict(os.environ, env_without_gate, clear=True),
-            patch("repo_ops_upgrade_remediations_go.remediations.run") as mock_run,
-            patch.object(go_rem.shutil, "which", return_value="/usr/bin/go"),
-            patch(
-                "repo_ops_upgrade.orchestration._dispatch_remediations",
-                side_effect=lambda result, *, apply, skip: core.dispatch(
-                    result, apply=apply, skip=skip, _registry=[fake_hook]
-                ),
-            ),
-        ):
-            orch_rem.run_remediations(result, apply=True, skip=set())
-
-        called_cmds = [c[0][0] for c in mock_run.call_args_list]
-        assert ["go", "generate", "./..."] not in called_cmds, (
-            "orchestration proxy must not run go generate when env gate is unset"
-        )
-
-    def test_orchestration_proxy_runs_go_generate_when_gate_set(
-        self, tmp_path: Path, make_workspace: Any, make_change: Any, make_proc: Any
-    ) -> None:
-        """orchestration.remediations proxy respects REPO_OPS_REMEDIATE_GO_GENERATE=1."""
-        from repo_ops_upgrade.orchestration import remediations as orch_rem
-
-        result = self._setup_ws(tmp_path, make_workspace, make_change)
-        fake_hook = go_rem.RemediationHook(
-            "go_generate",
-            go_rem.detect_go_generate,
-            go_rem.report_go_generate,
-            go_rem.apply_go_generate,
-        )
-        with (
-            patch.dict(os.environ, {"REPO_OPS_REMEDIATE_GO_GENERATE": "1"}),
-            patch(
-                "repo_ops_upgrade_remediations_go.remediations.run",
-                return_value=make_proc(0),
-            ) as mock_run,
-            patch.object(go_rem.shutil, "which", return_value="/usr/bin/go"),
-            patch(
-                "repo_ops_upgrade.orchestration._dispatch_remediations",
-                side_effect=lambda result, *, apply, skip: core.dispatch(
-                    result, apply=apply, skip=skip, _registry=[fake_hook]
-                ),
-            ),
-        ):
-            orch_rem.run_remediations(result, apply=True, skip=set())
-
-        called_cmds = [c[0][0] for c in mock_run.call_args_list]
-        assert ["go", "generate", "./..."] in called_cmds
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -500,7 +305,7 @@ class TestToolMissingYieldsSkip:
             patch(f"{case.rem.__name__}.shutil") as mock_sh,
         ):
             mock_sh.which.return_value = None
-            case.rem.run_remediations(result, apply=True, skip=set())
+            case.rem.run_remediations(result, apply=True)
 
         assert result.status == "ok"
         assert result.remediations == []
@@ -523,69 +328,8 @@ class TestToolMissingYieldsSkip:
             lambda _ws, _ctx: [],
             _apply_raises,
         )
-        core.run_hooks([hook], result, apply=True, skip=set())
+        core.run_hooks([hook], result, apply=True)
 
         assert result.status == "ok", "result.status must not become 'fail' when a tool is missing"
         assert result.remediations[0]["status"] == "skip"
         assert "tool not found" in result.remediations[0]["detail"]
-
-    def test_go_generate_missing_tool_stays_successful(
-        self, tmp_path: Path, make_workspace: Any, make_change: Any
-    ) -> None:
-        """Missing 'go' binary: detect_go_generate returns False, result stays ok."""
-        (tmp_path / "go.mod").write_text("module example.com/m\n")
-        (tmp_path / "gen.go").write_text("package main\n//go:generate stringer -type=Foo\n")
-        ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="test")
-        ctx: dict[str, Any] = {"changes": [make_change("pkg")], "apply": True}
-
-        with patch("repo_ops_upgrade_remediations_go.remediations.shutil") as mock_sh:
-            mock_sh.which.return_value = None
-            detected = go_rem.detect_go_generate(ws, ctx)
-
-        assert detected is False
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Defect 4 — _has_go_generate SKIP_DIRS pruning
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class TestSkipDirsPruning:
-    """_has_go_generate must not traverse vendor/.git/node_modules/testdata."""
-
-    @pytest.mark.parametrize(
-        "skip_dir",
-        ["vendor", ".git", "node_modules", "testdata", "_vendor"],
-    )
-    def test_has_go_generate_skips_directory(self, tmp_path: Path, skip_dir: str) -> None:
-        """//go:generate inside a skip-dir is not detected."""
-        skip_path = tmp_path / skip_dir
-        skip_path.mkdir()
-        (skip_path / "generated.go").write_text(
-            "package generated\n//go:generate stringer -type=T\n"
-        )
-        assert go_rem._has_go_generate(tmp_path) is False, (
-            f"//go:generate in {skip_dir}/ must not trigger detection"
-        )
-
-    def test_has_go_generate_finds_directive_outside_skip_dirs(self, tmp_path: Path) -> None:
-        """//go:generate in a normal subdirectory IS detected."""
-        (tmp_path / "vendor").mkdir()
-        (tmp_path / "vendor" / "skip.go").write_text(
-            "package skip\n//go:generate stringer -type=T\n"
-        )
-        (tmp_path / "internal").mkdir()
-        (tmp_path / "internal" / "real.go").write_text(
-            "package internal\n//go:generate mockgen -source=real.go\n"
-        )
-        assert go_rem._has_go_generate(tmp_path) is True, (
-            "//go:generate in a non-skipped directory must be detected"
-        )
-
-    def test_has_go_generate_false_when_only_skip_dirs_exist(self, tmp_path: Path) -> None:
-        """When ALL .go files with directives are in skip dirs, returns False."""
-        for skip_dir in go_rem._SKIP_DIRS:
-            d = tmp_path / skip_dir
-            d.mkdir(exist_ok=True)
-            (d / "f.go").write_text("package p\n//go:generate something\n")
-        assert go_rem._has_go_generate(tmp_path) is False

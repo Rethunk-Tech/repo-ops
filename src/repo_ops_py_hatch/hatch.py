@@ -7,7 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
+from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
@@ -45,7 +45,7 @@ def check_hatch(ws: Workspace) -> list[Change]:
             venv_proc = run(
                 ["uv", "venv", str(venv_dir)],
                 ws.path,
-                timeout=resolve_timeout_check(),
+                timeout=TIMEOUT_CHECK,
             )
             if venv_proc.returncode != 0:
                 raise RuntimeError(venv_proc.stderr.strip() or "uv venv failed")
@@ -53,7 +53,7 @@ def check_hatch(ws: Workspace) -> list[Change]:
             install_proc = run(
                 ["uv", "pip", "install", "-e", install_target],
                 ws.path,
-                timeout=resolve_timeout_check(),
+                timeout=TIMEOUT_CHECK,
                 env={"VIRTUAL_ENV": str(venv_dir)},
             )
             if install_proc.returncode != 0:
@@ -61,7 +61,7 @@ def check_hatch(ws: Workspace) -> list[Change]:
             proc = run(
                 ["uv", "pip", "list", "--outdated"],
                 ws.path,
-                timeout=resolve_timeout_check(),
+                timeout=TIMEOUT_CHECK,
                 env={"VIRTUAL_ENV": str(venv_dir)},
             )
             if proc.returncode != 0:
@@ -80,7 +80,7 @@ def apply_hatch(ws: Workspace) -> None:
         print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
         return
     if not (ws.path / "uv.lock").exists():
-        proc = run(["uv", "lock"], ws.path, timeout=resolve_timeout_apply())
+        proc = run(["uv", "lock"], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "uv lock failed")
     apply_uv_lock(ws)

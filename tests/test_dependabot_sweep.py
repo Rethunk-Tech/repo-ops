@@ -484,8 +484,8 @@ def test_dependabot_exclude_unions_cli_and_config(
         "config": config_excluded,
         "kept": kept,
     }
-    (tmp_path / "pyproject.toml").write_text(
-        '[tool.repo-ops]\nexclude = ["config-excluded"]\n',
+    (tmp_path / ".repo-ops.toml").write_text(
+        'exclude = ["config-excluded"]\n',
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
@@ -526,8 +526,8 @@ def test_dependabot_exclude_filters_repositories_from_config(
     drop.mkdir()
     seen: list[str] = []
 
-    (tmp_path / "pyproject.toml").write_text(
-        '[tool.repo-ops]\nexclude = ["drop"]\n',
+    (tmp_path / ".repo-ops.toml").write_text(
+        'exclude = ["drop"]\n',
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)

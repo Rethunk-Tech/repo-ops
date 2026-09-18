@@ -55,7 +55,7 @@ def test_run_hooks_plan_records_pending(tmp_path: Path, make_workspace) -> None:
         lambda ws, ctx: ["REMEDIATE h: would do X"],
         lambda ws, ctx: (True, "X done"),
     )
-    core.run_hooks([hook], result, apply=False, skip=set())
+    core.run_hooks([hook], result, apply=False)
     assert len(result.remediations) == 1
     assert result.remediations[0]["status"] == "pending"
     assert "would do X" in result.remediations[0]["detail"]
@@ -69,7 +69,7 @@ def test_run_hooks_apply_records_applied(tmp_path: Path, make_workspace) -> None
         lambda ws, ctx: [],
         lambda ws, ctx: (True, "X done (ok)"),
     )
-    core.run_hooks([hook], result, apply=True, skip=set())
+    core.run_hooks([hook], result, apply=True)
     assert result.remediations[0]["status"] == "applied"
     assert "(ok)" in result.remediations[0]["detail"]
 
@@ -82,7 +82,7 @@ def test_run_hooks_apply_fail_sets_result_fail(tmp_path: Path, make_workspace) -
         lambda ws, ctx: [],
         lambda ws, ctx: (False, "X failed"),
     )
-    core.run_hooks([hook], result, apply=True, skip=set())
+    core.run_hooks([hook], result, apply=True)
     assert result.remediations[0]["status"] == "fail"
     assert result.status == "fail"
 
@@ -96,19 +96,7 @@ def test_run_hooks_no_detect_no_entry(tmp_path: Path, make_workspace) -> None:
         lambda ws, ctx: [],
         lambda ws, ctx: (True, ""),
     )
-    core.run_hooks([hook], result, apply=True, skip=set())
-    assert result.remediations == []
-
-
-def test_run_hooks_skip_set_bypasses_hook(tmp_path: Path, make_workspace) -> None:
-    result = _result(tmp_path, make_workspace=make_workspace)
-    hook = core.RemediationHook(
-        "skip_me",
-        lambda ws, ctx: True,
-        lambda ws, ctx: ["should not appear"],
-        lambda ws, ctx: (True, ""),
-    )
-    core.run_hooks([hook], result, apply=False, skip={"skip_me"})
+    core.run_hooks([hook], result, apply=True)
     assert result.remediations == []
 
 
@@ -127,7 +115,7 @@ def test_run_hooks_exception_caught_per_hook(tmp_path: Path, make_workspace) -> 
         lambda ws, ctx: ["would do good"],
         lambda ws, ctx: (True, ""),
     )
-    core.run_hooks([bad, good], result, apply=False, skip=set())
+    core.run_hooks([bad, good], result, apply=False)
     ids = [e["id"] for e in result.remediations]
     assert "bad" in ids
     assert result.remediations[0]["status"] == "fail"
@@ -143,7 +131,7 @@ def test_run_hooks_files_included_in_entry(tmp_path: Path, make_workspace) -> No
         lambda ws, ctx: (True, "ok"),
         files=lambda ws: ["biome.json"],
     )
-    core.run_hooks([hook], result, apply=True, skip=set())
+    core.run_hooks([hook], result, apply=True)
     assert result.remediations[0].get("files") == ["biome.json"]
 
 
@@ -156,7 +144,7 @@ def test_run_hooks_empty_files_not_included(tmp_path: Path, make_workspace) -> N
         lambda ws, ctx: (True, "ok"),
         files=lambda ws: [],  # empty — should not appear in entry
     )
-    core.run_hooks([hook], result, apply=True, skip=set())
+    core.run_hooks([hook], result, apply=True)
     assert "files" not in result.remediations[0]
 
 
@@ -171,37 +159,16 @@ def test_dispatch_uses_provided_registry(tmp_path: Path, make_workspace) -> None
         lambda ws, ctx: ["plan line"],
         lambda ws, ctx: (True, "applied"),
     )
-    core.dispatch(result, apply=False, skip=set(), _registry=[hook])
+    core.dispatch(result, apply=False, _registry=[hook])
     assert result.remediations[0]["id"] == "custom"
     assert result.remediations[0]["status"] == "pending"
 
 
 def test_dispatch_empty_registry_no_op(tmp_path: Path, make_workspace) -> None:
     result = _result(tmp_path, make_workspace=make_workspace)
-    core.dispatch(result, apply=True, skip=set(), _registry=[])
+    core.dispatch(result, apply=True, _registry=[])
     assert result.remediations == []
     assert result.status == "ok"
-
-
-def test_dispatch_global_registry_populated(tmp_path: Path) -> None:
-    """After the ecosystem packages load, the registry has unique expected hooks."""
-    core.load_ecosystem_hooks()
-
-    ids = [h.id for h in core._GLOBAL_REGISTRY]
-    expected = {
-        "biome_schema",
-        "playwright_browsers",
-        "codegen",
-        "package_manager_pin",
-        "ruff_fix",
-        "gofmt",
-        "go_generate",
-        "cargo_fix",
-        "deno_fix",
-    }
-    assert expected.issubset(set(ids)), f"missing hooks: {expected - set(ids)}"
-    # Hook ids must be unique after full orchestration import set.
-    assert len(ids) == len(set(ids)), f"duplicate hook ids in registry: {ids}"
 
 
 # ── VERBOSE flag observable through run_hooks ──────────────────────────────
@@ -221,7 +188,7 @@ def test_verbose_flag_observed(
     )
     process.set_verbose(True)
     try:
-        core.run_hooks([hook], result, apply=True, skip=set())
+        core.run_hooks([hook], result, apply=True)
     finally:
         process.set_verbose(False)
 

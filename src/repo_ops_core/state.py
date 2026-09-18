@@ -20,9 +20,6 @@ Schema (version 1)::
       }
     }
 
-All public helpers silently become no-ops (returning ``None``) when the
-environment variable ``REPO_OPS_NO_STATE=1`` is set.
-
 A module-level lazy cache (``_CACHE``) is populated on first access and
 flushed to disk via an ``atexit`` handler registered on first write, so
 callers that cannot pass a state dict around (e.g. workers in run.py)
@@ -63,10 +60,6 @@ def _state_path() -> Path:
     return base / "repo-ops" / "state.json"
 
 
-def _no_state() -> bool:
-    return os.environ.get("REPO_OPS_NO_STATE") == "1"
-
-
 def _ensure_loaded() -> dict[str, Any]:
     """Return the module-level cache, loading from disk on first call.
 
@@ -96,7 +89,7 @@ def _read_from_disk() -> dict[str, Any]:
 
 def _flush_cache() -> None:
     """atexit hook: persist the in-memory cache to disk if it was modified."""
-    if _DIRTY and _CACHE is not None and not _no_state():
+    if _DIRTY and _CACHE is not None:
         _write_to_disk(_CACHE)
 
 
@@ -124,10 +117,8 @@ def record_dirty_skip(
     """Record a dirty-skip event for *repo_path* in *state*.
 
     Increments the run counter and sets ``first_seen`` on the first call.
-    Returns the ``first_seen`` date.  Returns ``None`` when ``REPO_OPS_NO_STATE=1``.
+    Returns the ``first_seen`` date.
     """
-    if _no_state():
-        return None
     key = str(repo_path)
     dirty_skips: dict[str, Any] = state.setdefault("dirty_skips", {})
     entry: dict[str, Any] | None = dirty_skips.get(key)
@@ -144,10 +135,8 @@ def clear_dirty_skip(
 ) -> None:
     """Remove any dirty-skip tracking entry for *repo_path* from *state*.
 
-    No-op when ``REPO_OPS_NO_STATE=1`` or entry does not exist.
+    No-op when the entry does not exist.
     """
-    if _no_state():
-        return
     dirty_skips = state.get("dirty_skips", {})
     dirty_skips.pop(str(repo_path), None)
 
@@ -164,8 +153,6 @@ def cache_record_dirty_skip(repo_path: str | Path, today: date) -> date | None:
     The cache is flushed to disk at process exit via ``atexit``.
     """
     global _DIRTY
-    if _no_state():
-        return None
     state = _ensure_loaded()
     with _LOCK:
         first_seen = record_dirty_skip(state, repo_path, today)
@@ -176,8 +163,6 @@ def cache_record_dirty_skip(repo_path: str | Path, today: date) -> date | None:
 def cache_clear_dirty_skip(repo_path: str | Path) -> None:
     """Remove any dirty-skip entry for *repo_path* from the module-level cache."""
     global _DIRTY
-    if _no_state():
-        return
     state = _ensure_loaded()
     key = str(repo_path)
     with _LOCK:
@@ -188,8 +173,6 @@ def cache_clear_dirty_skip(repo_path: str | Path) -> None:
 
 def cache_get_dirty_skip(repo_path: str | Path) -> dict[str, Any] | None:
     """Return the raw dirty-skip entry for *repo_path*, or ``None``."""
-    if _no_state():
-        return None
     state = _ensure_loaded()
     dirty_skips: dict[str, Any] = state.get("dirty_skips") or {}
     entry = dirty_skips.get(str(repo_path))
@@ -240,8 +223,6 @@ def record_behind_latest(
     Never creates an entry for a repo with nothing behind.  Returns the
     surviving entry, or ``None`` when pruned, absent, or state is disabled.
     """
-    if _no_state():
-        return None
     key = str(repo_path)
     table: dict[str, Any] = state.setdefault("behind_latest", {})
     entry: dict[str, Any] | None = table.get(key)
@@ -285,8 +266,6 @@ def cache_record_behind_latest(
     entry and *count* is 0, so clean repos never bloat the state file.
     """
     global _DIRTY
-    if _no_state():
-        return
     state = _ensure_loaded()
     key = str(repo_path)
     with _LOCK:
@@ -314,8 +293,6 @@ def cache_get_staleness(repo_path: str | Path, today: date) -> dict[str, Any] | 
       rounded to 1 decimal; ``0.0`` when nothing is behind
     - ``new_behind_since_last_run`` — ``max(0, total - previous run total)``
     """
-    if _no_state():
-        return None
     state = _ensure_loaded()
     with _LOCK:
         table = state.get("behind_latest") or {}

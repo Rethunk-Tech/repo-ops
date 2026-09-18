@@ -16,7 +16,7 @@ from http.client import HTTPSConnection
 from pathlib import Path
 from urllib.parse import quote
 
-from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
+from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import restore_file, snapshot_file
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
@@ -39,7 +39,7 @@ def _cargo_registry_versions(crate_name: str) -> tuple[str, ...]:
         seen_queries.add(query)
         connection = HTTPSConnection(
             "crates.io",
-            timeout=resolve_timeout_check(),
+            timeout=TIMEOUT_CHECK,
         )
         try:
             connection.request(
@@ -117,7 +117,7 @@ def _cargo_resolved_versions(
     proc = run(
         ["cargo", "metadata", "--format-version", "1"],
         ws.path,
-        timeout=resolve_timeout_check() if timeout is None else timeout,
+        timeout=TIMEOUT_CHECK if timeout is None else timeout,
     )
     if proc.returncode != 0:
         return {}
@@ -168,7 +168,7 @@ def _filter_held_rust_changes(ws: Workspace, changes: list[Change]) -> list[Chan
 
 def _enforce_version_ceilings(ws: Workspace) -> None:
     """Clamp resolved Cargo crates that exceed active hold ceilings."""
-    timeout = resolve_timeout_apply()
+    timeout = TIMEOUT_APPLY
     resolved = _cargo_resolved_versions(ws, timeout=timeout)
     for crate_name, versions in sorted(resolved.items()):
         rule = _resolve_crate_hold(ws, crate_name)
@@ -202,7 +202,7 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
                     target,
                 ],
                 ws.path,
-                timeout=resolve_timeout_apply(),
+                timeout=TIMEOUT_APPLY,
             )
             if proc.returncode != 0:
                 raise RuntimeError(
@@ -425,7 +425,7 @@ def _apply_cargo_targeted_bumps(
                 candidate.to,
             ],
             ws.path,
-            timeout=resolve_timeout_apply(),
+            timeout=TIMEOUT_APPLY,
         )
         lock_advanced = snapshot_file(lockfile) != lock_snapshot
         if proc.returncode == 0 and lock_advanced:
@@ -439,7 +439,7 @@ def _apply_cargo_targeted_bumps(
 def check_rust(
     ws: Workspace,
 ) -> list[Change] | tuple[list[Change], list[Change]]:
-    proc = run(["cargo", "update", "--dry-run"], ws.path, timeout=resolve_timeout_check())
+    proc = run(["cargo", "update", "--dry-run"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "cargo update --dry-run failed")
     changes: list[Change] = []
@@ -453,7 +453,7 @@ def check_rust(
 
 
 def apply_rust(ws: Workspace) -> list[Change] | None:
-    proc = run(["cargo", "update"], ws.path, timeout=resolve_timeout_apply())
+    proc = run(["cargo", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "cargo update failed")
     _enforce_version_ceilings(ws)

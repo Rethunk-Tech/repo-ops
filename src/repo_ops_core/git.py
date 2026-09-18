@@ -6,7 +6,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from repo_ops_core.constants import resolve_git_timeout
+from repo_ops_core.constants import GIT_TIMEOUT
 
 
 def run_git(
@@ -19,7 +19,7 @@ def run_git(
     if not repo_path.is_dir():
         msg = f"git -C target is not a directory: {repo_path}"
         raise FileNotFoundError(msg)
-    effective_timeout = timeout if timeout is not None else resolve_git_timeout()
+    effective_timeout = timeout if timeout is not None else GIT_TIMEOUT
     effective_env = {**os.environ, **env} if env is not None else None
     return subprocess.run(
         ["git", "-C", str(repo_path), *args],

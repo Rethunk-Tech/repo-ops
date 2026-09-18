@@ -4,21 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import subprocess
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
-from repo_ops_core.config import (
-    ambient_env,
-    coerce_bool_setting,
-    load_global_config,
-    load_repo_config,
-    resolve_setting,
-)
-from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
+from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import (
@@ -28,9 +18,6 @@ from repo_ops_core.version_utils import (
 )
 from repo_ops_models import Change, Workspace
 
-GO_WORK_SYNC_ENV = "REPO_OPS_GO_WORK_SYNC"
-GO_DIRECTIVE_ENV = "REPO_OPS_GO_DIRECTIVE"
-GO_TOOLCHAIN_ENV = "REPO_OPS_GO_TOOLCHAIN"
 _GO_GET_BATCH = 40
 
 logger = logging.getLogger(__name__)
@@ -144,33 +131,6 @@ def _valid_go_get_target(target: str) -> bool:
     return bool(path) and not path.startswith("-")
 
 
-def _process_env_cli_override(env_var: str) -> str | None:
-    """Return a process value changed after the ambient environment snapshot.
-
-    Kept local (mirrors ``repo_ops_core.config.process_env_cli_override``)
-    rather than imported: it must read *this module's* ``ambient_env``
-    binding so callers can substitute a per-test snapshot for it.
-    """
-    ambient = ambient_env()
-    if ambient is None:
-        return None
-    process_value = os.environ.get(env_var)
-    if env_var not in ambient:
-        return process_value
-    return process_value if process_value != ambient[env_var] else None
-
-
-def _resolve_go_setting(name: str, env_var: str, ws: Workspace | None = None) -> Any:
-    """Resolve one Go setting: CLI > env > repo config > global config > default."""
-    return resolve_setting(
-        name,
-        cli_value=_process_env_cli_override(env_var),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
-    )
-
-
 def _iter_go_list_modules(stdout: str) -> Iterator[dict]:
     """Yield module dicts from ``go list -m -u -json`` stdout.
 
@@ -199,7 +159,7 @@ def _gomod_require_paths(ws: Workspace) -> set[str] | None:
     ``go mod tidy``, so reporting them produces ghost upgrades.
     Returns None when go.mod cannot be read (callers then skip filtering).
     """
-    proc = run(["go", "mod", "edit", "-json"], ws.path, timeout=resolve_timeout_check())
+    proc = run(["go", "mod", "edit", "-json"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         return None
     try:
@@ -248,7 +208,7 @@ def _resolved_go_module_version(ws: Workspace, module_path: str) -> str | None:
     proc = run(
         ["go", "list", "-m", "-json", module_path],
         ws.path,
-        timeout=resolve_timeout_check(),
+        timeout=TIMEOUT_CHECK,
     )
     if proc.returncode != 0:
         return None
@@ -300,7 +260,7 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
         proc = run(
             ["go", "get", f"{module_path}@{_go_ceiling_query(rule.max_version)}"],
             ws.path,
-            timeout=resolve_timeout_apply(),
+            timeout=TIMEOUT_APPLY,
         )
         if proc.returncode != 0:
             raise RuntimeError(
@@ -315,13 +275,9 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
             )
         corrected_any = True
     if corrected_any:
-        proc = run(["go", "mod", "tidy"], ws.path, timeout=resolve_timeout_apply())
+        proc = run(["go", "mod", "tidy"], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             _raise_classified(proc.stderr, "go mod tidy failed", ws.path)
-
-
-def _go_work_sync_enabled(ws: Workspace | None = None) -> bool:
-    return coerce_bool_setting(_resolve_go_setting("go_work_sync", GO_WORK_SYNC_ENV, ws))
 
 
 # ---------------------------------------------------------------------------
@@ -417,152 +373,14 @@ def _plan_go_work_directive_changes(go_work_dir: Path) -> list[Change]:
     return []
 
 
-def _go_directive_target(ws: Workspace | None = None) -> str | None:
-    """Return the configured target ``go`` directive version.
-
-    Returns ``None`` when the env var is unset or empty.
-    """
-    raw = _resolve_go_setting("go_directive", GO_DIRECTIVE_ENV, ws)
-    return str(raw).strip() if raw is not None and str(raw).strip() else None
-
-
-def _go_toolchain_target(ws: Workspace | None = None) -> str | None:
-    """Return the configured target ``toolchain`` version.
-
-    Normalises the value by stripping a leading ``go`` prefix so callers always
-    work with the bare version string (e.g. ``"1.25.10"``).  Returns ``None``
-    when unset or empty.
-    """
-    raw = _resolve_go_setting("go_toolchain", GO_TOOLCHAIN_ENV, ws)
-    if not raw:
-        return None
-    return str(raw).strip().removeprefix("go") or None
-
-
-def _gomod_toolchain_directive(ws: Workspace) -> str | None:
-    """Return the current ``toolchain`` directive from go.mod via ``go mod edit -json``.
-
-    Returns ``None`` when the directive is absent or the command fails.
-    """
-    proc = run(["go", "mod", "edit", "-json"], ws.path, timeout=resolve_timeout_check())
-    if proc.returncode != 0:
-        return None
-    try:
-        doc = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(doc, dict):
-        return None
-    toolchain = doc.get("Toolchain")
-    if not isinstance(toolchain, str) or not toolchain:
-        return None
-    # Toolchain is stored as "goX.Y.Z" in go.mod JSON; strip the prefix.
-    return toolchain.removeprefix("go")
-
-
-def _plan_fleet_directive_changes(ws: Workspace) -> list[Change]:
-    """Return Changes for fleet-wide ``go`` directive and/or ``toolchain`` bumps.
-
-    Reads ``REPO_OPS_GO_DIRECTIVE`` and ``REPO_OPS_GO_TOOLCHAIN``.  For each
-    set target, compares against the current value in the module's go.mod and
-    emits a Change when an upgrade is needed.  Returns ``[]`` when both vars
-    are unset (zero behaviour change by default).
-    """
-    changes: list[Change] = []
-
-    directive_target = _go_directive_target(ws)
-    toolchain_target = _go_toolchain_target(ws)
-    if not directive_target and not toolchain_target:
-        return []
-
-    # Read the current go directive from go.mod.
-    if directive_target:
-        proc = run(["go", "mod", "edit", "-json"], ws.path, timeout=resolve_timeout_check())
-        current_go: str | None = None
-        if proc.returncode == 0:
-            try:
-                doc = json.loads(proc.stdout)
-                if isinstance(doc, dict):
-                    current_go = doc.get("Go") or None
-            except json.JSONDecodeError:
-                pass
-        if current_go is None:
-            # Fallback: parse go.mod text directly.
-            try:
-                mod_text = (ws.path / "go.mod").read_text(encoding="utf-8")
-                current_go = _parse_go_directive(mod_text)
-            except OSError:
-                pass
-        if current_go is not None:
-            target_tuple = _go_directive_version_tuple(directive_target)
-            current_tuple = _go_directive_version_tuple(current_go)
-            if target_tuple > current_tuple:
-                changes.append(Change("go directive", current_go, directive_target))
-
-    if toolchain_target:
-        current_toolchain = _gomod_toolchain_directive(ws)
-        if current_toolchain is not None:
-            target_tuple = _go_directive_version_tuple(toolchain_target)
-            current_tuple = _go_directive_version_tuple(current_toolchain)
-            if target_tuple > current_tuple:
-                changes.append(Change("go toolchain", current_toolchain, toolchain_target))
-        else:
-            # No toolchain directive yet; treat as needing the bump.
-            changes.append(Change("go toolchain", "(none)", toolchain_target))
-
-    return changes
-
-
-def _try_go_work_use(ws: Workspace) -> bool:
-    """Run ``go work use`` in the registered go.work directory for *ws*.
-
-    Returns True when the command succeeds (exit 0), False otherwise.
-    Only called when ``REPO_OPS_GO_WORK_SYNC=1`` is set and a go.work
-    directory is registered for this workspace.
-    """
-    go_work_dir = _go_work_dirs.get(ws.path.resolve())
-    if go_work_dir is None:
-        return False
-    proc = run(["go", "work", "use"], go_work_dir, timeout=resolve_timeout_apply())
-    return proc.returncode == 0
-
-
 def _raise_classified(stderr: str, fallback: str, ws_path: Path) -> None:
     """Raise RuntimeError with a classified (possibly ``[env] ``-prefixed) message."""
     msg = classify_go_error(stderr or fallback, ws_path)
     raise RuntimeError(msg)
 
 
-def _run_with_go_work_retry(
-    cmd: list[str], ws: Workspace, timeout: int
-) -> subprocess.CompletedProcess[str]:
-    """Run *cmd* and, on go.work-version-mismatch error, optionally retry once.
-
-    When ``REPO_OPS_GO_WORK_SYNC=1`` is set and the first run fails with the
-    go.work directive mismatch pattern, run ``go work use`` in the registered
-    go.work directory and re-issue the same command a single time.  If the
-    retry also fails, the retry stderr is used for classification.
-    """
-    proc = run(cmd, ws.path, timeout=timeout)
-    if proc.returncode == 0:
-        return proc
-    stderr = proc.stderr.strip()
-    if (
-        _go_work_sync_enabled(ws)
-        and (
-            "listed in go.work file requires go >=" in stderr
-            or ("reading go.work" in stderr and "requires go" in stderr)
-        )
-        and _try_go_work_use(ws)
-    ):
-        proc = run(cmd, ws.path, timeout=timeout)
-    return proc
-
-
 def _changes_from_go_list_json(ws: Workspace) -> list[Change]:
-    proc = _run_with_go_work_retry(
-        ["go", "list", "-m", "-u", "-json", "all"], ws, timeout=resolve_timeout_check()
-    )
+    proc = run(["go", "list", "-m", "-u", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go list failed", ws.path)
     recorded: set[str] | None = None
@@ -585,9 +403,7 @@ def _changes_from_go_list_json(ws: Workspace) -> list[Change]:
 
 
 def _explicit_go_get_targets(ws: Workspace) -> list[str]:
-    proc = _run_with_go_work_retry(
-        ["go", "list", "-m", "-u", "-json", "all"], ws, timeout=resolve_timeout_check()
-    )
+    proc = run(["go", "list", "-m", "-u", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go list failed", ws.path)
     recorded: set[str] | None = None
@@ -624,11 +440,7 @@ def check_go(ws: Workspace) -> list[Change]:
     work_changes: list[Change] = []
     if go_work_dir is not None:
         work_changes = _plan_go_work_directive_changes(go_work_dir)
-
-    # Append fleet-wide directive/toolchain bumps (opt-in via env vars).
-    fleet_changes = _plan_fleet_directive_changes(ws)
-
-    return work_changes + dep_changes + fleet_changes
+    return work_changes + dep_changes
 
 
 def _apply_go_work_directive(ws: Workspace) -> None:
@@ -644,67 +456,22 @@ def _apply_go_work_directive(ws: Workspace) -> None:
     work_changes = _plan_go_work_directive_changes(go_work_dir)
     if not work_changes:
         return
-    proc = run(["go", "work", "use"], go_work_dir, timeout=resolve_timeout_apply())
+    proc = run(["go", "work", "use"], go_work_dir, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go work use failed", ws.path)
-
-
-def _apply_fleet_directive(ws: Workspace) -> None:
-    """Apply fleet-wide ``go`` directive and/or ``toolchain`` bumps to go.mod.
-
-    Reads ``REPO_OPS_GO_DIRECTIVE`` and ``REPO_OPS_GO_TOOLCHAIN``.  For each
-    configured target that is newer than the current value, runs
-    ``go mod edit`` followed by ``go mod tidy``.  No-ops when both env vars
-    are unset.
-    """
-    directive_target = _go_directive_target(ws)
-    toolchain_target = _go_toolchain_target(ws)
-    if not directive_target and not toolchain_target:
-        return
-
-    fleet_changes = _plan_fleet_directive_changes(ws)
-    if not fleet_changes:
-        return
-
-    names = {c.name for c in fleet_changes}
-
-    if "go directive" in names and directive_target:
-        proc = run(
-            ["go", "mod", "edit", f"-go={directive_target}"],
-            ws.path,
-            timeout=resolve_timeout_apply(),
-        )
-        if proc.returncode != 0:
-            _raise_classified(proc.stderr, "go mod edit -go failed", ws.path)
-
-    if "go toolchain" in names and toolchain_target:
-        proc = run(
-            ["go", "mod", "edit", f"-toolchain=go{toolchain_target}"],
-            ws.path,
-            timeout=resolve_timeout_apply(),
-        )
-        if proc.returncode != 0:
-            _raise_classified(proc.stderr, "go mod edit -toolchain failed", ws.path)
-
-    proc = run(["go", "mod", "tidy"], ws.path, timeout=resolve_timeout_apply())
-    if proc.returncode != 0:
-        _raise_classified(proc.stderr, "go mod tidy failed", ws.path)
 
 
 def apply_go(ws: Workspace) -> None:
     # 1. Sync go.work directive first (prevents downstream go list failures).
     _apply_go_work_directive(ws)
 
-    # 2. Fleet-wide directive/toolchain bumps (opt-in via env vars).
-    _apply_fleet_directive(ws)
-
     targets = _explicit_go_get_targets(ws)
     for i in range(0, len(targets), _GO_GET_BATCH):
         batch = targets[i : i + _GO_GET_BATCH]
-        proc = run(["go", "get", "--", *batch], ws.path, timeout=resolve_timeout_apply())
+        proc = run(["go", "get", "--", *batch], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             _raise_classified(proc.stderr, "go get failed", ws.path)
-    proc = run(["go", "mod", "tidy"], ws.path, timeout=resolve_timeout_apply())
+    proc = run(["go", "mod", "tidy"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go mod tidy failed", ws.path)
     _enforce_version_ceilings(ws)

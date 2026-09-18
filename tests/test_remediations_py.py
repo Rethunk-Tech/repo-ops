@@ -194,7 +194,7 @@ def test_run_remediations_plan_mode(tmp_path: Path, make_workspace, make_change)
         patch.object(py_rem, "REMEDIATIONS", [fake]),
         patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"),
     ):
-        py_rem.run_remediations(result, apply=False, skip=set())
+        py_rem.run_remediations(result, apply=False)
 
     assert len(result.remediations) == 1
     assert result.remediations[0]["status"] == "pending"
@@ -223,24 +223,7 @@ def test_run_remediations_apply_mode(
         patch("repo_ops_upgrade_remediations_py.remediations.run") as mock_run,
     ):
         mock_run.side_effect = [fix_ok, fmt_ok]
-        py_rem.run_remediations(result, apply=True, skip=set())
+        py_rem.run_remediations(result, apply=True)
 
     assert result.remediations[0]["status"] == "applied"
     assert result.status == "ok"
-
-
-def test_ruff_skipped_in_skip_set(tmp_path: Path, make_workspace, make_change) -> None:
-    (tmp_path / "ruff.toml").write_text("")
-    result = _result(tmp_path, make_workspace=make_workspace)
-    result.changes = [make_change("httpx")]
-
-    fake = py_rem.RemediationHook(
-        "ruff_fix",
-        py_rem.detect_ruff,
-        py_rem.report_ruff,
-        py_rem.apply_ruff,
-    )
-    with patch.object(py_rem, "REMEDIATIONS", [fake]):
-        py_rem.run_remediations(result, apply=True, skip={"ruff_fix"})
-
-    assert result.remediations == []

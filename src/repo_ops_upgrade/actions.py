@@ -754,7 +754,7 @@ def _run_actionlint(
     finding).  See :func:`_classify_actionlint_severity` for the classification
     logic.
 
-    When *lint_cache* is provided (and ``REPO_OPS_NO_LINT_CACHE`` is unset),
+    When *lint_cache* is provided,
     the result is looked up by content-hash before invoking the subprocess and
     stored after a cache miss.  The cache dict is mutated in place; the caller
     is responsible for persisting it to disk at the end of the run.
@@ -762,7 +762,7 @@ def _run_actionlint(
     if not shutil.which("actionlint"):
         return None
 
-    use_cache = lint_cache is not None and not os.environ.get("REPO_OPS_NO_LINT_CACHE")
+    use_cache = lint_cache is not None
 
     wf_bytes: bytes | None = None
     cache_key: str | None = None

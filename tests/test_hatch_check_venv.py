@@ -262,7 +262,7 @@ def test_check_hatch_pip_install_uses_timeout_check(
 
 
 # ---------------------------------------------------------------------------
-# gate uv.lock creation behind REPO_OPS_HATCH_MIGRATE_UV_LOCK
+# uv.lock creation for hatch projects without one
 # ---------------------------------------------------------------------------
 
 
@@ -351,37 +351,3 @@ def test_check_hatch_with_uv_lock_delegates_to_check_uv_lock(tmp_path: Path, mak
     assert run_calls == [["uv", "lock", "--upgrade", "--dry-run"]]
     assert len(changes) == 1
     assert changes[0].name == "foo"
-
-
-def test_check_hatch_venv_and_list_use_timeout_check(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
-) -> None:
-    """Uv venv and uv pip list --outdated use resolve_timeout_check."""
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "demo"\nversion = "0.1.0"\n',
-        encoding="utf-8",
-    )
-    ws = _make_ws(tmp_path)
-    timeouts: dict[str, int | None] = {}
-
-    def fake_run(
-        cmd: list[str], cwd: Path, timeout: int | None = None, env: object = None
-    ) -> subprocess.CompletedProcess[str]:
-        if cmd[:2] == ["uv", "venv"]:
-            Path(cmd[2]).mkdir(parents=True, exist_ok=True)
-            timeouts["venv"] = timeout
-        elif cmd[:3] == ["uv", "pip", "install"]:
-            timeouts["install"] = timeout
-        elif cmd[:3] == ["uv", "pip", "list"]:
-            timeouts["list"] = timeout
-        return make_proc()
-
-    with (
-        patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
-        patch("repo_ops_py_hatch.hatch.run", fake_run),
-    ):
-        check_hatch(ws)
-
-    assert timeouts.get("venv") == TIMEOUT_CHECK
-    assert timeouts.get("install") == TIMEOUT_CHECK
-    assert timeouts.get("list") == TIMEOUT_CHECK

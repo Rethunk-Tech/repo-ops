@@ -95,33 +95,18 @@ def test_emit_progress_fail_multiline_error_uses_first_line(tmp_path: Path) -> N
     assert "second line" not in line
 
 
-def test_emit_progress_suppressed_by_env_var(tmp_path: Path) -> None:
+def test_workspace_result_to_json_includes_elapsed_s(tmp_path: Path) -> None:
+    ws = _make_ws(tmp_path)
+    result = WorkspaceResult(workspace=ws, elapsed_s=2.567)
+    data = result.to_json()
+    assert data["elapsed_s"] == 2.57  # rounded to 2 decimal places
+
+
+def test_workspace_result_to_json_omits_elapsed_s_when_none(tmp_path: Path) -> None:
     ws = _make_ws(tmp_path)
     result = WorkspaceResult(workspace=ws)
-
-    buf = StringIO()
-    with (
-        patch.object(sys, "stderr", buf),
-        patch.dict(os.environ, {"REPO_OPS_NO_PROGRESS": "1"}),
-    ):
-        _emit_progress(result, elapsed_s=0.1)
-
-    assert buf.getvalue() == ""
-
-
-def test_emit_progress_not_suppressed_when_env_var_absent(tmp_path: Path) -> None:
-    ws = _make_ws(tmp_path)
-    result = WorkspaceResult(workspace=ws)
-
-    buf = StringIO()
-    env = {k: v for k, v in os.environ.items() if k != "REPO_OPS_NO_PROGRESS"}
-    with (
-        patch.object(sys, "stderr", buf),
-        patch.dict(os.environ, env, clear=True),
-    ):
-        _emit_progress(result, elapsed_s=0.1)
-
-    assert buf.getvalue().strip() != ""
+    data = result.to_json()
+    assert "elapsed_s" not in data
 
 
 def test_emit_progress_no_torn_lines_under_parallelism(tmp_path: Path) -> None:
@@ -141,7 +126,7 @@ def test_emit_progress_no_torn_lines_under_parallelism(tmp_path: Path) -> None:
             with _collect_lock:
                 lines.append(str(args[0]) if args else "")
 
-    env = {k: v for k, v in os.environ.items() if k != "REPO_OPS_NO_PROGRESS"}
+    env = dict(os.environ)
     with (
         patch("repo_ops_upgrade.orchestration.print", side_effect=capturing_print),
         patch.dict(os.environ, env, clear=True),
@@ -175,7 +160,7 @@ def test_process_workspace_sets_elapsed_s(tmp_path: Path) -> None:
         _patch(
             "repo_ops_upgrade.orchestration.remediations.run_remediations",
         ),
-        patch.dict(os.environ, {"REPO_OPS_NO_PROGRESS": "1"}),
+        patch.dict(os.environ, {}),
     ):
         out = process_workspace(
             result,
@@ -186,17 +171,3 @@ def test_process_workspace_sets_elapsed_s(tmp_path: Path) -> None:
 
     assert out.elapsed_s is not None
     assert out.elapsed_s >= 0.0
-
-
-def test_workspace_result_to_json_includes_elapsed_s(tmp_path: Path) -> None:
-    ws = _make_ws(tmp_path)
-    result = WorkspaceResult(workspace=ws, elapsed_s=2.567)
-    data = result.to_json()
-    assert data["elapsed_s"] == 2.57  # rounded to 2 decimal places
-
-
-def test_workspace_result_to_json_omits_elapsed_s_when_none(tmp_path: Path) -> None:
-    ws = _make_ws(tmp_path)
-    result = WorkspaceResult(workspace=ws)
-    data = result.to_json()
-    assert "elapsed_s" not in data

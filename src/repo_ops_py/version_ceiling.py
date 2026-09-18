@@ -10,7 +10,7 @@ from __future__ import annotations
 import subprocess
 from collections.abc import Callable
 
-from repo_ops_core.constants import resolve_timeout_apply
+from repo_ops_core.constants import TIMEOUT_APPLY
 from repo_ops_core.holds import resolve_package_hold
 from repo_ops_core.version_utils import hold_ceiling_spec, version_satisfies_ceiling
 from repo_ops_models import Workspace
@@ -46,7 +46,7 @@ def enforce_version_ceilings(
             proc = run(
                 clamp_command(name, spec),
                 ws.path,
-                timeout=resolve_timeout_apply(),
+                timeout=TIMEOUT_APPLY,
             )
         finally:
             if original is not None:

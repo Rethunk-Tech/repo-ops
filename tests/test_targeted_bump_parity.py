@@ -1,12 +1,7 @@
 """Upgrade-parity coverage across managers.
 
-1. The default full sweep flips the container/pre-commit/submodule cross-major
-   gates alongside bun/pnpm/yarn and go; ``--conservative`` flips all off.
-2. ``REPO_OPS_BUN_TARGETED_BUMP`` defaults on with the sweep, matching the
-   yarn/npm/pnpm wiring; ``--conservative`` disables it.
-3. ``_behind_latest_hint`` gives npm/pnpm/bun the same "flag not passed ->
-   name the flag; flag passed -> targeted bump was tried" treatment yarn
-   already had.
+``_behind_latest_hint`` names, per manager, why a targeted bump could not
+move a package.
 
 No subprocess or network calls are made.
 """
@@ -37,26 +32,6 @@ def _bun_workspace(tmp_path: Path, init_git_repo) -> None:
         encoding="utf-8",
     )
     (tmp_path / "bun.lock").write_text("", encoding="utf-8")
-
-
-_LATEST_UMBRELLA_VARS = (
-    "REPO_OPS_BUN_UPDATE_LATEST",
-    "REPO_OPS_PNPM_UPDATE_LATEST",
-    "REPO_OPS_YARN_UPDATE_LATEST",
-    "REPO_OPS_DENO_UPDATE_LATEST",
-    "REPO_OPS_GO_UPGRADE_MODE",
-    "REPO_OPS_CONTAINER_UPDATE_LATEST",
-    "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
-    "REPO_OPS_SUBMODULE_UPDATE_LATEST",
-)
-
-
-def _clear_env(monkeypatch, names: tuple[str, ...]) -> None:
-    # Seed then delete so monkeypatch reliably restores the pre-test state
-    # (absent) on teardown, mirroring test_behind_latest.py's pattern.
-    for var in names:
-        monkeypatch.setenv(var, "__sentinel__")
-        monkeypatch.delenv(var)
 
 
 # ---------------------------------------------------------------------------

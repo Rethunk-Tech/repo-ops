@@ -212,8 +212,3 @@ def test_umbrella_commit_message_shape(
     assert msg.startswith("chore(submodules): bump 1 child pin(s)")
     # Body must name the child.
     assert "libx" in msg
-
-
-# ---------------------------------------------------------------------------
-# Dry-run: no git commands, correct outcome status
-# ---------------------------------------------------------------------------

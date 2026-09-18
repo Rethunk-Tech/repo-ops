@@ -10,7 +10,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from repo_ops_core.constants import resolve_timeout_apply
+from repo_ops_core.constants import TIMEOUT_APPLY
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
@@ -262,7 +262,7 @@ def apply_with_members(
         merge_changes(behind, _in_member(apply_dir(member, ws.path), ws, member))
     if peer_lockstep(ws, [], write=True):
         # bun.lock mirrors member peer ranges and --frozen-lockfile passes a stale copy.
-        proc = run([ws.manager, "install"], ws.path, timeout=resolve_timeout_apply())
+        proc = run([ws.manager, "install"], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             raise RuntimeError(f"{ws.manager} install after peer lockstep: {_proc_error(proc)}")
     return behind

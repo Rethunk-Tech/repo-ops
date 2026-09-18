@@ -249,42 +249,6 @@ def test_content_change_is_cache_miss(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Kill-switch: REPO_OPS_NO_LINT_CACHE=1
-# ---------------------------------------------------------------------------
-
-
-def test_no_lint_cache_env_disables_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """REPO_OPS_NO_LINT_CACHE=1 must bypass read and write."""
-    monkeypatch.setenv("REPO_OPS_NO_LINT_CACHE", "1")
-    wf = _wf(tmp_path)
-    version = "1.0.0"
-    # Pre-populate cache with a "pass" entry.
-    wf_bytes = wf.read_bytes()
-    key = _lint_cache_key(wf_bytes, version)
-    lint_cache: dict = {key: {"result": "would be hit", "ts": time.time()}}
-
-    subprocess_called = []
-
-    def fake_run(*_: object, **__: object) -> MagicMock:
-        subprocess_called.append(True)
-        return _actionlint_pass()
-
-    with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/actionlint"),
-        patch("repo_ops_upgrade.actions.run", side_effect=fake_run),
-        patch("repo_ops_upgrade.actions._get_actionlint_version", return_value=version),
-    ):
-        result = _run_actionlint(wf, tmp_path, lint_cache=lint_cache)
-
-    # Kill-switch means the cache is ignored → subprocess ran.
-    assert subprocess_called, "subprocess must run when kill-switch is set"
-    # The existing pre-populated cache entry must not have been overwritten
-    # (cache write also skipped).
-    assert lint_cache[key]["result"] == "would be hit"
-    assert result is None
-
-
-# ---------------------------------------------------------------------------
 # scan_actions integration: cache is persisted after a run
 # ---------------------------------------------------------------------------
 
@@ -292,7 +256,6 @@ def test_no_lint_cache_env_disables_cache(tmp_path: Path, monkeypatch: pytest.Mo
 def test_scan_actions_saves_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """scan_actions must write the lint cache file after processing workflows."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.delenv("REPO_OPS_NO_LINT_CACHE", raising=False)
 
     wf_dir = tmp_path / ".github" / "workflows"
     wf_dir.mkdir(parents=True)

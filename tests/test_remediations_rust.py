@@ -136,7 +136,7 @@ def test_run_remediations_plan_mode(tmp_path: Path, make_workspace, make_change)
         rust_rem.apply_cargo_fix,
     )
     with patch.object(rust_rem, "REMEDIATIONS", [fake]):
-        rust_rem.run_remediations(result, apply=False, skip=set())
+        rust_rem.run_remediations(result, apply=False)
 
     assert len(result.remediations) == 1
     assert result.remediations[0]["status"] == "pending"
@@ -162,24 +162,7 @@ def test_run_remediations_apply_mode(
         patch("repo_ops_upgrade_remediations_rust.remediations.run") as mock_run,
     ):
         mock_run.return_value = ok_proc
-        rust_rem.run_remediations(result, apply=True, skip=set())
+        rust_rem.run_remediations(result, apply=True)
 
     assert result.remediations[0]["status"] == "applied"
     assert result.status == "ok"
-
-
-def test_cargo_fix_skipped_in_skip_set(tmp_path: Path, make_workspace, make_change) -> None:
-    (tmp_path / "Cargo.toml").write_text("[package]\nname = 'foo'\n")
-    result = _result(tmp_path, make_workspace=make_workspace)
-    result.changes = [make_change("serde")]
-
-    fake = rust_rem.RemediationHook(
-        "cargo_fix",
-        rust_rem.detect_cargo_fix,
-        rust_rem.report_cargo_fix,
-        rust_rem.apply_cargo_fix,
-    )
-    with patch.object(rust_rem, "REMEDIATIONS", [fake]):
-        rust_rem.run_remediations(result, apply=True, skip={"cargo_fix"})
-
-    assert result.remediations == []

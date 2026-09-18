@@ -6,7 +6,7 @@ import logging
 import re
 from pathlib import Path
 
-from repo_ops_core.constants import resolve_timeout_apply
+from repo_ops_core.constants import TIMEOUT_APPLY
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version
 from repo_ops_lockfiles.constants import (
@@ -273,7 +273,7 @@ def reinstall_from_lockfile(ws: Workspace) -> bool:
     cmd = spec[0]
     if cmd[0] == "uv" and not (ws.path / "uv.lock").is_file():
         return True
-    proc = run(cmd, ws.path, timeout=resolve_timeout_apply())
+    proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         logger.warning(
             "%s failed during revert for %s (rc=%d): %s",

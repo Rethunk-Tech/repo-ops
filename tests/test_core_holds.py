@@ -10,7 +10,6 @@ import pytest
 from repo_ops_core.holds import (
     HoldRule,
     load_global_holds,
-    load_repo_holds,
     resolve_hold,
 )
 from repo_ops_core.version_utils import version_satisfies_ceiling
@@ -92,18 +91,6 @@ def test_load_global_holds_absent_config_returns_empty(
     """No `[[hold]]` key at all (the common case) — no crash, empty list."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     assert load_global_holds() == []
-
-
-def test_load_repo_holds_from_pyproject(tmp_path: Path) -> None:
-    (tmp_path / "pyproject.toml").write_text(
-        '[[tool.repo-ops.hold]]\npackage = "typescript"\nmax_version = "6"\n'
-        'workspace = "packages/legacy-app"\n',
-        encoding="utf-8",
-    )
-    rules = load_repo_holds(tmp_path)
-    assert len(rules) == 1
-    assert rules[0].workspace == "packages/legacy-app"
-    assert rules[0].source == "repo"
 
 
 # ---------------------------------------------------------------------------

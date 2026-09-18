@@ -63,7 +63,7 @@ def test_check_deno_parses_box_table(tmp_path: Path, make_workspace) -> None:
 def test_check_deno_latest_mode_promotes_behind(
     tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
-    """REPO_OPS_DENO_UPDATE_LATEST targets Latest and clears behind_latest."""
+    """Latest is the target and behind_latest stays empty."""
 
     def fake_run(cmd, cwd, timeout=None):
         return subprocess.CompletedProcess(cmd, 0, stdout=_BOX_BEHIND_LATEST, stderr="")

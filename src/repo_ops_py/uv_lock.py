@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
+from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_toml_file
 from repo_ops_core.holds import resolve_package_hold
 from repo_ops_core.process import run
@@ -60,7 +60,7 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
         proc = run(
             ["uv", "lock", "--upgrade-package", spec],
             ws.path,
-            timeout=resolve_timeout_apply(),
+            timeout=TIMEOUT_APPLY,
         )
         if proc.returncode != 0:
             raise RuntimeError(
@@ -80,7 +80,7 @@ def check_uv_lock(ws: Workspace) -> list[Change]:
     proc = run(
         ["uv", "lock", "--upgrade", "--dry-run"],
         ws.path,
-        timeout=resolve_timeout_check(),
+        timeout=TIMEOUT_CHECK,
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "uv lock --dry-run failed")
@@ -101,10 +101,10 @@ def check_uv_lock(ws: Workspace) -> list[Change]:
 
 def apply_uv_lock(ws: Workspace) -> None:
     """Run ``uv lock --upgrade`` then ``uv sync``."""
-    proc = run(["uv", "lock", "--upgrade"], ws.path, timeout=resolve_timeout_apply())
+    proc = run(["uv", "lock", "--upgrade"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "uv lock --upgrade failed")
-    proc2 = run(["uv", "sync"], ws.path, timeout=resolve_timeout_apply())
+    proc2 = run(["uv", "sync"], ws.path, timeout=TIMEOUT_APPLY)
     if proc2.returncode != 0:
         raise RuntimeError(proc2.stderr.strip() or "uv sync failed")
     _enforce_version_ceilings(ws)

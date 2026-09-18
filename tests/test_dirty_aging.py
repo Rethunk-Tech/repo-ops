@@ -66,23 +66,6 @@ def test_clear_dirty_skip_noop_when_absent() -> None:
     clear_dirty_skip(state, "/repo/alpha")
 
 
-def test_record_dirty_skip_disabled_by_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("REPO_OPS_NO_STATE", "1")
-    state: dict = {}
-    result = record_dirty_skip(state, "/repo/alpha", date(2026, 6, 1))
-    assert result is None
-    assert state == {}
-
-
-def test_clear_dirty_skip_disabled_by_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("REPO_OPS_NO_STATE", "1")
-    # Pre-populate without the env var and then clear with it — must be no-op
-    state = {"dirty_skips": {"/repo/alpha": {"first_seen": "2026-06-01", "runs": 1}}}
-    clear_dirty_skip(state, "/repo/alpha")
-    # Entry should remain because REPO_OPS_NO_STATE suppresses the op
-    assert "/repo/alpha" in state["dirty_skips"]
-
-
 # ---------------------------------------------------------------------------
 # state.py — module-level cache helpers
 # ---------------------------------------------------------------------------
@@ -109,15 +92,6 @@ def test_cache_clear_removes_entry(tmp_path: Path) -> None:
     _reset_module_cache()
 
 
-def test_cache_disabled_by_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _reset_module_cache()
-    monkeypatch.setenv("REPO_OPS_NO_STATE", "1")
-    result = state_mod.cache_record_dirty_skip("/repo/delta", date(2026, 6, 1))
-    assert result is None
-    assert state_mod._DIRTY is False
-    _reset_module_cache()
-
-
 # ---------------------------------------------------------------------------
 # Orchestration wiring
 # ---------------------------------------------------------------------------
@@ -133,150 +107,6 @@ def _make_ws(tmp_path: Path, *, manager: str = "npm"):
         git_repo=tmp_path,
         label="test-repo",
     )
-
-
-def test_dirty_skip_records_in_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Dirty-skip in process_workspace records an entry in the module cache."""
-    _reset_module_cache()
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    from repo_ops_models import WorkspaceResult
-    from repo_ops_upgrade.orchestration import process_workspace
-
-    ws = _make_ws(tmp_path)
-    result = WorkspaceResult(workspace=ws)
-
-    with (
-        patch("repo_ops_upgrade.orchestration.should_exclude", return_value=False),
-        patch("repo_ops_upgrade.orchestration.is_git_dirty", return_value=True),
-        patch.dict(os.environ, {"REPO_OPS_NO_PROGRESS": "1"}),
-    ):
-        out = process_workspace(
-            result,
-            do_apply=True,
-            do_verify=False,
-            allow_dirty=False,
-        )
-
-    assert out.status == "skip"
-    assert out.error is not None and "dirty git worktree" in out.error
-    entry = state_mod.cache_get_dirty_skip(tmp_path)
-    assert entry is not None
-    assert entry["runs"] == 1
-    _reset_module_cache()
-
-
-def test_repo_started_dirty_override_skips_even_when_live_check_is_clean(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """An explicit repo_started_dirty=True is authoritative over a live-clean
-    is_git_dirty check — this is what lets the caller snapshot dirty state once
-    per bundle."""
-    _reset_module_cache()
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    from repo_ops_models import WorkspaceResult
-    from repo_ops_upgrade.orchestration import process_workspace
-
-    ws = _make_ws(tmp_path)
-    result = WorkspaceResult(workspace=ws)
-
-    with (
-        patch("repo_ops_upgrade.orchestration.should_exclude", return_value=False),
-        patch("repo_ops_upgrade.orchestration.is_git_dirty", return_value=False),
-        patch.dict(os.environ, {"REPO_OPS_NO_PROGRESS": "1"}),
-    ):
-        out = process_workspace(
-            result,
-            do_apply=True,
-            do_verify=False,
-            allow_dirty=False,
-            repo_started_dirty=True,
-        )
-
-    assert out.status == "skip"
-    assert out.error is not None and "dirty git worktree" in out.error
-    _reset_module_cache()
-
-
-def test_repo_started_dirty_override_proceeds_even_when_live_check_is_dirty(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """An explicit repo_started_dirty=False is authoritative over a live-dirty
-    is_git_dirty check — this is the actual bug fix: a later sibling workspace
-    must not be skipped just because an earlier sibling in the same bundle
-    already applied its own (not yet committed) changes."""
-    _reset_module_cache()
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    from repo_ops_models import WorkspaceResult
-    from repo_ops_upgrade.orchestration import process_workspace
-
-    ws = _make_ws(tmp_path)
-    result = WorkspaceResult(workspace=ws)
-
-    with (
-        patch("repo_ops_upgrade.orchestration.should_exclude", return_value=False),
-        # Live check says dirty (simulating an earlier sibling's uncommitted
-        # apply) — the explicit snapshot value must win instead.
-        patch("repo_ops_upgrade.orchestration.is_git_dirty", return_value=True),
-        patch("repo_ops_upgrade.orchestration.snapshot_workspace_files", return_value={}),
-        patch("repo_ops_upgrade.orchestration.diff_workspace_snapshots", return_value=[]),
-        patch(
-            "repo_ops_upgrade.orchestration.collect_changes_after_apply",
-            return_value=[],
-        ),
-        patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", return_value=[]),
-        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
-        patch.dict(os.environ, {"REPO_OPS_NO_PROGRESS": "1"}),
-    ):
-        out = process_workspace(
-            result,
-            do_apply=True,
-            do_verify=False,
-            allow_dirty=False,
-            repo_started_dirty=False,
-        )
-
-    assert out.status == "ok"
-    assert out.started_dirty is False
-    _reset_module_cache()
-
-
-def test_clean_run_clears_cache_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A clean (non-dirty) apply run removes any existing dirty-skip entry."""
-    _reset_module_cache()
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    # Pre-populate cache entry
-    state_mod.cache_record_dirty_skip(str(tmp_path), date(2026, 6, 1))
-    assert state_mod.cache_get_dirty_skip(str(tmp_path)) is not None
-
-    from repo_ops_models import WorkspaceResult
-    from repo_ops_upgrade.orchestration import process_workspace
-
-    ws = _make_ws(tmp_path)
-    result = WorkspaceResult(workspace=ws)
-
-    with (
-        patch("repo_ops_upgrade.orchestration.should_exclude", return_value=False),
-        patch("repo_ops_upgrade.orchestration.is_git_dirty", return_value=False),
-        patch("repo_ops_upgrade.orchestration.snapshot_workspace_files", return_value={}),
-        patch("repo_ops_upgrade.orchestration.diff_workspace_snapshots", return_value=[]),
-        patch(
-            "repo_ops_upgrade.orchestration.collect_changes_after_apply",
-            return_value=[],
-        ),
-        patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", return_value=[]),
-        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
-        patch.dict(os.environ, {"REPO_OPS_NO_PROGRESS": "1"}),
-    ):
-        out = process_workspace(
-            result,
-            do_apply=True,
-            do_verify=False,
-            allow_dirty=False,
-        )
-
-    assert out.status == "ok"
-    assert state_mod.cache_get_dirty_skip(str(tmp_path)) is None
-    _reset_module_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -434,4 +264,148 @@ def test_json_payload_no_dirty_fields_for_clean_workspace(
     ws_entry = payload["repos"][0]["workspaces"][0]
     assert "dirty_since" not in ws_entry
     assert "dirty_skip_runs" not in ws_entry
+    _reset_module_cache()
+
+
+def test_dirty_skip_records_in_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dirty-skip in process_workspace records an entry in the module cache."""
+    _reset_module_cache()
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    from repo_ops_models import WorkspaceResult
+    from repo_ops_upgrade.orchestration import process_workspace
+
+    ws = _make_ws(tmp_path)
+    result = WorkspaceResult(workspace=ws)
+
+    with (
+        patch("repo_ops_upgrade.orchestration.should_exclude", return_value=False),
+        patch("repo_ops_upgrade.orchestration.is_git_dirty", return_value=True),
+        patch.dict(os.environ, {}),
+    ):
+        out = process_workspace(
+            result,
+            do_apply=True,
+            do_verify=False,
+            allow_dirty=False,
+        )
+
+    assert out.status == "skip"
+    assert out.error is not None and "dirty git worktree" in out.error
+    entry = state_mod.cache_get_dirty_skip(tmp_path)
+    assert entry is not None
+    assert entry["runs"] == 1
+    _reset_module_cache()
+
+
+def test_repo_started_dirty_override_skips_even_when_live_check_is_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An explicit repo_started_dirty=True is authoritative over a live-clean
+    is_git_dirty check — this is what lets the caller snapshot dirty state once
+    per bundle."""
+    _reset_module_cache()
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    from repo_ops_models import WorkspaceResult
+    from repo_ops_upgrade.orchestration import process_workspace
+
+    ws = _make_ws(tmp_path)
+    result = WorkspaceResult(workspace=ws)
+
+    with (
+        patch("repo_ops_upgrade.orchestration.should_exclude", return_value=False),
+        patch("repo_ops_upgrade.orchestration.is_git_dirty", return_value=False),
+        patch.dict(os.environ, {}),
+    ):
+        out = process_workspace(
+            result,
+            do_apply=True,
+            do_verify=False,
+            allow_dirty=False,
+            repo_started_dirty=True,
+        )
+
+    assert out.status == "skip"
+    assert out.error is not None and "dirty git worktree" in out.error
+    _reset_module_cache()
+
+
+def test_repo_started_dirty_override_proceeds_even_when_live_check_is_dirty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An explicit repo_started_dirty=False is authoritative over a live-dirty
+    is_git_dirty check — this is the actual bug fix: a later sibling workspace
+    must not be skipped just because an earlier sibling in the same bundle
+    already applied its own (not yet committed) changes."""
+    _reset_module_cache()
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    from repo_ops_models import WorkspaceResult
+    from repo_ops_upgrade.orchestration import process_workspace
+
+    ws = _make_ws(tmp_path)
+    result = WorkspaceResult(workspace=ws)
+
+    with (
+        patch("repo_ops_upgrade.orchestration.should_exclude", return_value=False),
+        # Live check says dirty (simulating an earlier sibling's uncommitted
+        # apply) — the explicit snapshot value must win instead.
+        patch("repo_ops_upgrade.orchestration.is_git_dirty", return_value=True),
+        patch("repo_ops_upgrade.orchestration.snapshot_workspace_files", return_value={}),
+        patch("repo_ops_upgrade.orchestration.diff_workspace_snapshots", return_value=[]),
+        patch(
+            "repo_ops_upgrade.orchestration.collect_changes_after_apply",
+            return_value=[],
+        ),
+        patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", return_value=[]),
+        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
+        patch.dict(os.environ, {}),
+    ):
+        out = process_workspace(
+            result,
+            do_apply=True,
+            do_verify=False,
+            allow_dirty=False,
+            repo_started_dirty=False,
+        )
+
+    assert out.status == "ok"
+    assert out.started_dirty is False
+    _reset_module_cache()
+
+
+def test_clean_run_clears_cache_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A clean (non-dirty) apply run removes any existing dirty-skip entry."""
+    _reset_module_cache()
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    # Pre-populate cache entry
+    state_mod.cache_record_dirty_skip(str(tmp_path), date(2026, 6, 1))
+    assert state_mod.cache_get_dirty_skip(str(tmp_path)) is not None
+
+    from repo_ops_models import WorkspaceResult
+    from repo_ops_upgrade.orchestration import process_workspace
+
+    ws = _make_ws(tmp_path)
+    result = WorkspaceResult(workspace=ws)
+
+    with (
+        patch("repo_ops_upgrade.orchestration.should_exclude", return_value=False),
+        patch("repo_ops_upgrade.orchestration.is_git_dirty", return_value=False),
+        patch("repo_ops_upgrade.orchestration.snapshot_workspace_files", return_value={}),
+        patch("repo_ops_upgrade.orchestration.diff_workspace_snapshots", return_value=[]),
+        patch(
+            "repo_ops_upgrade.orchestration.collect_changes_after_apply",
+            return_value=[],
+        ),
+        patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", return_value=[]),
+        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
+        patch.dict(os.environ, {}),
+    ):
+        out = process_workspace(
+            result,
+            do_apply=True,
+            do_verify=False,
+            allow_dirty=False,
+        )
+
+    assert out.status == "ok"
+    assert state_mod.cache_get_dirty_skip(str(tmp_path)) is None
     _reset_module_cache()

@@ -91,10 +91,6 @@ def test_plan_exclude_filters_repositories_from_config(
     tmp_path: Path, monkeypatch, capsys, init_git_repo, run_dir: Path
 ) -> None:
     init_git_repo(tmp_path)
-    (tmp_path / "pyproject.toml").write_text(
-        '[tool.repo-ops]\nexclude = ["drop"]\n',
-        encoding="utf-8",
-    )
     repos = {}
     for name in ("keep", "drop"):
         repo = tmp_path / name
@@ -116,7 +112,8 @@ def test_plan_exclude_filters_repositories_from_config(
         return wr
 
     with (
-        patch("repo_ops_upgrade.run.load_global_config", return_value={}),
+        # The global config's exclude list applies to discovered repos.
+        patch("repo_ops_upgrade.run.load_global_config", return_value={"exclude": ["drop"]}),
         patch(
             "repo_ops_upgrade.run.orchestration.process_workspace",
             side_effect=_record_workspace,
@@ -129,18 +126,4 @@ def test_plan_exclude_filters_repositories_from_config(
     assert rc in (0, 1)
     assert seen == [repos["keep"].resolve()]
     assert payload["summary"]["excluded"] == 1
-
-    seen.clear()
-    with (
-        patch("repo_ops_upgrade.run.load_global_config", return_value={}),
-        patch(
-            "repo_ops_upgrade.run.orchestration.process_workspace",
-            side_effect=_record_workspace,
-        ),
-    ):
-        rc = main_plan([str(tmp_path)])
-
-    captured = capsys.readouterr()
-    assert rc in (0, 1)
-    assert seen == [repos["keep"].resolve()]
     assert "excluded 1 repo(s) by exclude patterns" in captured.err

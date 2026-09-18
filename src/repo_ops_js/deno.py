@@ -8,7 +8,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
+from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
@@ -274,7 +274,7 @@ def check_deno(ws: Workspace) -> tuple[list[Change], list[Change]]:
     proc = run(
         ["deno", "outdated"],
         ws.path,
-        timeout=resolve_timeout_check(),
+        timeout=TIMEOUT_CHECK,
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "deno outdated failed")
@@ -365,7 +365,7 @@ def _deno_outdated_versions(ws: Workspace, name: str) -> list[str]:
     proc = run(
         ["deno", "outdated", "--json"],
         ws.path,
-        timeout=resolve_timeout_apply(),
+        timeout=TIMEOUT_APPLY,
     )
     if proc.returncode != 0:
         return []
@@ -456,7 +456,7 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
             cmd.extend(["--latest", change.name])
         else:
             cmd.append(_deno_version_target(change.name, change.to))
-        proc = run(cmd, ws.path, timeout=resolve_timeout_apply())
+        proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
         advanced = False
         if proc.returncode == 0:
             advanced = _snapshot_deno_workspace(ws) != snapshot
@@ -518,7 +518,7 @@ def _enforce_deno_version_ceilings(ws: Workspace, candidate_names: list[str] | N
                 _deno_ceiling_target(name, rule.max_version),
             ],
             ws.path,
-            timeout=resolve_timeout_apply(),
+            timeout=TIMEOUT_APPLY,
         )
         landed = _landed_deno_version(ws, name) if proc.returncode == 0 else None
         if landed is not None and version_satisfies_ceiling(landed, rule.max_version):
@@ -534,7 +534,7 @@ def _enforce_deno_version_ceilings(ws: Workspace, candidate_names: list[str] | N
             proc = run(
                 [*_deno_update_command(ws), _deno_version_target(name, target)],
                 ws.path,
-                timeout=resolve_timeout_apply(),
+                timeout=TIMEOUT_APPLY,
             )
             landed = _landed_deno_version(ws, name) if proc.returncode == 0 else None
         if (
@@ -566,7 +566,7 @@ def apply_deno(ws: Workspace) -> list[Change]:
     proc = run(
         ["deno", "outdated", "--update", "--latest"],
         ws.path,
-        timeout=resolve_timeout_apply(),
+        timeout=TIMEOUT_APPLY,
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "deno outdated --update failed")

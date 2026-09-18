@@ -11,12 +11,12 @@ import json
 from http.client import HTTPSConnection
 from urllib.parse import quote
 
-from repo_ops_core.constants import resolve_timeout_check
+from repo_ops_core.constants import TIMEOUT_CHECK
 from repo_ops_core.version_utils import semver_tuple
 
 
 def pypi_latest(package: str) -> str | None:
-    connection = HTTPSConnection("pypi.org", timeout=resolve_timeout_check())
+    connection = HTTPSConnection("pypi.org", timeout=TIMEOUT_CHECK)
     try:
         connection.request(
             "GET",

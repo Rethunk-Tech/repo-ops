@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from repo_ops_core.discovery import FIND_TIMEOUT_ENV, discover_repos
+from repo_ops_core.discovery import discover_repos
 from repo_ops_core.walk import iter_scanned_dirs
 from repo_ops_upgrade.discovery import (
     DiscoveryDiagnostics,
@@ -390,54 +390,6 @@ def test_cargo_metadata_timeout_falls_back_to_manifest_members(
     monkeypatch.setattr("repo_ops_upgrade.discovery.subprocess.run", timeout)
 
     assert cargo_workspace_members(repo) == {"crates/*"}
-
-
-@pytest.mark.parametrize(
-    "env_val, param_val, expected",
-    [
-        # default: no env, no param → 60
-        (None, None, 60.0),
-        # env var overrides default
-        ("30", None, 30.0),
-        # explicit param overrides default
-        (None, 5.0, 5.0),
-        # explicit param wins over env var (param takes precedence)
-        ("30", 10.0, 10.0),
-        # invalid env var is silently ignored → default 60
-        ("not-a-number", None, 60.0),
-        # non-positive env var is ignored → default 60
-        ("0", None, 60.0),
-    ],
-)
-def test_discover_repos_find_timeout_is_tunable(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    env_val: str | None,
-    param_val: float | None,
-    expected: float,
-) -> None:
-    """Setting REPO_OPS_FIND_TIMEOUT env var or timeout= param changes the
-    subprocess timeout; explicit param takes precedence; default stays 60 s."""
-    # Ensure the env var is absent unless the test case sets it
-    monkeypatch.delenv(FIND_TIMEOUT_ENV, raising=False)
-    if env_val is not None:
-        monkeypatch.setenv(FIND_TIMEOUT_ENV, env_val)
-
-    mock_run = MagicMock()
-    mock_run.return_value = MagicMock(returncode=0, stdout="")
-
-    kwargs: dict = {}
-    if param_val is not None:
-        kwargs["timeout"] = param_val
-
-    with patch("repo_ops_core.discovery.subprocess.run", mock_run):
-        discover_repos([str(tmp_path)], **kwargs)
-
-    mock_run.assert_called_once()
-    actual_timeout = mock_run.call_args.kwargs["timeout"]
-    assert actual_timeout == expected, (
-        f"env={env_val!r} param={param_val!r}: expected timeout={expected}, got {actual_timeout}"
-    )
 
 
 def test_discover_repos_git_common_dir_timeout_skips_and_warns(

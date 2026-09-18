@@ -1,7 +1,7 @@
 """Upgrade-local constants and regexes.
 
-Timeout resolvers (resolve_timeout_check / resolve_timeout_apply /
-resolve_timeout_verify) and the raw TIMEOUT_* defaults live in
+Subprocess timeouts (TIMEOUT_CHECK / TIMEOUT_APPLY /
+TIMEOUT_VERIFY) live in
 repo_ops_core.constants; import them from there directly.
 """
 

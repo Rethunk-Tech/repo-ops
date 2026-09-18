@@ -190,7 +190,6 @@ def test_apply_go_explicit_mode_uses_get_separator(tmp_path) -> None:
         return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     with (
-        patch.dict("os.environ", {"REPO_OPS_GO_UPGRADE_MODE": "explicit"}),
         patch("repo_ops_go.go.run", side_effect=fake_run),
         patch(
             "repo_ops_go.go._explicit_go_get_targets",

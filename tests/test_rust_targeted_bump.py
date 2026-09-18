@@ -30,9 +30,7 @@ def test_check_rust_reports_direct_dependency_behind_latest(
             "repo_ops_rust.rust._cargo_registry_versions",
             return_value=("2.0.0",),
         ),
-        monkeypatch.context() as env,
     ):
-        env.setenv("REPO_OPS_RUST_TARGETED_BUMP", "true")
         result = check_rust(ws)
 
     assert isinstance(result, tuple)

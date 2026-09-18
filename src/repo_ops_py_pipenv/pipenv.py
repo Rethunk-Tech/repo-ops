@@ -7,7 +7,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
+from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import (
     read_json_file,
     read_toml_file,
@@ -107,7 +107,7 @@ def _apply_pipenv_targeted_bumps(
     ws: Workspace,
     candidates: list[Change],
 ) -> list[Change]:
-    venv = run(["pipenv", "--venv"], ws.path, timeout=resolve_timeout_apply())
+    venv = run(["pipenv", "--venv"], ws.path, timeout=TIMEOUT_APPLY)
     if venv.returncode != 0:
         return candidates
     manifest = ws.path / "Pipfile"
@@ -129,7 +129,7 @@ def _apply_pipenv_targeted_bumps(
             proc = run(
                 ["pipenv", "install", f"{candidate.name}@{bumped}"],
                 ws.path,
-                timeout=resolve_timeout_apply(),
+                timeout=TIMEOUT_APPLY,
             )
         except Exception:
             restore_file(manifest, manifest_snapshot)
@@ -161,7 +161,7 @@ def check_pipenv(
         print(f"WARN {ws.path}: pipenv not on PATH", file=sys.stderr)
         return ([], [])
     # Read-only probe: get venv path without creating one.
-    probe = run(["pipenv", "--venv"], ws.path, timeout=resolve_timeout_check())
+    probe = run(["pipenv", "--venv"], ws.path, timeout=TIMEOUT_CHECK)
     if probe.returncode != 0:
         print(
             f"WARN {ws.path}: pipenv venv not initialised; run 'pipenv install' first",
@@ -178,7 +178,7 @@ def check_pipenv(
     proc = run(
         [pip_cmd, "list", "--outdated", "--format=json"],
         ws.path,
-        timeout=resolve_timeout_check(),
+        timeout=TIMEOUT_CHECK,
     )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pip list --outdated failed")
@@ -201,7 +201,7 @@ def apply_pipenv(ws: Workspace) -> list[Change] | None:
     """Run ``pipenv update`` to upgrade all packages and regenerate Pipfile.lock."""
     if not shutil.which("pipenv"):
         raise RuntimeError(f"pipenv not on PATH for {ws.path}")
-    proc = run(["pipenv", "update"], ws.path, timeout=resolve_timeout_apply())
+    proc = run(["pipenv", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pipenv update failed")
     _enforce_version_ceilings(ws)

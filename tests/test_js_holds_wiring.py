@@ -64,10 +64,6 @@ def _run_patch(name: str) -> str:
     return f"{_module(name)}.run"
 
 
-def _env_var(name: str) -> str:
-    return f"REPO_OPS_{name.upper()}_TARGETED_BUMP"
-
-
 def _substr(cmds: list[list[str]], marker: str) -> bool:
     return any(marker in " ".join(c) for c in cmds)
 
@@ -166,7 +162,6 @@ def test_targeted_bump_uses_hold_ceiling_instead_of_latest(
 ) -> None:
     """The still-behind fallback targets `<=ceiling`, not the registry latest."""
     case.seed(tmp_path)
-    monkeypatch.setenv(_env_var(case.name), "1")
     ws = make_workspace(tmp_path, ecosystem="node", manager=case.name, label="demo")
     captured_cmds: list[list[str]] = []
 
@@ -476,7 +471,6 @@ def test_targeted_bump_releases_unheld_pin(
     """No hold covers is-odd: its legacy version-pin field is released so the
     retry can actually move the version, instead of ghost-bumping forever."""
     case.seed_pin(tmp_path)
-    monkeypatch.setenv(_env_var(case.name), "1")
     ws = make_workspace(tmp_path, ecosystem="node", manager=case.name, label="demo")
     captured_cmds: list[list[str]] = []
 
@@ -506,7 +500,6 @@ def test_targeted_bump_keeps_held_pin(
     """An active hold leaves its version-pin field untouched during retry —
     the pin-release path only fires for packages with no tracked hold."""
     case.seed_pin(tmp_path)
-    monkeypatch.setenv(_env_var(case.name), "1")
     ws = make_workspace(tmp_path, ecosystem="node", manager=case.name, label="demo")
 
     def _fake_run(cmd, cwd, timeout=None, env=None):

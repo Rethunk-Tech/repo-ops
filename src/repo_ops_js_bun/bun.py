@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
+from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_js.expo import with_expo_alignment
@@ -162,7 +162,7 @@ def check_bun(ws: Workspace, *, members: bool = True) -> tuple[list[Change], lis
 
 
 def _check_bun_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
-    proc_json = run(["bun", "outdated", "--json"], ws.path, timeout=resolve_timeout_check())
+    proc_json = run(["bun", "outdated", "--json"], ws.path, timeout=TIMEOUT_CHECK)
     if proc_json.returncode in (0, 1) and proc_json.stdout.strip():
         try:
             data = json.loads(proc_json.stdout)
@@ -172,7 +172,7 @@ def _check_bun_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
             changes, behind = _changes_from_bun_json(proc_json.stdout, ws=ws)
             return with_expo_alignment(ws, changes), behind
 
-    proc = run(["bun", "outdated"], ws.path, timeout=resolve_timeout_check())
+    proc = run(["bun", "outdated"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode not in (0, 1):
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "bun outdated failed")
     changes, behind = _changes_from_bun_text(proc.stdout, ws=ws)
@@ -219,7 +219,7 @@ def targeted_bump_behind(
         install = run(
             ["bun", "add", *exact, f"{name}@{version}"],
             ws.path,
-            timeout=resolve_timeout_apply(),
+            timeout=TIMEOUT_APPLY,
         )
         return install.returncode == 0
 
@@ -269,7 +269,7 @@ def _finalize_bun_apply(
         candidate_names,
         manager="bun",
         run_install=lambda name, spec: run(
-            ["bun", "add", f"{name}@{spec}"], ws.path, timeout=resolve_timeout_apply()
+            ["bun", "add", f"{name}@{spec}"], ws.path, timeout=TIMEOUT_APPLY
         ),
     )
     # bun records the *requested* spec in bun.lock's workspace mirror rather
@@ -279,7 +279,7 @@ def _finalize_bun_apply(
     # something actually mutated, and best-effort: a failure here leaves the
     # cosmetic drift an apply would have left anyway.
     if mutated or applied or held:
-        run(["bun", "install"], ws.path, timeout=resolve_timeout_apply())
+        run(["bun", "install"], ws.path, timeout=TIMEOUT_APPLY)
     return fold_held_into_behind(held, behind)
 
 
@@ -318,7 +318,7 @@ def _apply_bun_dir(ws: Workspace, root: Path) -> list[Change]:
         # applied to any changes whose target version IS known (skip
         # unparseable '?' entries but guard what IS known from the original
         # check output).
-        proc = run(["bun", "update"], ws.path, timeout=resolve_timeout_apply())
+        proc = run(["bun", "update"], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "bun update failed")
         # Re-check original changes for known target versions.
@@ -335,7 +335,7 @@ def _apply_bun_dir(ws: Workspace, root: Path) -> list[Change]:
             blocked = unresolved_targets(ws, guardable)
             behind = fold_blocked_into_behind(blocked, behind)
         return _finalize_bun_apply(ws, changes, behind, root=root, mutated=True)
-    proc = run(["bun", "update", "--", *targets], ws.path, timeout=resolve_timeout_apply())
+    proc = run(["bun", "update", "--", *targets], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
     blocked = unresolved_targets(ws, requested)

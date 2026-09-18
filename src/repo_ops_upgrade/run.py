@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import contextlib
 import os
 import sys
 import threading
 from itertools import groupby
 from pathlib import Path
-from typing import Any
 
 from repo_ops_core.cli import (
     build_upgrade_parser,
@@ -18,11 +16,8 @@ from repo_ops_core.cli import (
     wire_verbose,
 )
 from repo_ops_core.config import (
-    apply_config_to_env,
-    checkout_config_scope,
     load_global_config,
     load_repo_config,
-    set_ambient_env,
 )
 from repo_ops_core.constants import DEFAULT_ROOTS
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
@@ -102,13 +97,6 @@ def _cli_flag(args: object, name: str) -> bool:
     return getattr(args, name, False) is True
 
 
-def _single_checkout_config_scope(args: argparse.Namespace, roots: list[str]) -> bool:
-    """Return whether the invocation targets the current checkout directly."""
-    if len(roots) != 1:
-        return False
-    return Path(roots[0]).resolve() == Path.cwd().resolve()
-
-
 def _run_upgrade_body(
     *,
     apply: bool,
@@ -133,8 +121,6 @@ def _run_upgrade_body(
     bundles = workspace_discovery.group_by_repo(found, roots)
     bundles = workspace_discovery.merge_action_only_bundles(bundles, roots)
 
-    _global_cfg: dict[str, Any] = getattr(args, "_repo_ops_global_config", {})
-    _ambient_env: dict[str, str] = getattr(args, "_repo_ops_ambient_env", {})
     _repo_cfgs = {bundle.git_repo: load_repo_config(bundle.git_repo) for bundle in bundles.values()}
     exclude_patterns: list[str] = getattr(args, "exclude_patterns", None) or []
     kept_paths: list[Path] = []
@@ -173,23 +159,19 @@ def _run_upgrade_body(
         # workspace, not get silently dropped from results and reported clean
         # with exit 0. Mutate and return the input result so its
         # workspace.path still matches in reconciliation below.
-        with checkout_config_scope(
-            global_cfg=_global_cfg,
-            repo_cfg=_repo_cfgs.get(wr.workspace.git_repo),
-        ):
-            try:
-                return orchestration.process_workspace(
-                    wr,
-                    do_apply=apply,
-                    do_verify=apply and not args.no_verify,
-                    allow_dirty=allow_dirty,
-                    on_verify_fail=on_verify_fail,
-                    repo_started_dirty=repo_started_dirty,
-                )
-            except Exception as exc:
-                wr.status = "fail"
-                wr.error = str(exc)
-                return wr
+        try:
+            return orchestration.process_workspace(
+                wr,
+                do_apply=apply,
+                do_verify=apply and not args.no_verify,
+                allow_dirty=allow_dirty,
+                on_verify_fail=on_verify_fail,
+                repo_started_dirty=repo_started_dirty,
+            )
+        except Exception as exc:
+            wr.status = "fail"
+            wr.error = str(exc)
+            return wr
 
     # One failed workspace vetoes its repo's commit, so under revert the passing
     # siblings roll back too; otherwise their edits stay behind uncommitted and
@@ -197,25 +179,21 @@ def _run_upgrade_body(
     rollback_on_veto = commit and fleet
 
     def _process_repo(bundle: RepoBundle) -> list[WorkspaceResult]:
-        with checkout_config_scope(
-            global_cfg=_global_cfg,
-            repo_cfg=_repo_cfgs.get(bundle.git_repo),
-        ):
-            results: list[WorkspaceResult] = []
-            # Snapshot the repo's dirty state once, before any workspace in this
-            # bundle is processed, rather than re-checking live per workspace. All
-            # workspaces in a bundle share bundle.git_repo and share one commit at
-            # the end of the run, so an earlier sibling's own already-applied (not
-            # yet committed) changes must not make a later sibling look dirty and
-            # get skipped outright.
-            repo_started_dirty = is_git_dirty(bundle.git_repo) if apply else None
-            repo_before = capture_worktree_state(bundle.git_repo) if rollback_on_veto else None
-            for wr in bundle.workspaces:
-                updated = _process_one(wr, repo_started_dirty=repo_started_dirty)
-                results.append(updated)
-            if rollback_on_veto and any(r.status == "fail" for r in results):
-                _rollback_vetoed_repo(bundle.git_repo, repo_before, results)
-            return results
+        results: list[WorkspaceResult] = []
+        # Snapshot the repo's dirty state once, before any workspace in this
+        # bundle is processed, rather than re-checking live per workspace. All
+        # workspaces in a bundle share bundle.git_repo and share one commit at
+        # the end of the run, so an earlier sibling's own already-applied (not
+        # yet committed) changes must not make a later sibling look dirty and
+        # get skipped outright.
+        repo_started_dirty = is_git_dirty(bundle.git_repo) if apply else None
+        repo_before = capture_worktree_state(bundle.git_repo) if rollback_on_veto else None
+        for wr in bundle.workspaces:
+            updated = _process_one(wr, repo_started_dirty=repo_started_dirty)
+            results.append(updated)
+        if rollback_on_veto and any(r.status == "fail" for r in results):
+            _rollback_vetoed_repo(bundle.git_repo, repo_before, results)
+        return results
 
     all_results: list[WorkspaceResult] = []
     if apply:
@@ -313,33 +291,29 @@ def _run_upgrade_body(
         local_cache: dict[str, dict | None] = {}
         with _tag_cache_lock:
             local_cache.update(run_tag_cache)
-        with checkout_config_scope(
-            global_cfg=_global_cfg,
-            repo_cfg=_repo_cfgs.get(bundle.git_repo),
-        ):
-            try:
-                bumps, count = actions.scan_actions(
-                    bundle.git_repo,
-                    apply=apply,
-                    tag_cache=local_cache,
+        try:
+            bumps, count = actions.scan_actions(
+                bundle.git_repo,
+                apply=apply,
+                tag_cache=local_cache,
+            )
+        except Exception as exc:
+            # Isolate: a non-WorkflowParseError (e.g. OSError writing a
+            # workflow) must surface as a FAILED actions entry rather than
+            # propagating through the pool and tearing down the whole run
+            # AFTER lockfiles were already mutated on disk (#TASK-2).
+            bundle.actions = [
+                ActionBump(
+                    workflow="(error)",
+                    action="(worker)",
+                    pin="",
+                    latest="",
+                    status="fail",
+                    detail=str(exc),
                 )
-            except Exception as exc:
-                # Isolate: a non-WorkflowParseError (e.g. OSError writing a
-                # workflow) must surface as a FAILED actions entry rather than
-                # propagating through the pool and tearing down the whole run
-                # AFTER lockfiles were already mutated on disk (#TASK-2).
-                bundle.actions = [
-                    ActionBump(
-                        workflow="(error)",
-                        action="(worker)",
-                        pin="",
-                        latest="",
-                        status="fail",
-                        detail=str(exc),
-                    )
-                ]
-                bundle.actions_workflows_scanned = 0
-                return
+            ]
+            bundle.actions_workflows_scanned = 0
+            return
         with _tag_cache_lock:
             run_tag_cache.update(local_cache)
         bundle.actions = bumps
@@ -423,49 +397,14 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     parser = build_upgrade_parser(apply=apply)
     args = parser.parse_args(argv)
 
-    # Config-file settings layer (CLI flag > env > config file > default).
-    _g_cfg = load_global_config()
-
     wire_verbose(args)
-
     roots = resolve_scan_roots(list(args.roots or DEFAULT_ROOTS), parser)
-    _single_checkout = _single_checkout_config_scope(args, roots)
-    _r_cfg = load_repo_config(Path.cwd()) if _single_checkout else {}
-    # Keep the compatibility environment injection for a direct single-checkout
-    # invocation. Fleet runs resolve repo-scoped settings at use instead of
-    # leaking the launch checkout's config into every worker.
-    apply_config_to_env(
-        global_cfg=_g_cfg if _single_checkout else {},
-        repo_cfg=_r_cfg,
-    )
-    # Snapshot after config injection so injected config values remain ambient;
-    # later CLI flag writes are the only process values classified as overrides.
-    _ambient_env = dict(os.environ)
-    set_ambient_env(_ambient_env)
-    args._repo_ops_global_config = _g_cfg
-    args._repo_ops_ambient_env = _ambient_env
-
-    # ``jobs`` has no env-var channel — apply from config directly to args before the
-    # cpu_count fallback so the documented config-file default takes effect.
-    if args.jobs is None:
-        _jobs_val: Any = None
-        if _r_cfg and "jobs" in _r_cfg:
-            _jobs_val = _r_cfg["jobs"]
-        elif _g_cfg and "jobs" in _g_cfg:
-            _jobs_val = _g_cfg["jobs"]
-        if _jobs_val is not None:
-            with contextlib.suppress(TypeError, ValueError):
-                args.jobs = max(1, int(_jobs_val))
-
     if args.jobs is None:
         args.jobs = min(16, os.cpu_count() or 4)
-
-    # ``exclude_patterns`` has no env-var channel (lists don't serialize well
-    # to env vars). Merge CLI and every config layer directly before scanning.
+    # The global exclude list joins --exclude here; each repo's own
+    # .repo-ops.toml exclude is added per repo in the body.
     args.exclude_patterns = merge_exclude_patterns(
-        getattr(args, "exclude_patterns", None),
-        (_r_cfg or {}).get("exclude"),
-        (_g_cfg or {}).get("exclude"),
+        args.exclude_patterns, load_global_config().get("exclude")
     )
 
     run_dir = new_run_dir("apply" if apply else "plan")

@@ -224,20 +224,6 @@ def test_check_npm_promotes_behind_when_targeted_enabled(
     assert "react" in names
 
 
-def test_targeted_bump_accepts_on_env_value(tmp_path: Path, monkeypatch, make_workspace) -> None:
-    """REPO_OPS_NPM_TARGETED_BUMP=on must enable the gate (parity with pnpm/bun/yarn)."""
-    _seed(tmp_path)
-    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "on")
-    ws = make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo")
-    with (
-        patch("repo_ops_js_npm.npm.run", side_effect=_npm_install_run(tmp_path)),
-        patch(_RESOLVER_PATH, return_value="19.0.0"),
-    ):
-        applied, still_behind = targeted_bump_behind(ws, _REACT_BEHIND)
-    assert applied == [Change("react", "18.0.0", "19.0.0")]
-    assert still_behind == []
-
-
 def test_targeted_bump_uses_save_dev_for_dev_dep(
     tmp_path: Path, monkeypatch, make_workspace
 ) -> None:

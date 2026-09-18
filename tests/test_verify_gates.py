@@ -2,7 +2,6 @@
 
 - Go: ``go build ./...`` runs after ``go mod verify``, before optional ``go test``.
 - uv: ``ruff check`` runs after ``uv sync --locked`` when ruff is configured.
-- Node: ``REPO_OPS_NODE_VERIFY_SCRIPT`` overrides the waterfall; empty = skip.
 - gate: the gates a project declares outrank the built-in Node waterfall and
   Python ladder, and its absence degrades to them rather than failing.
 - Hatch: ``_verify_hatch_fast`` recognises "check"/"typecheck" scripts and mypy
@@ -18,17 +17,6 @@ from unittest.mock import patch
 
 import pytest
 
-from repo_ops_core.constants import (
-    _TIMEOUT_APPLY_ENV,
-    _TIMEOUT_CHECK_ENV,
-    _TIMEOUT_VERIFY_ENV,
-    TIMEOUT_APPLY,
-    TIMEOUT_CHECK,
-    TIMEOUT_VERIFY,
-    resolve_timeout_apply,
-    resolve_timeout_check,
-    resolve_timeout_verify,
-)
 from repo_ops_models import Workspace
 from repo_ops_upgrade.verify import verify_node, verify_workspace
 
@@ -462,69 +450,22 @@ class TestPythonManagerFastGates:
 
 
 # ---------------------------------------------------------------------------
-# Node: REPO_OPS_NODE_VERIFY_SCRIPT override
+# Node: verify script waterfall
 # ---------------------------------------------------------------------------
 
 
-class TestNodeVerifyScriptEnv:
+class TestNodeVerifyScriptWaterfall:
     def _write_pkg(self, path: Path, scripts: dict[str, str] | None = None) -> None:
         import json
 
         content = {"scripts": scripts or {"ci": "echo ci", "build": "echo build"}}
         (path / "package.json").write_text(json.dumps(content), encoding="utf-8")
 
-    def test_env_override_uses_specified_script(
+    def test_uses_waterfall(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
-        """REPO_OPS_NODE_VERIFY_SCRIPT=custom → use 'custom', not the waterfall."""
-        self._write_pkg(tmp_path, {"ci": "echo ci", "custom": "echo custom"})
-        monkeypatch.setenv("REPO_OPS_NODE_VERIFY_SCRIPT", "custom")
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
-
-        ws = make_workspace(tmp_path, manager="yarn", ecosystem="node", label="demo")
-        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_node(ws)
-
-        assert result is None
-        script_calls = [c for c in calls if "custom" in c]
-        assert script_calls, f"expected 'custom' script call, got: {calls}"
-
-    def test_env_override_empty_string_skips_script_step(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
-    ) -> None:
-        """REPO_OPS_NODE_VERIFY_SCRIPT='' → skip script step (immutable install still runs)."""
-        self._write_pkg(tmp_path, {"ci": "echo ci"})
-        monkeypatch.setenv("REPO_OPS_NODE_VERIFY_SCRIPT", "")
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
-
-        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
-        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_node(ws)
-
-        assert result is None
-        # npm ci (immutable install) must still have run
-        assert any("npm" in c and c[-1] == "ci" for c in calls), f"npm ci not called: {calls}"
-        # But no package.json script should have been run
-        assert not any("echo" in str(c) for c in calls)
-
-    def test_env_unset_uses_waterfall(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
-    ) -> None:
-        """When env var absent, first matching waterfall candidate is used."""
+        """The first matching waterfall candidate is used."""
         self._write_pkg(tmp_path, {"build": "echo build"})
-        monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         calls: list[list[str]] = []
 
         def fake_run(
@@ -541,32 +482,11 @@ class TestNodeVerifyScriptEnv:
         # 'build' is in the waterfall; ci/ci:pushgate are not defined → build used
         assert any("build" in c for c in calls)
 
-    def test_env_override_script_failure_propagates(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
-    ) -> None:
-        """REPO_OPS_NODE_VERIFY_SCRIPT failure must surface as an error."""
-        self._write_pkg(tmp_path, {"myscript": "echo ok"})
-        monkeypatch.setenv("REPO_OPS_NODE_VERIFY_SCRIPT", "myscript")
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            if "myscript" in cmd:
-                return _fail(stderr="script failed")
-            return _ok()
-
-        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
-        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_node(ws)
-
-        assert result is not None
-
     def test_waterfall_first_match_wins(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """Waterfall picks 'ci' over 'build' when both exist."""
         self._write_pkg(tmp_path, {"ci": "echo ci", "build": "echo build", "lint": "echo lint"})
-        monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         calls: list[list[str]] = []
 
         def fake_run(
@@ -714,107 +634,6 @@ class TestVerifyHatchFast:
 
         assert result is not None
         assert "check" in result or "type" in result
-
-
-# ---------------------------------------------------------------------------
-# Env-overridable timeouts
-# ---------------------------------------------------------------------------
-
-_TIMEOUTS = [
-    (_TIMEOUT_CHECK_ENV, resolve_timeout_check, TIMEOUT_CHECK, 42),
-    (_TIMEOUT_APPLY_ENV, resolve_timeout_apply, TIMEOUT_APPLY, 123),
-    (_TIMEOUT_VERIFY_ENV, resolve_timeout_verify, TIMEOUT_VERIFY, 300),
-]
-
-
-class TestTimeoutEnvOverride:
-    @pytest.mark.parametrize(("env_var", "resolve", "default", "override"), _TIMEOUTS)
-    def test_resolve_timeout_default(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        env_var: str,
-        resolve,
-        default: int,
-        override: int,
-    ) -> None:
-        monkeypatch.delenv(env_var, raising=False)
-        assert resolve() == default
-
-    @pytest.mark.parametrize(("env_var", "resolve", "default", "override"), _TIMEOUTS)
-    def test_resolve_timeout_override(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        env_var: str,
-        resolve,
-        default: int,
-        override: int,
-    ) -> None:
-        monkeypatch.setenv(env_var, str(override))
-        assert resolve() == override
-
-    def test_invalid_env_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(_TIMEOUT_VERIFY_ENV, "not_a_number")
-        assert resolve_timeout_verify() == TIMEOUT_VERIFY
-
-    def test_zero_env_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(_TIMEOUT_VERIFY_ENV, "0")
-        assert resolve_timeout_verify() == TIMEOUT_VERIFY
-
-    def test_negative_env_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(_TIMEOUT_CHECK_ENV, "-10")
-        assert resolve_timeout_check() == TIMEOUT_CHECK
-
-    def test_float_env_truncated_to_int(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(_TIMEOUT_VERIFY_ENV, "45.9")
-        assert resolve_timeout_verify() == 45
-
-    def test_verify_workspace_go_uses_resolved_timeout(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
-    ) -> None:
-        """verify_workspace (go) must pass the resolved verify timeout to go build."""
-        monkeypatch.setenv(_TIMEOUT_VERIFY_ENV, "77")
-        captured: list[dict] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            captured.append({"cmd": cmd, "timeout": timeout})
-            return _ok()
-
-        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
-        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            verify_workspace(ws)
-
-        build_call = next(c for c in captured if c["cmd"] == ["go", "build", "./..."])
-        assert build_call["timeout"] == 77
-
-    def test_verify_workspace_uv_ruff_uses_resolved_timeout(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
-    ) -> None:
-        """verify_workspace (uv) ruff step must use the resolved verify timeout."""
-        monkeypatch.setenv(_TIMEOUT_VERIFY_ENV, "55")
-        (tmp_path / "pyproject.toml").write_text(
-            '[tool.uv]\ndev-dependencies = ["ruff>=0.4"]\n',
-            encoding="utf-8",
-        )
-        captured: list[dict] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            captured.append({"cmd": cmd, "timeout": timeout})
-            return _ok()
-
-        ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
-        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            verify_workspace(ws)
-
-        ruff_call = next(
-            (c for c in captured if c["cmd"][:4] == ["uv", "run", "ruff", "check"]),
-            None,
-        )
-        assert ruff_call is not None
-        assert ruff_call["timeout"] == 55
 
 
 # ---------------------------------------------------------------------------

@@ -71,22 +71,3 @@ def test_apply_pipenv_raises_when_pipenv_absent(tmp_path: Path, make_workspace) 
             assert "pipenv not on PATH" in str(exc)
         else:
             raise AssertionError("expected RuntimeError")
-
-
-def test_check_pipenv_venv_probe_uses_timeout_check(tmp_path: Path, make_workspace) -> None:
-    """Pipenv --venv probe uses resolve_timeout_check."""
-    from repo_ops_core.constants import TIMEOUT_CHECK
-
-    captured: list[int | None] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        captured.append(timeout)
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    with (
-        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
-    ):
-        check_pipenv(make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo"))
-
-    assert captured[0] == TIMEOUT_CHECK

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import os
 import subprocess
 import sys
 from collections.abc import Callable, Iterable
@@ -206,7 +205,6 @@ def run_hooks(
     result: WorkspaceResult,
     *,
     apply: bool,
-    skip: set[str],
 ) -> None:
     """Run *hooks* against *result* in order.
 
@@ -220,8 +218,6 @@ def run_hooks(
         "pre_apply_snapshot": result.pre_apply_snapshot,
     }
     for hook in hooks:
-        if hook.id in skip:
-            continue
         entry: dict[str, Any] = {"id": hook.id, "status": "ok", "detail": ""}
         try:
             detected = hook.detect(result.workspace, ctx)
@@ -264,7 +260,7 @@ def run_hooks(
 def make_run_remediations(
     hooks: Callable[[], list[RemediationHook]],
 ) -> Callable[..., None]:
-    """Build a ``run_remediations(result, *, apply, skip)`` for one ecosystem.
+    """Build a ``run_remediations(result, *, apply)`` for one ecosystem.
 
     *hooks* is called fresh on every invocation rather than captured once, so
     a test that patches an ecosystem module's own ``REMEDIATIONS`` list (to
@@ -276,9 +272,8 @@ def make_run_remediations(
         result: WorkspaceResult,
         *,
         apply: bool,
-        skip: set[str],
     ) -> None:
-        run_hooks(hooks(), result, apply=apply, skip=skip)
+        run_hooks(hooks(), result, apply=apply)
 
     return run_remediations
 
@@ -287,7 +282,6 @@ def dispatch(
     result: WorkspaceResult,
     *,
     apply: bool,
-    skip: set[str],
     _registry: list[RemediationHook] | None = None,
 ) -> None:
     """Dispatch remediations from the global registry (or *_registry* if given).
@@ -295,13 +289,6 @@ def dispatch(
     All hooks registered via :func:`register` across every imported ecosystem
     package are executed.  Pass *_registry* in tests to supply an isolated list
     without touching the global state.
-
-    ``go_generate`` is **default-off** on this production path: it is added to
-    the effective skip set unless ``REPO_OPS_REMEDIATE_GO_GENERATE=1`` is set.
-    (Ecosystem ``go.run_remediations`` applies the same gate for direct callers.)
     """
-    effective_skip = set(skip)
-    if os.environ.get("REPO_OPS_REMEDIATE_GO_GENERATE", "") != "1":
-        effective_skip.add("go_generate")
     hooks = _registry if _registry is not None else list(_GLOBAL_REGISTRY)
-    run_hooks(hooks, result, apply=apply, skip=effective_skip)
+    run_hooks(hooks, result, apply=apply)

@@ -9,61 +9,6 @@ commits, and later sections assume the earlier ones. The plan comes from an
 audit (waste/debt/bypass lenses) measured against 362 unique recorded
 invocations. Every decision below was taken by the operator; none is open.
 
-## 5. Five config layers where one file with three keys is used
-
-Sources today: CLI, 48 `REPO_OPS_*` env vars, global `config.toml`,
-pyproject `[tool.repo-ops]`, `.repo-ops.toml`. Measured: 0 env vars set, 0
-pyproject tables, 18 sidecars using only `verify` (15), `hold` (4),
-`exclude` (1); the global file sets only `exclude`. Settings travel CLI →
-`os.environ` (`_set_cli_env`) → ambient-snapshot diff → `resolve_setting`
-(24 settings), 7 settings read raw `os.environ`, and `run.py:910` passes an
-empty global config on fleet runs, so global keys other than exclude are
-silently ignored. `resolve_bool_setting` is copied into 9 manager modules and
-`process_env_cli_override` twice (the deno copy has drifted).
-
-Decided: two files, three keys — `~/.config/repo-ops/config.toml` and
-per-repo `.repo-ops.toml`, keys `exclude`, `[[hold]]`, `[verify]`. No env
-vars, no pyproject layer. Timeouts and yarn concurrency become constants.
-One frozen per-repo settings object is built once and passed down.
-`exclude` resolves as the union of both files everywhere
-(`merge_exclude_patterns`). Move the durable excludes (WineCountryVIP,
-caldera: client repos outside operator orgs; 33 of 86 `--exclude` uses)
-into the live global config in the same pass.
-
-### Read
-
-- `src/repo_ops_core/config.py` whole file (411 lines): `SETTINGS_TABLE`,
-  `resolve_setting:339`, `resolve_bool_setting:392`, pyproject merge `:79-111`.
-- `src/repo_ops_upgrade/run.py:228-236,905-918` `_set_cli_env`,
-  `ambient_env`, `apply_config_to_env`.
-- Raw env reads: `run.py:418`, `actions.py:892,1056`, `orchestration.py:103`,
-  `state.py:67`, `yarn.py:103`, `hatch.py:37`; `REMEDIATE_GO_GENERATE` (3
-  sites).
-- Copies: `bun.py:79,90`, `pnpm.py:85,96`, `yarn.py:211,222`, `npm.py:59`,
-  `rust.py:49`, `deno.py:45,69`, `go.py:151,167`.
-- `src/repo_ops_core/exclude.py:21`; `src/repo_ops_dependabot/dependabot.py:1159-1166`
-  (uses repo *or* global excludes — wrong).
-- `~/.config/repo-ops/config.toml` (live operator config).
-
-### Traps
-
-- **`[verify]` is the one key doing real work** (15 sidecars): its schema and
-  behaviour must not change; run each of the 18 sidecar repos through
-  `repo-ops plan` before and after and diff the verify commands.
-- **Config test rewrite.** 33 layering tests (642 lines) and most of
-  `tests/test_config_e2e.py` (857 lines) test the deleted layers; replace
-  with tests of the two-file merge, not ports of the old ones.
-- **Tests patch module-level copies.** 21 patches target the per-module
-  copies; they move to the settings object.
-
-### Acceptance
-
-- `rg 'REPO_OPS_' src` is empty; `rg 'tool.repo-ops' src` is empty.
-- A global `exclude` and a repo `exclude` both apply on a fleet run and on
-  `dependabot`.
-- The 18 sidecar repos produce the same verify commands before/after.
-- Full gate green.
-
 ## 6. Helpers bypassed in the code that survives
 
 After sections 2–5, these remain:

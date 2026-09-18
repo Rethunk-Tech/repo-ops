@@ -7,7 +7,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
+from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_toml_file, restore_file, snapshot_file
 from repo_ops_core.holds import resolve_package_hold
 from repo_ops_core.process import run
@@ -145,7 +145,7 @@ def _apply_poetry_targeted_bumps(
             proc = run(
                 ["poetry", "add", f"{candidate.name}@{bumped}"],
                 ws.path,
-                timeout=resolve_timeout_apply(),
+                timeout=TIMEOUT_APPLY,
             )
         except Exception:
             restore_file(manifest, manifest_snapshot)
@@ -166,7 +166,7 @@ def check_poetry(
     if not shutil.which("poetry"):
         print(f"WARN {ws.path}: poetry not on PATH", file=sys.stderr)
         return ([], [])
-    proc = run(["poetry", "update", "--dry-run"], ws.path, timeout=resolve_timeout_check())
+    proc = run(["poetry", "update", "--dry-run"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "poetry update --dry-run failed")
     changes: list[Change] = []
@@ -181,7 +181,7 @@ def check_poetry(
 def apply_poetry(ws: Workspace) -> list[Change] | None:
     if not shutil.which("poetry"):
         raise RuntimeError(f"poetry not on PATH for {ws.path}")
-    proc = run(["poetry", "update"], ws.path, timeout=resolve_timeout_apply())
+    proc = run(["poetry", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "poetry update failed")
     _enforce_version_ceilings(ws)

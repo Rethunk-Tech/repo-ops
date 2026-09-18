@@ -1,10 +1,10 @@
-"""Tests for org allowed-actions policy audit (REPO_OPS_ACTIONS_ORG_POLICY=1).
+"""Tests for the org allowed-actions policy audit.
 
 Fleet incident: two GitHub orgs had allowed_actions=local_only, silently
 startup-failing ALL workflows that use actions/checkout (0-second failures).
 This feature detects that class of misconfiguration during the Actions scan.
 
-Opt-in: REPO_OPS_ACTIONS_ORG_POLICY=1  (default off — costs extra gh api calls).
+Runs whenever gh is authenticated; reports only.
 """
 
 from __future__ import annotations

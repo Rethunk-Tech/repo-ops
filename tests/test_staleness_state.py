@@ -113,38 +113,6 @@ def test_zero_behind_run_resets_aging_and_prunes(tmp_path, monkeypatch):
     _reset_module_cache()
 
 
-def test_process_workspace_records_plan_behind_latest(tmp_path, monkeypatch, make_workspace):
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    monkeypatch.setenv("REPO_OPS_NO_PROGRESS", "1")
-    _reset_module_cache()
-    ws = make_workspace(tmp_path, ecosystem="node", manager="npm", label="test-repo")
-    checked = WorkspaceResult(
-        workspace=ws,
-        status="ok",
-        behind_latest=[Change(name="left", from_ver="1.0.0", to="2.0.0")],
-    )
-    with (
-        patch("repo_ops_upgrade.orchestration.should_exclude", return_value=False),
-        patch(
-            "repo_ops_upgrade.orchestration.ecosystems.check_workspace",
-            return_value=checked,
-        ),
-        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
-    ):
-        out = process_workspace(
-            WorkspaceResult(workspace=ws),
-            do_apply=False,
-            do_verify=False,
-            allow_dirty=False,
-        )
-    assert out.status == "ok"
-    info = cache_get_staleness(tmp_path, date.today())
-    assert info is not None
-    assert info["total_behind"] == 1
-    assert info["by_manager"] == {"npm": 1}
-    _reset_module_cache()
-
-
 def test_report_surfaces_score_delta_and_footer_top3(tmp_path, monkeypatch, make_workspace):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     _reset_module_cache()
@@ -179,33 +147,32 @@ def test_report_surfaces_score_delta_and_footer_top3(tmp_path, monkeypatch, make
     _reset_module_cache()
 
 
-def test_empty_store_keeps_report_output_unchanged(tmp_path, monkeypatch, make_workspace):
+def test_process_workspace_records_plan_behind_latest(tmp_path, monkeypatch, make_workspace):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     _reset_module_cache()
-    repo = tmp_path / "repo"
-    bundle = RepoBundle(
-        git_repo=repo,
-        label="test-repo",
-        workspaces=[
-            WorkspaceResult(
-                workspace=make_workspace(repo, ecosystem="node", manager="npm", label="test-repo"),
-                behind_latest=[Change(name="pkg", from_ver="1.0.0", to="2.0.0")],
-            )
-        ],
+    ws = make_workspace(tmp_path, ecosystem="node", manager="npm", label="test-repo")
+    checked = WorkspaceResult(
+        workspace=ws,
+        status="ok",
+        behind_latest=[Change(name="left", from_ver="1.0.0", to="2.0.0")],
     )
-    summary = build_run_summary({repo: bundle})
-    assert "staleness_top" not in summary
-    payload = build_json_payload({repo: bundle}, roots=[str(repo)], mode="plan")
-    assert "staleness_score" not in payload["repos"][0]
-    assert "new_behind_since_last_run" not in payload["repos"][0]
-
-    buf = io.StringIO()
-    with patch("sys.stdout", buf):
-        print_run_footer(summary=summary, failures=[], exit_code=0)
-    assert "staleness" not in buf.getvalue()
-
-    # REPO_OPS_NO_STATE=1 disables both recording and read-back entirely.
-    monkeypatch.setenv("REPO_OPS_NO_STATE", "1")
-    cache_record_behind_latest(repo, "npm", 3, date.today())
-    assert cache_get_staleness(repo, date.today()) is None
+    with (
+        patch("repo_ops_upgrade.orchestration.should_exclude", return_value=False),
+        patch(
+            "repo_ops_upgrade.orchestration.ecosystems.check_workspace",
+            return_value=checked,
+        ),
+        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
+    ):
+        out = process_workspace(
+            WorkspaceResult(workspace=ws),
+            do_apply=False,
+            do_verify=False,
+            allow_dirty=False,
+        )
+    assert out.status == "ok"
+    info = cache_get_staleness(tmp_path, date.today())
+    assert info is not None
+    assert info["total_behind"] == 1
+    assert info["by_manager"] == {"npm": 1}
     _reset_module_cache()

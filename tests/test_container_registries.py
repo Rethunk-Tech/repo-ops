@@ -5,7 +5,7 @@ Covers:
 - docker.io direct token fetch (no probe RTT)
 - Basic-auth from ~/.docker/config.json (DOCKER_CONFIG env honoured)
 - credsStore-only config → report-only
-- Digest refresh plan+apply byte-preservation (REPO_OPS_CONTAINER_REFRESH_SHA=1)
+- Digest refresh plan+apply byte-preservation
 - Compose build.dockerfile resolution matrix (string form, mapping form, context+dockerfile)
 
 No real network calls are made; urllib is monkeypatched throughout.

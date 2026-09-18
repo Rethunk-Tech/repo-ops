@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from repo_ops_core.constants import resolve_timeout_apply
+from repo_ops_core.constants import TIMEOUT_APPLY
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version, semver_tuple
@@ -113,7 +113,7 @@ def apply_biome(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
         cmd = [*prefix, "biome", "migrate", "--write"]
         if cfg_dir != ws.path:
             cmd.append(f"--config-path={cfg_dir}")
-        proc = run(cmd, ws.path, timeout=resolve_timeout_apply())
+        proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             ok = False
             last_err = stderr_tail(proc.stderr or proc.stdout or "")
@@ -187,7 +187,7 @@ def report_playwright(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
 
 def apply_playwright(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     prefix = pm_exec_prefix(ws.manager)
-    proc = run([*prefix, "playwright", "install"], ws.path, timeout=resolve_timeout_apply())
+    proc = run([*prefix, "playwright", "install"], ws.path, timeout=TIMEOUT_APPLY)
     cmd = f"{ws.manager} exec playwright install"
     if proc.returncode == 0:
         return True, f"{cmd} (ok)"
@@ -223,7 +223,7 @@ def apply_codegen(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     pkg = read_json_file(ws.path / "package.json") or {}
     for script in ("generate:proto", "generate:openapi"):
         if script in (pkg.get("scripts") or {}):
-            proc = run([*prefix, script], ws.path, timeout=resolve_timeout_apply())
+            proc = run([*prefix, script], ws.path, timeout=TIMEOUT_APPLY)
             if proc.returncode != 0:
                 ok = False
                 last_err = stderr_tail(proc.stderr or proc.stdout or "")
@@ -327,7 +327,7 @@ def apply_manifest_format(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     files = _rewritten_manifests(ws, ctx)
     # A manifest the repo's own biome config ignores is left as written, not a failure.
     cmd = [str(_biome_bin(ws)), "format", "--write", "--no-errors-on-unmatched", *files]
-    proc = run(cmd, ws.path, timeout=resolve_timeout_apply())
+    proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
     detail = f"biome format --write {' '.join(files)}"
     if proc.returncode == 0:
         return True, f"{detail} (ok)"

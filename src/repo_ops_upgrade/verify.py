@@ -2,14 +2,13 @@
 
 Per-repo verify profiles
 ------------------------
-Non-Python repos carry no pyproject.toml, so the layered config module also
-reads a ``.repo-ops.toml`` sidecar at the repo root.  The ``[verify]`` table
-(or flat ``verify.*`` keys in the sidecar) supports three knobs:
+The ``[verify]`` table in ``.repo-ops.toml`` (or the global config) supports
+three knobs:
 
 ``verify.script`` (str)
     Overrides gate delegation and the Node.js waterfall (ci → ci:pushgate →
-    build → lint) with a specific package.json script name.  Empty string skips the script step
-    (same as ``REPO_OPS_NODE_VERIFY_SCRIPT=""``).  Real-world use: Heroku
+    build → lint) with a specific package.json script name.  Empty string skips
+    the script step.  Real-world use: Heroku
     repos that need ``yarn install --immutable && yarn build:production`` as
     their gate can declare ``script = "build:production"`` instead of
     relying on a ``ci`` script.
@@ -19,29 +18,24 @@ reads a ``.repo-ops.toml`` sidecar at the repo root.  The ``[verify]`` table
     a successful gate) after logging ``verify skipped (config)``.
 
 ``verify.timeout`` (int, seconds)
-    Per-repo override for the verify timeout.  Supersedes the global
-    ``REPO_OPS_TIMEOUT_VERIFY`` env var only when the env var is absent.
+    Per-repo override for the verify timeout.
 
-Precedence: env var > per-repo config > global config > default.
-The env var always wins for one-shot overrides (CI pipelines).
+Precedence: workspace config > repo config > global config > default.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import shutil
 from typing import Any
 
 from repo_ops_core.config import (
-    ambient_env,
     load_global_config,
     load_repo_config,
-    resolve_setting,
 )
-from repo_ops_core.constants import resolve_timeout_verify
+from repo_ops_core.constants import TIMEOUT_VERIFY
 from repo_ops_core.filesystem import read_json_file, read_toml_file
 from repo_ops_core.process import run
 from repo_ops_js.workspaces import pm_run_prefix
@@ -125,7 +119,7 @@ def _verify_hatch_fast(
     scripts = (d.get("project") or {}).get("scripts") or {}
     dev = _pyproject_dev_deps(d)
     if timeout is None:
-        timeout = resolve_timeout_verify()
+        timeout = TIMEOUT_VERIFY
     # What the project declares outranks this module's guess at it.
     handled, gate_err = _gate_verify(ws, timeout=timeout)
     if handled:
@@ -182,8 +176,6 @@ def _verify_hatch_fast(
     return None
 
 
-_NODE_VERIFY_SCRIPT_ENV = "REPO_OPS_NODE_VERIFY_SCRIPT"
-_TIMEOUT_VERIFY_ENV = "REPO_OPS_TIMEOUT_VERIFY"
 # Waterfall of default script candidates tried in order. Only reached when the
 # gate CLI is unavailable or detects nothing there: gate ranks Makefile targets
 # and turbo tasks above package.json scripts, which this waterfall cannot see.
@@ -252,27 +244,12 @@ def _load_verify_profile(ws: Workspace) -> dict[str, Any]:
 
 
 def _resolve_verify_timeout_with_profile(profile: dict[str, Any]) -> int:
-    """Resolve verify timeout: env var > per-repo config > global config > default.
-
-    *profile* is the merged ``[verify]`` dict from :func:`_load_verify_profile`.
-    """
-    # Env var always wins (one-shot override for CI pipelines).
-    ambient = ambient_env()
-    env_raw = (os.environ if ambient is None else ambient).get(_TIMEOUT_VERIFY_ENV, "").strip()
-    if env_raw:
-        try:
-            val = float(env_raw)
-            if val > 0:
-                return int(val)
-        except ValueError:
-            pass
-
-    # Per-repo / global config.
+    """Resolve the verify timeout from the merged ``[verify]`` profile, else the default."""
     cfg_timeout = profile.get("timeout")
     if isinstance(cfg_timeout, int) and cfg_timeout > 0:
         return cfg_timeout
 
-    return resolve_timeout_verify()
+    return TIMEOUT_VERIFY
 
 
 def verify_node(ws: Workspace) -> str | None:
@@ -280,13 +257,12 @@ def verify_node(ws: Workspace) -> str | None:
 
     Script resolution order (first match wins):
 
-    1. ``REPO_OPS_NODE_VERIFY_SCRIPT`` env var (empty → skip script step)
-    2. ``verify.script`` in per-repo / global config (empty → skip script step)
-    3. The gates the project declares, run through the ``gate`` CLI
-    4. Waterfall: ci → ci:pushgate → build → lint (first found in package.json)
-    5. Biome fallback (lint / biome:ci)
+    1. ``verify.script`` in per-repo / global config (empty → skip script step)
+    2. The gates the project declares, run through the ``gate`` CLI
+    3. Waterfall: ci → ci:pushgate → build → lint (first found in package.json)
+    4. Biome fallback (lint / biome:ci)
 
-    Steps 4 and 5 are reached only when ``gate`` is absent or detects nothing.
+    Steps 3 and 4 are reached only when ``gate`` is absent or detects nothing.
     """
     profile = _load_verify_profile(ws)
     mgr = ws.manager
@@ -307,46 +283,32 @@ def verify_node(ws: Workspace) -> str | None:
         if proc.returncode != 0 or (mgr == "yarn" and YARN_PEER_WARN.search(combined)):
             return combined.strip() or f"{mgr} immutable install failed"
 
-    # Caller environment wins over top-level config; the ambient snapshot keeps
-    # config values injected for another checkout from leaking into this one.
-    env_val = resolve_setting(
-        "node_verify_script",
-        global_cfg=load_global_config(),
-        repo_cfg=load_repo_config(ws.git_repo),
-        env=ambient_env(),
-    )
-    if env_val is not None:
-        if str(env_val).strip() == "":
+    cfg_script = profile.get("script")
+    if cfg_script is not None:
+        # Explicit empty string in config → skip script step.
+        if str(cfg_script).strip() == "":
             return None
-        script_name: str | None = str(env_val).strip()
+        script_name = str(cfg_script).strip()
     else:
-        # Per-repo config script override (next in precedence after env var).
-        cfg_script = profile.get("script")
-        if cfg_script is not None:
-            # Explicit empty string in config → skip script step.
-            if str(cfg_script).strip() == "":
-                return None
-            script_name = str(cfg_script).strip()
-        else:
-            # No explicit override: what the project declares outranks this
-            # module's guess at it.
-            handled, gate_err = _gate_verify(ws, timeout=timeout)
-            if handled:
-                return gate_err
-            script_name = None
-            for candidate in _NODE_VERIFY_CANDIDATES:
-                if candidate in scripts:
-                    script_name = candidate
-                    break
-            if not script_name and (
-                (ws.path / "biome.json").exists() or (ws.path / "biome.jsonc").exists()
-            ):
-                script_name = "lint" if "lint" in scripts else None
-                if not script_name:
-                    for candidate in ("biome:ci",):
-                        if candidate in scripts:
-                            script_name = candidate
-                            break
+        # No explicit override: what the project declares outranks this
+        # module's guess at it.
+        handled, gate_err = _gate_verify(ws, timeout=timeout)
+        if handled:
+            return gate_err
+        script_name = None
+        for candidate in _NODE_VERIFY_CANDIDATES:
+            if candidate in scripts:
+                script_name = candidate
+                break
+        if not script_name and (
+            (ws.path / "biome.json").exists() or (ws.path / "biome.jsonc").exists()
+        ):
+            script_name = "lint" if "lint" in scripts else None
+            if not script_name:
+                for candidate in ("biome:ci",):
+                    if candidate in scripts:
+                        script_name = candidate
+                        break
 
     if not script_name:
         return None
@@ -498,7 +460,7 @@ def _verify_pip_tools(ws: Workspace, *, timeout: int | None = None) -> str | Non
     if not req_in.exists():
         return None
     if timeout is None:
-        timeout = resolve_timeout_verify()
+        timeout = TIMEOUT_VERIFY
     if shutil.which("uv"):
         proc = run(
             ["uv", "pip", "compile", str(req_in), "-o", "-", "--quiet"],

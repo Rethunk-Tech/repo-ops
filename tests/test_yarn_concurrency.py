@@ -3,7 +3,7 @@
 Each yarn check/guard run copies the workspace to a temp dir and lets Yarn Berry
 extract its cache there; running one per ``--jobs`` worker can exhaust /tmp. The
 ``_yarn_extraction_slot`` semaphore bounds concurrent extractions independently
-of the worker pool (env ``REPO_OPS_YARN_MAX_CONCURRENCY``).
+of the worker pool.
 """
 
 from __future__ import annotations
@@ -25,23 +25,9 @@ def _reset_extraction_semaphore():
     yarn._extraction_sem = None
 
 
-def test_resolve_default_is_four(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("REPO_OPS_YARN_MAX_CONCURRENCY", raising=False)
-    assert yarn._resolve_yarn_max_concurrency() == 4
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [("1", 1), ("2", 2), ("0", 1), ("-3", 1), ("", 4), ("abc", 4)],
-)
-def test_resolve_env_override(monkeypatch: pytest.MonkeyPatch, raw: str, expected: int) -> None:
-    monkeypatch.setenv("REPO_OPS_YARN_MAX_CONCURRENCY", raw)
-    assert yarn._resolve_yarn_max_concurrency() == expected
-
-
 def test_slot_caps_concurrent_extractions(monkeypatch: pytest.MonkeyPatch) -> None:
     """With the cap at 2, no more than 2 slots are ever held simultaneously."""
-    monkeypatch.setenv("REPO_OPS_YARN_MAX_CONCURRENCY", "2")
+    monkeypatch.setattr(yarn, "_DEFAULT_YARN_MAX_CONCURRENCY", 2)
     active = 0
     peak = 0
     lock = threading.Lock()

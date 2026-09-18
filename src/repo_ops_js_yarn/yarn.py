@@ -14,7 +14,7 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 
-from repo_ops_core.constants import resolve_timeout_apply
+from repo_ops_core.constants import TIMEOUT_APPLY
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
@@ -55,7 +55,6 @@ _TIMEOUT_NPM_INFO = 60
 # it is disk-backed. This semaphore bounds the disk-heavy extraction phase
 # independently of the workspace-level --jobs pool, so non-yarn ecosystems keep
 # full parallelism.
-_YARN_MAX_CONCURRENCY_ENV = "REPO_OPS_YARN_MAX_CONCURRENCY"
 _DEFAULT_YARN_MAX_CONCURRENCY = 4
 _extraction_sem: threading.BoundedSemaphore | None = None
 _extraction_sem_lock = threading.Lock()
@@ -77,18 +76,6 @@ def _extraction_root() -> str | None:
     return str(var_tmp) if var_tmp.is_dir() else None
 
 
-def _resolve_yarn_max_concurrency() -> int:
-    """Max concurrent yarn extractions from ``REPO_OPS_YARN_MAX_CONCURRENCY`` (min 1)."""
-    raw = os.environ.get(_YARN_MAX_CONCURRENCY_ENV, "").strip()
-    if not raw:
-        return _DEFAULT_YARN_MAX_CONCURRENCY
-    try:
-        value = int(raw)
-    except ValueError:
-        return _DEFAULT_YARN_MAX_CONCURRENCY
-    return max(1, value)
-
-
 @contextlib.contextmanager
 def _yarn_extraction_slot() -> Iterator[None]:
     """Hold one extraction slot for the duration of an isolated-copy yarn run.
@@ -100,7 +87,7 @@ def _yarn_extraction_slot() -> Iterator[None]:
     if _extraction_sem is None:
         with _extraction_sem_lock:
             if _extraction_sem is None:
-                _extraction_sem = threading.BoundedSemaphore(_resolve_yarn_max_concurrency())
+                _extraction_sem = threading.BoundedSemaphore(_DEFAULT_YARN_MAX_CONCURRENCY)
     _extraction_sem.acquire()
     try:
         yield
@@ -417,10 +404,10 @@ def targeted_bump_behind(
         return [], behind
 
     def run_bump(name: str, version: str) -> bool:
-        up = run(["yarn", "up", f"{name}@{version}"], mdir, timeout=resolve_timeout_apply())
+        up = run(["yarn", "up", f"{name}@{version}"], mdir, timeout=TIMEOUT_APPLY)
         if up.returncode != 0:
             return False
-        install = run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
+        install = run(["yarn", "install"], mdir, timeout=TIMEOUT_APPLY)
         return install.returncode == 0
 
     def resolve_landed(name: str) -> str | None:
@@ -465,10 +452,10 @@ def check_yarn_snapshot(
         mdir = _copy_yarn_workspace_to_temp(ws, Path(td))
         before_snap = snapshot_workspace_files(mdir, "yarn")
         corepack_prepare("yarn", mdir)
-        proc = run(_yarn_up_cmd(), mdir, timeout=resolve_timeout_apply())
+        proc = run(_yarn_up_cmd(), mdir, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             raise _command_failure("yarn up failed", proc)
-        proc2 = run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
+        proc2 = run(["yarn", "install"], mdir, timeout=TIMEOUT_APPLY)
         if proc2.returncode != 0:
             raise _command_failure("yarn install failed", proc2)
         after_snap = snapshot_workspace_files(mdir, "yarn")
@@ -537,11 +524,11 @@ def _plan_without_resolutions(ws: Workspace) -> list[Change]:
                 del data["resolutions"]
                 pkg_path.write_text(json.dumps(data), encoding="utf-8")
         corepack_prepare("yarn", mdir)
-        proc = run(_yarn_up_cmd(), mdir, timeout=resolve_timeout_apply())
+        proc = run(_yarn_up_cmd(), mdir, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             # Check failure means we can't determine intent; skip guard (safe).
             return []
-        proc2 = run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
+        proc2 = run(["yarn", "install"], mdir, timeout=TIMEOUT_APPLY)
         if proc2.returncode != 0:
             return []
         after_resolved: dict[str, str] = _resolved_versions(lock) if lock.is_file() else {}
@@ -597,10 +584,10 @@ def apply_yarn(ws: Workspace) -> list[Change]:
 
     # --- real apply -----------------------------------------------------------
     corepack_prepare("yarn", ws.path)
-    proc = run(_yarn_up_cmd(), ws.path, timeout=resolve_timeout_apply())
+    proc = run(_yarn_up_cmd(), ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise _command_failure("yarn up failed", proc)
-    proc2 = run(["yarn", "install"], ws.path, timeout=resolve_timeout_apply())
+    proc2 = run(["yarn", "install"], ws.path, timeout=TIMEOUT_APPLY)
     if proc2.returncode != 0:
         raise _command_failure("yarn install failed", proc2)
 
@@ -640,7 +627,7 @@ def _yarn_hold_install(mdir: Path, name: str, spec: str) -> subprocess.Completed
     Only the ``yarn up`` result is returned when it fails (no point installing
     after a failed resolution change).
     """
-    up = run(["yarn", "up", f"{name}@{spec}"], mdir, timeout=resolve_timeout_apply())
+    up = run(["yarn", "up", f"{name}@{spec}"], mdir, timeout=TIMEOUT_APPLY)
     if up.returncode != 0:
         return up
-    return run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
+    return run(["yarn", "install"], mdir, timeout=TIMEOUT_APPLY)

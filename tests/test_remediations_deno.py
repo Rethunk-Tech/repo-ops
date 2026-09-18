@@ -147,7 +147,7 @@ def test_run_remediations_plan_mode(tmp_path: Path, make_workspace, make_change)
         patch.object(deno_rem, "REMEDIATIONS", [fake]),
         patch.object(deno_rem.shutil, "which", return_value="/usr/bin/deno"),
     ):
-        deno_rem.run_remediations(result, apply=False, skip=set())
+        deno_rem.run_remediations(result, apply=False)
 
     assert len(result.remediations) == 1
     assert result.remediations[0]["status"] == "pending"
@@ -174,24 +174,7 @@ def test_run_remediations_apply_mode(
         patch("repo_ops_upgrade_remediations_deno.remediations.run") as mock_run,
     ):
         mock_run.return_value = ok_proc
-        deno_rem.run_remediations(result, apply=True, skip=set())
+        deno_rem.run_remediations(result, apply=True)
 
     assert result.remediations[0]["status"] == "applied"
     assert result.status == "ok"
-
-
-def test_deno_fix_skipped_in_skip_set(tmp_path: Path, make_workspace, make_change) -> None:
-    (tmp_path / "deno.json").write_text("{}\n")
-    result = _result(tmp_path, make_workspace=make_workspace)
-    result.changes = [make_change("std")]
-
-    fake = deno_rem.RemediationHook(
-        "deno_fix",
-        deno_rem.detect_deno_fix,
-        deno_rem.report_deno_fix,
-        deno_rem.apply_deno_fix,
-    )
-    with patch.object(deno_rem, "REMEDIATIONS", [fake]):
-        deno_rem.run_remediations(result, apply=True, skip={"deno_fix"})
-
-    assert result.remediations == []

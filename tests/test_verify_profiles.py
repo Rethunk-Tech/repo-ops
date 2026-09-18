@@ -2,11 +2,9 @@
 
 Covers:
 - .repo-ops.toml read (flat keys)
-- pyproject.toml [tool.repo-ops] wins over .repo-ops.toml on a per-key basis
 - verify.script honored (config override of the Node waterfall)
 - verify.skip short-circuits verify gate entirely
 - verify.timeout passed to run()
-- env var still wins over per-repo config
 """
 
 from __future__ import annotations
@@ -19,7 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
-from repo_ops_core.config import load_dot_repo_ops_config, load_repo_config
+from repo_ops_core.config import load_repo_config
 from repo_ops_upgrade.verify import verify_node, verify_workspace
 
 # ---------------------------------------------------------------------------
@@ -51,19 +49,19 @@ class TestDotRepoOpsToml:
         (tmp_path / ".repo-ops.toml").write_text(
             'jobs = 8\ngo_upgrade_mode = "explicit"\n', encoding="utf-8"
         )
-        cfg = load_dot_repo_ops_config(tmp_path)
+        cfg = load_repo_config(tmp_path)
         assert cfg.get("jobs") == 8
         assert cfg.get("go_upgrade_mode") == "explicit"
 
     def test_missing_file_returns_empty(self, tmp_path: Path) -> None:
-        assert load_dot_repo_ops_config(tmp_path) == {}
+        assert load_repo_config(tmp_path) == {}
 
     def test_reads_verify_subtable(self, tmp_path: Path) -> None:
         (tmp_path / ".repo-ops.toml").write_text(
             "[verify]\nscript = 'build'\ntimeout = 60\nskip = false\n",
             encoding="utf-8",
         )
-        cfg = load_dot_repo_ops_config(tmp_path)
+        cfg = load_repo_config(tmp_path)
         verify = cfg.get("verify", {})
         assert verify.get("script") == "build"
         assert verify.get("timeout") == 60
@@ -71,7 +69,7 @@ class TestDotRepoOpsToml:
 
     def test_invalid_toml_returns_empty(self, tmp_path: Path) -> None:
         (tmp_path / ".repo-ops.toml").write_text("not valid toml ][[\n", encoding="utf-8")
-        cfg = load_dot_repo_ops_config(tmp_path)
+        cfg = load_repo_config(tmp_path)
         assert cfg == {}
 
 
@@ -82,20 +80,6 @@ class TestDotRepoOpsToml:
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 class TestSidecarPrecedence:
-    def test_pyproject_key_wins_over_sidecar(self, tmp_path: Path) -> None:
-        """pyproject.toml [tool.repo-ops] value must override .repo-ops.toml on shared keys."""
-        (tmp_path / ".repo-ops.toml").write_text(
-            'go_upgrade_mode = "explicit"\njobs = 4\n', encoding="utf-8"
-        )
-        (tmp_path / "pyproject.toml").write_text(
-            '[tool.repo-ops]\ngo_upgrade_mode = "patch"\n', encoding="utf-8"
-        )
-        cfg = load_repo_config(tmp_path)
-        # pyproject wins for go_upgrade_mode
-        assert cfg.get("go_upgrade_mode") == "patch"
-        # sidecar-only key is preserved
-        assert cfg.get("jobs") == 4
-
     def test_sidecar_only_key_present_when_no_pyproject(self, tmp_path: Path) -> None:
         (tmp_path / ".repo-ops.toml").write_text("jobs = 6\n", encoding="utf-8")
         cfg = load_repo_config(tmp_path)
@@ -103,24 +87,6 @@ class TestSidecarPrecedence:
 
     def test_no_sidecar_no_pyproject_returns_empty(self, tmp_path: Path) -> None:
         assert load_repo_config(tmp_path) == {}
-
-    def test_pyproject_without_tool_repo_ops_falls_back_to_sidecar(self, tmp_path: Path) -> None:
-        (tmp_path / ".repo-ops.toml").write_text("jobs = 3\n", encoding="utf-8")
-        (tmp_path / "pyproject.toml").write_text('[project]\nname = "myapp"\n', encoding="utf-8")
-        cfg = load_repo_config(tmp_path)
-        assert cfg.get("jobs") == 3
-
-    def test_verify_subtable_merged(self, tmp_path: Path) -> None:
-        """verify.timeout from sidecar is preserved when pyproject only sets verify.skip."""
-        (tmp_path / ".repo-ops.toml").write_text("[verify]\ntimeout = 45\n", encoding="utf-8")
-        (tmp_path / "pyproject.toml").write_text(
-            "[tool.repo-ops]\n[tool.repo-ops.verify]\nskip = false\n", encoding="utf-8"
-        )
-        cfg = load_repo_config(tmp_path)
-        verify = cfg.get("verify", {})
-        # pyproject sets skip; sidecar sets timeout — merged result has both
-        assert verify.get("skip") is False
-        assert verify.get("timeout") == 45
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +100,6 @@ class TestVerifyScriptFromConfig:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """verify.script in config overrides the waterfall when env var absent."""
-        monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         _write_pkg(tmp_path, {"ci": "echo ci", "build:prod": "echo build"})
         (tmp_path / ".repo-ops.toml").write_text(
             '[verify]\nscript = "build:prod"\n', encoding="utf-8"
@@ -163,7 +128,6 @@ class TestVerifyScriptFromConfig:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
         """verify.script = '' in config skips the script step (immutable install still runs)."""
-        monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         _write_pkg(tmp_path, {"ci": "echo ci"})
         (tmp_path / ".repo-ops.toml").write_text('[verify]\nscript = ""\n', encoding="utf-8")
         calls: list[list[str]] = []
@@ -187,7 +151,6 @@ class TestVerifyScriptFromConfig:
     def test_config_script_failure_propagates(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
-        monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         _write_pkg(tmp_path, {"gate": "echo gate"})
         (tmp_path / ".repo-ops.toml").write_text('[verify]\nscript = "gate"\n', encoding="utf-8")
 
@@ -235,7 +198,6 @@ class TestVerifySkip:
     def test_skip_false_runs_normally(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
-        monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         (tmp_path / ".repo-ops.toml").write_text("[verify]\nskip = false\n", encoding="utf-8")
         _write_pkg(tmp_path, {"ci": "echo ci"})
         calls: list[list[str]] = []
@@ -256,7 +218,6 @@ class TestVerifySkip:
     def test_skip_absent_runs_normally(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
-        monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         _write_pkg(tmp_path, {"ci": "echo ci"})
         ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         calls: list[list[str]] = []
@@ -308,7 +269,6 @@ class TestVerifyTimeout:
     def test_config_timeout_passed_to_run(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
-        monkeypatch.delenv("REPO_OPS_TIMEOUT_VERIFY", raising=False)
         (tmp_path / ".repo-ops.toml").write_text("[verify]\ntimeout = 42\n", encoding="utf-8")
         captured: list[dict] = []
 
@@ -326,33 +286,9 @@ class TestVerifyTimeout:
         assert build_call is not None
         assert build_call["timeout"] == 42
 
-    def test_env_var_wins_over_config_timeout(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
-    ) -> None:
-        monkeypatch.setenv("REPO_OPS_TIMEOUT_VERIFY", "99")
-        (tmp_path / ".repo-ops.toml").write_text("[verify]\ntimeout = 42\n", encoding="utf-8")
-        captured: list[dict] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            captured.append({"cmd": cmd, "timeout": timeout})
-            return _ok()
-
-        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
-        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            verify_workspace(ws)
-
-        build_call = next((c for c in captured if c["cmd"] == ["go", "build", "./..."]), None)
-        assert build_call is not None
-        # env var (99) beats config (42)
-        assert build_call["timeout"] == 99
-
     def test_node_config_timeout_used(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
     ) -> None:
-        monkeypatch.delenv("REPO_OPS_TIMEOUT_VERIFY", raising=False)
-        monkeypatch.delenv("REPO_OPS_NODE_VERIFY_SCRIPT", raising=False)
         (tmp_path / ".repo-ops.toml").write_text(
             '[verify]\ntimeout = 77\nscript = "build"\n', encoding="utf-8"
         )
@@ -373,62 +309,3 @@ class TestVerifyTimeout:
         assert all(c["timeout"] == 77 for c in captured), (
             f"expected all timeouts=77, got {captured}"
         )
-
-
-# ---------------------------------------------------------------------------
-# env still wins over per-repo config (regression guard)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
-class TestEnvWinsOverConfig:
-    def test_env_verify_script_wins_over_config_script(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
-    ) -> None:
-        """REPO_OPS_NODE_VERIFY_SCRIPT env var must override verify.script from config."""
-        monkeypatch.setenv("REPO_OPS_NODE_VERIFY_SCRIPT", "env-script")
-        (tmp_path / ".repo-ops.toml").write_text(
-            '[verify]\nscript = "cfg-script"\n', encoding="utf-8"
-        )
-        _write_pkg(tmp_path, {"env-script": "echo env", "cfg-script": "echo cfg"})
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
-
-        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
-        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_node(ws)
-
-        assert result is None
-        assert any("env-script" in c for c in calls), f"expected env-script in {calls}"
-        assert not any("cfg-script" in c for c in calls), (
-            f"cfg-script must not run when env var set: {calls}"
-        )
-
-    def test_env_verify_script_empty_skips_even_with_config_script(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
-    ) -> None:
-        """REPO_OPS_NODE_VERIFY_SCRIPT='' must skip script step regardless of config."""
-        monkeypatch.setenv("REPO_OPS_NODE_VERIFY_SCRIPT", "")
-        (tmp_path / ".repo-ops.toml").write_text(
-            '[verify]\nscript = "cfg-script"\n', encoding="utf-8"
-        )
-        _write_pkg(tmp_path, {"cfg-script": "echo cfg"})
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
-
-        ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
-        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_node(ws)
-
-        assert result is None
-        assert not any("cfg-script" in c for c in calls)

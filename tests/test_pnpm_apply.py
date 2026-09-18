@@ -101,7 +101,7 @@ def test_apply_pnpm_guard_skipped_when_resolver_returns_none(
 def test_bucket_pnpm_pkg_latest_mode_falls_through_when_latest_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With REPO_OPS_PNPM_UPDATE_LATEST set, latest=='?' must fall through
+    """latest=='?' must fall through
     to the wanted check so a package with a known in-range bump is not omitted.
 
     Before the fix: the early ``return`` after the ``latest not in ('?','')``
@@ -133,7 +133,7 @@ def test_bucket_pnpm_pkg_latest_mode_falls_through_when_latest_unknown(
 def test_bucket_pnpm_pkg_latest_mode_uses_latest_when_known(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With REPO_OPS_PNPM_UPDATE_LATEST set and a known latest, use latest."""
+    """A known latest is the target."""
 
     changes: list[Change] = []
     behind_latest: list[Change] = []
