@@ -20,33 +20,8 @@ from repo_ops_upgrade import orchestration as orch_mod
 from repo_ops_upgrade import run as run_mod
 
 
-def _fake_args(**overrides) -> MagicMock:
-    """Minimal argparse.Namespace stand-in for _run_upgrade_body."""
-    defaults: dict = {
-        # Selection
-        "eco_filter": None,
-        "exclude_patterns": None,
-        # Upgrade policy
-        "conservative": False,
-        "migrate_to_uv_lock": False,
-        "actions_org_policy": False,
-        "actions_policy_level": None,
-        "go_upgrade_mode": None,
-        "actions_unpin_sha": False,
-        "actions_tag_style": "major",
-        "actions_upgrade_mode": None,
-        "actions_lint_level": None,
-        # Safety
-        # Output
-        # Execution
-        "jobs": 1,
-    }
-    defaults.update(overrides)
-    return MagicMock(**defaults)
-
-
 def test_actions_worker_oserror_becomes_fail_entry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, upgrade_args
 ) -> None:
     """OSError from scan_actions → FAILED ActionBump on bundle; run exits 1, not raises."""
     bundle = RepoBundle(git_repo=tmp_path, label="test/repo", workspaces=[], actions=[])
@@ -65,7 +40,7 @@ def test_actions_worker_oserror_becomes_fail_entry(
     # Must NOT raise; exit code must be 1 (fail entry → actionable work → plan exit 1).
     rc = run_mod._run_upgrade_body(
         apply=False,
-        args=_fake_args(),
+        args=upgrade_args(),
         roots=[str(tmp_path)],
     )
     assert rc == 1, "expected exit 1 from fail entry, not a raised exception"
@@ -76,7 +51,7 @@ def test_actions_worker_oserror_becomes_fail_entry(
 
 
 def test_actions_worker_exception_preserves_other_bundles(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, upgrade_args
 ) -> None:
     """When one worker raises, other bundles' actions are still populated."""
     dir_a = tmp_path / "repo_a"
@@ -107,7 +82,7 @@ def test_actions_worker_exception_preserves_other_bundles(
 
     rc = run_mod._run_upgrade_body(
         apply=False,
-        args=_fake_args(),
+        args=upgrade_args(),
         roots=[str(tmp_path)],
     )
     assert rc == 1
@@ -119,7 +94,7 @@ def test_actions_worker_exception_preserves_other_bundles(
 
 
 def test_actions_worker_keyboardinterrupt_still_propagates(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, upgrade_args
 ) -> None:
     """KeyboardInterrupt is NOT swallowed — only Exception subclasses are isolated."""
     bundle = RepoBundle(git_repo=tmp_path, label="test", workspaces=[], actions=[])
@@ -141,6 +116,6 @@ def test_actions_worker_keyboardinterrupt_still_propagates(
     with pytest.raises((KeyboardInterrupt, Exception)):
         run_mod._run_upgrade_body(
             apply=False,
-            args=_fake_args(),
+            args=upgrade_args(),
             roots=[str(tmp_path)],
         )

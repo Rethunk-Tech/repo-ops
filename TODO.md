@@ -9,26 +9,6 @@ commits, and later sections assume the earlier ones. The plan comes from an
 audit (waste/debt/bypass lenses) measured against 362 unique recorded
 invocations. Every decision below was taken by the operator; none is open.
 
-## 7. Tests hand-roll what conftest should provide
-
-363 test clones (4,389 lines), 297 same-file: 261 local `def fake_run`,
-161 inline `CompletedProcess` builds in 29 files, 12 local workspace builders,
-5 private git-init helpers. `_fake_args` in `tests/test_run_wave2_wiring.py:21`
-and `tests/test_actions_pool_isolation.py:23` already drifted from the parser
-(`on_verify_fail="keep"` vs the parser's `revert`). About 270 lines only pin
-flag registration or `SETTINGS_TABLE` rows (`test_policy_display.py:269-343`,
-`test_config.py:89-200`, `test_cli.py:123-138,196-260`); they go with
-sections 3–5.
-
-Decided: add `fake_run` (call-recording) and `upgrade_args` (built from the
-real parser, so it cannot drift) to `tests/conftest.py`; migrate local
-copies file by file.
-
-### Acceptance
-
-- `rg -c 'def fake_run' tests` ≤ 5 (legitimately special ones).
-- No test builds upgrade args by hand. Suite time does not regress.
-
 ## 8. ~9,600 words of docs and skill for one command
 
 Word counts: `docs/usage.md` 6,197, `docs/bulk-maintenance.md` 668,

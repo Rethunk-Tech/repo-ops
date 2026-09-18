@@ -205,3 +205,43 @@ def _disable_ambient_color() -> Iterator[None]:
         for name in names:
             os.environ.pop(name, None)
         os.environ.update(before)
+
+
+@pytest.fixture
+def upgrade_args() -> Any:
+    """Build real plan/apply args from the parser, so tests cannot drift from it.
+
+    Defaults to ``jobs=1`` and no verify/commit (a unit test of the run body
+    should not shell out to gates or git); pass overrides to change any field.
+    """
+    from repo_ops_core.cli import build_upgrade_parser
+
+    def _build(**overrides: Any) -> Any:
+        args = build_upgrade_parser(apply=True).parse_args([])
+        args.jobs = 1
+        args.no_verify = True
+        args.no_commit = True
+        for key, value in overrides.items():
+            setattr(args, key, value)
+        return args
+
+    return _build
+
+
+class _FakeRun:
+    """A ``run()`` stand-in that records each argv in ``calls`` and succeeds."""
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def __call__(
+        self, cmd: list[str], *args: Any, **kwargs: Any
+    ) -> subprocess.CompletedProcess[str]:
+        self.calls.append(list(cmd))
+        return subprocess.CompletedProcess(list(cmd), 0, stdout="", stderr="")
+
+
+@pytest.fixture
+def fake_run() -> _FakeRun:
+    """Patch target for ``run()`` when a test only needs the commands it issued."""
+    return _FakeRun()

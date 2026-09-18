@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from repo_ops_js_npm.npm import (
@@ -32,13 +33,10 @@ def test_apply_npm_ok_when_resolved_at_target(tmp_path: Path, make_workspace) ->
             )  # must not raise
 
 
-def test_apply_npm_noop_when_nothing_outdated(tmp_path: Path, make_workspace) -> None:
+def test_apply_npm_noop_when_nothing_outdated(
+    tmp_path: Path, make_workspace, fake_run: Any
+) -> None:
     """No changes reported → apply still runs npm update/install (no short-circuit)."""
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=600, env=None):
-        calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
         patch("repo_ops_js_npm.npm.run", fake_run),
@@ -48,7 +46,7 @@ def test_apply_npm_noop_when_nothing_outdated(tmp_path: Path, make_workspace) ->
 
     # When outdated returns no changes, apply_npm still runs npm update/install
     # (it doesn't short-circuit like bun does), but the guard is skipped.
-    assert any(c[:2] == ["npm", "update"] for c in calls)
+    assert any(c[:2] == ["npm", "update"] for c in fake_run.calls)
 
 
 def test_apply_npm_guard_skipped_when_resolver_returns_none(tmp_path: Path, make_workspace) -> None:

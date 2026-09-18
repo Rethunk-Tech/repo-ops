@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from repo_ops_py_pipenv.pipenv import apply_pipenv, check_pipenv
@@ -41,13 +42,10 @@ def test_check_pipenv_raises_when_pip_fails(tmp_path: Path, make_workspace) -> N
             raise AssertionError("expected RuntimeError")
 
 
-def test_check_pipenv_invokes_venv_probe_then_pip(tmp_path: Path, make_workspace) -> None:
+def test_check_pipenv_invokes_venv_probe_then_pip(
+    tmp_path: Path, make_workspace, fake_run: Any
+) -> None:
     """check_pipenv probes for the venv first, then calls pip list --outdated --format=json."""
-    captured: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        captured.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
         patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
@@ -55,9 +53,11 @@ def test_check_pipenv_invokes_venv_probe_then_pip(tmp_path: Path, make_workspace
     ):
         check_pipenv(make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo"))
 
-    assert len(captured) == 2, f"expected 2 calls (probe + pip), got {captured}"
-    assert captured[0] == ["pipenv", "--venv"], f"first call must be probe; got {captured[0]}"
-    pip_call = captured[1]
+    assert len(fake_run.calls) == 2, f"expected 2 calls (probe + pip), got {fake_run.calls}"
+    assert fake_run.calls[0] == ["pipenv", "--venv"], (
+        f"first call must be probe; got {fake_run.calls[0]}"
+    )
+    pip_call = fake_run.calls[1]
     assert "pip" in pip_call[0], f"second call must invoke pip; got {pip_call}"
     assert "--outdated" in pip_call
     assert "--format=json" in pip_call

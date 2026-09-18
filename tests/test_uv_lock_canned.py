@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -65,18 +66,15 @@ def test_check_uv_lock_parses_prerelease_versions(tmp_path: Path, make_workspace
     assert changes[1].from_ver == "1.0.0+local"
 
 
-def test_apply_uv_lock_runs_upgrade_then_sync(tmp_path: Path, make_workspace) -> None:
+def test_apply_uv_lock_runs_upgrade_then_sync(
+    tmp_path: Path, make_workspace, fake_run: Any
+) -> None:
     """apply_uv_lock success path: uv lock --upgrade then uv sync."""
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=None, env=None):
-        calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with patch.object(uv_lock, "run", fake_run):
         uv_lock.apply_uv_lock(make_workspace(tmp_path, ecosystem="py", manager="uv", label="demo"))
 
-    assert calls == [["uv", "lock", "--upgrade"], ["uv", "sync"]]
+    assert fake_run.calls == [["uv", "lock", "--upgrade"], ["uv", "sync"]]
 
 
 def test_apply_uv_lock_raises_on_upgrade_failure(tmp_path: Path, make_workspace) -> None:

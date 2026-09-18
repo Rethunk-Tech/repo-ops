@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from repo_ops_js.deno import apply_deno, check_deno
@@ -148,13 +149,8 @@ def test_check_deno_raises_on_nonzero_returncode(tmp_path: Path, make_workspace)
             raise AssertionError("expected RuntimeError")
 
 
-def test_check_deno_invokes_deno_outdated(tmp_path: Path, make_workspace) -> None:
+def test_check_deno_invokes_deno_outdated(tmp_path: Path, make_workspace, fake_run: Any) -> None:
     """check_deno must call exactly 'deno outdated'."""
-    captured: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        captured.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
         patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
@@ -162,15 +158,12 @@ def test_check_deno_invokes_deno_outdated(tmp_path: Path, make_workspace) -> Non
     ):
         check_deno(make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"))
 
-    assert captured == [["deno", "outdated"]]
+    assert fake_run.calls == [["deno", "outdated"]]
 
 
-def test_apply_deno_passes_latest_flag(tmp_path: Path, monkeypatch, make_workspace) -> None:
-    captured: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        captured.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+def test_apply_deno_passes_latest_flag(
+    tmp_path: Path, monkeypatch, make_workspace, fake_run: Any
+) -> None:
 
     with (
         patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
@@ -178,7 +171,7 @@ def test_apply_deno_passes_latest_flag(tmp_path: Path, monkeypatch, make_workspa
     ):
         apply_deno(make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"))
 
-    assert ["deno", "outdated", "--update", "--latest"] in captured
+    assert ["deno", "outdated", "--update", "--latest"] in fake_run.calls
 
 
 def test_apply_deno_raises_when_deno_absent(tmp_path: Path, make_workspace) -> None:

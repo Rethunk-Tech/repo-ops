@@ -45,14 +45,7 @@ def _go_ws_with_generate(tmp_path: Path, make_workspace) -> WorkspaceResult:
 
 
 class TestVerifyExtraManagers:
-    def test_pdm_runs_sync_clean(self, tmp_path: Path, make_workspace) -> None:
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
+    def test_pdm_runs_sync_clean(self, tmp_path: Path, make_workspace, fake_run: Any) -> None:
 
         ws = make_workspace(tmp_path, manager="pdm", ecosystem=None, label="demo")
         with (
@@ -60,16 +53,9 @@ class TestVerifyExtraManagers:
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
             assert verify_workspace(ws) is None
-        assert calls == [["pdm", "sync", "--clean"]]
+        assert fake_run.calls == [["pdm", "sync", "--clean"]]
 
-    def test_pipenv_runs_verify(self, tmp_path: Path, make_workspace) -> None:
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
+    def test_pipenv_runs_verify(self, tmp_path: Path, make_workspace, fake_run: Any) -> None:
 
         ws = make_workspace(tmp_path, manager="pipenv", ecosystem=None, label="demo")
         with (
@@ -77,54 +63,39 @@ class TestVerifyExtraManagers:
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
             assert verify_workspace(ws) is None
-        assert calls == [["pipenv", "verify"]]
+        assert fake_run.calls == [["pipenv", "verify"]]
 
-    def test_hatch_without_uv_lock_skips_sync_locked(self, tmp_path: Path, make_workspace) -> None:
+    def test_hatch_without_uv_lock_skips_sync_locked(
+        self, tmp_path: Path, make_workspace, fake_run: Any
+    ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\nversion = "0.1.0"\n',
             encoding="utf-8",
         )
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
 
         ws = make_workspace(tmp_path, manager="hatch", ecosystem=None, label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             assert verify_workspace(ws) is None
-        assert not any(c[:3] == ["uv", "sync", "--locked"] for c in calls)
+        assert not any(c[:3] == ["uv", "sync", "--locked"] for c in fake_run.calls)
 
-    def test_hatch_with_uv_lock_runs_sync_locked(self, tmp_path: Path, make_workspace) -> None:
+    def test_hatch_with_uv_lock_runs_sync_locked(
+        self, tmp_path: Path, make_workspace, fake_run: Any
+    ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\nversion = "0.1.0"\n',
             encoding="utf-8",
         )
         (tmp_path / "uv.lock").write_text("version = 1\n", encoding="utf-8")
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
 
         ws = make_workspace(tmp_path, manager="hatch", ecosystem=None, label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             assert verify_workspace(ws) is None
-        assert calls[0] == ["uv", "sync", "--locked"]
+        assert fake_run.calls[0] == ["uv", "sync", "--locked"]
 
-    def test_deno_with_lock_runs_install_frozen(self, tmp_path: Path, make_workspace) -> None:
+    def test_deno_with_lock_runs_install_frozen(
+        self, tmp_path: Path, make_workspace, fake_run: Any
+    ) -> None:
         (tmp_path / "deno.lock").write_text("{}", encoding="utf-8")
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
 
         ws = make_workspace(tmp_path, manager="deno", ecosystem="deno", label="demo")
         with (
@@ -132,16 +103,9 @@ class TestVerifyExtraManagers:
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
             assert verify_workspace(ws) is None
-        assert calls == [["deno", "install", "--frozen"]]
+        assert fake_run.calls == [["deno", "install", "--frozen"]]
 
-    def test_precommit_validate_config(self, tmp_path: Path, make_workspace) -> None:
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
+    def test_precommit_validate_config(self, tmp_path: Path, make_workspace, fake_run: Any) -> None:
 
         ws = make_workspace(tmp_path, manager="precommit", ecosystem="precommit", label="demo")
         with (
@@ -152,7 +116,7 @@ class TestVerifyExtraManagers:
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
             assert verify_workspace(ws) is None
-        assert calls == [["pre-commit", "validate-config"]]
+        assert fake_run.calls == [["pre-commit", "validate-config"]]
 
     def test_container_verify_is_intentional_noop(self, tmp_path: Path, make_workspace) -> None:
         """container v1: image builds out of scope — verify returns None."""

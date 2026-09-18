@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -47,17 +48,9 @@ def test_check_poetry_raises_on_nonzero_dry_run(tmp_path: Path, make_workspace) 
         check_poetry(make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo"))
 
 
-def test_apply_poetry_runs_poetry_update(tmp_path: Path, make_workspace) -> None:
+def test_apply_poetry_runs_poetry_update(tmp_path: Path, make_workspace, fake_run: Any) -> None:
     """apply_poetry success path invokes poetry update."""
     from repo_ops_py_poetry.poetry import apply_poetry
-
-    captured: list[list[str]] = []
-
-    def fake_run(
-        cmd: list[str], cwd: Path, timeout: int | None = None, env: object = None
-    ) -> subprocess.CompletedProcess[str]:
-        captured.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
         patch("repo_ops_py_poetry.poetry.shutil.which", return_value="/usr/bin/poetry"),
@@ -65,7 +58,7 @@ def test_apply_poetry_runs_poetry_update(tmp_path: Path, make_workspace) -> None
     ):
         apply_poetry(make_workspace(tmp_path, ecosystem="py", manager="poetry", label="demo"))
 
-    assert captured == [["poetry", "update"]]
+    assert fake_run.calls == [["poetry", "update"]]
 
 
 def test_apply_poetry_absent_raises_without_warn_prefix(tmp_path: Path, make_workspace) -> None:

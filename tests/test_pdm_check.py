@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from repo_ops_py_pdm.pdm import apply_pdm, check_pdm
@@ -25,12 +26,7 @@ def test_check_pdm_raises_on_nonzero_returncode(tmp_path: Path, make_workspace) 
             raise AssertionError("expected RuntimeError")
 
 
-def test_apply_pdm_runs_pdm_update(tmp_path: Path, make_workspace) -> None:
-    captured: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        captured.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+def test_apply_pdm_runs_pdm_update(tmp_path: Path, make_workspace, fake_run: Any) -> None:
 
     with (
         patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
@@ -38,7 +34,7 @@ def test_apply_pdm_runs_pdm_update(tmp_path: Path, make_workspace) -> None:
     ):
         apply_pdm(make_workspace(tmp_path, ecosystem="py", manager="pdm", label="demo"))
 
-    assert captured == [["pdm", "update"]]
+    assert fake_run.calls == [["pdm", "update"]]
 
 
 def test_apply_pdm_raises_when_pdm_absent(tmp_path: Path, make_workspace) -> None:

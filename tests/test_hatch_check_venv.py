@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -267,7 +268,7 @@ def test_check_hatch_pip_install_uses_timeout_check(
 
 
 def test_apply_hatch_no_uv_lock_with_flag_runs_uv_lock(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc, fake_run: Any
 ) -> None:
     """No uv.lock + flag set → apply_hatch runs uv lock then uv lock --upgrade."""
     (tmp_path / "pyproject.toml").write_text(
@@ -275,13 +276,6 @@ def test_apply_hatch_no_uv_lock_with_flag_runs_uv_lock(
         encoding="utf-8",
     )
     ws = _make_ws(tmp_path)
-    run_calls: list[list[str]] = []
-
-    def fake_run(
-        cmd: list[str], cwd: object, timeout: object = None, env: object = None
-    ) -> subprocess.CompletedProcess[str]:
-        run_calls.append(list(cmd))
-        return make_proc()
 
     with (
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
@@ -290,8 +284,10 @@ def test_apply_hatch_no_uv_lock_with_flag_runs_uv_lock(
     ):
         apply_hatch(ws)
 
-    assert run_calls[0] == ["uv", "lock"], f"first call must be uv lock; got {run_calls}"
-    assert ["uv", "lock", "--upgrade"] in run_calls, f"uv lock --upgrade must run; got {run_calls}"
+    assert fake_run.calls[0] == ["uv", "lock"], f"first call must be uv lock; got {fake_run.calls}"
+    assert ["uv", "lock", "--upgrade"] in fake_run.calls, (
+        f"uv lock --upgrade must run; got {fake_run.calls}"
+    )
 
 
 def test_check_hatch_no_uv_warns_without_lock(

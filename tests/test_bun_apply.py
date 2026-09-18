@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from repo_ops_js_bun.bun import (
@@ -19,12 +20,7 @@ from repo_ops_upgrade_remediations_js.remediations import _rewritten_manifests
 _RESOLVER_PATH = "repo_ops_js.guards.resolved_version_from_node_modules"
 
 
-def test_apply_bun_updates_reported_packages_not_latest_flag(monkeypatch) -> None:
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=600, env=None):
-        calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+def test_apply_bun_updates_reported_packages_not_latest_flag(monkeypatch, fake_run: Any) -> None:
 
     ws = Workspace(
         path=Path("/tmp/proj"),
@@ -42,16 +38,11 @@ def test_apply_bun_updates_reported_packages_not_latest_flag(monkeypatch) -> Non
     ):
         apply_bun(ws)
 
-    assert calls == [["bun", "update", "--", "foo@1.1.0"], ["bun", "install"]]
-    assert not any("--latest" in c for c in calls)
+    assert fake_run.calls == [["bun", "update", "--", "foo@1.1.0"], ["bun", "install"]]
+    assert not any("--latest" in c for c in fake_run.calls)
 
 
-def test_apply_bun_rejects_dash_prefixed_package_names() -> None:
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=600, env=None):
-        calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+def test_apply_bun_rejects_dash_prefixed_package_names(fake_run: Any) -> None:
 
     ws = Workspace(
         path=Path("/tmp/proj"),
@@ -69,7 +60,7 @@ def test_apply_bun_rejects_dash_prefixed_package_names() -> None:
     ):
         apply_bun(ws)
 
-    assert calls == [["bun", "update"], ["bun", "install"]]
+    assert fake_run.calls == [["bun", "update"], ["bun", "install"]]
 
 
 def _ghost_ws() -> Workspace:
@@ -118,19 +109,14 @@ def test_apply_bun_targeted_bump_defers_ghost_to_retry(monkeypatch) -> None:
     assert behind == [blocked]
 
 
-def test_apply_bun_bare_update_defers_ghost_to_retry(monkeypatch) -> None:
+def test_apply_bun_bare_update_defers_ghost_to_retry(monkeypatch, fake_run: Any) -> None:
     """A blocked bare update is handed to targeted_bump_behind."""
-    calls: list[list[str]] = []
     retry_inputs: list[list[Change]] = []
     blocked = Change("zod", "3.25.76", "4.0.0")
     valid_results = [False, True]
 
     def fake_valid_package_name(name):
         return valid_results.pop(0)
-
-    def fake_run(cmd, cwd, timeout=600, env=None):
-        calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     def fake_targeted_bump(ws, behind, *, root=None):
         retry_inputs.append(list(behind))
@@ -160,7 +146,7 @@ def test_apply_bun_bare_update_defers_ghost_to_retry(monkeypatch) -> None:
         behind = apply_bun(_ghost_ws())
 
     initial_guard.assert_not_called()
-    assert calls == [["bun", "update"], ["bun", "install"]]
+    assert fake_run.calls == [["bun", "update"], ["bun", "install"]]
     assert retry_inputs == [[blocked]]
     assert behind == [blocked]
 
@@ -183,12 +169,7 @@ def test_apply_bun_ok_when_resolved_meets_or_exceeds_target() -> None:
             apply_bun(_ghost_ws())  # must not raise
 
 
-def test_apply_bun_noop_when_nothing_outdated(monkeypatch) -> None:
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=600, env=None):
-        calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+def test_apply_bun_noop_when_nothing_outdated(monkeypatch, fake_run: Any) -> None:
 
     ws = Workspace(
         path=Path("/tmp/proj"),
@@ -203,7 +184,7 @@ def test_apply_bun_noop_when_nothing_outdated(monkeypatch) -> None:
     ):
         apply_bun(ws)
 
-    assert calls == []
+    assert fake_run.calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +192,7 @@ def test_apply_bun_noop_when_nothing_outdated(monkeypatch) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_apply_bun_fallback_guard_called_for_known_versions() -> None:
+def test_apply_bun_fallback_guard_called_for_known_versions(fake_run: Any) -> None:
     """assert_targets_resolved is invoked in the fallback path.
 
     Version '?' forces the fallback (no targets built).  The guard is wired
@@ -219,12 +200,7 @@ def test_apply_bun_fallback_guard_called_for_known_versions() -> None:
     is empty (version '?' excluded) so no error is raised, but we confirm
     the update command ran and the guard path was reached without raising.
     """
-    calls: list[list[str]] = []
     guard_calls: list[list] = []
-
-    def fake_run(cmd, cwd, timeout=600, env=None):
-        calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     def fake_guard(ws, requested, manager="js"):
         guard_calls.append(list(requested))
@@ -239,7 +215,7 @@ def test_apply_bun_fallback_guard_called_for_known_versions() -> None:
     ):
         apply_bun(_ghost_ws())
 
-    assert calls == [["bun", "update"], ["bun", "install"]]
+    assert fake_run.calls == [["bun", "update"], ["bun", "install"]]
     # guardable empty ('?' excluded) → guard not called; that's correct behaviour
     assert guard_calls == []
 

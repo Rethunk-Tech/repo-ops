@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from repo_ops_js.deno import (
@@ -222,13 +223,10 @@ def test_targeted_bump_restores_when_lockfile_version_misses_target(
     )
 
 
-def test_targeted_bump_passes_latest_flag(tmp_path: Path, monkeypatch, make_workspace) -> None:
+def test_targeted_bump_passes_latest_flag(
+    tmp_path: Path, monkeypatch, make_workspace, fake_run: Any
+) -> None:
     change = Change("npm:chalk", "5.2.0", "5.3.0")
-    captured: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        captured.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with (
         patch(
@@ -248,7 +246,7 @@ def test_targeted_bump_passes_latest_flag(tmp_path: Path, monkeypatch, make_work
 
     assert applied == [change]
     assert still_behind == []
-    assert captured == [["deno", "update", "--latest", "npm:chalk"]]
+    assert fake_run.calls == [["deno", "update", "--latest", "npm:chalk"]]
 
 
 def test_targeted_bump_restores_when_landed_version_missing(

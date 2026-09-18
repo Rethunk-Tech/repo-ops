@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -13,33 +12,6 @@ from repo_ops_upgrade import orchestration as orch_mod
 from repo_ops_upgrade import run as run_mod
 from repo_ops_upgrade import submodules as sub_mod
 from repo_ops_upgrade.post_apply_commit import CommitOutcome
-
-
-def _fake_args(**overrides) -> MagicMock:
-    defaults: dict = {
-        "eco_filter": None,
-        "exclude_patterns": None,
-        "conservative": False,
-        "migrate_to_uv_lock": False,
-        "actions_org_policy": False,
-        "actions_policy_level": None,
-        "go_upgrade_mode": None,
-        "actions_unpin_sha": False,
-        "actions_tag_style": "major",
-        "actions_upgrade_mode": None,
-        "actions_lint_level": None,
-        "jobs": 1,
-        "no_verify": True,
-        "no_commit": True,
-        # Real run_upgrade() always sets these before _run_upgrade_body runs;
-        # a bare MagicMock auto-vivifies a missing attribute into a truthy
-        # non-dict mock, which corrupts settings resolution (e.g. `in` on it
-        # is always True) rather than falling through to the {} default.
-        "_repo_ops_global_config": {},
-        "_repo_ops_ambient_env": {},
-    }
-    defaults.update(overrides)
-    return MagicMock(**defaults)
 
 
 def _npm_ws(path: Path, label: str = "demo") -> Workspace:
@@ -53,7 +25,10 @@ def _npm_ws(path: Path, label: str = "demo") -> Workspace:
 
 
 def test_exclude_drops_matching_bundles(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    upgrade_args,
 ) -> None:
     """--exclude removes matching bundles and prints footer count."""
     keep = tmp_path / "keep-repo"
@@ -90,7 +65,7 @@ def test_exclude_drops_matching_bundles(
 
     rc = run_mod._run_upgrade_body(
         apply=False,
-        args=_fake_args(exclude_patterns=["vendor"], quiet=False),
+        args=upgrade_args(exclude_patterns=["vendor"]),
         roots=[str(tmp_path)],
     )
     assert rc == 0
@@ -99,7 +74,9 @@ def test_exclude_drops_matching_bundles(
     assert processed == ["org/keep-repo"]
 
 
-def test_exclude_never_drops_a_named_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_exclude_never_drops_a_named_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, upgrade_args
+) -> None:
     """A checkout named on the command line is processed even when a pattern matches it."""
     repo = tmp_path / "vendor-repo"
     repo.mkdir()
@@ -121,13 +98,13 @@ def test_exclude_never_drops_a_named_root(tmp_path: Path, monkeypatch: pytest.Mo
 
     monkeypatch.setattr(orch_mod, "process_workspace", _process)
     run_mod._run_upgrade_body(
-        apply=False, args=_fake_args(exclude_patterns=["vendor"]), roots=[str(repo)]
+        apply=False, args=upgrade_args(exclude_patterns=["vendor"]), roots=[str(repo)]
     )
     assert processed == ["org/vendor-repo"]
 
 
 def test_children_first_processes_child_depth_before_parent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, upgrade_args
 ) -> None:
     """Children-first level scheduling waits for child depth."""
     parent = tmp_path / "parent"
@@ -172,7 +149,7 @@ def test_children_first_processes_child_depth_before_parent(
 
     run_mod._run_upgrade_body(
         apply=True,
-        args=_fake_args(
+        args=upgrade_args(
             submodule_order="children-first",
             skip_actions=True,
             jobs=1,
@@ -184,7 +161,7 @@ def test_children_first_processes_child_depth_before_parent(
 
 
 def test_failed_repo_is_retried_alone_after_the_sweep(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo, upgrade_args
 ) -> None:
     """A repo that fails verify during the sweep gets one fresh, serial re-apply;
     a passing retry is what the report and commit phase see."""
@@ -240,7 +217,7 @@ def test_failed_repo_is_retried_alone_after_the_sweep(
 
     rc = run_mod._run_upgrade_body(
         apply=True,
-        args=_fake_args(no_verify=False, no_commit=False),
+        args=upgrade_args(no_verify=False, no_commit=False),
         roots=[str(tmp_path)],
         fleet=True,
     )

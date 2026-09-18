@@ -13,6 +13,7 @@ import json
 import sys
 from pathlib import Path
 from subprocess import CompletedProcess
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -97,46 +98,34 @@ class TestSidecarPrecedence:
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 class TestVerifyScriptFromConfig:
     def test_config_script_used_instead_of_waterfall(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace, fake_run: Any
     ) -> None:
         """verify.script in config overrides the waterfall when env var absent."""
         _write_pkg(tmp_path, {"ci": "echo ci", "build:prod": "echo build"})
         (tmp_path / ".repo-ops.toml").write_text(
             '[verify]\nscript = "build:prod"\n', encoding="utf-8"
         )
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
 
         ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_node(ws)
 
         assert result is None
-        assert any("build:prod" in c for c in calls), f"expected build:prod in {calls}"
+        assert any("build:prod" in c for c in fake_run.calls), (
+            f"expected build:prod in {fake_run.calls}"
+        )
         # waterfall 'ci' must NOT have been called as a script-run step
         # (npm ci = immutable install; npm run ci = waterfall script — check for the latter)
-        assert not any("run" in c and c[-1] == "ci" for c in calls), (
-            f"waterfall script 'ci' must not run when config overrides: {calls}"
+        assert not any("run" in c and c[-1] == "ci" for c in fake_run.calls), (
+            f"waterfall script 'ci' must not run when config overrides: {fake_run.calls}"
         )
 
     def test_config_script_empty_string_skips_script_step(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace, fake_run: Any
     ) -> None:
         """verify.script = '' in config skips the script step (immutable install still runs)."""
         _write_pkg(tmp_path, {"ci": "echo ci"})
         (tmp_path / ".repo-ops.toml").write_text('[verify]\nscript = ""\n', encoding="utf-8")
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
 
         ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
@@ -144,9 +133,9 @@ class TestVerifyScriptFromConfig:
 
         assert result is None
         # npm ci (immutable) still ran
-        assert any("npm" in c and c[-1] == "ci" for c in calls)
+        assert any("npm" in c and c[-1] == "ci" for c in fake_run.calls)
         # No package.json script was invoked
-        assert not any("echo" in str(c) for c in calls)
+        assert not any("echo" in str(c) for c in fake_run.calls)
 
     def test_config_script_failure_propagates(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
@@ -196,43 +185,29 @@ class TestVerifySkip:
         assert not called, "run() must not be called when skip=true"
 
     def test_skip_false_runs_normally(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace, fake_run: Any
     ) -> None:
         (tmp_path / ".repo-ops.toml").write_text("[verify]\nskip = false\n", encoding="utf-8")
         _write_pkg(tmp_path, {"ci": "echo ci"})
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
 
         ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws)
 
         assert result is None
-        assert calls, "expected at least one run() call"
+        assert fake_run.calls, "expected at least one run() call"
 
     def test_skip_absent_runs_normally(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace, fake_run: Any
     ) -> None:
         _write_pkg(tmp_path, {"ci": "echo ci"})
         ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
-        calls: list[list[str]] = []
-
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
-        ) -> CompletedProcess[str]:
-            calls.append(cmd)
-            return _ok()
 
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             result = verify_workspace(ws)
 
         assert result is None
-        assert calls
+        assert fake_run.calls
 
     def test_workspace_sidecar_skips_only_that_workspace(
         self, tmp_path: Path, make_workspace

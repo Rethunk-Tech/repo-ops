@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from unittest.mock import patch
 
 from repo_ops_go.go import (
@@ -175,7 +176,7 @@ def test_explicit_go_get_targets_skips_flag_like_modules(tmp_path) -> None:
         assert _explicit_go_get_targets(ws) == ["example.com/foo@v1.0.1"]
 
 
-def test_apply_go_explicit_mode_uses_get_separator(tmp_path) -> None:
+def test_apply_go_explicit_mode_uses_get_separator(tmp_path, fake_run: Any) -> None:
     ws = Workspace(
         path=tmp_path,
         ecosystem="go",
@@ -183,11 +184,6 @@ def test_apply_go_explicit_mode_uses_get_separator(tmp_path) -> None:
         git_repo=tmp_path,
         label="mod",
     )
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=0):
-        calls.append(cmd)
-        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     with (
         patch("repo_ops_go.go.run", side_effect=fake_run),
@@ -197,5 +193,5 @@ def test_apply_go_explicit_mode_uses_get_separator(tmp_path) -> None:
         ),
     ):
         apply_go(ws)
-    assert ["go", "get", "--", "example.com/foo@v1.0.1"] in calls
-    assert ["go", "mod", "tidy"] in calls
+    assert ["go", "get", "--", "example.com/foo@v1.0.1"] in fake_run.calls
+    assert ["go", "mod", "tidy"] in fake_run.calls

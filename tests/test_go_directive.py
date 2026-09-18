@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -140,7 +141,9 @@ def test_plan_go_work_no_go_directive_in_work(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_apply_go_work_directive_runs_when_stale(tmp_path: Path, make_workspace, make_proc) -> None:
+def test_apply_go_work_directive_runs_when_stale(
+    tmp_path: Path, make_workspace, make_proc, fake_run: Any
+) -> None:
     """_apply_go_work_directive calls go work use when go.work is behind a member."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     go_work_dir = tmp_path / "workspace"
@@ -151,22 +154,16 @@ def test_apply_go_work_directive_runs_when_stale(tmp_path: Path, make_workspace,
     _write_go_work(go_work_dir, "1.22", ["./api"])
     register_go_work_dir(tmp_path, go_work_dir)
 
-    calls_recorded: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=0):
-        calls_recorded.append(list(cmd))
-        return make_proc()
-
     with patch("repo_ops_go.go.run", side_effect=fake_run):
         _apply_go_work_directive(ws)
 
-    assert ["go", "work", "use"] in calls_recorded, (
-        f"go work use not called; calls={calls_recorded}"
+    assert ["go", "work", "use"] in fake_run.calls, (
+        f"go work use not called; calls={fake_run.calls}"
     )
 
 
 def test_apply_go_work_directive_skips_when_current(
-    tmp_path: Path, make_workspace, make_proc
+    tmp_path: Path, make_workspace, make_proc, fake_run: Any
 ) -> None:
     """_apply_go_work_directive does NOT call go work use when directive is current."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
@@ -178,33 +175,22 @@ def test_apply_go_work_directive_skips_when_current(
     _write_go_work(go_work_dir, "1.22", ["./api"])
     register_go_work_dir(tmp_path, go_work_dir)
 
-    calls_recorded: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=0):
-        calls_recorded.append(list(cmd))
-        return make_proc()
-
     with patch("repo_ops_go.go.run", side_effect=fake_run):
         _apply_go_work_directive(ws)
 
-    assert ["go", "work", "use"] not in calls_recorded
+    assert ["go", "work", "use"] not in fake_run.calls
 
 
 def test_apply_go_work_directive_no_go_work_dir_registered(
-    tmp_path: Path, make_workspace, make_proc
+    tmp_path: Path, make_workspace, make_proc, fake_run: Any
 ) -> None:
     """_apply_go_work_directive is a no-op when no go.work dir is registered."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
-    calls_recorded: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=0):
-        calls_recorded.append(list(cmd))
-        return make_proc()
 
     with patch("repo_ops_go.go.run", side_effect=fake_run):
         _apply_go_work_directive(ws)
 
-    assert calls_recorded == []
+    assert fake_run.calls == []
 
 
 def test_apply_go_work_directive_raises_on_failure(
