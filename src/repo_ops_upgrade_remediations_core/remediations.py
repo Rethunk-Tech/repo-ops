@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import subprocess
 import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -11,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core import process
+from repo_ops_core.git import run_git
 from repo_ops_models import Workspace, WorkspaceResult
 
 ApplyResult = tuple[bool, str]
@@ -60,18 +60,11 @@ def changed_files_since_head(
     are dropped (e.g. a formatter's own config/lock files, which are not a
     "source" reformat).
 
-    Uses ``subprocess`` directly (not the repo_ops_core.process.run helper)
-    so that tests that mock the process helper can still exercise the
-    fallback path without interference from git calls.
+    Uses ``run_git`` (not the repo_ops_core.process.run helper) so tests that
+    mock the process helper can still exercise the fallback path.
     """
     try:
-        proc = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
-            cwd=str(ws.git_repo),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        proc = run_git(ws.git_repo, "diff", "--name-only", "HEAD", timeout=30)
     except (FileNotFoundError, OSError):
         return None
     if proc.returncode != 0:

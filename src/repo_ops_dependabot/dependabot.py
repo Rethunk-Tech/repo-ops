@@ -66,6 +66,8 @@ from repo_ops_core.config import load_global_config, load_repo_config
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
+from repo_ops_core.git import github_owner_repo as _owner_repo
+from repo_ops_core.git import github_remote as _github_remote
 from repo_ops_core.git import repo_label, run_git
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_lockfiles.parsers import (
@@ -168,35 +170,6 @@ class RepoResult:
     remote: str
     prs: list[DependabotPR] = field(default_factory=list)
     gh_error: str = ""
-
-
-# ---------------------------------------------------------------------------
-# Git remote detection
-# ---------------------------------------------------------------------------
-
-
-def _github_remote(repo: str) -> str | None:
-    """Return the first github.com remote URL found, or None."""
-    proc = run_git(repo, "remote", "-v", timeout=10)
-    if proc.returncode != 0 or not proc.stdout.strip():
-        return None
-    for line in proc.stdout.splitlines():
-        parts = line.split()
-        if len(parts) < 2:
-            continue
-        url = parts[1]
-        if "github.com" in url:
-            return url
-    return None
-
-
-def _owner_repo(remote_url: str) -> str | None:
-    """Parse 'owner/repo' from a github.com remote URL."""
-    # SSH: git@github.com:owner/repo.git
-    m = re.search(r"github\.com[:/]([^/]+/[^/\s]+?)(?:\.git)?/?$", remote_url)
-    if m:
-        return m.group(1)
-    return None
 
 
 # ---------------------------------------------------------------------------

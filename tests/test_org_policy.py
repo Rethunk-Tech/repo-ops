@@ -78,19 +78,6 @@ def _gh_proc(payload: object, returncode: int = 0) -> subprocess.CompletedProces
     )
 
 
-def _remote_url_run(url: str):
-    """Return a ``subprocess.run`` side-effect that always reports *url* as the remote.
-
-    Several tests only care that ``_derive_owner`` sees a fixed GitHub remote —
-    factored out since the closure was copy-pasted at every call site.
-    """
-
-    def _fake_run(cmd: list, **kw: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess([], 0, stdout=f"{url}\n", stderr="")
-
-    return _fake_run
-
-
 # ---------------------------------------------------------------------------
 # _derive_owner: parse owner from remote URL
 # ---------------------------------------------------------------------------
@@ -101,34 +88,21 @@ def _remote_url_run(url: str):
     [
         ("https://github.com/myorg/myrepo.git", "myorg"),  # HTTPS
         ("git@github.com:myorg/myrepo.git", "myorg"),  # SSH
+        ("ssh://git@github.com/myorg/myrepo.git", "myorg"),  # ssh:// URL
         ("https://gitlab.com/myorg/myrepo.git", None),  # non-github → skip silently
     ],
 )
 def test_derive_owner_from_remote(
-    tmp_path: Path, remote_url: str, expected_owner: str | None
+    tmp_path: Path, init_git_repo, remote_url: str, expected_owner: str | None
 ) -> None:
-    proc = subprocess.CompletedProcess([], 0, stdout=f"{remote_url}\n", stderr="")
-    with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
-        patch("repo_ops_upgrade.actions.subprocess.run", return_value=proc),
-    ):
-        assert _derive_owner(tmp_path) == expected_owner
+    init_git_repo(tmp_path)
+    subprocess.run(["git", "remote", "add", "upstream", remote_url], cwd=tmp_path, check=True)
+    assert _derive_owner(tmp_path) == expected_owner
 
 
-def test_derive_owner_git_absent_returns_none(tmp_path: Path) -> None:
-    """git not on PATH → None."""
-    with patch("repo_ops_upgrade.actions.shutil.which", return_value=None):
-        assert _derive_owner(tmp_path) is None
-
-
-def test_derive_owner_git_failure_returns_none(tmp_path: Path) -> None:
-    """git config exits non-zero → None."""
-    proc = subprocess.CompletedProcess([], 1, stdout="", stderr="error")
-    with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/git"),
-        patch("repo_ops_upgrade.actions.subprocess.run", return_value=proc),
-    ):
-        assert _derive_owner(tmp_path) is None
+def test_derive_owner_without_remote_returns_none(tmp_path: Path, init_git_repo) -> None:
+    init_git_repo(tmp_path)
+    assert _derive_owner(tmp_path) is None
 
 
 # ---------------------------------------------------------------------------

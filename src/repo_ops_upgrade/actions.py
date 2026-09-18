@@ -18,6 +18,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from repo_ops_core.git import github_owner_repo, github_remote
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
@@ -109,43 +110,10 @@ _actionlint_version_cache: str | None = None
 
 
 def _derive_owner(repo: Path) -> str | None:
-    """Return the GitHub org/user name from the repo's origin remote URL.
-
-    Parses both HTTPS (``https://github.com/owner/repo.git``) and SSH
-    (``git@github.com:owner/repo.git``) forms.  Returns ``None`` when:
-    - ``git`` is not on PATH,
-    - the remote is absent or malformed,
-    - or the remote does not point at github.com.
-    """
-    if not shutil.which("git"):
-        return None
-    try:
-        proc = subprocess.run(
-            ["git", "config", "--get", "remote.origin.url"],
-            cwd=str(repo),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except Exception:
-        return None
-    if proc.returncode != 0:
-        return None
-    url = proc.stdout.strip()
-    if not url:
-        return None
-
-    # HTTPS: https://github.com/owner/repo[.git]
-    m = re.match(r"https?://github\.com/([^/]+)/", url)
-    if m:
-        return m.group(1)
-
-    # SSH: git@github.com:owner/repo[.git]
-    m2 = re.match(r"git@github\.com:([^/]+)/", url)
-    if m2:
-        return m2.group(1)
-
-    return None
+    """Return the GitHub org/user owning *repo*'s github.com remote, or None."""
+    url = github_remote(repo)
+    owner_repo = github_owner_repo(url) if url else None
+    return owner_repo.split("/")[0] if owner_repo else None
 
 
 def _action_policy_violation(action: str, policy: dict, org_owner: str | None = None) -> str | None:

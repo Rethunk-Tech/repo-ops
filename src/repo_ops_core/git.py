@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -78,3 +79,21 @@ def repo_label(repo: Path | str, roots: list[str]) -> str:
         return f"~/{repo_path.relative_to(home)}"
     except ValueError:
         return str(repo_path)
+
+
+def github_remote(repo: Path | str) -> str | None:
+    """Return the first github.com remote URL of *repo*, or None."""
+    proc = run_git(repo, "remote", "-v")
+    if proc.returncode != 0:
+        return None
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and "github.com" in parts[1]:
+            return parts[1]
+    return None
+
+
+def github_owner_repo(remote_url: str) -> str | None:
+    """Parse ``owner/repo`` from a github.com remote URL (HTTPS, SSH, or ssh://)."""
+    m = re.search(r"github\.com[:/]([^/]+/[^/\s]+?)(?:\.git)?/?$", remote_url)
+    return m.group(1) if m else None
