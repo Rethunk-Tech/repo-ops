@@ -29,7 +29,6 @@ def _fake_args(**overrides) -> MagicMock:
         "submodule_order": "discovery",
         "conservative": False,
         "migrate_to_uv_lock": False,
-        "commit_umbrella": False,
         "actions_org_policy": False,
         "actions_policy_level": None,
         "go_upgrade_mode": None,
@@ -381,3 +380,71 @@ def test_pr_failed_outcome_sets_exit_code(tmp_path: Path, monkeypatch: pytest.Mo
         )
 
     assert rc == 1
+
+
+def test_failed_repo_is_retried_alone_after_the_sweep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
+) -> None:
+    """A repo that fails verify during the sweep gets one fresh, serial re-apply;
+    a passing retry is what the report and commit phase see."""
+    flaky, steady = tmp_path / "flaky", tmp_path / "steady"
+    for repo in (flaky, steady):
+        repo.mkdir()
+        init_git_repo(repo)
+    ws_flaky = Workspace(
+        path=flaky, ecosystem="go", manager="go", git_repo=flaky, label="org/flaky"
+    )
+    ws_steady = Workspace(
+        path=steady, ecosystem="go", manager="go", git_repo=steady, label="org/steady"
+    )
+    bundles = {
+        flaky: RepoBundle(
+            git_repo=flaky, label="org/flaky", workspaces=[WorkspaceResult(workspace=ws_flaky)]
+        ),
+        steady: RepoBundle(
+            git_repo=steady, label="org/steady", workspaces=[WorkspaceResult(workspace=ws_steady)]
+        ),
+    }
+    monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws_flaky, ws_steady])
+    monkeypatch.setattr(orch_mod, "filter_workspaces", lambda found, *a, **kw: found)
+    monkeypatch.setattr(disc_mod, "group_by_repo", lambda *a, **kw: bundles)
+    monkeypatch.setattr(disc_mod, "merge_action_only_bundles", lambda b, *a, **kw: b)
+    monkeypatch.setattr(run_mod, "capture_worktree_state", lambda *a, **kw: {})
+    monkeypatch.setattr(run_mod, "restore_worktree_state", lambda *a, **kw: True)
+    monkeypatch.setattr(run_mod, "reinstall_from_lockfile", lambda *a, **kw: True)
+
+    calls: list[str] = []
+
+    def _process(wr: WorkspaceResult, **kw) -> WorkspaceResult:
+        calls.append(wr.workspace.label)
+        assert wr.error is None, "retry must start from a fresh result"
+        if wr.workspace.label == "org/flaky" and calls.count("org/flaky") == 1:
+            wr.status = "fail"
+            wr.error = "gate: FAIL exit 1  govulncheck ./..."
+            wr.verify_fail_disposition = "FAILED_CLEAN"
+        return wr
+
+    monkeypatch.setattr(orch_mod, "process_workspace", _process)
+    committed: list[str] = []
+
+    def _commits(b: dict, **kw) -> tuple[list[CommitOutcome], int]:
+        committed.extend(
+            bundle.label
+            for bundle in b.values()
+            if all(w.status == "ok" for w in bundle.workspaces)
+        )
+        return [], 0
+
+    monkeypatch.setattr(run_mod.post_apply_commit, "run_post_apply_commits", _commits)
+
+    rc = run_mod._run_upgrade_body(
+        apply=True,
+        args=_fake_args(
+            no_verify=False, on_verify_fail="revert", commit="conventional", allow_dirty=False
+        ),
+        roots=[str(tmp_path)],
+    )
+
+    assert rc == 0
+    assert sorted(calls) == ["org/flaky", "org/flaky", "org/steady"]
+    assert sorted(committed) == ["org/flaky", "org/steady"]

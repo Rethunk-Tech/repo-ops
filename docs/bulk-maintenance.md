@@ -46,9 +46,9 @@ Umbrella repos (Bastion-style, many Go/Node submodules) need **children-first** 
 
 ```bash
 repo-ops plan --json --json-out plan.json /path/to/Bastion
-repo-ops apply --commit=conventional --commit-umbrella /path/to/Bastion --log-file apply.log
+repo-ops apply --commit=conventional /path/to/Bastion --log-file apply.log
 ```
 
-`--commit-umbrella` enables the parent pointer commits only — it does not select child-first processing, and it still requires `--commit`. Plan/apply JSON gains `submodules: [{path, git_repo, parent}]` unless `--no-submodules` is passed.
+With `--commit`, each parent then gets one `chore(submodules)` commit staging exactly the gitlinks of children committed this run. Plan/apply JSON gains `submodules: [{path, git_repo, parent}]` unless `--no-submodules` is passed.
 
-Then push children first, and push the parent last. If a parent pointer is still dirty afterwards, apply reports it via `submodule_pointer_hints`; stage the submodule path and commit it before pushing the parent.
+Then push children first, and push the parent last. A pointer still dirty after the run (a child whose commit failed, or `--commit=none`) is listed in the footer and in `submodule_pointer_hints`.

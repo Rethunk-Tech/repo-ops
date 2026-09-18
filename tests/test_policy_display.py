@@ -262,28 +262,8 @@ def test_print_run_footer_policy_violations_zero() -> None:
 
 
 # ---------------------------------------------------------------------------
-# CLI flag wiring: --commit-umbrella and --actions-org-policy
+# CLI flag wiring: --actions-org-policy
 # ---------------------------------------------------------------------------
-
-
-def test_commit_umbrella_flag_registered() -> None:
-    """--commit-umbrella is accepted on the apply parser."""
-    from repo_ops_core.cli import build_upgrade_parser
-
-    parser = build_upgrade_parser(apply=True)
-    args = parser.parse_args(["--commit-umbrella"])
-    assert args.commit_umbrella is True
-    args_off = parser.parse_args([])
-    assert args_off.commit_umbrella is False
-
-
-def test_commit_umbrella_not_on_plan_parser() -> None:
-    """--commit-umbrella is not registered on the plan parser (apply-only)."""
-    from repo_ops_core.cli import build_upgrade_parser
-
-    parser = build_upgrade_parser(apply=False)
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--commit-umbrella"])
 
 
 def test_actions_org_policy_flag_registered_on_plan() -> None:
@@ -302,21 +282,6 @@ def test_actions_org_policy_flag_registered_on_apply() -> None:
     parser = build_upgrade_parser(apply=True)
     args = parser.parse_args(["--actions-org-policy"])
     assert args.actions_org_policy is True
-
-
-def test_commit_umbrella_wires_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """--commit-umbrella reaches REPO_OPS_COMMIT_UMBRELLA through the real apply entry point."""
-    monkeypatch.delenv("REPO_OPS_COMMIT_UMBRELLA", raising=False)
-    monkeypatch.chdir(tmp_path)
-
-    rc = run_mod.run_upgrade(
-        apply=True,
-        argv=["--flat", "--skip-actions", "--commit-umbrella", str(tmp_path)],
-    )
-
-    assert rc == 0
-    assert os.environ.get("REPO_OPS_COMMIT_UMBRELLA") == "1"
-    monkeypatch.delenv("REPO_OPS_COMMIT_UMBRELLA", raising=False)
 
 
 def test_actions_org_policy_wires_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -340,20 +305,12 @@ def test_actions_org_policy_wires_env(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
 
 def test_settings_table_has_v015_entries() -> None:
-    """commit_umbrella, actions_org_policy, container_update_latest are in SETTINGS_TABLE."""
+    """actions_org_policy and container_update_latest are in SETTINGS_TABLE."""
     from repo_ops_core.config import SETTINGS_TABLE
 
     names = [r[0] for r in SETTINGS_TABLE]
-    for key in ("commit_umbrella", "actions_org_policy", "container_update_latest"):
+    for key in ("actions_org_policy", "container_update_latest"):
         assert key in names, f"Missing SETTINGS_TABLE entry: {key}"
-
-
-def test_settings_table_commit_umbrella_env_var() -> None:
-    from repo_ops_core.config import SETTINGS_TABLE
-
-    row = next(r for r in SETTINGS_TABLE if r[0] == "commit_umbrella")
-    assert row[2] == "REPO_OPS_COMMIT_UMBRELLA"
-    assert row[1] == "--commit-umbrella"
 
 
 def test_settings_table_actions_org_policy_env_var() -> None:
@@ -374,11 +331,10 @@ def test_settings_table_container_update_latest_env_var() -> None:
 @pytest.mark.parametrize(
     "env_var,setting_name",
     [
-        ("REPO_OPS_COMMIT_UMBRELLA", "commit_umbrella"),
         ("REPO_OPS_ACTIONS_ORG_POLICY", "actions_org_policy"),
         ("REPO_OPS_CONTAINER_UPDATE_LATEST", "container_update_latest"),
     ],
-    ids=["commit-umbrella", "actions-org-policy", "container-update-latest"],
+    ids=["actions-org-policy", "container-update-latest"],
 )
 def test_resolve_setting(monkeypatch: pytest.MonkeyPatch, env_var: str, setting_name: str) -> None:
     from repo_ops_core.config import resolve_setting

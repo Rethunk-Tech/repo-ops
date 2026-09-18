@@ -422,7 +422,6 @@ out while the rest of the sweep stays on.
 | `audit_fail_on_unknown` | `--fail-on-unknown` | `0` |
 | `commit_agent_model` | `(none)` | `composer-2.5` |
 | `commit_agent_provider` | `(none)` | `cursor` |
-| `commit_umbrella` | `--commit-umbrella` | `0` |
 | `exclude_patterns` | `--exclude` | `[]` |
 | `find_timeout` | `(none)` | `60` |
 | `git_timeout` | `(none)` | `10` |

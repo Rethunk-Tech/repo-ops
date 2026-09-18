@@ -1,12 +1,10 @@
-"""Umbrella submodule pointer-bump commits (REPO_OPS_COMMIT_UMBRELLA=1)."""
+"""Umbrella submodule pointer-bump commits."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
 from unittest.mock import patch
-
-import pytest
 
 from repo_ops_upgrade.post_apply_commit import (
     CommitOutcome,
@@ -36,56 +34,15 @@ def _make_child_outcome(
 
 
 # ---------------------------------------------------------------------------
-# Env-gate: feature is off by default
-# ---------------------------------------------------------------------------
-
-
-def test_env_off_produces_no_umbrella_commit(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    init_git_repo,
-) -> None:
-    """When REPO_OPS_COMMIT_UMBRELLA is absent, no umbrella commit is attempted."""
-    monkeypatch.delenv("REPO_OPS_COMMIT_UMBRELLA", raising=False)
-
-    umbrella = tmp_path / "umbrella"
-    child = umbrella / "child"
-    child.mkdir(parents=True)
-    init_git_repo(umbrella)
-    init_git_repo(child)
-
-    links = [
-        SubmoduleLink(
-            path="child",
-            git_repo=child.resolve(),
-            parent=umbrella.resolve(),
-        )
-    ]
-    child_outcomes = [_make_child_outcome(child.resolve())]
-
-    outcomes, code = commit_umbrella_submodule_pointers(
-        links,
-        child_outcomes,
-        mode="conventional",
-        dry_run=False,
-        quiet=True,
-    )
-    assert outcomes == []
-    assert code == 0
-
-
-# ---------------------------------------------------------------------------
 # No child commits → no umbrella commit
 # ---------------------------------------------------------------------------
 
 
 def test_no_child_commits_produces_no_umbrella_commit(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     init_git_repo,
 ) -> None:
     """When no child received a commit (all skipped), no umbrella commit runs."""
-    monkeypatch.setenv("REPO_OPS_COMMIT_UMBRELLA", "1")
 
     umbrella = tmp_path / "umbrella"
     child = umbrella / "child"
@@ -128,12 +85,10 @@ def test_no_child_commits_produces_no_umbrella_commit(
 
 def test_stages_only_committed_child_gitlinks(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     init_git_repo,
 ) -> None:
     """Stages exactly the 2 gitlink paths for committed children; unrelated dirty
     files and uncommitted-child gitlinks are never touched."""
-    monkeypatch.setenv("REPO_OPS_COMMIT_UMBRELLA", "1")
 
     umbrella = tmp_path / "umbrella"
     child_a = umbrella / "child-a"
@@ -215,11 +170,9 @@ def test_stages_only_committed_child_gitlinks(
 
 def test_umbrella_commit_message_shape(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     init_git_repo,
 ) -> None:
     """Commit subject is 'chore(submodules): bump N child pin(s)'; body names children."""
-    monkeypatch.setenv("REPO_OPS_COMMIT_UMBRELLA", "1")
 
     umbrella = tmp_path / "umbrella"
     child_x = umbrella / "libx"
@@ -277,11 +230,9 @@ def test_umbrella_commit_message_shape(
 
 def test_dry_run_produces_no_git_add(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     init_git_repo,
 ) -> None:
     """In dry-run mode, outcome is 'dry_run' and no git add/commit is executed."""
-    monkeypatch.setenv("REPO_OPS_COMMIT_UMBRELLA", "1")
 
     umbrella = tmp_path / "umbrella"
     child_y = umbrella / "child-y"

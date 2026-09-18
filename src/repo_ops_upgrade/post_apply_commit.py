@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -641,10 +640,8 @@ def _print_outcome(outcome: CommitOutcome) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Umbrella submodule pointer-bump commits (opt-in via REPO_OPS_COMMIT_UMBRELLA=1)
+# Umbrella submodule pointer-bump commits
 # ---------------------------------------------------------------------------
-
-_COMMIT_UMBRELLA_ENV = "REPO_OPS_COMMIT_UMBRELLA"
 
 
 def _dirty_gitlink_paths_for_children(
@@ -694,17 +691,14 @@ def commit_umbrella_submodule_pointers(
 ) -> tuple[list[CommitOutcome], int]:
     """Commit submodule pointer bumps in umbrella repos after child commits.
 
-    Enabled only when ``REPO_OPS_COMMIT_UMBRELLA=1`` is set in the environment
-    and *mode* is ``"conventional"`` or ``"agent"`` (same gate as the child
-    commit phase).  One commit per eligible umbrella repo is produced; each
+    Runs whenever *mode* is ``"conventional"`` or ``"agent"`` (same gate as the
+    child commit phase).  One commit per eligible umbrella repo is produced; each
     stages only the gitlink paths corresponding to children that received a
     commit this run — pre-existing dirty paths are never touched.
 
     Returns ``(outcomes, exit_code)`` matching ``run_post_apply_commits``.
     """
     if mode == "none":
-        return [], 0
-    if not os.environ.get(_COMMIT_UMBRELLA_ENV, "").strip():
         return [], 0
     if not submodule_links:
         return [], 0

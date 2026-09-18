@@ -34,7 +34,6 @@ def _fake_args(**overrides) -> MagicMock:
         # Upgrade policy
         "conservative": False,
         "migrate_to_uv_lock": False,
-        "commit_umbrella": False,
         "actions_org_policy": False,
         "actions_policy_level": None,
         "go_upgrade_mode": None,

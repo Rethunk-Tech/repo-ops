@@ -209,7 +209,6 @@ _SETTINGS: tuple[_Setting, ...] = (
     _s("node_verify_script", None, "(none)", "(none)"),
     _s("commit_agent_provider", None, "(none)", "cursor"),
     _s("commit_agent_model", "composer-2.5", "(none)", "composer-2.5"),
-    _s("commit_umbrella", None, "--commit-umbrella", "0"),
     _s("actions_org_policy", None, "--actions-org-policy", "0"),
     _s("actions_policy_level", None, "--actions-policy-level", "report"),
     # Actions digest refresh (SHA-pinned Actions get their pin's commit

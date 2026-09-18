@@ -265,9 +265,6 @@ def _run_upgrade_body(
     # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects.
     if _cli_flag(args, "migrate_to_uv_lock"):
         _set_cli_env("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
-    # --commit-umbrella: opt in to post-commit umbrella pointer bumps.
-    if _cli_flag(args, "commit_umbrella"):
-        _set_cli_env("REPO_OPS_COMMIT_UMBRELLA", "1")
     # Org allowed-actions policy. Enabled whenever a GitHub token is available,
     # because without it a sweep will happily bump a pin on an Action the org
     # forbids — a clean-looking report and a workflow that fails at startup.
@@ -547,6 +544,25 @@ def _run_upgrade_body(
                 stop_on_result=_workspace_failed,
             )
 
+    # Retry each failed repo once, alone, after the parallel sweep. Rollback left
+    # it at its pre-apply state, so the retry is a clean re-apply. Failures that
+    # only exist under fleet-wide concurrency (a resolver blip in govulncheck,
+    # golangci-lint's machine-wide runner lock, a test timeout under load) failed
+    # 9 of 9 repos in one sweep, and all 9 passed when re-run one at a time.
+    if rollback_on_veto and not args.fail_fast:
+        failed_repos = sorted({r.workspace.git_repo for r in all_results if r.status == "fail"})
+        if failed_repos:
+            if not args.quiet:
+                print(f"retrying {len(failed_repos)} failed repo(s) one at a time")
+            retry_set = set(failed_repos)
+            all_results = [r for r in all_results if r.workspace.git_repo not in retry_set]
+            for key in failed_repos:
+                bundle = bundles[key]
+                bundle.workspaces = [
+                    WorkspaceResult(workspace=wr.workspace) for wr in bundle.workspaces
+                ]
+                all_results.extend(_process_repo(bundle))
+
     # Key by (path, manager): a single directory can host multiple ecosystems
     # (e.g. npm + container). Path-only keys let the last worker overwrite the
     # earlier result, dropping non-container workspaces from --json/--json-out.
@@ -795,8 +811,7 @@ def _run_upgrade_body(
                                 _cpt_state.save_checkpoint(_to_save)
             # Umbrella pointer-bump commits: after all child commits complete,
             # commit dirty gitlinks in umbrella repos for children that received
-            # commits this run.  Opt-in via REPO_OPS_COMMIT_UMBRELLA=1 env var.
-            # CLI flag --commit-umbrella wires the env var.
+            # commits this run.
             if submodule_links:
                 _, umbrella_exit = post_apply_commit.commit_umbrella_submodule_pointers(
                     submodule_links,
@@ -807,6 +822,11 @@ def _run_upgrade_body(
                 )
                 if umbrella_exit != 0:
                     exit_code = 1 if exit_code == 0 else exit_code
+                # The footer reports what is still dirty, not the pre-commit state.
+                if not _cli_flag(args, "commit_dry_run"):
+                    pointer_hints = (
+                        submodules.parent_repos_needing_pointer_commit(submodule_links) or None
+                    )
 
             # PR/branch mode (opt-in via --pr): after commits land, create a
             # branch, push it, and open a PR for each repo that received a

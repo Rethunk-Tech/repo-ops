@@ -615,22 +615,6 @@ def add_upgrade_common_arguments(
                 "(default: skip failed verify)."
             ),
         )
-        exe.add_argument(
-            "--commit-umbrella",
-            action="store_true",
-            dest="commit_umbrella",
-            help=(
-                "After child commits complete, also commit submodule pointer bumps "
-                "in umbrella repos for each child that received a commit this run. "
-                "Enable with --commit-umbrella or REPO_OPS_COMMIT_UMBRELLA=1. "
-                "Umbrella pointer commits also require --commit=conventional or "
-                "--commit=agent; --commit=none does not commit. "
-                "Submodule discovery requires --submodules or "
-                "--submodule-order=children-first. Child-to-parent apply ordering "
-                "also requires --submodule-order=children-first; that is separate "
-                "from umbrella commits. No-op when no submodules are detected."
-            ),
-        )
 
     # ---- Branch / PR workflow (apply-only, opt-in) ------------------------
     if apply:
