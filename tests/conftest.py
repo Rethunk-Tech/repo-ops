@@ -243,5 +243,9 @@ class _FakeRun:
 
 @pytest.fixture
 def fake_run() -> _FakeRun:
-    """Patch target for ``run()`` when a test only needs the commands it issued."""
+    """Patch target for ``run()`` when a test only needs the commands it issued.
+
+    The ~100 local ``fake_run`` definitions left in tests script per-command
+    output; folding them into a scripted fixture was measured and declined.
+    """
     return _FakeRun()

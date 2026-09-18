@@ -193,7 +193,7 @@ def test_remediations_not_run_after_apply_fail(tmp_path: Path, make_workspace) -
             side_effect=_boom,
         ),
         patch(
-            "repo_ops_upgrade.orchestration.remediations.run_remediations",
+            "repo_ops_upgrade.orchestration.dispatch_remediations",
             side_effect=_spy_rem,
         ),
         patch("repo_ops_upgrade.orchestration.is_git_dirty", return_value=False),
@@ -230,7 +230,7 @@ def test_missing_applier_maps_to_workspace_fail(tmp_path: Path, make_workspace) 
             "repo_ops_upgrade.orchestration.snapshot_workspace_files",
             return_value={},
         ),
-        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
+        patch("repo_ops_upgrade.orchestration.dispatch_remediations"),
         # Call through orchestration so RuntimeError is classified as fail.
         patch(
             "repo_ops_upgrade.orchestration.ecosystems.apply_workspace",
@@ -286,7 +286,7 @@ def test_revert_subprocess_timeout_sets_disposition(tmp_path: Path, make_workspa
             "repo_ops_upgrade.orchestration.verify_mod.verify_workspace",
             return_value="verify boom",
         ),
-        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
+        patch("repo_ops_upgrade.orchestration.dispatch_remediations"),
         patch(
             "repo_ops_upgrade.orchestration.revert_workspace_after_verify_fail",
             side_effect=subprocess.TimeoutExpired(cmd=["git"], timeout=1),

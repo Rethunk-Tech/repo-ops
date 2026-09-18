@@ -57,7 +57,7 @@ def test_verify_fail_revert_restores_lockfile(tmp_path: Path, init_git_repo) -> 
             "repo_ops_upgrade.orchestration.verify_mod.verify_workspace",
             return_value="simulated verify failure",
         ),
-        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
+        patch("repo_ops_upgrade.orchestration.dispatch_remediations"),
     ):
         out = orchestration.process_workspace(
             wr,
@@ -91,7 +91,7 @@ def test_verify_fail_keep_leaves_changes(tmp_path: Path, init_git_repo) -> None:
             "repo_ops_upgrade.orchestration.verify_mod.verify_workspace",
             return_value="simulated verify failure",
         ),
-        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
+        patch("repo_ops_upgrade.orchestration.dispatch_remediations"),
     ):
         out = orchestration.process_workspace(
             wr,

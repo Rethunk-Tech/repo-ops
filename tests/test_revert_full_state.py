@@ -85,7 +85,7 @@ def test_revert_restores_remediation_edits_and_reinstalls(tmp_path: Path, init_g
     with (
         patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", side_effect=_apply),
         patch(
-            "repo_ops_upgrade.orchestration.remediations.run_remediations",
+            "repo_ops_upgrade.orchestration.dispatch_remediations",
             side_effect=_biome_migrate,
         ),
         patch(
@@ -114,7 +114,7 @@ def test_revert_runs_when_verify_raises(tmp_path: Path, init_git_repo) -> None:
     register_all()
     with (
         patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", side_effect=_apply),
-        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
+        patch("repo_ops_upgrade.orchestration.dispatch_remediations"),
         patch(
             "repo_ops_upgrade.orchestration.verify_mod.verify_workspace",
             side_effect=subprocess.TimeoutExpired(cmd=["gate"], timeout=60),
@@ -149,7 +149,7 @@ def test_revert_keeps_preexisting_edit_to_a_file_apply_rewrote(
     register_all()
     with (
         patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", side_effect=_apply),
-        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
+        patch("repo_ops_upgrade.orchestration.dispatch_remediations"),
         patch(
             "repo_ops_upgrade.orchestration.verify_mod.verify_workspace",
             return_value="fail",
@@ -188,7 +188,7 @@ def test_vetoed_commit_rolls_back_passing_siblings(tmp_path: Path, init_git_repo
     register_all()
     with (
         patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", side_effect=_apply),
-        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
+        patch("repo_ops_upgrade.orchestration.dispatch_remediations"),
         patch("repo_ops_upgrade.orchestration.verify_mod.verify_workspace", side_effect=_verify),
         # A fleet sweep (no roots named) is what reverts a vetoed repo.
         patch("repo_ops_core.cli.DEFAULT_ROOTS", [str(repo)]),

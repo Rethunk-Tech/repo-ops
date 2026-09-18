@@ -136,7 +136,7 @@ def test_process_workspace_plan_mode(tmp_path: Path) -> None:
             "repo_ops_upgrade.orchestration.ecosystems.check_workspace",
             return_value=checked,
         ),
-        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
+        patch("repo_ops_upgrade.orchestration.dispatch_remediations"),
     ):
         out = orchestration.process_workspace(
             wr,

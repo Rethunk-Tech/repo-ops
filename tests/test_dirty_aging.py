@@ -356,7 +356,7 @@ def test_repo_started_dirty_override_proceeds_even_when_live_check_is_dirty(
             return_value=[],
         ),
         patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", return_value=[]),
-        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
+        patch("repo_ops_upgrade.orchestration.dispatch_remediations"),
         patch.dict(os.environ, {}),
     ):
         out = process_workspace(
@@ -396,7 +396,7 @@ def test_clean_run_clears_cache_entry(tmp_path: Path, monkeypatch: pytest.Monkey
             return_value=[],
         ),
         patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", return_value=[]),
-        patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
+        patch("repo_ops_upgrade.orchestration.dispatch_remediations"),
         patch.dict(os.environ, {}),
     ):
         out = process_workspace(

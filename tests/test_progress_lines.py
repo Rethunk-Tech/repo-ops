@@ -158,7 +158,7 @@ def test_process_workspace_sets_elapsed_s(tmp_path: Path) -> None:
             side_effect=_fake_check,
         ),
         _patch(
-            "repo_ops_upgrade.orchestration.remediations.run_remediations",
+            "repo_ops_upgrade.orchestration.dispatch_remediations",
         ),
         patch.dict(os.environ, {}),
     ):

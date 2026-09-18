@@ -32,36 +32,13 @@ from repo_ops_upgrade.post_apply import (
     collect_changes_after_apply,
     revert_workspace_after_verify_fail,
 )
-from repo_ops_upgrade_remediations_core.remediations import (
-    dispatch as _dispatch_remediations,
-)
+from repo_ops_upgrade_remediations_core.remediations import dispatch as dispatch_remediations
 from repo_ops_upgrade_remediations_core.remediations import load_ecosystem_hooks
 
 load_ecosystem_hooks()
 
 logger = logging.getLogger(__name__)
 
-
-class _RemediationsProxy:
-    """Intentional test seam: tests patch ``orchestration.remediations.run_remediations``.
-
-    # compat: patch site for test_progress_lines / test_staleness_state /
-    # test_on_verify_fail — keep this proxy rather than migrating every call site.
-    Routes live calls through remediations-core.dispatch.
-    """
-
-    def run_remediations(
-        self,
-        result: WorkspaceResult,
-        *,
-        apply: bool,
-    ) -> None:
-        _dispatch_remediations(result, apply=apply)
-
-
-# Module-level ``remediations`` attribute: existing tests patch
-# ``orchestration.remediations.run_remediations`` via this name.
-remediations = _RemediationsProxy()
 
 OnVerifyFail = Literal["keep", "revert"]
 
@@ -187,7 +164,7 @@ def _process_workspace_body(
 
     if not (do_apply and result.status == "fail"):
         result.pre_apply_snapshot = before_snap or {}
-        remediations.run_remediations(result, apply=do_apply)
+        dispatch_remediations(result, apply=do_apply)
         result.pre_apply_snapshot = {}
 
     if do_apply and do_verify and result.status != "fail":

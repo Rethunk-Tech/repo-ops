@@ -57,6 +57,24 @@ def test_pip_tools_verify_passes_when_in_sync(tmp_path: Path, make_workspace, ma
     assert result is None, f"expected None (in sync), got: {result!r}"
 
 
+def test_pip_tools_verify_treats_dot_and_dash_names_as_one_package(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
+    """``zope.interface`` and ``zope-interface`` are the same distribution (PEP 503), not drift."""
+    (tmp_path / "requirements.in").write_text("zope.interface\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("zope.interface==7.2\n", encoding="utf-8")
+
+    with (
+        patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/uv"),
+        patch("repo_ops_upgrade.verify.run", return_value=make_proc(0, "zope-interface==7.2\n")),
+    ):
+        result = verify_workspace(
+            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"),
+        )
+
+    assert result is None, f"expected None (same package), got: {result!r}"
+
+
 def test_pip_tools_verify_compile_failure_returns_error(
     tmp_path: Path, make_workspace, make_proc
 ) -> None:
