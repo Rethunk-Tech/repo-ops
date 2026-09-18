@@ -151,7 +151,7 @@ def test_apply_submodule_tag_advances_invoked_via_run(
     with contextlib.suppress(SystemExit):
         run_mod.run_upgrade(
             apply=True,
-            argv=["--flat", str(root), "--submodules", "--quiet"],
+            argv=[str(root), "--submodules", "--quiet"],
         )
 
     assert len(called_with) == 1, (

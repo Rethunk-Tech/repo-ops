@@ -25,7 +25,6 @@ def _fake_args(**overrides) -> MagicMock:
     defaults: dict = {
         # Selection
         "skip_actions": False,
-        "flat": False,
         "eco_filter": None,
         "manager_filter": None,
         "exclude_patterns": None,
@@ -42,7 +41,6 @@ def _fake_args(**overrides) -> MagicMock:
         "actions_upgrade_mode": None,
         "actions_lint_level": None,
         # Safety
-        "allow_dirty": False,
         "strict_exit": False,
         # Output
         "json": False,

@@ -38,7 +38,6 @@ def test_apply_verify_failure_exits_nonzero(tmp_path: Path, init_git_repo) -> No
         rc = main_apply(
             [
                 str(tmp_path),
-                "--flat",
                 "--skip-actions",
             ]
         )
@@ -68,7 +67,6 @@ with patch(
 ):
     sys.exit(main_apply([
         {str(tmp_path)!r},
-        "--flat",
         "--skip-actions",
         "--quiet",
     ]))
@@ -97,7 +95,6 @@ def test_apply_worker_exception_reports_fail_not_clean(tmp_path: Path, init_git_
         rc = main_apply(
             [
                 str(tmp_path),
-                "--flat",
                 "--skip-actions",
                 "--json",
                 f"--json-out={out_file}",
@@ -125,7 +122,6 @@ def test_apply_log_file_captures_transcript(tmp_path: Path, init_git_repo) -> No
         rc = main_apply(
             [
                 str(tmp_path),
-                "--flat",
                 "--skip-actions",
                 "--quiet",
                 "--log-file",
@@ -155,7 +151,6 @@ def test_plan_log_file_includes_footer(tmp_path: Path, capsys, init_git_repo) ->
         rc = main_plan(
             [
                 str(tmp_path),
-                "--flat",
                 "--skip-actions",
                 "--quiet",
                 "--log-file",
@@ -195,7 +190,7 @@ def test_apply_dirty_skip_does_not_scan_actions(tmp_path: Path, init_git_repo) -
         ),
         patch("repo_ops_upgrade.run.actions.scan_actions", side_effect=track_scan),
     ):
-        main_apply([str(tmp_path), "--flat", "--quiet"])
+        main_apply([str(tmp_path), "--quiet"])
 
     assert scan_calls == []
 
@@ -208,11 +203,10 @@ def test_strict_exit_counts_dirty_skip(tmp_path: Path, init_git_repo) -> None:
         "repo_ops_upgrade.run.orchestration.process_workspace",
         side_effect=_dirty_skip,
     ):
-        rc_normal = main_apply([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
+        rc_normal = main_apply([str(tmp_path), "--skip-actions", "--quiet"])
         rc_strict = main_apply(
             [
                 str(tmp_path),
-                "--flat",
                 "--skip-actions",
                 "--quiet",
                 "--strict-exit",
@@ -246,7 +240,7 @@ def test_apply_snapshots_repo_dirty_state_once_per_bundle(tmp_path: Path, init_g
         ),
         patch("repo_ops_upgrade.run.is_git_dirty", return_value=False) as mock_dirty,
     ):
-        rc = main_apply([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
+        rc = main_apply([str(tmp_path), "--skip-actions", "--quiet"])
 
     assert rc == 0
     assert len(calls) == 2  # npm root workspace + precommit workspace

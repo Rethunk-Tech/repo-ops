@@ -27,7 +27,7 @@ def test_parse_gitmodules_and_discover(tmp_path: Path, init_git_repo) -> None:
     init_git_repo(child)
     _write_gitmodules(parent, "libs/child", "https://example.com/child.git")
 
-    links = submodules.discover_submodules_under_roots([str(parent)], flat=True)
+    links = submodules.discover_submodules_under_roots([str(parent)])
     assert len(links) == 1
     assert links[0].path == "libs/child"
     assert links[0].git_repo.resolve() == child.resolve()
@@ -83,7 +83,7 @@ def test_plan_json_includes_submodules(tmp_path: Path, capsys, init_git_repo) ->
         side_effect=_noop_workspace,
     ):
         code = main_plan(
-            ["--flat", "--json", "--submodules", str(parent)],
+            ["--json", "--submodules", str(parent)],
         )
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
@@ -119,7 +119,7 @@ def test_discover_skips_uninitialized_submodule(tmp_path: Path, init_git_repo) -
     uninit_dir.mkdir()
     _write_gitmodules(parent, "sub", "https://example.com/sub.git")
 
-    links = submodules.discover_submodules_under_roots([str(parent)], flat=True)
+    links = submodules.discover_submodules_under_roots([str(parent)])
     assert links == []
 
 
@@ -153,7 +153,7 @@ def test_dirty_submodule_pointer_hint(tmp_path: Path, init_git_repo) -> None:
         capture_output=True,
     )
 
-    links = submodules.discover_submodules_under_roots([str(parent)], flat=True)
+    links = submodules.discover_submodules_under_roots([str(parent)])
     hints = submodules.parent_repos_needing_pointer_commit(links)
     assert hints
     assert hints[0]["parent"] == str(parent.resolve())
@@ -202,5 +202,5 @@ def test_discover_rejects_self_referential_dot_path(tmp_path: Path, init_git_rep
         encoding="utf-8",
     )
 
-    links = submodules.discover_submodules_under_roots([str(repo)], flat=True)
+    links = submodules.discover_submodules_under_roots([str(repo)])
     assert links == [], f"self-referential path='.' submodule must be rejected; got {links}"

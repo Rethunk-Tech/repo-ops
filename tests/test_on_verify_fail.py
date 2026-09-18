@@ -127,7 +127,6 @@ def test_apply_json_includes_verify_fail_disposition(tmp_path: Path, capsys, ini
         rc = main_apply(
             [
                 str(tmp_path),
-                "--flat",
                 "--skip-actions",
                 "--json",
                 f"--json-out={out_file}",
@@ -138,14 +137,3 @@ def test_apply_json_includes_verify_fail_disposition(tmp_path: Path, capsys, ini
     payload = json.loads(out_file.read_text(encoding="utf-8"))
     ws_json = payload["repos"][0]["workspaces"][0]
     assert ws_json["verify_fail_disposition"] == FAILED_WITH_CHANGES
-
-
-def test_apply_parser_exposes_on_verify_fail() -> None:
-    from repo_ops_core.cli import build_upgrade_parser
-
-    apply_parser = build_upgrade_parser(apply=True)
-    dests = {a.dest for a in apply_parser._actions}
-    assert "on_verify_fail" in dests
-    plan_parser = build_upgrade_parser(apply=False)
-    plan_dests = {a.dest for a in plan_parser._actions}
-    assert "on_verify_fail" not in plan_dests

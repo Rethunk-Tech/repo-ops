@@ -87,7 +87,7 @@ def _parse_gitmodules_file(gitmodules_path: Path) -> list[tuple[str, str]]:
     return entries
 
 
-def discover_submodules_under_roots(roots: list[str], *, flat: bool) -> list[SubmoduleLink]:
+def discover_submodules_under_roots(roots: list[str]) -> list[SubmoduleLink]:
     """Find .gitmodules under scanned roots and resolve parent/child git repos."""
     links: list[SubmoduleLink] = []
     seen: set[tuple[str, str, str]] = set()
@@ -96,14 +96,7 @@ def discover_submodules_under_roots(roots: list[str], *, flat: bool) -> list[Sub
         root = Path(root_s).expanduser().resolve()
         if not root.is_dir():
             continue
-        candidates: list[Path]
-        if flat and len(roots) == 1:
-            gm = root / ".gitmodules"
-            candidates = [gm] if gm.is_file() else []
-        else:
-            candidates = _find_gitmodules(root)
-
-        for gitmodules_path in candidates:
+        for gitmodules_path in _find_gitmodules(root):
             parent = git_repo_for(gitmodules_path.parent)
             if parent is None:
                 continue

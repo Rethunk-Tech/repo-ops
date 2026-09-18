@@ -47,7 +47,7 @@ def test_discover_all_finds_repo_below_org_proj_depth(tmp_path: Path, init_git_r
     (repo / "pyproject.toml").write_text("[project]\nname = 'widget'\n")
     (repo / "uv.lock").write_text("")
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
 
     paths = {ws.path for ws in found}
     assert repo.resolve() in paths, f"deep repo not discovered; found={paths}"
@@ -72,7 +72,7 @@ def test_discover_all_enumerates_multiple_and_subdir_workspaces(tmp_path: Path, 
     (subdir_only / "web" / "package.json").write_text('{"name":"iv-web"}')
     (subdir_only / "web" / "yarn.lock").write_text("")
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     by_path = {ws.path: ws for ws in found}
 
     assert (multi).resolve() in by_path, "root Go module not found"
@@ -96,7 +96,7 @@ def test_discover_all_suppresses_uv_workspace_members(tmp_path: Path, init_git_r
         "[project]\nname = 'lib'\n\n[build-system]\nbuild-backend = 'uv_build'\n"
     )
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     py = [ws for ws in found if ws.ecosystem == "py"]
     assert len(py) == 1, f"expected only the uv root, got {[str(w.path) for w in py]}"
     assert py[0].path == repo.resolve()
@@ -111,7 +111,7 @@ def test_discover_all_records_skip_for_unactionable_manifest(tmp_path: Path, ini
     (repo / "package.json").write_text('{"name":"nolock"}')
 
     diags = DiscoveryDiagnostics()
-    found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
+    found = discover_all([str(tmp_path)], diagnostics=diags)
 
     assert not [ws for ws in found if ws.path == repo.resolve()]
     assert any(
@@ -131,7 +131,7 @@ def test_discover_all_records_skip_for_requirements_txt_only(tmp_path: Path, ini
     (repo / "requirements.txt").write_text("requests==2.31.0\n")
 
     diags = DiscoveryDiagnostics()
-    found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
+    found = discover_all([str(tmp_path)], diagnostics=diags)
 
     py_found = [ws for ws in found if ws.ecosystem == "py"]
     assert py_found == [], (
@@ -155,7 +155,7 @@ def test_discover_all_finds_requirements_txt_only_repo(tmp_path: Path, init_git_
     (repo / "requirements.txt").write_text("requests==2.31.0\n")
 
     diags = DiscoveryDiagnostics()
-    found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
+    found = discover_all([str(tmp_path)], diagnostics=diags)
     py = [ws for ws in found if ws.ecosystem == "py"]
 
     # requirements.txt-only → skip, not a workspace
@@ -208,7 +208,7 @@ def test_discover_node_workspace_member_not_recorded_as_skip(tmp_path: Path, ini
     (member / "package.json").write_text('{"name":"ui"}')
 
     diags = DiscoveryDiagnostics()
-    found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
+    found = discover_all([str(tmp_path)], diagnostics=diags)
 
     member_skips = [
         s for s in diags.skipped if Path(s["path"]) == member.resolve() and s["ecosystem"] == "node"
@@ -243,7 +243,7 @@ def test_discover_skip_only_dir_not_double_printed_in_nested_repo(
 
     # Run without diagnostics so skips go to stderr (the --json path already
     # dedupes via _seen_skips; the bug is stderr-only).
-    discover_all([str(tmp_path)], flat=False, diagnostics=None)
+    discover_all([str(tmp_path)], diagnostics=None)
     err = capsys.readouterr().err
 
     skip_count = err.count("SKIP node")
@@ -267,7 +267,7 @@ def test_discover_cargo_workspace_members_not_enumerated_standalone(tmp_path: Pa
     # Member: Cargo.toml with [package] but no own Cargo.lock.
     (member / "Cargo.toml").write_text('[package]\nname = "util"\nversion = "0.1.0"\n')
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     rust_found = [ws for ws in found if ws.ecosystem == "rust"]
 
     assert len(rust_found) == 1, (
@@ -305,7 +305,7 @@ def test_discover_cargo_collapses_excluded_and_implicit_path_members(
     (excluded / "Cargo.toml").write_text('[package]\nname = "excluded"\nversion = "0.1.0"\n')
     (excluded / "src" / "lib.rs").write_text("")
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     rust_found = [ws for ws in found if ws.ecosystem == "rust"]
 
     assert [ws.path for ws in rust_found] == [repo.resolve()]
@@ -326,7 +326,7 @@ def test_discover_cargo_missing_binary_falls_back_to_member_globs(
     (member / "src" / "lib.rs").write_text("")
     monkeypatch.setattr("repo_ops_upgrade.discovery.shutil.which", lambda _: None)
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     rust_found = [ws for ws in found if ws.ecosystem == "rust"]
 
     assert [ws.path for ws in rust_found] == [repo.resolve()]
@@ -364,7 +364,7 @@ def test_discover_cargo_missing_binary_expands_path_dependencies(
     (nested / "src" / "lib.rs").write_text("")
     monkeypatch.setattr("repo_ops_upgrade.discovery.shutil.which", lambda _: None)
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     rust_found = [ws for ws in found if ws.ecosystem == "rust"]
 
     assert [ws.path for ws in rust_found] == [repo.resolve()]

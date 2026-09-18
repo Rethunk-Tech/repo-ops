@@ -274,7 +274,6 @@ def _register_workspace(
 
 def discover_workspaces_in_root(
     root: Path,
-    flat: bool,
     *,
     diagnostics: DiscoveryDiagnostics | None = None,
     follow_symlinks: bool = False,
@@ -482,23 +481,20 @@ def discover_workspaces_in_root(
         _register_workspace(mdir, "deno", "deno", record_skip=record_skip, found=found)
 
     seen_paths: set[Path] = set()
-    if flat:
-        dir_iter: list[tuple[Path, set[str]]] = list(iter_scanned_dirs(root))
-    else:
-        # Depth-agnostic, full per-repo discovery: find every git repo under
-        # ``root`` using the same recursive walk that drives Actions discovery
-        # (``discover_repos``), then recursively scan each repo so that *every*
-        # manifest in the tree is enumerated — multiple ecosystems and sub-apps
-        # within one repo (e.g. a Go module at the root plus a node app in
-        # ``web/``), not just one workspace per repo. Walking each repo
-        # (rather than ``root`` wholesale) keeps the scan scoped to real repos
-        # and lets per-repo workspace-member suppression run in tree order.
-        dir_iter = []
-        repos = discover_repos([str(root)], follow_symlinks=follow_symlinks)
-        for repo_s in sorted(set(repos.values())):
-            dir_iter.extend(iter_scanned_dirs(Path(repo_s)))
-        if not dir_iter:
-            dir_iter = list(iter_scanned_dirs(root))
+    # Depth-agnostic, full per-repo discovery: find every git repo under
+    # ``root`` using the same recursive walk that drives Actions discovery
+    # (``discover_repos``), then recursively scan each repo so that *every*
+    # manifest in the tree is enumerated — multiple ecosystems and sub-apps
+    # within one repo (e.g. a Go module at the root plus a node app in
+    # ``web/``), not just one workspace per repo. Walking each repo
+    # (rather than ``root`` wholesale) keeps the scan scoped to real repos
+    # and lets per-repo workspace-member suppression run in tree order.
+    dir_iter: list[tuple[Path, set[str]]] = []
+    repos = discover_repos([str(root)], follow_symlinks=follow_symlinks)
+    for repo_s in sorted(set(repos.values())):
+        dir_iter.extend(iter_scanned_dirs(Path(repo_s)))
+    if not dir_iter:
+        dir_iter = list(iter_scanned_dirs(root))
 
     for mdir, names in dir_iter:
         key = mdir.resolve()
@@ -535,7 +531,6 @@ def discover_workspaces_in_root(
 
 def discover_all(
     roots: list[str],
-    flat: bool,
     *,
     diagnostics: DiscoveryDiagnostics | None = None,
     follow_symlinks: bool = False,
@@ -552,7 +547,6 @@ def discover_all(
             continue
         for ws in discover_workspaces_in_root(
             root,
-            flat=flat and len(roots) == 1,
             diagnostics=diagnostics,
             follow_symlinks=follow_symlinks,
         ):

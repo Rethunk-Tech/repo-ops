@@ -146,7 +146,7 @@ def test_discovery_registers_go_work_dir(tmp_path: Path, init_git_repo) -> None:
     # Clear registry before test (module-level state from other tests)
     _go_work_dirs.clear()
 
-    discover_all([str(tmp_path)], flat=False)
+    discover_all([str(tmp_path)])
 
     assert module.resolve() in _go_work_dirs, (
         f"go.work dir not registered for {module}; registry={dict(_go_work_dirs)}"
@@ -163,7 +163,7 @@ def test_discovery_no_go_work_no_registration(tmp_path: Path, init_git_repo) -> 
     (repo / "go.mod").write_text("module example.com/standalone\n\ngo 1.22\n")
 
     _go_work_dirs.clear()
-    discover_all([str(tmp_path)], flat=False)
+    discover_all([str(tmp_path)])
 
     assert repo.resolve() not in _go_work_dirs
 

@@ -73,7 +73,7 @@ def test_resolve_scan_roots_all_defaults_missing_exits_with_guidance(
 
     err = capsys.readouterr().err
     assert "none of the default roots exist on this machine" in err
-    assert "--flat ." in err
+    assert "e.g. `.` for the current checkout" in err
 
 
 def test_resolve_scan_roots_explicit_missing_path_still_fatal(

@@ -32,7 +32,7 @@ def test_discover_all_json_diagnostics_no_stderr(tmp_path: Path, capsys, init_gi
     (warn_dir / "bun.lock").write_text("", encoding="utf-8")
 
     diag = DiscoveryDiagnostics()
-    discover_all([str(tmp_path)], flat=True, diagnostics=diag)
+    discover_all([str(tmp_path)], diagnostics=diag)
     captured = capsys.readouterr()
     assert captured.err == ""
     assert len(diag.skipped) == 1
@@ -77,7 +77,6 @@ def test_plan_json_stdout_parses_without_skip_warn_lines(
             [
                 str(tmp_path),
                 "--json",
-                "--flat",
                 "--skip-actions",
             ]
         )
@@ -122,7 +121,6 @@ def test_plan_json_v1_schema_compact_and_null_omission(
                 str(tmp_path),
                 "--json",
                 "--compact",
-                "--flat",
                 "--skip-actions",
             ]
         )
@@ -179,7 +177,7 @@ def test_plan_exclude_filters_repositories_from_config(
             side_effect=_record_workspace,
         ),
     ):
-        rc = main_plan([str(tmp_path), "--json", "--flat", "--skip-actions"])
+        rc = main_plan([str(tmp_path), "--json", "--skip-actions"])
 
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
@@ -195,7 +193,7 @@ def test_plan_exclude_filters_repositories_from_config(
             side_effect=_record_workspace,
         ),
     ):
-        rc = main_plan([str(tmp_path), "--flat", "--skip-actions"])
+        rc = main_plan([str(tmp_path), "--skip-actions"])
 
     captured = capsys.readouterr()
     assert rc in (0, 1)

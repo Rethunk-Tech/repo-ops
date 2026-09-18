@@ -62,7 +62,7 @@ MANAGER_FILTER_HELP = (
 DEFAULT_ROOTS_HELP = (
     "Root directories to scan. When omitted, uses DEFAULT_ROOTS: "
     + ", ".join(DEFAULT_ROOTS)
-    + ". Pass explicit paths to limit scope (e.g. a single checkout with --flat)."
+    + ". Named roots are treated as checkouts the operator is working in."
 )
 
 PLAN_DESCRIPTION = (
@@ -81,13 +81,7 @@ exit codes:
   1  drift, remediations, or Actions pin changes exist (CI-friendly);
      or any workspace skip/fail when --strict-exit
 
-workflow:
-  Run plan before apply with the same flags and roots. Plan may run
-  corepack prepare (network) for Yarn version activation.
-
-docs:
-  Agents: AGENTS.md (quick reference). Humans: HUMANS.md (install).
-  Full reference: docs/usage.md in the repo-ops clone.
+Full reference: docs/usage.md.
 """
 
 APPLY_EPILOG = """\
@@ -95,15 +89,14 @@ exit codes:
   0  no workspace failures (dirty skips are ok unless --strict-exit)
   1  any workspace fail; or any skip/fail when --strict-exit
 
-workflow:
-  Prefer plan first (same flags/roots). Dirty git worktrees are skipped
-  unless --allow-dirty. On verify failure, default --on-verify-fail=revert
-  rolls back only apply-artifact files (lockfiles and manifests); use keep
-  to leave them in place for inspection. Pre-existing dirty edits and
-  untracked files outside that set are preserved either way.
+roots:
+  omitted  fleet sweep of DEFAULT_ROOTS: dirty repos are skipped; a repo that
+           fails verify is reverted and retried once on its own
+  named    that checkout, even if dirty (only files apply touched are
+           committed); a failed verify keeps the changes for inspection
 
-docs:
-  Agents: AGENTS.md. Humans: HUMANS.md. Bulk playbook: docs/bulk-maintenance.md.
+Each verified repo gets one conventional commit; nothing is pushed.
+Full reference: docs/usage.md.
 """
 
 
@@ -163,7 +156,7 @@ def resolve_scan_roots(
         parser.error(
             "none of the default roots exist on this machine ("
             + ", ".join(DEFAULT_ROOTS)
-            + "); pass a directory to scan, e.g. `--flat .` for the current checkout"
+            + "); pass a directory to scan, e.g. `.` for the current checkout"
         )
     return resolved
 
@@ -220,15 +213,6 @@ def add_json_out_argument(parser: argparse._ActionsContainer) -> None:
         metavar="PATH",
         dest="json_report_path",
         help="With --json: write the report to PATH (atomic). Stdout prints only the path.",
-    )
-
-
-def add_flat_argument(parser: argparse._ActionsContainer) -> None:
-    """Add --flat flag (treat roots as single projects)."""
-    parser.add_argument(
-        "--flat",
-        action="store_true",
-        help="Treat each root as a single project (skip org/proj two-level walk).",
     )
 
 
@@ -321,7 +305,6 @@ def add_upgrade_common_arguments(
     # ---- Selection --------------------------------------------------------
     sel = parser.add_argument_group("Selection")
     add_roots_argument(sel)
-    add_flat_argument(sel)
     add_eco_filter_argument(sel)
     add_manager_filter_argument(sel)
     add_exclude_argument(sel)
@@ -337,14 +320,6 @@ def add_upgrade_common_arguments(
 
     # ---- Safety -----------------------------------------------------------
     saf = parser.add_argument_group("Safety")
-    saf.add_argument(
-        "--allow-dirty",
-        action="store_true",
-        help=(
-            "Process repos with uncommitted changes (default: skip dirty worktrees "
-            "and report them in the summary)."
-        ),
-    )
     saf.add_argument(
         "--strict-exit",
         action="store_true",
@@ -378,24 +353,6 @@ def add_upgrade_common_arguments(
             "--verify-test",
             action="store_true",
             help="Run go test ./... and cargo test during verify.",
-        )
-        saf.add_argument(
-            "--on-verify-fail",
-            choices=("keep", "revert"),
-            default="revert",
-            dest="on_verify_fail",
-            metavar="POLICY",
-            help=(
-                "When verify fails after apply: revert every file the workspace's "
-                "apply and remediations changed and reinstall from the restored "
-                "lockfile (default), or keep the changes in the worktree to inspect "
-                "them. Unless --no-commit, a failure also reverts the repo's passing "
-                "workspaces, since the failure vetoes the commit. Reverting is the "
-                "default because the cross-range bulk upgrade a sweep performs has no "
-                "per-package rollback of its own, so a failure would otherwise leave "
-                "the workspace broken. Edits and untracked files present before apply "
-                "are preserved either way."
-            ),
         )
 
     # ---- Output -----------------------------------------------------------

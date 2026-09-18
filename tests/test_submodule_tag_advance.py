@@ -468,7 +468,7 @@ def test_discover_populates_url(tmp_path: Path, init_git_repo) -> None:
         encoding="utf-8",
     )
 
-    links = discover_submodules_under_roots([str(parent)], flat=True)
+    links = discover_submodules_under_roots([str(parent)])
     assert len(links) == 1
     assert links[0].url == "https://example.com/child.git"
 

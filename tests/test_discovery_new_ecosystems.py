@@ -19,7 +19,7 @@ def test_pipfile_only_produces_accurate_skip(tmp_path: Path, init_git_repo) -> N
     (repo / "Pipfile").write_text('[packages]\nrequests = "*"\n')
 
     diags = DiscoveryDiagnostics()
-    found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
+    found = discover_all([str(tmp_path)], diagnostics=diags)
 
     py_found = [ws for ws in found if ws.ecosystem == "py"]
     assert py_found == [], f"Pipfile-only must not produce a workspace; got {py_found}"
@@ -47,7 +47,7 @@ def test_discover_pdm_with_pdm_lock(tmp_path: Path, init_git_repo) -> None:
         "[metadata]\nlock_version = '4.4.1'\n\n[[package]]\nname = 'requests'\nversion = '2.31.0'\n"
     )
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     pdm_found = [ws for ws in found if ws.manager == "pdm"]
 
     assert len(pdm_found) == 1, f"expected one pdm workspace; found={pdm_found}"
@@ -64,7 +64,7 @@ def test_discover_pdm_lock_without_pyproject_triggers_py(tmp_path: Path, init_gi
         "[metadata]\nlock_version = '4.4.1'\n\n[[package]]\nname = 'click'\nversion = '8.1.0'\n"
     )
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     pdm_found = [ws for ws in found if ws.manager == "pdm"]
 
     assert len(pdm_found) == 1, f"expected one pdm workspace; found={pdm_found}"
@@ -80,7 +80,7 @@ def test_discover_pdm_tool_section_without_lock_skips_accurately(
     (repo / "pyproject.toml").write_text("[project]\nname = 'x'\n\n[tool.pdm]\n")
 
     diags = DiscoveryDiagnostics()
-    found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
+    found = discover_all([str(tmp_path)], diagnostics=diags)
 
     py_found = [ws for ws in found if ws.ecosystem == "py"]
     assert py_found == [], f"must not produce a workspace without pdm.lock; got {py_found}"
@@ -106,7 +106,7 @@ def test_discover_pipenv_with_lock(tmp_path: Path, init_git_repo) -> None:
         '{"_meta":{},"default":{"requests":{"version":"==2.31.0"}},"develop":{}}'
     )
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     pipenv_found = [ws for ws in found if ws.manager == "pipenv"]
 
     assert len(pipenv_found) == 1, f"expected one pipenv workspace; found={pipenv_found}"
@@ -121,7 +121,7 @@ def test_discover_pipenv_no_lock_skips_with_pipenv_reason(tmp_path: Path, init_g
     (repo / "Pipfile").write_text('[packages]\nrequests = "*"\n')
 
     diags = DiscoveryDiagnostics()
-    found = discover_all([str(tmp_path)], flat=False, diagnostics=diags)
+    found = discover_all([str(tmp_path)], diagnostics=diags)
 
     py_found = [ws for ws in found if ws.ecosystem == "py"]
     assert py_found == [], "no workspace without Pipfile.lock"
@@ -149,7 +149,7 @@ def test_discover_deno_with_deno_json(tmp_path: Path, init_git_repo) -> None:
     (repo / "deno.json").write_text('{"name":"my-deno-app","version":"0.1.0"}\n')
     (repo / "deno.lock").write_text('{"version":"3","packages":{}}\n')
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     deno_found = [ws for ws in found if ws.ecosystem == "deno"]
 
     assert len(deno_found) == 1, f"expected one deno workspace; found={deno_found}"
@@ -163,7 +163,7 @@ def test_discover_deno_with_deno_jsonc(tmp_path: Path, init_git_repo) -> None:
     init_git_repo(repo)
     (repo / "deno.jsonc").write_text('// deno config\n{"name":"app"}\n')
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     deno_found = [ws for ws in found if ws.ecosystem == "deno"]
 
     assert len(deno_found) == 1, f"expected one deno workspace; found={deno_found}"
@@ -175,7 +175,7 @@ def test_discover_deno_with_lock_only(tmp_path: Path, init_git_repo) -> None:
     init_git_repo(repo)
     (repo / "deno.lock").write_text('{"version":"3","packages":{}}\n')
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     deno_found = [ws for ws in found if ws.ecosystem == "deno"]
 
     assert len(deno_found) == 1
@@ -188,7 +188,7 @@ def test_discover_deno_not_inside_git_is_skipped(tmp_path: Path) -> None:
     (nogt / "deno.json").write_text('{"name":"app"}\n')
 
     diags = DiscoveryDiagnostics()
-    discover_all([str(tmp_path)], flat=True, diagnostics=diags)
+    discover_all([str(tmp_path)], diagnostics=diags)
 
     deno_skips = [s for s in diags.skipped if s["ecosystem"] == "deno"]
     assert deno_skips, "deno manifest outside git must be recorded as skip"

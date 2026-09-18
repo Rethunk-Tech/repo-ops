@@ -22,7 +22,7 @@ def test_pipfile_lock_only_discovered_as_pipenv(tmp_path: Path, init_git_repo) -
         '{"_meta":{},"default":{"requests":{"version":"==2.31.0"}},"develop":{}}'
     )
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     pipenv_found = [ws for ws in found if ws.manager == "pipenv"]
 
     assert len(pipenv_found) == 1, (
@@ -41,7 +41,7 @@ def test_pipfile_lock_only_not_double_counted_with_pipfile(tmp_path: Path, init_
         '{"_meta":{},"default":{"requests":{"version":"==2.31.0"}},"develop":{}}'
     )
 
-    found = discover_all([str(tmp_path)], flat=False)
+    found = discover_all([str(tmp_path)])
     pipenv_found = [ws for ws in found if ws.manager == "pipenv"]
 
     assert len(pipenv_found) == 1, (

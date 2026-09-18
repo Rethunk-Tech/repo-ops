@@ -18,7 +18,6 @@ from repo_ops_upgrade.post_apply_commit import CommitOutcome
 def _fake_args(**overrides) -> MagicMock:
     defaults: dict = {
         "skip_actions": True,
-        "flat": True,
         "eco_filter": None,
         "manager_filter": None,
         "exclude_patterns": None,
@@ -33,7 +32,6 @@ def _fake_args(**overrides) -> MagicMock:
         "actions_tag_style": "major",
         "actions_upgrade_mode": None,
         "actions_lint_level": None,
-        "allow_dirty": True,
         "strict_exit": False,
         "json": False,
         "json_report_path": None,
@@ -47,7 +45,6 @@ def _fake_args(**overrides) -> MagicMock:
         "skip_remediations": "",
         "no_verify": True,
         "verify_test": False,
-        "on_verify_fail": "keep",
         "no_commit": True,
         "follow_symlinks": False,
         # Real run_upgrade() always sets these before _run_upgrade_body runs;
@@ -116,6 +113,33 @@ def test_exclude_drops_matching_bundles(
     err = capsys.readouterr().err
     assert "excluded 1 repo(s) by exclude patterns" in err
     assert processed == ["org/keep-repo"]
+
+
+def test_exclude_never_drops_a_named_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A checkout named on the command line is processed even when a pattern matches it."""
+    repo = tmp_path / "vendor-repo"
+    repo.mkdir()
+    ws = _npm_ws(repo, "org/vendor-repo")
+    bundles = {
+        repo: RepoBundle(
+            git_repo=repo, label="org/vendor-repo", workspaces=[WorkspaceResult(workspace=ws)]
+        )
+    }
+    processed: list[str] = []
+    monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws])
+    monkeypatch.setattr(orch_mod, "filter_workspaces", lambda found, *a, **kw: found)
+    monkeypatch.setattr(disc_mod, "group_by_repo", lambda *a, **kw: bundles)
+    monkeypatch.setattr(disc_mod, "merge_action_only_bundles", lambda b, *a, **kw: b)
+
+    def _process(wr: WorkspaceResult, **kw) -> WorkspaceResult:
+        processed.append(wr.workspace.label)
+        return wr
+
+    monkeypatch.setattr(orch_mod, "process_workspace", _process)
+    run_mod._run_upgrade_body(
+        apply=False, args=_fake_args(exclude_patterns=["vendor"]), roots=[str(repo)]
+    )
+    assert processed == ["org/vendor-repo"]
 
 
 def test_skip_remediations_passed_to_process_workspace(
@@ -262,10 +286,9 @@ def test_failed_repo_is_retried_alone_after_the_sweep(
 
     rc = run_mod._run_upgrade_body(
         apply=True,
-        args=_fake_args(
-            no_verify=False, on_verify_fail="revert", no_commit=False, allow_dirty=False
-        ),
+        args=_fake_args(no_verify=False, no_commit=False),
         roots=[str(tmp_path)],
+        fleet=True,
     )
 
     assert rc == 0

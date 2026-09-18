@@ -108,7 +108,7 @@ def _cli_flag(args: object, name: str) -> bool:
 
 def _single_checkout_config_scope(args: argparse.Namespace, roots: list[str]) -> bool:
     """Return whether the invocation targets the current checkout directly."""
-    if not _cli_flag(args, "flat") or len(roots) != 1:
+    if len(roots) != 1:
         return False
     return Path(roots[0]).resolve() == Path.cwd().resolve()
 
@@ -118,11 +118,18 @@ def _run_upgrade_body(
     apply: bool,
     args: argparse.Namespace,
     roots: list[str],
+    fleet: bool = False,
     follow_symlinks: bool = False,
 ) -> int:
     # Apply commits each verified repo unless told not to; an unverified apply
     # never commits.
     commit = apply and not _cli_flag(args, "no_commit") and not args.no_verify
+    # A fleet sweep (no roots named) leaves dirty repos alone and reverts a
+    # failed repo so the retry below starts clean. Named roots are checkouts the
+    # operator is working in: they are processed even when dirty, and a failed
+    # verify keeps the changes for inspection.
+    allow_dirty = not fleet
+    on_verify_fail = "revert" if fleet else "keep"
     skip_remediations = set()
     if apply:
         skip_remediations = {s.strip() for s in args.skip_remediations.split(",") if s.strip()}
@@ -134,7 +141,6 @@ def _run_upgrade_body(
     diagnostics = DiscoveryDiagnostics()
     found: list[Workspace] = workspace_discovery.discover_all(
         roots,
-        flat=args.flat,
         diagnostics=diagnostics,
         follow_symlinks=follow_symlinks,
     )
@@ -158,7 +164,12 @@ def _run_upgrade_body(
     exclude_patterns: list[str] = getattr(args, "exclude_patterns", None) or []
     kept_paths: list[Path] = []
     excluded_count = 0
+    # Exclude filters what discovery found, never a checkout named on the CLI.
+    named_roots = set() if fleet else {Path(r).resolve() for r in roots}
     for path, bundle in bundles.items():
+        if bundle.git_repo.resolve() in named_roots:
+            kept_paths.append(path)
+            continue
         repo_exclude = _repo_cfgs.get(bundle.git_repo, {}).get("exclude")
         bundle_exclude = merge_exclude_patterns(exclude_patterns, repo_exclude)
         bundle_kept, bundle_excluded = filter_repo_paths(
@@ -176,10 +187,7 @@ def _run_upgrade_body(
     submodule_links: list[submodules.SubmoduleLink] = []
     submodules_json: list[dict[str, str]] | None = None
     if need_submodule_scan:
-        submodule_links = submodules.discover_submodules_under_roots(
-            roots,
-            flat=args.flat,
-        )
+        submodule_links = submodules.discover_submodules_under_roots(roots)
         if include_submodules:
             submodules_json = submodules.submodules_to_json(submodule_links)
 
@@ -210,8 +218,8 @@ def _run_upgrade_body(
                     do_verify=apply and not args.no_verify,
                     verify_test=apply and args.verify_test,
                     skip_remediations=skip_remediations,
-                    allow_dirty=args.allow_dirty,
-                    on_verify_fail=getattr(args, "on_verify_fail", "keep"),
+                    allow_dirty=allow_dirty,
+                    on_verify_fail=on_verify_fail,
                     quiet=args.quiet,
                     repo_started_dirty=repo_started_dirty,
                 )
@@ -223,7 +231,7 @@ def _run_upgrade_body(
     # One failed workspace vetoes its repo's commit, so under revert the passing
     # siblings roll back too; otherwise their edits stay behind uncommitted and
     # the next sweep skips the repo as dirty.
-    rollback_on_veto = commit and getattr(args, "on_verify_fail", "keep") == "revert"
+    rollback_on_veto = commit and fleet
 
     def _process_repo(bundle: RepoBundle) -> list[WorkspaceResult]:
         with checkout_config_scope(
@@ -446,7 +454,7 @@ def _run_upgrade_body(
     if apply and include_submodules and submodule_links:
         _sub_bumps = submodules.apply_submodule_tag_advances(
             submodule_links,
-            allow_dirty=args.allow_dirty,
+            allow_dirty=allow_dirty,
         )
         for _bump in _sub_bumps:
             if _bump.is_actionable:
@@ -620,12 +628,14 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
                 apply=apply,
                 args=args,
                 roots=roots,
+                fleet=args.roots == DEFAULT_ROOTS,
                 follow_symlinks=follow_symlinks,
             )
     return _run_upgrade_body(
         apply=apply,
         args=args,
         roots=roots,
+        fleet=args.roots == DEFAULT_ROOTS,
         follow_symlinks=follow_symlinks,
     )
 

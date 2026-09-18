@@ -36,7 +36,6 @@ def test_plan_json_out_writes_file_and_prints_path_only(
                 str(tmp_path),
                 "--json",
                 f"--json-out={out_file}",
-                "--flat",
                 "--skip-actions",
             ]
         )
@@ -60,7 +59,6 @@ def test_json_out_requires_json(tmp_path: Path) -> None:
                 [
                     str(tmp_path),
                     f"--json-out={tmp_path / 'out.json'}",
-                    "--flat",
                 ]
             )
         except SystemExit as exc:
@@ -102,7 +100,6 @@ def test_apply_json_out_keeps_colocated_npm_and_container(tmp_path: Path, init_g
         rc = main_apply(
             [
                 str(tmp_path),
-                "--flat",
                 "--skip-actions",
                 "--json",
                 f"--json-out={out_file}",

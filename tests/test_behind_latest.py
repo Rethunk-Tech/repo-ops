@@ -302,7 +302,6 @@ def test_behind_latest_workspace_does_not_change_plan_exit_code(
         rc = main_plan(
             [
                 str(tmp_path),
-                "--flat",
                 "--skip-actions",
                 "--quiet",
             ]
