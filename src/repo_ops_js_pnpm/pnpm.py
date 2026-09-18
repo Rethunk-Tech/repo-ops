@@ -45,8 +45,7 @@ from repo_ops_js.workspaces import (
     check_with_members,
     member_audit_overrides,
 )
-from repo_ops_lockfiles.license_policy import _split_nv
-from repo_ops_lockfiles.parsers import versions_pnpm_lock
+from repo_ops_lockfiles.parsers import split_name_version, versions_pnpm_lock
 from repo_ops_lockfiles.snapshots import (
     resolved_version_from_node_modules,
     restore_workspace_snapshot,
@@ -186,7 +185,7 @@ def _catalog_lock_from_ver(ws: Workspace, name: str, spec: str) -> str:
     matches = [
         version
         for token in resolved
-        for token_name, version in (_split_nv(token),)
+        for token_name, version in (split_name_version(token),)
         if token_name == name
     ]
     if not matches:

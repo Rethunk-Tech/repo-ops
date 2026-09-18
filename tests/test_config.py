@@ -174,34 +174,14 @@ def test_settings_table_has_new_env_gate_entries() -> None:
         "precommit_update_latest",
         "container_refresh_sha",
         "hatch_migrate_uv_lock",
-        "audit_fail_on",
-        "audit_fail_on_unknown",
     ):
         assert key in names, f"Missing SETTINGS_TABLE entry: {key}"
-
-
-def test_settings_table_audit_fail_on_columns() -> None:
-    row = next(r for r in SETTINGS_TABLE if r[0] == "audit_fail_on")
-    assert row[1] == "--fail-on"
-    assert row[2] == "REPO_OPS_AUDIT_FAIL_ON"
-    assert row[3] == "audit_fail_on"
-    assert row[4] == "high"
-
-
-def test_settings_table_audit_fail_on_unknown_columns() -> None:
-    row = next(r for r in SETTINGS_TABLE if r[0] == "audit_fail_on_unknown")
-    assert row[1] == "--fail-on-unknown"
-    assert row[2] == "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN"
-    assert row[3] == "audit_fail_on_unknown"
-    assert row[4] == "0"
 
 
 @pytest.mark.parametrize(
     ("toml_line", "env_var", "expected"),
     [
         ("resume = true", "REPO_OPS_RESUME", "1"),
-        ('audit_fail_on = "critical"', "REPO_OPS_AUDIT_FAIL_ON", "critical"),
-        ("audit_fail_on_unknown = true", "REPO_OPS_AUDIT_FAIL_ON_UNKNOWN", "1"),
         ("hatch_migrate_uv_lock = true", "REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1"),
         ("container_refresh_sha = true", "REPO_OPS_CONTAINER_REFRESH_SHA", "1"),
         ("precommit_refresh_sha = true", "REPO_OPS_PRECOMMIT_REFRESH_SHA", "1"),

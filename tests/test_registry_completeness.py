@@ -4,7 +4,6 @@ Asserts that every manager/ecosystem that discovery can emit is:
   1. Registered in repo_ops_upgrade.registry.CHECKERS and APPLIERS after register_all()
   2. Present in MANAGER_FILTER_CHOICES (CLI filter parity)
   3. Present in ECO_FILTER_CHOICES when the manager maps to a new ecosystem
-  4. Present in inventory's manifest_kinds output (walk parity for inventory)
 
 Also adds one behavioral end-to-end test per new ecosystem (pdm/pipenv/deno) that
 drives check_workspace through register_all() with a mocked subprocess, proving
@@ -21,7 +20,6 @@ import pytest
 
 from repo_ops._register import register_all
 from repo_ops_core.cli import ECO_FILTER_CHOICES, MANAGER_FILTER_CHOICES
-from repo_ops_core.walk import manifest_kinds
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -82,13 +80,6 @@ class TestRegistryCompleteness:
         assert "deno" in ECO_FILTER_CHOICES, (
             f"'deno' missing from ECO_FILTER_CHOICES: {ECO_FILTER_CHOICES}"
         )
-
-    def test_manifest_kinds_includes_deno(self) -> None:
-        """manifest_kinds() must return 'deno' when deno manifests are present."""
-        assert "deno" in manifest_kinds({"deno.json"}), "deno.json not detected"
-        assert "deno" in manifest_kinds({"deno.jsonc"}), "deno.jsonc not detected"
-        assert "deno" in manifest_kinds({"deno.lock"}), "deno.lock not detected"
-        assert "deno" not in manifest_kinds({"package.json"}), "node-only dir should not emit deno"
 
 
 # ---------------------------------------------------------------------------

@@ -233,12 +233,6 @@ _SETTINGS: tuple[_Setting, ...] = (
     # Exclude patterns: CLI --exclude / config key ``exclude`` (list). No env
     # channel — lists do not serialize cleanly; run.py also special-cases merge.
     _s("exclude_patterns", None, "--exclude", "[]", env_var=None, config_key="exclude"),
-    # Audit fail-on gates: readable from [tool.repo-ops] so CI can pin the
-    # severity threshold without repeating --fail-on / --fail-on-unknown on
-    # every invocation. Consumed by repo_ops_audit's main() (CLI flag > env >
-    # config > default); repo_ops_core only owns the settings-table rows.
-    _s("audit_fail_on", None, "--fail-on", "high"),
-    _s("audit_fail_on_unknown", None, "--fail-on-unknown", "0"),
 )
 
 # Maps setting name → (env_var, config_key, default); consumed directly by

@@ -35,8 +35,3 @@ def format_cell(text: str, width: int, *, align: Align = "left") -> str:
     if align == "right":
         return cell.rjust(width)
     return cell.ljust(width)
-
-
-def join_row(cells: list[str], *, sep: str = "  ") -> str:
-    """Join pre-formatted cells with a separator (no extra padding)."""
-    return sep.join(cells)

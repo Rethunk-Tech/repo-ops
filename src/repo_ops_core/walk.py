@@ -44,19 +44,3 @@ def iter_scanned_dirs(
                 d for d in dirnames if os.path.realpath(os.path.join(dirpath, d)) not in pruned
             ]
         yield mdir, set(filenames)
-
-
-def manifest_kinds(names: set[str]) -> list[str]:
-    """Return ecosystem tags signaled by *names* (node, go, rust, py, deno)."""
-    kinds: list[str] = []
-    if "package.json" in names:
-        kinds.append("node")
-    if "go.mod" in names:
-        kinds.append("go")
-    if "Cargo.toml" in names:
-        kinds.append("rust")
-    if names & PY_MANIFEST_NAMES:
-        kinds.append("py")
-    if names & DENO_MANIFEST_NAMES:
-        kinds.append("deno")
-    return kinds

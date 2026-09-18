@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from datetime import UTC, datetime
 from pathlib import Path
 
 from repo_ops_core.constants import DEFAULT_ROOTS
@@ -126,22 +125,6 @@ def positive_int(value: str) -> int:
     if n <= 0:
         raise argparse.ArgumentTypeError("must be a positive integer")
     return n
-
-
-def parse_iso8601(value: str) -> datetime:
-    """Parse an ISO 8601 string into a timezone-aware UTC datetime.
-
-    Rejects naive datetimes with an argparse-compatible error.
-    """
-    try:
-        dt = datetime.fromisoformat(value.strip())
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"Invalid ISO 8601 datetime {value!r}: {exc}") from exc
-    if dt.tzinfo is None or dt.utcoffset() is None:
-        raise argparse.ArgumentTypeError(
-            f"Datetime {value!r} has no timezone; use e.g. 2026-05-26T00:00Z or +00:00 suffix"
-        )
-    return dt.astimezone(UTC)
 
 
 def looks_like_find_predicate(value: str) -> bool:

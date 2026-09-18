@@ -82,10 +82,7 @@ module-name = [
   "repo_ops_upgrade_remediations_go",
   "repo_ops_upgrade_remediations_rust",
   "repo_ops_upgrade_remediations_deno",
-  "repo_ops_inventory",
-  "repo_ops_audit",
   "repo_ops_dependabot",
-  "repo_ops_doctor",
 ]
 
 # deptry runs as `deptry src` (see .gate.toml). The module roots are under

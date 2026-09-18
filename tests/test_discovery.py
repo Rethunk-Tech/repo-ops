@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from repo_ops_core.discovery import FIND_TIMEOUT_ENV, discover_repos
-from repo_ops_core.walk import iter_scanned_dirs, manifest_kinds
+from repo_ops_core.walk import iter_scanned_dirs
 from repo_ops_upgrade.discovery import (
     DiscoveryDiagnostics,
     cargo_workspace_members,
@@ -37,14 +37,6 @@ def test_discover_repos_with_tmp_layout_and_monkeypatch(tmp_path: Path):
     assert isinstance(result, dict)
     assert common in result
     assert result[common] == str(repo_dir.resolve())
-
-
-def test_manifest_kinds_detects_ecosystems():
-    assert manifest_kinds({"package.json"}) == ["node"]
-    assert manifest_kinds({"go.mod"}) == ["go"]
-    assert manifest_kinds({"Cargo.toml"}) == ["rust"]
-    assert manifest_kinds({"requirements.txt"}) == ["py"]
-    assert manifest_kinds(set()) == []
 
 
 def test_discover_all_finds_repo_below_org_proj_depth(tmp_path: Path, init_git_repo):

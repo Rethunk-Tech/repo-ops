@@ -200,17 +200,3 @@ def test_write_json_report_omits_exit_code_when_none(tmp_path: Path) -> None:
 
 
 # ---------- inventory json-out contracts ----------
-
-
-def test_inventory_json_out_writes_file_and_prints_path_only(tmp_path: Path, capsys) -> None:
-    from repo_ops_inventory.scan import main as inventory_main
-
-    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
-    out_file = tmp_path / "inventory.json"
-    rc = inventory_main([str(tmp_path), "--flat", "--json", f"--json-out={out_file}"])
-    assert rc == 0
-    assert capsys.readouterr().out.strip() == str(out_file.resolve())
-    payload = json.loads(out_file.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == 1
-    assert "summary" in payload
-    assert "rows" in payload

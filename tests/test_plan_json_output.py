@@ -201,19 +201,3 @@ def test_plan_exclude_filters_repositories_from_config(
     assert rc in (0, 1)
     assert seen == [repos["keep"].resolve()]
     assert "excluded 1 repo(s) by exclude patterns" in captured.err
-
-
-def test_inventory_json_compact_schema_contract(tmp_path: Path, capsys) -> None:
-    """Inventory --json --compact matches plan schema_version contract."""
-    from repo_ops_inventory.scan import main as inventory_main
-
-    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\n')
-    rc = inventory_main([str(tmp_path), "--flat", "--json", "--compact"])
-    assert rc == 0
-    out = capsys.readouterr().out.strip()
-    assert out.count("\n") == 0
-    payload = json.loads(out)
-    assert next(iter(payload)) == "schema_version"
-    assert payload["schema_version"] == 1
-    assert "summary" in payload
-    assert "manifests" in payload["totals"]

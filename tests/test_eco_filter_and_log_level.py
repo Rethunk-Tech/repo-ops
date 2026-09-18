@@ -1,10 +1,8 @@
-"""ECO_FILTER_CHOICES, inventory coverage for new ecosystems, and --log-level / -v."""
+"""ECO_FILTER_CHOICES and --log-level / -v."""
 
 from __future__ import annotations
 
-import json
 import logging
-from pathlib import Path
 
 import pytest
 
@@ -13,15 +11,6 @@ from repo_ops_core.cli import (
     build_upgrade_parser,
 )
 from repo_ops_core.process import configure_logging
-from repo_ops_inventory.counting import (
-    _kind_matches,
-    count_actions,
-    count_container,
-    count_precommit,
-    scan,
-)
-from repo_ops_inventory.scan import build_inventory_parser
-from repo_ops_inventory.scan import main as inventory_main
 
 # ---------------------------------------------------------------------------
 # ECO_FILTER_CHOICES coverage
@@ -37,147 +26,19 @@ def test_eco_filter_choices_includes_precommit_and_actions():
 @pytest.mark.parametrize(
     ("parser_builder", "filter_value"),
     [
-        (build_inventory_parser, "precommit"),
-        (build_inventory_parser, "actions"),
         (lambda: build_upgrade_parser(apply=False), "precommit"),
         (lambda: build_upgrade_parser(apply=False), "actions"),
     ],
     ids=[
-        "inventory-precommit",
-        "inventory-actions",
         "upgrade-precommit",
         "upgrade-actions",
     ],
 )
 def test_filter_flag_accepted(parser_builder, filter_value):
-    """--filter precommit/actions must parse without error on inventory and plan/apply."""
+    """--filter precommit/actions must parse without error on plan/apply."""
     parser = parser_builder()
     args = parser.parse_args(["--filter", filter_value])
     assert args.eco_filter == filter_value
-
-
-# ---------------------------------------------------------------------------
-# inventory counting for new ecosystems
-# ---------------------------------------------------------------------------
-
-
-def test_count_precommit_counts_rev_pins(tmp_path: Path):
-    """count_precommit returns the correct pin count from .pre-commit-config.yaml."""
-    cfg = tmp_path / ".pre-commit-config.yaml"
-    cfg.write_text(
-        "repos:\n"
-        "  - repo: https://github.com/pre-commit/pre-commit-hooks\n"
-        "    rev: v4.5.0\n"
-        "    hooks:\n"
-        "      - id: trailing-whitespace\n"
-        "  - repo: https://github.com/psf/black\n"
-        "    rev: 24.1.0\n"
-        "    hooks:\n"
-        "      - id: black\n",
-        encoding="utf-8",
-    )
-    direct, versions = count_precommit(tmp_path)
-    assert direct == 2
-    assert any("pre-commit-hooks" in v for v in versions)
-    assert any("black" in v for v in versions)
-
-
-def test_count_actions_counts_uses_pins(tmp_path: Path):
-    """count_actions returns the correct pin count from .github/workflows/."""
-    wf_dir = tmp_path / ".github" / "workflows"
-    wf_dir.mkdir(parents=True)
-    (wf_dir / "ci.yml").write_text(
-        "on: [push]\n"
-        "jobs:\n"
-        "  build:\n"
-        "    runs-on: ubuntu-latest\n"
-        "    steps:\n"
-        "      - uses: actions/checkout@v4\n"
-        "      - uses: actions/setup-python@v5\n",
-        encoding="utf-8",
-    )
-    direct, versions = count_actions(tmp_path)
-    assert direct == 2
-    assert "actions/checkout@v4" in versions
-    assert "actions/setup-python@v5" in versions
-
-
-def test_count_container_counts_image_pins(tmp_path: Path):
-    """count_container returns the correct pin count from Dockerfile."""
-    dockerfile = tmp_path / "Dockerfile"
-    dockerfile.write_text(
-        "FROM python:3.12-slim\nFROM node:20-alpine AS builder\n",
-        encoding="utf-8",
-    )
-    direct, versions = count_container(tmp_path)
-    assert direct == 2
-    assert any("python:3.12-slim" in v for v in versions)
-    assert any("node:20-alpine" in v for v in versions)
-
-
-def test_inventory_scan_includes_precommit_kind(tmp_path: Path):
-    """scan() populates 'precommit' kind when .pre-commit-config.yaml is present."""
-    cfg = tmp_path / ".pre-commit-config.yaml"
-    cfg.write_text(
-        "repos:\n"
-        "  - repo: https://github.com/pre-commit/pre-commit-hooks\n"
-        "    rev: v4.5.0\n"
-        "    hooks: [{id: trailing-whitespace}]\n",
-        encoding="utf-8",
-    )
-    rows = scan(tmp_path, flat=True)
-    assert len(rows) == 1
-    assert "precommit" in rows[0]["kinds"]
-    assert rows[0]["direct"] >= 1
-
-
-def test_inventory_scan_includes_actions_kind(tmp_path: Path):
-    """scan() populates 'actions' kind when .github/workflows/ has a workflow."""
-    wf_dir = tmp_path / ".github" / "workflows"
-    wf_dir.mkdir(parents=True)
-    (wf_dir / "ci.yml").write_text(
-        "on: [push]\njobs:\n  build:\n    runs-on: ubuntu-latest\n"
-        "    steps:\n      - uses: actions/checkout@v4\n",
-        encoding="utf-8",
-    )
-    rows = scan(tmp_path, flat=True)
-    assert len(rows) == 1
-    assert "actions" in rows[0]["kinds"]
-    assert rows[0]["direct"] >= 1
-
-
-def test_kind_matches_new_ecosystems():
-    """_kind_matches handles precommit and actions kinds correctly."""
-    assert _kind_matches({"precommit"}, "precommit")
-    assert _kind_matches({"actions"}, "actions")
-    assert not _kind_matches({"actions"}, "precommit")
-    assert not _kind_matches({"-"}, "actions")
-
-
-def test_inventory_main_filter_precommit_excludes_node(tmp_path: Path, capsys, init_git_repo):
-    """inventory --filter precommit suppresses rows that have only node kind."""
-    org = tmp_path / "myorg"
-    proj_node = org / "proj-node"
-    init_git_repo(proj_node)
-    (proj_node / "package.json").write_text(json.dumps({"dependencies": {"a": "^1"}}))
-
-    proj_pre = org / "proj-pre"
-    init_git_repo(proj_pre)
-    (proj_pre / ".pre-commit-config.yaml").write_text(
-        "repos:\n"
-        "  - repo: https://github.com/pre-commit/pre-commit-hooks\n"
-        "    rev: v4.5.0\n"
-        "    hooks: [{id: trailing-whitespace}]\n",
-        encoding="utf-8",
-    )
-
-    inventory_main([str(tmp_path), "--json", "--filter", "precommit"])
-    out = capsys.readouterr().out
-    payload = json.loads(out)
-    names = [r["name"] for r in payload["rows"]]
-    # Only the precommit project should appear after filtering
-    assert not any("proj-node" in n for n in names), "node-only project must be filtered out"
-    assert any("proj-pre" in n for n in names), "precommit project must appear"
 
 
 # ---------------------------------------------------------------------------
@@ -188,13 +49,12 @@ def test_inventory_main_filter_precommit_excludes_node(tmp_path: Path, capsys, i
 @pytest.mark.parametrize(
     ("parser_builder", "level"),
     [
-        (build_inventory_parser, "info"),
         (lambda: build_upgrade_parser(apply=False), "warning"),
     ],
-    ids=["inventory", "upgrade"],
+    ids=["upgrade"],
 )
 def test_log_level_argument_registered(parser_builder, level):
-    """Both the inventory and plan/apply parsers must accept --log-level."""
+    """The plan/apply parser accepts --log-level."""
     parser = parser_builder()
     args = parser.parse_args(["--log-level", level])
     assert args.log_level == level
@@ -243,7 +103,7 @@ def test_verbose_flag_implies_debug_when_no_log_level():
     import repo_ops_core.process as proc_mod
     from repo_ops_core.cli import wire_verbose
 
-    parser = build_inventory_parser()
+    parser = build_upgrade_parser(apply=False)
     args = parser.parse_args(["--verbose"])
     old_verbose = proc_mod.VERBOSE
     try:

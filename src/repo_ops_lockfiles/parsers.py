@@ -283,39 +283,9 @@ def versions_uv_lock(p: Path) -> set[str]:
     return _versions_toml_lock(p)
 
 
-def versions_go_sum(p: Path) -> set[str]:
-    """go.sum → module@version pairs (deduped; /go.mod annotation lines excluded)."""
-    out: set[str] = set()
-    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
-        parts = line.split()
-        if len(parts) >= 2:
-            module = parts[0]
-            version = parts[1].split("/", 1)[0]
-            out.add(f"{module}@{version}")
-    return out
-
-
-def versions_cargo_lock(p: Path) -> set[str]:
-    """Cargo.lock (TOML) → set of name@version."""
-    return _versions_toml_lock(p)
-
-
 _REQ_PIN_RE = re.compile(
     r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*==\s*([^;\s]+)",
 )
-
-
-def versions_requirements_txt(p: Path) -> set[str]:
-    """requirements.txt pinned ``name==ver`` lines → name@version."""
-    out: set[str] = set()
-    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or line.startswith("-"):
-            continue
-        match = _REQ_PIN_RE.match(line)
-        if match:
-            out.add(f"{match.group(1)}@{match.group(2)}")
-    return out
 
 
 def versions_pipenv_lock(p: Path) -> set[str]:

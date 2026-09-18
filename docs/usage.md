@@ -8,15 +8,9 @@ Subcommands (entry point in `src/repo_ops`):
 
 | Subcommand | Purpose |
 | ------------ | --------- |
-| `inventory` | Read-only dependency footprint |
 | `plan` | Outdated deps, Actions pin drift, remediations (no writes) |
 | `apply` | Apply updates, Actions bumps, remediations, verify gates |
-| `audit` | Fleet vulnerability sweep per ecosystem (read-only unless `--fix`) |
 | `dependabot` | List/close Dependabot PRs superseded by local manifests |
-| `sbom` | Emit CycloneDX/SPDX SBOM from lockfile dependencies (read-only) |
-| `license` | Scan dependency licenses and flag policy violations (read-only) |
-| `doctor` | Toolchain/auth preflight: probe known binaries and `gh` auth (read-only) |
-| `install-skill` | Copy bundled agent skill into Cursor/Claude skill dirs |
 
 Default scan roots: [`DEFAULT_ROOTS`](../src/repo_ops_core/constants.py) (`/usr/local/src`, `~/Projects`, etc.). Pass explicit root directories to override. Discovery flags (`--flat`, `--follow-symlinks`, actions-only repos): [Security and discovery](#security-and-discovery).
 
@@ -24,28 +18,14 @@ Flags shared across subcommands (`repo-ops <subcommand> --help` is authoritative
 
 | Flag | Effect |
 | ------ | -------- |
-| `--json` | JSON instead of human output. Every subcommand except `sbom`, which uses `--format`/`--output`. Reports carry a top-level `summary` mirroring the human footer, and discovery notes in `skipped`/`warnings`. |
-| `--json-out PATH` | Write the report to `PATH` atomically; stdout prints only the path. `inventory`, `plan`, `apply`, `doctor`. |
+| `--json` | JSON instead of human output. Every subcommand. Reports carry a top-level `summary` mirroring the human footer, and discovery notes in `skipped`/`warnings`. |
+| `--json-out PATH` | Write the report to `PATH` atomically; stdout prints only the path. `plan`, `apply`. |
 | `--filter ECO` | One ecosystem: `node`, `go`, `rust`, `py`, `container`, `precommit`, `actions`, `deno`. |
 | `--manager MANAGER` | `plan`/`apply` only. One package manager: `bun`, `npm`, `pnpm`, `yarn`, `uv`, `poetry`, `pip-tools`, `hatch`, `pdm`, `pipenv`, `deno`, `go`, `rust`, `container`, `precommit`. |
 | `--log-level LEVEL` | `debug`/`info`/`warning`/`error`. `--verbose`/`-v` echoes subprocesses and implies `debug`. |
 | `--log-file PATH` | `plan`/`apply` transcript (stdout + stderr) to `PATH`, no shell pipe needed. |
 | `--no-submodules` | Skip the submodule scan. Detection is on by default and adds `submodules[]` to plan/apply JSON. |
 | `--submodule-order` | `children-first` (default when `.gitmodules` exists) applies child repos before parent umbrellas; `discovery` restores plain scan order. |
-
-### `inventory` — dependency footprint
-
-`repo-ops inventory [root_dir ...]` reports read-only dependency counts per workspace.
-
-Rows are git checkouts. A repository is a row wherever it sits in the tree, so
-submodules and nested checkouts each get their own, and a plain directory that
-is not a repository never becomes one. Each row's manifest walk prunes the
-nested checkouts that have rows of their own, so a superproject is not also
-credited with its submodules' dependencies.
-
-- `--sort {name,direct,versions,on-disk,edges}` — sort column; `name` sorts ascending, every other column sorts descending (default: `name`).
-- `--no-cache` — bypass the XDG Go module result cache.
-- `--follow-symlinks` — traverse symlinked `.git` directories during discovery.
 
 ### Plan vs apply
 
@@ -88,11 +68,11 @@ credited with its submodules' dependencies.
 ### Security and discovery
 
 - **Scan roots:** `resolve_scan_roots` expands paths, requires existing directories, and rejects tokens that look like `find(1)` predicates (for example `-name`).
-- **Symlinks:** `find` does not follow symlinks by default. Pass `--follow-symlinks` on `inventory`, `plan`, or `apply` when symlinked `.git` dirs must be traversed (`find -L`).
+- **Symlinks:** `find` does not follow symlinks by default. Pass `--follow-symlinks` on `plan` or `apply` when symlinked `.git` dirs must be traversed (`find -L`).
 - **Actions-only repos:** Git repos with workflow files but no dependency workspaces still appear in plan/apply (Actions pin audit only).
-- **`--flat`:** On `inventory` and upgrade `plan`/`apply`, treats each root as a single project rather than discovering the checkouts beneath it.
+- **`--flat`:** On `plan`/`apply`, treats each root as a single project rather than discovering the checkouts beneath it.
 - **Node `packageManager`:** Only `npm`, `pnpm`, `yarn`, and `bun` with `name@version` form are accepted; path-like or unknown names are skipped with diagnostics.
-- **`--exclude PATTERN`:** Repeatable on `plan`, `apply`, `audit`, and `dependabot`. A repository is skipped when a pattern substring- or fnmatch-matches its label or absolute path. Unlike every other setting, `--exclude` does not override the config layers — CLI, per-repo `exclude`, and global `exclude` are unioned, so an ad-hoc flag cannot silently pull a permanently-excluded repo back into a sweep.
+- **`--exclude PATTERN`:** Repeatable on `plan`, `apply`, and `dependabot`. A repository is skipped when a pattern substring- or fnmatch-matches its label or absolute path. Unlike every other setting, `--exclude` does not override the config layers — CLI, per-repo `exclude`, and global `exclude` are unioned, so an ad-hoc flag cannot silently pull a permanently-excluded repo back into a sweep.
 
 When JSON is enabled, audit reports excluded repositories in
 `summary.excluded`; dependabot uses the same canonical `summary.excluded` key.
@@ -200,46 +180,6 @@ After a successful apply+verify pass with commits, opt into branch-and-PR mode i
 
 Idempotent when an open PR already exists for the same branch. Combine with `--commit=conventional` or `--commit=agent` so there are commits to push. See [Bulk maintenance](bulk-maintenance.md) for MCP commit guidance.
 
-### `audit` — fleet vulnerability sweep
-
-`repo-ops audit [root_dir ...]` runs the native auditor for each ecosystem found
-across discovered workspaces. Default behavior is read-only (no lockfile writes);
-`--fix` applies advisory remediations via the upgrade orchestration layer (mutates
-lockfiles; no auto-commit).
-
-| Ecosystem | Tool required | Notes |
-| ----------- | -------------- | ------- |
-| `go` | `govulncheck` | `govulncheck -json ./...`; workspace skipped if not on PATH |
-| `node` | `npm` / `yarn` / `pnpm` / `bun` | detected from lockfile; `bun audit --json` preferred, ANSI text fallback when JSON unavailable |
-| `py-uv` | `uv` | `uv audit --frozen --output-format json`; audits the committed lockfile (not the installed environment); skipped when `uv.lock` is missing. When `uv.lock` and hatchling metadata both exist, `uv.lock` wins (`py-uv` / `uv`). |
-| `py-poetry` / `py-pdm` / `py-pipenv` / `py-hatch` / `py-pip-tools` | manager + `pip-audit` | manager-native export then `pip-audit`; JSON `skip_reason` when export/tool missing (never false-clean `ok`). `py-hatch` only when hatch signals exist and no competing lock (`uv.lock` / poetry / pdm / Pipfile). |
-| `rust` | `cargo` + `cargo-audit` | `cargo audit --json`; skipped if `cargo audit --version` fails |
-| `deno` | `deno` | `deno audit --json` when supported, otherwise `deno audit`; skipped when not on PATH |
-
-Counts are normalised to `{critical, high, moderate, low, unknown}` per workspace.
-CVSS severity: govulncheck findings default to `unknown` (use `--fail-on-unknown`);
-`uv audit`/pip-audit map CVE presence to `high`/`critical`; cargo audit maps CVSS
-vector C/I/A components.
-
-**Flags** (see `repo-ops audit --help` for the full list):
-
-- **`--fail-on SEVERITY`** (default `high`) — exit `1` when any workspace has vulns at or above the threshold (`critical`/`high`/`moderate`/`low`/`never`).
-- **`--fail-on-unknown`** — exit `1` when any workspace has govulncheck findings with unknown severity (default: off).
-- **`--fix-plan`** — read-only remediation checklist: for each finding with a known-safe fix version, emit `(package, safe_version, ecosystem, workspace)`. With `--json`, included under the `remediations` key. Exits `1` when actionable remediations exist.
-- **`--fix`** — apply remediations (implies `--fix-plan` collection). Delegates to upgrade orchestration per workspace; skips dirty worktrees unless **`--allow-dirty`**. Verifies each applied workspace by default; pass `--no-verify` to skip post-apply verification. No automatic commit.
-- **`--json`** — structured payload with per-workspace counts, optional `remediations[]`, and `summary`. When repositories are excluded, audit JSON reports the count as `summary.excluded`.
-
-Each JSON workspace row may include `findings[]`, serialized from
-`FindingItem.as_dict`, with finding identifier, package/version data, severity,
-and description.
-
-**Exit codes:**
-
-- `0` — no vulns at or above `--fail-on`, and (when `--fix-plan` is active) no actionable remediations.
-- `1` — at least one workspace qualifies under `--fail-on` / `--fail-on-unknown`, or `--fix-plan` found actionable remediations.
-
-Config keys `audit_fail_on` / `audit_fail_on_unknown` (env: `REPO_OPS_AUDIT_FAIL_ON`, `REPO_OPS_AUDIT_FAIL_ON_UNKNOWN`) follow CLI > env > config > default precedence.
-
 ### `dependabot` — Dependabot PR sweep
 
 `repo-ops dependabot [root_dir ...]` discovers repos with a `github.com` remote,
@@ -280,109 +220,6 @@ Precision caveats:
 
 `--json` emits per-repo PR lists with `superseded`, `current_ver`, `low_confidence`, and `closed` fields.
 
-### `sbom` — CycloneDX/SPDX SBOM export
-
-`repo-ops sbom [root_dir ...]` builds a Software Bill of Materials from
-discovered lockfile dependencies (read-only). Offline by default; component
-licenses are `NOASSERTION` unless enrichment is enabled.
-The default CycloneDX JSON uses specification 1.5; the tool component uses
-`publisher` and `authors[]` (not the 1.4 `author` string). CycloneDX 1.4
-consumers that require `metadata.tools[]` are dropped.
-
-- `--format cyclonedx|spdx` — output format (default: `cyclonedx`).
-- `--output PATH` — write the SBOM to `PATH` instead of stdout.
-- `--compact` — emit single-line JSON instead of pretty-printed.
-- `--enrich-licenses` — opt-in SPDX fill from on-disk package metadata and
-  cached registry lookups (`REPO_OPS_ENRICH_LICENSES=1`), including JSR
-  (`jsr.io` version meta, then `jsr.json` / `deno.json`). Never invents
-  license ids; container images stay unenriched.
-- `--enrich-licenses-local` — same enrichment from local metadata and XDG
-  cache only (`REPO_OPS_ENRICH_LICENSES_LOCAL=1`); no registry network.
-- `--enrich-licenses-network` — force registry network enrichment even when
-  LOCAL env/flag is set; wins over `--enrich-licenses-local`
-  (`REPO_OPS_ENRICH_LICENSES_NETWORK=1`).
-  When local and network modes are both set, network mode wins.
-  Implies enrichment is on. `BSD-3-Clause` requires the endorse/promote
-  clause; redistribution text without that clause classifies as
-  `BSD-2-Clause` (truncated BSD-3 without the third clause is indistinguishable).
-
-### `license` — dependency license policy scan
-
-`repo-ops license [root_dir ...]` classifies dependency licenses and flags
-policy violations (read-only). Offline by default.
-
-- `--allow LIST` — comma-separated SPDX identifiers that are permitted; any
-  license not in this list is flagged.
-- `--deny LIST` — comma-separated SPDX identifiers that are forbidden; any
-  license in this list is flagged.
-- `--no-fail-unknown` — exit `0` even when unknown licenses are found
-  (default: exit `2` when unknown licenses exist in ecosystems with a local extractor).
-- `--enrich-licenses` — same opt-in enrichment as `sbom` (env twin
-  `REPO_OPS_ENRICH_LICENSES`); can reduce UNKNOWN for npm/PyPI/crates/JSR when
-  metadata or cache hits exist.
-- `--enrich-licenses-local` — local/cache-only enrichment
-  (`REPO_OPS_ENRICH_LICENSES_LOCAL`).
-- `--enrich-licenses-network` — force registry network enrichment
-  (`REPO_OPS_ENRICH_LICENSES_NETWORK`). Set together with the local flag, network
-  wins; otherwise local wins.
-- `--json` — emit JSON instead of human-readable output (`--compact` for
-  single-line).
-
-**Exit codes:** `0` — no violations and no unknown licenses (or `--no-fail-unknown`);
-`1` — policy violations (denied or not in allow-list); `2` — unknown licenses in
-an ecosystem with a local extractor (container images are reported unknown but
-excluded from this bucket).
-
-**Scope (best-effort, offline):**
-
-| Ecosystem | Source |
-| ----------- | -------- |
-| npm / yarn / pnpm | `node_modules/**/package.json` (requires prior install) |
-| Python (uv.lock) | locked packages + adjacent venv `*.dist-info/METADATA` |
-| Go | `go.sum` pairs via LICENSE files in GOMODCACHE |
-| Rust | `Cargo.lock` via `cargo metadata --offline` |
-| Deno | `deno.lock` `npm:` specifiers via DENO_DIR npm cache; `jsr:` ids fill only with `--enrich-licenses` |
-| container | no local license source (always unknown; does not trigger exit `2`) |
-
-Poetry, PDM, and pipenv lockfiles without an installed venv may report unknown
-for Python packages. BSD classification caveats:
-
-| License | Rule |
-| --------- | ------ |
-| `BSD-3-Clause` | Requires the endorse/promote clause |
-| `BSD-2-Clause` | Truncated text missing that clause classifies here |
-| SPDX compounds | See `repo-ops license --help` epilog |
-
-### `doctor` — toolchain/auth preflight
-
-`repo-ops doctor` probes binaries repo-ops shells out to (read-only; no scan roots):
-
-| Category | Tools |
-| ---------- | ------- |
-| VCS / GitHub | `git`, `gh` (+ `gh auth status`) |
-| Python | `uv`, `pip-compile`, `poetry`, `pipenv`, `pdm`, `pip-audit`, `pyrefly`, `ruff`, `hatch` |
-| JS | `npm`, `pnpm`, `yarn`, `bun`, `corepack` |
-| Other | `pre-commit`, `deno`, `go`, `gofmt`, `govulncheck`, `cargo`, `cargo-audit`, `actionlint` |
-
-Each tool: `shutil.which` + best-effort `--version` (timeout-guarded). Doctor also warns when installed Cursor/Claude skill copies drift from the bundled skill (`skill_drift` in JSON). Use `repo-ops install-skill --check` read-only, then `--force` to overwrite.
-
-- `--strict` — exit `1` when any probed binary is missing (default: exit `0`
-  regardless of missing binaries).
-- `--json` — emit a structured payload (`binaries[]`, `gh_auth`, `missing[]`,
-  `found_count`, `total_count`); `--compact` for single-line output.
-- `--json-out PATH` — write the report atomically to `PATH` (requires `--json`).
-
-Run `repo-ops <subcommand> --help` for all flags.
-
-### `install-skill` — bundled agent skill
-
-`repo-ops install-skill --check` verifies installed Cursor/Claude skill copies without writing: exit `0` when absent or matching, `1` on drift; use `--force` to overwrite.
-
-- `--target {cursor,claude,both}` — where to install (default: `both`).
-- `--home DIR` — override home directory (also `REPO_OPS_HOME` env).
-- `--dest DIR` — install directly to this skill directory (testing; ignores `--target` layout).
-- `--dry-run` — print planned installs without writing files.
-
 ## Settings reference
 
 One layered lookup per setting: **CLI flag** → **env var** → **config file** → **default**.
@@ -418,8 +255,6 @@ out while the rest of the sweep stays on.
 | `actions_lint_level` | `--actions-lint-level` | `block` |
 | `actions_org_policy` | `--actions-org-policy` | `0` |
 | `actions_policy_level` | `--actions-policy-level` | `report` |
-| `audit_fail_on` | `--fail-on` | `high` |
-| `audit_fail_on_unknown` | `--fail-on-unknown` | `0` |
 | `commit_agent_model` | `(none)` | `composer-2.5` |
 | `commit_agent_provider` | `(none)` | `cursor` |
 | `exclude_patterns` | `--exclude` | `[]` |
@@ -527,8 +362,7 @@ package that list names but the file does not (e.g. `@types/react`) still needs 
 
 **Enforcement scope:** JS (npm, yarn, pnpm, bun), Deno, Go, Rust/Cargo, the
 Python managers (uv, hatch, pdm, pipenv, poetry, pip-tools), pre-commit, GitHub
-Actions, containers, and submodules. An advisory-safe version from `audit --fix`
-overrides an active hold for that remediation only.
+Actions, containers, and submodules.
 
 **How it's enforced.** One rule everywhere: bump targets above the ceiling are
 filtered out of `plan`, and refs *already* above it (a hold added after the

@@ -6,12 +6,9 @@ from pathlib import Path
 from repo_ops_lockfiles.parsers import (
     parse_package_json_direct,
     versions_bun_lock,
-    versions_cargo_lock,
     versions_deno_lock,
-    versions_go_sum,
     versions_npm_lock,
     versions_pnpm_lock,
-    versions_requirements_txt,
     versions_yarn_lock,
 )
 
@@ -63,51 +60,6 @@ def test_versions_yarn_lock_parses_basic():
         res = versions_yarn_lock(p)
         assert "foo@1.2.3" in res
         assert any("bar@2.3.4" in x for x in res)
-
-
-def test_versions_go_sum_strips_go_mod_suffix():
-    content = "golang.org/x/net v0.17.0 h1:abc=\ngolang.org/x/net v0.17.0/go.mod h1:xyz=\n"
-    with tempfile.TemporaryDirectory() as tmp:
-        p = Path(tmp) / "go.sum"
-        p.write_text(content)
-        assert versions_go_sum(p) == {"golang.org/x/net@v0.17.0"}
-
-
-def test_versions_cargo_lock_ignores_nested_dependency_tables():
-    content = """\
-[[package]]
-name = "serde"
-version = "1.0.197"
-dependencies = ["serde_derive 1.0.197"]
-
-[[package]]
-name = "tokio"
-version = "1.36.0"
-
-[metadata]
-"serde 1.0.197" = "checksum"
-"""
-    with tempfile.TemporaryDirectory() as tmp:
-        p = Path(tmp) / "Cargo.lock"
-        p.write_text(content)
-        assert versions_cargo_lock(p) == {"serde@1.0.197", "tokio@1.36.0"}
-
-
-def test_versions_requirements_txt_parses_pins_and_extras():
-    content = """\
-requests==2.31.0
-flask[async]==3.0.0; python_version >= "3.9"
-click>=8.1
-# comment
--r other.txt
-"""
-    with tempfile.TemporaryDirectory() as tmp:
-        p = Path(tmp) / "requirements.txt"
-        p.write_text(content)
-        assert versions_requirements_txt(p) == {
-            "requests@2.31.0",
-            "flask@3.0.0",
-        }
 
 
 def test_versions_deno_lock_v3_packages_jsr():

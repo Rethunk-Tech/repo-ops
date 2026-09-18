@@ -15,20 +15,13 @@ from repo_ops_core.cli import (
     MANAGER_FILTER_CHOICES,
     add_eco_filter_argument,
     build_upgrade_parser,
-    parse_iso8601,
     positive_int,
 )
 
 _MAIN_HELP_TARGETS: list[tuple[str, str, list[str]]] = [
-    ("repo_ops_inventory.scan", "main", []),
     ("repo_ops_upgrade.run", "main_plan", []),
     ("repo_ops_upgrade.run", "main_apply", []),
-    ("repo_ops.install_skill", "main", []),
-    ("repo_ops_audit.audit", "main", []),
     ("repo_ops_dependabot.dependabot", "main", []),
-    ("repo_ops_lockfiles.sbom", "main", []),
-    ("repo_ops_lockfiles.license_policy", "main", []),
-    ("repo_ops_doctor.doctor", "main", []),
 ]
 
 
@@ -77,23 +70,6 @@ def test_positive_int_rejects_zero_and_negative():
     assert positive_int("4") == 4
 
 
-def test_parse_iso8601_accepts_z_and_returns_utc():
-    dt = parse_iso8601("2026-05-29T14:00Z")
-    assert dt.tzinfo is not None
-    assert dt.year == 2026
-    assert dt.hour == 14
-
-
-def test_parse_iso8601_rejects_naive():
-    with pytest.raises(argparse.ArgumentTypeError):
-        parse_iso8601("2026-05-29T14:00:00")
-
-
-def test_parse_iso8601_rejects_invalid():
-    with pytest.raises(argparse.ArgumentTypeError):
-        parse_iso8601("not-a-date")
-
-
 @pytest.mark.parametrize("module_name,func_name,prefix", _MAIN_HELP_TARGETS)
 def test_entrypoint_main_help(module_name: str, func_name: str, prefix: list[str]) -> None:
     _call_main_help(module_name, func_name, prefix)
@@ -103,17 +79,7 @@ def test_repo_ops_dispatcher_subcommands_help(capsys) -> None:
     """Dispatcher delegates --help to full subcommand parsers (return 0, no exit)."""
     from repo_ops import cli
 
-    for sub in (
-        "inventory",
-        "plan",
-        "apply",
-        "install-skill",
-        "audit",
-        "dependabot",
-        "sbom",
-        "license",
-        "doctor",
-    ):
+    for sub in ("plan", "apply", "dependabot"):
         assert cli.main([sub, "--help"]) == 0
         out = capsys.readouterr().out
         assert "usage: repo-ops" in out

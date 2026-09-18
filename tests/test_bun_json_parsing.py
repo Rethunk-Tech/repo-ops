@@ -13,10 +13,8 @@ No subprocess or network calls are made.
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
 
 import repo_ops_js_bun.bun as bun_mod
-from repo_ops_audit.audit import _audit_node
 from repo_ops_js_bun.bun import (
     _changes_from_bun_json,
     _changes_from_bun_text,
@@ -206,76 +204,6 @@ _NPM_AUDIT_JSON_WITH_VULNS = json.dumps(
         },
     }
 )
-
-
-def test_audit_bun_uses_json_when_parseable() -> None:
-    """When bun audit --json emits npm-advisory JSON, parse counts from JSON."""
-    with (
-        patch("repo_ops_audit.audit.shutil.which", return_value="/usr/bin/bun"),
-        patch("repo_ops_audit.audit._probe_bun_audit", return_value=True),
-        patch(
-            "repo_ops_audit.audit._run",
-            return_value=(1, _NPM_AUDIT_JSON_WITH_VULNS, ""),
-        ),
-    ):
-        result = _audit_node("/tmp/proj", "bun")
-
-    assert result.status == "vulns"
-    assert result.counts.high == 1
-    assert result.counts.critical == 0
-
-
-def test_audit_bun_falls_back_to_text_on_json_failure() -> None:
-    """If stdout is not JSON (old bun without --json), use text parser."""
-    text_output = "3 vulnerabilities (1 critical, 2 high)"
-    with (
-        patch("repo_ops_audit.audit.shutil.which", return_value="/usr/bin/bun"),
-        patch("repo_ops_audit.audit._probe_bun_audit", return_value=True),
-        patch(
-            "repo_ops_audit.audit._run",
-            return_value=(1, text_output, ""),
-        ),
-    ):
-        result = _audit_node("/tmp/proj", "bun")
-
-    assert result.status == "vulns"
-    assert result.counts.critical == 1
-    assert result.counts.high == 2
-
-
-def test_audit_bun_json_empty_stdout_falls_back_to_text_stderr() -> None:
-    """Empty stdout → text parser sees combined stdout+stderr."""
-    stderr_text = "1 vulnerability (1 moderate)"
-    with (
-        patch("repo_ops_audit.audit.shutil.which", return_value="/usr/bin/bun"),
-        patch("repo_ops_audit.audit._probe_bun_audit", return_value=True),
-        patch(
-            "repo_ops_audit.audit._run",
-            return_value=(1, "", stderr_text),
-        ),
-    ):
-        result = _audit_node("/tmp/proj", "bun")
-
-    assert result.counts.moderate == 1
-
-
-def test_audit_bun_zero_vulns_json() -> None:
-    """JSON with zero counts + rc=0 → status ok."""
-    clean_json = json.dumps(
-        {"metadata": {"vulnerabilities": {"critical": 0, "high": 0, "moderate": 0, "low": 0}}}
-    )
-    with (
-        patch("repo_ops_audit.audit.shutil.which", return_value="/usr/bin/bun"),
-        patch("repo_ops_audit.audit._probe_bun_audit", return_value=True),
-        patch(
-            "repo_ops_audit.audit._run",
-            return_value=(0, clean_json, ""),
-        ),
-    ):
-        result = _audit_node("/tmp/proj", "bun")
-
-    assert result.status == "ok"
-    assert result.counts.total == 0
 
 
 # ---------------------------------------------------------------------------

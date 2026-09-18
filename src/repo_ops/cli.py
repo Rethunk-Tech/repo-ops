@@ -1,4 +1,4 @@
-"""repo-ops dispatcher: inventory, plan, apply, audit, dependabot, sbom, license."""
+"""repo-ops dispatcher: plan, apply, dependabot."""
 
 from __future__ import annotations
 
@@ -10,25 +10,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from repo_ops._register import register_all
-from repo_ops.install_skill import (
-    build_parser as build_install_skill_parser,
-)
-from repo_ops.install_skill import (
-    main as install_skill_main,
-)
-from repo_ops_audit.audit import build_audit_parser
-from repo_ops_audit.audit import main as audit_main
 from repo_ops_core.cli import build_upgrade_parser
 from repo_ops_dependabot.dependabot import build_dependabot_parser
 from repo_ops_dependabot.dependabot import main as dependabot_main
-from repo_ops_doctor.doctor import build_doctor_parser
-from repo_ops_doctor.doctor import main as doctor_main
-from repo_ops_inventory.scan import build_inventory_parser
-from repo_ops_inventory.scan import main as inventory_main
-from repo_ops_lockfiles.license_policy import build_license_parser
-from repo_ops_lockfiles.license_policy import main as license_main
-from repo_ops_lockfiles.sbom import build_sbom_parser
-from repo_ops_lockfiles.sbom import main as sbom_main
 from repo_ops_upgrade.run import main_apply, main_plan
 
 
@@ -43,11 +27,6 @@ class _Subcommand:
 
 
 _SUBCOMMANDS: dict[str, _Subcommand] = {
-    "inventory": _Subcommand(
-        inventory_main,
-        build_inventory_parser,
-        "Dependency footprint report",
-    ),
     "plan": _Subcommand(
         main_plan,
         lambda: build_upgrade_parser(apply=False),
@@ -58,35 +37,10 @@ _SUBCOMMANDS: dict[str, _Subcommand] = {
         lambda: build_upgrade_parser(apply=True),
         "Apply upgrades with verify gates",
     ),
-    "install-skill": _Subcommand(
-        install_skill_main,
-        build_install_skill_parser,
-        "Install Cursor/Claude agent skill for repo-ops",
-    ),
-    "audit": _Subcommand(
-        audit_main,
-        build_audit_parser,
-        "Fleet vulnerability sweep (read-only unless --fix)",
-    ),
     "dependabot": _Subcommand(
         dependabot_main,
         build_dependabot_parser,
         "List/close superseded Dependabot PRs (or --scaffold dependabot.yml)",
-    ),
-    "sbom": _Subcommand(
-        sbom_main,
-        build_sbom_parser,
-        "Emit CycloneDX/SPDX SBOM from lockfile dependencies (read-only)",
-    ),
-    "license": _Subcommand(
-        license_main,
-        build_license_parser,
-        "Scan dependency licenses and flag policy violations (read-only)",
-    ),
-    "doctor": _Subcommand(
-        doctor_main,
-        build_doctor_parser,
-        "Toolchain/auth preflight: probe known binaries and gh auth (read-only)",
     ),
 }
 
@@ -98,7 +52,7 @@ _HELP_BUILDERS: dict[str, Callable[[], argparse.ArgumentParser]] = {
     name: sc.help_builder for name, sc in _SUBCOMMANDS.items()
 }
 
-_REGISTER_COMMANDS = frozenset({"inventory", "plan", "apply", "audit"})
+_REGISTER_COMMANDS = frozenset({"plan", "apply"})
 
 _SUBCOMMAND_HELP: dict[str, str] = {name: sc.help_text for name, sc in _SUBCOMMANDS.items()}
 
@@ -112,25 +66,18 @@ def _resolve_version() -> str:
 
 
 _TOP_LEVEL_DESCRIPTION = """\
-Repository operations for local monorepo roots (inventory, plan, apply,
-audit, dependabot, sbom, license, doctor).
+Dependency maintenance for local checkouts (plan, apply, dependabot).
 
 When no root_dir arguments are passed, subcommands scan DEFAULT_ROOTS
-(see repo-ops plan --help). Agents: AGENTS.md quick reference. Humans: HUMANS.md.
+(see repo-ops plan --help).
 """
 
 _TOP_LEVEL_EPILOG = """\
 examples:
-  repo-ops plan
-  repo-ops apply --log-file apply.log
-  repo-ops apply --conservative
-  repo-ops inventory --flat /path/to/checkout
-  repo-ops audit --fail-on critical
+  repo-ops apply
+  repo-ops apply /path/to/checkout
+  repo-ops plan /path/to/checkout
   repo-ops dependabot --close
-  repo-ops dependabot --scaffold --write
-  repo-ops sbom --format cyclonedx --output sbom.json /path/to/checkout
-  repo-ops license --allow MIT,Apache-2.0,ISC /path/to/checkout
-  repo-ops doctor --strict
 
 Use repo-ops <subcommand> --help for all flags on that subcommand.
 """

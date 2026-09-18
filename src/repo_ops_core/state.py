@@ -116,20 +116,6 @@ def _write_to_disk(state: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def load_state() -> dict[str, Any]:
-    """Load state from disk.  Returns an empty dict on any error or missing file."""
-    if _no_state():
-        return {}
-    return _read_from_disk()
-
-
-def save_state(state: dict[str, Any]) -> None:
-    """Persist *state* to disk atomically (tmp + rename).  No-op on error."""
-    if _no_state():
-        return
-    _write_to_disk(state)
-
-
 def record_dirty_skip(
     state: dict[str, Any],
     repo_path: str | Path,

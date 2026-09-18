@@ -13,9 +13,7 @@ import pytest
 from repo_ops_core import state as state_mod
 from repo_ops_core.state import (
     clear_dirty_skip,
-    load_state,
     record_dirty_skip,
-    save_state,
 )
 
 # ---------------------------------------------------------------------------
@@ -83,52 +81,6 @@ def test_clear_dirty_skip_disabled_by_env(monkeypatch: pytest.MonkeyPatch) -> No
     clear_dirty_skip(state, "/repo/alpha")
     # Entry should remain because REPO_OPS_NO_STATE suppresses the op
     assert "/repo/alpha" in state["dirty_skips"]
-
-
-# ---------------------------------------------------------------------------
-# state.py — load/save roundtrip
-# ---------------------------------------------------------------------------
-
-
-def test_load_save_roundtrip(tmp_path: Path) -> None:
-    with patch.dict(os.environ, {"XDG_CACHE_HOME": str(tmp_path / "cache")}):
-        state = load_state()
-        record_dirty_skip(state, "/repo/alpha", date(2026, 6, 1))
-        save_state(state)
-
-        loaded = load_state()
-    assert loaded["dirty_skips"]["/repo/alpha"]["first_seen"] == "2026-06-01"
-    assert loaded["dirty_skips"]["/repo/alpha"]["runs"] == 1
-
-
-def test_load_state_tolerates_corrupt_file(tmp_path: Path) -> None:
-    cache_dir = tmp_path / "cache" / "repo-ops"
-    cache_dir.mkdir(parents=True)
-    (cache_dir / "state.json").write_text("NOT JSON {{{", encoding="utf-8")
-    with patch.dict(os.environ, {"XDG_CACHE_HOME": str(tmp_path / "cache")}):
-        state = load_state()
-    assert state == {}
-
-
-def test_load_state_tolerates_missing_file(tmp_path: Path) -> None:
-    with patch.dict(os.environ, {"XDG_CACHE_HOME": str(tmp_path / "no-cache")}):
-        state = load_state()
-    assert state == {}
-
-
-def test_load_state_disabled_by_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("REPO_OPS_NO_STATE", "1")
-    state = load_state()
-    assert state == {}
-
-
-def test_save_state_disabled_by_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("REPO_OPS_NO_STATE", "1")
-    with patch.dict(os.environ, {"XDG_CACHE_HOME": str(tmp_path / "cache")}):
-        save_state({"dirty_skips": {"/x": {"first_seen": "2026-06-01", "runs": 1}}})
-        # File must not have been written
-        state_file = tmp_path / "cache" / "repo-ops" / "state.json"
-        assert not state_file.exists()
 
 
 # ---------------------------------------------------------------------------
