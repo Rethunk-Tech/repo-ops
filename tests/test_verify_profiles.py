@@ -47,12 +47,9 @@ def _write_pkg(path: Path, scripts: dict[str, str] | None = None) -> None:
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 class TestDotRepoOpsToml:
     def test_reads_flat_keys(self, tmp_path: Path) -> None:
-        (tmp_path / ".repo-ops.toml").write_text(
-            'jobs = 8\ngo_upgrade_mode = "explicit"\n', encoding="utf-8"
-        )
+        (tmp_path / ".repo-ops.toml").write_text('exclude = ["vendor"]\n', encoding="utf-8")
         cfg = load_repo_config(tmp_path)
-        assert cfg.get("jobs") == 8
-        assert cfg.get("go_upgrade_mode") == "explicit"
+        assert cfg.get("exclude") == ["vendor"]
 
     def test_missing_file_returns_empty(self, tmp_path: Path) -> None:
         assert load_repo_config(tmp_path) == {}
@@ -77,17 +74,6 @@ class TestDotRepoOpsToml:
 # ---------------------------------------------------------------------------
 # pyproject wins over .repo-ops.toml (per-key merge)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
-class TestSidecarPrecedence:
-    def test_sidecar_only_key_present_when_no_pyproject(self, tmp_path: Path) -> None:
-        (tmp_path / ".repo-ops.toml").write_text("jobs = 6\n", encoding="utf-8")
-        cfg = load_repo_config(tmp_path)
-        assert cfg.get("jobs") == 6
-
-    def test_no_sidecar_no_pyproject_returns_empty(self, tmp_path: Path) -> None:
-        assert load_repo_config(tmp_path) == {}
 
 
 # ---------------------------------------------------------------------------

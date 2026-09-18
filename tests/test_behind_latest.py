@@ -1,7 +1,7 @@
 """Regression tests for behind-latest disposition.
 
-Verifies that workspaces with newer-than-installed packages when latest-mode
-is off, and Actions with a newer major available, are reported as a distinct
+Verifies that packages the sweep could not move, and Actions with a newer
+major available, are reported as a distinct
 ``behind_latest`` disposition (NOT ok / NOT fail), do not change exit code,
 and appear in the footer hint.
 

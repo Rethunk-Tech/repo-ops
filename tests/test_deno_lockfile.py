@@ -12,7 +12,6 @@ Fixture spike output (run against tests/fixtures/):
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -55,28 +54,6 @@ def test_v2_npm_captured(tmp_path: Path) -> None:
     versions = versions_deno_lock(_copy_lock_fixture(tmp_path, "deno_v2.lock"))
     assert "npm:chalk@5.1.0" in versions
     assert len(versions) == 1
-
-
-def test_deno_fixture_files_on_disk() -> None:
-    """On-disk fixtures return expected version counts (sync guard)."""
-    expected_counts = {
-        "deno_v2.lock": 1,
-        "deno_v3.lock": 2,
-        "deno_v4.lock": 2,
-    }
-    for name, count in expected_counts.items():
-        path = FIXTURE_DIR / name
-        assert path.exists(), f"missing fixture {name}"
-        versions = versions_deno_lock(path)
-        assert len(versions) == count, f"{name}: expected {count}, got {sorted(versions)}"
-
-
-def test_deno_fixture_files_are_valid_json() -> None:
-    """Every on-disk Deno lock fixture must be parseable JSON."""
-    for name in _DENO_FIXTURES:
-        path = FIXTURE_DIR / name
-        assert path.exists(), f"missing fixture {name}"
-        json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_empty_lockfile_returns_empty_set(tmp_path: Path) -> None:

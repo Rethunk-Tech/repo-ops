@@ -1,4 +1,4 @@
-"""Tests for pnpm apply ghost-bump guard and latest-mode omission fix."""
+"""Tests for the pnpm apply ghost-bump guard and latest-column bucketing."""
 
 from __future__ import annotations
 
@@ -94,11 +94,11 @@ def test_apply_pnpm_guard_skipped_when_resolver_returns_none(
 
 
 # ---------------------------------------------------------------------------
-# _bucket_pnpm_pkg latest-mode omission fix
+# _bucket_pnpm_pkg latest-column bucketing
 # ---------------------------------------------------------------------------
 
 
-def test_bucket_pnpm_pkg_latest_mode_falls_through_when_latest_unknown(
+def test_bucket_pnpm_pkg_falls_through_when_latest_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """latest=='?' must fall through
@@ -130,7 +130,7 @@ def test_bucket_pnpm_pkg_latest_mode_falls_through_when_latest_unknown(
     assert behind_latest == []
 
 
-def test_bucket_pnpm_pkg_latest_mode_uses_latest_when_known(
+def test_bucket_pnpm_pkg_uses_latest_when_known(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A known latest is the target."""

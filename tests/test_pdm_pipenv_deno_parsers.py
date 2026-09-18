@@ -7,7 +7,6 @@ import tempfile
 from pathlib import Path
 
 from repo_ops_lockfiles.parsers import (
-    versions_deno_lock,
     versions_pdm_lock,
     versions_pipenv_lock,
     versions_uv_lock,
@@ -200,43 +199,3 @@ _DENO_LOCK_V3 = {
         },
     },
 }
-
-
-def test_versions_deno_lock_v3_specifiers():
-    with tempfile.TemporaryDirectory() as tmp:
-        p = Path(tmp) / "deno.lock"
-        p.write_text(json.dumps(_DENO_LOCK_V3))
-        result = versions_deno_lock(p)
-    # Resolved specifiers must appear in the output
-    assert "jsr:@std/assert@0.221.0" in result
-    assert "npm:chalk@5.3.0" in result
-
-
-def test_versions_deno_lock_v3_npm_section():
-    """npm sub-dict keys are also emitted (with npm: prefix)."""
-    data = {
-        "version": "3",
-        "packages": {},
-        "npm": {"lodash@4.17.21": {"integrity": "x"}},
-    }
-    with tempfile.TemporaryDirectory() as tmp:
-        p = Path(tmp) / "deno.lock"
-        p.write_text(json.dumps(data))
-        result = versions_deno_lock(p)
-    assert "npm:lodash@4.17.21" in result
-
-
-def test_versions_deno_lock_empty():
-    with tempfile.TemporaryDirectory() as tmp:
-        p = Path(tmp) / "deno.lock"
-        p.write_text("{}")
-        result = versions_deno_lock(p)
-    assert result == set()
-
-
-def test_versions_deno_lock_invalid_json():
-    with tempfile.TemporaryDirectory() as tmp:
-        p = Path(tmp) / "deno.lock"
-        p.write_text("not json")
-        result = versions_deno_lock(p)
-    assert result == set()

@@ -27,12 +27,6 @@ _BOX_BEHIND_LATEST = """\
 └──────────────────────┴─────────┴─────────┴─────────┘
 """
 
-_PLAIN_4_OUTPUT = """\
-Package             Current  Update   Latest
-jsr:@std/assert     0.221.0  0.226.0  0.226.0
-npm:chalk           5.2.0    5.2.0    5.3.0
-"""
-
 
 def test_check_deno_parses_box_table(tmp_path: Path, make_workspace) -> None:
     """check_deno must parse the box-drawing table format."""
@@ -55,9 +49,7 @@ def test_check_deno_parses_box_table(tmp_path: Path, make_workspace) -> None:
     assert "npm:chalk" in names
 
 
-def test_check_deno_latest_mode_promotes_behind(
-    tmp_path: Path, monkeypatch, make_workspace
-) -> None:
+def test_check_deno_targets_latest_column(tmp_path: Path, monkeypatch, make_workspace) -> None:
     """Latest is the target and behind_latest stays empty."""
 
     def fake_run(cmd, cwd, timeout=None):

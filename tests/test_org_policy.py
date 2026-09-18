@@ -27,48 +27,6 @@ from repo_ops_upgrade.actions import (
 # ---------------------------------------------------------------------------
 
 
-def _wf(tmp_path: Path, content: str) -> Path:
-    wf_dir = tmp_path / ".github" / "workflows"
-    wf_dir.mkdir(parents=True)
-    wf = wf_dir / "ci.yml"
-    wf.write_text(content, encoding="utf-8")
-    return wf
-
-
-_CHECKOUT_WF = """\
-name: CI
-on: push
-jobs:
-  ci:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: softprops/action-gh-release@v1
-"""
-
-_LOCAL_WF = """\
-name: CI
-on: push
-jobs:
-  ci:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: ./local-action
-      - uses: myorg/internal-action@v1
-      - uses: actions/checkout@v4
-"""
-
-_BUMP_WF = """\
-name: CI
-on: push
-jobs:
-  ci:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: softprops/action-gh-release@v1.0.0
-"""
-
-
 def _gh_proc(payload: object, returncode: int = 0) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(
         [],
@@ -321,27 +279,6 @@ def test_actions_summary_policy_violations_counted() -> None:
     assert summary["bumps"] == 1
 
 
-def test_actions_summary_policy_does_not_count_as_failure() -> None:
-    """Policy rows do not increment the failures counter."""
-    from repo_ops_models import ActionBump, RepoBundle
-
-    bundle = RepoBundle(git_repo=Path("/fake"), label="fake")
-    bundle.actions = [
-        ActionBump(
-            workflow="ci.yml",
-            action="myaction/foo",
-            pin="v1",
-            latest="v1",
-            status="policy",
-            detail="org policy (local_only): myaction/foo not allowed",
-        ),
-    ]
-    bundle.actions_workflows_scanned = 1
-    summary = bundle.actions_summary()
-    assert summary["failures"] == 0
-    assert summary["policy_violations"] == 1
-
-
 @pytest.mark.parametrize("status", ["policy", "policy-blocked", "warn"])
 def test_actions_summary_policy_statuses_are_not_bumps(status: str) -> None:
     """Policy-status rows count as violations, never actionable bumps."""
@@ -362,3 +299,4 @@ def test_actions_summary_policy_statuses_are_not_bumps(status: str) -> None:
     summary = bundle.actions_summary()
     assert summary["policy_violations"] == 1
     assert summary["bumps"] == 0
+    assert summary["failures"] == 0

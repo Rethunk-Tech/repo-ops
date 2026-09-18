@@ -14,8 +14,6 @@ from repo_ops_js_bun.bun import apply_bun, check_bun
 from repo_ops_models import RepoBundle, WorkspaceResult
 from repo_ops_upgrade.report import build_json_payload, print_human_report
 
-_REPO_HOLDS_CACHE = "repo_ops_core.holds._repo_holds_cached"
-
 _BUNDLED = {
     "react-native": "0.86.3",
     "react-native-gesture-handler": "~2.32.0",

@@ -25,15 +25,6 @@ from repo_ops_core.cli import ECO_FILTER_CHOICES
 # ---------------------------------------------------------------------------
 
 
-def _registered_managers() -> tuple[set[str], set[str]]:
-    """Return (CHECKERS keys, APPLIERS keys) after a fresh register_all()."""
-    # Re-import to get a fresh view after registration.
-    from repo_ops_upgrade import registry
-
-    register_all()
-    return set(registry.CHECKERS), set(registry.APPLIERS)
-
-
 # ---------------------------------------------------------------------------
 # Core registry completeness
 # ---------------------------------------------------------------------------

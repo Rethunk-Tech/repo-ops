@@ -1,10 +1,9 @@
-"""Tests for SHA-pin digest refresh within a major and cross-major
-re-pin under --latest.
+"""Tests for SHA-pin digest refresh within a major and cross-major re-pin.
 
 Keeps an action pinned by commit digest (supply-chain hardening) but advances
 the SHA to the newest vN.M.P release within its current major — the same kind of
-bump Dependabot makes when it security-pins by commit.  With upgrade_mode=latest,
-also crosses major boundaries (Dependabot parity for major-bump PRs).
+bump Dependabot makes when it security-pins by commit.  It also crosses major
+boundaries (Dependabot parity for major-bump PRs).
 """
 
 from __future__ import annotations
@@ -208,7 +207,7 @@ def test_refresh_bare_major_only_is_report_only(tmp_path: Path) -> None:
 
 
 def test_cross_major_refresh_latest_updates_sha_and_comment(tmp_path: Path) -> None:
-    """upgrade_mode=latest: v6 SHA pin advances to v7 digest; # v6 comment → # v7."""
+    """A v6 SHA pin advances to the v7 digest; # v6 comment → # v7."""
     wf = _wf(
         tmp_path,
         f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_OLD}  # v6\n",

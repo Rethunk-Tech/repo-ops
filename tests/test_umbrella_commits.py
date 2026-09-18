@@ -13,13 +13,6 @@ from repo_ops_upgrade.post_apply_commit import (
 from repo_ops_upgrade.submodules import SubmoduleLink
 
 
-def _write_gitmodules(parent: Path, path: str, url: str) -> None:
-    (parent / ".gitmodules").write_text(
-        f'[submodule "{path}"]\n\tpath = {path}\n\turl = {url}\n',
-        encoding="utf-8",
-    )
-
-
 def _make_child_outcome(
     git_repo: Path,
     status: Literal["committed", "dry_run", "skipped", "failed"] = "committed",

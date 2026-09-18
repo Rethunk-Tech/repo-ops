@@ -10,10 +10,6 @@ when the command fails with a network-style error.
 
 from __future__ import annotations
 
-import shutil
-
 import pytest
 
 pytestmark = pytest.mark.integration
-
-_CARGO = shutil.which("cargo")

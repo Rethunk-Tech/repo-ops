@@ -17,19 +17,6 @@ from __future__ import annotations
 # and will be rewritten.  ``actions/checkout@v3`` is already at its floating
 # major, so in normalize mode it is reported only (newer major v4 available)
 # and NOT rewritten.  This guarantees exactly one changed line.
-_FIXTURE_YAML = """\
-name: Test
-on: push
-
-jobs:
-      build:
-            runs-on: ubuntu-latest
-            steps:
-            - name: Checkout
-              uses: actions/checkout@v3  # important comment preserved
-            - name: Setup Python
-              uses: astral-sh/setup-uv@v5.4.0
-"""
 
 # Pre-populated cache replaces the live ``gh api`` call.
 # checkout: bare major v3 and v4 exist (floating), max_major=4.

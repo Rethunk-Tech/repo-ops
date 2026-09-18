@@ -1,4 +1,4 @@
-"""Tests for pre-commit rev: pin detection, plan, and apply (sub-task 8c).
+"""Tests for pre-commit rev: pin detection, plan, and apply.
 
 Covers:
   * is_precommit_workspace: detects .pre-commit-config.yaml / .yml
@@ -7,7 +7,7 @@ Covers:
   * _is_sha_rev / _is_semver_like / _has_v_prefix / _resolve_latest_precommit_rev
   * _fetch_tags_for_repo: happy path, git not found, timeout, non-zero exit
   * check_precommit: actionable bump, SHA pin, non-semver rev, network error,
-    already-at-latest, cross-major opt-in via env var
+    already-at-latest, cross-major
   * apply_precommit: byte-preserving rev replacement, CRLF safe, quoted revs
 
 No real subprocesses or network calls are made.
@@ -313,30 +313,7 @@ def test_check_precommit_sha_pin_report_only(tmp_path: Path) -> None:
     assert "SHA pin" in changes[0].to
 
 
-def test_check_precommit_sha_pin_refreshes_with_opt_in(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    current_sha = "a" * 40
-    latest_sha = "b" * 40
-    (tmp_path / ".pre-commit-config.yaml").write_text(
-        f"repos:\n- repo: https://github.com/org/tool\n  rev: {current_sha}\n  hooks:\n  - id: x\n"
-    )
-    proc = _fake_ls_remote_refs(
-        [
-            (current_sha, "v1.0.0"),
-            (latest_sha, "v1.1.0"),
-            ("c" * 40, "v2.0.0"),
-        ]
-    )
-    with patch("subprocess.run", return_value=proc):
-        changes = check_precommit(_make_ws(tmp_path))
-    assert len(changes) == 1
-    assert changes[0].from_ver == current_sha
-    assert changes[0].to == latest_sha
-    assert "[report-only]" not in changes[0].to
-
-
-def test_check_precommit_sha_refresh_stays_within_major_under_update_latest(
+def test_check_precommit_sha_refresh_stays_within_major(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     current_sha = "a" * 40
@@ -393,9 +370,7 @@ def test_check_precommit_no_config_no_changes(tmp_path: Path) -> None:
     assert changes == []
 
 
-def test_check_precommit_cross_major_opt_in(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_check_precommit_crosses_majors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / ".pre-commit-config.yaml").write_text(
         "repos:\n- repo: https://github.com/org/tool\n  rev: v1.9.0\n  hooks:\n  - id: x\n"
     )
@@ -492,9 +467,7 @@ def test_apply_precommit_no_change_when_at_latest(tmp_path: Path) -> None:
     assert cfg.read_text(encoding="utf-8") == original
 
 
-def test_apply_precommit_refreshes_sha_pin_with_opt_in(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_apply_precommit_refreshes_sha_pin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     current_sha = "a" * 40
     latest_sha = "b" * 40
     original = (

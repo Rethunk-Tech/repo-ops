@@ -8,7 +8,6 @@ from unittest.mock import patch
 import pytest
 
 from repo_ops_core.holds import HoldRule
-from repo_ops_core.holds import workspace_rel as _workspace_rel
 from repo_ops_go.go import (
     _changes_from_go_list_json,
     _enforce_version_ceilings,
@@ -16,10 +15,8 @@ from repo_ops_go.go import (
     _filter_held_go_changes,
     _go_ceiling_query,
 )
-from repo_ops_models import Workspace
 
 _GLOBAL_HOLDS_CACHE = "repo_ops_core.holds._global_holds_cached"
-_REPO_HOLDS_CACHE = "repo_ops_core.holds._repo_holds_cached"
 _MODULE = "example.com/a"
 
 
@@ -179,19 +176,6 @@ def test_enforce_version_ceilings_raises_when_still_above_ceiling(
         pytest.raises(RuntimeError, match="hold"),
     ):
         _enforce_version_ceilings(ws)
-
-
-def test_workspace_rel_falls_back_when_path_outside_git_repo(tmp_path) -> None:
-    other_root = tmp_path / "unrelated"
-    other_root.mkdir()
-    ws = Workspace(
-        path=other_root,
-        ecosystem="go",
-        manager="go",
-        git_repo=tmp_path / "actual-repo",
-        label="mod",
-    )
-    assert _workspace_rel(ws) == "."
 
 
 def test_enforce_version_ceilings_skips_unheld_and_already_compliant(

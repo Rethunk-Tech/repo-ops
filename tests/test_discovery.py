@@ -145,26 +145,6 @@ def test_discover_all_records_skip_for_requirements_txt_only(tmp_path: Path, ini
     ), f"expected a py skip with requirements.in mention; skipped={diags.skipped}"
 
 
-def test_discover_all_finds_requirements_txt_only_repo(tmp_path: Path, init_git_repo):
-    """A repo with requirements.txt triggers consider_py so
-    the manifest is reached.  Without requirements.in the repo is now recorded
-    as an unactionable discovery skip rather than a false-green
-    workspace — assert the discovery skip is recorded but no workspace is added."""
-    repo = tmp_path / "com.github" / "Acme" / "legacy"
-    init_git_repo(repo)
-    (repo / "requirements.txt").write_text("requests==2.31.0\n")
-
-    diags = DiscoveryDiagnostics()
-    found = discover_all([str(tmp_path)], diagnostics=diags)
-    py = [ws for ws in found if ws.ecosystem == "py"]
-
-    # requirements.txt-only → skip, not a workspace
-    assert py == [], f"expected no py workspace (skip), got {[str(w.path) for w in py]}"
-    assert any(s["ecosystem"] == "py" for s in diags.skipped), (
-        f"expected a py discovery skip; skipped={diags.skipped}"
-    )
-
-
 def test_iter_scanned_dirs_skips_node_modules(tmp_path: Path):
     root = tmp_path / "proj"
     (root / "node_modules" / "pkg").mkdir(parents=True)

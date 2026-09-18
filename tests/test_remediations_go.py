@@ -1,4 +1,4 @@
-"""Tests for Go-ecosystem remediation hooks (gofmt, go_generate)."""
+"""Tests for the Go gofmt remediation hook."""
 
 from __future__ import annotations
 
@@ -104,15 +104,6 @@ def test_apply_gofmt_failure_captures_stderr(tmp_path: Path, make_workspace, mak
     assert ok is False
     assert "gofmt" in detail
     assert "cannot find package" in detail
-
-
-# ── detect_go_generate ───────────────────────────────────────────────────────
-
-
-# ── report_go_generate ───────────────────────────────────────────────────────
-
-
-# ── apply_go_generate ────────────────────────────────────────────────────────
 
 
 # ── run_remediations integration ─────────────────────────────────────────────

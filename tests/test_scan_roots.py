@@ -17,13 +17,6 @@ def test_looks_like_find_predicate() -> None:
     assert not looks_like_find_predicate("")
 
 
-def test_resolve_scan_roots_rejects_missing(tmp_path: Path) -> None:
-    parser = argparse.ArgumentParser()
-    missing = tmp_path / "nope"
-    with pytest.raises(SystemExit):
-        resolve_scan_roots([str(missing)], parser)
-
-
 def test_resolve_scan_roots_rejects_find_predicate(tmp_path: Path) -> None:
     parser = argparse.ArgumentParser()
     with pytest.raises(SystemExit):

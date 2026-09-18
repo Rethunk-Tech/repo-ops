@@ -48,13 +48,6 @@ def test_check_bun_targets_latest_column(tmp_path: Path, make_workspace) -> None
 # land in EXACTLY ONE bucket — changes — matching the JSON parser's if/elif
 # semantics.  The old text parser appended to changes AND then also to
 # behind_latest via a separate trailing `if`, causing double-counting.
-_TABLE_CURRENT_LT_UPDATE_LT_LATEST = (
-    "│ \x1b[1m\x1b[34mPackage\x1b[0m │ \x1b[1mCurrent\x1b[0m "
-    "│ \x1b[1mUpdate\x1b[0m │ \x1b[1mLatest\x1b[0m │\n"
-    "├────│\n"
-    # react: current=18.0.0, update=18.3.0 (in-range bump), latest=19.0.0
-    "│ react │ 18.0.0 │ 18.3.0 │ 19.0.0 │\n"
-)
 
 
 # a real npm dependency literally named ``bun`` must be detected

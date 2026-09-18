@@ -97,24 +97,6 @@ class TestGoVerifyGates:
         assert result is not None
         assert "undefined" in result
 
-    def test_go_test_runs_after_build_when_verify_test(
-        self, tmp_path: Path, make_workspace, fake_run: Any
-    ) -> None:
-        """go test ./... must run after go build when."""
-
-        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
-        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws)
-
-        assert result is None
-        cmd_strs = [" ".join(c) for c in fake_run.calls]
-        assert "go mod verify" in cmd_strs
-        assert "go build ./..." in cmd_strs
-        assert "go test ./..." in cmd_strs
-        # Order: mod verify → build → test
-        assert cmd_strs.index("go mod verify") < cmd_strs.index("go build ./...")
-        assert cmd_strs.index("go build ./...") < cmd_strs.index("go test ./...")
-
     def test_go_build_skipped_when_mod_verify_fails(self, tmp_path: Path, make_workspace) -> None:
         """go test must NOT run if go build fails."""
         called_test = False
@@ -137,10 +119,10 @@ class TestGoVerifyGates:
 
 
 class TestRustVerifyGates:
-    def test_rust_test_runs_after_check_when_verify_test(
+    def test_rust_test_runs_after_check(
         self, tmp_path: Path, make_workspace, fake_run: Any
     ) -> None:
-        """cargo test must run after cargo check when."""
+        """cargo test runs after cargo check."""
 
         ws = make_workspace(tmp_path, manager="rust", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):

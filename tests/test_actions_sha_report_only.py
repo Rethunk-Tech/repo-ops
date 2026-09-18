@@ -1,4 +1,4 @@
-"""Tests for SHA-pin resolution: unpin SHA-pinned Actions to version tags."""
+"""SHA-pinned Actions that cannot be refreshed stay report-only."""
 
 from __future__ import annotations
 
@@ -63,31 +63,6 @@ def test_unresolvable_sha_report_only(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_keep_sha_noop(tmp_path: Path) -> None:
-    """: SHA pin reported as-is; no rewrite on apply."""
-    wf = _wf(
-        tmp_path,
-        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_SHA}  # v4\n",
-    )
-    original = wf.read_text(encoding="utf-8")
-    tags_proc = _make_tags_proc(f"v4 {_SHA}", f"v4.2.1 {_SHA}")
-
-    with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
-        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
-    ):
-        bumps, _ = scan_actions(tmp_path, apply=True)
-
-    checkout = [b for b in bumps if b.action == "actions/checkout"]
-    assert len(checkout) == 1
-    b = checkout[0]
-    assert b.pin == _SHA
-    assert b.latest == _SHA
-    assert b.detail == "SHA-pinned; report only"
-    # File must be unchanged
-    assert wf.read_text(encoding="utf-8") == original
-
-
 # ---------------------------------------------------------------------------
 # (g) short-SHA prefix resolution
 # ---------------------------------------------------------------------------
@@ -95,7 +70,5 @@ def test_keep_sha_noop(tmp_path: Path) -> None:
 # Full 40-char SHA used as the key in sha_to_tags (as the real API returns).
 _FULL_SHA_A = "abc1234def5678901234567890abc1234def5678"
 # 7-char prefix of _FULL_SHA_A
-_SHORT_SHA_A = _FULL_SHA_A[:7]
 
 # A second full SHA whose first 7 chars differ from _FULL_SHA_A
-_FULL_SHA_B = "ffff0000111122223333444455556666777788889"[:40]

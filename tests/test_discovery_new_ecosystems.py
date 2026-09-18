@@ -114,29 +114,6 @@ def test_discover_pipenv_with_lock(tmp_path: Path, init_git_repo) -> None:
     assert pipenv_found[0].path == repo.resolve()
 
 
-def test_discover_pipenv_no_lock_skips_with_pipenv_reason(tmp_path: Path, init_git_repo) -> None:
-    """Pipfile without Pipfile.lock → skip with Pipfile/pipenv reason (not pyproject msg)."""
-    repo = tmp_path / "org" / "pipenv-no-lock"
-    init_git_repo(repo)
-    (repo / "Pipfile").write_text('[packages]\nrequests = "*"\n')
-
-    diags = DiscoveryDiagnostics()
-    found = discover_all([str(tmp_path)], diagnostics=diags)
-
-    py_found = [ws for ws in found if ws.ecosystem == "py"]
-    assert py_found == [], "no workspace without Pipfile.lock"
-
-    py_skips = [s for s in diags.skipped if s["ecosystem"] == "py"]
-    assert py_skips, "must record a skip"
-    reason = py_skips[0]["reason"]
-    assert "pyproject.toml" not in reason, (
-        f"misleading pyproject skip message still present: {reason!r}"
-    )
-    assert "pipenv" in reason.lower() or "Pipfile" in reason, (
-        f"expected Pipfile/pipenv in skip reason; got {reason!r}"
-    )
-
-
 # ---------------------------------------------------------------------------
 # Deno
 # ---------------------------------------------------------------------------

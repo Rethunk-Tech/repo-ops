@@ -43,9 +43,6 @@ from repo_ops_js_yarn.yarn import targeted_bump_behind as yarn_targeted_bump_beh
 from repo_ops_models import Change
 
 _GLOBAL_HOLDS_CACHE = "repo_ops_core.holds._global_holds_cached"
-_REPO_HOLDS_CACHE = (
-    "repo_ops_core.holds._repo_holds_cached"  # picked up by conftest's autouse fixture
-)
 
 
 def _held_rule(**overrides):
@@ -567,7 +564,7 @@ def test_targeted_bump_without_ws_keeps_latest_fallback(
     tmp_path: Path, monkeypatch, make_proc
 ) -> None:
     """yarn's ``ws`` is optional and keyword-only: direct callers that omit it
-    (pre-holds callers) keep the prior audit-override/latest fallback."""
+    keep the ``@latest`` target."""
     _seed_yarn(tmp_path)
     captured_cmds: list[list[str]] = []
 

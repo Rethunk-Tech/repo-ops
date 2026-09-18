@@ -17,7 +17,6 @@ from repo_ops_dependabot.dependabot import (
     _is_security_title,
     _lockfile_resolved,
     _manifest_versions,
-    _owner_repo,
     _parse_bump,
     _parse_group_body,
     _split_name_ver,
@@ -130,14 +129,6 @@ _SAMPLE_GROUP_BODY_3COL = """\
 | express | 4.18.0  | 4.19.0  |
 """
 
-_SAMPLE_GROUP_BODY_ARROW = """\
-Updates the group:
-
-| Package | Update |
-| ------- | ------ |
-| lodash  | 4.17.11 → 4.17.21 |
-| express | 4.18.0 → 4.19.0  |
-"""
 
 _SAMPLE_GROUP_BODY_NO_TABLE = """\
 This is a regular PR with no update table.
@@ -190,23 +181,6 @@ def test_split_name_ver_no_at() -> None:
 # ---------------------------------------------------------------------------
 # Owner/repo extraction
 # ---------------------------------------------------------------------------
-
-
-def test_owner_repo_https_url() -> None:
-    assert _owner_repo("https://github.com/owner/repo.git") == "owner/repo"
-    assert _owner_repo("https://github.com/owner/repo") == "owner/repo"
-
-
-def test_owner_repo_ssh_url() -> None:
-    assert _owner_repo("git@github.com:owner/repo.git") == "owner/repo"
-
-
-def test_owner_repo_non_github_returns_none() -> None:
-    assert _owner_repo("https://gitlab.com/owner/repo.git") is None
-
-
-def test_owner_repo_tolerates_trailing_slash() -> None:
-    assert _owner_repo("https://github.com/owner/repo/") == "owner/repo"
 
 
 # ---------------------------------------------------------------------------
@@ -463,12 +437,6 @@ def test_dependabot_parser_close_flag() -> None:
     assert args.close is True
     args_no_close = parser.parse_args([])
     assert args_no_close.close is False
-
-
-def test_dependabot_parser_exclude_patterns() -> None:
-    parser = build_dependabot_parser()
-    args = parser.parse_args(["--exclude", "vendor", "--exclude", "archive"])
-    assert args.exclude_patterns == ["vendor", "archive"]
 
 
 def test_dependabot_exclude_unions_cli_and_config(

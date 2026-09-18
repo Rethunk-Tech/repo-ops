@@ -156,7 +156,7 @@ def test_human_report_skip_shows_aging(tmp_path: Path, monkeypatch: pytest.Monke
     _reset_module_cache()
 
 
-def test_human_report_skip_no_aging_when_no_state(
+def test_human_report_skip_no_aging_without_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Human report skip line shows plain error when no state entry exists."""

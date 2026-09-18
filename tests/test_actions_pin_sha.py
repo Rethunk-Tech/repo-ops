@@ -1,10 +1,4 @@
-"""Tests for pinning a floating tag Action to a commit SHA (--actions-pin-sha).
-
-Converts an Action that was never SHA-pinned (@vN or @vN.M.P) to a commit-SHA
-pin — supply-chain hardening for the ~200 fleet-wide references repo-ops's
-existing --actions-refresh-sha/--actions-unpin-sha never touch (both only
-operate on an already-SHA-pinned ref).
-"""
+"""Tests for pinning a floating tag Action (@vN or @vN.M.P) to a commit SHA."""
 
 from __future__ import annotations
 
@@ -89,7 +83,7 @@ def test_pin_sha_exact_tag_pins_to_own_sha_and_replaces_no_comment(
     assert "stale note" not in text
 
 
-def test_pin_sha_cross_major_under_latest_mode(tmp_path: Path) -> None:
+def test_pin_sha_crosses_majors(tmp_path: Path) -> None:
     wf = _wf(tmp_path, "jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@v7\n")
     tags_proc = _make_tags_proc(
         f"v8.0.0 {_V8_0_0}",

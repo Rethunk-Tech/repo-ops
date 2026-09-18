@@ -27,11 +27,6 @@ from repo_ops_upgrade_remediations_rust import remediations as rust_rem
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 
-def _go_result(tmp_path: Path, make_workspace: Any) -> WorkspaceResult:
-    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="test")
-    return WorkspaceResult(workspace=ws)
-
-
 def _git_commit_all(path: Path, message: str = "initial") -> None:
     subprocess.run(["git", "add", "-A"], cwd=str(path), check=True, capture_output=True)
     subprocess.run(

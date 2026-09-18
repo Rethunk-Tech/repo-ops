@@ -1046,7 +1046,7 @@ def scan_actions(
                         pin=pin,
                         latest=latest_target,
                         status="ok",
-                        detail=f"cross-major {pin} -> {latest_target} (latest mode)",
+                        detail=f"cross-major {pin} -> {latest_target}",
                     )
                 )
                 if apply:

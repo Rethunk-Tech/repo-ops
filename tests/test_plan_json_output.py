@@ -1,4 +1,4 @@
-"""JSON stdout contract for repo-ops plan --json."""
+"""Discovery diagnostics and the plan report.json contract."""
 
 from __future__ import annotations
 

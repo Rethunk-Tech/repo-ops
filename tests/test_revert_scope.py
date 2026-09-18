@@ -128,7 +128,7 @@ def test_revert_preserves_preexisting_dirty_tracked_edit(tmp_path: Path, init_gi
     lock = tmp_path / "package-lock.json"
     before_snap = snapshot_workspace_files(ws.path, ws.manager)
 
-    # Operator's pre-existing dirty edit (done before apply, with --allow-dirty).
+    # Operator's pre-existing dirty edit, made before apply.
     app_py.write_text("# version 2 (operator edit)\n", encoding="utf-8")
     dirty_content = app_py.read_bytes()
     before_tree = capture_worktree_state(ws.git_repo)
@@ -188,7 +188,7 @@ def test_revert_preserves_preexisting_dirty_artifact_not_in_snapshot(
     # Capture pre-apply snapshot (npm lockfiles only — requirements.txt not included).
     before_snap = snapshot_workspace_files(ws.path, ws.manager)
 
-    # Operator dirty-edits requirements.txt before apply (simulates --allow-dirty run).
+    # Operator dirty-edits requirements.txt before apply.
     req.write_text("flask==2.0.0\nrequests==2.28.0\n", encoding="utf-8")
     dirty_content = req.read_bytes()
     before_tree = capture_worktree_state(ws.git_repo)

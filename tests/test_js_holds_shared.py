@@ -18,8 +18,6 @@ from repo_ops_js.holds import enforce_holds
 from repo_ops_models import Workspace
 
 _GLOBAL_HOLDS_CACHE = "repo_ops_core.holds._global_holds_cached"
-_REPO_HOLDS_CACHE = "repo_ops_core.holds._repo_holds_cached"
-_RESOLVER_PATH = "repo_ops_lockfiles.snapshots.resolved_version_from_node_modules"
 
 
 def test_workspace_rel_falls_back_when_path_outside_git_repo(tmp_path: Path) -> None:

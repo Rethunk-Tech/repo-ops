@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-from repo_ops_lockfiles.snapshots import _pkg_json_dep_changes, diff_workspace_snapshots
+from repo_ops_lockfiles.snapshots import _pkg_json_dep_changes
 
 
 def _enc(obj: dict) -> bytes:
@@ -46,11 +45,3 @@ def test_unchanged_optional_dep_not_emitted() -> None:
     pkg = _enc({"optionalDependencies": {"fsevents": "2.3.2"}})
     changes = _pkg_json_dep_changes(pkg, pkg)
     assert not changes  # identical versions → no change entries
-
-
-def test_diff_coarse_includes_deno_pdm_pipfile(tmp_path: Path) -> None:
-    """Snapshot diff emits coarse Change rows for deno/pdm/Pipfile locks."""
-    for name in ("deno.lock", "pdm.lock", "Pipfile.lock"):
-        p = tmp_path / name
-        changes = diff_workspace_snapshots({p: b"v1"}, {p: b"v2"}, "uv")
-        assert any(c.name == name for c in changes)

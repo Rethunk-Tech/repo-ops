@@ -1,8 +1,8 @@
-"""--on-verify-fail=revert returns the repo to its exact pre-apply state.
+"""A fleet-sweep verify failure returns the repo to its exact pre-apply state.
 
 Covers what a manager-lockfile snapshot alone misses: files a remediation hook
 rewrote (biome.json ``$schema``), a verify that raises instead of returning an
-error, an operator's --allow-dirty edit to a file apply also rewrote, the
+error, an operator's pre-existing edit to a file apply also rewrote, the
 installed dependency tree, and sibling workspaces whose repo commit is vetoed.
 """
 

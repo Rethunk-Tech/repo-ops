@@ -1,4 +1,4 @@
-"""Yarn latest-mode behind-after-up surfacing.
+"""Yarn behind-after-up surfacing.
 
 After ``yarn up -R '*'``, peer/group-constrained direct deps can be left below
 their newest published version. repo-ops now reports those as ``behind_latest``
@@ -67,7 +67,7 @@ def test_behind_after_up_resilient_to_info_failure(tmp_path: Path, monkeypatch) 
     assert behind == []  # info failure skips the package, never raises
 
 
-def test_apply_yarn_returns_behind_in_latest_mode(tmp_path: Path, monkeypatch) -> None:
+def test_apply_yarn_returns_behind(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path)
     ws = Workspace(
         path=tmp_path,

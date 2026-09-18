@@ -9,13 +9,6 @@ from unittest.mock import patch
 
 from repo_ops_py_pipenv.pipenv import apply_pipenv, check_pipenv
 
-_OUTDATED_OUTPUT = """\
-Package    Version  Latest  Type
----------- -------  ------  -----
-requests   2.28.0   2.31.0  wheel
-certifi    2022.12.7 2023.7.22 wheel
-"""
-
 
 def test_check_pipenv_raises_when_pip_fails(tmp_path: Path, make_workspace) -> None:
     """When the venv probe succeeds but pip list fails, check_pipenv raises RuntimeError."""

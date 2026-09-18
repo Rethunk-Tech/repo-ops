@@ -3,41 +3,13 @@
 import json
 from unittest.mock import patch
 
-from repo_ops_core.holds import HoldRule
 from repo_ops_rust.rust import (
     _cargo_registry_versions,
 )
 
 _GLOBAL_HOLDS_CACHE = "repo_ops_core.holds._global_holds_cached"
-_REPO_HOLDS_CACHE = "repo_ops_core.holds._repo_holds_cached"
-_REGISTRY_VERSIONS = "repo_ops_rust.rust._cargo_registry_versions"
 _REGISTRY_CONNECTION = "repo_ops_rust.rust.HTTPSConnection"
 _CRATE = "serde"
-
-
-def _held_rule(**overrides) -> HoldRule:
-    defaults = {"package": _CRATE, "max_version": "1.5"}
-    defaults.update(overrides)
-    return HoldRule(**defaults)
-
-
-def _metadata(crate_versions: str | tuple[str, ...]) -> str:
-    if isinstance(crate_versions, str):
-        crate_versions = (crate_versions,)
-    packages = [
-        {
-            "id": f"registry+https://example.invalid#{_CRATE}@{version}",
-            "name": _CRATE,
-            "version": version,
-        }
-        for version in crate_versions
-    ]
-    return json.dumps(
-        {
-            "packages": packages,
-            "resolve": {"nodes": [{"id": package["id"]} for package in packages]},
-        }
-    )
 
 
 def test_cargo_registry_versions_follows_seek_pagination() -> None:

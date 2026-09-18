@@ -219,7 +219,7 @@ def test_print_human_report_report_only_marker(tmp_path: Path, capsys) -> None:
                 "v3.19.0",
                 "v4.0.0",
                 status="ok",
-                detail="cross-major v3.19.0 -> v4.0.0 (latest mode)",
+                detail="cross-major v3.19.0 -> v4.0.0",
             ),
         ],
         actions_workflows_scanned=1,
@@ -233,7 +233,7 @@ def test_print_human_report_report_only_marker(tmp_path: Path, capsys) -> None:
     assert "slackapi/slack-github-action@v3.19.0 → v4.0.0 [ok]" in out
 
 
-def test_only_outdated_human_report_sort_suppress_align(tmp_path: Path, capsys) -> None:
+def test_human_report_sort_suppress_align(tmp_path: Path, capsys) -> None:
     """--only-outdated sorts heaviest-first, suppresses empty headers,
     and aligns change rows; build_run_summary carries packages_upgraded."""
     heavy_repo = tmp_path / "heavy"

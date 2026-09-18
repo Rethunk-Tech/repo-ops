@@ -198,34 +198,7 @@ def test_check_sha_only_pin_is_report_only(tmp_path: Path) -> None:
     assert bumps[0].current_tag == ""
 
 
-def test_check_sha_only_pin_refreshes_with_opt_in(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    link = _make_link(tmp_path)
-    current_sha = "a" * 40
-    with (
-        patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value=None),
-        patch(
-            "repo_ops_upgrade.submodules._current_submodule_sha",
-            return_value=current_sha,
-        ),
-        patch(
-            "repo_ops_upgrade.submodules._fetch_remote_tag_refs",
-            return_value=[
-                (current_sha, "v1.0.0"),
-                ("b" * 40, "v1.1.0"),
-                ("c" * 40, "v2.0.0"),
-            ],
-        ),
-    ):
-        bumps = check_submodule_tag_advances([link])
-    assert len(bumps) == 1
-    assert bumps[0].is_actionable
-    assert bumps[0].current_tag == ""
-    assert bumps[0].latest_tag == "v1.1.0"
-
-
-def test_check_sha_refresh_stays_within_major_under_update_latest(
+def test_check_sha_refresh_stays_within_major(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     link = _make_link(tmp_path)
@@ -398,7 +371,7 @@ def test_apply_calls_fetch_checkout_add_for_actionable(tmp_path: Path, make_proc
     assert calls[2][0][2] == "sub"
 
 
-def test_apply_refreshes_sha_only_pin_with_opt_in(
+def test_apply_refreshes_sha_only_pin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
     link = _make_link(tmp_path)

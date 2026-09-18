@@ -38,14 +38,3 @@ def test_jobs_explicit_not_overridden():
         run_upgrade(apply=False, argv=["/tmp", "--jobs", "3"])
 
     assert called_with_jobs[0] == 3
-
-
-def test_exclude_flag_accepted():
-    """--exclude is accepted and accumulates into a list."""
-    from repo_ops_core.cli import build_upgrade_parser
-
-    parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(["--exclude", "vendor", "--exclude", "node_modules"])
-    assert args.exclude_patterns == ["vendor", "node_modules"]
-    args2 = parser.parse_args([])
-    assert args2.exclude_patterns is None

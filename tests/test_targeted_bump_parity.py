@@ -20,28 +20,9 @@ from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.report import _behind_latest_hint
 
 # ---------------------------------------------------------------------------
-# Shared fixture: a minimal flat bun workspace so main_plan has something to
-# discover and does not exit early on empty-roots.
+# _behind_latest_hint parity — _behind_latest_hint parity for npm/pnpm/bun
 # ---------------------------------------------------------------------------
 
-
-def _bun_workspace(tmp_path: Path, init_git_repo) -> None:
-    init_git_repo(tmp_path)
-    (tmp_path / "package.json").write_text(
-        '{"name":"root","packageManager":"bun@1.3.14"}',
-        encoding="utf-8",
-    )
-    (tmp_path / "bun.lock").write_text("", encoding="utf-8")
-
-
-# ---------------------------------------------------------------------------
-# Contract 3 — _behind_latest_hint parity for npm/pnpm/bun
-# ---------------------------------------------------------------------------
-
-# Managers whose targeted bump has no separate --<manager>-targeted-bump CLI
-# flag (only npm) name "no latest mode" in the not-requested hint;
-# py managers with no latest-mode concept at all still say so but skip the
-# generic "bump manually" close since it duplicates that sentence for them.
 _TRIED_FRAGMENT = "the targeted bump was attempted but could not move them"
 
 _BEHIND_LATEST_HINT_CASES = [

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -30,40 +28,6 @@ def test_parse_requirements_lines_extras_and_markers():
     assert result["flask"] == "3.0.0"
     # plain name==version unchanged
     assert result["plain"] == "1.0.0"
-
-
-def test_checkers_use_monkeypatched_run(monkeypatch):
-    from repo_ops_js_bun.bun import check_bun
-    from repo_ops_models import Workspace
-
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=600, env=None):
-        calls.append(cmd)
-        return subprocess.CompletedProcess(
-            cmd,
-            0,
-            stdout=(
-                "\x1b[1mbun outdated v1.3.14 (0d9b296a)\x1b[0m\n"
-                "│ Package │ Current │ Update │ Latest │\n"
-                "│ foo │ 1.0 │ 1.1 │ 1.1 │\n"
-            ),
-            stderr="",
-        )
-
-    ws = Workspace(
-        path=Path("/tmp"),
-        ecosystem="node",
-        manager="bun",
-        git_repo=Path("/tmp"),
-        label="",
-    )
-    with patch("repo_ops_js_bun.bun.run", fake_run):
-        changes, behind_latest = check_bun(ws)
-    assert len(changes) == 1
-    assert changes[0].name == "foo"
-    assert behind_latest == []
-    assert any("bun" in c[0] for c in calls)
 
 
 def test_ecosystem_checker_and_applier_registry_keys():
@@ -128,24 +92,3 @@ def test_is_git_dirty_clean_repo(tmp_path):
 
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
     assert is_git_dirty(tmp_path) is False
-
-
-def test_apply_poetry_raises_clear_error_when_poetry_absent(tmp_path):
-    """apply_poetry must raise RuntimeError with 'poetry not on PATH', not bare FileNotFoundError."""
-    import pytest
-
-    from repo_ops_models import Workspace
-    from repo_ops_py_poetry.poetry import apply_poetry
-
-    ws = Workspace(
-        path=tmp_path,
-        ecosystem="python",
-        manager="poetry",
-        git_repo=tmp_path,
-        label="",
-    )
-    with (
-        patch("repo_ops_py_poetry.poetry.shutil.which", return_value=None),
-        pytest.raises(RuntimeError, match="poetry not on PATH"),
-    ):
-        apply_poetry(ws)

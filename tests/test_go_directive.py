@@ -7,7 +7,6 @@ Covers:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -24,17 +23,6 @@ from repo_ops_go.go import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _gomod_json(go_ver: str = "1.22", toolchain: str | None = None) -> str:
-    doc: dict = {
-        "Module": {"Path": "example.com/main"},
-        "Go": go_ver,
-        "Require": [],
-    }
-    if toolchain is not None:
-        doc["Toolchain"] = f"go{toolchain}"
-    return json.dumps(doc)
 
 
 # ---------------------------------------------------------------------------

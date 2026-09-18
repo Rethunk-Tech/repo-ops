@@ -10,8 +10,6 @@ No subprocess or network calls are made.
 
 from __future__ import annotations
 
-import json
-
 from repo_ops_js_bun.bun import (
     _changes_from_bun_text,
     _valid_bun_package_name,
@@ -153,36 +151,3 @@ def test_valid_bun_package_name_scoped_accepted() -> None:
 # ---------------------------------------------------------------------------
 # bun audit: JSON-first path in _audit_node
 # ---------------------------------------------------------------------------
-
-_NPM_AUDIT_JSON_WITH_VULNS = json.dumps(
-    {
-        "auditReportVersion": 2,
-        "vulnerabilities": {
-            "lodash": {
-                "name": "lodash",
-                "severity": "high",
-                "via": [
-                    {
-                        "source": 1469,
-                        "name": "lodash",
-                        "dependency": "lodash",
-                        "title": "Prototype Pollution",
-                        "url": "https://npmjs.com/advisories/1469",
-                        "severity": "high",
-                        "range": "<4.17.19",
-                    }
-                ],
-            }
-        },
-        "metadata": {
-            "vulnerabilities": {
-                "info": 0,
-                "low": 0,
-                "moderate": 0,
-                "high": 1,
-                "critical": 0,
-                "total": 1,
-            }
-        },
-    }
-)

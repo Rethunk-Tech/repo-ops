@@ -30,8 +30,8 @@ _TARGETED_TRIED_HINT: dict[str, str] = {
         "not move them (verify failed or still constrained) — bump manually"
     ),
     "npm": (
-        "no latest mode; the targeted bump was attempted but could not move "
-        "them (install failed or version did not advance) — bump manually"
+        "the targeted bump was attempted but could not move them "
+        "(install failed or version did not advance) — bump manually"
     ),
     "pnpm": (
         "the targeted bump was attempted but could not move them "

@@ -28,20 +28,6 @@ def _held_rule(**overrides) -> HoldRule:
     return HoldRule(**defaults)
 
 
-def _seed_is_odd_pin(d) -> None:
-    (d / "import_map.json").write_text(
-        json.dumps({"imports": {"npm:is-odd": "npm:is-odd@0.1.2"}}),
-        encoding="utf-8",
-    )
-
-
-def _seed_assert_pin(d) -> None:
-    (d / "import_map.json").write_text(
-        json.dumps({"imports": {"jsr:@std/assert": "jsr:@std/assert@1.0.0"}}),
-        encoding="utf-8",
-    )
-
-
 @pytest.mark.parametrize(
     ("left", "right", "expected"),
     [

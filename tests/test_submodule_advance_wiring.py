@@ -29,7 +29,6 @@ from repo_ops_upgrade.post_apply_commit import (
 )
 from repo_ops_upgrade.submodules import (
     SubmoduleLink,
-    SubmoduleTagBump,
     _clear_submodule_tag_cache,
     apply_submodule_tag_advances,
 )
@@ -44,26 +43,6 @@ def _clear_cache():
     _clear_submodule_tag_cache()
     yield
     _clear_submodule_tag_cache()
-
-
-def _make_actionable_bump(
-    tmp_path: Path,
-    *,
-    path: str = "sub",
-    url: str = "https://example.com/sub.git",
-    current_tag: str = "v1.0.0",
-    latest_tag: str = "v1.1.0",
-) -> SubmoduleTagBump:
-    git_repo = (tmp_path / path).resolve()
-    git_repo.mkdir(parents=True, exist_ok=True)
-    return SubmoduleTagBump(
-        path=path,
-        url=url,
-        current_tag=current_tag,
-        latest_tag=latest_tag,
-        parent=tmp_path.resolve(),
-        git_repo=git_repo,
-    )
 
 
 def _make_bundle(git_repo: Path, *, with_change: bool = False) -> RepoBundle:
@@ -144,7 +123,6 @@ def test_apply_submodule_tag_advances_invoked_via_run(
     )
     monkeypatch.setattr(sub_mod, "discover_submodules_under_roots", lambda *a, **kw: [fake_link])
 
-    # run_upgrade with --submodules + apply (--flat so no two-level walk)
     import contextlib
 
     with contextlib.suppress(SystemExit):

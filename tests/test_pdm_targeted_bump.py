@@ -69,11 +69,6 @@ def _pipenv_seed(tmp_path: Path) -> None:
     )
 
 
-def _pip_tools_seed(tmp_path: Path) -> None:
-    (tmp_path / "requirements.in").write_text("requests==2.28.0\n", encoding="utf-8")
-    (tmp_path / "requirements.txt").write_text("requests==2.31.0\n", encoding="utf-8")
-
-
 def _write_locked_version(path: Path, version: str) -> None:
     if path.name == "Pipfile.lock":
         path.write_text(

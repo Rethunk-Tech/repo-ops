@@ -367,7 +367,7 @@ def test_check_container_deduplicates_same_image(tmp_path: Path) -> None:
     assert len(nginx_changes) == 1
 
 
-def test_check_container_cross_major_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_container_crosses_majors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / "Dockerfile").write_text("FROM nginx:1.25\n")
 
     with patch(

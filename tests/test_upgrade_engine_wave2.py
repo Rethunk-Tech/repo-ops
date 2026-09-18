@@ -1,4 +1,4 @@
-"""Upgrade-engine coverage for orchestration go_generate gate, verify gates for
+"""Upgrade-engine coverage for verify gates for
 pdm/pipenv/hatch/deno/precommit, filter_workspaces, apply-fail remediations skip,
 missing applier, worker-crash reconciliation helpers, exclude filtering, and
 children-first level scheduling seams exercised via focused unit tests.
@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from subprocess import CompletedProcess
 from typing import Any
 from unittest.mock import patch
 
@@ -20,23 +19,6 @@ from repo_ops_upgrade import orchestration, registry
 from repo_ops_upgrade.verify import verify_workspace
 
 # ── helpers ──────────────────────────────────────────────────────────────────
-
-
-def _ok(stdout: str = "", stderr: str = "") -> CompletedProcess[str]:
-    return CompletedProcess([], 0, stdout=stdout, stderr=stderr)
-
-
-def _fail(stdout: str = "", stderr: str = "err") -> CompletedProcess[str]:
-    return CompletedProcess([], 1, stdout=stdout, stderr=stderr)
-
-
-def _go_ws_with_generate(tmp_path: Path, make_workspace) -> WorkspaceResult:
-    (tmp_path / "go.mod").write_text("module example.com/m\n\ngo 1.21\n")
-    (tmp_path / "gen.go").write_text("package main\n//go:generate echo hi\n", encoding="utf-8")
-    ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
-    result = WorkspaceResult(workspace=ws, status="ok")
-    result.changes = [Change("golang.org/x/tools", "1", "2")]
-    return result
 
 
 # ══════════════════════════════════════════════════════════════════════════════
