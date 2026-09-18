@@ -9,33 +9,6 @@ commits, and later sections assume the earlier ones. The plan comes from an
 audit (waste/debt/bypass lenses) measured against 362 unique recorded
 invocations. Every decision below was taken by the operator; none is open.
 
-## 1. Auto-commit sweeps up whatever was already staged
-
-`execute_commit_plan` stages each planned file, then runs `git commit -m MSG`
-with no pathspec, so anything a person or sibling session had already staged
-in that repo is committed under repo-ops' `chore(deps)` message. Section 4
-makes commit the default, so this lands first.
-
-Decided shape: `git commit -m MSG -- <plan.files>` (pathspec-limited commit),
-same for the umbrella commit.
-
-### Read
-
-- `src/repo_ops_upgrade/post_apply_commit.py:523-570` `execute_commit_plan`.
-- `src/repo_ops_upgrade/post_apply_commit.py` `commit_umbrella_submodule_pointers`
-  (the `git commit` near its end) — same shape.
-
-### Traps
-
-- **Pathspec commit with a gitlink.** `git commit -- <submodule path>` commits
-  the gitlink only; confirm in a test with a real submodule, not a mock.
-
-### Acceptance
-
-- Test: a repo with an unrelated file staged before apply's commit; after the
-  commit that file is still staged and absent from `git show --stat HEAD`.
-- Full gate green.
-
 ## 2. Nine subcommands, most unused, each with its own flag dialect
 
 Measured over 362 unique invocations: `apply` and `plan` carry the tool;

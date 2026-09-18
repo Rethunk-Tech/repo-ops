@@ -545,11 +545,15 @@ def execute_commit_plan(plan: CommitPlan, *, dry_run: bool) -> CommitOutcome:
                 "failed",
                 detail=f"git add {path!r}: {err}",
             )
+    # Pathspec-limited: anything someone else already staged stays staged and
+    # out of repo-ops' commit.
     commit = run_git(
         plan.git_repo,
         "commit",
         "-m",
         plan.message,
+        "--",
+        *plan.files,
         timeout=120,
     )
     if commit.returncode != 0:
@@ -772,7 +776,7 @@ def commit_umbrella_submodule_pointers(
         if add_failed:
             continue
 
-        commit = run_git(umbrella, "commit", "-m", message, timeout=120)
+        commit = run_git(umbrella, "commit", "-m", message, "--", *dirty_paths, timeout=120)
         if commit.returncode != 0:
             err = (commit.stderr or commit.stdout or "git commit failed").strip()
             outcome = CommitOutcome(umbrella, label, "failed", detail=err)

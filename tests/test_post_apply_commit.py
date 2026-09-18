@@ -1048,3 +1048,23 @@ def test_upgrade_scoped_paths_includes_container_files(tmp_path: Path, init_git_
     )
     assert "Containerfile" in scoped
     assert "unrelated.txt" not in scoped
+
+
+def test_commit_leaves_previously_staged_files_out(tmp_path: Path, init_git_repo) -> None:
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
+    (tmp_path / "notes.md").write_text("someone else's work\n", encoding="utf-8")
+    subprocess.run(["git", "add", "notes.md"], cwd=tmp_path, check=True)
+    (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
+    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
+    plan = post_apply_commit.plan_repo_commit(
+        bundle, mode="conventional", allow_dirty=True, commit_on_fail=False
+    )
+    assert post_apply_commit.execute_commit_plan(plan, dry_run=False).status == "committed"
+
+    def _git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, capture_output=True, text=True, check=True
+        ).stdout
+
+    assert _git("show", "--name-only", "--format=", "HEAD").split() == ["package-lock.json"]
+    assert _git("diff", "--cached", "--name-only").split() == ["notes.md"]
