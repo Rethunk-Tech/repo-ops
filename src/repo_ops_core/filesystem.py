@@ -55,6 +55,32 @@ def new_run_dir(command: str) -> Path:
     return run_dir
 
 
+def is_workspace_member(mdir: Path, root: Path, patterns: set[str]) -> bool:
+    """True when *mdir* is a workspace member of *root* under one of *patterns*.
+
+    Patterns are the manager's member globs (npm/yarn ``workspaces``, uv and
+    Cargo ``members``). Matching is separator-aware, so ``packages/foo`` never
+    matches the sibling ``packages/foobar``.
+    """
+    try:
+        rel = mdir.relative_to(root).as_posix()
+    except ValueError:
+        return False
+    for pattern in patterns:
+        if rel == pattern.removesuffix("/*").removesuffix("/") or _under(
+            rel, pattern.replace("*", "")
+        ):
+            return True
+        if pattern.endswith("/*") and _under(rel, pattern[:-2]):
+            return True
+    return False
+
+
+def _under(rel: str, prefix: str) -> bool:
+    prefix = prefix.rstrip("/")
+    return rel == prefix or rel.startswith(prefix + "/")
+
+
 def should_exclude(path: str) -> bool:
     return any(fragment in path for fragment in EXCLUDE_PATH_FRAGMENTS)
 

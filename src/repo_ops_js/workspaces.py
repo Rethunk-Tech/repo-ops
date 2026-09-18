@@ -143,28 +143,6 @@ def yarn_workspace_members(mdir: Path) -> set[str]:
     return members
 
 
-def path_is_yarn_workspace_child(mdir: Path, root: Path, members: set[str]) -> bool:
-    try:
-        rel = mdir.relative_to(root).as_posix()
-    except ValueError:
-        return False
-    for pattern in members:
-        pat = pattern.replace("*", "")
-        if rel == pattern.rstrip("/*") or _under(rel, pat):
-            return True
-    return False
-
-
-def _under(rel: str, prefix: str) -> bool:
-    """True when *rel* equals *prefix* or sits under it on a path boundary.
-
-    Separator-aware so ``packages/foo`` does not match the sibling
-    ``packages/foobar``.
-    """
-    prefix = prefix.rstrip("/")
-    return rel == prefix or rel.startswith(prefix + "/")
-
-
 def member_workspaces(ws: Workspace) -> list[Workspace]:
     """A monorepo root's members, each as a ``Workspace`` at its own directory.
 

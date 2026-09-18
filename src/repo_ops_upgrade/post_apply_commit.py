@@ -8,8 +8,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from repo_ops_core.filesystem import is_workspace_member
 from repo_ops_core.git import run_git
-from repo_ops_js.workspaces import path_is_yarn_workspace_child, yarn_workspace_members
+from repo_ops_js.workspaces import yarn_workspace_members
 from repo_ops_lockfiles.constants import (
     GO_LOCKFILES,
     NODE_LOCKFILES,
@@ -261,7 +262,7 @@ def upgrade_scoped_paths(
         if base == "package.json" and node_workspace_roots:
             member_dir = (bundle.git_repo / norm).resolve().parent
             for root_path, members in node_workspace_roots:
-                if path_is_yarn_workspace_child(member_dir, root_path, members):
+                if is_workspace_member(member_dir, root_path, members):
                     scoped.append(path)
                     break
     return scoped

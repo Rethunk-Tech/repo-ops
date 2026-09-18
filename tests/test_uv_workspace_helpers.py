@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from repo_ops_core.filesystem import _under, is_workspace_member
 from repo_ops_py_uv.uv import (
-    _under,
-    path_is_uv_workspace_child,
     uv_workspace_members,
 )
 
@@ -39,7 +38,7 @@ def test_path_is_uv_workspace_child_glob(tmp_path: Path) -> None:
     child = tmp_path / "packages" / "demo"
     child.mkdir(parents=True)
     members = {"packages/*"}
-    assert path_is_uv_workspace_child(child, root, members) is True
+    assert is_workspace_member(child, root, members) is True
     sibling = tmp_path / "other" / "demo"
     sibling.mkdir(parents=True)
-    assert path_is_uv_workspace_child(sibling, root, members) is False
+    assert is_workspace_member(sibling, root, members) is False

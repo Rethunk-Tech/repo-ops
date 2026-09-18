@@ -13,6 +13,7 @@ from repo_ops_core.holds import resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
 from repo_ops_core.version_utils import version_parts, version_satisfies_ceiling
+from repo_ops_lockfiles.parsers import toml_lock_versions
 from repo_ops_models import Change, Workspace
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
 from repo_ops_py.pypi import pypi_latest as _pypi_latest
@@ -28,16 +29,7 @@ from repo_ops_py.version_ceiling import enforce_version_ceilings
 
 def _poetry_lock_versions(ws: Workspace) -> dict[str, str]:
     """name → resolved version, parsed from poetry.lock's ``[[package]]`` entries."""
-    data = read_toml_file(ws.path / "poetry.lock") or {}
-    out: dict[str, str] = {}
-    for pkg in data.get("package", []):
-        if not isinstance(pkg, dict):
-            continue
-        name = pkg.get("name")
-        version = pkg.get("version")
-        if name and version:
-            out[str(name)] = str(version)
-    return out
+    return toml_lock_versions(ws.path / "poetry.lock")
 
 
 def _poetry_requirement_satisfied(version: str, requirement: str) -> bool:

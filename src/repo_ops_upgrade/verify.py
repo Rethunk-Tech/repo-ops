@@ -40,6 +40,7 @@ from repo_ops_core.filesystem import read_json_file, read_toml_file
 from repo_ops_core.process import run
 from repo_ops_js.workspaces import pm_run_prefix
 from repo_ops_models import Workspace
+from repo_ops_py.requirements import parse_requirements_lines
 from repo_ops_upgrade.constants import YARN_PEER_WARN
 
 logger = logging.getLogger(__name__)
@@ -440,19 +441,6 @@ def verify_workspace(ws: Workspace) -> str | None:
     return None
 
 
-def _parse_req_lines(text: str) -> dict[str, str]:
-    """Parse pinned versions from a requirements.txt-format string."""
-    versions: dict[str, str] = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or line.startswith("-"):
-            continue
-        m = re.match(r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*==\s*([^;\s]+)", line)
-        if m:
-            versions[m.group(1).lower().replace("_", "-")] = m.group(2)
-    return versions
-
-
 def _verify_pip_tools(ws: Workspace, *, timeout: int | None = None) -> str | None:
     """Verify pip-tools workspace by recompiling requirements.in and checking for drift."""
     req_in = ws.path / "requirements.in"
@@ -483,8 +471,8 @@ def _verify_pip_tools(ws: Workspace, *, timeout: int | None = None) -> str | Non
         return None
     if not req_txt.exists():
         return "requirements.txt missing after apply"
-    current = _parse_req_lines(req_txt.read_text(encoding="utf-8", errors="replace"))
-    proposed = _parse_req_lines(compiled)
+    current = parse_requirements_lines(req_txt.read_text(encoding="utf-8", errors="replace"))
+    proposed = parse_requirements_lines(compiled)
     if not proposed:
         return None
     drift = {pkg for pkg in set(current) | set(proposed) if current.get(pkg) != proposed.get(pkg)}

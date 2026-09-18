@@ -14,9 +14,9 @@ from unittest.mock import patch
 
 import pytest
 
+from repo_ops_core.filesystem import is_workspace_member
 from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import orchestration, registry
-from repo_ops_upgrade.discovery import path_is_cargo_workspace_child
 from repo_ops_upgrade.verify import verify_workspace
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -352,7 +352,7 @@ def test_cargo_implicit_members_not_treated_as_children(tmp_path: Path) -> None:
     root = tmp_path
     child = tmp_path / "crates" / "util"
     child.mkdir(parents=True)
-    assert path_is_cargo_workspace_child(child, root, set()) is False
+    assert is_workspace_member(child, root, set()) is False
 
 
 # ══════════════════════════════════════════════════════════════════════════════

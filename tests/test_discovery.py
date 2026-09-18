@@ -471,25 +471,15 @@ def test_discover_repos_git_common_dir_fnf_skips_and_warns(
     )
 
 
-@pytest.mark.parametrize(
-    "matcher",
-    [
-        "repo_ops_js.workspaces:path_is_yarn_workspace_child",
-        "repo_ops_py_uv.uv:path_is_uv_workspace_child",
-        "repo_ops_upgrade.discovery:path_is_cargo_workspace_child",
-    ],
-)
-def test_workspace_member_match_is_separator_bound(matcher: str):
-    """Prefix match must respect a path boundary in all three packages.
+def test_workspace_member_match_is_separator_bound():
+    """Member prefix matching must respect a path boundary.
 
     A sibling dir (``packages/foobar``) must not be matched as a child of the
     member pattern ``packages/foo``; the same for ``apps`` vs ``apps-legacy``.
     Real children must still match.
     """
-    import importlib
+    from repo_ops_core.filesystem import is_workspace_member as is_child
 
-    mod_name, fn_name = matcher.split(":")
-    is_child = getattr(importlib.import_module(mod_name), fn_name)
     root = Path("/r")
 
     # Exact-name member: sibling rejected, exact + nested accepted.

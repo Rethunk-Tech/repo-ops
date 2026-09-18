@@ -214,18 +214,18 @@ def versions_bun_lock(p: Path) -> set[str]:
     return out
 
 
-def _versions_toml_lock(p: Path) -> set[str]:
-    """Shared body for TOML lockfiles with ``[[package]]`` name/version entries."""
-    d = read_toml_file(p) or {}
-    out: set[str] = set()
-    for pkg in d.get("package", []):
-        if not isinstance(pkg, dict):
-            continue
-        name = pkg.get("name")
-        ver = pkg.get("version")
-        if name and ver:
-            out.add(f"{name}@{ver}")
+def toml_lock_versions(p: Path) -> dict[str, str]:
+    """name → version from a TOML lockfile's ``[[package]]`` entries (uv, pdm, poetry)."""
+    out: dict[str, str] = {}
+    for pkg in (read_toml_file(p) or {}).get("package", []):
+        if isinstance(pkg, dict) and pkg.get("name") and pkg.get("version"):
+            out[str(pkg["name"])] = str(pkg["version"])
     return out
+
+
+def _versions_toml_lock(p: Path) -> set[str]:
+    """TOML lockfile → set of name@version."""
+    return {f"{name}@{ver}" for name, ver in toml_lock_versions(p).items()}
 
 
 def versions_pdm_lock(p: Path) -> set[str]:

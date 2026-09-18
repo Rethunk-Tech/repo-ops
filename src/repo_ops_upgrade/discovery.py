@@ -12,16 +12,15 @@ from pathlib import Path
 
 from repo_ops_container.container import is_container_workspace
 from repo_ops_core.discovery import discover_repos
-from repo_ops_core.filesystem import read_toml_file
+from repo_ops_core.filesystem import is_workspace_member, read_toml_file
 from repo_ops_core.git import git_repo_for, repo_label
 from repo_ops_core.walk import iter_scanned_dirs
 from repo_ops_js.workspaces import (
     detect_node_manager,
-    path_is_yarn_workspace_child,
     yarn_workspace_members,
 )
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
-from repo_ops_py_uv.uv import path_is_uv_workspace_child, uv_workspace_members
+from repo_ops_py_uv.uv import uv_workspace_members
 from repo_ops_upgrade.actions import discover_workflow_files
 from repo_ops_upgrade.precommit import is_precommit_workspace
 
@@ -175,36 +174,6 @@ def cargo_workspace_excludes(mdir: Path) -> set[str]:
     return _cargo_workspace_globs(mdir, "exclude")
 
 
-def path_is_cargo_workspace_child(mdir: Path, root: Path, members: set[str]) -> bool:
-    """True when *mdir* is a Cargo workspace child under *root*.
-
-    Uses separator-aware prefix matching.  The *members* set may contain
-    resolved member directories from Cargo metadata or manifest globs as a
-    fallback.
-    """
-    try:
-        rel = mdir.relative_to(root).as_posix()
-    except ValueError:
-        return False
-    for pattern in members:
-        pat = pattern.replace("*", "")
-        if rel == pattern.removesuffix("/*").removesuffix("/") or _under(rel, pat):
-            return True
-        if pattern.endswith("/*") and _under(rel, pattern[:-2]):
-            return True
-    return False
-
-
-def _under(rel: str, prefix: str) -> bool:
-    """True when *rel* equals *prefix* or sits under it on a path boundary.
-
-    Separator-aware so ``packages/foo`` does not match the sibling
-    ``packages/foobar``.
-    """
-    prefix = prefix.rstrip("/")
-    return rel == prefix or rel.startswith(prefix + "/")
-
-
 # ---------- Workspace discovery ----------
 
 
@@ -308,7 +277,7 @@ def discover_workspaces_in_root(
         # The walk is top-down, so a workspace root is always registered before
         # its members are visited.
         for wr, members in node_workspace_roots.items():
-            if mdir != wr and path_is_yarn_workspace_child(mdir, wr, members):
+            if mdir != wr and is_workspace_member(mdir, wr, members):
                 return
         mgr, warn = detect_node_manager(mdir)
         if not mgr:
@@ -373,7 +342,7 @@ def discover_workspaces_in_root(
         # has a Cargo.toml with [package] but no own Cargo.lock; without this
         # guard every member surfaced as a standalone rust workspace.
         for cr, members in cargo_roots.items():
-            if mdir != cr and path_is_cargo_workspace_child(mdir, cr, members):
+            if mdir != cr and is_workspace_member(mdir, cr, members):
                 return
         lock = mdir / "Cargo.lock"
         d = read_toml_file(cargo) or {}
@@ -414,7 +383,7 @@ def discover_workspaces_in_root(
         ):
             return
         for ur, members in uv_roots.items():
-            if mdir != ur and path_is_uv_workspace_child(mdir, ur, members):
+            if mdir != ur and is_workspace_member(mdir, ur, members):
                 return
         mgr: str | None = None
         if (mdir / "uv.lock").exists():
