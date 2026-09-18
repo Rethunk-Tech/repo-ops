@@ -12,8 +12,8 @@ Design notes
   portion of the matched ``rev:`` line is rewritten; indentation and surrounding
   content are preserved.
 * Tag matching: the latest tag that shares the same prefix style (``v``-prefixed
-  vs bare-numeric) and the same major version (conservative) is selected.  Set
-  ``REPO_OPS_PRECOMMIT_UPDATE_LATEST=1`` to allow cross-major bumps.
+  vs bare-numeric) is selected, across majors. SHA pins refresh within their
+  tagged major.
 * All subprocess and network calls are bounded; failures degrade gracefully to
   report-only entries so the check never raises.
 """
@@ -26,7 +26,6 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
@@ -46,11 +45,6 @@ _PRECOMMIT_CONFIG_NAMES = frozenset(
 
 _REPORT_ONLY_PREFIX = "[report-only] "
 
-# Env-opt-in for cross-major bumps (mirrors REPO_OPS_CONTAINER_UPDATE_LATEST)
-_UPDATE_LATEST_ENV = "REPO_OPS_PRECOMMIT_UPDATE_LATEST"
-
-# Env-opt-in for refreshing SHA-pinned hooks within their tagged major.
-_REFRESH_SHA_ENV = "REPO_OPS_PRECOMMIT_REFRESH_SHA"
 
 # Timeout for git ls-remote (seconds); kept modest since it's per unique repo.
 _LS_REMOTE_TIMEOUT = 30
@@ -65,14 +59,6 @@ _REPO_LINE_RE = re.compile(r"^\s*-\s+repo:\s+(.+?)\s*$")
 
 # Regex to match "  rev: <value>" lines (leading whitespace required).
 _REV_LINE_RE = re.compile(r"^(\s+)rev:\s+(.+?)\s*$")
-
-
-def _precommit_update_latest_enabled(ws: Workspace) -> bool:
-    return resolve_bool_setting("precommit_update_latest", _UPDATE_LATEST_ENV, ws)
-
-
-def _precommit_refresh_sha_enabled(ws: Workspace) -> bool:
-    return resolve_bool_setting("precommit_refresh_sha", _REFRESH_SHA_ENV, ws)
 
 
 # ---------------------------------------------------------------------------
@@ -186,14 +172,12 @@ def _target_within_hold(ws: Workspace, package: str, target_version: str) -> boo
 def _resolve_latest_precommit_rev(
     current_rev: str,
     revs: list[str],
-    *,
-    allow_cross_major: bool = False,
 ) -> str | None:
     """Return the best candidate tag for *current_rev* from *revs*.
 
     See :func:`repo_ops_upgrade.tags.resolve_latest_tag` for matching rules.
     """
-    return tag_utils.resolve_latest_tag(current_rev, revs, allow_cross_major=allow_cross_major)
+    return tag_utils.resolve_latest_tag(current_rev, revs)
 
 
 # ---------------------------------------------------------------------------
@@ -257,8 +241,7 @@ def _resolve_sha_refresh(
     """Resolve a SHA pin to the newest digest within its tagged major.
 
     The tags attached to the pinned commit establish the hook's version intent.
-    The target keeps that tag's prefix style and major, even when
-    ``REPO_OPS_PRECOMMIT_UPDATE_LATEST`` is enabled.
+    The target keeps that tag's prefix style and major.
     """
     return tag_utils.resolve_sha_refresh(current_sha, refs, context="pre-commit")
 
@@ -293,15 +276,9 @@ def check_precommit(ws: Workspace) -> list[Change]:
 
     Returns a list of Change objects.  Non-actionable pins (SHA, branch, network
     errors) use a ``to`` value prefixed with ``[report-only]`` so the report
-    layer can distinguish them.
-
-    Environment variables:
-    - ``REPO_OPS_PRECOMMIT_UPDATE_LATEST=1``: allow cross-major bumps.
-    - ``REPO_OPS_PRECOMMIT_REFRESH_SHA=1``: refresh SHA pins within their
-      resolved tagged major.
+    layer can distinguish them. Tags advance across majors; SHA pins refresh
+    within their resolved tagged major.
     """
-    allow_cross_major = _precommit_update_latest_enabled(ws)
-    refresh_sha = _precommit_refresh_sha_enabled(ws)
     cfg_path = _find_precommit_config(ws.path)
     if cfg_path is None:
         return []
@@ -335,15 +312,14 @@ def check_precommit(ws: Workspace) -> list[Change]:
                     if hold_target is not None:
                         changes.append(Change(name=label, from_ver=rev, to=hold_target))
                         continue
-            if refresh_sha:
-                refs = refs if refs is not None else _fetch_tag_refs_for_repo(repo_url)
-                resolved = _resolve_sha_refresh(rev, refs or [])
-                if resolved is not None:
-                    latest_sha, _current_tag, latest_tag = resolved
-                    if not _target_within_hold(ws, label, latest_tag):
-                        continue
-                    changes.append(Change(name=label, from_ver=rev, to=latest_sha))
+            refs = refs if refs is not None else _fetch_tag_refs_for_repo(repo_url)
+            resolved = _resolve_sha_refresh(rev, refs or [])
+            if resolved is not None:
+                latest_sha, _current_tag, latest_tag = resolved
+                if not _target_within_hold(ws, label, latest_tag):
                     continue
+                changes.append(Change(name=label, from_ver=rev, to=latest_sha))
+                continue
             changes.append(
                 Change(
                     name=label,
@@ -383,7 +359,7 @@ def check_precommit(ws: Workspace) -> list[Change]:
                 changes.append(Change(name=label, from_ver=rev, to=hold_target))
                 continue
 
-        latest = _resolve_latest_precommit_rev(rev, tags, allow_cross_major=allow_cross_major)
+        latest = _resolve_latest_precommit_rev(rev, tags)
         if latest is None:
             continue  # already at latest or indeterminate
 
@@ -489,8 +465,6 @@ def apply_precommit(ws: Workspace) -> None:
     # each get an independent key and their own target rev.
     # Tag cache is already warm from check_precommit above, so these calls are
     # instant cache hits.
-    allow_cross_major = _precommit_update_latest_enabled(ws)
-    refresh_sha = _precommit_refresh_sha_enabled(ws)
     repos = _parse_precommit_repos(text)
 
     line_bumps: dict[int, str] = {}  # 1-indexed rev_line_no → target rev
@@ -500,14 +474,13 @@ def apply_precommit(ws: Workspace) -> None:
         rev_line_no: int = entry["rev_line_no"]
 
         if _is_sha_rev(from_ver):
-            if refresh_sha:
-                refs = _fetch_tag_refs_for_repo(repo_url)
-                resolved = _resolve_sha_refresh(from_ver, refs or [])
-                if resolved is not None:
-                    new_sha, _current_tag, latest_tag = resolved
-                    if not _target_within_hold(ws, _repo_short_name(repo_url), latest_tag):
-                        continue
-                    line_bumps[rev_line_no] = new_sha
+            refs = _fetch_tag_refs_for_repo(repo_url)
+            resolved = _resolve_sha_refresh(from_ver, refs or [])
+            if resolved is not None:
+                new_sha, _current_tag, latest_tag = resolved
+                if not _target_within_hold(ws, _repo_short_name(repo_url), latest_tag):
+                    continue
+                line_bumps[rev_line_no] = new_sha
             continue
 
         if not tag_utils.is_semver_tag(from_ver):
@@ -517,7 +490,7 @@ def apply_precommit(ws: Workspace) -> None:
         if tags is None:
             continue
 
-        new_rev = _resolve_latest_precommit_rev(from_ver, tags, allow_cross_major=allow_cross_major)
+        new_rev = _resolve_latest_precommit_rev(from_ver, tags)
         if new_rev is not None and _target_within_hold(ws, _repo_short_name(repo_url), new_rev):
             line_bumps[rev_line_no] = new_rev
 

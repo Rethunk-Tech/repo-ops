@@ -6,14 +6,6 @@ import json
 import sys
 from pathlib import Path
 
-from repo_ops_core.config import (
-    ambient_env,
-    coerce_bool_setting,
-    load_global_config,
-    load_repo_config,
-    process_env_cli_override,
-    resolve_setting,
-)
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
@@ -39,19 +31,6 @@ from repo_ops_js.workspaces import (
 )
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
-
-_NPM_TARGETED_BUMP_ENV = "REPO_OPS_NPM_TARGETED_BUMP"
-
-
-def _npm_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
-    raw = resolve_setting(
-        "npm_targeted_bump",
-        cli_value=process_env_cli_override(_NPM_TARGETED_BUMP_ENV),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
-    )
-    return coerce_bool_setting(raw)
 
 
 def _save_flag_for(name: str, pkg_data: dict[str, object]) -> list[str]:
@@ -100,12 +79,11 @@ def targeted_bump_behind(
     old version due to an override/exact-pin). On any failure or no-op we restore
     the snapshot, leaving that package behind.
 
-    Opt-in (``REPO_OPS_NPM_TARGETED_BUMP``) and reversible per-package: a bump
-    that fights peer constraints is dropped, never committed. Returns
+    Reversible per-package: a bump that fights peer constraints is dropped, never committed. Returns
     ``(applied, still_behind)`` — ``applied`` carries the real resolved version
     landed.
     """
-    if not behind or not _npm_targeted_bump_enabled(ws):
+    if not behind:
         return [], behind
     # The lockfile and hoisted node_modules live at the monorepo root; the
     # install runs in the member so it saves into the member's manifest.
@@ -207,8 +185,7 @@ def _check_npm_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
     ``wanted`` version equals ``current`` (i.e. only a range-breaking bump
     is available).
 
-    When ``REPO_OPS_NPM_TARGETED_BUMP`` is set, behind_latest candidates are
-    promoted into ``changes`` for plan preview parity with yarn (which runs
+    Behind_latest candidates are promoted into ``changes`` for plan preview parity with yarn (which runs
     targeted bumps on an isolated copy during plan). Apply uses
     :func:`_npm_outdated` directly so this promotion does not affect guards.
 
@@ -218,7 +195,7 @@ def _check_npm_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
     apply path will actually do.
     """
     changes, behind = _npm_outdated(ws)
-    if _npm_targeted_bump_enabled(ws) and behind:
+    if behind:
         promoted: list[Change] = []
         still_behind: list[Change] = []
         for c in behind:
@@ -242,11 +219,9 @@ def apply_npm(ws: Workspace) -> list[Change]:
 def _apply_npm_dir(ws: Workspace, root: Path) -> list[Change]:
     """Apply npm upgrades in one directory; returns still-behind deps after targeted bumps.
 
-    With ``REPO_OPS_NPM_TARGETED_BUMP`` set, each dep that ``npm update`` left
-    behind_latest gets a reversible targeted ``npm install <pkg>@latest``; only
-    bumps that actually advance the resolved version are kept. Returns the subset
-    of behind_latest that could not be moved (the full behind list when targeted
-    bump is unset, or the remaining gaps after targeted bump runs).
+    Each dep that ``npm update`` left behind_latest gets a reversible targeted
+    ``npm install <pkg>@latest``; only bumps that actually advance the resolved
+    version are kept. Returns the subset of behind_latest that could not be moved.
     """
     # Raw outdated split — do not use check_npm (plan may promote behind→changes).
     changes, behind = _npm_outdated(ws)
@@ -257,11 +232,8 @@ def _apply_npm_dir(ws: Workspace, root: Path) -> list[Change]:
     if proc2.returncode != 0:
         raise RuntimeError(proc2.stderr.strip() or "npm install failed")
     if changes:
-        if _npm_targeted_bump_enabled(ws):
-            blocked = unresolved_targets(ws, changes)
-            behind = fold_blocked_into_behind(blocked, behind)
-        else:
-            assert_targets_resolved(ws, changes, manager="npm")
+        blocked = unresolved_targets(ws, changes)
+        behind = fold_blocked_into_behind(blocked, behind)
     applied, behind = targeted_bump_behind(ws, behind, root=root)
     candidate_names = direct_dependency_names(read_json_file(ws.path / "package.json") or {}) | {
         c.name for c in (*changes, *applied, *behind)

@@ -62,32 +62,7 @@ def _patched_check(table_stdout: str, tmp_path: Path, make_workspace):
         return check_bun(make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo"))
 
 
-def test_check_bun_parses_real_ansi_table_in_range(
-    monkeypatch, tmp_path: Path, make_workspace
-) -> None:
-    """Range-respecting (Update column) parsing — pin latest-mode off, since the
-    sweep now defaults it on and this test is specifically about the
-    non-latest bucketing branch."""
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
-    changes, behind_latest = _patched_check(_REAL_BUN_TABLE, tmp_path, make_workspace)
-
-    # Default: range-respecting (Update column). @hono is skipped — its in-range
-    # Update (1.19.14) equals Current; only ai and vitest have in-range bumps.
-    assert [(c.name, c.from_ver, c.to) for c in changes] == [
-        ("ai", "6.0.193", "6.0.195"),
-        ("vitest", "4.1.7", "4.1.8"),
-    ]
-    # The banner must never leak through as a bogus "bun@(hash)" target.
-    assert "bun" not in [c.name for c in changes]
-    assert all("0d9b296a" not in c.to for c in changes)
-    # @hono has a newer latest (2.0.4) but in-range update == current, so behind_latest.
-    assert ("@hono/node-server", "1.19.14", "2.0.4") in [
-        (c.name, c.from_ver, c.to) for c in behind_latest
-    ]
-
-
 def test_check_bun_latest_column_when_opted_in(monkeypatch, tmp_path: Path, make_workspace) -> None:
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
     changes, behind_latest = _patched_check(_REAL_BUN_TABLE, tmp_path, make_workspace)
 
     # Latest column: @hono now upgrades out-of-range to 2.0.4.
@@ -107,24 +82,6 @@ _TABLE_CURRENT_LT_UPDATE_LT_LATEST = (
     # react: current=18.0.0, update=18.3.0 (in-range bump), latest=19.0.0
     "│ react │ 18.0.0 │ 18.3.0 │ 19.0.0 │\n"
 )
-
-
-def test_text_parser_no_double_count_when_current_lt_update_lt_latest(
-    monkeypatch, tmp_path: Path, make_workspace
-) -> None:
-    """Current < update < latest → changes only, not both buckets."""
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
-    changes, behind_latest = _patched_check(
-        _TABLE_CURRENT_LT_UPDATE_LT_LATEST, tmp_path, make_workspace
-    )
-
-    # The in-range bump (18.0.0 → 18.3.0) lands in changes.
-    assert len(changes) == 1
-    assert changes[0].name == "react"
-    assert changes[0].from_ver == "18.0.0"
-    assert changes[0].to == "18.3.0"
-    # It must NOT also appear in behind_latest (double-count regression).
-    assert behind_latest == [], f"expected empty behind_latest, got {behind_latest}"
 
 
 # a real npm dependency literally named ``bun`` must be detected
@@ -167,13 +124,12 @@ _ASCII_PIPE_TABLE = (
 )
 
 
-def test_check_bun_parses_ascii_pipe_table(monkeypatch, tmp_path: Path, make_workspace) -> None:
+def test_check_bun_parses_ascii_pipe_table(tmp_path: Path, make_workspace) -> None:
     """ASCII-pipe table (CI/non-UTF-8 terminal) must parse."""
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
     changes, behind_latest = _patched_check(_ASCII_PIPE_TABLE, tmp_path, make_workspace)
 
-    # The single data row parses; update column (1.0.0) is the in-range target.
-    assert [(c.name, c.from_ver, c.to) for c in changes] == [("is-odd", "0.1.2", "1.0.0")]
+    # The single data row parses; the Latest column (3.0.1) is the target.
+    assert [(c.name, c.from_ver, c.to) for c in changes] == [("is-odd", "0.1.2", "3.0.1")]
     # Border/header rows must not leak: no dash-led or "Package" pseudo-names.
     assert behind_latest == []
 
@@ -207,7 +163,6 @@ def test_check_bun_checks_each_workspace_member(
     monkeypatch, tmp_path: Path, make_workspace
 ) -> None:
     """`bun outdated` reports only the cwd's workspace; members are checked from their dirs."""
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
     (tmp_path / "package.json").write_text(json.dumps({"workspaces": ["apps/*"]}))
     web = tmp_path / "apps" / "web"
     web.mkdir(parents=True)
@@ -229,7 +184,6 @@ def test_check_bun_proposes_private_member_peer_lockstep(
     monkeypatch, tmp_path: Path, make_workspace
 ) -> None:
     """A private member's peer pin follows the version its own manifest depends on."""
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
     (tmp_path / "package.json").write_text(json.dumps({"workspaces": ["packages/*"]}))
     (tmp_path / ".repo-ops.toml").write_text(
         '[[hold]]\npackage = "react-native"\nmax_version = "0.86"\nworkspace = "packages/ui"\n'

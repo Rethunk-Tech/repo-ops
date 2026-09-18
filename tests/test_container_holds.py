@@ -93,7 +93,6 @@ def test_check_container_filters_digest_refresh_above_ceiling(
     digest = "a" * 64
     _dockerfile(tmp_path, ref=f"1.5.0@sha256:{digest}")
     ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
-    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
     _write_global_hold(tmp_path)
 
     with patch.object(
@@ -102,35 +101,6 @@ def test_check_container_filters_digest_refresh_above_ceiling(
         return_value=f"sha256:{'b' * 64}",
     ):
         assert container.check_container(ws) == []
-
-
-def test_apply_container_clamps_tag_and_digest_to_ceiling(
-    tmp_path, monkeypatch, make_workspace
-) -> None:
-    old_digest = "a" * 64
-    new_digest = f"sha256:{'b' * 64}"
-    dockerfile = _dockerfile(tmp_path, ref=f"1.5.0@sha256:{old_digest}")
-    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
-    monkeypatch.delenv("REPO_OPS_CONTAINER_REFRESH_SHA", raising=False)
-    _write_global_hold(tmp_path)
-
-    with (
-        patch.object(
-            container,
-            "_fetch_tags",
-            return_value=["1.0.0", "1.4.0", "1.5.0"],
-        ),
-        patch.object(
-            container,
-            "_fetch_manifest_digest",
-            return_value=new_digest,
-        ),
-    ):
-        container.apply_container(ws)
-
-    assert dockerfile.read_text(encoding="utf-8") == (
-        f"FROM docker.io/library/node:1.4.0@{new_digest}\n"
-    )
 
 
 def test_apply_container_raises_when_no_tag_satisfies_ceiling(tmp_path, make_workspace) -> None:

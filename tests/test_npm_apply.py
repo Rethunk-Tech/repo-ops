@@ -6,8 +6,6 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from repo_ops_js_npm.npm import (
     apply_npm,
 )
@@ -19,52 +17,6 @@ _OUTDATED = "repo_ops_js_npm.npm._npm_outdated"
 
 def _fake_run_ok(cmd, cwd, timeout=600, env=None):
     return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-
-def test_apply_npm_raises_on_ghost_bump_overrides_pin(
-    tmp_path: Path, make_workspace, monkeypatch
-) -> None:
-    """Ghost bump: overrides/exact-pin keeps old version installed after npm update.
-
-    npm update + npm install finish with rc=0, but node_modules still has the
-    old version.  The guard must raise so apply_workspace marks the workspace
-    failed (not a false-green success). Targeted bump is disabled here so the
-    hard-fail guard runs instead of deferring to the retry fallback (the
-    sweep default).
-    """
-    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "0")
-    with (
-        patch("repo_ops_js_npm.npm.run", _fake_run_ok),
-        patch(_OUTDATED, return_value=([Change("lodash", "4.17.20", "4.17.21")], [])),
-        patch(_RESOLVER_PATH, return_value="4.17.20"),
-        pytest.raises(RuntimeError) as exc_info,
-    ):
-        apply_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))
-    assert "lodash" in str(exc_info.value)
-    assert "4.17.20" in str(exc_info.value)
-
-
-def test_apply_npm_targeted_bump_defers_ghost_to_retry(tmp_path: Path, make_workspace) -> None:
-    """Targeted bump mode sends a ghost target to the per-package retry."""
-    change = Change("lodash", "4.17.20", "4.17.21")
-    with (
-        patch("repo_ops_js_npm.npm.run", _fake_run_ok),
-        patch(_OUTDATED, return_value=([change], [])),
-        patch(_RESOLVER_PATH, return_value="4.17.20"),
-        patch("repo_ops_js_npm.npm._npm_targeted_bump_enabled", return_value=True),
-        patch("repo_ops_js_npm.npm.assert_targets_resolved") as guard,
-        patch(
-            "repo_ops_js_npm.npm.targeted_bump_behind",
-            return_value=([], [change]),
-        ) as retry,
-    ):
-        assert apply_npm(
-            make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo")
-        ) == [change]
-
-    retry.assert_called_once()
-    assert retry.call_args.args[1] == [change]
-    guard.assert_not_called()
 
 
 def test_apply_npm_ok_when_resolved_at_target(tmp_path: Path, make_workspace) -> None:

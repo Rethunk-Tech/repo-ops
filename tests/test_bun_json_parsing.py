@@ -100,28 +100,16 @@ def test_bun_text_parser_skips_banner_and_borders() -> None:
     assert all(c.from_ver for c in changes)
 
 
-def test_bun_text_parser_correct_versions(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
+def test_bun_text_parser_correct_versions() -> None:
     changes, _ = _changes_from_bun_text(_BUN_OUTDATED_ANSI)
     by_name = {c.name: c for c in changes}
     assert by_name["@types/bun"].from_ver == "1.1.6"
     assert by_name["@types/bun"].to == "1.1.10"
     assert by_name["react"].from_ver == "18.2.0"
     assert by_name["react"].to == "18.3.0"
-    # "bun" update column (1.2.0) is the actionable target
+    # the Latest column (1.3.0) is the target, not the in-range Update (1.2.0)
     assert by_name["bun"].from_ver == "1.1.0"
-    assert by_name["bun"].to == "1.2.0"
-
-
-def test_bun_text_parser_behind_latest_when_update_eq_current(monkeypatch) -> None:
-    """Packages where Update == Current but Latest > Current go to behind_latest."""
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
-    fixture = f"{_BOX_V} esbuild  {_BOX_V} 0.21.5  {_BOX_V} 0.21.5  {_BOX_V} 0.24.0  {_BOX_V}\n"
-    changes, behind = _changes_from_bun_text(fixture)
-    assert changes == []
-    assert len(behind) == 1
-    assert behind[0].name == "esbuild"
-    assert behind[0].to == "0.24.0"
+    assert by_name["bun"].to == "1.3.0"
 
 
 def test_bun_text_parser_peer_optional_suffix_stripped() -> None:
@@ -232,32 +220,9 @@ def test_changes_from_bun_json_skips_invalid_name_and_non_dict_meta() -> None:
     assert behind == []
 
 
-def test_changes_from_bun_json_missing_update_target_skipped(monkeypatch) -> None:
-    """No 'update'/'latest' field at all -> target stays '?' -> no entry either way."""
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
-    data = {"foo": {"current": "1.0.0"}}
-    changes, behind = _changes_from_bun_json(json.dumps(data))
-    assert changes == []
-    assert behind == []
-
-
-def test_changes_from_bun_json_want_latest_off_targets_update_field(
-    monkeypatch,
-) -> None:
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
-    data = {"foo": {"current": "1.0.0", "update": "1.1.0", "latest": "2.0.0"}}
-    changes, behind = _changes_from_bun_json(json.dumps(data))
-    assert len(changes) == 1
-    assert changes[0].name == "foo"
-    assert changes[0].from_ver == "1.0.0"
-    assert changes[0].to == "1.1.0"
-    assert behind == []
-
-
 def test_changes_from_bun_json_want_latest_on_targets_latest_field(
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
     data = {"foo": {"current": "1.0.0", "update": "1.1.0", "latest": "2.0.0"}}
     changes, behind = _changes_from_bun_json(json.dumps(data))
     assert len(changes) == 1
@@ -265,41 +230,10 @@ def test_changes_from_bun_json_want_latest_on_targets_latest_field(
     assert behind == []
 
 
-def test_changes_from_bun_json_falls_back_to_installed_key(monkeypatch) -> None:
-    """'current' absent -> falls back to 'installed'."""
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
-    data = {"foo": {"installed": "1.0.0", "update": "1.1.0", "latest": "1.1.0"}}
-    changes, _behind = _changes_from_bun_json(json.dumps(data))
-    assert changes[0].from_ver == "1.0.0"
-
-
-def test_changes_from_bun_json_cur_equals_target_is_noop(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
-    data = {"foo": {"current": "1.0.0", "update": "1.0.0", "latest": "1.0.0"}}
-    changes, behind = _changes_from_bun_json(json.dumps(data))
-    assert changes == []
-    assert behind == []
-
-
-def test_changes_from_bun_json_behind_latest_when_update_stuck_at_current(
-    monkeypatch,
-) -> None:
-    """update == current (in-range is exhausted) but latest is newer -> behind_latest."""
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "0")
-    data = {"foo": {"current": "1.0.0", "update": "1.0.0", "latest": "2.0.0"}}
-    changes, behind = _changes_from_bun_json(json.dumps(data))
-    assert changes == []
-    assert len(behind) == 1
-    assert behind[0].name == "foo"
-    assert behind[0].from_ver == "1.0.0"
-    assert behind[0].to == "2.0.0"
-
-
 def test_changes_from_bun_json_no_behind_latest_bucket_when_want_latest_on(
     monkeypatch,
 ) -> None:
     """With want_latest on, the behind_latest branch is unreachable (target IS latest)."""
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
     data = {"foo": {"current": "1.0.0", "update": "1.0.0", "latest": "1.0.0"}}
     changes, behind = _changes_from_bun_json(json.dumps(data))
     assert changes == []

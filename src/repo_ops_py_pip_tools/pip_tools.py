@@ -10,7 +10,6 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
-from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import restore_file, snapshot_file
 from repo_ops_core.holds import resolve_package_hold
@@ -35,7 +34,6 @@ from repo_ops_py.requirements import parse_requirements_lines
 # requirements.in itself — config/manifest files stay untouched.
 
 _REQ_NAME_RE = re.compile(r"^([A-Za-z0-9_.-]+)")
-_PIP_TOOLS_TARGETED_BUMP_ENV = "REPO_OPS_PIP_TOOLS_TARGETED_BUMP"
 
 
 def _requirements_in_names(req_in: Path) -> set[str]:
@@ -78,10 +76,6 @@ def _requirements_in_constraints(req_in: Path) -> dict[str, str]:
             rest = rest[closing + 1 :].strip() if closing >= 0 else ""
         constraints[match.group(1)] = rest.split(";", 1)[0].strip()
     return constraints
-
-
-def _pip_tools_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
-    return resolve_bool_setting("pip_tools_targeted_bump", _PIP_TOOLS_TARGETED_BUMP_ENV, ws)
 
 
 def _pip_tools_requirement_satisfied(version: str, requirement: str) -> bool:
@@ -214,17 +208,13 @@ def check_pip_tools(
     if not proposed:
         if uv_failed and not shutil.which("pip-compile"):
             raise RuntimeError("pip-compile not on PATH and uv pip compile failed")
-        if _pip_tools_targeted_bump_enabled(ws):
-            return [], _pip_tools_latest_direct_changes(ws)
-        return []
+        return [], _pip_tools_latest_direct_changes(ws)
     changes: list[Change] = []
     for pkg in sorted(set(current) | set(proposed)):
         cur = current.get(pkg)
         prop = proposed.get(pkg)
         if cur != prop and prop:
             changes.append(Change(pkg, cur or "?", prop))
-    if not _pip_tools_targeted_bump_enabled(ws):
-        return changes
     return changes, _pip_tools_latest_direct_changes(ws)
 
 
@@ -370,8 +360,6 @@ def apply_pip_tools(ws: Workspace) -> list[Change] | None:
         raise RuntimeError("requirements.in not found")
     with _hold_constraints_file(ws, req_in) as constraints_path:
         _compile_requirements(ws, out, req_in, constraints_path)
-    if not _pip_tools_targeted_bump_enabled(ws):
-        return None
     return _apply_pip_tools_targeted_bumps(
         ws,
         _pip_tools_latest_direct_changes(ws),

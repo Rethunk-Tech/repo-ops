@@ -185,7 +185,6 @@ def test_targeted_bump_uses_hold_ceiling_instead_of_latest(
 
 
 def _bun_check(tmp_path, monkeypatch, make_workspace, make_proc, latest):
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
     ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
     payload = {"typescript": {"current": "6.5.0", "latest": latest}}
 
@@ -197,7 +196,6 @@ def _bun_check(tmp_path, monkeypatch, make_workspace, make_proc, latest):
 
 
 def _npm_check(tmp_path, monkeypatch, make_workspace, make_proc, latest):
-    monkeypatch.setenv("REPO_OPS_NPM_TARGETED_BUMP", "1")
     ws = make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo")
     with patch(
         f"{_module('npm')}._npm_outdated",
@@ -207,7 +205,6 @@ def _npm_check(tmp_path, monkeypatch, make_workspace, make_proc, latest):
 
 
 def _pnpm_check(tmp_path, monkeypatch, make_workspace, make_proc, latest):
-    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
     with patch(
         f"{_module('pnpm')}._pnpm_outdated",
@@ -579,7 +576,6 @@ def test_targeted_bump_without_ws_keeps_latest_fallback(
     """yarn's ``ws`` is optional and keyword-only: direct callers that omit it
     (pre-holds callers) keep the prior audit-override/latest fallback."""
     _seed_yarn(tmp_path)
-    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
     captured_cmds: list[list[str]] = []
 
     def _fake_run(cmd, cwd, timeout=None, env=None):
@@ -609,8 +605,6 @@ def test_check_yarn_snapshot_does_not_promote_held_package_past_ceiling(
     of being promoted into the plan preview.
     """
     _seed_yarn(tmp_path)
-    monkeypatch.setenv("REPO_OPS_YARN_UPDATE_LATEST", "1")
-    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
     ws = make_workspace(tmp_path, ecosystem="node", manager="yarn", label="demo")
 
     def _fake_run(cmd, cwd, timeout=None, env=None):

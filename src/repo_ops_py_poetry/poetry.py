@@ -7,7 +7,6 @@ import shutil
 import sys
 from pathlib import Path
 
-from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import read_toml_file, restore_file, snapshot_file
 from repo_ops_core.holds import resolve_package_hold
@@ -18,8 +17,6 @@ from repo_ops_models import Change, Workspace
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
 from repo_ops_py.pypi import pypi_latest as _pypi_latest
 from repo_ops_py.version_ceiling import enforce_version_ceilings
-
-_POETRY_TARGETED_BUMP_ENV = "REPO_OPS_POETRY_TARGETED_BUMP"
 
 # ---------------------------------------------------------------------------
 # Package version-ceiling ("hold") rules
@@ -41,10 +38,6 @@ def _poetry_lock_versions(ws: Workspace) -> dict[str, str]:
         if name and version:
             out[str(name)] = str(version)
     return out
-
-
-def _poetry_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
-    return resolve_bool_setting("poetry_targeted_bump", _POETRY_TARGETED_BUMP_ENV, ws)
 
 
 def _poetry_requirement_satisfied(version: str, requirement: str) -> bool:
@@ -172,7 +165,7 @@ def check_poetry(
 ) -> list[Change] | tuple[list[Change], list[Change]]:
     if not shutil.which("poetry"):
         print(f"WARN {ws.path}: poetry not on PATH", file=sys.stderr)
-        return ([], []) if _poetry_targeted_bump_enabled(ws) else []
+        return ([], [])
     proc = run(["poetry", "update", "--dry-run"], ws.path, timeout=resolve_timeout_check())
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "poetry update --dry-run failed")
@@ -182,8 +175,6 @@ def check_poetry(
         if m:
             changes.append(Change(m.group(1), m.group(2), m.group(3)))
     in_range = _filter_held_changes(ws, changes)
-    if not _poetry_targeted_bump_enabled(ws):
-        return in_range
     return in_range, _poetry_latest_direct_changes(ws)
 
 
@@ -194,6 +185,4 @@ def apply_poetry(ws: Workspace) -> list[Change] | None:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "poetry update failed")
     _enforce_version_ceilings(ws)
-    if not _poetry_targeted_bump_enabled(ws):
-        return None
     return _apply_poetry_targeted_bumps(ws, _poetry_latest_direct_changes(ws))

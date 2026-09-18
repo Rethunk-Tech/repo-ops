@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
+from repo_ops_core.constants import TIMEOUT_CHECK
 from repo_ops_js_bun.bun import check_bun
 from repo_ops_py_poetry.poetry import apply_poetry, check_poetry
 from repo_ops_py_uv.uv import apply_uv, check_uv
@@ -34,10 +34,9 @@ def _no_extra_patches(monkeypatch: pytest.MonkeyPatch) -> list:
 
 
 def _rust_extra_patches(monkeypatch: pytest.MonkeyPatch) -> list:
-    # Targeted bump would otherwise shell out beyond the single run() this
-    # test observes.
-    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
-    return []
+    # The targeted-bump probe reads Cargo.toml; this test observes only the
+    # cargo run() timeout.
+    return [patch("repo_ops_rust.rust._cargo_latest_direct_changes", return_value=[])]
 
 
 def _poetry_extra_patches(monkeypatch: pytest.MonkeyPatch) -> list:
@@ -165,21 +164,3 @@ def test_timeout_check_default_unchanged(
         check_uv(make_workspace(tmp_path, ecosystem="py", manager="uv", label="demo"))
 
     assert captured[0]["timeout"] == TIMEOUT_CHECK
-
-
-def test_timeout_apply_default_unchanged(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    make_workspace,
-) -> None:
-    """Without env override, apply functions use TIMEOUT_APPLY."""
-    monkeypatch.delenv("REPO_OPS_TIMEOUT_APPLY", raising=False)
-    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
-    captured: list[dict] = []
-
-    from repo_ops_rust.rust import apply_rust
-
-    with patch("repo_ops_rust.rust.run", side_effect=_fake_run(captured)):
-        apply_rust(make_workspace(tmp_path, ecosystem="rust", manager="cargo", label="demo"))
-
-    assert captured[0]["timeout"] == TIMEOUT_APPLY

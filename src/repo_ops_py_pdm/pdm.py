@@ -6,7 +6,6 @@ import re
 import shutil
 import sys
 
-from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import read_toml_file, restore_file, snapshot_file
 from repo_ops_core.holds import resolve_package_hold
@@ -17,13 +16,6 @@ from repo_ops_models import Change, Workspace
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
 from repo_ops_py.pypi import pypi_latest as _pypi_latest
 from repo_ops_py.version_ceiling import enforce_version_ceilings
-
-_PDM_TARGETED_BUMP_ENV = "REPO_OPS_PDM_TARGETED_BUMP"
-
-
-def _pdm_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
-    return resolve_bool_setting("pdm_targeted_bump", _PDM_TARGETED_BUMP_ENV, ws)
-
 
 # ---------------------------------------------------------------------------
 # Package version-ceiling ("hold") rules
@@ -191,7 +183,7 @@ def check_pdm(
     """
     if not shutil.which("pdm"):
         print(f"WARN {ws.path}: pdm not on PATH", file=sys.stderr)
-        return ([], []) if _pdm_targeted_bump_enabled(ws) else []
+        return ([], [])
     proc = run(
         ["pdm", "update", "--dry-run"],
         ws.path,
@@ -208,8 +200,6 @@ def check_pdm(
         if m:
             changes.append(Change(m.group(1), m.group(2), m.group(3)))
     in_range = _filter_held_changes(ws, changes)
-    if not _pdm_targeted_bump_enabled(ws):
-        return in_range
     return in_range, _pdm_latest_direct_changes(ws)
 
 
@@ -221,6 +211,4 @@ def apply_pdm(ws: Workspace) -> list[Change] | None:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pdm update failed")
     _enforce_version_ceilings(ws)
-    if not _pdm_targeted_bump_enabled(ws):
-        return None
     return _apply_pdm_targeted_bumps(ws, _pdm_latest_direct_changes(ws))

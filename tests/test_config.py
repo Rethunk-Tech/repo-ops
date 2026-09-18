@@ -16,34 +16,28 @@ from repo_ops_core.config import (
 
 
 def test_resolve_setting_cli_wins_over_env(monkeypatch):
-    monkeypatch.setenv("REPO_OPS_GO_UPGRADE_MODE", "explicit")
-    result = resolve_setting("go_upgrade_mode", cli_value="patch")
-    assert result == "patch"
+    monkeypatch.setenv("REPO_OPS_TIMEOUT_CHECK", "7")
+    result = resolve_setting("timeout_check", cli_value="5")
+    assert result == "5"
 
 
 def test_resolve_setting_env_wins_over_default(monkeypatch):
-    monkeypatch.setenv("REPO_OPS_GO_UPGRADE_MODE", "explicit")
-    result = resolve_setting("go_upgrade_mode")
-    assert result == "explicit"
-
-
-def test_resolve_setting_default_when_no_override(monkeypatch):
-    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
-    result = resolve_setting("go_upgrade_mode")
-    assert result is None  # go_upgrade_mode default is None in _SETTINGS_MAP
+    monkeypatch.setenv("REPO_OPS_TIMEOUT_CHECK", "7")
+    result = resolve_setting("timeout_check")
+    assert result == "7"
 
 
 def test_resolve_setting_global_config_wins_over_default(tmp_path):
-    cfg = {"go_upgrade_mode": "mvs"}
-    result = resolve_setting("go_upgrade_mode", global_cfg=cfg)
-    assert result == "mvs"
+    cfg = {"timeout_check": 9}
+    result = resolve_setting("timeout_check", global_cfg=cfg)
+    assert result == 9
 
 
 def test_resolve_setting_repo_config_wins_over_global(tmp_path):
-    global_cfg = {"actions_lint_level": "warn"}
-    repo_cfg = {"actions_lint_level": "off"}
-    result = resolve_setting("actions_lint_level", global_cfg=global_cfg, repo_cfg=repo_cfg)
-    assert result == "off"
+    global_cfg = {"timeout_check": 9}
+    repo_cfg = {"timeout_check": 11}
+    result = resolve_setting("timeout_check", global_cfg=global_cfg, repo_cfg=repo_cfg)
+    assert result == 11
 
 
 def test_resolve_setting_unknown_raises():
@@ -94,15 +88,12 @@ def test_settings_table_has_expected_columns():
 def test_settings_table_has_jobs_entry():
     names = [r[0] for r in SETTINGS_TABLE]
     assert "jobs" in names
-    assert "actions_lint_level" in names
 
 
 def test_settings_table_has_new_v014_entries() -> None:
     """New v0.14.0 settings are present in SETTINGS_TABLE."""
     names = [r[0] for r in SETTINGS_TABLE]
     for key in (
-        "npm_targeted_bump",
-        "pnpm_targeted_bump",
         "go_directive",
         "go_toolchain",
         "no_state",
@@ -111,42 +102,15 @@ def test_settings_table_has_new_v014_entries() -> None:
         assert key in names, f"Missing SETTINGS_TABLE entry: {key}"
 
 
-def test_resolve_setting_precommit_refresh_sha_repo_config_wins_over_unset_env(
-    monkeypatch,
-) -> None:
-    monkeypatch.delenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", raising=False)
-    result = resolve_setting(
-        "precommit_refresh_sha",
-        repo_cfg={"precommit_refresh_sha": True},
-    )
-    assert result is True
-
-
 # Every setting reachable from an env var: the SETTINGS_TABLE row maps the key
 # to that env var, and resolve_setting reads it back.
 ENV_SETTINGS = [
-    ("npm_targeted_bump", "REPO_OPS_NPM_TARGETED_BUMP", "1"),
-    ("pnpm_targeted_bump", "REPO_OPS_PNPM_TARGETED_BUMP", "1"),
     ("go_directive", "REPO_OPS_GO_DIRECTIVE", "1.22"),
     ("go_toolchain", "REPO_OPS_GO_TOOLCHAIN", "go1.22.0"),
     ("no_state", "REPO_OPS_NO_STATE", "1"),
     ("no_lint_cache", "REPO_OPS_NO_LINT_CACHE", "1"),
-    ("actions_policy_level", "REPO_OPS_ACTIONS_POLICY_LEVEL", "warn"),
-    ("precommit_refresh_sha", "REPO_OPS_PRECOMMIT_REFRESH_SHA", "1"),
-    ("submodule_refresh_sha", "REPO_OPS_SUBMODULE_REFRESH_SHA", "1"),
     ("commit_agent_provider", "REPO_OPS_COMMIT_AGENT_PROVIDER", "cursor"),
-    ("bun_update_latest", "REPO_OPS_BUN_UPDATE_LATEST", "1"),
-    ("pnpm_update_latest", "REPO_OPS_PNPM_UPDATE_LATEST", "1"),
-    ("yarn_update_latest", "REPO_OPS_YARN_UPDATE_LATEST", "1"),
-    ("deno_update_latest", "REPO_OPS_DENO_UPDATE_LATEST", "1"),
-    ("bun_targeted_bump", "REPO_OPS_BUN_TARGETED_BUMP", "1"),
-    ("deno_targeted_bump", "REPO_OPS_DENO_TARGETED_BUMP", "1"),
-    ("rust_targeted_bump", "REPO_OPS_RUST_TARGETED_BUMP", "1"),
     ("resume", "REPO_OPS_RESUME", "1"),
-    ("submodule_update_latest", "REPO_OPS_SUBMODULE_UPDATE_LATEST", "1"),
-    ("precommit_update_latest", "REPO_OPS_PRECOMMIT_UPDATE_LATEST", "1"),
-    ("container_refresh_sha", "REPO_OPS_CONTAINER_REFRESH_SHA", "1"),
-    ("hatch_migrate_uv_lock", "REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1"),
 ]
 
 
@@ -168,13 +132,7 @@ def test_settings_table_maps_key_to_env_var(key: str, env_var: str, value: str) 
 def test_settings_table_has_new_env_gate_entries() -> None:
     """Env-gate settings surfaced in v0.15+ are present in SETTINGS_TABLE."""
     names = [r[0] for r in SETTINGS_TABLE]
-    for key in (
-        "resume",
-        "submodule_update_latest",
-        "precommit_update_latest",
-        "container_refresh_sha",
-        "hatch_migrate_uv_lock",
-    ):
+    for key in ("resume",):
         assert key in names, f"Missing SETTINGS_TABLE entry: {key}"
 
 
@@ -182,10 +140,6 @@ def test_settings_table_has_new_env_gate_entries() -> None:
     ("toml_line", "env_var", "expected"),
     [
         ("resume = true", "REPO_OPS_RESUME", "1"),
-        ("hatch_migrate_uv_lock = true", "REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1"),
-        ("container_refresh_sha = true", "REPO_OPS_CONTAINER_REFRESH_SHA", "1"),
-        ("precommit_refresh_sha = true", "REPO_OPS_PRECOMMIT_REFRESH_SHA", "1"),
-        ("submodule_refresh_sha = true", "REPO_OPS_SUBMODULE_REFRESH_SHA", "1"),
     ],
 )
 def test_setting_from_config_file(

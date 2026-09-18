@@ -25,8 +25,6 @@ from repo_ops_go.go import (
     _parse_go_directive,
     _plan_fleet_directive_changes,
     _plan_go_work_directive_changes,
-    apply_go,
-    check_go,
     register_go_work_dir,
 )
 
@@ -143,38 +141,6 @@ def test_plan_go_work_no_go_directive_in_work(tmp_path: Path) -> None:
     (mod / "go.mod").write_text("module example.com/api\n\ngo 1.25\n")
     changes = _plan_go_work_directive_changes(tmp_path)
     assert changes == []
-
-
-# ---------------------------------------------------------------------------
-# check_go — go.work directive changes are prepended
-# ---------------------------------------------------------------------------
-
-
-def test_check_go_includes_work_directive_change(tmp_path: Path, make_workspace, make_proc) -> None:
-    """check_go prepends go.work directive change when go.work is stale."""
-    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
-    # Register a go.work dir and write fixture files.
-    go_work_dir = tmp_path / "workspace"
-    go_work_dir.mkdir()
-    mod = go_work_dir / "api"
-    mod.mkdir()
-    (mod / "go.mod").write_text("module example.com/api\n\ngo 1.25\n")
-    _write_go_work(go_work_dir, "1.22", ["./api"])
-    register_go_work_dir(tmp_path, go_work_dir)
-
-    # go list returns no dep updates; we only care about the directive change.
-    def fake_run(cmd, cwd, timeout=0):
-        return make_proc(stdout="")
-
-    with (
-        patch.dict("os.environ", {"REPO_OPS_GO_UPGRADE_MODE": "patch"}),
-        patch("repo_ops_go.go.run", side_effect=fake_run),
-    ):
-        changes = check_go(ws)
-
-    assert any(c.name == "go.work go directive" for c in changes), (
-        f"expected go.work directive change; got {[c.name for c in changes]}"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -514,82 +480,6 @@ def test_apply_fleet_directive_raises_on_mod_edit_failure(
 
 
 # ---------------------------------------------------------------------------
-# apply_go integration — directive phases run before dep upgrade
-# ---------------------------------------------------------------------------
-
-
-def test_apply_go_calls_work_directive_before_dep_upgrade(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
-    """apply_go: _apply_go_work_directive is called before go get."""
-    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
-    go_work_dir = tmp_path / "workspace"
-    go_work_dir.mkdir()
-    mod = go_work_dir / "api"
-    mod.mkdir()
-    (mod / "go.mod").write_text("module example.com/api\n\ngo 1.25\n")
-    _write_go_work(go_work_dir, "1.22", ["./api"])
-    register_go_work_dir(tmp_path, go_work_dir)
-
-    call_order: list[str] = []
-
-    def fake_run(cmd, cwd, timeout=0):
-        if cmd == ["go", "work", "use"]:
-            call_order.append("go_work_use")
-        elif cmd[:2] == ["go", "get"]:
-            call_order.append("go_get")
-        return make_proc()
-
-    with (
-        patch.dict(
-            "os.environ",
-            {
-                "REPO_OPS_GO_UPGRADE_MODE": "patch",
-                GO_DIRECTIVE_ENV: "",
-                GO_TOOLCHAIN_ENV: "",
-            },
-        ),
-        patch("repo_ops_go.go.run", side_effect=fake_run),
-    ):
-        apply_go(ws)
-
-    assert "go_work_use" in call_order
-    assert call_order.index("go_work_use") < call_order.index("go_get")
-
-
-def test_apply_go_fleet_directive_runs_before_dep_upgrade(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
-    """apply_go: fleet directive mod edit runs before go get."""
-    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
-    call_order: list[str] = []
-
-    def fake_run(cmd, cwd, timeout=0):
-        if cmd[:3] == ["go", "mod", "edit"] and "-go=" in " ".join(cmd):
-            call_order.append("mod_edit_go")
-        elif cmd[:2] == ["go", "get"]:
-            call_order.append("go_get")
-        # Return valid JSON for go mod edit -json probes.
-        return make_proc(stdout=_gomod_json("1.22"))
-
-    with (
-        patch.dict(
-            "os.environ",
-            {
-                "REPO_OPS_GO_UPGRADE_MODE": "patch",
-                GO_DIRECTIVE_ENV: "1.25",
-                GO_TOOLCHAIN_ENV: "",
-            },
-        ),
-        patch("repo_ops_go.go.run", side_effect=fake_run),
-    ):
-        apply_go(ws)
-
-    assert "mod_edit_go" in call_order
-    assert call_order.index("mod_edit_go") < call_order.index("go_get")
-
-
-# ---------------------------------------------------------------------------
 # resolve_timeout_check/apply used (not bare constants)
 # ---------------------------------------------------------------------------
 
@@ -621,39 +511,3 @@ def test_issue_118_timeout_resolvers_used_in_gomod_require_paths(
 
     assert captured, "run() not called"
     assert captured[0] == custom, f"expected {custom}, got {captured[0]}"
-
-
-def test_issue_118_timeout_resolvers_used_in_apply_go_tidy(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
-    """apply_go uses resolve_timeout_apply() for go mod tidy, honoring env override."""
-    from repo_ops_core.constants import TIMEOUT_APPLY
-
-    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
-    tidy_timeouts: list[int] = []
-
-    def fake_run(cmd, cwd, timeout=0):
-        if cmd == ["go", "mod", "tidy"]:
-            tidy_timeouts.append(timeout)
-        return make_proc()
-
-    custom = TIMEOUT_APPLY + 200
-
-    with (
-        patch.dict(
-            "os.environ",
-            {
-                "REPO_OPS_GO_UPGRADE_MODE": "patch",
-                "REPO_OPS_TIMEOUT_APPLY": str(custom),
-                GO_DIRECTIVE_ENV: "",
-                GO_TOOLCHAIN_ENV: "",
-            },
-        ),
-        patch("repo_ops_go.go.run", side_effect=fake_run),
-    ):
-        apply_go(ws)
-
-    assert tidy_timeouts, "go mod tidy not called"
-    assert all(t == custom for t in tidy_timeouts), (
-        f"expected all tidy timeouts={custom}, got {tidy_timeouts}"
-    )

@@ -12,14 +12,6 @@ from typing import Any
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
-from repo_ops_core.config import (
-    ambient_env,
-    coerce_bool_setting,
-    load_global_config,
-    load_repo_config,
-    process_env_cli_override,
-    resolve_setting,
-)
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
@@ -51,9 +43,6 @@ from repo_ops_lockfiles.snapshots import (
 )
 from repo_ops_models import Change, Workspace
 
-_PNPM_UPDATE_LATEST_ENV = "REPO_OPS_PNPM_UPDATE_LATEST"
-_PNPM_TARGETED_BUMP_ENV = "REPO_OPS_PNPM_TARGETED_BUMP"
-
 
 def _yaml_loader() -> YAML:
     yaml = YAML(typ="rt")
@@ -66,28 +55,6 @@ def _yaml_loader() -> YAML:
     # of leaving it untouched.
     yaml.indent(mapping=2, sequence=4, offset=2)
     return yaml
-
-
-def _pnpm_update_latest_enabled(ws: Workspace | None = None) -> bool:
-    raw = resolve_setting(
-        "pnpm_update_latest",
-        cli_value=process_env_cli_override(_PNPM_UPDATE_LATEST_ENV),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
-    )
-    return coerce_bool_setting(raw)
-
-
-def _pnpm_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
-    raw = resolve_setting(
-        "pnpm_targeted_bump",
-        cli_value=process_env_cli_override(_PNPM_TARGETED_BUMP_ENV),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
-    )
-    return coerce_bool_setting(raw)
 
 
 def _catalog_workspace_path(ws: Workspace) -> Path:
@@ -242,9 +209,8 @@ def _bucket_pnpm_pkg(
     ``wanted`` is the newest version that satisfies the declared range;
     ``latest`` is the registry's latest release (may break the range).
 
-    When ``REPO_OPS_PNPM_UPDATE_LATEST`` is set, ``latest`` is used as the
-    target so packages that are only behind latest are treated as actionable
-    (matching what ``apply_pnpm`` does when it passes ``--latest``) — unless
+    ``latest`` is the target, so packages that are only behind latest are
+    actionable (matching ``apply_pnpm``'s ``--latest``) — unless
     an active hold rule's ceiling would be violated, in which case the
     package is left in ``behind_latest`` instead of being promoted.
 
@@ -255,7 +221,7 @@ def _bucket_pnpm_pkg(
     # Treat latest as the upgrade target — mirrors apply_pnpm --latest. An
     # unknown latest ('?') falls through to the wanted check below so a known
     # in-range bump is not silently omitted.
-    if _pnpm_update_latest_enabled(ws) and latest not in ("?", "") and cur != latest:
+    if latest not in ("?", "") and cur != latest:
         held_rule = resolve_package_hold(ws, name) if ws is not None else None
         if held_rule is not None and not is_within_ceiling(latest, held_rule):
             behind_latest.append(Change(name, cur, latest))
@@ -321,8 +287,6 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
         for name, specs in catalog_specs.items():
             meta = outdated.get(name)
             if meta is None:
-                if not (_pnpm_update_latest_enabled(ws) or _pnpm_targeted_bump_enabled(ws)):
-                    continue
                 latest = _latest_published(ws, name)
                 if latest is None:
                     continue
@@ -383,8 +347,7 @@ def _check_pnpm_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
     ``latest`` exceeds ``current`` but the in-range ``wanted`` equals
     ``current`` (only a range-breaking bump is available).
 
-    When ``REPO_OPS_PNPM_TARGETED_BUMP`` is set, behind_latest candidates are
-    promoted into ``changes`` for plan preview parity with yarn. Apply uses
+    Behind_latest candidates are promoted into ``changes`` for plan preview parity with yarn. Apply uses
     :func:`_pnpm_outdated` directly so this promotion does not affect guards.
 
     A package held below the reported ``latest`` (an active hold rule whose
@@ -393,7 +356,7 @@ def _check_pnpm_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
     apply path will actually do.
     """
     changes, behind = _pnpm_outdated(ws)
-    if _pnpm_targeted_bump_enabled(ws) and behind:
+    if behind:
         promoted: list[Change] = []
         still_behind: list[Change] = []
         for c in behind:
@@ -428,12 +391,11 @@ def targeted_bump_behind(
     exits non-zero on install failure — making it structurally equivalent to
     ``yarn up <pkg>@latest`` + ``yarn install``.
 
-    Opt-in (``REPO_OPS_PNPM_TARGETED_BUMP``) and reversible per-package: a bump
-    that fights peer constraints is dropped, never committed. Returns
+    Reversible per-package: a bump that fights peer constraints is dropped, never committed. Returns
     ``(applied, still_behind)`` — ``applied`` carries the real resolved version
     landed.
     """
-    if not behind or not _pnpm_targeted_bump_enabled(ws):
+    if not behind:
         return [], behind
     applied: list[Change] = []
     still_behind: list[Change] = []
@@ -519,31 +481,22 @@ def apply_pnpm(ws: Workspace) -> list[Change]:
 def _apply_pnpm_dir(ws: Workspace, root: Path) -> list[Change]:
     """Apply pnpm upgrades in one directory; returns still-behind deps after targeted bumps.
 
-    With ``REPO_OPS_PNPM_TARGETED_BUMP`` set, each dep that ``pnpm update`` left
-    behind_latest gets a reversible targeted ``pnpm update --latest <pkg>``; only
-    bumps that actually advance the resolved version are kept. Returns the subset
-    of behind_latest that could not be moved (the full behind list when targeted
-    bump is unset, or the remaining gaps after targeted bump runs).
+    Each dep that ``pnpm update`` left behind_latest gets a reversible targeted
+    ``pnpm update --latest <pkg>``; only bumps that actually advance the resolved
+    version are kept. Returns the subset of behind_latest that could not be moved.
     """
     # Raw outdated split — do not use check_pnpm (plan may promote behind→changes).
     changes, behind = _pnpm_outdated(ws)
     if changes:
-        # Match npm conservative bumps (semver ranges) unless the user opts into latest.
-        cmd = ["pnpm", "update", "-r"]
-        if _pnpm_update_latest_enabled(ws):
-            cmd.append("--latest")
-        proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
+        proc = run(["pnpm", "update", "-r", "--latest"], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "pnpm update failed")
         proc2 = run(["pnpm", "install"], ws.path, timeout=TIMEOUT_APPLY)
         if proc2.returncode != 0:
             raise RuntimeError(proc2.stderr.strip() or "pnpm install failed")
         if changes:
-            if _pnpm_targeted_bump_enabled(ws):
-                blocked = unresolved_targets(ws, changes)
-                behind = fold_blocked_into_behind(blocked, behind)
-            else:
-                assert_targets_resolved(ws, changes, manager="pnpm")
+            blocked = unresolved_targets(ws, changes)
+            behind = fold_blocked_into_behind(blocked, behind)
     applied, behind = targeted_bump_behind(ws, behind, root=root)
     # End-of-apply hold safety net: this is the PRIMARY mechanism protecting a
     # held package from `pnpm update -r --latest` above (a blanket, bulk

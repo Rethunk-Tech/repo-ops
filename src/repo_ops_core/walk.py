@@ -9,10 +9,6 @@ from pathlib import Path
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.filesystem import should_exclude
 
-PY_MANIFEST_NAMES = frozenset({"pyproject.toml", "requirements.in", "requirements.txt", "Pipfile"})
-
-DENO_MANIFEST_NAMES = frozenset({"deno.json", "deno.jsonc", "deno.lock"})
-
 
 def iter_scanned_dirs(
     root: Path,

@@ -108,20 +108,3 @@ def test_load_repo_config_reads_toml_with_shared_loader(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text("[tool.repo-ops]\njobs = 9\n", encoding="utf-8")
 
     assert load_repo_config(tmp_path) == {"jobs": 9}
-
-
-def test_container_cli_flags_removed_in_favor_of_conservative() -> None:
-    """--container-update-latest/--container-refresh-sha are not argparse flags.
-
-    Container sweep behaviour runs as part of the default full sweep in run.py;
-    --conservative is the opt-out (env-var wiring covered by
-    tests/test_run_targeted_bump_getattr.py).
-    """
-    from repo_ops_core.cli import build_upgrade_parser
-
-    parser = build_upgrade_parser(apply=False)
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--flat", "--container-update-latest", "/tmp"])
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--flat", "--container-refresh-sha", "/tmp"])
-    assert parser.parse_args(["--conservative"]).conservative is True

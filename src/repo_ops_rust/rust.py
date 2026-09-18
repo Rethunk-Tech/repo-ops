@@ -16,14 +16,6 @@ from http.client import HTTPSConnection
 from pathlib import Path
 from urllib.parse import quote
 
-from repo_ops_core.config import (
-    ambient_env,
-    coerce_bool_setting,
-    load_global_config,
-    load_repo_config,
-    process_env_cli_override,
-    resolve_setting,
-)
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import restore_file, snapshot_file
 from repo_ops_core.holds import HoldRule, resolve_package_hold
@@ -31,19 +23,6 @@ from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
-
-_RUST_TARGETED_BUMP_ENV = "REPO_OPS_RUST_TARGETED_BUMP"
-
-
-def _rust_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
-    raw = resolve_setting(
-        "rust_targeted_bump",
-        cli_value=process_env_cli_override(_RUST_TARGETED_BUMP_ENV),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
-    )
-    return coerce_bool_setting(raw)
 
 
 def _resolve_crate_hold(ws: Workspace, crate_name: str) -> HoldRule | None:
@@ -469,8 +448,6 @@ def check_rust(
         if m:
             changes.append(Change(m.group(1), m.group(2), m.group(3)))
     in_range = _filter_held_rust_changes(ws, changes)
-    if not _rust_targeted_bump_enabled(ws):
-        return in_range
     behind = _cargo_latest_direct_changes(ws)
     return in_range, behind
 
@@ -480,6 +457,4 @@ def apply_rust(ws: Workspace) -> list[Change] | None:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "cargo update failed")
     _enforce_version_ceilings(ws)
-    if not _rust_targeted_bump_enabled(ws):
-        return None
     return _apply_cargo_targeted_bumps(ws, _cargo_latest_direct_changes(ws))

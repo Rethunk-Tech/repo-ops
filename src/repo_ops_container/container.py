@@ -12,8 +12,7 @@ Design notes
   (detail string prefix ``[report-only]``).
 * Apply: byte-preserving single-line edits — only the tag portion of the
   matched line changes; never reflows.
-* SHA-pinned images: opt-in digest refresh via ``REPO_OPS_CONTAINER_REFRESH_SHA=1``.
-  When enabled, for ``image:tag@sha256:...`` pins, the manifest is queried for
+* SHA-pinned images: for ``image:tag@sha256:...`` pins, the manifest is queried for
   the tag and the Docker-Content-Digest is compared; if it differs the digest
   is updated keeping the same tag (byte-preserving line edit).
 * Compose build.dockerfile: compose services with ``build:`` keys have their
@@ -53,13 +52,6 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from repo_ops_core.config import (
-    ambient_env,
-    load_global_config,
-    load_repo_config,
-    process_env_cli_override,
-    resolve_setting,
-)
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.http import open_url
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
@@ -86,19 +78,6 @@ _COMPOSE_RE = re.compile(
 def _is_compose_name(name: str) -> bool:
     """Whether *name* is a compose file this checker should scan."""
     return _COMPOSE_RE.match(name) is not None
-
-
-def _container_flag_enabled(setting: str, env_var: str, ws: Workspace) -> bool:
-    raw = resolve_setting(
-        setting,
-        cli_value=process_env_cli_override(env_var),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo),
-        global_cfg=load_global_config(),
-    )
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def is_container_workspace(directory: Path) -> bool:
@@ -822,16 +801,13 @@ def _is_semver_tag(tag: str) -> bool:
 def _resolve_latest_tag(
     current_tag: str,
     available_tags: list[str],
-    *,
-    allow_cross_major: bool = False,
 ) -> str | None:
     """Return the best candidate tag for *current_tag* from *available_tags*.
 
     Matching strategy:
     - Candidates must share the same suffix (e.g. ``-alpine``, ``-slim``, or
       bare numeric) as *current_tag*.
-    - Default (conservative): bump within same major only.
-    - ``allow_cross_major=True``: pick the global best across all majors.
+    - The best across all majors wins.
     - Returns None if no suitable candidate is found or *current_tag* is
       non-semver (report-only caller).
     """
@@ -869,15 +845,6 @@ def _resolve_latest_tag(
         return None
 
     best_tup, best_tag = candidates[0]
-
-    if not allow_cross_major:
-        # Same major only
-        same_major = [
-            (tup, t) for tup, t in candidates if tup and current_tup and tup[0] == current_tup[0]
-        ]
-        if not same_major:
-            return None
-        best_tup, best_tag = same_major[0]
 
     if best_tup <= current_tup:
         return None  # already at latest
@@ -971,17 +938,9 @@ def check_container(ws: Workspace) -> list[Change]:
     bounded subprocesses (``docker-credential-*``, ``aws ecr get-login-password``)
     when helpers are configured; see ``_resolve_auth_for_host``.
 
-    Environment variables:
-    - ``REPO_OPS_CONTAINER_UPDATE_LATEST=1``: allow cross-major bumps.
-    - ``REPO_OPS_CONTAINER_REFRESH_SHA=1``: for ``image:tag@sha256:...`` pins,
-      query the manifest and report/apply a digest update if it has changed.
+    Tags advance across majors; ``image:tag@sha256:...`` pins get their digest
+    refreshed when the tag's manifest changed.
     """
-    allow_cross_major = _container_flag_enabled(
-        "container_update_latest", "REPO_OPS_CONTAINER_UPDATE_LATEST", ws
-    )
-    refresh_sha = _container_flag_enabled(
-        "container_refresh_sha", "REPO_OPS_CONTAINER_REFRESH_SHA", ws
-    )
     changes: list[Change] = []
     # (image, tag, sha) dedup — sha must be part of the key so multi-stage
     # files that pin the same image:tag at different digests get each
@@ -1018,42 +977,33 @@ def check_container(ws: Workspace) -> list[Change]:
                 continue
 
             if sha and tag:
-                # tag+sha pin: attempt digest refresh when opt-in
-                if refresh_sha:
-                    cache_key = (image, tag)
-                    if cache_key in digest_cache:
-                        new_digest = digest_cache[cache_key]
-                    else:
-                        new_digest = _fetch_manifest_digest(image, tag)
-                        digest_cache[cache_key] = new_digest
-                    if new_digest is None:
-                        changes.append(
-                            Change(
-                                name=f"{image}:{tag}",
-                                from_ver=sha,
-                                to=f"{_REPORT_ONLY_PREFIX}digest query failed",
-                            )
-                        )
-                    elif new_digest == sha:
-                        # Already current; no change needed
-                        pass
-                    else:
-                        if not _target_within_hold(ws, image, tag):
-                            continue
-                        # Digest has changed — actionable update
-                        changes.append(
-                            Change(
-                                name=f"{image}:{tag}",
-                                from_ver=sha,
-                                to=new_digest,
-                            )
-                        )
+                # tag+sha pin: digest refresh
+                cache_key = (image, tag)
+                if cache_key in digest_cache:
+                    new_digest = digest_cache[cache_key]
                 else:
+                    new_digest = _fetch_manifest_digest(image, tag)
+                    digest_cache[cache_key] = new_digest
+                if new_digest is None:
                     changes.append(
                         Change(
                             name=f"{image}:{tag}",
-                            from_ver=tag,
-                            to=f"{_REPORT_ONLY_PREFIX}sha-pinned; set REPO_OPS_CONTAINER_REFRESH_SHA=1 to refresh digest",
+                            from_ver=sha,
+                            to=f"{_REPORT_ONLY_PREFIX}digest query failed",
+                        )
+                    )
+                elif new_digest == sha:
+                    # Already current; no change needed
+                    pass
+                else:
+                    if not _target_within_hold(ws, image, tag):
+                        continue
+                    # Digest has changed — actionable update
+                    changes.append(
+                        Change(
+                            name=f"{image}:{tag}",
+                            from_ver=sha,
+                            to=new_digest,
                         )
                     )
                 continue
@@ -1105,7 +1055,7 @@ def check_container(ws: Workspace) -> list[Change]:
                     )
                     continue
 
-            latest = _resolve_latest_tag(tag, available, allow_cross_major=allow_cross_major)
+            latest = _resolve_latest_tag(tag, available)
             if latest is None:
                 # Already at latest or indeterminate
                 continue
@@ -1222,8 +1172,7 @@ def apply_container(ws: Workspace) -> None:
     path, then rewrites only the tag or digest portion of each matched line.
 
     SHA-pinned images without a tag are skipped unconditionally (report-only
-    by design).  Digest refresh requires ``REPO_OPS_CONTAINER_REFRESH_SHA=1``.
-    Cross-major bumps require ``REPO_OPS_CONTAINER_UPDATE_LATEST=1``.
+    by design).
     """
     # Reuse check_container so tag/digest resolution cannot drift from plan.
     tag_bumps: list[tuple[str, str, str]] = []

@@ -54,25 +54,13 @@ def _info_run(cmd: list[str], cwd: object, timeout: object = None) -> MagicMock:
 
 def test_behind_after_up_reports_packages_left_behind(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path)
-    monkeypatch.setenv("REPO_OPS_YARN_UPDATE_LATEST", "1")
     with patch("repo_ops_js_yarn.yarn.run", side_effect=_info_run):
         behind = behind_after_up(tmp_path)
     assert behind == [Change("@sentry/nextjs", "10.55.0", "10.56.0")]
 
 
-def test_behind_after_up_disabled_in_conservative_mode(tmp_path: Path, monkeypatch) -> None:
-    _seed(tmp_path)
-    monkeypatch.setenv("REPO_OPS_YARN_UPDATE_LATEST", "0")
-    run_mock = MagicMock()
-    with patch("repo_ops_js_yarn.yarn.run", run_mock):
-        behind = behind_after_up(tmp_path)
-    assert behind == []
-    run_mock.assert_not_called()  # no registry lookups outside latest mode
-
-
 def test_behind_after_up_resilient_to_info_failure(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path)
-    monkeypatch.setenv("REPO_OPS_YARN_UPDATE_LATEST", "1")
     fail = MagicMock(returncode=1, stdout="", stderr="ENOTFOUND")
     with patch("repo_ops_js_yarn.yarn.run", return_value=fail):
         behind = behind_after_up(tmp_path)
@@ -81,7 +69,6 @@ def test_behind_after_up_resilient_to_info_failure(tmp_path: Path, monkeypatch) 
 
 def test_apply_yarn_returns_behind_in_latest_mode(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path)
-    monkeypatch.setenv("REPO_OPS_YARN_UPDATE_LATEST", "1")
     ws = Workspace(
         path=tmp_path,
         ecosystem="node",
@@ -129,20 +116,8 @@ def _targeted_run(tmp_path: Path, *, up_rc: int = 0, install_rc: int = 0, landed
     return _run
 
 
-def test_targeted_bump_env_zero_disables_it(tmp_path: Path, monkeypatch) -> None:
-    _seed(tmp_path)
-    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "0")
-    run_mock = MagicMock()
-    with patch("repo_ops_js_yarn.yarn.run", run_mock):
-        applied, behind = targeted_bump_behind(tmp_path, _SENTRY_BEHIND)
-    assert applied == []
-    assert behind == _SENTRY_BEHIND
-    run_mock.assert_not_called()  # explicit opt-out: no yarn invocations
-
-
 def test_targeted_bump_moves_the_gap(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path)
-    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
     with patch(
         "repo_ops_js_yarn.yarn.run",
         side_effect=_targeted_run(tmp_path, landed="10.56.0"),
@@ -154,7 +129,6 @@ def test_targeted_bump_moves_the_gap(tmp_path: Path, monkeypatch) -> None:
 
 def test_targeted_bump_reverts_when_install_fails(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path)
-    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
     original_lock = (tmp_path / "yarn.lock").read_text(encoding="utf-8")
     with patch(
         "repo_ops_js_yarn.yarn.run",
@@ -169,7 +143,6 @@ def test_targeted_bump_reverts_when_install_fails(tmp_path: Path, monkeypatch) -
 def test_targeted_bump_reverts_ghost_bump(tmp_path: Path, monkeypatch) -> None:
     """`yarn up` succeeds but the resolver holds the old version → revert, stay behind."""
     _seed(tmp_path)
-    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
     with patch(
         "repo_ops_js_yarn.yarn.run",
         side_effect=_targeted_run(tmp_path, landed="10.55.0"),
@@ -181,8 +154,6 @@ def test_targeted_bump_reverts_ghost_bump(tmp_path: Path, monkeypatch) -> None:
 
 def test_apply_yarn_targeted_bump_clears_behind(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path)
-    monkeypatch.setenv("REPO_OPS_YARN_UPDATE_LATEST", "1")
-    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
     ws = Workspace(
         path=tmp_path,
         ecosystem="node",

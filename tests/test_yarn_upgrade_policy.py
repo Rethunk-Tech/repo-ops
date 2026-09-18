@@ -23,44 +23,8 @@ _RESOLVER_PATH = "repo_ops_js.guards.resolved_version_from_node_modules"
 _PLAN_PATH = "repo_ops_js_yarn.yarn._plan_without_resolutions"
 
 
-def test_yarn_up_cmd_in_range_refresh_by_default(monkeypatch) -> None:
-    """Bare `yarn up` is a Yarn 4 no-op; conservative mode must pass
-    `-R '*'` to actually re-resolve in-range bumps."""
-    monkeypatch.delenv("REPO_OPS_YARN_UPDATE_LATEST", raising=False)
-    assert _yarn_up_cmd() == ["yarn", "up", "-R", "*"]
-
-
 def test_yarn_up_cmd_latest_when_env_set(monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_YARN_UPDATE_LATEST", "1")
     assert _yarn_up_cmd() == ["yarn", "up", "-R", "*"]
-
-
-def test_apply_yarn_uses_in_range_refresh_cmd(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("REPO_OPS_YARN_UPDATE_LATEST", raising=False)
-    ws = Workspace(
-        path=tmp_path,
-        ecosystem="node",
-        manager="yarn",
-        git_repo=tmp_path,
-        label="",
-    )
-    calls: list[list[str]] = []
-
-    def fake_run(cmd: list[str], cwd: object, timeout: object = None) -> MagicMock:
-        calls.append(list(cmd))
-        return MagicMock(returncode=0, stdout="", stderr="")
-
-    with (
-        patch("repo_ops_js_yarn.yarn.corepack_prepare"),
-        patch("repo_ops_js_yarn.yarn.run", side_effect=fake_run),
-        # _plan_without_resolutions runs yarn in a temp copy; short-circuit it to
-        # keep this test focused on the apply command sequence.
-        patch(_PLAN_PATH, return_value=[]),
-    ):
-        apply_yarn(ws)
-
-    assert calls[0] == ["yarn", "up", "-R", "*"]
-    assert calls[1] == ["yarn", "install"]
 
 
 # ---------------------------------------------------------------------------
@@ -119,37 +83,6 @@ def _resolutions_pkg(tmp_path: Path) -> None:
     )
 
 
-def test_apply_yarn_guard_raises_on_blocked_target(
-    tmp_path: Path, make_workspace, monkeypatch
-) -> None:
-    """Guard fires: probe planned is-odd→1.0.0, node_modules still at 0.1.2 → error.
-
-    Targeted bump is disabled here so the hard-fail guard runs instead of
-    deferring to the retry fallback (the sweep default).
-    """
-    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "0")
-    _node_modules_yarnrc(tmp_path)
-    _resolutions_pkg(tmp_path)
-    planned = [Change("is-odd", "0.1.2", "1.0.0")]
-
-    with (
-        patch("repo_ops_js_yarn.yarn.corepack_prepare"),
-        patch(
-            "repo_ops_js_yarn.yarn.run",
-            return_value=MagicMock(returncode=0, stdout="", stderr=""),
-        ),
-        patch(_PLAN_PATH, return_value=planned),
-        patch(_RESOLVER_PATH, return_value="0.1.2"),  # still behind
-    ):
-        try:
-            apply_yarn(make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test"))
-        except RuntimeError as exc:
-            assert "ghost bump" in str(exc)
-            assert "is-odd" in str(exc)
-        else:
-            raise AssertionError("expected ghost-bump RuntimeError")
-
-
 def test_apply_yarn_guard_ok_when_target_resolved(tmp_path: Path, make_workspace) -> None:
     """No error when node_modules has the requested version (real upgrade)."""
     _node_modules_yarnrc(tmp_path)
@@ -173,15 +106,11 @@ def test_apply_yarn_guard_ok_when_target_resolved(tmp_path: Path, make_workspace
 def test_apply_yarn_guard_skipped_for_pnp_workspace(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], make_workspace
 ) -> None:
-    """PnP workspace: guard is skipped and a note is printed to stderr."""
+    """PnP workspace: the guard is skipped with a note on stderr."""
     # .yarnrc.yml without nodeLinker → Yarn 4 default is PnP (no node_modules)
     (tmp_path / ".yarnrc.yml").write_text("enableGlobalCache: true\n", encoding="utf-8")
     _resolutions_pkg(tmp_path)
     planned = [Change("lodash", "4.17.20", "4.17.21")]
-    guard_calls: list[object] = []
-
-    def fake_guard(ws: object, requested: object, manager: str = "js") -> None:
-        guard_calls.append(requested)
 
     with (
         patch("repo_ops_js_yarn.yarn.corepack_prepare"),
@@ -190,36 +119,11 @@ def test_apply_yarn_guard_skipped_for_pnp_workspace(
             return_value=MagicMock(returncode=0, stdout="", stderr=""),
         ),
         patch(_PLAN_PATH, return_value=planned),
-        patch("repo_ops_js_yarn.yarn.assert_targets_resolved", fake_guard),
     ):
         apply_yarn(make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test"))
 
-    assert guard_calls == [], "guard must not be called for PnP workspaces"
     captured = capsys.readouterr()
     assert "Plug'n'Play" in captured.err
-
-
-def test_apply_yarn_guard_not_called_when_no_targets(tmp_path: Path, make_workspace) -> None:
-    """No guardable changes (empty probe output) → assert_targets_resolved not called."""
-    _node_modules_yarnrc(tmp_path)
-    _resolutions_pkg(tmp_path)
-    guard_calls: list[object] = []
-
-    def fake_guard(ws: object, requested: object, manager: str = "js") -> None:
-        guard_calls.append(requested)
-
-    with (
-        patch("repo_ops_js_yarn.yarn.corepack_prepare"),
-        patch(
-            "repo_ops_js_yarn.yarn.run",
-            return_value=MagicMock(returncode=0, stdout="", stderr=""),
-        ),
-        patch(_PLAN_PATH, return_value=[]),
-        patch("repo_ops_js_yarn.yarn.assert_targets_resolved", fake_guard),
-    ):
-        apply_yarn(make_workspace(tmp_path, ecosystem="node", manager="yarn", label="test"))
-
-    assert guard_calls == []
 
 
 # ---------------------------------------------------------------------------

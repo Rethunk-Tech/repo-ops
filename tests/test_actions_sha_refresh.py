@@ -51,7 +51,7 @@ def test_refresh_advances_digest_within_major_and_keeps_comment(tmp_path: Path) 
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, scanned = scan_actions(tmp_path, apply=True, keep_sha=True, refresh_sha=True)
+        bumps, scanned = scan_actions(tmp_path, apply=True)
 
     assert scanned == 1
     checkout = [b for b in bumps if b.action == "actions/checkout"]
@@ -80,7 +80,7 @@ def test_refresh_rewrites_exact_comment_to_new_release(tmp_path: Path) -> None:
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        scan_actions(tmp_path, apply=True, keep_sha=True, refresh_sha=True)
+        scan_actions(tmp_path, apply=True)
 
     assert wf.read_text(encoding="utf-8").endswith(f"@{_NEW} #v6.0.3 audited\n")
 
@@ -100,7 +100,7 @@ def test_refresh_resolves_major_via_tags_api_without_comment(tmp_path: Path) -> 
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=True, refresh_sha=True)
+        bumps, _ = scan_actions(tmp_path, apply=True)
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert len(checkout) == 1
@@ -124,33 +124,13 @@ def test_refresh_already_current_is_report_only(tmp_path: Path) -> None:
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=True, refresh_sha=True)
+        bumps, _ = scan_actions(tmp_path, apply=True)
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert len(checkout) == 1
     b = checkout[0]
     assert b.latest == _NEW
     assert b.detail == "SHA-pinned; report only"
-    assert wf.read_text(encoding="utf-8") == original
-
-
-def test_refresh_off_by_default_keeps_report_only(tmp_path: Path) -> None:
-    """Without refresh_sha, a SHA pin stays report-only even when a newer digest exists."""
-    wf = _wf(
-        tmp_path,
-        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_OLD}  # v6\n",
-    )
-    original = wf.read_text(encoding="utf-8")
-    tags_proc = _make_tags_proc(f"v6.0.3 {_NEW}", f"v6.0.2 {_OLD}")
-
-    with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
-        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
-    ):
-        bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=True)
-
-    checkout = [b for b in bumps if b.action == "actions/checkout"]
-    assert checkout[0].detail == "SHA-pinned; report only"
     assert wf.read_text(encoding="utf-8") == original
 
 
@@ -170,7 +150,7 @@ def test_refresh_two_part_tags_orders_by_semver_and_rewrites_comment(tmp_path: P
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc) as run_mock,
     ):
-        bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=True, refresh_sha=True)
+        bumps, _ = scan_actions(tmp_path, apply=True)
 
     assert any("repos/Rethunk-Tech/gh-actions/tags" in c.args[0] for c in run_mock.call_args_list)
     checkout = [b for b in bumps if b.action == action]
@@ -194,7 +174,7 @@ def test_refresh_mixed_two_and_three_part_tags_picks_highest(tmp_path: Path) -> 
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=True, refresh_sha=True)
+        bumps, _ = scan_actions(tmp_path, apply=True)
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert checkout[0].latest == _NEW
@@ -214,7 +194,7 @@ def test_refresh_bare_major_only_is_report_only(tmp_path: Path) -> None:
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=True, refresh_sha=True)
+        bumps, _ = scan_actions(tmp_path, apply=True)
 
     assert [b.detail for b in bumps if b.action == "actions/checkout"] == [
         "SHA-pinned; report only"
@@ -248,9 +228,6 @@ def test_cross_major_refresh_latest_updates_sha_and_comment(tmp_path: Path) -> N
         bumps, scanned = scan_actions(
             tmp_path,
             apply=True,
-            keep_sha=True,
-            refresh_sha=True,
-            upgrade_mode="latest",
         )
 
     assert scanned == 1
@@ -267,46 +244,6 @@ def test_cross_major_refresh_latest_updates_sha_and_comment(tmp_path: Path) -> N
     assert _OLD not in text, "old SHA still present"
     assert "# v7" in text, "comment not updated to v7"
     assert "# v6" not in text, "old comment still present"
-
-
-def test_cross_major_refresh_normalize_stays_within_major(tmp_path: Path) -> None:
-    """upgrade_mode=normalize (default): refresh stays within v6 even when v7 exists."""
-    wf = _wf(
-        tmp_path,
-        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_OLD}  # v6\n",
-    )
-    tags_proc = _make_tags_proc(
-        f"v7.0.1 {_V7}",
-        f"v7 {_V7}",
-        f"v6.0.3 {_NEW}",
-        f"v6.0.2 {_OLD}",
-        f"v6 {_OTHER}",
-    )
-
-    with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
-        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
-    ):
-        bumps, _ = scan_actions(
-            tmp_path,
-            apply=True,
-            keep_sha=True,
-            refresh_sha=True,
-            upgrade_mode="normalize",
-        )
-
-    checkout = [b for b in bumps if b.action == "actions/checkout"]
-    assert len(checkout) == 1
-    b = checkout[0]
-    # Must advance within v6 (to v6.0.3), not jump to v7.
-    assert b.latest == _NEW
-    assert "v6.0.3" in (b.detail or "")
-    assert "cross-major" not in (b.detail or "").lower()
-
-    text = wf.read_text(encoding="utf-8")
-    assert _NEW in text
-    assert "# v6" in text  # comment stays at v6
-    assert "# v7" not in text
 
 
 def test_cross_major_refresh_no_newer_major_exact_tag_stays_within(
@@ -332,9 +269,6 @@ def test_cross_major_refresh_no_newer_major_exact_tag_stays_within(
         bumps, _ = scan_actions(
             tmp_path,
             apply=True,
-            keep_sha=True,
-            refresh_sha=True,
-            upgrade_mode="latest",
         )
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
@@ -372,9 +306,6 @@ def test_cross_major_refresh_already_current_on_new_major_is_noop(
         bumps, _ = scan_actions(
             tmp_path,
             apply=True,
-            keep_sha=True,
-            refresh_sha=True,
-            upgrade_mode="latest",
         )
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]

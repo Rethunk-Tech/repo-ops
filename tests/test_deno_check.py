@@ -6,8 +6,6 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from repo_ops_js.deno import apply_deno, check_deno
 from repo_ops_models import Change
 
@@ -62,34 +60,10 @@ def test_check_deno_parses_box_table(tmp_path: Path, make_workspace) -> None:
     assert "npm:chalk" in names
 
 
-def test_check_deno_parses_update_vs_latest_columns(
-    tmp_path: Path, monkeypatch, make_workspace
-) -> None:
-    """Update==Current but Latest newer → behind_latest when latest-mode is off."""
-    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
-
-    def fake_run(cmd, cwd, timeout=None):
-        return subprocess.CompletedProcess(cmd, 0, stdout=_BOX_BEHIND_LATEST, stderr="")
-
-    with (
-        patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
-        patch("repo_ops_js.deno.run", side_effect=fake_run),
-    ):
-        changes, behind = check_deno(
-            make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo")
-        )
-
-    assert changes == []
-    assert len(behind) == 1
-    assert behind[0].name == "npm:lodash"
-    assert behind[0].to == "4.17.21"
-
-
 def test_check_deno_latest_mode_promotes_behind(
     tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """REPO_OPS_DENO_UPDATE_LATEST targets Latest and clears behind_latest."""
-    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "1")
 
     def fake_run(cmd, cwd, timeout=None):
         return subprocess.CompletedProcess(cmd, 0, stdout=_BOX_BEHIND_LATEST, stderr="")
@@ -126,29 +100,6 @@ def test_check_deno_parses_plain_table(tmp_path: Path, make_workspace) -> None:
     names = {c.name for c in changes}
     assert "jsr:@std/assert" in names
     assert "npm:chalk" in names
-
-
-def test_check_deno_parses_plain_four_column_behind(
-    tmp_path: Path, monkeypatch, make_workspace
-) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
-
-    def fake_run(cmd, cwd, timeout=None):
-        return subprocess.CompletedProcess(cmd, 0, stdout=_PLAIN_4_OUTPUT, stderr="")
-
-    with (
-        patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
-        patch("repo_ops_js.deno.run", side_effect=fake_run),
-    ):
-        changes, behind = check_deno(
-            make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo")
-        )
-
-    assert len(changes) == 1
-    assert changes[0].name == "jsr:@std/assert"
-    assert len(behind) == 1
-    assert behind[0].name == "npm:chalk"
-    assert behind[0].to == "5.3.0"
 
 
 def test_check_deno_returns_empty_when_up_to_date(tmp_path: Path, make_workspace) -> None:
@@ -214,28 +165,7 @@ def test_check_deno_invokes_deno_outdated(tmp_path: Path, make_workspace) -> Non
     assert captured == [["deno", "outdated"]]
 
 
-def test_apply_deno_runs_deno_outdated_update(tmp_path: Path, monkeypatch, make_workspace) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
-    captured: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        captured.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    with (
-        patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
-        patch("repo_ops_js.deno.run", side_effect=fake_run),
-    ):
-        apply_deno(make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"))
-
-    assert captured == [
-        ["deno", "outdated"],
-        ["deno", "outdated", "--update"],
-    ]
-
-
 def test_apply_deno_passes_latest_flag(tmp_path: Path, monkeypatch, make_workspace) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "1")
     captured: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout=None):
@@ -284,38 +214,10 @@ def test_apply_deno_calls_ghost_bump_guard(tmp_path: Path, make_workspace) -> No
         apply_deno(make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"))
 
 
-def test_apply_deno_rejects_lockfile_ghost_bump(
-    tmp_path: Path, monkeypatch, make_workspace
-) -> None:
-    """apply_deno fails when the lockfile remains below a planned target."""
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "0")
-
-    def fake_run(cmd, cwd, timeout=None):
-        if cmd == ["deno", "outdated"]:
-            return subprocess.CompletedProcess(cmd, 0, stdout=_BOX_OUTPUT, stderr="")
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    with (
-        patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
-        patch("repo_ops_js.deno.run", side_effect=fake_run),
-        patch(
-            "repo_ops_js.deno.versions_deno_lock",
-            return_value={
-                "jsr:@std/assert@0.225.0",
-                "npm:chalk@5.2.1",
-            },
-        ),
-        patch("repo_ops_js.guards.resolved_version_from_node_modules", return_value=None),
-        pytest.raises(RuntimeError, match="ghost bump"),
-    ):
-        apply_deno(make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"))
-
-
 def test_apply_deno_defers_lockfile_ghost_bump_with_targeted_bump(
     tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
     """Targeted mode folds unresolved bulk targets into the retry list."""
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
     ghost = Change("jsr:@std/assert", "0.225.0", "0.226.0")
 
     def fake_run(cmd, cwd, timeout=None):

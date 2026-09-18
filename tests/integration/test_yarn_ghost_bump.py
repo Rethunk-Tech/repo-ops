@@ -66,22 +66,6 @@ def test_yarn_guard_fires_when_resolutions_block_upgrade(
         assert_targets_resolved(ws, is_odd_ghost_change, manager="yarn")
 
 
-def test_yarn_apply_raises_ghost_bump_with_resolutions_pin(
-    yarn_ghost_apply_root: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """apply_yarn raises ghost-bump when resolutions block an in-range upgrade."""
-    # yarn_targeted_bump defaults on (settings-table default) — this test
-    # covers the hard-raise path (assert_targets_resolved), which only runs
-    # with targeted-bump off. The opt-in retry path is covered separately by
-    # test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising.
-    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "0")
-
-    ws = ghost_workspace(yarn_ghost_apply_root, manager="yarn", label="yarn-ghost-apply-test")
-
-    with pytest.raises(RuntimeError, match="ghost bump"):
-        apply_yarn(ws)
-
-
 def test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising(
     yarn_ghost_apply_root: Path, monkeypatch
 ) -> None:
@@ -92,7 +76,6 @@ def test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising(
     No ``.repo-ops.toml``/global hold covers ``is-odd`` here, so this pin is
     exactly the "legacy debt" case the release path targets.
     """
-    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
 
     ws = ghost_workspace(
         yarn_ghost_apply_root,

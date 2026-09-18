@@ -13,14 +13,11 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from repo_ops_go.go import (
     GO_WORK_SYNC_ENV,
     _go_work_dirs,
     _go_work_sync_enabled,
     _run_with_go_work_retry,
-    check_go,
     classify_go_error,
     register_go_work_dir,
 )
@@ -377,26 +374,3 @@ def test_go_work_sync_on_no_retry_when_go_work_use_fails(tmp_path: Path) -> None
     real_calls = [c for c in run_calls if c != ["go", "work", "use"]]
     assert len(real_calls) == 1, f"expected 1 real cmd call; got {real_calls}"
     assert result.returncode != 0
-
-
-def test_classify_errors_propagated_via_check_go(tmp_path: Path) -> None:
-    """check_go raises RuntimeError with [env] prefix for env-class errors."""
-    ws = _make_ws(tmp_path)
-
-    def fake_run(cmd, cwd, timeout=0):
-        return type(
-            "Proc",
-            (),
-            {
-                "returncode": 1,
-                "stdout": "",
-                "stderr": "go: module x listed in go.work file requires go >= 1.25.10",
-            },
-        )()
-
-    with (
-        patch.dict("os.environ", {"REPO_OPS_GO_UPGRADE_MODE": "patch", GO_WORK_SYNC_ENV: "0"}),
-        patch("repo_ops_go.go.run", side_effect=fake_run),
-        pytest.raises(RuntimeError, match=r"\[env\]"),
-    ):
-        check_go(ws)

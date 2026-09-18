@@ -40,17 +40,6 @@ def test_jobs_explicit_not_overridden():
     assert called_with_jobs[0] == 3
 
 
-def test_actions_lint_level_flag_accepted():
-    """--actions-lint-level is accepted by the upgrade parser."""
-    from repo_ops_core.cli import build_upgrade_parser
-
-    parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(["--actions-lint-level", "warn"])
-    assert args.actions_lint_level == "warn"
-    args2 = parser.parse_args([])
-    assert args2.actions_lint_level is None
-
-
 def test_exclude_flag_accepted():
     """--exclude is accepted and accumulates into a list."""
     from repo_ops_core.cli import build_upgrade_parser

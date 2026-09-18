@@ -230,17 +230,8 @@ Config files are TOML, read via stdlib `tomllib`:
 exceptions are `jobs` and `yarn_max_concurrency`, which apply to the whole run.
 CLI flags and caller-provided env vars outrank config everywhere.
 
-**The `--conservative` family.** 22 settings share one flag and one
-default of `1`: the full sweep is on unless `--conservative` turns it off. They
-are the per-ecosystem `*_update_latest`, `*_targeted_bump`, and `*_refresh_sha`
-keys, plus `actions_pin_sha`. Set one to `0` in config to opt a single ecosystem
-out while the rest of the sweep stays on.
-
 | Setting | Flag | Default |
 | --------- | ------ | --------- |
-| `actions_lint_level` | `--actions-lint-level` | `block` |
-| `actions_org_policy` | `--actions-org-policy` | `0` |
-| `actions_policy_level` | `--actions-policy-level` | `report` |
 | `commit_agent_model` | `(none)` | `composer-2.5` |
 | `commit_agent_provider` | `(none)` | `cursor` |
 | `exclude_patterns` | `--exclude` | `[]` |
@@ -248,9 +239,7 @@ out while the rest of the sweep stays on.
 | `git_timeout` | `(none)` | `10` |
 | `go_directive` | `(none)` | `(none)` |
 | `go_toolchain` | `(none)` | `(none)` |
-| `go_upgrade_mode` | `--go-upgrade-mode` | `patch` |
 | `go_work_sync` | `(none)` | `0` |
-| `hatch_migrate_uv_lock` | `--migrate-to-uv-lock` | `1` |
 | `jobs` | `--jobs` | `min(16, cpu_count)` |
 | `no_lint_cache` | `(none)` | `0` |
 | `no_progress` | `(none)` | `0` |

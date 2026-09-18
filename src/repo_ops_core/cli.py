@@ -106,15 +106,6 @@ docs:
   Agents: AGENTS.md. Humans: HUMANS.md. Bulk playbook: docs/bulk-maintenance.md.
 """
 
-CONSERVATIVE_FLAG_HELP = (
-    "Stay in-range: only move dependencies their own manifest constraints "
-    "already allow. The default is a full sweep — cross-range upgrades, "
-    "per-package targeted bumps for every package manager, GitHub Actions "
-    "pin/digest/major bumps, and container image tag and digest bumps. Use "
-    "this when a run must not cross a declared range. Per-ecosystem policy "
-    "flags (--go-upgrade-mode, --actions-upgrade-mode) still override it."
-)
-
 
 def positive_int(value: str) -> int:
     """Parse a strictly positive integer for argparse ``type=``."""
@@ -339,72 +330,6 @@ def add_upgrade_common_arguments(
     # ---- Upgrade policy ---------------------------------------------------
     pol = parser.add_argument_group("Upgrade policy")
     pol.add_argument(
-        "--conservative",
-        action="store_true",
-        help=CONSERVATIVE_FLAG_HELP,
-    )
-    pol.add_argument(
-        "--go-upgrade-mode",
-        choices=("patch", "explicit", "mvs"),
-        default=None,
-        dest="go_upgrade_mode",
-        metavar="MODE",
-        help=(
-            "Go module upgrade selection: explicit takes the latest tagged "
-            "version; patch bumps within the current minor; mvs uses the "
-            "module graph's minimum version selection. A default sweep uses "
-            "explicit; --conservative falls back to patch. Setting this "
-            "overrides both for this run."
-        ),
-    )
-    pol.add_argument(
-        "--actions-upgrade-mode",
-        choices=("normalize", "latest"),
-        default=None,
-        dest="actions_upgrade_mode",
-        metavar="MODE",
-        help=(
-            "GitHub Actions cross-major policy: latest applies cross-major "
-            "bumps to the newest available major (honoring --actions-tag-style "
-            "and the bare-major safety check); normalize collapses to the "
-            "current floating major and only reports newer ones. A default "
-            "sweep uses latest; --conservative falls back to normalize. "
-            "Setting this overrides both for Actions."
-        ),
-    )
-    pol.add_argument(
-        "--actions-tag-style",
-        choices=("major", "exact"),
-        default="major",
-        dest="actions_tag_style",
-        metavar="STYLE",
-        help=(
-            "Tag style when unpinning SHA-pinned Actions (requires --actions-unpin-sha): "
-            "major (default) → @vN; exact → highest @vN.M.P within that major."
-        ),
-    )
-    pol.add_argument(
-        "--actions-unpin-sha",
-        action="store_true",
-        dest="actions_unpin_sha",
-        help=(
-            "Opt in to resolving SHA-pinned Actions to version tags on apply. "
-            "By default, SHA pins are preserved (report only) to protect supply-chain hardening."
-        ),
-    )
-    pol.add_argument(
-        "--migrate-to-uv-lock",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        dest="migrate_to_uv_lock",
-        help=(
-            "Create a uv.lock for hatch projects that lack one, converting them to "
-            "uv-managed lockfile mode (default). --no-migrate-to-uv-lock skips such "
-            "projects instead, which leaves them permanently outside the sweep. "
-            "Sets REPO_OPS_HATCH_MIGRATE_UV_LOCK."
-        ),
-    )
-    pol.add_argument(
         "--skip-actions",
         action="store_true",
         help="Skip GitHub Actions workflow pin audit (deps only).",
@@ -537,17 +462,6 @@ def add_upgrade_common_arguments(
         help="Stop scheduling new workspaces after the first failure.",
     )
     exe.add_argument(
-        "--actions-lint-level",
-        choices=("block", "warn", "off"),
-        default=None,
-        dest="actions_lint_level",
-        metavar="LEVEL",
-        help=(
-            "How actionlint failures gate pin bumps: block (default, env: "
-            "REPO_OPS_ACTIONS_LINT_LEVEL), warn, or off."
-        ),
-    )
-    exe.add_argument(
         "--submodules",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -632,32 +546,6 @@ def add_upgrade_common_arguments(
                 "Resulting name: {prefix}/{repo-slug}."
             ),
         )
-
-    exe.add_argument(
-        "--actions-org-policy",
-        action="store_true",
-        dest="actions_org_policy",
-        help=(
-            "Fetch the GitHub org's allowed-actions policy and annotate Actions "
-            "rows that violate it (status=policy by default). "
-            "Sets REPO_OPS_ACTIONS_ORG_POLICY=1. Requires a GitHub token with "
-            "org read-permissions. Combine with --actions-policy-level to warn "
-            "or block pin rewrites."
-        ),
-    )
-    exe.add_argument(
-        "--actions-policy-level",
-        choices=("block", "warn", "report"),
-        default=None,
-        dest="actions_policy_level",
-        metavar="LEVEL",
-        help=(
-            "How org allowed-actions policy violations gate pin bumps when "
-            "--actions-org-policy is set: report (default, annotate only), "
-            "warn, or block (skip rewrites; status=policy-blocked). "
-            "Sets REPO_OPS_ACTIONS_POLICY_LEVEL."
-        ),
-    )
 
 
 def build_upgrade_parser(*, apply: bool) -> argparse.ArgumentParser:

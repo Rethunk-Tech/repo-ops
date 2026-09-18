@@ -8,23 +8,9 @@ from unittest.mock import patch
 
 from repo_ops_js.deno import (
     _landed_deno_version,
-    apply_deno,
     targeted_bump_behind,
 )
 from repo_ops_models import Change
-
-
-def test_targeted_bump_env_zero_disables_it(tmp_path: Path, monkeypatch, make_workspace) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "0")
-    behind = [Change("npm:lodash", "4.17.20", "4.17.21")]
-
-    with patch("repo_ops_js.deno.run") as run_mock:
-        assert targeted_bump_behind(
-            make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"),
-            behind,
-        ) == ([], behind)
-
-    run_mock.assert_not_called()
 
 
 def test_landed_deno_version_picks_highest_lock_version(
@@ -48,44 +34,9 @@ def test_landed_deno_version_picks_highest_lock_version(
     )
 
 
-def test_targeted_bump_keeps_changed_snapshot(tmp_path: Path, monkeypatch, make_workspace) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
-    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
-    change = Change("npm:lodash", "4.17.20", "4.17.21")
-    captured: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        captured.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    with (
-        patch(
-            "repo_ops_js.deno.snapshot_workspace_files",
-            side_effect=[{"deno.lock": b"old"}, {"deno.lock": b"new"}],
-        ),
-        patch(
-            "repo_ops_js.deno.versions_deno_lock",
-            return_value={"npm:lodash@4.17.22"},
-        ),
-        patch("repo_ops_js.guards.resolved_version_from_node_modules", return_value=None),
-        patch("repo_ops_js.deno._restore_deno_workspace") as restore,
-        patch("repo_ops_js.deno.run", side_effect=fake_run),
-    ):
-        applied, still_behind = targeted_bump_behind(
-            make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"),
-            [change],
-        )
-
-    assert applied == [Change("npm:lodash", "4.17.20", "4.17.22")]
-    assert still_behind == []
-    assert captured == [["deno", "update", "npm:lodash"]]
-    restore.assert_not_called()
-
-
 def test_targeted_bump_restores_snapshot_when_guard_raises(
     tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
     change = Change("npm:lodash", "4.17.20", "4.17.21")
     snapshot = {"deno.lock": b"original"}
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo")
@@ -128,7 +79,6 @@ def test_targeted_bump_restores_snapshot_when_guard_raises(
 
 
 def test_targeted_bump_restores_after_failure(tmp_path: Path, monkeypatch, make_workspace) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
     change = Change("jsr:@std/assert", "0.221.0", "0.226.0")
     snapshot = {"deno.lock": b"original"}
 
@@ -161,7 +111,6 @@ def test_targeted_bump_restores_after_failure(tmp_path: Path, monkeypatch, make_
 def test_targeted_bump_restores_when_snapshot_does_not_advance(
     tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
     change = Change("npm:chalk", "5.2.0", "5.3.0")
     snapshot = {"deno.lock": b"original"}
 
@@ -197,7 +146,6 @@ def test_targeted_bump_restores_when_snapshot_does_not_advance(
 def test_targeted_bump_restores_when_landed_version_does_not_advance(
     tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
     change = Change("npm:chalk", "5.2.0", "5.3.0")
     snapshot = {"deno.lock": b"original"}
 
@@ -237,7 +185,6 @@ def test_targeted_bump_restores_when_landed_version_does_not_advance(
 def test_targeted_bump_restores_when_lockfile_version_misses_target(
     tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
     change = Change("npm:chalk", "5.2.0", "5.3.0")
     snapshot = {"deno.lock": b"original"}
 
@@ -276,8 +223,6 @@ def test_targeted_bump_restores_when_lockfile_version_misses_target(
 
 
 def test_targeted_bump_passes_latest_flag(tmp_path: Path, monkeypatch, make_workspace) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
-    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "true")
     change = Change("npm:chalk", "5.2.0", "5.3.0")
     captured: list[list[str]] = []
 
@@ -309,7 +254,6 @@ def test_targeted_bump_passes_latest_flag(tmp_path: Path, monkeypatch, make_work
 def test_targeted_bump_restores_when_landed_version_missing(
     tmp_path: Path, monkeypatch, make_workspace
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
     change = Change("npm:chalk", "5.2.0", "5.3.0")
     snapshot = {"deno.lock": b"original"}
 
@@ -341,36 +285,3 @@ def test_targeted_bump_restores_when_landed_version_missing(
         make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"),
         snapshot,
     )
-
-
-def test_apply_deno_runs_targeted_fallback_after_bulk(
-    tmp_path: Path, monkeypatch, make_workspace
-) -> None:
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
-    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
-    change = Change("npm:lodash", "4.17.20", "4.17.21")
-    captured: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        captured.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    with (
-        patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
-        patch("repo_ops_js.deno.check_deno", return_value=([], [change])),
-        patch("repo_ops_js.deno.run", side_effect=fake_run),
-        patch(
-            "repo_ops_js.deno.targeted_bump_behind",
-            return_value=([], [change]),
-        ) as targeted,
-    ):
-        result = apply_deno(
-            make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo")
-        )
-
-    assert captured == [["deno", "outdated", "--update"]]
-    targeted.assert_called_once_with(
-        make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo"),
-        [change],
-    )
-    assert result == [change]

@@ -24,18 +24,14 @@ from repo_ops_core.process import run
 from repo_ops_core.version_utils import (
     hold_ceiling_spec,
     is_go_pseudo_version,
-    semver_tuple,
     version_satisfies_ceiling,
 )
 from repo_ops_models import Change, Workspace
-from repo_ops_upgrade.constants import GO_UPGRADE_RE
 
-GO_UPGRADE_MODE_ENV = "REPO_OPS_GO_UPGRADE_MODE"
 GO_WORK_SYNC_ENV = "REPO_OPS_GO_WORK_SYNC"
 GO_DIRECTIVE_ENV = "REPO_OPS_GO_DIRECTIVE"
 GO_TOOLCHAIN_ENV = "REPO_OPS_GO_TOOLCHAIN"
 _GO_GET_BATCH = 40
-_VALID_GO_UPGRADE_MODES = frozenset({"patch", "explicit", "mvs"})
 
 logger = logging.getLogger(__name__)
 
@@ -173,32 +169,6 @@ def _resolve_go_setting(name: str, env_var: str, ws: Workspace | None = None) ->
         repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
         global_cfg=load_global_config(),
     )
-
-
-def _go_upgrade_mode(ws: Workspace | None = None) -> str:
-    raw = _resolve_go_setting("go_upgrade_mode", GO_UPGRADE_MODE_ENV, ws)
-    if raw is None:
-        raw = "patch"
-    if not isinstance(raw, str):
-        raw = str(raw)
-    mode = raw.strip().lower()
-    if mode in _VALID_GO_UPGRADE_MODES:
-        return mode
-    if mode:
-        logger.warning(
-            "invalid %s=%r; using patch (valid: patch, explicit, mvs)",
-            GO_UPGRADE_MODE_ENV,
-            raw,
-        )
-    return "patch"
-
-
-def _is_patch_update(current: str, newer: str) -> bool:
-    cur = semver_tuple(current)
-    new = semver_tuple(newer)
-    if len(cur) < 2 or len(new) < 2:
-        return False
-    return cur[:2] == new[:2] and new > cur
 
 
 def _iter_go_list_modules(stdout: str) -> Iterator[dict]:
@@ -589,7 +559,7 @@ def _run_with_go_work_retry(
     return proc
 
 
-def _changes_from_go_list_json(ws: Workspace, *, patch_only: bool) -> list[Change]:
+def _changes_from_go_list_json(ws: Workspace) -> list[Change]:
     proc = _run_with_go_work_retry(
         ["go", "list", "-m", "-u", "-json", "all"], ws, timeout=resolve_timeout_check()
     )
@@ -605,8 +575,6 @@ def _changes_from_go_list_json(ws: Workspace, *, patch_only: bool) -> list[Chang
         path = mod.get("Path") or update.get("Path") or "?"
         cur = mod.get("Version") or "?"
         new = update.get("Version") or "?"
-        if patch_only and not _is_patch_update(cur, new):
-            continue
         if not have_recorded:
             recorded = _gomod_require_paths(ws)
             have_recorded = True
@@ -649,12 +617,7 @@ def _explicit_go_get_targets(ws: Workspace) -> list[str]:
 
 
 def check_go(ws: Workspace) -> list[Change]:
-    mode = _go_upgrade_mode(ws)
-    if mode == "mvs":
-        dep_changes = _check_go_mvs(ws)
-    else:
-        dep_changes = _changes_from_go_list_json(ws, patch_only=(mode == "patch"))
-    dep_changes = _filter_held_go_changes(ws, dep_changes)
+    dep_changes = _filter_held_go_changes(ws, _changes_from_go_list_json(ws))
 
     # Prepend go.work directive sync changes (textual parse, no subprocess).
     go_work_dir = _go_work_dirs.get(ws.path.resolve())
@@ -666,30 +629,6 @@ def check_go(ws: Workspace) -> list[Change]:
     fleet_changes = _plan_fleet_directive_changes(ws)
 
     return work_changes + dep_changes + fleet_changes
-
-
-def _check_go_mvs(ws: Workspace) -> list[Change]:
-    proc = _run_with_go_work_retry(
-        ["go", "list", "-u", "-m", "all"], ws, timeout=resolve_timeout_check()
-    )
-    if proc.returncode != 0:
-        _raise_classified(proc.stderr, "go list failed", ws.path)
-    recorded: set[str] | None = None
-    have_recorded = False
-    changes: list[Change] = []
-    for line in proc.stdout.splitlines():
-        m = GO_UPGRADE_RE.search(line)
-        if m:
-            parts = line.split()
-            name = parts[0]
-            cur = parts[1] if len(parts) > 1 and not parts[1].startswith("[") else "?"
-            if not have_recorded:
-                recorded = _gomod_require_paths(ws)
-                have_recorded = True
-            if recorded is not None and name not in recorded:
-                continue
-            changes.append(Change(name, cur, m.group(1)))
-    return changes
 
 
 def _apply_go_work_directive(ws: Workspace) -> None:
@@ -759,36 +698,13 @@ def apply_go(ws: Workspace) -> None:
     # 2. Fleet-wide directive/toolchain bumps (opt-in via env vars).
     _apply_fleet_directive(ws)
 
-    mode = _go_upgrade_mode(ws)
-    if mode == "mvs":
-        _apply_go_mvs(ws)
-        _enforce_version_ceilings(ws)
-        return
-    if mode == "explicit":
-        targets = _explicit_go_get_targets(ws)
-        for i in range(0, len(targets), _GO_GET_BATCH):
-            batch = targets[i : i + _GO_GET_BATCH]
-            proc = run(["go", "get", "--", *batch], ws.path, timeout=resolve_timeout_apply())
-            if proc.returncode != 0:
-                _raise_classified(proc.stderr, "go get failed", ws.path)
-    else:
-        proc = _run_with_go_work_retry(
-            ["go", "get", "-u=patch", "all"], ws, timeout=resolve_timeout_apply()
-        )
+    targets = _explicit_go_get_targets(ws)
+    for i in range(0, len(targets), _GO_GET_BATCH):
+        batch = targets[i : i + _GO_GET_BATCH]
+        proc = run(["go", "get", "--", *batch], ws.path, timeout=resolve_timeout_apply())
         if proc.returncode != 0:
-            _raise_classified(proc.stderr, "go get -u=patch all failed", ws.path)
+            _raise_classified(proc.stderr, "go get failed", ws.path)
     proc = run(["go", "mod", "tidy"], ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go mod tidy failed", ws.path)
     _enforce_version_ceilings(ws)
-
-
-def _apply_go_mvs(ws: Workspace) -> None:
-    proc = _run_with_go_work_retry(
-        ["go", "get", "-u", "-t", "all"], ws, timeout=resolve_timeout_apply()
-    )
-    if proc.returncode != 0:
-        _raise_classified(proc.stderr, "go get -u -t all failed", ws.path)
-    proc = run(["go", "mod", "tidy"], ws.path, timeout=resolve_timeout_apply())
-    if proc.returncode != 0:
-        _raise_classified(proc.stderr, "go mod tidy failed", ws.path)

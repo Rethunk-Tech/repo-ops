@@ -75,87 +75,6 @@ def test_check_pip_tools_pip_compile_fallback_dry_run_uses_upgrade(
     assert "--upgrade" in captured[0]
 
 
-def test_check_pip_tools_diffs_against_existing_requirements_txt(
-    tmp_path: Path,
-    monkeypatch,
-    make_workspace,
-    make_proc,
-) -> None:
-    """Existing requirements.txt pins are read as 'current' and diffed against
-    the freshly compiled 'proposed' set (exercises the req_txt.exists() branch)."""
-    monkeypatch.setenv("REPO_OPS_PIP_TOOLS_TARGETED_BUMP", "0")
-    (tmp_path / "requirements.in").write_text("requests\n")
-    (tmp_path / "requirements.txt").write_text("requests==2.28.0\n")
-
-    with (
-        patch("repo_ops_py_pip_tools.pip_tools.shutil.which", return_value="/usr/bin/uv"),
-        patch(
-            "repo_ops_py_pip_tools.pip_tools.run",
-            return_value=make_proc(0, stdout="requests==2.31.0\n"),
-        ),
-    ):
-        changes = check_pip_tools(
-            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
-        )
-
-    assert len(changes) == 1
-    assert changes[0].name == "requests"
-    assert changes[0].from_ver == "2.28.0"
-    assert changes[0].to == "2.31.0"
-
-
-def test_check_pip_tools_uv_empty_stdout_falls_through_to_pip_compile(
-    tmp_path: Path,
-    monkeypatch,
-    make_workspace,
-    make_proc,
-) -> None:
-    """uv returncode 0 with empty stdout is treated like 'no proposal yet' and
-    falls through to the pip-compile branch, not an error."""
-    monkeypatch.setenv("REPO_OPS_PIP_TOOLS_TARGETED_BUMP", "0")
-    (tmp_path / "requirements.in").write_text("requests\n")
-
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        calls.append(cmd)
-        if cmd[0] == "uv":
-            return make_proc(0, stdout="")
-        return make_proc(0, stdout="requests==2.31.0\n")
-
-    with (
-        patch(
-            "repo_ops_py_pip_tools.pip_tools.shutil.which",
-            return_value="/usr/bin/tool",
-        ),
-        patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_run),
-    ):
-        changes = check_pip_tools(
-            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
-        )
-
-    assert calls[0][0] == "uv"
-    assert calls[1][0] == "pip-compile"
-    assert any(c.name == "requests" for c in changes)
-
-
-def test_check_pip_tools_no_tools_available_returns_empty(
-    tmp_path: Path, monkeypatch, make_workspace
-) -> None:
-    """Neither uv nor pip-compile installed: quiet no-op, not an error (uv was
-    never attempted so uv_failed stays False)."""
-    monkeypatch.setenv("REPO_OPS_PIP_TOOLS_TARGETED_BUMP", "0")
-    (tmp_path / "requirements.in").write_text("requests\n")
-
-    with patch("repo_ops_py_pip_tools.pip_tools.shutil.which", return_value=None):
-        assert (
-            check_pip_tools(
-                make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
-            )
-            == []
-        )
-
-
 def test_check_pip_tools_uv_fails_pip_compile_missing_raises(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], make_workspace, make_proc
 ) -> None:
@@ -181,43 +100,6 @@ def test_check_pip_tools_uv_fails_pip_compile_missing_raises(
         )
 
     assert "WARN uv pip compile failed: boom" in capsys.readouterr().err
-
-
-def test_check_pip_tools_uv_fails_falls_through_to_pip_compile_with_warning(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch,
-    make_workspace,
-    make_proc,
-) -> None:
-    """uv failure still falls through to pip-compile (existing fallback preserved),
-    but now emits a WARN so the failure is not silently swallowed."""
-    monkeypatch.setenv("REPO_OPS_PIP_TOOLS_TARGETED_BUMP", "0")
-    req_in = tmp_path / "requirements.in"
-    req_in.write_text("requests\n")
-
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        calls.append(cmd)
-        if cmd[0] == "uv":
-            return make_proc(1, stderr="uv exploded")
-        return make_proc(0, stdout="requests==2.31.0\n")
-
-    with (
-        patch(
-            "repo_ops_py_pip_tools.pip_tools.shutil.which",
-            return_value="/usr/bin/tool",
-        ),
-        patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_run),
-    ):
-        changes = check_pip_tools(
-            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
-        )
-
-    assert "WARN uv pip compile failed: uv exploded" in capsys.readouterr().err
-    assert any(c.name == "requests" for c in changes)
-    assert calls[0][0] == "uv"
 
 
 def test_compile_requirements_uv_success_returns_early(

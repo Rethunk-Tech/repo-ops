@@ -8,47 +8,10 @@ from unittest.mock import patch
 from repo_ops_go.go import (
     _changes_from_go_list_json,
     _explicit_go_get_targets,
-    _is_patch_update,
     _valid_go_get_target,
     apply_go,
 )
 from repo_ops_models import Workspace
-
-
-def test_is_patch_update_same_minor() -> None:
-    assert _is_patch_update("v1.2.3", "v1.2.4")
-    assert not _is_patch_update("v1.2.3", "v1.3.0")
-
-
-def test_changes_from_go_list_json_patch_filter(tmp_path) -> None:
-    ws = Workspace(
-        path=tmp_path,
-        ecosystem="go",
-        manager="go",
-        git_repo=tmp_path,
-        label="mod",
-    )
-    lines = [
-        json.dumps(
-            {
-                "Path": "example.com/a",
-                "Version": "v1.2.3",
-                "Update": {"Path": "example.com/a", "Version": "v1.2.4"},
-            }
-        ),
-        json.dumps(
-            {
-                "Path": "example.com/b",
-                "Version": "v2.0.0",
-                "Update": {"Path": "example.com/b", "Version": "v2.1.0"},
-            }
-        ),
-    ]
-    fake_run = _fake_run_with_gomod("\n".join(lines), ["example.com/a", "example.com/b"])
-    with patch("repo_ops_go.go.run", side_effect=fake_run):
-        changes = _changes_from_go_list_json(ws, patch_only=True)
-    assert len(changes) == 1
-    assert changes[0].name == "example.com/a"
 
 
 def test_changes_from_go_list_json_pretty_printed(tmp_path) -> None:
@@ -74,7 +37,7 @@ def test_changes_from_go_list_json_pretty_printed(tmp_path) -> None:
     stdout = "\n".join(json.dumps(m, indent="\t") for m in modules)
     fake_run = _fake_run_with_gomod(stdout, ["example.com/a", "example.com/b"])
     with patch("repo_ops_go.go.run", side_effect=fake_run):
-        changes = _changes_from_go_list_json(ws, patch_only=False)
+        changes = _changes_from_go_list_json(ws)
     assert len(changes) == 2
     assert {c.name for c in changes} == {"example.com/a", "example.com/b"}
 
@@ -144,7 +107,7 @@ def test_graph_only_modules_excluded(tmp_path) -> None:
     )
     fake_run = _fake_run_with_gomod(lines, ["example.com/recorded"])
     with patch("repo_ops_go.go.run", side_effect=fake_run):
-        changes = _changes_from_go_list_json(ws, patch_only=False)
+        changes = _changes_from_go_list_json(ws)
         targets = _explicit_go_get_targets(ws)
     assert [c.name for c in changes] == ["example.com/recorded"]
     assert targets == ["example.com/recorded@v1.0.1"]
@@ -173,31 +136,8 @@ def test_unreadable_gomod_skips_filtering(tmp_path) -> None:
         return type("Proc", (), {"returncode": 0, "stdout": line, "stderr": ""})()
 
     with patch("repo_ops_go.go.run", side_effect=fake_run):
-        changes = _changes_from_go_list_json(ws, patch_only=False)
+        changes = _changes_from_go_list_json(ws)
     assert [c.name for c in changes] == ["example.com/foo"]
-
-
-def test_apply_go_patch_mode_runs_patch_all(tmp_path) -> None:
-    ws = Workspace(
-        path=tmp_path,
-        ecosystem="go",
-        manager="go",
-        git_repo=tmp_path,
-        label="mod",
-    )
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=0):
-        calls.append(cmd)
-        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-
-    with (
-        patch.dict("os.environ", {"REPO_OPS_GO_UPGRADE_MODE": "patch"}),
-        patch("repo_ops_go.go.run", side_effect=fake_run),
-    ):
-        apply_go(ws)
-    assert ["go", "get", "-u=patch", "all"] in calls
-    assert ["go", "mod", "tidy"] in calls
 
 
 def test_valid_go_get_target_rejects_flag_like_paths() -> None:
@@ -260,78 +200,3 @@ def test_apply_go_explicit_mode_uses_get_separator(tmp_path) -> None:
         apply_go(ws)
     assert ["go", "get", "--", "example.com/foo@v1.0.1"] in calls
     assert ["go", "mod", "tidy"] in calls
-
-
-def test_check_go_passes_timeout_check(tmp_path) -> None:
-    """check_go must pass TIMEOUT_CHECK to run(), not the 300s default."""
-    from repo_ops_core.constants import TIMEOUT_CHECK
-    from repo_ops_go.go import check_go
-
-    ws = Workspace(
-        path=tmp_path,
-        ecosystem="go",
-        manager="go",
-        git_repo=tmp_path,
-        label="mod",
-    )
-    captured: list[dict] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        captured.append({"cmd": cmd, "timeout": timeout})
-        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-
-    with (
-        patch.dict("os.environ", {"REPO_OPS_GO_UPGRADE_MODE": "patch"}),
-        patch("repo_ops_go.go.run", side_effect=fake_run),
-    ):
-        check_go(ws)
-
-    assert captured, "run() was not called"
-    assert captured[0]["timeout"] == TIMEOUT_CHECK
-
-
-def test_apply_go_mvs_mode_runs_get_u_t_all(tmp_path) -> None:
-    ws = Workspace(
-        path=tmp_path,
-        ecosystem="go",
-        manager="go",
-        git_repo=tmp_path,
-        label="mod",
-    )
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=0):
-        calls.append(cmd)
-        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-
-    with (
-        patch.dict("os.environ", {"REPO_OPS_GO_UPGRADE_MODE": "mvs"}),
-        patch("repo_ops_go.go.run", side_effect=fake_run),
-    ):
-        apply_go(ws)
-    assert ["go", "get", "-u", "-t", "all"] in calls
-    assert ["go", "mod", "tidy"] in calls
-
-
-def test_go_upgrade_mode_invalid_env_falls_back_to_patch_with_warning(caplog, monkeypatch) -> None:
-    """Typos in REPO_OPS_GO_UPGRADE_MODE warn and fall back to patch."""
-    import logging
-
-    from repo_ops_go.go import _go_upgrade_mode
-
-    monkeypatch.setenv("REPO_OPS_GO_UPGRADE_MODE", "patxh")
-    with caplog.at_level(logging.WARNING, logger="repo_ops_go.go"):
-        assert _go_upgrade_mode() == "patch"
-    assert any("invalid REPO_OPS_GO_UPGRADE_MODE" in r.message for r in caplog.records)
-    assert any("patxh" in r.message for r in caplog.records)
-
-
-def test_go_upgrade_mode_empty_env_is_patch_without_warning(caplog, monkeypatch) -> None:
-    import logging
-
-    from repo_ops_go.go import _go_upgrade_mode
-
-    monkeypatch.setenv("REPO_OPS_GO_UPGRADE_MODE", "   ")
-    with caplog.at_level(logging.WARNING, logger="repo_ops_go.go"):
-        assert _go_upgrade_mode() == "patch"
-    assert not any("invalid REPO_OPS_GO_UPGRADE_MODE" in r.message for r in caplog.records)

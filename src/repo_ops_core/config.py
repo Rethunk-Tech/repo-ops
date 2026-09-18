@@ -170,9 +170,6 @@ def _s(
 _SETTINGS: tuple[_Setting, ...] = (
     # Execution
     _s("jobs", None, "--jobs", "min(16, cpu_count)", env_var=None),
-    # Upgrade policy
-    _s("go_upgrade_mode", None, "--go-upgrade-mode", "patch"),
-    _s("actions_lint_level", None, "--actions-lint-level", "block"),
     # Timeouts (defaults from constants — same values resolve_timeout_* use)
     _s("timeout_check", TIMEOUT_CHECK, "(none)", str(TIMEOUT_CHECK)),
     _s("timeout_apply", TIMEOUT_APPLY, "(none)", str(TIMEOUT_APPLY)),
@@ -180,26 +177,7 @@ _SETTINGS: tuple[_Setting, ...] = (
     _s("find_timeout", FIND_TIMEOUT, "(none)", str(FIND_TIMEOUT)),
     _s("git_timeout", GIT_TIMEOUT, "(none)", str(GIT_TIMEOUT)),
     # Feature flags
-    # Sweep-default settings: these 20 keys back off/on the default full
-    # sweep and default to "1" (on). --conservative is the only way to flip
-    # them all to "0" at once; each is still individually overridable via its
-    # own env var or [tool.repo-ops] config key, which is the entire point of
-    # routing them through this table instead of an unconditional env write.
-    _s("bun_update_latest", "1", "--conservative", "1"),
-    _s("pnpm_update_latest", "1", "--conservative", "1"),
-    _s("yarn_update_latest", "1", "--conservative", "1"),
-    _s("yarn_targeted_bump", "1", "--conservative", "1"),
     _s("yarn_max_concurrency", None, "(none)", "4"),
-    _s("npm_targeted_bump", "1", "--conservative", "1"),
-    _s("pnpm_targeted_bump", "1", "--conservative", "1"),
-    _s("bun_targeted_bump", "1", "--conservative", "1"),
-    _s("deno_update_latest", "1", "--conservative", "1"),
-    _s("deno_targeted_bump", "1", "--conservative", "1"),
-    _s("rust_targeted_bump", "1", "--conservative", "1"),
-    _s("poetry_targeted_bump", "1", "--conservative", "1"),
-    _s("pdm_targeted_bump", "1", "--conservative", "1"),
-    _s("pipenv_targeted_bump", "1", "--conservative", "1"),
-    _s("pip_tools_targeted_bump", "1", "--conservative", "1"),
     _s("go_work_sync", None, "(none)", "0"),
     _s("no_progress", None, "(none)", "0"),
     _s("no_state", None, "(none)", "0"),
@@ -209,27 +187,8 @@ _SETTINGS: tuple[_Setting, ...] = (
     _s("node_verify_script", None, "(none)", "(none)"),
     _s("commit_agent_provider", None, "(none)", "cursor"),
     _s("commit_agent_model", "composer-2.5", "(none)", "composer-2.5"),
-    _s("actions_org_policy", None, "--actions-org-policy", "0"),
-    _s("actions_policy_level", None, "--actions-policy-level", "report"),
-    # Actions digest refresh (SHA-pinned Actions get their pin's commit
-    # advanced within the resolved major) and pin-to-SHA (a floating-tag
-    # Action gets hardened to a SHA pin). Both are opt-in-by-sweep-default,
-    # AND-ed with keep_sha (never fires when --actions-unpin-sha is passed).
-    _s("actions_refresh_sha", "1", "--conservative", "1"),
-    _s("actions_pin_sha", "1", "--conservative", "1"),
-    _s("container_update_latest", "1", "--conservative", "1"),
     # Apply resume checkpoint (apply-only): skip repos already applied in a prior run.
     _s("resume", None, "(none)", "0"),
-    # Submodule tag-advance: allow cross-major semver tag bumps on submodule pointers.
-    _s("submodule_update_latest", "1", "--conservative", "1"),
-    # Pre-commit hook upgrades: allow cross-major rev bumps.
-    _s("precommit_update_latest", "1", "--conservative", "1"),
-    _s("precommit_refresh_sha", "1", "--conservative", "1"),
-    _s("submodule_refresh_sha", "1", "--conservative", "1"),
-    # Container ecosystem: refresh image digest for SHA-pinned references.
-    _s("container_refresh_sha", "1", "--conservative", "1"),
-    # Hatch: opt in to creating uv.lock (also settable via --migrate-to-uv-lock flag).
-    _s("hatch_migrate_uv_lock", None, "--migrate-to-uv-lock", "1"),
     # Exclude patterns: CLI --exclude / config key ``exclude`` (list). No env
     # channel — lists do not serialize cleanly; run.py also special-cases merge.
     _s("exclude_patterns", None, "--exclude", "[]", env_var=None, config_key="exclude"),
@@ -381,25 +340,3 @@ def coerce_bool_setting(raw: Any) -> bool:
     if isinstance(raw, bool):
         return raw
     return str(raw or "").strip().lower() in _BOOL_TRUE_VALUES
-
-
-def resolve_bool_setting(name: str, env_var: str, ws: Any = None) -> bool:
-    """Resolve a boolean feature-flag setting: CLI > env > config > default.
-
-    ``ws`` supplies the per-repo config scope — any object with a
-    ``git_repo`` path attribute (e.g. ``repo_ops_models.Workspace``); omit
-    to resolve from global config only.
-
-    Callers that need ``ambient_env``/``load_repo_config``/``load_global_config``
-    individually patchable (e.g. a test suite mocking the config layer at the
-    call site's module) should call :func:`resolve_setting` directly and pass
-    the result through :func:`coerce_bool_setting` instead.
-    """
-    raw = resolve_setting(
-        name,
-        cli_value=process_env_cli_override(env_var),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
-    )
-    return coerce_bool_setting(raw)

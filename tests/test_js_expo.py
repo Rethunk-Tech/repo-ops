@@ -46,8 +46,6 @@ def _installed(root: Path, name: str, version: str) -> None:
 
 
 def _expo_monorepo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setenv("REPO_OPS_BUN_UPDATE_LATEST", "1")
-    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
     _write(tmp_path / "package.json", {"workspaces": ["apps/*"]})
     mobile = tmp_path / "apps" / "mobile"
     _write(

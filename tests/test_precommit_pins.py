@@ -21,7 +21,6 @@ from unittest.mock import patch
 
 import pytest
 
-from repo_ops_core.cli import build_upgrade_parser
 from repo_ops_models import Workspace
 from repo_ops_upgrade.precommit import (
     _clear_tag_cache,
@@ -226,27 +225,24 @@ def test_is_sha_rev_tag_not_sha() -> None:
 
 
 @pytest.mark.parametrize(
-    ("current", "tags", "allow_cross_major", "expected"),
+    ("current", "tags", "expected"),
     [
-        ("v4.5.0", ["v4.5.0", "v4.6.0", "v4.6.1", "v5.0.0"], False, "v4.6.1"),
-        # Without allow_cross_major, v5 should not be picked.
-        ("v4.5.0", ["v4.5.0", "v4.6.1", "v5.0.0"], False, "v4.6.1"),
-        ("v4.5.0", ["v4.5.0", "v4.6.1", "v5.0.0"], True, "v5.0.0"),
+        ("v4.5.0", ["v4.5.0", "v4.6.0", "v4.6.1"], "v4.6.1"),
+        # Crosses majors.
+        ("v4.5.0", ["v4.5.0", "v4.6.1", "v5.0.0"], "v5.0.0"),
         # Bare (non-v-prefixed) revs match bare tags only.
-        ("23.3.0", ["23.3.0", "23.4.0", "v24.0.0"], False, "23.4.0"),
-        ("v4.6.1", ["v4.5.0", "v4.6.1"], False, None),
+        ("23.3.0", ["23.3.0", "23.4.0", "v24.0.0"], "23.4.0"),
+        ("v4.6.1", ["v4.5.0", "v4.6.1"], None),
         # SHA or branch rev → None (non-actionable).
-        ("abc1234", ["v4.5.0"], False, None),
-        ("main", ["v4.5.0"], False, None),
-        ("v4.5.0", [], False, None),
+        ("abc1234", ["v4.5.0"], None),
+        ("main", ["v4.5.0"], None),
+        ("v4.5.0", [], None),
         # current is v-prefixed but tags are bare → no match.
-        ("v4.5.0", ["4.5.0", "4.6.0"], False, None),
+        ("v4.5.0", ["4.5.0", "4.6.0"], None),
     ],
 )
-def test_resolve_latest_precommit_rev(
-    current: str, tags: list[str], allow_cross_major: bool, expected: str | None
-) -> None:
-    result = _resolve_latest_precommit_rev(current, tags, allow_cross_major=allow_cross_major)
+def test_resolve_latest_precommit_rev(current: str, tags: list[str], expected: str | None) -> None:
+    result = _resolve_latest_precommit_rev(current, tags)
     assert result == expected
 
 
@@ -320,7 +316,6 @@ def test_check_precommit_sha_pin_report_only(tmp_path: Path) -> None:
 def test_check_precommit_sha_pin_refreshes_with_opt_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "1")
     current_sha = "a" * 40
     latest_sha = "b" * 40
     (tmp_path / ".pre-commit-config.yaml").write_text(
@@ -344,8 +339,6 @@ def test_check_precommit_sha_pin_refreshes_with_opt_in(
 def test_check_precommit_sha_refresh_stays_within_major_under_update_latest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "1")
-    monkeypatch.setenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", "1")
     current_sha = "a" * 40
     latest_sha = "b" * 40
     cross_major_sha = "c" * 40
@@ -403,7 +396,6 @@ def test_check_precommit_no_config_no_changes(tmp_path: Path) -> None:
 def test_check_precommit_cross_major_opt_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_PRECOMMIT_UPDATE_LATEST", "1")
     (tmp_path / ".pre-commit-config.yaml").write_text(
         "repos:\n- repo: https://github.com/org/tool\n  rev: v1.9.0\n  hooks:\n  - id: x\n"
     )
@@ -412,20 +404,6 @@ def test_check_precommit_cross_major_opt_in(
         changes = check_precommit(_make_ws(tmp_path))
     assert len(changes) == 1
     assert changes[0].to == "v2.0.0"
-
-
-def test_precommit_and_submodule_refresh_sha_flags_removed() -> None:
-    """--precommit-refresh-sha/--submodule-refresh-sha are not argparse flags.
-
-    Refresh-sha runs as part of the default full sweep in run.py; --conservative
-    is the opt-out (env-var wiring covered by
-    tests/test_run_targeted_bump_getattr.py).
-    """
-    parser = build_upgrade_parser(apply=False)
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--precommit-refresh-sha"])
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--submodule-refresh-sha"])
 
 
 def test_check_precommit_deduplicates_same_repo(tmp_path: Path) -> None:
@@ -514,29 +492,9 @@ def test_apply_precommit_no_change_when_at_latest(tmp_path: Path) -> None:
     assert cfg.read_text(encoding="utf-8") == original
 
 
-def test_apply_precommit_sha_pin_not_modified(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Digest refresh defaults on with the sweep; pin it off so this
-    # test exercises the plain SHA-pin-untouched path.
-    monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "0")
-    sha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
-    original = f"repos:\n- repo: https://github.com/org/tool\n  rev: {sha}\n  hooks:\n  - id: x\n"
-    cfg = tmp_path / ".pre-commit-config.yaml"
-    cfg.write_text(original, encoding="utf-8")
-
-    # No subprocess call expected (SHA is report-only)
-    with patch("subprocess.run") as mock_run:
-        apply_precommit(_make_ws(tmp_path))
-
-    mock_run.assert_not_called()
-    assert cfg.read_text(encoding="utf-8") == original
-
-
 def test_apply_precommit_refreshes_sha_pin_with_opt_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_PRECOMMIT_REFRESH_SHA", "1")
     current_sha = "a" * 40
     latest_sha = "b" * 40
     original = (

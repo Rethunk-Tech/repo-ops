@@ -7,7 +7,6 @@ import shutil
 import sys
 from pathlib import Path
 
-from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import (
     read_json_file,
@@ -23,8 +22,6 @@ from repo_ops_models import Change, Workspace
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
 from repo_ops_py.pypi import pypi_latest as _pypi_latest
 from repo_ops_py.version_ceiling import enforce_version_ceilings
-
-_PIPENV_TARGETED_BUMP_ENV = "REPO_OPS_PIPENV_TARGETED_BUMP"
 
 # ---------------------------------------------------------------------------
 # Package version-ceiling ("hold") rules
@@ -46,10 +43,6 @@ def _pipfile_lock_versions(ws: Workspace) -> dict[str, str]:
             if name and ver:
                 out[str(name)] = ver
     return out
-
-
-def _pipenv_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
-    return resolve_bool_setting("pipenv_targeted_bump", _PIPENV_TARGETED_BUMP_ENV, ws)
 
 
 def _pipenv_requirement_satisfied(version: str, requirement: str) -> bool:
@@ -166,7 +159,7 @@ def check_pipenv(
     """
     if not shutil.which("pipenv"):
         print(f"WARN {ws.path}: pipenv not on PATH", file=sys.stderr)
-        return ([], []) if _pipenv_targeted_bump_enabled(ws) else []
+        return ([], [])
     # Read-only probe: get venv path without creating one.
     probe = run(["pipenv", "--venv"], ws.path, timeout=resolve_timeout_check())
     if probe.returncode != 0:
@@ -174,9 +167,7 @@ def check_pipenv(
             f"WARN {ws.path}: pipenv venv not initialised; run 'pipenv install' first",
             file=sys.stderr,
         )
-        if _pipenv_targeted_bump_enabled(ws):
-            return [], _pipenv_latest_direct_changes(ws)
-        return []
+        return [], _pipenv_latest_direct_changes(ws)
     venv_path = probe.stdout.strip()
     # Derive pip from the venv path; fall back to bare "pip" when the probe
     # returned an unusable path (e.g. in unit tests with a mocked run).
@@ -203,8 +194,6 @@ def check_pipenv(
             if len(parts) >= 3:
                 changes.append(Change(parts[0], parts[1], parts[2]))
     in_range = _filter_held_changes(ws, changes)
-    if not _pipenv_targeted_bump_enabled(ws):
-        return in_range
     return in_range, _pipenv_latest_direct_changes(ws)
 
 
@@ -216,6 +205,4 @@ def apply_pipenv(ws: Workspace) -> list[Change] | None:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pipenv update failed")
     _enforce_version_ceilings(ws)
-    if not _pipenv_targeted_bump_enabled(ws):
-        return None
     return _apply_pipenv_targeted_bumps(ws, _pipenv_latest_direct_changes(ws))

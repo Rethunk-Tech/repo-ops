@@ -230,29 +230,21 @@ def test_normalize_docker_image(image: str, host: str, repo: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "current, available, allow_cross_major, expected",
+    "current, available, expected",
     [
-        ("1.25", ["1.24", "1.25", "1.26"], False, "1.26"),
-        (
-            "1.25-alpine",
-            ["1.24-alpine", "1.25-alpine", "1.26-alpine", "1.26-slim"],
-            False,
-            "1.26-alpine",
-        ),
-        # Without allow_cross_major, resolution stays within current major.
-        ("1.25", ["1.26", "2.0", "2.1"], False, "1.26"),
-        ("1.25", ["1.26", "2.0", "2.1"], True, "2.1"),
-        ("1.25", ["1.25", "1.24"], False, None),
+        ("1.25", ["1.24", "1.25", "1.26"], "1.26"),
+        ("1.25-alpine", ["1.24-alpine", "1.25-alpine", "1.26-alpine", "1.26-slim"], "1.26-alpine"),
+        # Crosses majors.
+        ("1.25", ["1.26", "2.0", "2.1"], "2.1"),
+        ("1.25", ["1.25", "1.24"], None),
         # Non-semver current tag → always None.
-        ("latest", ["1.25", "1.26"], False, None),
+        ("latest", ["1.25", "1.26"], None),
         # No candidates with same suffix → None.
-        ("1.25-alpine", ["1.26-slim", "1.27-slim"], False, None),
+        ("1.25-alpine", ["1.26-slim", "1.27-slim"], None),
     ],
 )
-def test_resolve_latest_tag(
-    current: str, available: list[str], allow_cross_major: bool, expected: str | None
-) -> None:
-    assert _resolve_latest_tag(current, available, allow_cross_major=allow_cross_major) == expected
+def test_resolve_latest_tag(current: str, available: list[str], expected: str | None) -> None:
+    assert _resolve_latest_tag(current, available) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -268,49 +260,6 @@ def _make_ws(path: Path) -> Workspace:
         git_repo=path,
         label="",
     )
-
-
-@pytest.mark.parametrize(
-    "dockerfile, fetch_return, extra_substrings, env",
-    [
-        (
-            "FROM nginx@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456ab12\n",
-            [],
-            [],
-            {},
-        ),
-        ("FROM nginx:latest\n", ["1.26"], [], {}),
-        ("FROM ubuntu\n", [], [], {}),
-        ("FROM nginx:1.25\n", None, ["registry query failed"], {}),
-        (
-            # Digest refresh defaults on with the sweep; pin it off so this
-            # exercises the plain report-only path rather than an actual digest fetch.
-            "FROM nginx:1.25@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456ab12\n",
-            ["1.26"],
-            [],
-            {"REPO_OPS_CONTAINER_REFRESH_SHA": "0"},
-        ),
-    ],
-)
-def test_check_container_report_only(
-    dockerfile: str,
-    fetch_return: list[str] | None,
-    extra_substrings: list[str],
-    env: dict[str, str],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    for key, value in env.items():
-        monkeypatch.setenv(key, value)
-    (tmp_path / "Dockerfile").write_text(dockerfile)
-
-    with patch("repo_ops_container.container._fetch_tags", return_value=fetch_return):
-        changes = check_container(_make_ws(tmp_path))
-
-    assert len(changes) == 1
-    assert "[report-only]" in changes[0].to
-    for substr in extra_substrings:
-        assert substr in changes[0].to
 
 
 @pytest.mark.parametrize(
@@ -419,7 +368,6 @@ def test_check_container_deduplicates_same_image(tmp_path: Path) -> None:
 
 
 def test_check_container_cross_major_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("REPO_OPS_CONTAINER_UPDATE_LATEST", "1")
     (tmp_path / "Dockerfile").write_text("FROM nginx:1.25\n")
 
     with patch(

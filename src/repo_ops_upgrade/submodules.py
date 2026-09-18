@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
-from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
 from repo_ops_core.holds import HoldRule, resolve_package_hold
@@ -240,11 +239,6 @@ def _dirty_submodule_paths(parent: Path, submodule_paths: list[str]) -> list[str
 #: ecosystems so the report layer can distinguish them uniformly).
 _REPORT_ONLY_PREFIX = "[report-only] "
 
-#: Environment variable opt-in for cross-major tag advances.
-_SUBMODULE_UPDATE_LATEST_ENV = "REPO_OPS_SUBMODULE_UPDATE_LATEST"
-
-#: Environment variable opt-in for refreshing SHA-only submodule pointers.
-_SUBMODULE_REFRESH_SHA_ENV = "REPO_OPS_SUBMODULE_REFRESH_SHA"
 
 #: Bounded timeout (seconds) for ``git ls-remote`` calls.
 _LS_REMOTE_TIMEOUT = 30
@@ -253,22 +247,6 @@ _LS_REMOTE_TIMEOUT = 30
 #: One entry per unique upstream URL so repeated checks cost only one RTT.
 _SUBMODULE_TAG_CACHE: dict[str, list[str] | None] = {}
 _SUBMODULE_TAG_REF_CACHE: dict[str, list[tuple[str, str]] | None] = {}
-
-
-def _submodule_update_latest_enabled(repo_root: Path) -> bool:
-    return resolve_bool_setting(
-        "submodule_update_latest",
-        _SUBMODULE_UPDATE_LATEST_ENV,
-        SimpleNamespace(git_repo=repo_root),
-    )
-
-
-def _submodule_refresh_sha_enabled(repo_root: Path) -> bool:
-    return resolve_bool_setting(
-        "submodule_refresh_sha",
-        _SUBMODULE_REFRESH_SHA_ENV,
-        SimpleNamespace(git_repo=repo_root),
-    )
 
 
 @dataclass(frozen=True)
@@ -369,14 +347,12 @@ def _current_submodule_sha(git_repo: Path) -> str | None:
 def _resolve_latest_submodule_tag(
     current_tag: str,
     available_tags: list[str],
-    *,
-    allow_cross_major: bool = False,
 ) -> str | None:
     """Return the best candidate tag for *current_tag* from *available_tags*.
 
     See :func:`repo_ops_upgrade.tags.resolve_latest_tag` for matching rules.
     """
-    return tags.resolve_latest_tag(current_tag, available_tags, allow_cross_major=allow_cross_major)
+    return tags.resolve_latest_tag(current_tag, available_tags)
 
 
 def _resolve_sha_refresh(current_sha: str, refs: list[tuple[str, str]]) -> tuple[str, str] | None:
@@ -443,18 +419,14 @@ def check_submodule_tag_advances(
     - Queries upstream tags via ``git ls-remote`` with a 30 s timeout; network
       failures degrade to report-only so the check never raises.
     - Non-semver current tags are report-only.
-    - Submodules already at the latest semver tag within the same major produce
-      no entry.
-
-    Set ``REPO_OPS_SUBMODULE_UPDATE_LATEST=1`` to allow cross-major advances.
-    Set ``REPO_OPS_SUBMODULE_REFRESH_SHA=1`` to refresh SHA-only HEADs when
-    their upstream tag history establishes a same-major target.
+    - Submodules already at the latest semver tag produce no entry; tags advance
+      across majors.
+    - SHA-only HEADs refresh when their upstream tag history establishes a
+      same-major target.
     """
     bumps: list[SubmoduleTagBump] = []
 
     for link in links:
-        allow_cross_major = _submodule_update_latest_enabled(link.parent)
-        refresh_sha = _submodule_refresh_sha_enabled(link.parent)
         url = link.url
         if not url:
             # No URL recorded — cannot resolve upstream; skip silently.
@@ -464,7 +436,7 @@ def check_submodule_tag_advances(
         hold = _resolve_submodule_hold(link)
 
         if current_tag is None:
-            current_sha = _current_submodule_sha(link.git_repo) if (hold or refresh_sha) else None
+            current_sha = _current_submodule_sha(link.git_repo)
             refs: list[tuple[str, str]] | None = None
             if hold is not None and current_sha:
                 refs = _fetch_remote_tag_refs(url)
@@ -482,28 +454,25 @@ def check_submodule_tag_advances(
                             )
                         )
                         continue
-            if refresh_sha:
-                refs = (
-                    refs
-                    if refs is not None
-                    else (_fetch_remote_tag_refs(url) if current_sha else None)
-                )
-                resolved = _resolve_sha_refresh(current_sha or "", refs or [])
-                if resolved is not None:
-                    _resolved_current_tag, latest_tag = resolved
-                    if not _target_within_hold(link, latest_tag):
-                        continue
-                    bumps.append(
-                        SubmoduleTagBump(
-                            path=link.path,
-                            url=url,
-                            current_tag="",
-                            latest_tag=latest_tag,
-                            parent=link.parent,
-                            git_repo=link.git_repo,
-                        )
-                    )
+            refs = (
+                refs if refs is not None else (_fetch_remote_tag_refs(url) if current_sha else None)
+            )
+            resolved = _resolve_sha_refresh(current_sha or "", refs or [])
+            if resolved is not None:
+                _resolved_current_tag, latest_tag = resolved
+                if not _target_within_hold(link, latest_tag):
                     continue
+                bumps.append(
+                    SubmoduleTagBump(
+                        path=link.path,
+                        url=url,
+                        current_tag="",
+                        latest_tag=latest_tag,
+                        parent=link.parent,
+                        git_repo=link.git_repo,
+                    )
+                )
+                continue
             bumps.append(
                 SubmoduleTagBump(
                     path=link.path,
@@ -562,9 +531,7 @@ def check_submodule_tag_advances(
                 )
                 continue
 
-        latest = _resolve_latest_submodule_tag(
-            current_tag, tags, allow_cross_major=allow_cross_major
-        )
+        latest = _resolve_latest_submodule_tag(current_tag, tags)
         if latest is None:
             continue  # already at latest or indeterminate
         if not _target_within_hold(link, latest):

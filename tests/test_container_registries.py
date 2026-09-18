@@ -494,7 +494,6 @@ def test_digest_refresh_check_reports_update(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """REFRESH_SHA=1 and digest has changed → actionable Change."""
-    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
     (tmp_path / "Dockerfile").write_text(f"FROM nginx:1.25@{_OLD_DIGEST}\n")
 
     with patch(
@@ -514,7 +513,6 @@ def test_digest_refresh_check_already_current(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Digest is already current → no Change emitted."""
-    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
     (tmp_path / "Dockerfile").write_text(f"FROM nginx:1.25@{_OLD_DIGEST}\n")
 
     with patch(
@@ -526,31 +524,10 @@ def test_digest_refresh_check_already_current(
     assert changes == []
 
 
-def test_digest_refresh_check_env_zero_disables_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """REPO_OPS_CONTAINER_REFRESH_SHA=0 keeps tag+sha pins report-only."""
-    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "0")
-    (tmp_path / "Dockerfile").write_text(f"FROM nginx:1.25@{_OLD_DIGEST}\n")
-
-    with patch(
-        "repo_ops_container.container._fetch_manifest_digest",
-        return_value=_NEW_DIGEST,
-    ) as mock_digest:
-        changes = check_container(_make_ws(tmp_path))
-
-    # Should be report-only; digest function should not even be called
-    mock_digest.assert_not_called()
-    assert len(changes) == 1
-    assert "[report-only]" in changes[0].to
-    assert "REPO_OPS_CONTAINER_REFRESH_SHA" in changes[0].to
-
-
 def test_digest_refresh_check_query_failure_report_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Digest query failure → report-only."""
-    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
     (tmp_path / "Dockerfile").write_text(f"FROM nginx:1.25@{_OLD_DIGEST}\n")
 
     with patch(
@@ -573,7 +550,6 @@ def test_digest_refresh_apply_byte_preserving(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """apply_container with REFRESH_SHA=1 rewrites only the digest, preserving all other bytes."""
-    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
     dockerfile = tmp_path / "Dockerfile"
     original = (
         f"# syntax=docker/dockerfile:1\n"
@@ -605,7 +581,6 @@ def test_digest_refresh_apply_crlf_preserved(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """CRLF line endings survive digest refresh apply."""
-    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
     dockerfile = tmp_path / "Dockerfile"
     original_bytes = f"FROM nginx:1.25@{_OLD_DIGEST}\r\nEXPOSE 80\r\n".encode()
     dockerfile.write_bytes(original_bytes)
@@ -619,25 +594,6 @@ def test_digest_refresh_apply_crlf_preserved(
     result = dockerfile.read_bytes()
     assert _NEW_DIGEST.encode() in result
     assert b"EXPOSE 80\r\n" in result
-
-
-def test_digest_refresh_apply_env_zero_disables_it_untouched(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """REPO_OPS_CONTAINER_REFRESH_SHA=0 keeps tag+sha pins unmodified."""
-    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "0")
-    dockerfile = tmp_path / "Dockerfile"
-    original = f"FROM nginx:1.25@{_OLD_DIGEST}\n"
-    dockerfile.write_text(original, encoding="utf-8")
-
-    with patch(
-        "repo_ops_container.container._fetch_manifest_digest",
-        return_value=_NEW_DIGEST,
-    ) as mock_digest:
-        apply_container(_make_ws(tmp_path))
-
-    mock_digest.assert_not_called()
-    assert dockerfile.read_text(encoding="utf-8") == original
 
 
 # ---------------------------------------------------------------------------
@@ -654,7 +610,6 @@ def test_digest_refresh_check_multi_stage_stale_occurrence_detected(
     the current digest must not shadow the drifted one.  The registry is still
     queried only once per (image, tag).
     """
-    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
     (tmp_path / "Dockerfile").write_text(
         f"FROM nginx:1.25@{_NEW_DIGEST} AS build\nFROM nginx:1.25@{_OLD_DIGEST} AS runtime\n"
     )
@@ -675,7 +630,6 @@ def test_digest_refresh_apply_multi_stage_stale_occurrence_fixed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """apply refreshes the stale stage while leaving the current one intact."""
-    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
         f"FROM nginx:1.25@{_NEW_DIGEST} AS build\n"
@@ -701,7 +655,6 @@ def test_digest_refresh_apply_same_stale_digest_on_all_lines(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Every line carrying the stale digest is patched, not just the first."""
-    monkeypatch.setenv("REPO_OPS_CONTAINER_REFRESH_SHA", "1")
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(
         f"FROM nginx:1.25@{_OLD_DIGEST} AS build\nFROM nginx:1.25@{_OLD_DIGEST} AS runtime\n"

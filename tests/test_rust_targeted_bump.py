@@ -73,79 +73,6 @@ def test_cargo_latest_changes_cache_keys_on_manifest_digest(tmp_path: Path, make
     assert [(change.name, change.to) for change in second] == [("regex", "2.0.0")]
 
 
-def test_check_rust_targeted_bump_defaults_on_without_config(
-    tmp_path: Path, monkeypatch, make_workspace, make_proc
-) -> None:
-    """The sweep default is on, so no env var/config needed to attempt it."""
-    (tmp_path / "Cargo.toml").write_text(
-        '[package]\nname = "demo"\nversion = "0.1.0"\n\n[dependencies]\nserde = "1.0"\n',
-        encoding="utf-8",
-    )
-    monkeypatch.delenv("REPO_OPS_RUST_TARGETED_BUMP", raising=False)
-    with (
-        patch(
-            "repo_ops_rust.rust.run",
-            return_value=make_proc(),
-        ),
-        patch(
-            "repo_ops_rust.rust._cargo_registry_versions",
-            return_value=("1.0.0",),
-        ),
-        patch("repo_ops_rust.rust.load_global_config", return_value={}),
-    ):
-        result = check_rust(
-            make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
-        )
-
-    assert isinstance(result, tuple)
-
-
-def test_check_rust_targeted_bump_env_zero_disables_it(
-    tmp_path: Path, monkeypatch, make_workspace, make_proc
-) -> None:
-    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "0")
-    with (
-        patch(
-            "repo_ops_rust.rust.run",
-            return_value=make_proc(),
-        ),
-        patch("repo_ops_rust.rust.load_global_config", return_value={}),
-    ):
-        result = check_rust(
-            make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
-        )
-
-    assert isinstance(result, list)
-
-
-def test_check_rust_targeted_bump_reads_repo_config(
-    tmp_path: Path, monkeypatch, make_workspace, make_proc
-) -> None:
-    (tmp_path / "Cargo.toml").write_text(
-        '[package]\nname = "demo"\nversion = "0.1.0"\n\n[dependencies]\nserde = "1.0"\n',
-        encoding="utf-8",
-    )
-    (tmp_path / ".repo-ops.toml").write_text("rust_targeted_bump = true\n", encoding="utf-8")
-    monkeypatch.delenv("REPO_OPS_RUST_TARGETED_BUMP", raising=False)
-    with (
-        patch(
-            "repo_ops_rust.rust.run",
-            return_value=make_proc(),
-        ),
-        patch(
-            "repo_ops_rust.rust._cargo_registry_versions",
-            return_value=("2.0.0",),
-        ),
-        patch("repo_ops_rust.rust.load_global_config", return_value={}),
-    ):
-        result = check_rust(
-            make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
-        )
-
-    assert isinstance(result, tuple)
-    assert result[1][0].name == "serde"
-
-
 def test_workspace_dependency_targeted_bump_checks_and_rewrites(
     tmp_path: Path, monkeypatch, make_workspace, make_proc
 ) -> None:
@@ -157,7 +84,6 @@ def test_workspace_dependency_targeted_bump_checks_and_rewrites(
     )
     lockfile.write_text("serde 1.0.0\n", encoding="utf-8")
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
-    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
 
     with (
         patch(
@@ -212,7 +138,6 @@ def test_apply_rust_reuses_check_registry_lookup(
             lockfile.write_text("serde 2.0.0\n", encoding="utf-8")
         return make_proc()
 
-    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
     with (
         patch("repo_ops_rust.rust.run", side_effect=fake_run),
@@ -241,7 +166,6 @@ def test_held_crate_stays_behind_latest_and_manifest_unchanged(
     original_manifest = manifest.read_text(encoding="utf-8")
     hold = HoldRule(package="serde", max_version="1")
     ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
-    monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "true")
 
     with (
         patch("repo_ops_core.holds._global_holds_cached", return_value=(hold,)),
@@ -304,7 +228,6 @@ def test_apply_rust_bumps_manifest_and_precise_updates_lock(
             return_value=("2.0.0",),
         ),
     ):
-        monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
         remaining = apply_rust(
             make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
         )
@@ -343,7 +266,6 @@ def test_apply_rust_restores_manifest_and_lock_on_precise_failure(
             return_value=("2.0.0",),
         ),
     ):
-        monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
         remaining = apply_rust(
             make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
         )
@@ -381,7 +303,6 @@ def test_rust_targeted_bump_skips_non_registry_dependencies(
             side_effect=registry,
         ),
     ):
-        monkeypatch.setenv("REPO_OPS_RUST_TARGETED_BUMP", "1")
         result = check_rust(
             make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
         )

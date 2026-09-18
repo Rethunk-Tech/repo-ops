@@ -3,19 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import sys
 from pathlib import Path
 
-from repo_ops_core.config import (
-    ambient_env,
-    coerce_bool_setting,
-    load_global_config,
-    load_repo_config,
-    resolve_setting,
-)
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
@@ -25,8 +17,6 @@ from repo_ops_lockfiles.parsers import versions_deno_lock
 from repo_ops_lockfiles.snapshots import snapshot_workspace_files
 from repo_ops_models import Change, Workspace
 
-_DENO_UPDATE_LATEST_ENV = "REPO_OPS_DENO_UPDATE_LATEST"
-_DENO_TARGETED_BUMP_ENV = "REPO_OPS_DENO_TARGETED_BUMP"
 _DENO_CONFIG_FILENAMES = ("deno.json", "deno.jsonc")
 _DENO_IMPORT_MAP_FILENAMES = (
     "import_map.json",
@@ -38,48 +28,6 @@ _SEMVER_RE = re.compile(
     r"^[vV]?\d+(?:\.\d+)*(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
 )
-
-
-def _process_env_cli_override(env_var: str) -> str | None:
-    """Return a process value changed after the ambient environment snapshot."""
-    ambient = ambient_env()
-    if ambient is None:
-        return None
-    process_value = os.environ.get(env_var)
-    if env_var not in ambient:
-        if process_value is None:
-            return None
-        setting = env_var.removeprefix("REPO_OPS_").lower()
-        global_value = load_global_config().get(setting)
-        if global_value is True:
-            global_value = "1"
-        elif global_value is False:
-            global_value = "0"
-        return (
-            None
-            if global_value is not None and process_value == str(global_value)
-            else process_value
-        )
-    return process_value if process_value != ambient[env_var] else None
-
-
-def _deno_setting(name: str, env_var: str, ws: Workspace | None = None) -> bool:
-    raw = resolve_setting(
-        name,
-        cli_value=_process_env_cli_override(env_var),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
-    )
-    return coerce_bool_setting(raw)
-
-
-def _deno_update_latest_enabled(ws: Workspace | None = None) -> bool:
-    return _deno_setting("deno_update_latest", _DENO_UPDATE_LATEST_ENV, ws)
-
-
-def _deno_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
-    return _deno_setting("deno_targeted_bump", _DENO_TARGETED_BUMP_ENV, ws)
 
 
 def _parseable_semver_tuple(version: str) -> tuple[int, ...] | None:
@@ -314,10 +262,8 @@ def check_deno(ws: Workspace) -> tuple[list[Change], list[Change]]:
         jsr:@std/assert   0.221.0  0.226.0  0.226.0
         npm:chalk         5.2.0    5.3.0    5.3.0
 
-    Returns ``(changes, behind_latest)``. By default (conservative), ``Update``
-    is the actionable target and packages where only ``Latest`` is newer go to
-    ``behind_latest``. With ``REPO_OPS_DENO_UPDATE_LATEST`` set, ``Latest`` is
-    the actionable target and ``behind_latest`` is empty.
+    Returns ``(changes, behind_latest)``: ``Latest`` is the actionable target;
+    ``behind_latest`` holds what an active hold blocks.
 
     Falls back to empty lists with a WARN when ``deno`` is absent so the
     workspace degrades gracefully (report-only, no error).
@@ -342,8 +288,7 @@ def check_deno(ws: Workspace) -> tuple[list[Change], list[Change]]:
 def _parse_deno_outdated(
     stdout: str, ws: Workspace | None = None
 ) -> tuple[list[Change], list[Change]]:
-    """Parse ``deno outdated`` stdout into ``(changes, behind_latest)``."""
-    want_latest = _deno_update_latest_enabled(ws)
+    """Parse ``deno outdated`` stdout into ``(changes, behind_latest)``; Latest is the target."""
     changes: list[Change] = []
     behind_latest: list[Change] = []
     # Plain text: "name  current  update  latest" OR "name  current  latest"
@@ -365,35 +310,19 @@ def _parse_deno_outdated(
             name = parts[0]
             if name.lower() in ("package", "name"):
                 continue  # header row
-            cur = parts[1]
-            if len(parts) >= 4:
-                update_ver, latest = parts[2], parts[3]
-            else:
-                # Legacy 3-column table: treat the last column as both Update and Latest.
-                update_ver = latest = parts[-1]
+            cur, latest = parts[1], parts[-1]
             if not cur or not re.match(r"[\d]", cur):
                 continue
-            target = latest if want_latest else update_ver
-            if target and cur != target:
-                changes.append(Change(name, cur, target))
-            elif not want_latest and latest and cur != latest and update_ver == cur:
-                behind_latest.append(Change(name, cur, latest))
+            if latest and cur != latest:
+                changes.append(Change(name, cur, latest))
             continue
         m4 = _PLAIN_4.match(stripped)
         if m4:
-            name, cur, update_ver, latest = (
-                m4.group(1),
-                m4.group(2),
-                m4.group(3),
-                m4.group(4),
-            )
+            name, cur, latest = m4.group(1), m4.group(2), m4.group(4)
             if name.lower() in ("package", "name"):
                 continue
-            target = latest if want_latest else update_ver
-            if cur != target:
-                changes.append(Change(name, cur, target))
-            elif not want_latest and cur != latest and update_ver == cur:
-                behind_latest.append(Change(name, cur, latest))
+            if cur != latest:
+                changes.append(Change(name, cur, latest))
             continue
         m = _PLAIN_3.match(stripped)
         if m:
@@ -510,7 +439,7 @@ def _deno_lock_package_names(ws: Workspace) -> set[str]:
 
 def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Change], list[Change]]:
     """Run a reversible per-package ``deno update`` for behind-latest deps."""
-    if not behind or not _deno_targeted_bump_enabled(ws):
+    if not behind:
         return [], behind
     applied: list[Change] = []
     still_behind: list[Change] = []
@@ -524,9 +453,7 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
             _release_unheld_deno_pin(ws, change.name)
         cmd = _deno_update_command(ws)
         if hold is None:
-            if _deno_update_latest_enabled(ws):
-                cmd.append("--latest")
-            cmd.append(change.name)
+            cmd.extend(["--latest", change.name])
         else:
             cmd.append(_deno_version_target(change.name, change.to))
         proc = run(cmd, ws.path, timeout=resolve_timeout_apply())
@@ -627,9 +554,7 @@ def apply_deno(ws: Workspace) -> list[Change]:
     """Run ``deno outdated --update`` to upgrade dependencies.
 
     Requires Deno ≥ 2.x; ``deno outdated --update`` rewrites ``deno.lock``
-    and import maps in-place. When ``REPO_OPS_DENO_UPDATE_LATEST`` is unset,
-    Deno's default update stays range-respecting (Update column); when set,
-    ``--latest`` is passed so cross-range bumps are applied.
+    and import maps in-place; ``--latest`` applies cross-range bumps.
 
     After a successful update, planned targets are verified via
     :func:`assert_targets_resolved` (ghost-bump guard parity with Node PMs).
@@ -638,11 +563,8 @@ def apply_deno(ws: Workspace) -> list[Change]:
     if not shutil.which("deno"):
         raise RuntimeError(f"deno not on PATH for {ws.path}")
     planned, behind = check_deno(ws)
-    cmd = ["deno", "outdated", "--update"]
-    if _deno_update_latest_enabled(ws):
-        cmd.append("--latest")
     proc = run(
-        cmd,
+        ["deno", "outdated", "--update", "--latest"],
         ws.path,
         timeout=resolve_timeout_apply(),
     )
@@ -654,24 +576,16 @@ def apply_deno(ws: Workspace) -> list[Change]:
         if (ch.to or "").strip() not in ("", "?", "latest") and (ch.name or "").strip()
     ]
     if guardable:
-        if _deno_targeted_bump_enabled(ws):
-            blocked = unresolved_targets(
-                ws,
-                guardable,
-                fallback_resolver=_landed_deno_version,
-            )
-            behind_names = {change.name for change in behind}
-            for change, _resolved in blocked:
-                if change.name not in behind_names:
-                    behind.append(change)
-                    behind_names.add(change.name)
-        else:
-            assert_targets_resolved(
-                ws,
-                guardable,
-                manager="deno",
-                fallback_resolver=_landed_deno_version,
-            )
+        blocked = unresolved_targets(
+            ws,
+            guardable,
+            fallback_resolver=_landed_deno_version,
+        )
+        behind_names = {change.name for change in behind}
+        for change, _resolved in blocked:
+            if change.name not in behind_names:
+                behind.append(change)
+                behind_names.add(change.name)
     _, behind = targeted_bump_behind(ws, behind)
     _enforce_deno_version_ceilings(ws, [change.name for change in [*planned, *behind]])
     return behind

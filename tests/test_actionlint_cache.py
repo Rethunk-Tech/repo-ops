@@ -285,37 +285,6 @@ def test_no_lint_cache_env_disables_cache(tmp_path: Path, monkeypatch: pytest.Mo
 
 
 # ---------------------------------------------------------------------------
-# lint_level="off" does not consult or write cache
-# ---------------------------------------------------------------------------
-
-
-def test_lint_level_off_no_cache_interaction(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """lint_level='off' must not load or save the cache file."""
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-
-    (tmp_path / ".github" / "workflows").mkdir(parents=True)
-    wf = tmp_path / ".github" / "workflows" / "ci.yml"
-    wf.write_text(_SIMPLE_WF, encoding="utf-8")
-
-    with (
-        patch(
-            "repo_ops_upgrade.actions.shutil.which",
-            side_effect=lambda n: f"/usr/bin/{n}",
-        ),
-        patch(
-            "repo_ops_upgrade.actions.action_tag_info",
-            return_value=None,
-        ),
-    ):
-        scan_actions(tmp_path, apply=False, lint_level="off")
-
-    # No cache file must have been created in "off" mode.
-    assert not (tmp_path / "repo-ops" / "actionlint-cache.json").exists()
-
-
-# ---------------------------------------------------------------------------
 # scan_actions integration: cache is persisted after a run
 # ---------------------------------------------------------------------------
 
@@ -343,7 +312,7 @@ def test_scan_actions_saves_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         patch("repo_ops_upgrade.actions.action_tag_info", return_value=None),
         patch("repo_ops_upgrade.actions._get_actionlint_version", return_value="1.0"),
     ):
-        scan_actions(tmp_path, apply=False, lint_level="block")
+        scan_actions(tmp_path, apply=False)
 
     cache_file = tmp_path / "cache" / "repo-ops" / "actionlint-cache.json"
     assert cache_file.exists(), "cache file must be written after scan_actions"

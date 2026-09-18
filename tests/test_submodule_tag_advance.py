@@ -92,20 +92,14 @@ def test_has_v_prefix(tag: str, expected: bool) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_resolve_latest_picks_newest_in_same_major() -> None:
-    tags = ["v1.0.0", "v1.2.3", "v1.3.0", "v2.0.0"]
+def test_resolve_latest_picks_newest() -> None:
+    tags = ["v1.0.0", "v1.2.3", "v1.3.0"]
     assert _resolve_latest_submodule_tag("v1.2.3", tags) == "v1.3.0"
 
 
-def test_resolve_latest_no_cross_major_by_default() -> None:
-    # v2.0.0 exists but cross-major is off; no candidate within v1.x > v1.2.3.
-    tags = ["v1.0.0", "v1.2.3", "v2.0.0"]
-    assert _resolve_latest_submodule_tag("v1.2.3", tags) is None
-
-
-def test_resolve_latest_cross_major_opt_in() -> None:
+def test_resolve_latest_crosses_majors() -> None:
     tags = ["v1.2.3", "v2.0.0", "v3.1.0"]
-    result = _resolve_latest_submodule_tag("v1.2.3", tags, allow_cross_major=True)
+    result = _resolve_latest_submodule_tag("v1.2.3", tags)
     assert result == "v3.1.0"
 
 
@@ -207,7 +201,6 @@ def test_check_sha_only_pin_is_report_only(tmp_path: Path) -> None:
 def test_check_sha_only_pin_refreshes_with_opt_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_SUBMODULE_REFRESH_SHA", "1")
     link = _make_link(tmp_path)
     current_sha = "a" * 40
     with (
@@ -235,8 +228,6 @@ def test_check_sha_only_pin_refreshes_with_opt_in(
 def test_check_sha_refresh_stays_within_major_under_update_latest(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_SUBMODULE_REFRESH_SHA", "1")
-    monkeypatch.setenv("REPO_OPS_SUBMODULE_UPDATE_LATEST", "1")
     link = _make_link(tmp_path)
     current_sha = "a" * 40
     with (
@@ -316,25 +307,7 @@ def test_check_actionable_bump_detected(tmp_path: Path) -> None:
     assert b.url == "https://example.com/sub.git"
 
 
-def test_check_cross_major_blocked_when_env_zero(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("REPO_OPS_SUBMODULE_UPDATE_LATEST", "0")
-    link = _make_link(tmp_path)
-    with (
-        patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.2.3"),
-        patch(
-            "repo_ops_upgrade.submodules._fetch_remote_tags",
-            return_value=["v1.2.3", "v2.0.0"],
-        ),
-    ):
-        bumps = check_submodule_tag_advances([link])
-    # v2.0.0 is cross-major; env explicitly off → no bump
-    assert bumps == []
-
-
 def test_check_cross_major_enabled_via_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("REPO_OPS_SUBMODULE_UPDATE_LATEST", "1")
     link = _make_link(tmp_path)
     with (
         patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value="v1.2.3"),
@@ -425,33 +398,9 @@ def test_apply_calls_fetch_checkout_add_for_actionable(tmp_path: Path, make_proc
     assert calls[2][0][2] == "sub"
 
 
-def test_apply_skips_git_ops_for_report_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
-) -> None:
-    """No fetch/checkout/add calls for non-actionable (SHA-only) bumps.
-
-    Digest refresh defaults on with the sweep; pin it off so this test
-    exercises the plain report-only path rather than an actual refresh.
-    """
-    monkeypatch.setenv("REPO_OPS_SUBMODULE_REFRESH_SHA", "0")
-    link = _make_link(tmp_path)
-
-    with (
-        patch("repo_ops_upgrade.submodules._current_submodule_tag", return_value=None),
-        patch("repo_ops_upgrade.submodules.run_git", return_value=make_proc()) as mock_git,
-    ):
-        bumps = apply_submodule_tag_advances([link])
-
-    assert len(bumps) == 1
-    assert not bumps[0].is_actionable
-    # run_git must NOT be called for the apply ops (no fetch/checkout/add)
-    mock_git.assert_not_called()
-
-
 def test_apply_refreshes_sha_only_pin_with_opt_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_proc
 ) -> None:
-    monkeypatch.setenv("REPO_OPS_SUBMODULE_REFRESH_SHA", "1")
     link = _make_link(tmp_path)
     current_sha = "a" * 40
     with (

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import fnmatch
+import functools
 import hashlib
 import json
 import logging
@@ -15,7 +16,7 @@ import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Literal, cast
+from typing import Any
 
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
@@ -92,36 +93,6 @@ def _classify_actionlint_severity(output: str) -> str:
             return "error"  # shellcheck error or unparseable severity → fatal
     return "warning"
 
-
-TagStyle = Literal["major", "exact"]
-
-# How the Actions upgrader treats a pin whose major is behind the newest upstream
-# major line. ``normalize`` (default) only collapses to the current floating major
-# and reports newer majors (report only). ``latest`` also rewrites the pin to the
-# newest available major, subject to the same tag-style + bare-major
-# safety rules used elsewhere.
-ActionsUpgradeMode = Literal["normalize", "latest"]
-
-# How actionlint failures gate pin bumps for a workflow.
-# ``block`` (default) — a lint failure records a fail row and skips all pin
-#   bumps for that workflow (current behaviour).
-# ``warn`` — records the ActionBump fail row and prints a WARN to stderr, but
-#   still proceeds with pin bumps for that workflow.
-# ``off`` — skips running actionlint entirely.
-# Env var: REPO_OPS_ACTIONS_LINT_LEVEL (values: block | warn | off).
-# A CLI flag (--actions-lint-level) can wire into this parameter later.
-ActionsLintLevel = Literal["block", "warn", "off"]
-
-_DEFAULT_LINT_LEVEL: ActionsLintLevel = "block"
-
-# How org allowed-actions policy violations gate pin bumps.
-# ``block`` skips rewrites and emits ``policy-blocked`` rows.
-# ``warn`` allows rewrites and emits ``warn`` rows.
-# ``report`` preserves the report-only ``policy`` rows.
-# Env var: REPO_OPS_ACTIONS_POLICY_LEVEL (values: block | warn | report).
-ActionsPolicyLevel = Literal["block", "warn", "report"]
-
-_DEFAULT_POLICY_LEVEL: ActionsPolicyLevel = "report"
 
 # ---------------------------------------------------------------------------
 # Actionlint result cache
@@ -380,41 +351,29 @@ def _get_actionlint_version() -> str:
     return ver
 
 
-def _read_level_env(var: str, valid: tuple[str, ...], default: str) -> str:
-    """Read an env var restricted to *valid* values, warning and falling back to
-    *default* when absent or unrecognised."""
-    raw = os.environ.get(var, "").strip().lower()
-    if not raw:
-        return default
-    if raw in valid:
-        return raw
-    print(
-        f"WARN: {var}={raw!r} unrecognised; defaulting to {default!r}",
-        file=sys.stderr,
-    )
-    return default
+@functools.cache
+def _github_token_available() -> bool:
+    """Whether org-policy lookups can authenticate, probed once per process.
 
-
-def _read_lint_level_env() -> ActionsLintLevel:
-    """Read ``REPO_OPS_ACTIONS_LINT_LEVEL`` from the environment."""
-    return cast(
-        "ActionsLintLevel",
-        _read_level_env(
-            "REPO_OPS_ACTIONS_LINT_LEVEL", ("block", "warn", "off"), _DEFAULT_LINT_LEVEL
-        ),
-    )
-
-
-def _read_policy_level_env() -> ActionsPolicyLevel:
-    """Read ``REPO_OPS_ACTIONS_POLICY_LEVEL`` from the environment."""
-    return cast(
-        "ActionsPolicyLevel",
-        _read_level_env(
-            "REPO_OPS_ACTIONS_POLICY_LEVEL",
-            ("block", "warn", "report"),
-            _DEFAULT_POLICY_LEVEL,
-        ),
-    )
+    The policy fetch shells out to ``gh api``, so the question is whether ``gh``
+    itself is authenticated rather than whether any particular variable is set;
+    ``gh auth token`` answers exactly that and honors the same precedence gh
+    uses for the real call. Any failure means no policy fetch, which is a
+    skipped annotation rather than a failed run.
+    """
+    if not shutil.which("gh"):
+        return False
+    try:
+        proc = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0 and bool(proc.stdout.strip())
 
 
 def discover_workflow_files(repo: Path) -> list[Path]:
@@ -498,83 +457,6 @@ def action_tag_info(action: str, *, cache: dict[str, dict | None] | None = None)
         print(f"WARN: gh api timed out for {action}", file=sys.stderr)
     store[repo] = None
     return None
-
-
-def _resolve_sha_target(
-    sha: str,
-    *,
-    comment_hint: str | None,
-    info: dict | None,
-    tag_style: TagStyle,
-) -> tuple[str, str] | None:
-    """Resolve a SHA pin to a target tag string and a human description.
-
-    Returns ``(target_tag, description)`` or ``None`` when unresolvable.
-
-    Resolution order:
-    1. Comment hint ``# vN[.N.N]``: use major N (e.g. ``v4``) as the major.
-    2. SHA→tag mapping from the tags API: find tags pointing at this SHA, pick
-       the highest semver one to determine the major.
-
-    When ``tag_style='exact'``, ``target_tag`` is the highest ``vN.M.P`` within
-    the resolved major (or ``@vN`` fallback when no exact tags exist).
-    When ``tag_style='major'``, ``target_tag`` is ``vN``.
-    """
-    # --- Step 1: resolve major ---
-    resolved_major: int | None = None
-    source_desc = ""
-
-    if comment_hint:
-        m = re.match(r"^v(\d+)", comment_hint)
-        if m:
-            resolved_major = int(m.group(1))
-            source_desc = f"comment hint {comment_hint}"
-
-    if resolved_major is None and info is not None:
-        sha_lower = sha.lower()
-        # Normalise sha prefix-form: "sha<hex>" → strip "sha" prefix
-        if sha_lower.startswith("sha"):
-            sha_lower = sha_lower[3:]
-        sha_to_tags_map = info.get("sha_to_tags", {})
-        tags_for_sha = sha_to_tags_map.get(sha_lower, [])
-        if not tags_for_sha and len(sha_lower) < 40:
-            # Short-SHA prefix fallback: scan all full SHAs for a unique prefix match.
-            matches = [k for k in sha_to_tags_map if k.startswith(sha_lower)]
-            if len(matches) == 1:
-                tags_for_sha = sha_to_tags_map[matches[0]]
-            # len == 0: no match; len > 1: ambiguous — leave tags_for_sha empty.
-        if tags_for_sha:
-            # Pick the highest semver among tags pointing at this SHA.
-            best: str | None = None
-            best_tuple: tuple[int, ...] = ()
-            for t in tags_for_sha:
-                if not _MAJOR_TAG_RE.match(t):
-                    continue
-                stripped = t.lstrip("v")
-                tup = semver_tuple(stripped)
-                if tup > best_tuple:
-                    best_tuple = tup
-                    best = t
-            if best:
-                m2 = _MAJOR_TAG_RE.match(best)
-                if m2:
-                    resolved_major = int(m2.group(1))
-                    source_desc = f"SHA resolves to {best}"
-
-    if resolved_major is None:
-        return None
-
-    major_tag = f"v{resolved_major}"
-
-    # --- Step 2: pick target based on tag_style ---
-    if tag_style == "major":
-        return major_tag, f"unpin SHA to {major_tag} (via {source_desc})"
-
-    digest = _highest_exact_digest_in_major(info, resolved_major) if info is not None else None
-    exact_tag = digest[1] if digest else None
-    target = exact_tag if exact_tag else major_tag
-    style_note = "exact" if exact_tag else "major (no exact tag found)"
-    return target, f"unpin SHA to {target} ({style_note}; via {source_desc})"
 
 
 def _resolve_sha_major(sha: str, *, comment_hint: str | None, info: dict | None) -> int | None:
@@ -673,25 +555,16 @@ def _highest_exact_in_major(info: dict, major: int) -> str | None:
     return best
 
 
-def _resolve_latest_target(info: dict, tag_style: TagStyle) -> str | None:
-    """Resolve the rewrite target for a cross-major (latest-mode) bump.
+def _resolve_latest_target(info: dict) -> str | None:
+    """Resolve the rewrite target for a cross-major bump.
 
-    Honors ``tag_style`` and the same bare-major safety rule used elsewhere:
-    - ``exact`` → highest ``v{max_major}.M.P`` (falls back to floating ``v{max_major}``
-      only when no exact tag exists but a bare major tag does).
-    - ``major`` → floating ``v{max_major}`` only when a bare ``v{max_major}`` tag
-      exists upstream.
-
-    Returns ``None`` when no major can be safely targeted (caller keeps report-only).
+    The floating ``v{max_major}`` is targeted only when a bare ``v{max_major}``
+    tag exists upstream. Returns ``None`` when no major can be safely targeted
+    (caller keeps report-only).
     """
     max_major = info.get("max_major")
     if max_major is None:
         return None
-    if tag_style == "exact":
-        exact = _highest_exact_in_major(info, max_major)
-        if exact:
-            return exact
-        # No exact tag for the newest major — fall back to floating major below.
     if max_major in info.get("bare_majors", set()):
         return f"v{max_major}"
     return None
@@ -944,14 +817,7 @@ def scan_actions(
     repo: Path,
     apply: bool,
     *,
-    keep_sha: bool = True,
-    refresh_sha: bool = False,
-    pin_sha: bool = False,
-    tag_style: TagStyle = "major",
-    upgrade_mode: ActionsUpgradeMode = "normalize",
     tag_cache: dict[str, dict | None] | None = None,
-    lint_level: ActionsLintLevel | None = None,
-    policy_level: ActionsPolicyLevel | None = None,
     org_policy_cache: dict[str, dict | None] | None = None,
 ) -> tuple[list[ActionBump], int]:
     """Scan GitHub Actions workflow files and produce bump recommendations.
@@ -962,98 +828,25 @@ def scan_actions(
         Repository root (parent of ``.github/workflows/``).
     apply:
         When True, rewrite workflow files for actionable bumps.
-    keep_sha:
-        When True (the default), SHA-pinned actions are reported only and never
-        rewritten — preserving supply-chain hardening.  Pass ``keep_sha=False``
-        (CLI: ``--actions-unpin-sha``) to opt in to resolving SHA pins to
-        version tags.
-    refresh_sha:
-        When True (env: ``REPO_OPS_ACTIONS_REFRESH_SHA``, config key
-        ``actions_refresh_sha``; on by default with the sweep) and the action
-        stays SHA-pinned (``keep_sha=True``), advance the digest to the
-        commit of the newest
-        ``vN.M.P`` release within the pin's resolved major, preserving the digest
-        pin and the ``# vN`` comment (Dependabot-compatible). When
-        combined with ``upgrade_mode="latest"``, the digest may also cross a major
-        boundary: if the newest major has a real ``vN.M.P`` release the pin is
-        re-pinned to that commit and the ``# vN`` comment is updated to the new
-        major. Ignored when ``keep_sha=False`` (the unpin path takes over).
-        No-op when the major cannot be resolved or no newer digest exists.
-    pin_sha:
-        When True (env: ``REPO_OPS_ACTIONS_PIN_SHA``, config key
-        ``actions_pin_sha``; on by default with the sweep), a tag-pinned
-        action (``@vN``, ``@vN.M.P``) is rewritten to the commit SHA of the
-        highest exact
-        ``vN.M.P`` release within its resolved major, with a ``# vN.M.P``
-        audit-hint comment added (or replacing any existing trailing
-        comment) — supply-chain hardening for actions that were never
-        SHA-pinned in the first place. With ``upgrade_mode="latest"``, also
-        crosses major boundaries the same way ``refresh_sha`` does. Falls
-        back to the existing tag-normalize behavior (report only) when no
-        exact release exists in the resolved major. Independent of
-        ``keep_sha``/``refresh_sha``, which only govern already-SHA-pinned
-        actions.
-    tag_style:
-        ``"major"`` (default) → rewrite SHA pins to ``@vN``.
-        ``"exact"`` → rewrite to the highest ``@vN.M.P`` within the resolved major.
-    upgrade_mode:
-        ``"normalize"`` (default) → only collapse to the current floating major;
-        a newer major upstream is reported only (not applied).
-        ``"latest"`` (CLI: ``--actions-upgrade-mode=latest``; also the sweep
-        default unless ``--conservative``) → also rewrite a pin to the newest
-        available major, honoring ``tag_style`` and the
-        bare-major safety rule. Falls back to normalize/report-only when the newest
-        major cannot be safely targeted.
     tag_cache:
         Optional shared cache dict mapping action name → tag info (or None on
         failure).  When provided, entries are reused across calls so each
         (action, ref) is resolved at most once per run.  When omitted, a fresh
         per-call dict is used (preserves test isolation).
-    lint_level:
-        Controls how actionlint failures gate pin bumps.  ``None`` (default) reads
-        from the ``REPO_OPS_ACTIONS_LINT_LEVEL`` environment variable, falling
-        back to ``"block"``.
-
-        * ``"block"`` — lint failure records a fail row and skips all pin bumps
-          for that workflow (current behaviour).
-        * ``"warn"`` — records the fail row and prints a WARN to stderr, but
-          proceeds with pin bumps for the workflow.
-        * ``"off"`` — skips running actionlint entirely.
-
-        A CLI flag (``--actions-lint-level``) can wire into this parameter later.
-    policy_level:
-        Controls how org allowed-actions policy violations gate pin bumps.
-        ``None`` (default) reads from ``REPO_OPS_ACTIONS_POLICY_LEVEL``, falling
-        back to ``"report"``.
-
-        * ``"block"`` — skips pin rewrites for violating actions and emits
-          ``policy-blocked`` rows.
-        * ``"warn"`` — allows pin rewrites and emits ``warn`` rows.
-        * ``"report"`` — emits ``policy`` rows without affecting rewrites.
-
-        A CLI flag (``--actions-policy-level``) can wire into this parameter later.
     org_policy_cache:
         Optional shared policy cache dict (maps owner → policy dict or None).
         When ``None``, the module-level ``_ORG_POLICY_CACHE`` is used.  Callers
-        may pass a fresh ``{}`` for test isolation.  The env var
-        ``REPO_OPS_ACTIONS_ORG_POLICY=1`` must be set for any policy fetching
-        to occur; when absent, policy checks are skipped entirely (zero ``gh``
-        calls).
+        may pass a fresh ``{}`` for test isolation.  Policy checks run only when
+        ``gh`` is authenticated; otherwise they are skipped (zero ``gh`` calls).
     """
-    effective_lint_level: ActionsLintLevel = (
-        lint_level if lint_level is not None else _read_lint_level_env()
-    )
-    effective_policy_level: ActionsPolicyLevel = (
-        policy_level if policy_level is not None else _read_policy_level_env()
-    )
-    if effective_lint_level != "off" and not shutil.which("actionlint"):
+    if not shutil.which("actionlint"):
         print("WARN: actionlint not on PATH; skipping action validation", file=sys.stderr)
     workflows = discover_workflow_files(repo)
     bumps: list[ActionBump] = []
     _cache: dict[str, dict | None] = tag_cache if tag_cache is not None else {}
 
-    # Org allowed-actions policy (opt-in via REPO_OPS_ACTIONS_ORG_POLICY=1).
-    _policy_enabled: bool = os.environ.get("REPO_OPS_ACTIONS_ORG_POLICY", "").strip() == "1"
+    # Org allowed-actions policy: report-only rows whenever gh can authenticate.
+    _policy_enabled = _github_token_available()
     _policy_store: dict[str, dict | None] = (
         org_policy_cache if org_policy_cache is not None else _ORG_POLICY_CACHE
     )
@@ -1070,22 +863,15 @@ def scan_actions(
         return _action_policy_violation(action, _org_policy, _org_owner)
 
     # Load the actionlint result cache once per run (skipped in "off" mode).
-    _lint_cache: dict[str, dict] | None = None
-    _lint_cache_path: Path | None = None
-    if effective_lint_level != "off":
-        _lint_cache_path = _actionlint_cache_path()
-        _lint_cache = _load_lint_cache(_lint_cache_path)
+    _lint_cache_path = _actionlint_cache_path()
+    _lint_cache = _load_lint_cache(_lint_cache_path)
 
     for wf in workflows:
         rel = str(wf.relative_to(repo))
-        lint_res = (
-            None
-            if effective_lint_level == "off"
-            else _run_actionlint(wf, repo, lint_cache=_lint_cache)
-        )
+        lint_res = _run_actionlint(wf, repo, lint_cache=_lint_cache)
         if lint_res:
             lint_msg, lint_sev = lint_res
-            fatal = (lint_sev == "error") and (effective_lint_level == "block")
+            fatal = lint_sev == "error"
             bumps.append(
                 ActionBump(
                     workflow=rel,
@@ -1102,17 +888,11 @@ def scan_actions(
                     file=sys.stderr,
                 )
                 continue
-            # Non-fatal: warning-class finding, or lint_level=warn. Record warn row, proceed.
-            if effective_lint_level == "warn":
-                print(
-                    f"WARN: {rel}: actionlint findings (lint_level=warn); proceeding with pin bumps",
-                    file=sys.stderr,
-                )
-            else:
-                print(
-                    f"WARN: {rel}: actionlint reported warnings only; proceeding with pin bumps",
-                    file=sys.stderr,
-                )
+            # Warning-class finding: record the warn row and proceed.
+            print(
+                f"WARN: {rel}: actionlint reported warnings only; proceeding with pin bumps",
+                file=sys.stderr,
+            )
         try:
             pins = parse_workflow_uses(wf, workflow_rel=rel)
         except WorkflowParseError as exc:
@@ -1130,161 +910,105 @@ def scan_actions(
         replacements: list[PinReplacement] = []
         for uses in pins:
             action, pin = uses.action, uses.pin
-            policy_violation = _policy_violation_for(action)
-            policy_blocked = effective_policy_level == "block" and policy_violation is not None
-            # SHA-pinned: attempt to resolve to a version tag (unless keep_sha).
+            # SHA-pinned: refresh the digest, staying SHA-pinned.
             if _SHA_RE.fullmatch(pin):
-                if keep_sha:
-                    # Digest refresh: stay SHA-pinned but advance the digest
-                    # to the newest in-major release, preserving the # vN comment.
-                    if refresh_sha:
-                        info = action_tag_info(action, cache=_cache)
-                        major = (
-                            _resolve_sha_major(pin, comment_hint=uses.comment, info=info)
-                            if info is not None
-                            else None
-                        )
-                        # Cross-major SHA refresh: when upgrade_mode=latest,
-                        # advance to max_major if it has a real vN.M.P release.
-                        # Falls back to the current major when the newest major has
-                        # no exact tag (same safety check as the unpin path).
-                        target_major = major
-                        if upgrade_mode == "latest" and info is not None and major is not None:
-                            max_major = info.get("max_major")
-                            if max_major is not None and max_major > major:
-                                candidate = _highest_exact_digest_in_major(info, max_major)
-                                if candidate is not None:
-                                    target_major = max_major
-                        digest = (
-                            _highest_exact_digest_in_major(info, target_major)
-                            if info is not None and target_major is not None
-                            else None
-                        )
-                        if digest is not None:
-                            new_sha, tag = digest
-                            pin_norm = pin.lower()
-                            if pin_norm.startswith("sha"):
-                                pin_norm = pin_norm[3:]
-                            already_current = pin_norm == new_sha or (
-                                len(pin_norm) < 40 and new_sha.startswith(pin_norm)
-                            )
-                            if not already_current and _target_within_hold(repo, action, tag):
-                                cross_major = (
-                                    target_major is not None
-                                    and major is not None
-                                    and target_major != major
-                                )
-                                if cross_major:
-                                    detail_desc = (
-                                        f"cross-major SHA re-pin to {tag} "
-                                        f"(v{major} -> v{target_major}, {new_sha[:12]})"
-                                    )
-                                else:
-                                    detail_desc = (
-                                        f"refresh SHA digest to {tag} within v{major} "
-                                        f"({new_sha[:12]})"
-                                    )
-                                if not policy_blocked:
-                                    bumps.append(
-                                        ActionBump(
-                                            workflow=rel,
-                                            action=action,
-                                            pin=pin,
-                                            latest=new_sha,
-                                            status="ok",
-                                            detail=detail_desc,
-                                        )
-                                    )
-                                if apply and not policy_blocked:
-                                    replacements.append(
-                                        PinReplacement(
-                                            action=action,
-                                            pin=pin,
-                                            latest=new_sha,
-                                            line=uses.line or None,
-                                            comment_rewrite=_comment_rewrite_for(uses.comment, tag),
-                                        )
-                                    )
-                                continue
-                        # Unresolvable major / no newer digest → report only below.
-                    info = action_tag_info(action, cache=_cache)
-                    hold_rule = _resolve_actions_hold(repo, action)
-                    if info is not None and hold_rule is not None:
-                        hold_resolution = _resolve_hold_action_sha_target(pin, info, hold_rule)
-                        if hold_resolution is not None:
-                            target_sha, current_tag, target_tag = hold_resolution
-                            if not policy_blocked:
-                                bumps.append(
-                                    ActionBump(
-                                        workflow=rel,
-                                        action=action,
-                                        pin=pin,
-                                        latest=target_sha,
-                                        status="ok",
-                                        detail=(
-                                            f"hold clamp {current_tag} -> {target_tag} "
-                                            f"(<={hold_rule.max_version})"
-                                        ),
-                                    )
-                                )
-                            continue
-                    bumps.append(
-                        ActionBump(
-                            workflow=rel,
-                            action=action,
-                            pin=pin,
-                            latest=pin,
-                            status="ok",
-                            detail="SHA-pinned; report only",
-                        )
-                    )
-                    continue
-
+                # Digest refresh: stay SHA-pinned but advance the digest
+                # to the newest in-major release, preserving the # vN comment.
                 info = action_tag_info(action, cache=_cache)
-                resolution = _resolve_sha_target(
-                    pin,
-                    comment_hint=uses.comment,
-                    info=info,
-                    tag_style=tag_style,
+                major = (
+                    _resolve_sha_major(pin, comment_hint=uses.comment, info=info)
+                    if info is not None
+                    else None
                 )
-                if resolution is None:
-                    # Cannot resolve: keep reporting, do not rewrite.
-                    bumps.append(
-                        ActionBump(
-                            workflow=rel,
-                            action=action,
-                            pin=pin,
-                            latest=pin,
-                            status="ok",
-                            detail="SHA-pinned; report only (unresolvable: no tag maps to this SHA)",
-                        )
+                # Cross-major SHA refresh: advance to max_major if it has a
+                # real vN.M.P release.
+                # Falls back to the current major when the newest major has
+                # no exact tag (same safety check as the unpin path).
+                target_major = major
+                if info is not None and major is not None:
+                    max_major = info.get("max_major")
+                    if max_major is not None and max_major > major:
+                        candidate = _highest_exact_digest_in_major(info, max_major)
+                        if candidate is not None:
+                            target_major = max_major
+                digest = (
+                    _highest_exact_digest_in_major(info, target_major)
+                    if info is not None and target_major is not None
+                    else None
+                )
+                if digest is not None:
+                    new_sha, tag = digest
+                    pin_norm = pin.lower()
+                    if pin_norm.startswith("sha"):
+                        pin_norm = pin_norm[3:]
+                    already_current = pin_norm == new_sha or (
+                        len(pin_norm) < 40 and new_sha.startswith(pin_norm)
                     )
-                    continue
-
-                target_tag, detail = resolution
-                if not _target_within_hold(repo, action, target_tag):
-                    continue
-                if not policy_blocked:
-                    bumps.append(
-                        ActionBump(
-                            workflow=rel,
-                            action=action,
-                            pin=pin,
-                            latest=target_tag,
-                            status="ok",
-                            detail=detail,
+                    if not already_current and _target_within_hold(repo, action, tag):
+                        cross_major = (
+                            target_major is not None and major is not None and target_major != major
                         )
-                    )
-                if apply and not policy_blocked:
-                    replacements.append(
-                        PinReplacement(
-                            action=action,
-                            pin=pin,
-                            latest=target_tag,
-                            line=uses.line or None,
-                            comment_rewrite=_comment_rewrite_for(uses.comment, target_tag),
+                        if cross_major:
+                            detail_desc = (
+                                f"cross-major SHA re-pin to {tag} "
+                                f"(v{major} -> v{target_major}, {new_sha[:12]})"
+                            )
+                        else:
+                            detail_desc = (
+                                f"refresh SHA digest to {tag} within v{major} ({new_sha[:12]})"
+                            )
+                        bumps.append(
+                            ActionBump(
+                                workflow=rel,
+                                action=action,
+                                pin=pin,
+                                latest=new_sha,
+                                status="ok",
+                                detail=detail_desc,
+                            )
                         )
+                        if apply:
+                            replacements.append(
+                                PinReplacement(
+                                    action=action,
+                                    pin=pin,
+                                    latest=new_sha,
+                                    line=uses.line or None,
+                                    comment_rewrite=_comment_rewrite_for(uses.comment, tag),
+                                )
+                            )
+                        continue
+                # Unresolvable major / no newer digest → report only below.
+                info = action_tag_info(action, cache=_cache)
+                hold_rule = _resolve_actions_hold(repo, action)
+                if info is not None and hold_rule is not None:
+                    hold_resolution = _resolve_hold_action_sha_target(pin, info, hold_rule)
+                    if hold_resolution is not None:
+                        target_sha, current_tag, target_tag = hold_resolution
+                        bumps.append(
+                            ActionBump(
+                                workflow=rel,
+                                action=action,
+                                pin=pin,
+                                latest=target_sha,
+                                status="ok",
+                                detail=(
+                                    f"hold clamp {current_tag} -> {target_tag} "
+                                    f"(<={hold_rule.max_version})"
+                                ),
+                            )
+                        )
+                        continue
+                bumps.append(
+                    ActionBump(
+                        workflow=rel,
+                        action=action,
+                        pin=pin,
+                        latest=pin,
+                        status="ok",
+                        detail="SHA-pinned; report only",
                     )
+                )
                 continue
 
             # Parse current major from pin (vN, vN.x.y). Skip non-version refs.
@@ -1299,50 +1023,44 @@ def scan_actions(
                 # gh absent or API failed — skip this pin.
                 continue
 
-            # Pin a floating tag to a commit SHA: governed by pin_sha
-            # (REPO_OPS_ACTIONS_PIN_SHA / actions_pin_sha). Runs before the
-            # tag-normalize logic below — once pinned to SHA, refresh_sha
-            # (REPO_OPS_ACTIONS_REFRESH_SHA), not this path, governs future
-            # digest bumps for it. Same cross-major honoring of
-            # upgrade_mode="latest" as the SHA-pinned refresh path.
-            if pin_sha:
-                target_major = M
-                if upgrade_mode == "latest":
-                    latest_major = info.get("max_major")
-                    if (
-                        latest_major is not None
-                        and latest_major > M
-                        and _highest_exact_digest_in_major(info, latest_major) is not None
-                    ):
-                        target_major = latest_major
-                digest = _highest_exact_digest_in_major(info, target_major)
-                if digest is not None:
-                    new_sha, tag_label = digest
-                    if _target_within_hold(repo, action, tag_label):
-                        if not policy_blocked:
-                            bumps.append(
-                                ActionBump(
-                                    workflow=rel,
-                                    action=action,
-                                    pin=pin,
-                                    latest=new_sha,
-                                    status="ok",
-                                    detail=f"pin floating {pin} to SHA ({tag_label}, {new_sha[:12]})",
-                                )
+            # Pin a floating tag to a commit SHA, crossing to the newest major
+            # when it has a real vN.M.P release. Runs before the tag-normalize
+            # logic below; once SHA-pinned, the refresh path above owns it.
+            target_major = M
+            latest_major = info.get("max_major")
+            if (
+                latest_major is not None
+                and latest_major > M
+                and _highest_exact_digest_in_major(info, latest_major) is not None
+            ):
+                target_major = latest_major
+            digest = _highest_exact_digest_in_major(info, target_major)
+            if digest is not None:
+                new_sha, tag_label = digest
+                if _target_within_hold(repo, action, tag_label):
+                    bumps.append(
+                        ActionBump(
+                            workflow=rel,
+                            action=action,
+                            pin=pin,
+                            latest=new_sha,
+                            status="ok",
+                            detail=f"pin floating {pin} to SHA ({tag_label}, {new_sha[:12]})",
+                        )
+                    )
+                    if apply:
+                        replacements.append(
+                            PinReplacement(
+                                action=action,
+                                pin=pin,
+                                latest=new_sha,
+                                line=uses.line or None,
+                                set_comment=f"# {tag_label}",
                             )
-                        if apply and not policy_blocked:
-                            replacements.append(
-                                PinReplacement(
-                                    action=action,
-                                    pin=pin,
-                                    latest=new_sha,
-                                    line=uses.line or None,
-                                    set_comment=f"# {tag_label}",
-                                )
-                            )
-                        continue
-                # Unresolvable digest for this major — fall through to the
-                # tag-normalize logic below (report only; stays tag-pinned).
+                        )
+                    continue
+            # Unresolvable digest for this major — fall through to the
+            # tag-normalize logic below (report only; stays tag-pinned).
 
             bare_major_exists = M in info["bare_majors"]
             max_major = info["max_major"]
@@ -1352,45 +1070,39 @@ def scan_actions(
                     pin, info.get("all_tags", set()), hold_rule
                 )
                 if hold_target is not None:
-                    if not policy_blocked:
-                        bumps.append(
-                            ActionBump(
-                                workflow=rel,
-                                action=action,
-                                pin=pin,
-                                latest=hold_target,
-                                status="ok",
-                                detail=(
-                                    f"hold clamp {pin} -> {hold_target} (<={hold_rule.max_version})"
-                                ),
-                            )
-                        )
-                    continue
-
-            # In latest mode, a newer major upstream is rewritten (not just
-            # reported), provided it can be safely targeted.
-            newer_major = max_major is not None and max_major > M
-            latest_target = (
-                _resolve_latest_target(info, tag_style)
-                if upgrade_mode == "latest" and newer_major
-                else None
-            )
-            if latest_target and not _target_within_hold(repo, action, latest_target):
-                latest_target = None
-
-            if latest_target and latest_target != pin:
-                if not policy_blocked:
                     bumps.append(
                         ActionBump(
                             workflow=rel,
                             action=action,
                             pin=pin,
-                            latest=latest_target,
+                            latest=hold_target,
                             status="ok",
-                            detail=f"cross-major {pin} -> {latest_target} (latest mode)",
+                            detail=(
+                                f"hold clamp {pin} -> {hold_target} (<={hold_rule.max_version})"
+                            ),
                         )
                     )
-                if apply and not policy_blocked:
+                    continue
+
+            # A newer major upstream is rewritten (not just reported),
+            # provided it can be safely targeted.
+            newer_major = max_major is not None and max_major > M
+            latest_target = _resolve_latest_target(info) if newer_major else None
+            if latest_target and not _target_within_hold(repo, action, latest_target):
+                latest_target = None
+
+            if latest_target and latest_target != pin:
+                bumps.append(
+                    ActionBump(
+                        workflow=rel,
+                        action=action,
+                        pin=pin,
+                        latest=latest_target,
+                        status="ok",
+                        detail=f"cross-major {pin} -> {latest_target} (latest mode)",
+                    )
+                )
+                if apply:
                     replacements.append(
                         PinReplacement(
                             action=action,
@@ -1426,18 +1138,17 @@ def scan_actions(
                     detail = f"normalize to floating major v{M}"
                     if newer_major:
                         detail += f"; newer major v{max_major} available"
-                    if not policy_blocked:
-                        bumps.append(
-                            ActionBump(
-                                workflow=rel,
-                                action=action,
-                                pin=pin,
-                                latest=desired,
-                                status="ok",
-                                detail=detail,
-                            )
+                    bumps.append(
+                        ActionBump(
+                            workflow=rel,
+                            action=action,
+                            pin=pin,
+                            latest=desired,
+                            status="ok",
+                            detail=detail,
                         )
-                    if apply and not policy_blocked:
+                    )
+                    if apply:
                         replacements.append(
                             PinReplacement(
                                 action=action,
@@ -1460,18 +1171,17 @@ def scan_actions(
                         detail = f"advance exact pin within v{M} (no floating major tag upstream)"
                         if newer_major:
                             detail += f"; newer major v{max_major} available"
-                        if not policy_blocked:
-                            bumps.append(
-                                ActionBump(
-                                    workflow=rel,
-                                    action=action,
-                                    pin=pin,
-                                    latest=in_major,
-                                    status="ok",
-                                    detail=detail,
-                                )
+                        bumps.append(
+                            ActionBump(
+                                workflow=rel,
+                                action=action,
+                                pin=pin,
+                                latest=in_major,
+                                status="ok",
+                                detail=detail,
                             )
-                        if apply and not policy_blocked:
+                        )
+                        if apply:
                             replacements.append(
                                 PinReplacement(
                                     action=action,
@@ -1514,11 +1224,7 @@ def scan_actions(
                 action = uses.action
                 violation = _policy_violation_for(action)
                 if violation:
-                    status = {
-                        "block": "policy-blocked",
-                        "warn": "warn",
-                        "report": "policy",
-                    }[effective_policy_level]
+                    status = "policy"
                     bumps.append(
                         ActionBump(
                             workflow=rel,
@@ -1531,7 +1237,6 @@ def scan_actions(
                     )
 
     # Persist the actionlint cache (atomic write; best-effort).
-    if _lint_cache is not None and _lint_cache_path is not None:
-        _save_lint_cache(_lint_cache_path, _lint_cache)
+    _save_lint_cache(_lint_cache_path, _lint_cache)
 
     return bumps, len(workflows)

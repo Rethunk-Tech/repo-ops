@@ -2,8 +2,7 @@
 
 Submodule tags and pre-commit hook revs both resolve upstream semver tags
 the same way: fetch via ``git ls-remote``, filter to the current rev's
-v-prefix style, and take the highest same-major (or, with
-``allow_cross_major``, global) survivor above the current version.
+v-prefix style, and take the highest survivor above the current version.
 """
 
 from __future__ import annotations
@@ -61,16 +60,13 @@ def fetch_tag_refs(url: str, *, timeout: int) -> list[tuple[str, str]] | None:
     return refs
 
 
-def resolve_latest_tag(
-    current: str, candidates: list[str], *, allow_cross_major: bool = False
-) -> str | None:
+def resolve_latest_tag(current: str, candidates: list[str]) -> str | None:
     """Return the best candidate tag for *current* from *candidates*, or None.
 
     Matching rules:
     - *current* must be semver-like; returns None otherwise.
     - Candidates must share the same ``v``-prefix style as *current*.
-    - Conservative (default): same major only.
-    - ``allow_cross_major=True``: pick the global best across all majors.
+    - The best across all majors wins.
     - Returns None when already at latest, or no suitable candidate exists.
     """
     if not is_semver_tag(current):
@@ -88,12 +84,6 @@ def resolve_latest_tag(
     if not scored:
         return None
     scored.sort(key=lambda item: item[0], reverse=True)
-
-    if not allow_cross_major:
-        same_major = [(tup, tag) for tup, tag in scored if tup[0] == current_tup[0]]
-        if not same_major:
-            return None
-        scored = same_major
 
     best_tup, best_tag = scored[0]
     if best_tup <= current_tup:

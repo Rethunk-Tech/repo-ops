@@ -14,19 +14,15 @@ No subprocess or network calls are made.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from repo_ops._register import register_all
-from repo_ops_core.config import coerce_bool_setting, resolve_setting
 from repo_ops_js_bun.bun import targeted_bump_behind as bun_targeted_bump_behind
-from repo_ops_models import Change, Workspace, WorkspaceResult
+from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.report import _behind_latest_hint
-from repo_ops_upgrade.run import main_plan
 
 # ---------------------------------------------------------------------------
 # Shared fixture: a minimal flat bun workspace so main_plan has something to
@@ -64,127 +60,6 @@ def _clear_env(monkeypatch, names: tuple[str, ...]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Contract 1 — --latest flips container/pre-commit/submodule gates
-# ---------------------------------------------------------------------------
-
-
-def test_default_sweep_sets_container_precommit_submodule_env_vars(
-    tmp_path: Path, monkeypatch, init_git_repo
-) -> None:
-    _clear_env(monkeypatch, _LATEST_UMBRELLA_VARS)
-    _bun_workspace(tmp_path, init_git_repo=init_git_repo)
-    register_all()
-
-    ran: list[bool] = []
-
-    def _capture(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
-        ran.append(True)
-        return wr
-
-    with patch(
-        "repo_ops_upgrade.run.orchestration.process_workspace",
-        side_effect=_capture,
-    ):
-        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
-
-    assert ran, "the run never reached a workspace"
-    # run.py does not force-write these to "1" — each key's
-    # settings-table default is already "1", so with nothing overriding it
-    # (env cleared above, no config file) every gate must still resolve on.
-    for name in (
-        "container_update_latest",
-        "precommit_update_latest",
-        "submodule_update_latest",
-        "deno_update_latest",
-    ):
-        assert coerce_bool_setting(resolve_setting(name)) is True
-
-
-def test_conservative_flag_zeroes_container_precommit_submodule_env_vars(
-    tmp_path: Path, monkeypatch, init_git_repo
-) -> None:
-    """--conservative writes each gate to "0" explicitly (not merely
-    unset) so an ambient REPO_OPS_*=1 can't outrank it."""
-    _clear_env(monkeypatch, _LATEST_UMBRELLA_VARS)
-    _bun_workspace(tmp_path, init_git_repo=init_git_repo)
-    register_all()
-
-    seen: dict[str, str | None] = {}
-
-    def _capture(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
-        seen["container"] = os.environ.get("REPO_OPS_CONTAINER_UPDATE_LATEST")
-        seen["precommit"] = os.environ.get("REPO_OPS_PRECOMMIT_UPDATE_LATEST")
-        seen["submodule"] = os.environ.get("REPO_OPS_SUBMODULE_UPDATE_LATEST")
-        seen["deno"] = os.environ.get("REPO_OPS_DENO_UPDATE_LATEST")
-        return wr
-
-    with patch(
-        "repo_ops_upgrade.run.orchestration.process_workspace",
-        side_effect=_capture,
-    ):
-        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"])
-
-    assert seen == {
-        "container": "0",
-        "precommit": "0",
-        "submodule": "0",
-        "deno": "0",
-    }
-
-
-# ---------------------------------------------------------------------------
-# Contract 2 — --bun-targeted-bump wires REPO_OPS_BUN_TARGETED_BUMP
-# ---------------------------------------------------------------------------
-
-
-def test_bun_targeted_bump_defaults_on(tmp_path: Path, monkeypatch, init_git_repo) -> None:
-    _clear_env(
-        monkeypatch,
-        ("REPO_OPS_BUN_TARGETED_BUMP", "REPO_OPS_BUN_UPDATE_LATEST"),
-    )
-    _bun_workspace(tmp_path, init_git_repo=init_git_repo)
-    register_all()
-
-    ran: list[bool] = []
-
-    def _capture(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
-        ran.append(True)
-        return wr
-
-    with patch(
-        "repo_ops_upgrade.run.orchestration.process_workspace",
-        side_effect=_capture,
-    ):
-        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
-
-    assert ran, "the run never reached a workspace"
-    # no force-write — the settings-table default ("1") must resolve on.
-    assert coerce_bool_setting(resolve_setting("bun_targeted_bump")) is True
-
-
-def test_bun_targeted_bump_conservative_flag_disables_it(
-    tmp_path: Path, monkeypatch, init_git_repo
-) -> None:
-    _clear_env(monkeypatch, ("REPO_OPS_BUN_TARGETED_BUMP",))
-    _bun_workspace(tmp_path, init_git_repo=init_git_repo)
-    register_all()
-
-    seen: dict[str, str | None] = {}
-
-    def _capture(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
-        seen["bun_targeted_bump"] = os.environ.get("REPO_OPS_BUN_TARGETED_BUMP")
-        return wr
-
-    with patch(
-        "repo_ops_upgrade.run.orchestration.process_workspace",
-        side_effect=_capture,
-    ):
-        main_plan([str(tmp_path), "--flat", "--skip-actions", "--quiet", "--conservative"])
-
-    assert seen == {"bun_targeted_bump": "0"}
-
-
-# ---------------------------------------------------------------------------
 # Contract 3 — _behind_latest_hint parity for npm/pnpm/bun
 # ---------------------------------------------------------------------------
 
@@ -195,90 +70,32 @@ def test_bun_targeted_bump_conservative_flag_disables_it(
 _TRIED_FRAGMENT = "the targeted bump was attempted but could not move them"
 
 _BEHIND_LATEST_HINT_CASES = [
-    (
-        "npm",
-        "REPO_OPS_NPM_TARGETED_BUMP",
-        False,
-        ("no latest mode", "not attempted this run", "bump manually"),
-    ),
-    ("npm", "REPO_OPS_NPM_TARGETED_BUMP", True, (_TRIED_FRAGMENT, "bump manually")),
-    (
-        "pnpm",
-        "REPO_OPS_PNPM_TARGETED_BUMP",
-        False,
-        ("not attempted this run", "bump manually"),
-    ),
-    ("pnpm", "REPO_OPS_PNPM_TARGETED_BUMP", True, (_TRIED_FRAGMENT, "bump manually")),
-    (
-        "bun",
-        "REPO_OPS_BUN_TARGETED_BUMP",
-        False,
-        ("not attempted this run", "bump manually"),
-    ),
-    ("bun", "REPO_OPS_BUN_TARGETED_BUMP", True, (_TRIED_FRAGMENT, "bump manually")),
-    (
-        "deno",
-        "REPO_OPS_DENO_TARGETED_BUMP",
-        False,
-        ("not attempted this run", "bump manually"),
-    ),
-    ("deno", "REPO_OPS_DENO_TARGETED_BUMP", True, (_TRIED_FRAGMENT, "bump manually")),
+    ("npm", (_TRIED_FRAGMENT, "bump manually")),
+    ("pnpm", (_TRIED_FRAGMENT, "bump manually")),
+    ("bun", (_TRIED_FRAGMENT, "bump manually")),
+    ("deno", (_TRIED_FRAGMENT, "bump manually")),
     (
         "poetry",
-        "REPO_OPS_POETRY_TARGETED_BUMP",
-        False,
-        ("not attempted this run", "no latest mode"),
-    ),
-    (
-        "poetry",
-        "REPO_OPS_POETRY_TARGETED_BUMP",
-        True,
         (_TRIED_FRAGMENT, "bump manually"),
     ),
-    (
-        "pdm",
-        "REPO_OPS_PDM_TARGETED_BUMP",
-        False,
-        ("not attempted this run", "no latest mode"),
-    ),
-    ("pdm", "REPO_OPS_PDM_TARGETED_BUMP", True, (_TRIED_FRAGMENT, "bump manually")),
+    ("pdm", (_TRIED_FRAGMENT, "bump manually")),
     (
         "pipenv",
-        "REPO_OPS_PIPENV_TARGETED_BUMP",
-        False,
-        ("not attempted this run", "no latest mode"),
-    ),
-    (
-        "pipenv",
-        "REPO_OPS_PIPENV_TARGETED_BUMP",
-        True,
         (_TRIED_FRAGMENT, "bump manually"),
     ),
     (
         "pip-tools",
-        "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
-        False,
-        ("not attempted this run", "no latest mode"),
-    ),
-    (
-        "pip-tools",
-        "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
-        True,
         (_TRIED_FRAGMENT, "bump manually"),
     ),
 ]
 
 
 @pytest.mark.parametrize(
-    "manager,env_var,requested,expected_fragments",
+    "manager,expected_fragments",
     _BEHIND_LATEST_HINT_CASES,
-    ids=[
-        f"{manager}-{'requested' if requested else 'default'}"
-        for manager, _, requested, _ in _BEHIND_LATEST_HINT_CASES
-    ],
+    ids=[manager for manager, _ in _BEHIND_LATEST_HINT_CASES],
 )
-def test_behind_latest_hint(monkeypatch, manager, env_var, requested, expected_fragments) -> None:
-    monkeypatch.setenv(env_var, "1" if requested else "0")
+def test_behind_latest_hint(manager, expected_fragments) -> None:
     hint = _behind_latest_hint(manager)
     for fragment in expected_fragments:
         assert fragment in hint
@@ -298,7 +115,6 @@ def test_behind_latest_hint(monkeypatch, manager, env_var, requested, expected_f
 
 
 def test_bun_targeted_bump_restores_snapshot_when_guard_raises(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_BUN_TARGETED_BUMP", "1")
     (tmp_path / "package.json").write_text(
         json.dumps({"dependencies": {"zod": "^3.25.76"}}), encoding="utf-8"
     )
@@ -337,18 +153,3 @@ def test_bun_targeted_bump_restores_snapshot_when_guard_raises(tmp_path: Path, m
     # The lockfile mutated by the fake install must be reverted, not left
     # corrupted, once the ghost-bump guard raises.
     assert (tmp_path / "bun.lock").read_bytes() == original_lock
-
-
-def test_yarn_hint_unaffected_by_generalization(monkeypatch) -> None:
-    """Regression guard: generalizing the yarn branch must not change its text."""
-    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "0")
-    assert _behind_latest_hint("yarn") == (
-        "peer/group-constrained; targeted bump not attempted this run — "
-        "drop --conservative, or set REPO_OPS_YARN_TARGETED_BUMP=1, to "
-        "attempt it, or bump manually"
-    )
-    monkeypatch.setenv("REPO_OPS_YARN_TARGETED_BUMP", "1")
-    assert _behind_latest_hint("yarn") == (
-        "peer/group-constrained; the targeted bump was attempted but could not "
-        "move them (verify failed or still constrained) — bump manually"
-    )

@@ -70,32 +70,6 @@ def test_check_surfaces_tag_hold_clamp_at_upstream_latest(tmp_path: Path) -> Non
     assert bumps[0].is_actionable
 
 
-def test_check_surfaces_sha_hold_clamp_without_refresh(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.delenv("REPO_OPS_SUBMODULE_REFRESH_SHA", raising=False)
-    link = _make_link(tmp_path)
-    current_sha = "a" * 40
-    refs = [
-        (current_sha, "v1.5.0"),
-        ("b" * 40, "v1.0.0"),
-        ("c" * 40, "v2.0.0"),
-    ]
-    _write_global_hold(tmp_path)
-
-    with (
-        patch.object(submodules, "_current_submodule_tag", return_value=None),
-        patch.object(submodules, "_current_submodule_sha", return_value=current_sha),
-        patch.object(submodules, "_fetch_remote_tag_refs", return_value=refs),
-    ):
-        bumps = check_submodule_tag_advances([link])
-
-    assert len(bumps) == 1
-    assert bumps[0].current_tag == ""
-    assert bumps[0].latest_tag == "v1.0.0"
-    assert bumps[0].is_actionable
-
-
 def test_apply_clamps_tag_above_ceiling(tmp_path: Path, make_proc) -> None:
     link = _make_link(tmp_path)
     _write_global_hold(tmp_path)

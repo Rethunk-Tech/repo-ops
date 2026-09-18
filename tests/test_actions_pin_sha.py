@@ -30,20 +30,6 @@ def _wf(tmp_path: Path, content: str) -> Path:
     return wf
 
 
-def test_pin_sha_off_by_default_leaves_tag_pin_alone(tmp_path: Path) -> None:
-    wf = _wf(tmp_path, "jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@v7\n")
-    original = wf.read_text(encoding="utf-8")
-    tags_proc = _make_tags_proc(f"v7.0.1 {_V7_0_1}", f"v7 {_V7_0_1}")
-
-    with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
-        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
-    ):
-        scan_actions(tmp_path, apply=True, keep_sha=True)
-
-    assert wf.read_text(encoding="utf-8") == original
-
-
 def test_pin_sha_bare_major_tag_pins_to_highest_exact_release_no_prior_comment(
     tmp_path: Path,
 ) -> None:
@@ -59,7 +45,7 @@ def test_pin_sha_bare_major_tag_pins_to_highest_exact_release_no_prior_comment(
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, scanned = scan_actions(tmp_path, apply=True, keep_sha=True, pin_sha=True)
+        bumps, scanned = scan_actions(tmp_path, apply=True)
 
     assert scanned == 1
     checkout = [b for b in bumps if b.action == "actions/checkout"]
@@ -89,7 +75,7 @@ def test_pin_sha_exact_tag_pins_to_own_sha_and_replaces_no_comment(
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=True, pin_sha=True)
+        bumps, _ = scan_actions(tmp_path, apply=True)
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert len(checkout) == 1
@@ -116,9 +102,7 @@ def test_pin_sha_cross_major_under_latest_mode(tmp_path: Path) -> None:
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, _ = scan_actions(
-            tmp_path, apply=True, keep_sha=True, pin_sha=True, upgrade_mode="latest"
-        )
+        bumps, _ = scan_actions(tmp_path, apply=True)
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert len(checkout) == 1
@@ -144,7 +128,7 @@ def test_pin_sha_no_exact_release_in_major_falls_back_to_tag_normalize(
         patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
         patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
     ):
-        bumps, _ = scan_actions(tmp_path, apply=True, keep_sha=True, pin_sha=True)
+        bumps, _ = scan_actions(tmp_path, apply=True)
 
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert len(checkout) == 1

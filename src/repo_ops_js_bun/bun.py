@@ -6,14 +6,6 @@ import json
 import re
 from pathlib import Path
 
-from repo_ops_core.config import (
-    ambient_env,
-    coerce_bool_setting,
-    load_global_config,
-    load_repo_config,
-    process_env_cli_override,
-    resolve_setting,
-)
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
@@ -57,30 +49,6 @@ _BOX_V = "│"  # │ box drawings light vertical (column separator)
 _ASCII_V = "|"  # ASCII fallback separator on non-UTF-8 terminals
 _DEP_GROUP_SUFFIX_RE = re.compile(r"\s*\((?:dev|peer|optional)\)\s*$")
 _PKG_NAME_RE = re.compile(r"^(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+$")
-_BUN_UPDATE_LATEST_ENV = "REPO_OPS_BUN_UPDATE_LATEST"
-_BUN_TARGETED_BUMP_ENV = "REPO_OPS_BUN_TARGETED_BUMP"
-
-
-def _bun_update_latest_enabled(ws: Workspace | None = None) -> bool:
-    raw = resolve_setting(
-        "bun_update_latest",
-        cli_value=process_env_cli_override(_BUN_UPDATE_LATEST_ENV),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
-    )
-    return coerce_bool_setting(raw)
-
-
-def _bun_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
-    raw = resolve_setting(
-        "bun_targeted_bump",
-        cli_value=process_env_cli_override(_BUN_TARGETED_BUMP_ENV),
-        env=ambient_env() or None,
-        repo_cfg=load_repo_config(ws.git_repo) if ws is not None else None,
-        global_cfg=load_global_config(),
-    )
-    return coerce_bool_setting(raw)
 
 
 def _valid_bun_package_name(name: str) -> bool:
@@ -102,9 +70,7 @@ def _changes_from_bun_json(
     Range-respecting by default (``update`` field); ``latest`` when opted in.
 
     Returns ``(changes, behind_latest)`` where ``behind_latest`` contains
-    packages that have a newer ``latest`` version available but are not
-    actionable because latest-mode is off (and the in-range update equals
-    the current version).
+    packages whose ``latest`` an active hold rule blocks.
 
     A package with an active hold rule whose ceiling ``target`` would
     violate is not promoted into ``changes`` — it lands in ``behind_latest``
@@ -112,7 +78,6 @@ def _changes_from_bun_json(
     exercising the parser in isolation (no ``Workspace``) keep prior
     behavior; ``check_bun`` always passes the real workspace.
     """
-    want_latest = _bun_update_latest_enabled(ws)
     changes: list[Change] = []
     behind_latest: list[Change] = []
     try:
@@ -126,16 +91,12 @@ def _changes_from_bun_json(
             continue
         cur = str(meta.get("current") or meta.get("installed") or "?")
         latest = str(meta.get("latest", "?"))
-        target = latest if want_latest else str(meta.get("update") or meta.get("latest") or "?")
-        if cur != target and target not in ("?", ""):
+        if cur != latest and latest not in ("?", ""):
             held_rule = resolve_package_hold(ws, str(name)) if ws is not None else None
-            if held_rule is not None and not is_within_ceiling(target, held_rule):
-                behind_latest.append(Change(str(name), cur, target))
+            if held_rule is not None and not is_within_ceiling(latest, held_rule):
+                behind_latest.append(Change(str(name), cur, latest))
             else:
-                changes.append(Change(str(name), cur, target))
-        elif not want_latest and latest not in ("?", "") and cur != latest:
-            # In-range is already current, but a newer latest exists.
-            behind_latest.append(Change(str(name), cur, latest))
+                changes.append(Change(str(name), cur, latest))
     return changes, behind_latest
 
 
@@ -154,14 +115,10 @@ def _changes_from_bun_text(
     ``_valid_bun_package_name`` rejects.
 
     Returns ``(changes, behind_latest)`` where ``behind_latest`` contains
-    packages that have a newer ``latest`` version available but are not
-    actionable because latest-mode is off (and the in-range update equals
-    the current version) — or because an active hold rule's ceiling would be
-    violated by ``target``. ``ws`` is optional and keyword-only so direct
+    packages whose ``latest`` an active hold rule's ceiling would violate. ``ws`` is optional and keyword-only so direct
     unit tests exercising the parser in isolation keep prior behavior;
     ``check_bun`` always passes the real workspace.
     """
-    want_latest = _bun_update_latest_enabled(ws)
     changes: list[Change] = []
     behind_latest: list[Change] = []
     for raw in stdout.splitlines():
@@ -180,13 +137,8 @@ def _changes_from_bun_text(
         if name == "Package" or not _valid_bun_package_name(name):
             continue
         current = cells[2]
-        update_ver = cells[3]
-        latest_ver = cells[4]
-        target = latest_ver if want_latest else update_ver
+        target = cells[4]
         if not current or not target or current == target:
-            # When latest-mode is off, check if there's a newer latest to report.
-            if not want_latest and latest_ver and current and current != latest_ver:
-                behind_latest.append(Change(name, current, latest_ver))
             continue
         held_rule = resolve_package_hold(ws, name) if ws is not None else None
         if held_rule is not None and not is_within_ceiling(target, held_rule):
@@ -200,8 +152,7 @@ def check_bun(ws: Workspace, *, members: bool = True) -> tuple[list[Change], lis
     """Check for outdated bun packages.
 
     Returns ``(changes, behind_latest)`` where ``behind_latest`` holds packages
-    that have a newer ``latest`` version available but are not actioned when
-    ``REPO_OPS_BUN_UPDATE_LATEST`` is unset.
+    whose ``latest`` an active hold blocks.
 
     ``bun outdated`` reports only the workspace its cwd belongs to, so a monorepo
     root also checks each member directory; ``members=False`` is the
@@ -250,12 +201,12 @@ def targeted_bump_behind(
     version due to an override/exact-pin). On any failure or no-op we restore
     the snapshot, leaving that package behind.
 
-    Opt-in (``REPO_OPS_BUN_TARGETED_BUMP``) and reversible per-package: a bump
+    Reversible per-package: a bump
     that fights peer constraints is dropped, never committed. Returns
     ``(applied, still_behind)`` — ``applied`` carries the real resolved version
     landed.
     """
-    if not behind or not _bun_targeted_bump_enabled(ws):
+    if not behind:
         return [], behind
     # The lockfile lives at the monorepo root: snapshot there, and read its
     # node_modules when the member directory has no linked copy.
@@ -340,11 +291,10 @@ def apply_bun(ws: Workspace) -> list[Change]:
 def _apply_bun_dir(ws: Workspace, root: Path) -> list[Change]:
     """Apply upgrades ``check_bun`` reports for one directory, without rewriting ranges to ``latest``.
 
-    With ``REPO_OPS_BUN_TARGETED_BUMP`` set, each dep that ``check_bun`` left
-    behind_latest gets a reversible targeted ``bun add <pkg>@latest``; only
-    bumps that actually advance the resolved version are kept. Returns the
-    subset of behind_latest that could not be moved (empty when the flag is
-    off or all behind deps were successfully targeted).
+    Each dep that ``check_bun`` left behind_latest gets a reversible targeted
+    ``bun add <pkg>@latest``; only bumps that actually advance the resolved
+    version are kept. Returns the subset of behind_latest that could not be
+    moved.
     """
     changes, behind = check_bun(ws, members=False)
     targets: list[str] = []
@@ -379,22 +329,15 @@ def _apply_bun_dir(ws: Workspace, root: Path) -> list[Change]:
             and _valid_bun_package_name((ch.name or "").strip())
         ]
         if guardable:
-            if _bun_targeted_bump_enabled(ws):
-                # Defer to the targeted-bump retry below (which can release
-                # an unheld legacy pin) instead of hard-failing here; a
-                # still-blocked package after that best-effort retry lands
-                # in behind_latest like any other targeted-bump miss.
-                blocked = unresolved_targets(ws, guardable)
-                behind = fold_blocked_into_behind(blocked, behind)
-            else:
-                assert_targets_resolved(ws, guardable, manager="bun")
+            # Defer to the targeted-bump retry (which can release an unheld
+            # legacy pin) instead of hard-failing here; a still-blocked
+            # package after that best-effort retry lands in behind_latest.
+            blocked = unresolved_targets(ws, guardable)
+            behind = fold_blocked_into_behind(blocked, behind)
         return _finalize_bun_apply(ws, changes, behind, root=root, mutated=True)
     proc = run(["bun", "update", "--", *targets], ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
-    if _bun_targeted_bump_enabled(ws):
-        blocked = unresolved_targets(ws, requested)
-        behind = fold_blocked_into_behind(blocked, behind)
-    else:
-        assert_targets_resolved(ws, requested, manager="bun")
+    blocked = unresolved_targets(ws, requested)
+    behind = fold_blocked_into_behind(blocked, behind)
     return _finalize_bun_apply(ws, changes, behind, root=root, mutated=True)

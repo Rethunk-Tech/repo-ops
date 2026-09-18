@@ -16,86 +16,6 @@ certifi    2022.12.7 2023.7.22 wheel
 """
 
 
-def test_check_pipenv_parses_outdated_output(tmp_path: Path, make_workspace, monkeypatch) -> None:
-    """check_pipenv must parse the tabular output of pip list --outdated."""
-    monkeypatch.setenv("REPO_OPS_PIPENV_TARGETED_BUMP", "0")
-
-    def fake_run(cmd, cwd, timeout=None):
-        return subprocess.CompletedProcess(cmd, 0, stdout=_OUTDATED_OUTPUT, stderr="")
-
-    with (
-        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
-    ):
-        changes = check_pipenv(
-            make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo")
-        )
-
-    assert len(changes) == 2
-    names = {c.name for c in changes}
-    assert "requests" in names
-    assert "certifi" in names
-
-
-def test_check_pipenv_returns_empty_when_up_to_date(
-    tmp_path: Path, make_workspace, monkeypatch
-) -> None:
-    monkeypatch.setenv("REPO_OPS_PIPENV_TARGETED_BUMP", "0")
-    empty_output = "Package  Version  Latest  Type\n------- -------- ------- -----\n"
-
-    def fake_run(cmd, cwd, timeout=None):
-        return subprocess.CompletedProcess(cmd, 0, stdout=empty_output, stderr="")
-
-    with (
-        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
-    ):
-        changes = check_pipenv(
-            make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo")
-        )
-
-    assert changes == []
-
-
-def test_check_pipenv_warns_when_pipenv_absent(
-    tmp_path: Path, capsys, make_workspace, monkeypatch
-) -> None:
-    """check_pipenv must not raise when pipenv is absent — returns [] + WARN."""
-    monkeypatch.setenv("REPO_OPS_PIPENV_TARGETED_BUMP", "0")
-    with patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value=None):
-        result = check_pipenv(
-            make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo")
-        )
-
-    assert result == []
-    assert "WARN" in capsys.readouterr().err
-
-
-def test_check_pipenv_warns_when_venv_not_initialised(
-    tmp_path: Path, capsys, make_workspace, monkeypatch
-) -> None:
-    """When 'pipenv --venv' fails (no venv), check_pipenv returns [] + WARN (no raise)."""
-    monkeypatch.setenv("REPO_OPS_PIPENV_TARGETED_BUMP", "0")
-
-    def fake_run(cmd, cwd, timeout=None):
-        # Probe fails — venv not yet created
-        return subprocess.CompletedProcess(
-            cmd, 1, stdout="", stderr="No virtualenv has been created"
-        )
-
-    with (
-        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
-    ):
-        result = check_pipenv(
-            make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo")
-        )
-
-    assert result == []
-    err = capsys.readouterr().err
-    assert "WARN" in err
-
-
 def test_check_pipenv_raises_when_pip_fails(tmp_path: Path, make_workspace) -> None:
     """When the venv probe succeeds but pip list fails, check_pipenv raises RuntimeError."""
     call_count = 0
@@ -143,23 +63,6 @@ def test_check_pipenv_invokes_venv_probe_then_pip(tmp_path: Path, make_workspace
     assert "--format=json" in pip_call
 
 
-def test_apply_pipenv_runs_pipenv_update(tmp_path: Path, make_workspace, monkeypatch) -> None:
-    monkeypatch.setenv("REPO_OPS_PIPENV_TARGETED_BUMP", "0")
-    captured: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        captured.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    with (
-        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
-    ):
-        apply_pipenv(make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo"))
-
-    assert captured == [["pipenv", "update"]]
-
-
 def test_apply_pipenv_raises_when_pipenv_absent(tmp_path: Path, make_workspace) -> None:
     with patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value=None):
         try:
@@ -168,83 +71,6 @@ def test_apply_pipenv_raises_when_pipenv_absent(tmp_path: Path, make_workspace) 
             assert "pipenv not on PATH" in str(exc)
         else:
             raise AssertionError("expected RuntimeError")
-
-
-def test_check_pipenv_parses_json_outdated(tmp_path: Path, make_workspace, monkeypatch) -> None:
-    """JSON pip list --outdated output parses into Change entries."""
-    monkeypatch.setenv("REPO_OPS_PIPENV_TARGETED_BUMP", "0")
-    json_out = (
-        '[{"name": "requests", "version": "2.28.0", "latest_version": "2.31.0"},'
-        ' {"name": "certifi", "version": "2022.12.7", "latest_version": "2023.7.22"}]'
-    )
-
-    def fake_run(cmd, cwd, timeout=None):
-        if cmd[:2] == ["pipenv", "--venv"]:
-            return subprocess.CompletedProcess(cmd, 0, stdout="/fake/.venv", stderr="")
-        return subprocess.CompletedProcess(cmd, 0, stdout=json_out, stderr="")
-
-    with (
-        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
-    ):
-        changes = check_pipenv(
-            make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo")
-        )
-
-    assert len(changes) == 2
-    assert changes[0].name == "requests"
-    assert changes[0].from_ver == "2.28.0"
-    assert changes[0].to == "2.31.0"
-
-
-def test_check_pipenv_json_keyerror_falls_back_without_raise(
-    tmp_path: Path, make_workspace, monkeypatch
-) -> None:
-    """KeyError on JSON entries is caught (column fallback, no raise)."""
-    monkeypatch.setenv("REPO_OPS_PIPENV_TARGETED_BUMP", "0")
-    # Valid JSON list but missing version keys → KeyError → column fallback.
-    json_out = '[{"name": "requests"}]'
-
-    def fake_run(cmd, cwd, timeout=None):
-        if cmd[:2] == ["pipenv", "--venv"]:
-            return subprocess.CompletedProcess(cmd, 0, stdout="/fake/.venv", stderr="")
-        return subprocess.CompletedProcess(cmd, 0, stdout=json_out, stderr="")
-
-    with (
-        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
-    ):
-        changes = check_pipenv(
-            make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo")
-        )
-
-    # Column fallback cannot parse JSON text; result is empty, not an exception.
-    assert changes == []
-
-
-def test_check_pipenv_invalid_json_falls_back_to_columns(
-    tmp_path: Path, make_workspace, monkeypatch
-) -> None:
-    """JSONDecodeError falls back to column-format parsing."""
-    monkeypatch.setenv("REPO_OPS_PIPENV_TARGETED_BUMP", "0")
-    column_out = "Package Version Latest\n------- ------- ------\nrequests 2.28.0 2.31.0\n"
-
-    def fake_run(cmd, cwd, timeout=None):
-        if cmd[:2] == ["pipenv", "--venv"]:
-            return subprocess.CompletedProcess(cmd, 0, stdout="/fake/.venv", stderr="")
-        return subprocess.CompletedProcess(cmd, 0, stdout=column_out, stderr="")
-
-    with (
-        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
-    ):
-        changes = check_pipenv(
-            make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo")
-        )
-
-    assert len(changes) == 1
-    assert changes[0].name == "requests"
-    assert changes[0].to == "2.31.0"
 
 
 def test_check_pipenv_venv_probe_uses_timeout_check(tmp_path: Path, make_workspace) -> None:

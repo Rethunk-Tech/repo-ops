@@ -5,10 +5,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import contextlib
-import functools
 import os
-import shutil
-import subprocess
 import sys
 import threading
 from itertools import groupby
@@ -21,13 +18,10 @@ from repo_ops_core.cli import (
     wire_verbose,
 )
 from repo_ops_core.config import (
-    ambient_env,
     apply_config_to_env,
     checkout_config_scope,
-    coerce_bool_setting,
     load_global_config,
     load_repo_config,
-    resolve_setting,
     set_ambient_env,
 )
 from repo_ops_core.constants import DEFAULT_ROOTS
@@ -134,64 +128,6 @@ def _resolve_exit_code(
     return 0
 
 
-# Every gate the default full sweep opens. Each one's settings-table default
-# is already "1" (see repo_ops_core.config._SETTINGS_MAP), so the sweep needs
-# no write here to turn on — only --conservative writes "0" to each, an
-# explicit CLI override that outranks the user's own env var or config entry
-# by design (an unset default here would leave those free to win instead).
-_SWEEP_ENV_VARS = (
-    # Cross-range upgrades per ecosystem.
-    "REPO_OPS_BUN_UPDATE_LATEST",
-    "REPO_OPS_PNPM_UPDATE_LATEST",
-    "REPO_OPS_YARN_UPDATE_LATEST",
-    "REPO_OPS_DENO_UPDATE_LATEST",
-    "REPO_OPS_CONTAINER_UPDATE_LATEST",
-    "REPO_OPS_PRECOMMIT_UPDATE_LATEST",
-    "REPO_OPS_SUBMODULE_UPDATE_LATEST",
-    # Per-package targeted fallback: moves a behind_latest dep instead of only
-    # reporting it. Reversible per package.
-    "REPO_OPS_YARN_TARGETED_BUMP",
-    "REPO_OPS_NPM_TARGETED_BUMP",
-    "REPO_OPS_PNPM_TARGETED_BUMP",
-    "REPO_OPS_BUN_TARGETED_BUMP",
-    "REPO_OPS_DENO_TARGETED_BUMP",
-    "REPO_OPS_RUST_TARGETED_BUMP",
-    "REPO_OPS_POETRY_TARGETED_BUMP",
-    "REPO_OPS_PDM_TARGETED_BUMP",
-    "REPO_OPS_PIPENV_TARGETED_BUMP",
-    "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
-    # Digest refresh for things already pinned by SHA.
-    "REPO_OPS_CONTAINER_REFRESH_SHA",
-    "REPO_OPS_PRECOMMIT_REFRESH_SHA",
-    "REPO_OPS_SUBMODULE_REFRESH_SHA",
-)
-
-
-@functools.cache
-def _github_token_available() -> bool:
-    """Whether org-policy lookups can authenticate, probed once per process.
-
-    The policy fetch shells out to ``gh api``, so the question is whether ``gh``
-    itself is authenticated rather than whether any particular variable is set;
-    ``gh auth token`` answers exactly that and honors the same precedence gh
-    uses for the real call. Any failure means no policy fetch, which is a
-    skipped annotation rather than a failed run.
-    """
-    if not shutil.which("gh"):
-        return False
-    try:
-        proc = subprocess.run(
-            ["gh", "auth", "token"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return proc.returncode == 0 and bool(proc.stdout.strip())
-
-
 def _rollback_vetoed_repo(
     repo: Path,
     repo_before: dict[str, bytes | None] | None,
@@ -226,14 +162,6 @@ def _single_checkout_config_scope(args: argparse.Namespace, roots: list[str]) ->
     return Path(roots[0]).resolve() == Path.cwd().resolve()
 
 
-def _set_cli_env(env_var: str, value: str) -> None:
-    """Set a CLI-derived environment value and mark it outside ambient config."""
-    os.environ[env_var] = value
-    ambient = ambient_env()
-    if isinstance(ambient, dict):
-        ambient.pop(env_var, None)
-
-
 def _run_upgrade_body(
     *,
     apply: bool,
@@ -241,45 +169,6 @@ def _run_upgrade_body(
     roots: list[str],
     follow_symlinks: bool = False,
 ) -> int:
-    # Full sweep is the default: every ecosystem crosses ranges and every
-    # package manager gets its per-package targeted fallback. --conservative is
-    # the single opt-out for a run that must stay inside declared constraints.
-    # Targeted bumps are safe to default on because each one snapshots the
-    # workspace and restores it unless the install succeeds *and* the resolved
-    # version actually advances (see e.g. yarn.targeted_bump_behind).
-    conservative = _cli_flag(args, "conservative")
-    latest = not conservative
-    # --conservative is an explicit CLI instruction, so it is written
-    # unconditionally (beats env/config, same as any other CLI override).
-    # The non-conservative "on" case is NOT written here: each of these keys'
-    # settings-table default is already "1", so
-    # leaving the var unset lets the user's own REPO_OPS_*=0 env var or
-    # [tool.repo-ops] config entry override the default through the normal
-    # CLI > env > config > default layering instead of being silently
-    # clobbered by a forced "1" written here.
-    if conservative:
-        for _var in _SWEEP_ENV_VARS:
-            _set_cli_env(_var, "0")
-    if latest:
-        os.environ.setdefault("REPO_OPS_GO_UPGRADE_MODE", "explicit")
-    # --migrate-to-uv-lock: opt in to creating uv.lock for hatch projects.
-    if _cli_flag(args, "migrate_to_uv_lock"):
-        _set_cli_env("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "1")
-    # Org allowed-actions policy. Enabled whenever a GitHub token is available,
-    # because without it a sweep will happily bump a pin on an Action the org
-    # forbids — a clean-looking report and a workflow that fails at startup.
-    # At the default `report` level this only annotates rows, so the only cost
-    # of running it is the fetch; a tokenless host silently skips it rather
-    # than failing the run.
-    if _cli_flag(args, "actions_org_policy") or _github_token_available():
-        _set_cli_env("REPO_OPS_ACTIONS_ORG_POLICY", "1")
-    policy_level = getattr(args, "actions_policy_level", None)
-    if isinstance(policy_level, str) and policy_level:
-        _set_cli_env("REPO_OPS_ACTIONS_POLICY_LEVEL", policy_level)
-    go_mode = getattr(args, "go_upgrade_mode", None)
-    if isinstance(go_mode, str) and go_mode:
-        _set_cli_env("REPO_OPS_GO_UPGRADE_MODE", go_mode)
-
     skip_remediations = set()
     if apply:
         skip_remediations = {s.strip() for s in args.skip_remediations.split(",") if s.strip()}
@@ -587,44 +476,6 @@ def _run_upgrade_body(
         bundle.workspaces = updated
 
     if not args.skip_actions:
-        # SHA pins are preserved by default (supply-chain hardening).
-        # Only unpin when the user explicitly opts in via --actions-unpin-sha.
-        keep_sha = not _cli_flag(args, "actions_unpin_sha")
-        # Digest refresh: only meaningful while staying SHA-pinned.
-        # No CLI flag of its own — --conservative is passed
-        # through as an explicit CLI override (cli_value wins ahead of
-        # env/config) rather than a real flag, so REPO_OPS_ACTIONS_REFRESH_SHA
-        # / [tool.repo-ops] actions_refresh_sha still take effect whenever the
-        # run is not conservative.
-        refresh_sha = keep_sha and coerce_bool_setting(
-            resolve_setting(
-                "actions_refresh_sha",
-                cli_value="0" if conservative else None,
-                global_cfg=_global_cfg,
-                env=_ambient_env,
-            )
-        )
-        # Pin-to-SHA: a floating tag pin is invisible to refresh_sha,
-        # so leaving it opt-in meant the common case — an Action that was
-        # never SHA-pinned at all — was silently never hardened.
-        pin_sha = keep_sha and coerce_bool_setting(
-            resolve_setting(
-                "actions_pin_sha",
-                cli_value="0" if conservative else None,
-                global_cfg=_global_cfg,
-                env=_ambient_env,
-            )
-        )
-        _raw_tag_style = getattr(args, "actions_tag_style", "major")
-        tag_style: actions.TagStyle = "exact" if _raw_tag_style == "exact" else "major"
-        # Cross-major apply: explicit --actions-upgrade-mode wins; otherwise
-        # A default sweep also opts Actions into latest mode.
-        _raw_actions_mode = getattr(args, "actions_upgrade_mode", None)
-        if not isinstance(_raw_actions_mode, str):
-            _raw_actions_mode = "latest" if latest else "normalize"
-        actions_mode: actions.ActionsUpgradeMode = (
-            "latest" if _raw_actions_mode == "latest" else "normalize"
-        )
         # One shared cache for the whole run so each (action, ref) is resolved
         # at most once across all repos — avoids redundant GitHub API calls.
         # The cache is shared across threads; we copy-in before each slow API
@@ -646,26 +497,7 @@ def _run_upgrade_body(
                     bumps, count = actions.scan_actions(
                         bundle.git_repo,
                         apply=apply,
-                        keep_sha=keep_sha,
-                        refresh_sha=refresh_sha,
-                        pin_sha=pin_sha,
-                        tag_style=tag_style,
-                        upgrade_mode=actions_mode,
                         tag_cache=local_cache,
-                        lint_level=resolve_setting(
-                            "actions_lint_level",
-                            cli_value=getattr(args, "actions_lint_level", None),
-                            global_cfg=_global_cfg,
-                            repo_cfg=_repo_cfgs.get(bundle.git_repo),
-                            env=_ambient_env,
-                        ),
-                        policy_level=resolve_setting(
-                            "actions_policy_level",
-                            cli_value=getattr(args, "actions_policy_level", None),
-                            global_cfg=_global_cfg,
-                            repo_cfg=_repo_cfgs.get(bundle.git_repo),
-                            env=_ambient_env,
-                        ),
                     )
                 except Exception as exc:
                     # Isolate: a non-WorkflowParseError (e.g. OSError writing a

@@ -86,22 +86,6 @@ def test_repo_ops_dispatcher_subcommands_help(capsys) -> None:
         assert sub in out
 
 
-def test_dispatcher_apply_help_lists_conservative_flag(capsys) -> None:
-    """Regression: dispatcher --help must expose full flags, not only -h."""
-    from repo_ops import cli
-
-    assert cli.main(["apply", "--help"]) == 0
-    out = capsys.readouterr().out
-    # The sweep is on by default and --conservative is its single opt-out;
-    # there are no per-manager targeted-bump or refresh-sha flags.
-    assert "--conservative" in out
-    assert "full sweep" in out
-    assert "cargo test" in out
-    assert "REPO_OPS_COMMIT_AGENT_MODEL" in out
-    assert "composer-2.5" in out
-    assert "root_dir" in out
-
-
 def test_dispatcher_forwards_empty_list_for_bare_subcommand() -> None:
     """Regression: a bare subcommand (e.g. ``repo-ops plan``) must forward an
     empty list to the handler, not ``None``. ``None`` makes the handler's
@@ -159,41 +143,6 @@ def test_manager_filter_choices_match_registry() -> None:
     assert set(MANAGER_FILTER_CHOICES) == set(CHECKERS.keys())
 
 
-def test_upgrade_parser_accepts_104_and_102_flags() -> None:
-    """Plan parser accepts policy and scope flags."""
-    parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(
-        [
-            "--manager",
-            "npm",
-            "--conservative",
-            "--go-upgrade-mode",
-            "explicit",
-        ]
-    )
-    assert args.manager_filter == "npm"
-    assert args.conservative is True
-    assert args.go_upgrade_mode == "explicit"
-
-
-def test_upgrade_parser_accepts_actions_upgrade_mode() -> None:
-    """Plan parser accepts --actions-upgrade-mode; defaults to None (umbrella)."""
-    parser = build_upgrade_parser(apply=False)
-    assert parser.parse_args([]).actions_upgrade_mode is None
-    args = parser.parse_args(["--actions-upgrade-mode", "latest"])
-    assert args.actions_upgrade_mode == "latest"
-
-
-def test_upgrade_parser_actions_lint_level_choices():
-    """--actions-lint-level accepts block/warn/off."""
-    parser = build_upgrade_parser(apply=False)
-    for level in ("block", "warn", "off"):
-        args = parser.parse_args(["--actions-lint-level", level])
-        assert args.actions_lint_level == level
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--actions-lint-level", "invalid"])
-
-
 def test_upgrade_parser_exclude_repeatable():
     """--exclude is repeatable and stores a list."""
     parser = build_upgrade_parser(apply=False)
@@ -201,34 +150,3 @@ def test_upgrade_parser_exclude_repeatable():
     assert args.exclude_patterns == ["foo", "bar"]
     args_none = parser.parse_args([])
     assert args_none.exclude_patterns is None
-
-
-def test_upgrade_parser_conservative_replaces_targeted_bump_flags() -> None:
-    """The 16 --latest/--full/per-manager-targeted-bump/refresh-sha flags
-    collapsed into one --conservative opt-out; the sweep is on by default and
-    none of those argparse options exist anymore."""
-    parser = build_upgrade_parser(apply=False)
-    assert parser.parse_args([]).conservative is False
-    assert parser.parse_args(["--conservative"]).conservative is True
-    for removed_flag in (
-        "--latest",
-        "--full",
-        "--yarn-targeted-bump",
-        "--npm-targeted-bump",
-        "--pnpm-targeted-bump",
-        "--bun-targeted-bump",
-        "--deno-targeted-bump",
-        "--rust-targeted-bump",
-        "--poetry-targeted-bump",
-        "--pdm-targeted-bump",
-        "--pipenv-targeted-bump",
-        "--pip-tools-targeted-bump",
-        "--actions-refresh-sha",
-        "--actions-pin-sha",
-        "--precommit-refresh-sha",
-        "--submodule-refresh-sha",
-        "--container-update-latest",
-        "--container-refresh-sha",
-    ):
-        with pytest.raises(SystemExit):
-            parser.parse_args([removed_flag])

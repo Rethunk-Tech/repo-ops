@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from repo_ops_core.config import _SETTINGS_MAP, coerce_bool_setting, resolve_setting
 from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import discovery as disc_mod
 from repo_ops_upgrade import orchestration as orch_mod
@@ -68,62 +66,6 @@ def _fake_args(**overrides) -> MagicMock:
     }
     defaults.update(overrides)
     return MagicMock(**defaults)
-
-
-def test_default_sweep_sets_policy_env_and_refreshes_actions(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The default full sweep composes latest, digest refresh, and targeted
-    bump policy across every _SWEEP_ENV_VARS gate — no flag needed."""
-    env_names = [*run_mod._SWEEP_ENV_VARS, "REPO_OPS_GO_UPGRADE_MODE"]
-    for name in env_names:
-        monkeypatch.delenv(name, raising=False)
-
-    ws = _npm_ws(tmp_path)
-    wr = WorkspaceResult(workspace=ws)
-    bundles = {tmp_path: RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])}
-    action_kwargs: list[dict] = []
-
-    monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws])
-    monkeypatch.setattr(orch_mod, "filter_workspaces", lambda found, *a, **kw: found)
-    monkeypatch.setattr(disc_mod, "group_by_repo", lambda *a, **kw: bundles)
-    monkeypatch.setattr(disc_mod, "merge_action_only_bundles", lambda b, *a, **kw: b)
-    monkeypatch.setattr(
-        orch_mod,
-        "process_workspace",
-        lambda result, **kw: result,
-    )
-    monkeypatch.setattr(
-        run_mod.actions,
-        "scan_actions",
-        lambda *a, **kw: action_kwargs.append(kw) or ([], 0),
-    )
-
-    rc = run_mod._run_upgrade_body(
-        apply=False,
-        args=_fake_args(
-            skip_actions=False,
-            go_upgrade_mode="patch",
-            actions_upgrade_mode="normalize",
-        ),
-        roots=[str(tmp_path)],
-    )
-
-    assert rc == 0
-    assert os.environ["REPO_OPS_GO_UPGRADE_MODE"] == "patch"
-    # The default sweep does not force-write _SWEEP_ENV_VARS to "1" —
-    # each key's settings-table default is already "1", so an unset var must
-    # still resolve enabled (and stays unset, so a user's own env/config can
-    # still override it on a real run).
-    env_var_to_setting = {
-        env_var: name for name, (env_var, _cfg_key, _default) in _SETTINGS_MAP.items()
-    }
-    for name in run_mod._SWEEP_ENV_VARS:
-        assert os.environ.get(name) is None
-        assert coerce_bool_setting(resolve_setting(env_var_to_setting[name])) is True
-    assert action_kwargs
-    assert action_kwargs[0]["refresh_sha"] is True
-    assert action_kwargs[0]["upgrade_mode"] == "normalize"
 
 
 def _npm_ws(path: Path, label: str = "demo") -> Workspace:

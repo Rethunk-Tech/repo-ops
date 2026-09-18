@@ -27,35 +27,12 @@ def _fake_run_ok(cmd, cwd, timeout=600, env=None):
 # ---------------------------------------------------------------------------
 
 
-def test_apply_pnpm_raises_on_ghost_bump_overrides_pin(
-    tmp_path: Path, make_workspace, monkeypatch
-) -> None:
-    """Ghost bump: pnpm.overrides/resolutions keeps old version installed.
-
-    pnpm update + pnpm install finish with rc=0, but node_modules still has
-    the old version.  The guard must raise so the workspace is marked failed.
-    Targeted bump is disabled here so the hard-fail guard runs instead of
-    deferring to the retry fallback (the sweep default).
-    """
-    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "0")
-    with (
-        patch("repo_ops_js_pnpm.pnpm.run", _fake_run_ok),
-        patch(_OUTDATED, return_value=([Change("axios", "1.6.0", "1.7.0")], [])),
-        patch(_RESOLVER_PATH, return_value="1.6.0"),
-        pytest.raises(RuntimeError) as exc_info,
-    ):
-        apply_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
-    assert "axios" in str(exc_info.value)
-    assert "1.6.0" in str(exc_info.value)
-
-
 def test_apply_pnpm_targeted_bump_defers_ghost_to_retry(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     make_workspace,
 ) -> None:
     """A blocked initial target is handed to targeted_bump_behind."""
-    monkeypatch.setenv("REPO_OPS_PNPM_TARGETED_BUMP", "1")
     blocked = Change("axios", "1.6.0", "1.7.0")
     retry_inputs: list[list[Change]] = []
 
@@ -131,7 +108,6 @@ def test_bucket_pnpm_pkg_latest_mode_falls_through_when_latest_unknown(
     block swallowed packages where latest was '?' even when wanted > current,
     causing apply to silently skip an actionable in-range upgrade.
     """
-    monkeypatch.setenv("REPO_OPS_PNPM_UPDATE_LATEST", "1")
 
     changes: list[Change] = []
     behind_latest: list[Change] = []
@@ -158,7 +134,6 @@ def test_bucket_pnpm_pkg_latest_mode_uses_latest_when_known(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """With REPO_OPS_PNPM_UPDATE_LATEST set and a known latest, use latest."""
-    monkeypatch.setenv("REPO_OPS_PNPM_UPDATE_LATEST", "1")
 
     changes: list[Change] = []
     behind_latest: list[Change] = []
@@ -175,26 +150,3 @@ def test_bucket_pnpm_pkg_latest_mode_uses_latest_when_known(
     assert len(changes) == 1
     assert changes[0].to == "2.0.0"
     assert behind_latest == []
-
-
-def test_bucket_pnpm_pkg_normal_mode_unaffected_by_fix(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Without REPO_OPS_PNPM_UPDATE_LATEST, the fix must not alter behaviour."""
-    monkeypatch.delenv("REPO_OPS_PNPM_UPDATE_LATEST", raising=False)
-
-    changes: list[Change] = []
-    behind_latest: list[Change] = []
-
-    _bucket_pnpm_pkg(
-        "axios",
-        cur="1.6.0",
-        wanted="1.7.0",
-        latest="?",
-        changes=changes,
-        behind_latest=behind_latest,
-    )
-
-    # Normal mode: wanted > current → changes, regardless of latest.
-    assert len(changes) == 1
-    assert changes[0].to == "1.7.0"

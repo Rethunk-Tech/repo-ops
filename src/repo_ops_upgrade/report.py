@@ -11,7 +11,6 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from repo_ops_core.config import resolve_bool_setting
 from repo_ops_core.holds import HoldRule
 from repo_ops_core.state import cache_get_dirty_skip, cache_get_staleness
 from repo_ops_core.table import column_width, format_cell
@@ -23,37 +22,10 @@ UpgradeMode = Literal["plan", "apply"]
 
 DEFAULT_MAX_FAILURE_LINES = 20
 
-# Per-manager remediation advice for packages reported behind latest, used
-# when that manager's targeted-bump setting is OFF this run (--conservative,
-# or an explicit per-manager override). go has a real CLI flag; the rest have
-# none, so their note points at the env var / config key and --conservative.
-_LATEST_HINT_NO_MODE = (
-    "no latest mode; targeted bump not attempted this run — drop "
-    "--conservative to attempt it, or bump manually"
-)
-_LATEST_HINT_DEFAULT = (
-    "targeted bump not attempted this run — drop --conservative to attempt it, or bump manually"
-)
-# Managers with no update-latest concept at all (structural — cargo/poetry/
-# pdm/pipenv/pip-compile have no cross-range "latest" mode to fall back to,
-# unlike bun/pnpm/deno/yarn/npm's targeted bump, which stands in for one).
-_NO_LATEST_MODE_MANAGERS = frozenset({"rust", "poetry", "pdm", "pipenv", "pip-tools", "npm"})
-_LATEST_HINT_BY_MANAGER: dict[str, str] = {
-    # yarn's leftovers are specifically peer/group-constrained.
-    "yarn": (
-        "peer/group-constrained; targeted bump not attempted this run — "
-        "drop --conservative, or set REPO_OPS_YARN_TARGETED_BUMP=1, to "
-        "attempt it, or bump manually"
-    ),
-    "go": "run with --go-upgrade-mode=explicit to include",
-    **dict.fromkeys(_NO_LATEST_MODE_MANAGERS, _LATEST_HINT_NO_MODE),
-}
-# Per-manager behind-latest note when that manager's targeted bump WAS
-# attempted this run (the sweep default, unless --conservative or an
-# explicit per-manager override turned it off): the leftovers are packages
-# the fallback could not move, not packages nobody tried to move. The sweep
-# attempts this by default for every manager, so "attempted" is the common
-# case rather than something the operator opts into.
+# Generic behind-latest note for a manager with no specific wording below.
+_LATEST_HINT_DEFAULT = "could not be moved automatically — bump manually"
+# Per-manager behind-latest note: every sweep attempts a targeted bump, so the
+# leftovers are packages the fallback could not move.
 _TARGETED_TRIED_HINT: dict[str, str] = {
     "yarn": (
         "peer/group-constrained; the targeted bump was attempted but could "
@@ -98,59 +70,13 @@ _TARGETED_TRIED_HINT: dict[str, str] = {
     ),
 }
 
-# Env vars that back a per-package targeted bump, keyed by manager. Read
-# here (not imported from the manager packages) because repo_ops_upgrade may
-# not import repo_ops_js_* per the import-boundary rules.
-_TARGETED_BUMP_ENV: dict[str, str] = {
-    "yarn": "REPO_OPS_YARN_TARGETED_BUMP",
-    "npm": "REPO_OPS_NPM_TARGETED_BUMP",
-    "pnpm": "REPO_OPS_PNPM_TARGETED_BUMP",
-    "bun": "REPO_OPS_BUN_TARGETED_BUMP",
-    "deno": "REPO_OPS_DENO_TARGETED_BUMP",
-    "rust": "REPO_OPS_RUST_TARGETED_BUMP",
-    "poetry": "REPO_OPS_POETRY_TARGETED_BUMP",
-    "pdm": "REPO_OPS_PDM_TARGETED_BUMP",
-    "pipenv": "REPO_OPS_PIPENV_TARGETED_BUMP",
-    "pip-tools": "REPO_OPS_PIP_TOOLS_TARGETED_BUMP",
-}
-
-
-def _targeted_bump_requested(manager: str) -> bool:
-    """True when this run's targeted-bump setting for *manager* resolves on.
-
-       Routes through the settings layer (CLI > env > config > default) via
-       ``resolve_bool_setting`` rather than a direct env read: the sweep default
-    now lives in the settings table, not always in the process
-       environment, so a plain ``os.environ`` check would wrongly report
-       "not requested" for the common default-on case where nothing is set.
-    """
-    env_var = _TARGETED_BUMP_ENV.get(manager)
-    if not env_var:
-        return False
-    setting_name = manager.replace("-", "_") + "_targeted_bump"
-    return resolve_bool_setting(setting_name, env_var)
-
 
 def _behind_latest_hint(manager: str) -> str:
     """Per-manager remediation note for behind-latest packages.
 
-    Shared by the per-workspace line and the run footer so the two never
-    disagree — and so neither prints a misleading "(latest-mode off)" for
-    packages that latest mode genuinely could not move.
-
-    A default sweep already attempts every manager's targeted bump, so
-    a behind-latest entry usually means the resolver genuinely refused to
-    move it (peer/group constraints, a failed install, or a stuck lockfile),
-    not that the operator forgot a flag — per-manager targeted-bump flags were
-    removed; the default sweep is the remediation path. When the setting was off
-    this run (--conservative, or an explicit per-manager override), the note
-    says so instead and points at --conservative / the env var, which still
-    exist.
+    Shared by the per-workspace line and the run footer so the two never disagree.
     """
-    tried = _TARGETED_TRIED_HINT.get(manager)
-    if tried and _targeted_bump_requested(manager):
-        return tried
-    return _LATEST_HINT_BY_MANAGER.get(manager, _LATEST_HINT_DEFAULT)
+    return _TARGETED_TRIED_HINT.get(manager, _LATEST_HINT_DEFAULT)
 
 
 # ---------------------------------------------------------------------------
@@ -692,9 +618,7 @@ def print_run_footer(
         if packages_behind > 0:
             by_manager: dict[str, int] = summary.get("packages_behind_latest_by_manager", {})
             if by_manager:
-                # One line per manager so the remediation advice is correct for
-                # each — npm has no latest mode at all; the rest differ in
-                # whether their targeted bump was attempted this run.
+                # One line per manager so the remediation advice fits each.
                 for manager in sorted(by_manager):
                     count = by_manager[manager]
                     manager_hint = _behind_latest_hint(manager)
@@ -704,9 +628,7 @@ def print_run_footer(
         if actions_behind > 0:
             parts.append(
                 f"{actions_behind} action(s) have a newer major available"
-                " (report-only when no floating major tag exists upstream;"
-                " under --conservative, drop it or pass"
-                " --actions-upgrade-mode=latest to include)"
+                " (report-only when no floating major tag exists upstream)"
             )
         print()
         for part in parts:

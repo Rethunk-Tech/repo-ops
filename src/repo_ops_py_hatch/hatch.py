@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 import tempfile
@@ -32,30 +31,13 @@ def _install_target(ws_path: Path) -> str:
     return "."
 
 
-def _migrate_to_uv_lock_enabled() -> bool:
-    """Return True when the operator has opted into creating a uv.lock for hatch projects."""
-    return os.environ.get("REPO_OPS_HATCH_MIGRATE_UV_LOCK", "").lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
-
-
 def check_hatch(ws: Workspace) -> list[Change]:
     if (ws.path / "uv.lock").exists():
         if not shutil.which("uv"):
             print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
             return []
         return check_uv_lock(ws)
-    # No uv.lock: align with apply_hatch — only probe for drift when migrate is opted in.
-    if not _migrate_to_uv_lock_enabled():
-        print(
-            f"WARN {ws.path}: hatch project has no uv.lock; "
-            "set --migrate-to-uv-lock / REPO_OPS_HATCH_MIGRATE_UV_LOCK to enable upgrades",
-            file=sys.stderr,
-        )
-        return []
+    # No uv.lock yet: apply_hatch creates one, so probe for drift as if it existed.
     if shutil.which("uv"):
         changes: list[Change] = []
         with tempfile.TemporaryDirectory(prefix="repo-ops-hatch-") as tmp:
@@ -98,9 +80,6 @@ def apply_hatch(ws: Workspace) -> None:
         print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
         return
     if not (ws.path / "uv.lock").exists():
-        if not _migrate_to_uv_lock_enabled():
-            # No uv.lock and migration not opted in: skip silently (no changes).
-            return
         proc = run(["uv", "lock"], ws.path, timeout=resolve_timeout_apply())
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "uv lock failed")

@@ -15,7 +15,6 @@ from repo_ops_go.go import (
     _explicit_go_get_targets,
     _filter_held_go_changes,
     _go_ceiling_query,
-    apply_go,
 )
 from repo_ops_models import Workspace
 
@@ -76,7 +75,7 @@ def test_changes_from_go_list_json_then_filter_held_past_ceiling(
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
         patch("repo_ops_go.go.run", side_effect=fake_run),
     ):
-        changes = _changes_from_go_list_json(ws, patch_only=False)
+        changes = _changes_from_go_list_json(ws)
         filtered = _filter_held_go_changes(ws, changes)
     assert len(changes) == 1
     assert filtered == []
@@ -96,7 +95,7 @@ def test_filter_held_go_changes_keeps_within_ceiling(tmp_path, make_workspace, m
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
         patch("repo_ops_go.go.run", side_effect=fake_run),
     ):
-        changes = _changes_from_go_list_json(ws, patch_only=False)
+        changes = _changes_from_go_list_json(ws)
         filtered = _filter_held_go_changes(ws, changes)
     assert filtered == changes
 
@@ -271,28 +270,3 @@ def test_enforce_version_ceilings_raises_when_corrective_get_command_fails(
         pytest.raises(RuntimeError, match=r"hold.*network error"),
     ):
         _enforce_version_ceilings(ws)
-
-
-def test_apply_go_patch_mode_invokes_enforce_ceilings(
-    tmp_path, monkeypatch, make_workspace, make_proc
-) -> None:
-    """apply_go's default (patch) mode calls the clamp-down safety net."""
-    monkeypatch.delenv("REPO_OPS_GO_UPGRADE_MODE", raising=False)
-    ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=0, env=None):
-        calls.append(cmd)
-        if cmd[:3] == ["go", "mod", "edit"]:
-            return make_proc(stdout=json.dumps({"Module": {"Path": "example.com/main"}}))
-        return make_proc()
-
-    with (
-        patch(_GLOBAL_HOLDS_CACHE, return_value=()),
-        patch("repo_ops_go.go.run", side_effect=fake_run),
-        patch("repo_ops_go.go._run_with_go_work_retry", side_effect=fake_run),
-    ):
-        apply_go(ws)
-    # No Require entries → _enforce_version_ceilings is a cheap no-op, but it
-    # must have at least run go mod edit -json to discover that.
-    assert any(cmd[:3] == ["go", "mod", "edit"] for cmd in calls)

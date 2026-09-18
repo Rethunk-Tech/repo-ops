@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import io
-import os
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-import repo_ops_upgrade.run as run_mod
 from repo_ops_models import ActionBump, RepoBundle
 from repo_ops_upgrade.report import (
     build_run_summary,
@@ -259,85 +257,3 @@ def test_print_run_footer_policy_violations_zero() -> None:
     # Should still render the row with 0
     assert "actions policy violations" in out
     assert "0" in out
-
-
-# ---------------------------------------------------------------------------
-# CLI flag wiring: --actions-org-policy
-# ---------------------------------------------------------------------------
-
-
-def test_actions_org_policy_flag_registered_on_plan() -> None:
-    """--actions-org-policy is accepted on the plan parser."""
-    from repo_ops_core.cli import build_upgrade_parser
-
-    parser = build_upgrade_parser(apply=False)
-    args = parser.parse_args(["--actions-org-policy"])
-    assert args.actions_org_policy is True
-
-
-def test_actions_org_policy_flag_registered_on_apply() -> None:
-    """--actions-org-policy is accepted on the apply parser."""
-    from repo_ops_core.cli import build_upgrade_parser
-
-    parser = build_upgrade_parser(apply=True)
-    args = parser.parse_args(["--actions-org-policy"])
-    assert args.actions_org_policy is True
-
-
-def test_actions_org_policy_wires_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """--actions-org-policy reaches REPO_OPS_ACTIONS_ORG_POLICY through the real plan entry point."""
-    monkeypatch.delenv("REPO_OPS_ACTIONS_ORG_POLICY", raising=False)
-    monkeypatch.chdir(tmp_path)
-
-    rc = run_mod.run_upgrade(
-        apply=False,
-        argv=["--flat", "--skip-actions", "--actions-org-policy", str(tmp_path)],
-    )
-
-    assert rc == 0
-    assert os.environ.get("REPO_OPS_ACTIONS_ORG_POLICY") == "1"
-    monkeypatch.delenv("REPO_OPS_ACTIONS_ORG_POLICY", raising=False)
-
-
-# ---------------------------------------------------------------------------
-# SETTINGS_TABLE entries
-# ---------------------------------------------------------------------------
-
-
-def test_settings_table_has_v015_entries() -> None:
-    """actions_org_policy and container_update_latest are in SETTINGS_TABLE."""
-    from repo_ops_core.config import SETTINGS_TABLE
-
-    names = [r[0] for r in SETTINGS_TABLE]
-    for key in ("actions_org_policy", "container_update_latest"):
-        assert key in names, f"Missing SETTINGS_TABLE entry: {key}"
-
-
-def test_settings_table_actions_org_policy_env_var() -> None:
-    from repo_ops_core.config import SETTINGS_TABLE
-
-    row = next(r for r in SETTINGS_TABLE if r[0] == "actions_org_policy")
-    assert row[2] == "REPO_OPS_ACTIONS_ORG_POLICY"
-    assert row[1] == "--actions-org-policy"
-
-
-def test_settings_table_container_update_latest_env_var() -> None:
-    from repo_ops_core.config import SETTINGS_TABLE
-
-    row = next(r for r in SETTINGS_TABLE if r[0] == "container_update_latest")
-    assert row[2] == "REPO_OPS_CONTAINER_UPDATE_LATEST"
-
-
-@pytest.mark.parametrize(
-    "env_var,setting_name",
-    [
-        ("REPO_OPS_ACTIONS_ORG_POLICY", "actions_org_policy"),
-        ("REPO_OPS_CONTAINER_UPDATE_LATEST", "container_update_latest"),
-    ],
-    ids=["actions-org-policy", "container-update-latest"],
-)
-def test_resolve_setting(monkeypatch: pytest.MonkeyPatch, env_var: str, setting_name: str) -> None:
-    from repo_ops_core.config import resolve_setting
-
-    monkeypatch.setenv(env_var, "1")
-    assert resolve_setting(setting_name) == "1"

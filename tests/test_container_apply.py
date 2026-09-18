@@ -253,7 +253,6 @@ def test_apply_registry_fail_skips_image(tmp_path: Path) -> None:
 
 
 def test_apply_cross_major_when_env_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("REPO_OPS_CONTAINER_UPDATE_LATEST", "1")
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text("FROM nginx:1.25\n")
 

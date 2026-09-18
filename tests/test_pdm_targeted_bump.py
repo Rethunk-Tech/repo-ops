@@ -26,8 +26,6 @@ from repo_ops_models import Change
 from repo_ops_py_pdm.pdm import _pdm_requirement_satisfied, apply_pdm, check_pdm
 from repo_ops_py_pip_tools.pip_tools import (
     _pip_tools_requirement_satisfied,
-    apply_pip_tools,
-    check_pip_tools,
 )
 from repo_ops_py_pipenv.pipenv import (
     _apply_pipenv_targeted_bumps,
@@ -117,10 +115,6 @@ class _Spec:
         return f"{self.module_path}.shutil.which"
 
     @property
-    def enabled_target(self) -> str:
-        return f"{self.module_path}._{self.manager}_targeted_bump_enabled"
-
-    @property
     def pypi_target(self) -> str:
         return f"{self.module_path}._pypi_latest"
 
@@ -187,7 +181,6 @@ def _spec_patched(
     with (
         patch(spec.which_target, return_value=spec.which_binary),
         patch(spec.run_target, side_effect=fake_run),
-        patch(spec.enabled_target, return_value=True),
         patch(spec.pypi_target, return_value="3.0.0"),
     ):
         yield
@@ -260,54 +253,6 @@ def test_check_reports_latest_direct_dependency(
     with _spec_patched(spec, fake_run):
         result = spec.check_fn(
             make_workspace(tmp_path, ecosystem="py", manager=spec.manager, label="demo")
-        )
-
-    assert result == ([], [Change("requests", "2.31.0", "3.0.0")])
-
-
-def test_check_pipenv_reports_direct_constraint_bump(tmp_path: Path, make_workspace) -> None:
-    _pipenv_seed(tmp_path)
-
-    def fake_run(cmd, cwd, timeout=None):
-        if cmd[:2] == ["pipenv", "--venv"]:
-            return subprocess.CompletedProcess(cmd, 0, stdout="/fake/.venv", stderr="")
-        return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
-
-    with (
-        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
-        patch(
-            "repo_ops_py_pipenv.pipenv._pipenv_targeted_bump_enabled",
-            return_value=True,
-        ),
-        patch("repo_ops_py_pipenv.pipenv._pypi_latest", return_value="3.0.0"),
-    ):
-        result = check_pipenv(
-            make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo")
-        )
-
-    assert result == ([], [Change("requests", "2.31.0", "3.0.0")])
-
-
-def test_check_pip_tools_reports_direct_constraint_bump(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
-    _pip_tools_seed(tmp_path)
-
-    def fake_run(cmd, cwd, timeout=None):
-        return make_proc(stdout="requests==2.31.0\n")
-
-    with (
-        patch("repo_ops_py_pip_tools.pip_tools.shutil.which", return_value="/usr/bin/uv"),
-        patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_run),
-        patch(
-            "repo_ops_py_pip_tools.pip_tools._pip_tools_targeted_bump_enabled",
-            return_value=True,
-        ),
-        patch("repo_ops_py_pip_tools.pip_tools._pypi_latest", return_value="3.0.0"),
-    ):
-        result = check_pip_tools(
-            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
         )
 
     assert result == ([], [Change("requests", "2.31.0", "3.0.0")])
@@ -394,37 +339,6 @@ def test_apply_keeps_successful_targeted_bump(tmp_path: Path, make_workspace, sp
 # ---------------------------------------------------------------------------
 
 
-def test_apply_pipenv_skips_targeted_install_without_venv(tmp_path: Path, make_workspace) -> None:
-    _pipenv_seed(tmp_path)
-    calls: list[list[str]] = []
-    candidate = Change("requests", "2.31.0", "3.0.0")
-
-    def fake_run(cmd, cwd, timeout=None):
-        calls.append(list(cmd))
-        if cmd[:2] == ["pipenv", "--venv"]:
-            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="no venv")
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    with (
-        patch("repo_ops_py_pipenv.pipenv.shutil.which", return_value="/usr/bin/pipenv"),
-        patch("repo_ops_py_pipenv.pipenv.run", side_effect=fake_run),
-        patch(
-            "repo_ops_py_pipenv.pipenv._pipenv_targeted_bump_enabled",
-            return_value=True,
-        ),
-        patch(
-            "repo_ops_py_pipenv.pipenv._pipenv_latest_direct_changes",
-            return_value=[candidate],
-        ),
-    ):
-        remaining = apply_pipenv(
-            make_workspace(tmp_path, ecosystem="py", manager="pipenv", label="demo")
-        )
-
-    assert remaining == [candidate]
-    assert calls == [["pipenv", "update"], ["pipenv", "--venv"]]
-
-
 def test_targeted_pipenv_bump_skips_missing_pipfile_constraint(
     tmp_path: Path, make_workspace
 ) -> None:
@@ -450,87 +364,3 @@ def test_targeted_pipenv_bump_skips_missing_pipfile_constraint(
 # pip-tools — constraints-file prevention, not a post-hoc restore; apply
 # raises on a failed targeted compile rather than returning it as remaining
 # ---------------------------------------------------------------------------
-
-
-def test_apply_pip_tools_restores_files_when_targeted_compile_fails(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
-    _pip_tools_seed(tmp_path)
-    req_in = tmp_path / "requirements.in"
-    req_txt = tmp_path / "requirements.txt"
-    in_before = req_in.read_bytes()
-    txt_before = req_txt.read_bytes()
-    candidate = Change("requests", "2.31.0", "3.0.0")
-
-    def fake_run(cmd, cwd, timeout=None):
-        if "--upgrade-package" in cmd:
-            req_in.write_text("requests==3.0.0\n", encoding="utf-8")
-            req_txt.write_text("changed\n", encoding="utf-8")
-            return make_proc(returncode=1, stderr="failed")
-        return make_proc()
-
-    with (
-        patch(
-            "repo_ops_py_pip_tools.pip_tools.shutil.which",
-            side_effect=lambda name: None if name == "uv" else "/usr/bin/pip-compile",
-        ),
-        patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_run),
-        patch(
-            "repo_ops_py_pip_tools.pip_tools._pip_tools_targeted_bump_enabled",
-            return_value=True,
-        ),
-        patch(
-            "repo_ops_py_pip_tools.pip_tools._pip_tools_latest_direct_changes",
-            return_value=[candidate],
-        ),
-        pytest.raises(RuntimeError, match="failed"),
-    ):
-        apply_pip_tools(
-            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
-        )
-
-    assert req_in.read_bytes() == in_before
-    assert req_txt.read_bytes() == txt_before
-
-
-def test_apply_pip_tools_uses_targeted_upgrade_package(
-    tmp_path: Path, make_workspace, make_proc
-) -> None:
-    _pip_tools_seed(tmp_path)
-    candidate = Change("requests", "2.31.0", "3.0.0")
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=None):
-        calls.append(list(cmd))
-        output = Path(cmd[cmd.index("-o") + 1])
-        version = "3.0.0" if "--upgrade-package" in cmd else "2.31.0"
-        output.write_text(f"requests=={version}\n", encoding="utf-8")
-        return make_proc()
-
-    with (
-        patch(
-            "repo_ops_py_pip_tools.pip_tools.shutil.which",
-            side_effect=lambda name: None if name == "uv" else "/usr/bin/pip-compile",
-        ),
-        patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_run),
-        patch(
-            "repo_ops_py_pip_tools.pip_tools._pip_tools_targeted_bump_enabled",
-            return_value=True,
-        ),
-        patch(
-            "repo_ops_py_pip_tools.pip_tools._pip_tools_latest_direct_changes",
-            return_value=[candidate],
-        ),
-    ):
-        remaining = apply_pip_tools(
-            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
-        )
-
-    assert remaining == []
-    assert calls[1][0:4] == [
-        "pip-compile",
-        "--upgrade",
-        "--upgrade-package",
-        "requests==3.0.0",
-    ]
-    assert (tmp_path / "requirements.in").read_text() == "requests==3.0.0\n"
