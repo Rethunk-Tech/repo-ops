@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import subprocess
-import sys
-import types
-from collections.abc import Mapping, Sequence
 from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import patch
@@ -13,7 +10,6 @@ from unittest.mock import patch
 import pytest
 
 from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
-from repo_ops_upgrade import commit_agent_providers as providers
 from repo_ops_upgrade import post_apply_commit
 from repo_ops_upgrade.post_apply import collect_changes_after_apply
 
@@ -36,21 +32,6 @@ def test_forbidden_env_blocks_commit() -> None:
     assert post_apply_commit.is_forbidden_commit_path(".env")
     assert post_apply_commit.is_forbidden_commit_path("apps/web/.env.local")
     assert not post_apply_commit.is_forbidden_commit_path("package-lock.json")
-
-
-def test_commit_dry_run_lists_files(tmp_path: Path, init_git_repo) -> None:
-    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
-    lock = tmp_path / "package-lock.json"
-    lock.write_text('{"lockfileVersion":1}', encoding="utf-8")
-    subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
-    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
-    )
-    assert plan.files
-    outcome = post_apply_commit.execute_commit_plan(plan, dry_run=True)
-    assert outcome.status == "dry_run"
-    assert "chore(deps)" in (outcome.message or "")
 
 
 def test_parse_porcelain_unstaged_preserves_filename() -> None:
@@ -109,25 +90,8 @@ def test_skips_verify_fail_by_default(tmp_path: Path, init_git_repo) -> None:
     bundle.workspaces[0].status = "fail"
     bundle.workspaces[0].verify_error = "build failed"
     (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
-    )
+    plan = post_apply_commit.plan_repo_commit(bundle)
     assert plan.skipped_reason == "verify failed: build failed"
-
-
-def test_commit_on_fail_true_proceeds_after_verify_fail(tmp_path: Path, init_git_repo) -> None:
-    """--commit-on-fail allows commits when verify_error is set."""
-    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
-    bundle.workspaces[0].status = "fail"
-    bundle.workspaces[0].verify_error = "build failed"
-    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
-    (tmp_path / "package-lock.json").write_text('{"v":1}', encoding="utf-8")
-    subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="conventional", allow_dirty=False, commit_on_fail=True
-    )
-    assert plan.skipped_reason is None
-    assert "package-lock.json" in plan.files
 
 
 def test_allow_dirty_scopes_commit_to_upgrade_paths(tmp_path: Path, init_git_repo) -> None:
@@ -136,9 +100,7 @@ def test_allow_dirty_scopes_commit_to_upgrade_paths(tmp_path: Path, init_git_rep
     (tmp_path / "wip.txt").write_text("unrelated", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
     bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="conventional", allow_dirty=True, commit_on_fail=False
-    )
+    plan = post_apply_commit.plan_repo_commit(bundle)
     assert plan.files == ["package-lock.json"]
     assert "wip.txt" not in plan.files
 
@@ -156,9 +118,7 @@ def test_dirty_start_no_upgrade_changes_skips(tmp_path: Path, init_git_repo) -> 
     # sweeping the stray dirty file into a commit.
     bundle = _bundle(tmp_path, started_dirty=True, init_git_repo=init_git_repo)
     (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
-    )
+    plan = post_apply_commit.plan_repo_commit(bundle)
     assert plan.skipped_reason == "no upgrade-scoped changes to commit (dirty worktree)"
 
 
@@ -172,9 +132,7 @@ def test_dirty_sibling_does_not_block_clean_workspace_commit(tmp_path: Path, ini
     (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
     (tmp_path / "WIP.md").write_text("unrelated pre-existing edit", encoding="utf-8")
     bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
-    )
+    plan = post_apply_commit.plan_repo_commit(bundle)
     assert set(plan.files) == {"package.json", "package-lock.json"}
     assert "WIP.md" not in plan.files
 
@@ -205,9 +163,7 @@ def test_skipped_dirty_sibling_workspace_does_not_block_commit(
     sibling.started_dirty = True
     bundle.workspaces.append(sibling)
 
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
-    )
+    plan = post_apply_commit.plan_repo_commit(bundle)
     assert plan.skipped_reason is None
     assert set(plan.files) == {"package.json", "package-lock.json"}
 
@@ -239,75 +195,10 @@ def test_actions_only_repo_commits(tmp_path: Path, init_git_repo) -> None:
             )
         ],
     )
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
-    )
+    plan = post_apply_commit.plan_repo_commit(bundle)
     assert plan.skipped_reason is None
     assert ".github/workflows/ci.yml" in plan.files
     assert "chore(ci)" in plan.message
-
-
-def test_agent_missing_api_key_skips(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
-) -> None:
-    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
-    lock = tmp_path / "package-lock.json"
-    lock.write_text("{}", encoding="utf-8")
-    subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
-    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
-    monkeypatch.delenv("CURSOR_API_KEY", raising=False)
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="agent", allow_dirty=False, commit_on_fail=False
-    )
-    assert plan.skipped_reason
-    assert "CURSOR_API_KEY" in plan.skipped_reason
-    assert "commit-agent-cursor" in plan.skipped_reason
-
-
-def test_agent_drafts_message_when_mocked(tmp_path: Path, init_git_repo) -> None:
-    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
-    lock = tmp_path / "package-lock.json"
-    lock.write_text("{}", encoding="utf-8")
-    subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
-    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
-    with patch(
-        "repo_ops_upgrade.commit_agent_providers.draft_message_with_commit_agent",
-        return_value=(
-            "chore(deps): bump lockfile via agent\n\n"
-            "Automated post-apply commit (cursor commit-agent)."
-        ),
-    ):
-        plan = post_apply_commit.plan_repo_commit(
-            bundle, mode="agent", allow_dirty=False, commit_on_fail=False
-        )
-    assert plan.message
-    assert "agent" in plan.message or "deps" in plan.message
-
-
-def test_agent_non_runtime_error_skips_instead_of_propagating(
-    tmp_path: Path,
-    init_git_repo,
-) -> None:
-    """Non-RuntimeError from Agent.prompt must not crash plan_repo_commit.
-
-    A network/transport error (ConnectionError, TimeoutError, etc.) raised inside
-    draft_message_with_commit_agent must degrade to a skipped-commit result with a
-    reason, not propagate out of plan_repo_commit and crash the commit phase.
-    """
-    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
-    lock = tmp_path / "package-lock.json"
-    lock.write_text("{}", encoding="utf-8")
-    subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
-    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
-    with patch(
-        "repo_ops_upgrade.commit_agent_providers.draft_message_with_commit_agent",
-        side_effect=ConnectionError("network down"),
-    ):
-        plan = post_apply_commit.plan_repo_commit(
-            bundle, mode="agent", allow_dirty=False, commit_on_fail=False
-        )
-    assert plan.skipped_reason == "network down"
-    assert plan.message == ""
 
 
 def test_conventional_commit_writes(tmp_path: Path, init_git_repo) -> None:
@@ -316,10 +207,8 @@ def test_conventional_commit_writes(tmp_path: Path, init_git_repo) -> None:
     lock.write_text('{"v":2}', encoding="utf-8")
     subprocess.run(["git", "add", "package-lock.json"], cwd=tmp_path, check=True)
     bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
-    )
-    outcome = post_apply_commit.execute_commit_plan(plan, dry_run=False)
+    plan = post_apply_commit.plan_repo_commit(bundle)
+    outcome = post_apply_commit.execute_commit_plan(plan)
     assert outcome.status == "committed"
     log = subprocess.run(
         ["git", "log", "-1", "--oneline"],
@@ -329,88 +218,6 @@ def test_conventional_commit_writes(tmp_path: Path, init_git_repo) -> None:
         check=True,
     )
     assert "chore(deps)" in log.stdout
-
-
-def test_post_apply_commit_import_does_not_load_cursor_sdk() -> None:
-    sys.modules.pop("cursor_sdk", None)
-    import importlib
-
-    importlib.reload(post_apply_commit)
-    assert "cursor_sdk" not in sys.modules
-
-
-def test_unknown_commit_agent_provider(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv(providers.COMMIT_AGENT_PROVIDER_ENV, "not-a-provider")
-    with pytest.raises(RuntimeError, match="Unknown commit agent provider"):
-        providers.resolve_commit_agent_provider()
-
-
-def test_default_provider_is_cursor() -> None:
-    assert providers.commit_agent_provider_name() == "cursor"
-    provider = providers.resolve_commit_agent_provider()
-    assert provider.name == "cursor"
-
-
-def test_commit_agent_provider_uses_global_config(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.delenv(providers.COMMIT_AGENT_PROVIDER_ENV, raising=False)
-    xdg_config = tmp_path / "xdg"
-    config_dir = xdg_config / "repo-ops"
-    config_dir.mkdir(parents=True)
-    (config_dir / "config.toml").write_text("commit_agent_provider = 'cursor'\n", encoding="utf-8")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_config))
-
-    assert providers.commit_agent_provider_name() == "cursor"
-    assert providers.resolve_commit_agent_provider().name == "cursor"
-
-
-def test_commit_agent_provider_env_overrides_global_config(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    xdg_config = tmp_path / "xdg"
-    config_dir = xdg_config / "repo-ops"
-    config_dir.mkdir(parents=True)
-    (config_dir / "config.toml").write_text(
-        "commit_agent_provider = 'not-a-provider'\n", encoding="utf-8"
-    )
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_config))
-    monkeypatch.setenv(providers.COMMIT_AGENT_PROVIDER_ENV, "cursor")
-
-    assert providers.commit_agent_provider_name() == "cursor"
-    assert providers.resolve_commit_agent_provider().name == "cursor"
-
-
-def test_cursor_provider_missing_sdk_message(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    init_git_repo,
-) -> None:
-    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
-    monkeypatch.setenv("CURSOR_API_KEY", "test-key")
-    real_import = __import__
-
-    def _block_cursor_sdk(
-        name: str,
-        _globals: Mapping[str, object] | None = None,
-        _locals: Mapping[str, object] | None = None,
-        fromlist: Sequence[str] | None = (),
-        level: int = 0,
-    ) -> types.ModuleType:
-        if name == "cursor_sdk" or name.startswith("cursor_sdk."):
-            raise ImportError("cursor-sdk not installed")
-        return real_import(name, _globals, _locals, fromlist, level)
-
-    sys.modules.pop("cursor_sdk", None)
-    with (
-        patch("builtins.__import__", side_effect=_block_cursor_sdk),
-        pytest.raises(RuntimeError, match="commit-agent-cursor"),
-    ):
-        providers.resolve_commit_agent_provider().draft_commit_message(
-            bundle, ["package-lock.json"]
-        )
 
 
 def test_collect_changes_no_phantom_downgrade(tmp_path: Path) -> None:
@@ -574,9 +381,7 @@ def test_actions_only_does_not_sweep_predirty_lockfile(tmp_path: Path, init_git_
             )
         ],
     )
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
-    )
+    plan = post_apply_commit.plan_repo_commit(bundle)
     assert plan.skipped_reason is None
     assert plan.files == [".github/workflows/ci.yml"]
     assert "yarn.lock" not in plan.files
@@ -895,46 +700,6 @@ def test_classify_single_ecosystem_unchanged() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_run_post_apply_commits_parallel_outcomes_sorted(tmp_path: Path, init_git_repo) -> None:
-    """Outcomes are returned in label order regardless of execution order."""
-    # Build three minimal bundles — each in its own git repo directory.
-    paths = [tmp_path / f"repo{i}" for i in range(3)]
-    bundles: dict[Path, RepoBundle] = {}
-    for p in paths:
-        p.mkdir()
-        init_git_repo(p)
-        ws = Workspace(path=p, ecosystem="node", manager="npm", git_repo=p, label=p.name)
-        wr = WorkspaceResult(workspace=ws, status="ok")
-        # No changes → each will skip as "no upgrade-scoped changes to commit".
-        bundles[p] = RepoBundle(git_repo=p, label=p.name, workspaces=[wr])
-
-    outcomes, _ = post_apply_commit.run_post_apply_commits(
-        bundles,
-        mode="conventional",
-        dry_run=True,
-        quiet=True,
-        max_workers=3,
-    )
-    labels = [o.label for o in outcomes]
-    assert labels == sorted(labels)
-
-
-def test_run_post_apply_commits_max_workers_accepted(tmp_path: Path, init_git_repo) -> None:
-    """max_workers parameter is accepted without error."""
-    init_git_repo(tmp_path)
-    ws = Workspace(path=tmp_path, ecosystem="node", manager="npm", git_repo=tmp_path, label="w")
-    wr = WorkspaceResult(workspace=ws, status="ok")
-    bundle = RepoBundle(git_repo=tmp_path, label="w", workspaces=[wr])
-    outcomes, _ = post_apply_commit.run_post_apply_commits(
-        {tmp_path: bundle},
-        mode="conventional",
-        dry_run=True,
-        quiet=True,
-        max_workers=1,
-    )
-    assert len(outcomes) == 1
-
-
 def test_collect_changes_no_diff_reports_nothing(tmp_path: Path) -> None:
     """A clean git diff means no changes were applied. A checker fallback
     must not re-run the ecosystem checker here, or still-available updates
@@ -979,9 +744,7 @@ def test_pdm_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_rep
     wr = WorkspaceResult(workspace=ws, status="ok")
     wr.changes = [Change("requests", "2.0", "2.1")]
     bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
-    )
+    plan = post_apply_commit.plan_repo_commit(bundle)
     assert plan.skipped_reason is None
     assert set(plan.files) == {"pdm.lock", "pyproject.toml"}
 
@@ -1005,9 +768,7 @@ def test_pipenv_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_
     wr = WorkspaceResult(workspace=ws, status="ok")
     wr.changes = [Change("requests", "2.0", "2.1")]
     bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="conventional", allow_dirty=False, commit_on_fail=False
-    )
+    plan = post_apply_commit.plan_repo_commit(bundle)
     assert plan.skipped_reason is None
     assert set(plan.files) == {"Pipfile.lock", "Pipfile"}
 
@@ -1056,10 +817,8 @@ def test_commit_leaves_previously_staged_files_out(tmp_path: Path, init_git_repo
     subprocess.run(["git", "add", "notes.md"], cwd=tmp_path, check=True)
     (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
     bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
-    plan = post_apply_commit.plan_repo_commit(
-        bundle, mode="conventional", allow_dirty=True, commit_on_fail=False
-    )
-    assert post_apply_commit.execute_commit_plan(plan, dry_run=False).status == "committed"
+    plan = post_apply_commit.plan_repo_commit(bundle)
+    assert post_apply_commit.execute_commit_plan(plan).status == "committed"
 
     def _git(*args: str) -> str:
         return subprocess.run(

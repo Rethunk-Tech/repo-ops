@@ -25,12 +25,6 @@ classifiers = [
 ]
 dependencies = ["ruamel.yaml>=0.18"]
 
-[project.optional-dependencies]
-# Canonical extra for the Cursor commit-agent SDK.
-commit-agent-cursor = ["cursor-sdk>=0.1.0"]
-# Backward-compatible alias of commit-agent-cursor (same deps); documented once here.
-agent = ["cursor-sdk>=0.1.0"]
-
 [project.scripts]
 repo-ops = "repo_ops.cli:main"
 
@@ -90,13 +84,9 @@ module-name = [
 # repo_ops_* packages resolve as first-party — the alternative is listing every
 # one of them in known_first_party by hand.
 [tool.deptry.package_module_name_map]
-# Neither import name is derivable from its package name, and deptry can only
-# read the real one from installed metadata: ruamel.yaml installs into the
-# `ruamel` namespace package, and cursor-sdk is an optional extra that is
-# normally absent. Stating both keeps the gate's verdict the same whether or
-# not the environment happens to have them.
+# ruamel.yaml installs into the `ruamel` namespace package, so its import name
+# is not derivable from the package name.
 ruamel-yaml = ["ruamel"]
-cursor-sdk = ["cursor_sdk"]
 
 [tool.pytest.ini_options]
 # The default lane excludes external-tool tests while retaining parallel workers. Pass -n0 for a
@@ -159,12 +149,6 @@ quote-style = "double"
 # CLI to keep the checked scope equal to project-includes below.
 project-includes = ["src"]
 check-unannotated-defs = true
-# Optional, ImportError-guarded runtime fallback with no installed stubs:
-# cursor_sdk is the optional agent SDK, lazily imported only when the cursor
-# commit-agent provider is actually used. Pyrefly's equivalent of mypy's
-# blanket `ignore_missing_imports = true` is per-module, so list it explicitly
-# rather than inventing a global wildcard.
-replace-imports-with-any = ["cursor_sdk"]
 
 [tool.coverage.run]
 source = ["src"]

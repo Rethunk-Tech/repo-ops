@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from repo_ops_core.config import (
     SETTINGS_TABLE,
-    apply_config_to_env,
     load_global_config,
     load_repo_config,
     resolve_setting,
@@ -109,8 +106,6 @@ ENV_SETTINGS = [
     ("go_toolchain", "REPO_OPS_GO_TOOLCHAIN", "go1.22.0"),
     ("no_state", "REPO_OPS_NO_STATE", "1"),
     ("no_lint_cache", "REPO_OPS_NO_LINT_CACHE", "1"),
-    ("commit_agent_provider", "REPO_OPS_COMMIT_AGENT_PROVIDER", "cursor"),
-    ("resume", "REPO_OPS_RESUME", "1"),
 ]
 
 
@@ -127,38 +122,3 @@ def test_settings_table_maps_key_to_env_var(key: str, env_var: str, value: str) 
 
 
 # --- New env-gate settings ---
-
-
-def test_settings_table_has_new_env_gate_entries() -> None:
-    """Env-gate settings surfaced in v0.15+ are present in SETTINGS_TABLE."""
-    names = [r[0] for r in SETTINGS_TABLE]
-    for key in ("resume",):
-        assert key in names, f"Missing SETTINGS_TABLE entry: {key}"
-
-
-@pytest.mark.parametrize(
-    ("toml_line", "env_var", "expected"),
-    [
-        ("resume = true", "REPO_OPS_RESUME", "1"),
-    ],
-)
-def test_setting_from_config_file(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
-    toml_line: str,
-    env_var: str,
-    expected: str,
-) -> None:
-    """A global config key lands in its env var via apply_config_to_env."""
-    cfg_dir = tmp_path / "repo-ops"
-    cfg_dir.mkdir()
-    (cfg_dir / "config.toml").write_text(f"{toml_line}\n", encoding="utf-8")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    monkeypatch.delenv(env_var, raising=False)
-    try:
-        apply_config_to_env(global_cfg=load_global_config())
-        assert os.environ.get(env_var) == expected
-    finally:
-        # apply_config_to_env writes os.environ directly; monkeypatch.undo()
-        # does not revert that, so pop it to avoid leaking into later tests.
-        os.environ.pop(env_var, None)

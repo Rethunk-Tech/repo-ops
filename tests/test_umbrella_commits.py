@@ -70,8 +70,6 @@ def test_no_child_commits_produces_no_umbrella_commit(
     outcomes, code = commit_umbrella_submodule_pointers(
         links,
         child_outcomes,
-        mode="conventional",
-        dry_run=False,
         quiet=True,
     )
     assert outcomes == []
@@ -148,8 +146,6 @@ def test_stages_only_committed_child_gitlinks(
         outcomes, code = commit_umbrella_submodule_pointers(
             links,
             child_outcomes,
-            mode="conventional",
-            dry_run=False,
             quiet=True,
         )
 
@@ -210,8 +206,6 @@ def test_umbrella_commit_message_shape(
         outcomes, code = commit_umbrella_submodule_pointers(
             links,
             child_outcomes,
-            mode="conventional",
-            dry_run=False,
             quiet=True,
         )
 
@@ -226,49 +220,3 @@ def test_umbrella_commit_message_shape(
 # ---------------------------------------------------------------------------
 # Dry-run: no git commands, correct outcome status
 # ---------------------------------------------------------------------------
-
-
-def test_dry_run_produces_no_git_add(
-    tmp_path: Path,
-    init_git_repo,
-) -> None:
-    """In dry-run mode, outcome is 'dry_run' and no git add/commit is executed."""
-
-    umbrella = tmp_path / "umbrella"
-    child_y = umbrella / "child-y"
-    child_y.mkdir(parents=True)
-    init_git_repo(umbrella)
-    init_git_repo(child_y)
-
-    links = [SubmoduleLink(path="child-y", git_repo=child_y.resolve(), parent=umbrella.resolve())]
-    child_outcomes = [_make_child_outcome(child_y.resolve())]
-
-    fake_porcelain = " M child-y\0"
-    git_calls: list[tuple[str, ...]] = []
-
-    from subprocess import CompletedProcess
-
-    def _fake_run_git(repo: Path, *args: str, timeout: int = 60) -> CompletedProcess[str]:
-        git_calls.append(args)
-        cmd_list = list(args)
-        if "status" in cmd_list and "--porcelain" in cmd_list:
-            return CompletedProcess(cmd_list, 0, stdout=fake_porcelain, stderr="")
-        return CompletedProcess(cmd_list, 0, stdout="", stderr="")
-
-    with patch("repo_ops_upgrade.post_apply_commit.run_git", side_effect=_fake_run_git):
-        outcomes, code = commit_umbrella_submodule_pointers(
-            links,
-            child_outcomes,
-            mode="conventional",
-            dry_run=True,
-            quiet=True,
-        )
-
-    assert code == 0
-    assert len(outcomes) == 1
-    assert outcomes[0].status == "dry_run"
-    assert outcomes[0].files == ["child-y"]
-    # Only git status should have been called; no git add or commit.
-    for call in git_calls:
-        assert "add" not in call
-        assert "commit" not in call

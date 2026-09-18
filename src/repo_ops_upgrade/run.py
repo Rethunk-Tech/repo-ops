@@ -48,55 +48,6 @@ from repo_ops_upgrade.post_apply import (
 _FAIL_FAST = orchestration.FAIL_FAST_EVENT
 
 
-def _scope_fingerprint(args: argparse.Namespace) -> str:
-    """Derive a short string that identifies the effective run scope.
-
-    Used as a fingerprint stored in the checkpoint file so that a resume
-    with a different ``--filter`` / ``--manager`` scope cannot false-skip
-    repos that were never processed by the previous (differently-scoped) run.
-    An empty string means "no filter applied" (full-fleet run).
-    """
-    eco = getattr(args, "eco_filter", None) or ""
-    manager = getattr(args, "manager_filter", None) or ""
-    parts = []
-    if eco:
-        parts.append(f"eco={eco}")
-    if manager:
-        parts.append(f"mgr={manager}")
-    return ",".join(parts)
-
-
-def _get_head_sha(git_repo: Path) -> str | None:
-    """Return the current HEAD SHA for *git_repo*, or ``None`` on any error."""
-    from repo_ops_core.git import run_git
-
-    try:
-        result = run_git(git_repo, "rev-parse", "HEAD")
-        if result.returncode == 0:
-            return result.stdout.strip() or None
-        return None
-    except Exception:
-        return None
-
-
-def _checkpoint_should_skip(bundle: RepoBundle, checkpoint: dict[str, str]) -> bool:
-    """Return ``True`` if *bundle* should be skipped on a ``--resume`` re-run.
-
-    A bundle is skipped when the checkpoint contains its git_repo path mapped
-    to the repo's *current* HEAD SHA — i.e. the apply already completed for
-    this HEAD and nothing new has been pushed since.
-
-    If the current HEAD differs from the checkpointed SHA (e.g. someone
-    force-pushed or new commits landed), the check returns ``False`` and the
-    repo is re-processed normally.
-    """
-    done_sha = checkpoint.get(str(bundle.git_repo))
-    if done_sha is None:
-        return False
-    current_sha = _get_head_sha(bundle.git_repo)
-    return current_sha is not None and current_sha == done_sha
-
-
 def _has_actionable_work(bundles: dict[Path, RepoBundle]) -> bool:
     for bundle in bundles.values():
         for wr in bundle.workspaces:
@@ -169,6 +120,9 @@ def _run_upgrade_body(
     roots: list[str],
     follow_symlinks: bool = False,
 ) -> int:
+    # Apply commits each verified repo unless told not to; an unverified apply
+    # never commits.
+    commit = apply and not _cli_flag(args, "no_commit") and not args.no_verify
     skip_remediations = set()
     if apply:
         skip_remediations = {s.strip() for s in args.skip_remediations.split(",") if s.strip()}
@@ -269,12 +223,7 @@ def _run_upgrade_body(
     # One failed workspace vetoes its repo's commit, so under revert the passing
     # siblings roll back too; otherwise their edits stay behind uncommitted and
     # the next sweep skips the repo as dirty.
-    rollback_on_veto = (
-        apply
-        and getattr(args, "on_verify_fail", "keep") == "revert"
-        and getattr(args, "commit", "none") in ("conventional", "agent")
-        and not _cli_flag(args, "commit_on_fail")
-    )
+    rollback_on_veto = commit and getattr(args, "on_verify_fail", "keep") == "revert"
 
     def _process_repo(bundle: RepoBundle) -> list[WorkspaceResult]:
         with checkout_config_scope(
@@ -299,45 +248,6 @@ def _run_upgrade_body(
             if rollback_on_veto and any(r.status == "fail" for r in results):
                 _rollback_vetoed_repo(bundle.git_repo, repo_before, results)
             return results
-
-    # Resume / checkpoint (REPO_OPS_RESUME=1 or --resume): skip repos that
-    # already completed apply+commit in a previous run at their current HEAD.
-    # The scope fingerprint ensures a differently-scoped resume (e.g. different
-    # --filter) does not false-skip repos outside the prior run's scope.
-    _resume_mode = apply and (os.environ.get("REPO_OPS_RESUME") == "1" or _cli_flag(args, "resume"))
-    _checkpoint: dict[str, str] = {}
-    _checkpoint_lock = threading.Lock()
-    _scope = _scope_fingerprint(args)
-    if _resume_mode:
-        from repo_ops_core import state as _cpt_state
-
-        _checkpoint = _cpt_state.load_checkpoint()
-        # Discard stale checkpoint when the run scope changed: a checkpoint
-        # from a narrow --eco-filter run must not skip repos outside that
-        # scope on a differently-scoped (or unfiltered) resume.
-        if _checkpoint.get("_scope") != _scope:
-            _checkpoint = {}
-
-    def _process_repo_checkpointed(bundle: RepoBundle) -> list[WorkspaceResult]:
-        """Wrap _process_repo with resume-checkpoint skip logic.
-
-        When REPO_OPS_RESUME=1 (or --resume) and the bundle's git_repo HEAD
-        matches the checkpointed post-commit SHA, all workspaces are returned
-        as "skip" without calling the real process.
-
-        Checkpoint recording is intentionally NOT done here — it happens only
-        after the commit phase completes successfully (see the post-commit block
-        in _run_upgrade_body).  This ensures a crash before commit leaves no
-        checkpoint entry, so the repo is correctly re-applied on the next resume
-        rather than being silently skipped with uncommitted changes.
-        """
-        if _resume_mode and _checkpoint_should_skip(bundle, _checkpoint):
-            for wr in bundle.workspaces:
-                wr.status = "skip"
-                wr.error = "resume: already applied"
-            return list(bundle.workspaces)
-
-        return _process_repo(bundle)
 
     all_results: list[WorkspaceResult] = []
     if apply:
@@ -380,7 +290,7 @@ def _run_upgrade_body(
                 level_keys = list(level_keys_iter)
                 level_bundles = [bundles[k] for k in level_keys]
                 if len(level_bundles) == 1:
-                    batch = _process_repo_checkpointed(level_bundles[0])
+                    batch = _process_repo(level_bundles[0])
                     all_results.extend(batch)
                     if _repo_failed(batch):
                         break
@@ -392,7 +302,7 @@ def _run_upgrade_body(
                         for batch in run_bounded_pool(
                             _level_pool,
                             level_bundles,
-                            _process_repo_checkpointed,
+                            _process_repo,
                             max_in_flight=args.jobs,
                             should_stop=_FAIL_FAST.is_set,
                             stop_on_result=_repo_failed,
@@ -408,7 +318,7 @@ def _run_upgrade_body(
                 for batch in run_bounded_pool(
                     pool,
                     pending_bundles,
-                    _process_repo_checkpointed,
+                    _process_repo,
                     max_in_flight=args.jobs,
                     should_stop=_FAIL_FAST.is_set,
                     stop_on_result=_repo_failed,
@@ -606,96 +516,26 @@ def _run_upgrade_body(
                 pointer_hints=pointer_hints,
             )
 
-    if apply:
-        commit_mode: Literal["none", "conventional", "agent"] = getattr(args, "commit", "none")
-        if commit_mode and commit_mode != "none":
-            child_outcomes, commit_exit = post_apply_commit.run_post_apply_commits(
-                bundles,
-                mode=commit_mode,
-                dry_run=_cli_flag(args, "commit_dry_run"),
-                allow_dirty=args.allow_dirty,
-                commit_on_fail=_cli_flag(args, "commit_on_fail"),
-                quiet=args.quiet,
-                max_workers=args.jobs,
-                submodule_gitlink_map=submodule_gitlink_map if submodule_gitlink_map else None,
+    if commit:
+        child_outcomes, commit_exit = post_apply_commit.run_post_apply_commits(
+            bundles,
+            quiet=args.quiet,
+            max_workers=args.jobs,
+            submodule_gitlink_map=submodule_gitlink_map if submodule_gitlink_map else None,
+        )
+        if commit_exit != 0:
+            exit_code = 1 if exit_code == 0 else exit_code
+        # Umbrella pointer-bump commits: after all child commits complete,
+        # commit dirty gitlinks in umbrella repos for children that received
+        # commits this run.
+        if submodule_links:
+            _, umbrella_exit = post_apply_commit.commit_umbrella_submodule_pointers(
+                submodule_links, child_outcomes, quiet=args.quiet
             )
-            if commit_exit != 0:
+            if umbrella_exit != 0:
                 exit_code = 1 if exit_code == 0 else exit_code
-
-            # Checkpoint committed repos NOW (after commit), so that a crash
-            # before reaching this block leaves no entry and the repo is
-            # correctly re-applied on the next resume run.  Only "committed"
-            # outcomes are recorded — skipped/failed repos are never checkpointed
-            # .  Lock is held across the disk write
-            # to prevent a lost-update race between concurrent checkpoint saves
-            # .
-            if _resume_mode:
-                from repo_ops_core import state as _cpt_state
-
-                for _co in child_outcomes:
-                    if _co.status == "committed":
-                        _committed_sha = _get_head_sha(_co.git_repo)
-                        if _committed_sha:
-                            with _checkpoint_lock:
-                                _checkpoint[str(_co.git_repo)] = _committed_sha
-                                _checkpoint["_scope"] = _scope
-                                _to_save = dict(_checkpoint)
-                                _cpt_state.save_checkpoint(_to_save)
-            # Umbrella pointer-bump commits: after all child commits complete,
-            # commit dirty gitlinks in umbrella repos for children that received
-            # commits this run.
-            if submodule_links:
-                _, umbrella_exit = post_apply_commit.commit_umbrella_submodule_pointers(
-                    submodule_links,
-                    child_outcomes,
-                    mode=commit_mode,
-                    dry_run=_cli_flag(args, "commit_dry_run"),
-                    quiet=args.quiet,
-                )
-                if umbrella_exit != 0:
-                    exit_code = 1 if exit_code == 0 else exit_code
-                # The footer reports what is still dirty, not the pre-commit state.
-                if not _cli_flag(args, "commit_dry_run"):
-                    pointer_hints = (
-                        submodules.parent_repos_needing_pointer_commit(submodule_links) or None
-                    )
-
-            # PR/branch mode (opt-in via --pr): after commits land, create a
-            # branch, push it, and open a PR for each repo that received a
-            # commit this run. Skipped when --commit-dry-run is active (no
-            # real commits to push). When --pr is absent, this block is never
-            # entered — byte-identical to today's in-place-commit behaviour.
-            if _cli_flag(args, "pr"):
-                # Lazy import: pr.py pulls in subprocess + gh; avoid the cost
-                # on every apply run when --pr is not set.
-                from repo_ops_upgrade import pr as _pr_mod
-
-                commit_dry_run = _cli_flag(args, "commit_dry_run")
-                if commit_dry_run:
-                    if not args.quiet:
-                        print(
-                            "[pr] dry-run: branch/PR creation skipped",
-                            file=sys.stderr,
-                        )
-                else:
-                    committed_repos = {
-                        o.git_repo for o in child_outcomes if o.status == "committed"
-                    }
-                    pr_prefix = getattr(args, "branch_prefix", _pr_mod.DEFAULT_BRANCH_PREFIX)
-                    pr_base = getattr(args, "pr_base", None)
-                    for bundle in sorted(bundles.values(), key=lambda b: b.label):
-                        if bundle.git_repo not in committed_repos:
-                            continue
-                        pr_outcome = _pr_mod.run_pr_flow(
-                            bundle.git_repo,
-                            bundle,
-                            branch_prefix=pr_prefix,
-                            base_branch=pr_base,
-                        )
-                        if not args.quiet:
-                            _pr_mod.print_pr_outcome(pr_outcome)
-                        if pr_outcome.status == "failed":
-                            exit_code = 1 if exit_code == 0 else exit_code
+            # The footer reports what is still dirty, not the pre-commit state.
+            pointer_hints = submodules.parent_repos_needing_pointer_commit(submodule_links) or None
 
     if not use_json:
         footer_hints = pointer_hints if apply else None

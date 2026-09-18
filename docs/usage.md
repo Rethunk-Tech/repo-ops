@@ -232,8 +232,6 @@ CLI flags and caller-provided env vars outrank config everywhere.
 
 | Setting | Flag | Default |
 | --------- | ------ | --------- |
-| `commit_agent_model` | `(none)` | `composer-2.5` |
-| `commit_agent_provider` | `(none)` | `cursor` |
 | `exclude_patterns` | `--exclude` | `[]` |
 | `find_timeout` | `(none)` | `60` |
 | `git_timeout` | `(none)` | `10` |
@@ -245,7 +243,6 @@ CLI flags and caller-provided env vars outrank config everywhere.
 | `no_progress` | `(none)` | `0` |
 | `no_state` | `(none)` | `0` |
 | `node_verify_script` | `(none)` | `(none)` |
-| `resume` | `(none)` | `0` |
 | `timeout_apply` | `(none)` | `60` |
 | `timeout_check` | `(none)` | `60` |
 | `timeout_verify` | `(none)` | `60` |

@@ -193,9 +193,7 @@ def test_vetoed_commit_rolls_back_passing_siblings(tmp_path: Path, init_git_repo
         patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
         patch("repo_ops_upgrade.orchestration.verify_mod.verify_workspace", side_effect=_verify),
     ):
-        rc = main_apply(
-            [str(tmp_path), "--flat", "--skip-actions", "--quiet", "--commit=conventional"]
-        )
+        rc = main_apply([str(tmp_path), "--flat", "--skip-actions", "--quiet"])
 
     assert rc == 1
     assert _git(tmp_path, "status", "--porcelain") == ""

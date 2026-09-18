@@ -185,10 +185,6 @@ _SETTINGS: tuple[_Setting, ...] = (
     _s("go_directive", None, "(none)", "(none)"),
     _s("go_toolchain", None, "(none)", "(none)"),
     _s("node_verify_script", None, "(none)", "(none)"),
-    _s("commit_agent_provider", None, "(none)", "cursor"),
-    _s("commit_agent_model", "composer-2.5", "(none)", "composer-2.5"),
-    # Apply resume checkpoint (apply-only): skip repos already applied in a prior run.
-    _s("resume", None, "(none)", "0"),
     # Exclude patterns: CLI --exclude / config key ``exclude`` (list). No env
     # channel — lists do not serialize cleanly; run.py also special-cases merge.
     _s("exclude_patterns", None, "--exclude", "[]", env_var=None, config_key="exclude"),
@@ -221,17 +217,6 @@ def set_ambient_env(env: Mapping[str, str] | None) -> None:
 def ambient_env() -> Mapping[str, str] | None:
     """Return the caller-provided environment snapshot, when configured."""
     return _ambient_env
-
-
-def process_env_cli_override(env_var: str) -> str | None:
-    """Return a process value that differs from the ambient environment."""
-    ambient = ambient_env()
-    if ambient is None:
-        return None
-    process_value = os.environ.get(env_var)
-    if env_var not in ambient:
-        return process_value
-    return process_value if process_value != ambient[env_var] else None
 
 
 @contextmanager

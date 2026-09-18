@@ -239,9 +239,6 @@ def test_plan_repo_commit_includes_gitlink_via_extra_paths(tmp_path: Path, init_
     ):
         plan = post_apply_commit.plan_repo_commit(
             bundle,
-            mode="conventional",
-            allow_dirty=False,
-            commit_on_fail=False,
             extra_gitlink_paths={gitlink_path},
         )
 
@@ -389,14 +386,13 @@ def test_run_post_apply_commits_passes_gitlink_map(tmp_path: Path) -> None:
 
     captured_extra: list[set[str] | None] = []
 
-    def _spy_plan(b, *, mode, allow_dirty, commit_on_fail, extra_gitlink_paths=None):
+    def _spy_plan(b, *, extra_gitlink_paths=None):
         captured_extra.append(extra_gitlink_paths)
         return CommitPlan(git_repo=b.git_repo, label=b.label, message="", skipped_reason="test")
 
     with patch.object(post_apply_commit, "plan_repo_commit", side_effect=_spy_plan):
         post_apply_commit.run_post_apply_commits(
             bundles,
-            mode="conventional",
             quiet=True,
             submodule_gitlink_map={git_repo: {"libs/child"}},
         )

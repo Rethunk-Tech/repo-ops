@@ -352,9 +352,17 @@ def add_upgrade_common_arguments(
     )
     if apply:
         saf.add_argument(
+            "--no-commit",
+            action="store_true",
+            help=(
+                "Leave changes uncommitted (default: one conventional commit per "
+                "verified repo; never pushes)."
+            ),
+        )
+        saf.add_argument(
             "--no-verify",
             action="store_true",
-            help="Skip verify gates after apply.",
+            help="Skip verify gates after apply (implies --no-commit).",
         )
         saf.add_argument(
             "--skip-remediations",
@@ -381,26 +389,12 @@ def add_upgrade_common_arguments(
                 "When verify fails after apply: revert every file the workspace's "
                 "apply and remediations changed and reinstall from the restored "
                 "lockfile (default), or keep the changes in the worktree to inspect "
-                "them. With --commit, a failure also reverts the repo's passing "
+                "them. Unless --no-commit, a failure also reverts the repo's passing "
                 "workspaces, since the failure vetoes the commit. Reverting is the "
                 "default because the cross-range bulk upgrade a sweep performs has no "
                 "per-package rollback of its own, so a failure would otherwise leave "
                 "the workspace broken. Edits and untracked files present before apply "
                 "are preserved either way."
-            ),
-        )
-        # ---- Resume / checkpoint (apply-only) --------------------------------
-        saf.add_argument(
-            "--resume",
-            action="store_true",
-            help=(
-                "Skip repos already applied+committed in a previous run at their "
-                "current HEAD SHA.  Requires --commit (commits must land so that "
-                "the post-commit HEAD is checkpointed; apply-only runs without "
-                "--commit produce no checkpoint entries).  Also honoured via "
-                "REPO_OPS_RESUME=1.  Scope-aware: a resume with a different "
-                "--filter or --manager discards the previous run's checkpoint and "
-                "re-processes all repos."
             ),
         )
 
@@ -483,67 +477,6 @@ def add_upgrade_common_arguments(
                 "(default) applies child git repos before parent umbrellas, so a "
                 "parent never bumps its pointer at a child this run has not "
                 "updated yet; discovery uses plain scan order."
-            ),
-        )
-        exe.add_argument(
-            "--commit",
-            choices=("none", "conventional", "agent"),
-            default="none",
-            metavar="MODE",
-            help=(
-                "After apply: commit each repo where apply and verify succeeded. "
-                "conventional=local git; agent=commit-agent provider drafts the "
-                "subject (model from REPO_OPS_COMMIT_AGENT_MODEL / commit_agent_model, "
-                "default "
-                "composer-2.5; needs CURSOR_API_KEY and optional "
-                "repo-ops[commit-agent-cursor])."
-            ),
-        )
-        exe.add_argument(
-            "--commit-dry-run",
-            action="store_true",
-            help="With --commit: print intended messages and file lists; no git writes.",
-        )
-        exe.add_argument(
-            "--commit-on-fail",
-            action="store_true",
-            help=(
-                "Also attempt commits for repos with apply/verify failures "
-                "(default: skip failed verify)."
-            ),
-        )
-
-    # ---- Branch / PR workflow (apply-only, opt-in) ------------------------
-    if apply:
-        pr_grp = parser.add_argument_group("Branch / PR workflow")
-        pr_grp.add_argument(
-            "--pr",
-            action="store_true",
-            dest="pr",
-            help=(
-                "After apply+commit, create a branch and open a PR via gh for each "
-                "repo that received a commit. Requires gh CLI installed and "
-                "authenticated. Default: off (in-place commit only, no push)."
-            ),
-        )
-        pr_grp.add_argument(
-            "--pr-base",
-            default=None,
-            dest="pr_base",
-            metavar="BRANCH",
-            help=(
-                "Base branch for opened PRs (default: repo's default branch as "
-                "reported by gh). Overrides auto-detection when set."
-            ),
-        )
-        pr_grp.add_argument(
-            "--branch-prefix",
-            default="repo-ops/deps",
-            dest="branch_prefix",
-            metavar="PREFIX",
-            help=(
-                "Branch name prefix for PR branches (default: 'repo-ops/deps'). "
-                "Resulting name: {prefix}/{repo-slug}."
             ),
         )
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -13,7 +13,6 @@ from repo_ops_upgrade import orchestration as orch_mod
 from repo_ops_upgrade import run as run_mod
 from repo_ops_upgrade import submodules as sub_mod
 from repo_ops_upgrade.post_apply_commit import CommitOutcome
-from repo_ops_upgrade.pr import PROutcome
 
 
 def _fake_args(**overrides) -> MagicMock:
@@ -49,13 +48,7 @@ def _fake_args(**overrides) -> MagicMock:
         "no_verify": True,
         "verify_test": False,
         "on_verify_fail": "keep",
-        "commit": "none",
-        "commit_dry_run": False,
-        "commit_on_fail": False,
-        "pr": False,
-        "pr_base": None,
-        "branch_prefix": "repo-ops/deps",
-        "resume": False,
+        "no_commit": True,
         "follow_symlinks": False,
         # Real run_upgrade() always sets these before _run_upgrade_body runs;
         # a bare MagicMock auto-vivifies a missing attribute into a truthy
@@ -205,123 +198,11 @@ def test_children_first_processes_child_depth_before_parent(
             submodule_order="children-first",
             skip_actions=True,
             jobs=1,
-            commit="none",
+            no_commit=True,
         ),
         roots=[str(tmp_path)],
     )
     assert order == ["child", "parent"], f"expected child then parent, got {order}"
-
-
-def test_pr_dry_run_skips_run_pr_flow(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """--pr with --commit-dry-run prints skip and does not call run_pr_flow."""
-    ws = _npm_ws(tmp_path)
-    wr = WorkspaceResult(workspace=ws, status="ok")
-    wr.changes = [Change("pkg", "1", "2")]
-    bundles = {tmp_path: RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])}
-    pr_calls: list = []
-
-    monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws])
-    monkeypatch.setattr(orch_mod, "filter_workspaces", lambda found, *a, **kw: found)
-    monkeypatch.setattr(disc_mod, "group_by_repo", lambda *a, **kw: bundles)
-    monkeypatch.setattr(disc_mod, "merge_action_only_bundles", lambda b, *a, **kw: b)
-    monkeypatch.setattr(
-        orch_mod,
-        "process_workspace",
-        lambda result, **kw: result,
-    )
-    monkeypatch.setattr(
-        run_mod.post_apply_commit,
-        "run_post_apply_commits",
-        lambda *a, **kw: (
-            [
-                CommitOutcome(
-                    git_repo=tmp_path,
-                    label="demo",
-                    status="dry_run",
-                    message="chore(deps)",
-                    files=["package-lock.json"],
-                )
-            ],
-            0,
-        ),
-    )
-
-    with patch("repo_ops_upgrade.pr.run_pr_flow") as mock_pr:
-        mock_pr.side_effect = lambda *a, **kw: (
-            pr_calls.append(1) or PROutcome(tmp_path, "demo", "opened")
-        )
-        rc = run_mod._run_upgrade_body(
-            apply=True,
-            args=_fake_args(
-                pr=True,
-                commit="conventional",
-                commit_dry_run=True,
-                quiet=False,
-                skip_actions=True,
-            ),
-            roots=[str(tmp_path)],
-        )
-
-    assert rc == 0
-    assert pr_calls == []
-    assert "dry-run: branch/PR creation skipped" in capsys.readouterr().err
-
-
-def test_pr_failed_outcome_sets_exit_code(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """run_pr_flow status=failed propagates to exit_code."""
-    ws = _npm_ws(tmp_path)
-    wr = WorkspaceResult(workspace=ws, status="ok")
-    wr.changes = [Change("pkg", "1", "2")]
-    bundles = {tmp_path: RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])}
-
-    monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws])
-    monkeypatch.setattr(orch_mod, "filter_workspaces", lambda found, *a, **kw: found)
-    monkeypatch.setattr(disc_mod, "group_by_repo", lambda *a, **kw: bundles)
-    monkeypatch.setattr(disc_mod, "merge_action_only_bundles", lambda b, *a, **kw: b)
-    monkeypatch.setattr(
-        orch_mod,
-        "process_workspace",
-        lambda result, **kw: result,
-    )
-    monkeypatch.setattr(
-        run_mod.post_apply_commit,
-        "run_post_apply_commits",
-        lambda *a, **kw: (
-            [
-                CommitOutcome(
-                    git_repo=tmp_path,
-                    label="demo",
-                    status="committed",
-                    message="chore(deps)",
-                    files=["package-lock.json"],
-                )
-            ],
-            0,
-        ),
-    )
-
-    with (
-        patch(
-            "repo_ops_upgrade.pr.run_pr_flow",
-            return_value=PROutcome(tmp_path, "demo", "failed", detail="auth"),
-        ),
-        patch("repo_ops_upgrade.pr.print_pr_outcome"),
-    ):
-        rc = run_mod._run_upgrade_body(
-            apply=True,
-            args=_fake_args(
-                pr=True,
-                commit="conventional",
-                commit_dry_run=False,
-                quiet=True,
-                skip_actions=True,
-            ),
-            roots=[str(tmp_path)],
-        )
-
-    assert rc == 1
 
 
 def test_failed_repo_is_retried_alone_after_the_sweep(
@@ -382,7 +263,7 @@ def test_failed_repo_is_retried_alone_after_the_sweep(
     rc = run_mod._run_upgrade_body(
         apply=True,
         args=_fake_args(
-            no_verify=False, on_verify_fail="revert", commit="conventional", allow_dirty=False
+            no_verify=False, on_verify_fail="revert", no_commit=False, allow_dirty=False
         ),
         roots=[str(tmp_path)],
     )

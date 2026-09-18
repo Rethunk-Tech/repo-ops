@@ -77,25 +77,6 @@ def test_exclude_patterns_in_settings_map() -> None:
     assert resolve_setting("exclude_patterns", repo_cfg={"exclude": ["vendor"]}) == ["vendor"]
 
 
-def test_commit_agent_model_setting_default_and_override(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("REPO_OPS_COMMIT_AGENT_MODEL", raising=False)
-    assert resolve_setting("commit_agent_model") == "composer-2.5"
-
-    monkeypatch.setenv("REPO_OPS_COMMIT_AGENT_MODEL", "gpt-5.6-luna-xhigh")
-    assert resolve_setting("commit_agent_model") == "gpt-5.6-luna-xhigh"
-
-    row = next(row for row in SETTINGS_TABLE if row[0] == "commit_agent_model")
-    assert row == (
-        "commit_agent_model",
-        "(none)",
-        "REPO_OPS_COMMIT_AGENT_MODEL",
-        "commit_agent_model",
-        "composer-2.5",
-    )
-
-
 def test_load_repo_config_pyproject_wins_over_sidecar(tmp_path: Path) -> None:
     (tmp_path / ".repo-ops.toml").write_text("jobs = 3\nverbose = true\n", "utf-8")
     (tmp_path / "pyproject.toml").write_text("[tool.repo-ops]\njobs = 9\n", encoding="utf-8")

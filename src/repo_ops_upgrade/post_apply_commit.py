@@ -19,8 +19,6 @@ from repo_ops_lockfiles.constants import (
 from repo_ops_models import RepoBundle
 from repo_ops_upgrade.submodules import SubmoduleLink
 
-CommitMode = Literal["none", "conventional", "agent"]
-
 _FORBIDDEN_BASENAMES = frozenset(
     {
         ".env",
@@ -56,7 +54,7 @@ class CommitPlan:
 class CommitOutcome:
     git_repo: Path
     label: str
-    status: Literal["committed", "dry_run", "skipped", "failed"]
+    status: Literal["committed", "skipped", "failed"]
     message: str | None = None
     files: list[str] = field(default_factory=list)
     detail: str | None = None
@@ -319,11 +317,7 @@ def _bundle_started_dirty(bundle: RepoBundle) -> bool:
     return any(wr.started_dirty for wr in bundle.workspaces)
 
 
-def _bundle_apply_ok(
-    bundle: RepoBundle,
-    *,
-    commit_on_fail: bool,
-) -> tuple[bool, str | None]:
+def _bundle_apply_ok(bundle: RepoBundle) -> tuple[bool, str | None]:
     if not bundle.workspaces:
         # Actions-only repo (workflows but no package manifest): still committable
         # when an action bump was actually applied. The porcelain check downstream
@@ -342,11 +336,10 @@ def _bundle_apply_ok(
         if wr.status == "skip" and wr.error == "fail-fast":
             return False, "fail-fast"
         if wr.status == "fail":
-            if wr.verify_error and not commit_on_fail:
+            if wr.verify_error:
                 return False, f"verify failed: {wr.verify_error}"
-            if not commit_on_fail:
-                return False, wr.verify_error or wr.error or "apply failed"
-    if bundle.any_fail() and not commit_on_fail:
+            return False, wr.error or "apply failed"
+    if bundle.any_fail():
         return False, "workspace failures"
     return True, None
 
@@ -467,13 +460,10 @@ def build_conventional_message(bundle: RepoBundle, files: list[str]) -> str:
 def plan_repo_commit(
     bundle: RepoBundle,
     *,
-    mode: CommitMode,
-    allow_dirty: bool,
-    commit_on_fail: bool,
     extra_gitlink_paths: set[str] | None = None,
 ) -> CommitPlan:
     repo = bundle.git_repo
-    ok, reason = _bundle_apply_ok(bundle, commit_on_fail=commit_on_fail)
+    ok, reason = _bundle_apply_ok(bundle)
     if not ok:
         return CommitPlan(repo, bundle.label, "", skipped_reason=reason)
     if not _has_actionable_repo_changes(bundle):
@@ -504,35 +494,16 @@ def plan_repo_commit(
         )
     if not safe:
         return CommitPlan(repo, bundle.label, "", skipped_reason="no safe paths to stage")
-    if mode == "agent":
-        try:
-            from repo_ops_upgrade.commit_agent_providers import (
-                draft_message_with_commit_agent,
-            )
-
-            message = draft_message_with_commit_agent(bundle, safe)
-        except Exception as exc:
-            return CommitPlan(repo, bundle.label, "", skipped_reason=str(exc))
-    else:
-        message = build_conventional_message(bundle, safe)
-    return CommitPlan(repo, bundle.label, message, files=safe)
+    return CommitPlan(repo, bundle.label, build_conventional_message(bundle, safe), files=safe)
 
 
-def execute_commit_plan(plan: CommitPlan, *, dry_run: bool) -> CommitOutcome:
+def execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
     if plan.skipped_reason:
         return CommitOutcome(
             plan.git_repo,
             plan.label,
             "skipped",
             detail=plan.skipped_reason,
-        )
-    if dry_run:
-        return CommitOutcome(
-            plan.git_repo,
-            plan.label,
-            "dry_run",
-            message=plan.message,
-            files=plan.files,
         )
     for path in plan.files:
         add = run_git(plan.git_repo, "add", "--", path, timeout=120)
@@ -575,15 +546,11 @@ def execute_commit_plan(plan: CommitPlan, *, dry_run: bool) -> CommitOutcome:
 def run_post_apply_commits(
     bundles: dict[Path, RepoBundle],
     *,
-    mode: CommitMode,
-    dry_run: bool = False,
-    allow_dirty: bool = False,
-    commit_on_fail: bool = False,
     quiet: bool = False,
     max_workers: int = 8,
     submodule_gitlink_map: dict[Path, set[str]] | None = None,
 ) -> tuple[list[CommitOutcome], int]:
-    """Plan and optionally execute one commit per eligible git repo.
+    """Plan and execute one commit per eligible git repo.
 
     Bundles are processed in parallel (each is an independent git repo so commits
     do not race). Output ordering is deterministic: outcomes are sorted by label
@@ -594,21 +561,11 @@ def run_post_apply_commits(
     These paths are passed to upgrade_scoped_paths so pointer bumps are committed
     alongside dependency updates rather than left staged-but-uncommitted.
     """
-    if mode == "none":
-        return [], 0
-
     sorted_bundles = sorted(bundles.values(), key=lambda b: b.label)
 
     def _process(bundle: RepoBundle) -> CommitOutcome:
         gitlinks = (submodule_gitlink_map or {}).get(bundle.git_repo)
-        plan = plan_repo_commit(
-            bundle,
-            mode=mode,
-            allow_dirty=allow_dirty,
-            commit_on_fail=commit_on_fail,
-            extra_gitlink_paths=gitlinks,
-        )
-        return execute_commit_plan(plan, dry_run=dry_run)
+        return execute_commit_plan(plan_repo_commit(bundle, extra_gitlink_paths=gitlinks))
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit in label order so futures list is already sorted.
@@ -626,15 +583,7 @@ def run_post_apply_commits(
 
 def _print_outcome(outcome: CommitOutcome) -> None:
     prefix = outcome.label
-    if outcome.status == "dry_run":
-        print(f"[commit dry-run] {prefix}")
-        if outcome.message:
-            print(outcome.message)
-        if outcome.files:
-            print("  files:")
-            for f in outcome.files:
-                print(f"    {f}")
-    elif outcome.status == "committed":
+    if outcome.status == "committed":
         print(f"[commit] {prefix}: committed ({len(outcome.files)} files)")
     elif outcome.status == "skipped":
         print(f"[commit skip] {prefix}: {outcome.detail}")
@@ -688,27 +637,21 @@ def commit_umbrella_submodule_pointers(
     submodule_links: list[SubmoduleLink],
     child_outcomes: list[CommitOutcome],
     *,
-    mode: CommitMode,
-    dry_run: bool = False,
     quiet: bool = False,
 ) -> tuple[list[CommitOutcome], int]:
     """Commit submodule pointer bumps in umbrella repos after child commits.
 
-    Runs whenever *mode* is ``"conventional"`` or ``"agent"`` (same gate as the
-    child commit phase).  One commit per eligible umbrella repo is produced; each
+    One commit per eligible umbrella repo is produced; each
     stages only the gitlink paths corresponding to children that received a
     commit this run — pre-existing dirty paths are never touched.
 
     Returns ``(outcomes, exit_code)`` matching ``run_post_apply_commits``.
     """
-    if mode == "none":
-        return [], 0
     if not submodule_links:
         return [], 0
 
-    # Set of child git repos that got a real commit (not dry_run, skip, fail).
     committed_children: set[Path] = {
-        o.git_repo.resolve() for o in child_outcomes if o.status in ("committed", "dry_run")
+        o.git_repo.resolve() for o in child_outcomes if o.status == "committed"
     }
     if not committed_children:
         return [], 0
@@ -740,19 +683,6 @@ def commit_umbrella_submodule_pointers(
         subject = f"chore(submodules): bump {n} child pin(s)"
         body = f"Automated pointer-bump commit for {label}.\n\nChildren updated: {child_names}"
         message = f"{subject}\n\n{body}"
-
-        if dry_run:
-            outcome = CommitOutcome(
-                umbrella,
-                label,
-                "dry_run",
-                message=message,
-                files=dirty_paths,
-            )
-            outcomes.append(outcome)
-            if not quiet:
-                _print_outcome(outcome)
-            continue
 
         # Stage exactly the qualifying gitlink paths.
         add_failed = False
