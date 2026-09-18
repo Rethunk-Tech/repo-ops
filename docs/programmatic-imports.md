@@ -18,7 +18,7 @@ Everything else:
 | Upgrade pipeline | `repo_ops_upgrade.{orchestration,registry,discovery,actions,verify,pr}` | plan/apply stages |
 | Inventory | `repo_ops_inventory.scan` | dependency footprint |
 | Audit | `repo_ops_audit.audit` | `RemediationItem`, `collect_all_remediations`, `run_audit` |
-| Dependabot | `repo_ops_dependabot.dependabot` | `detect_ecosystems`, supersession helpers |
+| Dependabot | `repo_ops_dependabot.dependabot` | supersession helpers |
 | Doctor | `repo_ops_doctor.doctor` | `probe_all`, `BinarySpec`, `ProbeResult` |
 | Lockfiles | `repo_ops_lockfiles` | parsers, snapshot diff |
 | SBOM / license | `repo_ops_lockfiles.{sbom,license_policy}` | CycloneDX/SPDX builders, policy scan |

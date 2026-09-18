@@ -40,7 +40,7 @@ _SUBCOMMANDS: dict[str, _Subcommand] = {
     "dependabot": _Subcommand(
         dependabot_main,
         build_dependabot_parser,
-        "List/close superseded Dependabot PRs (or --scaffold dependabot.yml)",
+        "List superseded Dependabot PRs; --close closes them",
     ),
 }
 

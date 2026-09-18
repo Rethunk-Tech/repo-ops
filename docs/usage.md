@@ -189,18 +189,6 @@ whether the bump is already satisfied by local lockfiles or manifests.
 **Default (dry-run):** prints the "would-close" list with supersession status.
 **`--close`:** closes superseded PRs via `gh pr close <n> --comment "Superseded..."`.
 
-**Scaffold mode** (generate `.github/dependabot.yml` from detected ecosystems):
-
-- **`--scaffold`** — dry-run: print the YAML that would be written per repo.
-- **`--write`** — with `--scaffold`, actually write `.github/dependabot.yml` (requires `--scaffold`).
-- **`--schedule INTERVAL`** — schedule for generated entries (`daily`/`weekly`/`monthly`; default `weekly`).
-
-Scaffold detection covers npm, pnpm (`pnpm-lock.yaml` → `package-ecosystem: pnpm`),
-Bun lockfiles (`package-ecosystem: bun`), Deno, pre-commit, pip, Go modules, Cargo,
-Docker (`Dockerfile`, `docker-compose.yml` / `.yaml`, `compose.yml` / `.yaml`),
-and GitHub Actions. Scaffold mode does not scan PRs, so `--json` and `--close`
-are invalid alongside `--scaffold`.
-
 Precision caveats:
 
 - **High-confidence:** lockfile parsers resolve npm/yarn/pnpm/bun (text
