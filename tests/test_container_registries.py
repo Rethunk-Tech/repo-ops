@@ -493,7 +493,7 @@ _NEW_DIGEST = "sha256:1111aaaa2222bbbb3333cccc4444dddd5555eeee6666ffff1111aaaa22
 def test_digest_refresh_check_reports_update(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """REFRESH_SHA=1 and digest has changed → actionable Change."""
+    """A changed digest for the same tag → actionable Change."""
     (tmp_path / "Dockerfile").write_text(f"FROM nginx:1.25@{_OLD_DIGEST}\n")
 
     with patch(
@@ -549,7 +549,7 @@ def test_digest_refresh_check_query_failure_report_only(
 def test_digest_refresh_apply_byte_preserving(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """apply_container with REFRESH_SHA=1 rewrites only the digest, preserving all other bytes."""
+    """apply_container rewrites only the digest, preserving all other bytes."""
     dockerfile = tmp_path / "Dockerfile"
     original = (
         f"# syntax=docker/dockerfile:1\n"

@@ -246,7 +246,7 @@ def _fetch_org_policy_cached(owner: str, store: dict[str, dict | None]) -> dict 
                         ]
         except (OSError, subprocess.SubprocessError, ValueError) as exc:
             # Non-fatal: an unreadable selected-actions policy leaves the
-            # conservative defaults above in place.
+            # defaults above in place.
             logger.debug("selected-actions fetch failed for %s: %s", owner, exc)
 
     store[owner] = policy
@@ -356,11 +356,7 @@ def action_tag_info(action: str, *, cache: dict[str, dict | None] | None = None)
       - ``bare_majors``: set of integer majors that have a bare ``vN`` tag.
       - ``max_major``: maximum integer major across all version tags, or None.
       - ``all_tags``: set of every version tag name seen (``vN``, ``vN.M.P`` …).
-        Source of truth for highest-exact-in-major lookups, since ``sha_to_tags``
-        is empty when the API/mock returns name-only lines.
-      - ``sha_to_tags``: mapping of commit SHA → list of tag names (for SHA unpin).
-        Each line from the API is parsed as "name sha" or "name" (name-only for
-        backwards compat with existing test mocks that return names only).
+      - ``sha_to_tags``: mapping of commit SHA → list of tag names.
 
     Returns None when ``gh`` is absent or the API call fails (caller should skip
     the pin — mirrors old graceful degradation).
@@ -397,10 +393,10 @@ def action_tag_info(action: str, *, cache: dict[str, dict | None] | None = None)
             if not line:
                 continue
             parts = line.split()
-            name = parts[0]
-            sha = parts[1] if len(parts) > 1 else None
-            if sha:
-                sha_to_tags.setdefault(sha.lower(), []).append(name)
+            if len(parts) != 2:
+                continue
+            name, sha = parts
+            sha_to_tags.setdefault(sha.lower(), []).append(name)
             # Bare major: exactly "vN"
             if re.fullmatch(r"v\d+", name):
                 with contextlib.suppress(ValueError):
@@ -505,20 +501,6 @@ def _comment_rewrite_for(comment: str | None, tag: str) -> tuple[str, str] | Non
         return None
     new = tag if "." in comment else f"v{m.group(1)}"
     return None if new == comment else (comment, new)
-
-
-def _highest_exact_in_major(info: dict, major: int) -> str | None:
-    """Return the highest exact release tag within ``major`` from ``info['all_tags']``."""
-    best: str | None = None
-    best_tup: tuple[int, ...] = ()
-    for t in info.get("all_tags", ()):
-        if _exact_tag_major(t) != major:
-            continue
-        tup = _tag_version(t)
-        if tup > best_tup:
-            best_tup = tup
-            best = t
-    return best
 
 
 def _resolve_latest_target(info: dict) -> str | None:
@@ -1124,49 +1106,16 @@ def scan_actions(
                             )
                         )
                 else:
-                    # No bare major tag upstream — cannot collapse to floating.
-                    # Advance the exact pin within its major instead:
-                    # e.g. astral-sh/setup-uv publishes only vN.M.P tags, so
-                    # v8.1.0 would otherwise never move while v8.2.0 exists.
-                    in_major = _highest_exact_in_major(info, M)
-                    if (
-                        in_major
-                        and _tag_version(in_major) > _tag_version(pin)
-                        and _target_within_hold(repo, action, in_major)
-                    ):
-                        detail = f"advance exact pin within v{M} (no floating major tag upstream)"
-                        if newer_major:
-                            detail += f"; newer major v{max_major} available"
-                        bumps.append(
-                            ActionBump(
-                                workflow=rel,
-                                action=action,
-                                pin=pin,
-                                latest=in_major,
-                                status="ok",
-                                detail=detail,
-                            )
+                    bumps.append(
+                        ActionBump(
+                            workflow=rel,
+                            action=action,
+                            pin=pin,
+                            latest=pin,
+                            status="ok",
+                            detail="no floating major tag upstream; report only",
                         )
-                        if apply:
-                            replacements.append(
-                                PinReplacement(
-                                    action=action,
-                                    pin=pin,
-                                    latest=in_major,
-                                    line=uses.line or None,
-                                )
-                            )
-                    else:
-                        bumps.append(
-                            ActionBump(
-                                workflow=rel,
-                                action=action,
-                                pin=pin,
-                                latest=pin,
-                                status="ok",
-                                detail="no floating major tag upstream; report only",
-                            )
-                        )
+                    )
         if apply:
             replacements.extend(_enforce_version_ceilings(repo, pins, tag_cache=_cache))
         if apply and replacements:

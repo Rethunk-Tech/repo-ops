@@ -1,4 +1,4 @@
-"""Optional post-apply git commits (conventional or pluggable commit-agent)."""
+"""Post-apply git commits: one conventional commit per verified repo."""
 
 from __future__ import annotations
 

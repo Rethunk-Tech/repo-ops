@@ -1,4 +1,4 @@
-"""Yarn conservative vs latest upgrade policy."""
+"""Yarn latest upgrade policy."""
 
 from __future__ import annotations
 

@@ -291,9 +291,8 @@ def _parse_deno_outdated(
     """Parse ``deno outdated`` stdout into ``(changes, behind_latest)``; Latest is the target."""
     changes: list[Change] = []
     behind_latest: list[Change] = []
-    # Plain text: "name  current  update  latest" OR "name  current  latest"
+    # Plain text: "name  current  update  latest"
     _PLAIN_4 = re.compile(r"^(\S+)\s+([\d][^\s]*)\s+([\d][^\s]*)\s+([\d][^\s]*)")
-    _PLAIN_3 = re.compile(r"^(\S+)\s+([\d][^\s]*)\s+([\d][^\s]*)")
     # Vertical-bar character used in Deno's box-drawing table output.
     _VBAR = "│"  # │ (BOX DRAWINGS LIGHT VERTICAL)
     for line in stdout.splitlines():
@@ -323,14 +322,6 @@ def _parse_deno_outdated(
                 continue
             if cur != latest:
                 changes.append(Change(name, cur, latest))
-            continue
-        m = _PLAIN_3.match(stripped)
-        if m:
-            name, cur, latest = m.group(1), m.group(2), m.group(3)
-            if name.lower() in ("package", "name") or cur == latest:
-                continue
-            # 3-column plain: no distinct Update — treat Latest as the only target.
-            changes.append(Change(name, cur, latest))
     return changes, behind_latest
 
 

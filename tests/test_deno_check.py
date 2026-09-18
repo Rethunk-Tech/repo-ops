@@ -27,12 +27,6 @@ _BOX_BEHIND_LATEST = """\
 └──────────────────────┴─────────┴─────────┴─────────┘
 """
 
-_PLAIN_OUTPUT = """\
-Package             Current  Latest
-jsr:@std/assert     0.221.0  0.226.0
-npm:chalk           5.2.0    5.3.0
-"""
-
 _PLAIN_4_OUTPUT = """\
 Package             Current  Update   Latest
 jsr:@std/assert     0.221.0  0.226.0  0.226.0
@@ -80,27 +74,6 @@ def test_check_deno_latest_mode_promotes_behind(
     assert len(changes) == 1
     assert changes[0].to == "4.17.21"
     assert behind == []
-
-
-def test_check_deno_parses_plain_table(tmp_path: Path, make_workspace) -> None:
-    """check_deno must parse the plain-text column format."""
-
-    def fake_run(cmd, cwd, timeout=None):
-        return subprocess.CompletedProcess(cmd, 0, stdout=_PLAIN_OUTPUT, stderr="")
-
-    with (
-        patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
-        patch("repo_ops_js.deno.run", side_effect=fake_run),
-    ):
-        changes, behind = check_deno(
-            make_workspace(tmp_path, ecosystem="deno", manager="deno", label="demo")
-        )
-
-    assert len(changes) == 2
-    assert behind == []
-    names = {c.name for c in changes}
-    assert "jsr:@std/assert" in names
-    assert "npm:chalk" in names
 
 
 def test_check_deno_returns_empty_when_up_to_date(tmp_path: Path, make_workspace) -> None:

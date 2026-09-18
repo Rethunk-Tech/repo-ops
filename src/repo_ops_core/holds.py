@@ -2,16 +2,13 @@
 
 A hold rule caps a package at a maximum version, optionally until an
 expiry date, so a specific major upgrade (e.g. TypeScript 7) can be held
-back fleet-wide without disabling latest-mode/targeted-bump for every
+back fleet-wide without holding back every
 other package.
 
 Config source: the ``hold`` array-of-tables key already returned by
 ``repo_ops_core.config.load_global_config`` (global,
 ``~/.config/repo-ops/config.toml``) and ``load_repo_config`` (per-repo,
-``pyproject.toml [tool.repo-ops]`` / ``.repo-ops.toml``) — same read-only,
-never-written config files documented in ``config.py``. No CLI flag or env
-var channel: arrays don't serialize cleanly to env (same reasoning as
-``exclude_patterns``, see ``config.py``).
+``.repo-ops.toml``), both read-only; see ``config.py``.
 
     [[hold]]
     package = "typescript"      # exact name or fnmatch glob, e.g. "@types/*"

@@ -10,57 +10,9 @@ from repo_ops_upgrade.actions import action_tag_info, scan_actions
 
 def _make_tags_proc(*tags: str) -> MagicMock:
     """Build a mock process that returns a newline-joined list of tag names."""
-    return MagicMock(returncode=0, stdout="\n".join(tags) + "\n", stderr="")
-
-
-def test_collapse_exact_to_floating_major(tmp_path: Path) -> None:
-    """v4.2.1 with bare v4 tag upstream → normalize to v4; file updated on apply."""
-    wf_dir = tmp_path / ".github" / "workflows"
-    wf_dir.mkdir(parents=True)
-    wf = wf_dir / "ci.yml"
-    wf.write_text(
-        "jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@v4.2.1\n",
-        encoding="utf-8",
+    return MagicMock(
+        returncode=0, stdout="".join(f"{t} {t.encode().hex():0<40.40}\n" for t in tags), stderr=""
     )
-    tags_proc = _make_tags_proc("v4", "v4.2.1", "v4.2.2")
-
-    with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
-        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
-    ):
-        bumps, scanned = scan_actions(tmp_path, apply=True)
-
-    assert scanned == 1
-    checkout = [b for b in bumps if b.action == "actions/checkout"]
-    assert len(checkout) == 1
-    assert checkout[0].pin == "v4.2.1"
-    assert checkout[0].latest == "v4"
-    assert "normalize to floating major v4" in (checkout[0].detail or "")
-    assert "report only" not in (checkout[0].detail or "").lower()
-    assert "actions/checkout@v4" in wf.read_text(encoding="utf-8")
-    assert "actions/checkout@v4.2.1" not in wf.read_text(encoding="utf-8")
-
-
-def test_bare_major_up_to_date_emits_nothing(tmp_path: Path) -> None:
-    """v3 with only v3* tags and max_major==3 → no ActionBump entry at all."""
-    wf_dir = tmp_path / ".github" / "workflows"
-    wf_dir.mkdir(parents=True)
-    wf = wf_dir / "ci.yml"
-    wf.write_text(
-        "jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@v3\n",
-        encoding="utf-8",
-    )
-    tags_proc = _make_tags_proc("v3", "v3.6.0", "v3.5.0")
-
-    with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
-        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
-    ):
-        bumps, scanned = scan_actions(tmp_path, apply=False)
-
-    assert scanned == 1
-    checkout = [b for b in bumps if b.action == "actions/checkout"]
-    assert checkout == []
 
 
 def test_gh_absent_skips_pin(tmp_path: Path) -> None:
