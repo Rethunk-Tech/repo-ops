@@ -17,7 +17,6 @@ from repo_ops_core.config import (
 from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
-from repo_ops_js.audit_overrides import make_audit_override_api
 from repo_ops_js.expo import with_expo_alignment
 from repo_ops_js.guards import (
     assert_targets_resolved,
@@ -37,7 +36,6 @@ from repo_ops_js.targeted_bump import run_targeted_bump
 from repo_ops_js.workspaces import (
     apply_with_members,
     check_with_members,
-    member_audit_overrides,
 )
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
@@ -61,18 +59,6 @@ _DEP_GROUP_SUFFIX_RE = re.compile(r"\s*\((?:dev|peer|optional)\)\s*$")
 _PKG_NAME_RE = re.compile(r"^(?:@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+$")
 _BUN_UPDATE_LATEST_ENV = "REPO_OPS_BUN_UPDATE_LATEST"
 _BUN_TARGETED_BUMP_ENV = "REPO_OPS_BUN_TARGETED_BUMP"
-
-# Audit version overrides: package → advisory-safe version to use instead of
-# the check_bun-derived (range-respecting) target. Populated by
-# repo_ops_audit.audit.apply_remediations before the orchestration apply call
-# and cleared in a finally block after (mirrors repo_ops_js_npm.npm's
-# _AUDIT_VERSION_OVERRIDES). Not thread-safe, but apply_remediations processes
-# workspaces sequentially. Empty outside of audit --fix runs.
-_AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
-
-set_bun_audit_version_overrides, clear_bun_audit_version_overrides = make_audit_override_api(
-    _AUDIT_VERSION_OVERRIDES
-)
 
 
 def _bun_update_latest_enabled(ws: Workspace | None = None) -> bool:
@@ -299,7 +285,6 @@ def targeted_bump_behind(
             mdir,
             change,
             manager="bun",
-            audit_overrides=_AUDIT_VERSION_OVERRIDES,
             run_bump=run_bump,
             resolve_landed=resolve_landed,
             release_pin=release_unheld_pin,
@@ -315,7 +300,7 @@ def targeted_bump_behind(
 def _finalize_bun_apply(
     ws: Workspace, changes: list[Change], behind: list[Change], *, mutated: bool, root: Path
 ) -> list[Change]:
-    """Shared tail for every ``apply_bun`` exit path (bare/targeted/audit-only).
+    """Shared tail for every ``apply_bun`` exit path (bare/targeted).
 
     Runs the still-behind targeted bump, then the end-of-apply hold safety
     net (``enforce_holds``): cheap insurance even though bun's own targeting
@@ -355,13 +340,6 @@ def apply_bun(ws: Workspace) -> list[Change]:
 def _apply_bun_dir(ws: Workspace, root: Path) -> list[Change]:
     """Apply upgrades ``check_bun`` reports for one directory, without rewriting ranges to ``latest``.
 
-    Advisory-safe version overrides (``set_bun_audit_version_overrides``, wired
-    by ``repo_ops_audit.audit.apply_remediations`` during ``audit --fix``) are
-    applied independent of ``check_bun``'s findings: an overridden package is
-    targeted at its safe version even when ``bun outdated`` reports it as
-    already in-range (empty ``changes``) or only behind on ``latest``; dropping
-    it in that case would silently skip an advisory fix.
-
     With ``REPO_OPS_BUN_TARGETED_BUMP`` set, each dep that ``check_bun`` left
     behind_latest gets a reversible targeted ``bun add <pkg>@latest``; only
     bumps that actually advance the resolved version are kept. Returns the
@@ -371,32 +349,18 @@ def _apply_bun_dir(ws: Workspace, root: Path) -> list[Change]:
     changes, behind = check_bun(ws, members=False)
     targets: list[str] = []
     requested: list[Change] = []
-    seen_names: set[str] = set()
     for ch in changes:
         name = (ch.name or "").strip()
         if not name or not _valid_bun_package_name(name):
             continue
-        # Precedence: advisory-safe override (audit --fix) first, then an
-        # active hold ceiling, then the raw check_bun-derived target.
+        # An active hold ceiling wins over the check_bun-derived target.
         held_rule = resolve_package_hold(ws, name)
         hold_spec = hold_version_spec(held_rule) if held_rule is not None else None
-        version = _AUDIT_VERSION_OVERRIDES.get(name) or hold_spec or (ch.to or "").strip()
+        version = hold_spec or (ch.to or "").strip()
         if not version or version in ("?", "latest", "|"):
             continue
         targets.append(f"{name}@{version}")
         requested.append(Change(name, ch.from_ver, version))
-        seen_names.add(name)
-    # Advisory-safe overrides for packages check_bun did NOT report as changed
-    # (already satisfies its declared range, or only behind_latest) must still
-    # be targeted explicitly here — silently dropping them skips the fix.
-    for name, safe_version in member_audit_overrides(ws, root, _AUDIT_VERSION_OVERRIDES).items():
-        name = (name or "").strip()
-        safe_version = (safe_version or "").strip()
-        if not name or name in seen_names or not safe_version or not _valid_bun_package_name(name):
-            continue
-        targets.append(f"{name}@{safe_version}")
-        requested.append(Change(name, "", safe_version))
-        seen_names.add(name)
     if not changes and not targets:
         return _finalize_bun_apply(ws, changes, behind, root=root, mutated=False)
     if not targets:

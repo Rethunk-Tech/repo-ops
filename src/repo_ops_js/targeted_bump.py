@@ -33,25 +33,17 @@ def run_targeted_bump(
     change: Change,
     *,
     manager: str,
-    audit_overrides: dict[str, str],
     run_bump: Callable[[str, str], bool],
     resolve_landed: Callable[[str], str | None],
     release_pin: Callable[[Path, str], object],
     verify: Callable[[Workspace, list[Change], str], None] | None,
-    release_pin_on_audit_override: bool = True,
 ) -> Change | None:
     """Attempt one behind-latest bump; return the landed ``Change`` or ``None``.
 
-    Target precedence: an advisory-safe audit override (a security
-    remediation must not be silently blocked by a routine hold) wins over an
-    active hold ceiling, which wins over registry latest. On any failure,
+    Target: an active hold ceiling, else registry latest. On any failure,
     no-op, or ghost bump (the resolved version didn't actually advance, or
     *verify* still finds it unresolved) the snapshot is restored and ``None``
     is returned so the caller keeps *change* in its behind list.
-
-    ``release_pin_on_audit_override`` exists only for pnpm, which leaves a
-    legacy pin in place when an audit override is active; every other
-    manager releases it there too, same as when no hold is active at all.
 
     ``verify`` re-checks the landed version against ``node_modules`` before
     trusting it; pass ``None`` to skip (yarn: its own *resolve_landed* already
@@ -59,15 +51,9 @@ def run_targeted_bump(
     workspaces, absent — source of truth).
     """
     snap = snapshot_workspace_files(mdir, manager)
-    audit_override = audit_overrides.get(change.name)
-    held_rule = None if audit_override or ws is None else resolve_package_hold(ws, change.name)
-    if audit_override:
-        target_ver = audit_override
-    elif held_rule is not None:
-        target_ver = hold_version_spec(held_rule)
-    else:
-        target_ver = "latest"
-    if held_rule is None and (release_pin_on_audit_override or not audit_override):
+    held_rule = None if ws is None else resolve_package_hold(ws, change.name)
+    target_ver = "latest" if held_rule is None else hold_version_spec(held_rule)
+    if held_rule is None:
         release_pin(mdir, change.name)
     ok = run_bump(change.name, target_ver)
     landed = resolve_landed(change.name) if ok else None

@@ -9,8 +9,6 @@ from unittest.mock import patch
 
 from repo_ops_js_bun.bun import (
     apply_bun,
-    clear_bun_audit_version_overrides,
-    set_bun_audit_version_overrides,
 )
 from repo_ops_lockfiles.snapshots import restore_workspace_snapshot, snapshot_workspace_files
 from repo_ops_models import Change, Workspace
@@ -46,73 +44,6 @@ def test_apply_bun_updates_reported_packages_not_latest_flag(monkeypatch) -> Non
 
     assert calls == [["bun", "update", "--", "foo@1.1.0"], ["bun", "install"]]
     assert not any("--latest" in c for c in calls)
-
-
-def test_apply_bun_uses_advisory_safe_override_absent_from_check_bun() -> None:
-    """An audit-flagged safe version must not be silently dropped.
-
-    ``check_bun`` reports nothing outdated (empty changes/behind) — e.g. the
-    installed range already resolves in-range from bun's perspective — but
-    ``apply_remediations`` has computed a CVE-safe pin via
-    ``set_bun_audit_version_overrides``. That override must still be targeted
-    explicitly, not swallowed into a no-op bare update.
-    """
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=600, env=None):
-        calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    ws = Workspace(
-        path=Path("/tmp/proj"),
-        ecosystem="node",
-        manager="bun",
-        git_repo=Path("/tmp/proj"),
-        label="demo",
-    )
-    set_bun_audit_version_overrides({"pkg": "1.2.3"})
-    try:
-        with (
-            patch("repo_ops_js_bun.bun.run", fake_run),
-            patch("repo_ops_js_bun.bun.check_bun", return_value=([], [])),
-        ):
-            apply_bun(ws)
-    finally:
-        clear_bun_audit_version_overrides()
-
-    assert calls == [["bun", "update", "--", "pkg@1.2.3"], ["bun", "install"]]
-
-
-def test_apply_bun_override_replaces_check_derived_version() -> None:
-    """When a package IS in check_bun's changes, the override still wins over
-    the check-derived (range-respecting) target version."""
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=600, env=None):
-        calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    ws = Workspace(
-        path=Path("/tmp/proj"),
-        ecosystem="node",
-        manager="bun",
-        git_repo=Path("/tmp/proj"),
-        label="demo",
-    )
-    set_bun_audit_version_overrides({"foo": "1.5.5"})
-    try:
-        with (
-            patch("repo_ops_js_bun.bun.run", fake_run),
-            patch(
-                "repo_ops_js_bun.bun.check_bun",
-                return_value=([Change("foo", "1.0.0", "1.1.0")], []),
-            ),
-        ):
-            apply_bun(ws)
-    finally:
-        clear_bun_audit_version_overrides()
-
-    assert calls == [["bun", "update", "--", "foo@1.5.5"], ["bun", "install"]]
 
 
 def test_apply_bun_rejects_dash_prefixed_package_names() -> None:

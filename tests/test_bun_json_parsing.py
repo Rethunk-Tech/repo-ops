@@ -14,13 +14,10 @@ from __future__ import annotations
 
 import json
 
-import repo_ops_js_bun.bun as bun_mod
 from repo_ops_js_bun.bun import (
     _changes_from_bun_json,
     _changes_from_bun_text,
     _valid_bun_package_name,
-    clear_bun_audit_version_overrides,
-    set_bun_audit_version_overrides,
 )
 
 # ---------------------------------------------------------------------------
@@ -307,18 +304,3 @@ def test_changes_from_bun_json_no_behind_latest_bucket_when_want_latest_on(
     changes, behind = _changes_from_bun_json(json.dumps(data))
     assert changes == []
     assert behind == []
-
-
-def test_bun_audit_version_overrides_round_trip() -> None:
-    clear_bun_audit_version_overrides()
-    assert bun_mod._AUDIT_VERSION_OVERRIDES == {}
-
-    set_bun_audit_version_overrides({"pkg-a": "1.2.3", "pkg-b": "4.5.6"})
-    assert bun_mod._AUDIT_VERSION_OVERRIDES == {"pkg-a": "1.2.3", "pkg-b": "4.5.6"}
-
-    # Setting again replaces (not merges) the prior overrides.
-    set_bun_audit_version_overrides({"pkg-c": "7.8.9"})
-    assert bun_mod._AUDIT_VERSION_OVERRIDES == {"pkg-c": "7.8.9"}
-
-    clear_bun_audit_version_overrides()
-    assert bun_mod._AUDIT_VERSION_OVERRIDES == {}

@@ -1,4 +1,4 @@
-"""Tests for npm apply ghost-bump guard and audit overrides."""
+"""Tests for npm apply ghost-bump guard."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ import pytest
 
 from repo_ops_js_npm.npm import (
     apply_npm,
-    clear_npm_audit_version_overrides,
-    set_npm_audit_version_overrides,
 )
 from repo_ops_models import Change
 
@@ -111,28 +109,3 @@ def test_apply_npm_guard_skipped_when_resolver_returns_none(tmp_path: Path, make
         apply_npm(
             make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo")
         )  # must not raise
-
-
-def test_apply_npm_audit_override_absent_from_outdated(tmp_path: Path, make_workspace) -> None:
-    """Audit-safe pin must install even when outdated reports nothing."""
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=600, env=None):
-        calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    set_npm_audit_version_overrides({"pkg": "1.2.3"})
-    try:
-        with (
-            patch("repo_ops_js_npm.npm.run", fake_run),
-            patch(_OUTDATED, return_value=([], [])),
-            patch(_RESOLVER_PATH, return_value="1.2.3"),
-        ):
-            apply_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"))
-    finally:
-        clear_npm_audit_version_overrides()
-
-    install_cmds = [c for c in calls if c[:2] == ["npm", "install"] and "pkg@1.2.3" in c]
-    assert install_cmds, f"expected npm install pkg@1.2.3, got {calls}"
-    # No bare npm update when only audit overrides were applied.
-    assert not any(c == ["npm", "update"] for c in calls)

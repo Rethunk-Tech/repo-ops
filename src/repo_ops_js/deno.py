@@ -20,7 +20,6 @@ from repo_ops_core.constants import resolve_timeout_apply, resolve_timeout_check
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
-from repo_ops_js.audit_overrides import make_audit_override_api
 from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
 from repo_ops_lockfiles.parsers import versions_deno_lock
 from repo_ops_lockfiles.snapshots import snapshot_workspace_files
@@ -35,7 +34,6 @@ _DENO_IMPORT_MAP_FILENAMES = (
     "import_map.jsonc",
     "import-map.jsonc",
 )
-_AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 _SEMVER_RE = re.compile(
     r"^[vV]?\d+(?:\.\d+)*(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
@@ -284,30 +282,6 @@ def _restore_deno_workspace(ws: Workspace, before: dict[Path, bytes]) -> None:
             path.unlink()
 
 
-set_deno_audit_version_overrides, clear_deno_audit_version_overrides = make_audit_override_api(
-    _AUDIT_VERSION_OVERRIDES
-)
-
-
-def apply_deno_audit_version_overrides(ws: Workspace) -> None:
-    for name, version in _AUDIT_VERSION_OVERRIDES.items():
-        snapshot = _snapshot_deno_workspace(ws)
-        proc = run(
-            [
-                *_deno_update_command(ws),
-                _deno_version_target(name, version),
-            ],
-            ws.path,
-            timeout=resolve_timeout_apply(),
-        )
-        landed = _landed_deno_version(ws, name) if proc.returncode == 0 else None
-        if landed == _deno_precise_version(version):
-            continue
-        _restore_deno_workspace(ws, snapshot)
-        detail = proc.stderr.strip() if proc.returncode != 0 else "target not landed"
-        raise RuntimeError(f"deno audit override failed for {name}@{version}: {detail}")
-
-
 def _deno_version_target(name: str, version: str) -> str:
     return f"{name}@{_deno_precise_version(version)}"
 
@@ -325,8 +299,7 @@ def _filter_held_deno_changes(ws: Workspace, changes: list[Change]) -> list[Chan
     return [
         change
         for change in changes
-        if _AUDIT_VERSION_OVERRIDES.get(change.name) is not None
-        or (rule := _resolve_deno_hold(ws, change.name)) is None
+        if (rule := _resolve_deno_hold(ws, change.name)) is None
         or version_satisfies_ceiling(change.to, rule.max_version)
     ]
 
@@ -542,22 +515,15 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
     applied: list[Change] = []
     still_behind: list[Change] = []
     for change in behind:
-        audit_override = _AUDIT_VERSION_OVERRIDES.get(change.name)
         hold = _resolve_deno_hold(ws, change.name)
-        if (
-            audit_override is None
-            and hold is not None
-            and not version_satisfies_ceiling(change.to, hold.max_version)
-        ):
+        if hold is not None and not version_satisfies_ceiling(change.to, hold.max_version):
             still_behind.append(change)
             continue
         snapshot = _snapshot_deno_workspace(ws)
-        if audit_override is None and hold is None:
+        if hold is None:
             _release_unheld_deno_pin(ws, change.name)
         cmd = _deno_update_command(ws)
-        if audit_override is not None:
-            cmd.append(_deno_version_target(change.name, audit_override))
-        elif hold is None:
+        if hold is None:
             if _deno_update_latest_enabled(ws):
                 cmd.append("--latest")
             cmd.append(change.name)
@@ -573,11 +539,7 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
                 _restore_deno_workspace(ws, snapshot)
                 still_behind.append(change)
                 continue
-            if (
-                audit_override is None
-                and hold is not None
-                and not version_satisfies_ceiling(landed, hold.max_version)
-            ):
+            if hold is not None and not version_satisfies_ceiling(landed, hold.max_version):
                 _restore_deno_workspace(ws, snapshot)
                 still_behind.append(change)
                 continue
@@ -593,15 +555,7 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
                 try:
                     assert_targets_resolved(
                         ws,
-                        [
-                            change
-                            if audit_override is None
-                            else Change(
-                                change.name,
-                                change.from_ver,
-                                audit_override,
-                            )
-                        ],
+                        [change],
                         manager="deno",
                         fallback_resolver=_landed_deno_version,
                     )
@@ -624,9 +578,8 @@ def _enforce_deno_version_ceilings(ws: Workspace, candidate_names: list[str] | N
     candidates = set(candidate_names or ())
     candidates.update(_deno_lock_package_names(ws))
     for name in sorted(candidates):
-        audit_override = _AUDIT_VERSION_OVERRIDES.get(name)
         rule = _resolve_deno_hold(ws, name)
-        if audit_override is not None or rule is None:
+        if rule is None:
             continue
         resolved = _landed_deno_version(ws, name)
         if resolved is None or version_satisfies_ceiling(resolved, rule.max_version):

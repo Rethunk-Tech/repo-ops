@@ -14,7 +14,7 @@ from repo_ops_core.constants import resolve_timeout_apply
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
-from repo_ops_js.holds import direct_dependency_names, is_within_ceiling, resolve_package_hold
+from repo_ops_js.holds import is_within_ceiling, resolve_package_hold
 from repo_ops_js.overrides import package_json_paths
 from repo_ops_models import Change, Workspace
 
@@ -182,18 +182,6 @@ def merge_changes(into: list[Change], more: list[Change]) -> None:
     for change in more:
         if change not in into:
             into.append(change)
-
-
-def member_audit_overrides(ws: Workspace, root: Path, overrides: dict[str, str]) -> dict[str, str]:
-    """The advisory overrides a directory may install: all at the root, own deps in a member.
-
-    Installing from a member directory saves into that member's manifest, so an
-    undeclared name would become a new direct dependency of the member.
-    """
-    if ws.path == root:
-        return overrides
-    declared = direct_dependency_names(read_json_file(ws.path / "package.json") or {})
-    return {name: ver for name, ver in overrides.items() if name in declared}
 
 
 def _in_member(changes: list[Change], root: Workspace, member: Workspace) -> list[Change]:

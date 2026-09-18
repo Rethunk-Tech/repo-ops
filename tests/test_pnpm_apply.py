@@ -11,8 +11,6 @@ import pytest
 from repo_ops_js_pnpm.pnpm import (
     _bucket_pnpm_pkg,
     apply_pnpm,
-    clear_pnpm_audit_version_overrides,
-    set_pnpm_audit_version_overrides,
 )
 from repo_ops_models import Change
 
@@ -116,30 +114,6 @@ def test_apply_pnpm_guard_skipped_when_resolver_returns_none(
         apply_pnpm(
             make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
         )  # must not raise
-
-
-def test_apply_pnpm_audit_override_absent_from_outdated(tmp_path: Path, make_workspace) -> None:
-    """Audit-safe pin must install even when outdated reports nothing."""
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=600, env=None):
-        calls.append(list(cmd))
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    set_pnpm_audit_version_overrides({"pkg": "1.2.3"})
-    try:
-        with (
-            patch("repo_ops_js_pnpm.pnpm.run", fake_run),
-            patch(_OUTDATED, return_value=([], [])),
-            patch(_RESOLVER_PATH, return_value="1.2.3"),
-        ):
-            apply_pnpm(make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo"))
-    finally:
-        clear_pnpm_audit_version_overrides()
-
-    add_cmds = [c for c in calls if c[:2] == ["pnpm", "add"] and "pkg@1.2.3" in c]
-    assert add_cmds, f"expected pnpm add pkg@1.2.3, got {calls}"
-    assert not any(c[:2] == ["pnpm", "update"] for c in calls)
 
 
 # ---------------------------------------------------------------------------

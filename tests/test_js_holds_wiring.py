@@ -23,29 +23,21 @@ import pytest
 from repo_ops_js_bun.bun import (
     apply_bun,
     check_bun,
-    clear_bun_audit_version_overrides,
-    set_bun_audit_version_overrides,
 )
 from repo_ops_js_bun.bun import targeted_bump_behind as bun_targeted_bump_behind
 from repo_ops_js_npm.npm import (
     apply_npm,
     check_npm,
-    clear_npm_audit_version_overrides,
-    set_npm_audit_version_overrides,
 )
 from repo_ops_js_npm.npm import targeted_bump_behind as npm_targeted_bump_behind
 from repo_ops_js_pnpm.pnpm import (
     apply_pnpm,
     check_pnpm,
-    clear_pnpm_audit_version_overrides,
-    set_pnpm_audit_version_overrides,
 )
 from repo_ops_js_pnpm.pnpm import targeted_bump_behind as pnpm_targeted_bump_behind
 from repo_ops_js_yarn.yarn import (
     apply_yarn,
     check_yarn_snapshot,
-    clear_yarn_audit_version_overrides,
-    set_yarn_audit_version_overrides,
 )
 from repo_ops_js_yarn.yarn import targeted_bump_behind as yarn_targeted_bump_behind
 from repo_ops_models import Change
@@ -131,10 +123,6 @@ class BumpCase(NamedTuple):
     call_bump: object
     ceiling_ok: object
     latest_absent: object
-    override_ok: object
-    ceiling_absent: object
-    set_override: object
-    clear_override: object
 
 
 # pnpm's non-catalog bump command is a different subcommand shape entirely
@@ -147,10 +135,6 @@ BUMP_CASES = [
         bun_call,
         lambda c: _substr(c, "typescript@<=6"),
         lambda c: not _substr(c, "typescript@latest"),
-        lambda c: _substr(c, "typescript@6.2.5"),
-        lambda c: not _substr(c, "<=6"),
-        set_bun_audit_version_overrides,
-        clear_bun_audit_version_overrides,
     ),
     BumpCase(
         "npm",
@@ -158,10 +142,6 @@ BUMP_CASES = [
         npm_call,
         lambda c: _substr(c, "typescript@<=6"),
         lambda c: not _substr(c, "typescript@latest"),
-        lambda c: _substr(c, "typescript@6.2.5"),
-        lambda c: not _substr(c, "<=6"),
-        set_npm_audit_version_overrides,
-        clear_npm_audit_version_overrides,
     ),
     BumpCase(
         "pnpm",
@@ -169,10 +149,6 @@ BUMP_CASES = [
         pnpm_call,
         lambda c: ["pnpm", "add", "typescript@<=6"] in c,
         lambda c: not any(cmd[:2] == ["pnpm", "update"] for cmd in c),
-        lambda c: ["pnpm", "add", "typescript@6.2.5"] in c,
-        lambda c: not any(cmd[:2] == ["pnpm", "update"] for cmd in c),
-        set_pnpm_audit_version_overrides,
-        clear_pnpm_audit_version_overrides,
     ),
     BumpCase(
         "yarn",
@@ -180,10 +156,6 @@ BUMP_CASES = [
         yarn_call,
         lambda c: _substr(c, "typescript@<=6"),
         lambda c: not _substr(c, "typescript@latest"),
-        lambda c: _substr(c, "typescript@6.2.5"),
-        lambda c: not _substr(c, "<=6"),
-        set_yarn_audit_version_overrides,
-        clear_yarn_audit_version_overrides,
     ),
 ]
 
@@ -210,34 +182,6 @@ def test_targeted_bump_uses_hold_ceiling_instead_of_latest(
 
     assert case.ceiling_ok(captured_cmds), captured_cmds
     assert case.latest_absent(captured_cmds), captured_cmds
-
-
-@pytest.mark.parametrize("case", BUMP_CASES, ids=[c.name for c in BUMP_CASES])
-def test_targeted_bump_audit_override_wins_over_hold_ceiling(
-    case: BumpCase, tmp_path: Path, monkeypatch, make_workspace, make_proc
-) -> None:
-    """A security remediation (audit --fix) must not be blocked by a hold."""
-    case.seed(tmp_path)
-    monkeypatch.setenv(_env_var(case.name), "1")
-    ws = make_workspace(tmp_path, ecosystem="node", manager=case.name, label="demo")
-    captured_cmds: list[list[str]] = []
-
-    def _fake_run(cmd, cwd, timeout=None, env=None):
-        captured_cmds.append(list(cmd))
-        return make_proc()
-
-    case.set_override({"typescript": "6.2.5"})
-    try:
-        with (
-            patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
-            patch(_run_patch(case.name), side_effect=_fake_run),
-        ):
-            case.call_bump(tmp_path, ws, [Change("typescript", "6.0.0", "6.2.5")])
-    finally:
-        case.clear_override()
-
-    assert case.override_ok(captured_cmds), captured_cmds
-    assert case.ceiling_absent(captured_cmds), captured_cmds
 
 
 def _bun_check(tmp_path, monkeypatch, make_workspace, make_proc, latest):
@@ -599,7 +543,7 @@ def test_targeted_bump_keeps_held_pin(
 def test_apply_bun_target_loop_uses_hold_ceiling_between_override_and_to(
     tmp_path: Path, make_workspace, make_proc
 ) -> None:
-    """apply_bun's own per-package target loop: audit override > hold ceiling > ch.to.
+    """apply_bun's own per-package target loop: hold ceiling > ch.to.
 
     Bun runs this precedence twice — once in its per-package loop inside
     ``apply_bun``, once via the shared ``targeted_bump_behind`` fallback — so

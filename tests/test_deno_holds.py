@@ -16,10 +16,7 @@ from repo_ops_js.deno import (
     _filter_held_deno_changes,
     _release_unheld_deno_pin,
     _snapshot_deno_workspace,
-    apply_deno_audit_version_overrides,
     check_deno,
-    clear_deno_audit_version_overrides,
-    set_deno_audit_version_overrides,
     targeted_bump_behind,
 )
 from repo_ops_models import Change
@@ -64,10 +61,8 @@ def test_deno_package_matches_registry_aware(left, right, expected) -> None:
 
 @pytest.fixture(autouse=True)
 def _no_repo_holds():
-    clear_deno_audit_version_overrides()
     with patch(_REPO_HOLDS_CACHE, return_value=()):
         yield
-    clear_deno_audit_version_overrides()
 
 
 def test_check_deno_filters_past_ceiling_from_planned_and_behind(
@@ -288,26 +283,6 @@ def test_targeted_bump_keeps_held_jsr_import_map_pin(
     assert imports["jsr:@std/assert"] == "jsr:@std/assert@1.0.0"
 
 
-def test_apply_deno_audit_version_overrides_runs_without_targeted_bump(
-    tmp_path, monkeypatch, make_workspace, make_proc
-) -> None:
-    ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
-    monkeypatch.delenv("REPO_OPS_DENO_TARGETED_BUMP", raising=False)
-    set_deno_audit_version_overrides({_PACKAGE: "1.4.0"})
-    with (
-        patch("repo_ops_js.deno._snapshot_deno_workspace", return_value={}),
-        patch("repo_ops_js.deno._landed_deno_version", return_value="1.4.0"),
-        patch("repo_ops_js.deno.run", return_value=make_proc()) as run_mock,
-    ):
-        apply_deno_audit_version_overrides(ws)
-
-    assert run_mock.call_args.args[0] == [
-        "deno",
-        "update",
-        f"{_PACKAGE}@1.4.0",
-    ]
-
-
 def test_snapshot_deno_workspace_includes_maps_and_configs(tmp_path, make_workspace) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     import_map = tmp_path / "custom-map.json"
@@ -372,35 +347,6 @@ def test_release_unheld_deno_pin_handles_jsonc(tmp_path, filename, make_workspac
     assert _release_unheld_deno_pin(ws, "npm:is-odd") is True
     payload = json.loads((tmp_path / filename).read_text(encoding="utf-8"))
     assert payload["imports"]["npm:is-odd"] == "npm:is-odd"
-
-
-def test_targeted_bump_audit_override_wins_over_hold_ceiling(
-    tmp_path, monkeypatch, make_workspace, make_proc
-) -> None:
-    ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
-    change = Change(_PACKAGE, "1.0.0", "2.0.0")
-    monkeypatch.setenv("REPO_OPS_DENO_TARGETED_BUMP", "1")
-    monkeypatch.setenv("REPO_OPS_DENO_UPDATE_LATEST", "0")
-    set_deno_audit_version_overrides({_PACKAGE: "1.4.0"})
-    with (
-        patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
-        patch(
-            "repo_ops_js.deno._snapshot_deno_workspace",
-            side_effect=[object(), object()],
-        ),
-        patch("repo_ops_js.deno._landed_deno_version", return_value="1.4.0"),
-        patch("repo_ops_js.deno.assert_targets_resolved"),
-        patch("repo_ops_js.deno.run", return_value=make_proc()) as run_mock,
-    ):
-        applied, still_behind = targeted_bump_behind(ws, [change])
-
-    assert applied == [Change(_PACKAGE, "1.0.0", "1.4.0")]
-    assert still_behind == []
-    assert run_mock.call_args.args[0] == [
-        "deno",
-        "update",
-        f"{_PACKAGE}@1.4.0",
-    ]
 
 
 def test_enforce_deno_version_ceilings_clamps_resolved_above_ceiling(

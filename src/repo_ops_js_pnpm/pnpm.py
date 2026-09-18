@@ -24,7 +24,6 @@ from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version, semver_tuple
-from repo_ops_js.audit_overrides import apply_audit_overrides, make_audit_override_api
 from repo_ops_js.guards import (
     assert_targets_resolved,
     fold_blocked_into_behind,
@@ -43,7 +42,6 @@ from repo_ops_js.targeted_bump import run_targeted_bump
 from repo_ops_js.workspaces import (
     apply_with_members,
     check_with_members,
-    member_audit_overrides,
 )
 from repo_ops_lockfiles.parsers import split_name_version, versions_pnpm_lock
 from repo_ops_lockfiles.snapshots import (
@@ -68,16 +66,6 @@ def _yaml_loader() -> YAML:
     # of leaving it untouched.
     yaml.indent(mapping=2, sequence=4, offset=2)
     return yaml
-
-
-# Audit version overrides: package → advisory-safe version to use instead of @latest.
-# Populated by repo_ops_audit.audit.apply_remediations before the orchestration apply
-# call and cleared in a finally block after.  Empty outside of audit --fix runs.
-_AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
-
-set_pnpm_audit_version_overrides, clear_pnpm_audit_version_overrides = make_audit_override_api(
-    _AUDIT_VERSION_OVERRIDES
-)
 
 
 def _pnpm_update_latest_enabled(ws: Workspace | None = None) -> bool:
@@ -474,19 +462,12 @@ def targeted_bump_behind(
     for change in behind:
         if change.name in catalog_names:
             snap = snapshot_workspace_files(ws.path, "pnpm")
-            audit_target = _AUDIT_VERSION_OVERRIDES.get(change.name)
-            held_rule = None if audit_target else resolve_package_hold(ws, change.name)
-            target = (
-                audit_target
-                if audit_target
-                else hold_version_spec(held_rule)
-                if held_rule is not None
-                else change.to
-            )
+            held_rule = resolve_package_hold(ws, change.name)
+            target = hold_version_spec(held_rule) if held_rule is not None else change.to
             if not target or not _rewrite_catalog_package(ws, change.name, target):
                 still_behind.append(change)
                 continue
-            if held_rule is None and not audit_target:
+            if held_rule is None:
                 release_unheld_pin(ws.path, change.name)
             install = run(["pnpm", "install"], ws.path, timeout=TIMEOUT_APPLY)
             landed: str | None = None
@@ -518,41 +499,16 @@ def targeted_bump_behind(
             mdir,
             change,
             manager="pnpm",
-            audit_overrides=_AUDIT_VERSION_OVERRIDES,
             run_bump=run_bump,
             resolve_landed=resolve_landed,
             release_pin=release_unheld_pin,
             verify=assert_targets_resolved,
-            # pnpm keeps a legacy pin in place when an audit override is
-            # active; every other manager releases it there too.
-            release_pin_on_audit_override=False,
         )
         if resolved is None:
             still_behind.append(change)
         else:
             applied.append(resolved)
     return applied, still_behind
-
-
-def _apply_pnpm_audit_overrides(ws: Workspace, overrides: dict[str, str]) -> set[str]:
-    """Install advisory-safe pins from *overrides* (``_AUDIT_VERSION_OVERRIDES`` or a member's subset).
-
-    Independent of ``REPO_OPS_PNPM_TARGETED_BUMP`` so ``audit --fix`` pins are not
-    silently skipped when the user did not also opt into targeted bump.
-    """
-
-    def install(name: str, version: str) -> None:
-        add = run(
-            ["pnpm", "add", f"{name}@{version}"],
-            ws.path,
-            timeout=TIMEOUT_APPLY,
-        )
-        if add.returncode != 0:
-            raise RuntimeError(
-                add.stderr.strip() or f"pnpm add {name}@{version} failed (audit override)"
-            )
-
-    return apply_audit_overrides(ws, overrides, manager="pnpm", install=install)
 
 
 def apply_pnpm(ws: Workspace) -> list[Change]:
@@ -563,12 +519,6 @@ def apply_pnpm(ws: Workspace) -> list[Change]:
 def _apply_pnpm_dir(ws: Workspace, root: Path) -> list[Change]:
     """Apply pnpm upgrades in one directory; returns still-behind deps after targeted bumps.
 
-    Advisory-safe version overrides (``set_pnpm_audit_version_overrides``, wired
-    by ``repo_ops_audit.audit.apply_remediations`` during ``audit --fix``) are
-    applied independent of ``check_pnpm``'s findings and of the targeted-bump
-    flag: an empty ``outdated`` must still install them, or an advisory fix is
-    silently skipped.
-
     With ``REPO_OPS_PNPM_TARGETED_BUMP`` set, each dep that ``pnpm update`` left
     behind_latest gets a reversible targeted ``pnpm update --latest <pkg>``; only
     bumps that actually advance the resolved version are kept. Returns the subset
@@ -577,12 +527,6 @@ def _apply_pnpm_dir(ws: Workspace, root: Path) -> list[Change]:
     """
     # Raw outdated split — do not use check_pnpm (plan may promote behind→changes).
     changes, behind = _pnpm_outdated(ws)
-    handled = _apply_pnpm_audit_overrides(
-        ws, member_audit_overrides(ws, root, _AUDIT_VERSION_OVERRIDES)
-    )
-    if handled:
-        changes = [c for c in changes if c.name not in handled]
-        behind = [c for c in behind if c.name not in handled]
     if changes:
         # Match npm conservative bumps (semver ranges) unless the user opts into latest.
         cmd = ["pnpm", "update", "-r"]

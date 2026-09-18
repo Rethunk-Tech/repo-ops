@@ -26,7 +26,6 @@ from repo_ops_core.constants import resolve_timeout_apply
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
-from repo_ops_js.audit_overrides import apply_audit_overrides, make_audit_override_api
 from repo_ops_js.guards import (
     assert_targets_resolved,
     fold_blocked_into_behind,
@@ -54,15 +53,6 @@ from repo_ops_models import Change, Workspace
 from repo_ops_upgrade.constants import YARN_ISOLATED_COPY_SKIP, YARN_ISOLATED_YARN_SKIP
 
 FILE_PROTOCOL_RE = re.compile(r"^file:(\.\./.+?)(?:#.*)?$")
-
-# Audit version overrides: package → advisory-safe version to use instead of @latest.
-# Populated by repo_ops_audit.audit.apply_remediations before the orchestration apply
-# call and cleared in a finally block after.  Empty outside of audit --fix runs.
-_AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
-
-set_yarn_audit_version_overrides, clear_yarn_audit_version_overrides = make_audit_override_api(
-    _AUDIT_VERSION_OVERRIDES
-)
 
 
 _STDERR_TAIL_LINES = 12
@@ -459,8 +449,7 @@ def targeted_bump_behind(
     ``ws`` carries the real workspace context (for hold-rule lookups against the
     *real* repo/workspace path, not the ``mdir`` isolated copy this function may be
     operating on from ``check_yarn_snapshot``). It is optional and keyword-only so
-    direct callers that predate holds (including existing tests) keep the prior
-    audit-override/latest fallback behavior when omitted.
+    direct callers without a workspace get the plain latest target.
     """
     if not behind or not _yarn_targeted_bump_enabled(ws):
         return [], behind
@@ -486,7 +475,6 @@ def targeted_bump_behind(
             mdir,
             change,
             manager="yarn",
-            audit_overrides=_AUDIT_VERSION_OVERRIDES,
             run_bump=run_bump,
             resolve_landed=resolve_landed,
             release_pin=release_unheld_pin,
@@ -655,9 +643,6 @@ def apply_yarn(ws: Workspace) -> list[Change]:
 
     # --- real apply -----------------------------------------------------------
     corepack_prepare("yarn", ws.path)
-    # Advisory-safe pins from audit --fix: apply even
-    # when check/behind reported nothing and REPO_OPS_YARN_TARGETED_BUMP is off.
-    audit_handled = _apply_yarn_audit_overrides(ws)
     proc = run(_yarn_up_cmd(), ws.path, timeout=resolve_timeout_apply())
     if proc.returncode != 0:
         raise _command_failure("yarn up failed", proc)
@@ -684,8 +669,6 @@ def apply_yarn(ws: Workspace) -> list[Change]:
         # in behind_latest, same as any other targeted-bump miss.
 
     behind = behind_after_up(ws.path, ws=ws)
-    if audit_handled:
-        behind = [c for c in behind if c.name not in audit_handled]
     if guardable and targeted_bump and not _is_pnp_workspace(ws.path):
         blocked = unresolved_targets(ws, guardable)
         behind = fold_blocked_into_behind(blocked, behind)
@@ -707,43 +690,10 @@ def apply_yarn(ws: Workspace) -> list[Change]:
 def _yarn_hold_install(mdir: Path, name: str, spec: str) -> subprocess.CompletedProcess[str]:
     """Corrective ``yarn up <pkg>@<spec>`` + ``yarn install`` for ``enforce_holds``.
 
-    Mirrors ``_apply_yarn_audit_overrides``'s two-step install shape; only the
-    ``yarn up`` result is returned when it fails (no point installing after a
-    failed resolution change).
+    Only the ``yarn up`` result is returned when it fails (no point installing
+    after a failed resolution change).
     """
     up = run(["yarn", "up", f"{name}@{spec}"], mdir, timeout=resolve_timeout_apply())
     if up.returncode != 0:
         return up
     return run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
-
-
-def _apply_yarn_audit_overrides(ws: Workspace) -> set[str]:
-    """Install advisory-safe versions from ``_AUDIT_VERSION_OVERRIDES``.
-
-    Independent of ``REPO_OPS_YARN_TARGETED_BUMP`` so ``audit --fix`` pins are
-    not silently skipped when the user did not also opt into targeted bump.
-    Returns the set of package names that were targeted.
-    """
-    mdir = ws.path
-
-    def install(name: str, version: str) -> None:
-        up = run(
-            ["yarn", "up", f"{name}@{version}"],
-            mdir,
-            timeout=resolve_timeout_apply(),
-        )
-        if up.returncode != 0:
-            raise _command_failure(f"yarn up {name}@{version} failed (audit override)", up)
-        proc = run(["yarn", "install"], mdir, timeout=resolve_timeout_apply())
-        if proc.returncode != 0:
-            raise _command_failure(
-                f"yarn install after audit override {name}@{version} failed", proc
-            )
-
-    return apply_audit_overrides(
-        ws,
-        _AUDIT_VERSION_OVERRIDES,
-        manager="yarn",
-        install=install,
-        guard=not _is_pnp_workspace(mdir),
-    )

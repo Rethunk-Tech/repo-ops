@@ -32,17 +32,7 @@ from repo_ops_core.requirement import requirement_satisfied
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 
-_AUDIT_VERSION_OVERRIDES: dict[str, str] = {}
 _RUST_TARGETED_BUMP_ENV = "REPO_OPS_RUST_TARGETED_BUMP"
-
-
-def set_rust_audit_version_overrides(overrides: dict[str, str]) -> None:
-    _AUDIT_VERSION_OVERRIDES.clear()
-    _AUDIT_VERSION_OVERRIDES.update(overrides)
-
-
-def clear_rust_audit_version_overrides() -> None:
-    _AUDIT_VERSION_OVERRIDES.clear()
 
 
 def _rust_targeted_bump_enabled(ws: Workspace | None = None) -> bool:
@@ -190,10 +180,6 @@ def _filter_held_rust_changes(ws: Workspace, changes: list[Change]) -> list[Chan
     """Drop Changes whose crate target violates an active hold rule."""
     kept: list[Change] = []
     for change in changes:
-        audit_override = _AUDIT_VERSION_OVERRIDES.get(change.name)
-        if audit_override is not None:
-            kept.append(Change(change.name, change.from_ver, audit_override))
-            continue
         rule = _resolve_crate_hold(ws, change.name)
         if rule is not None and not version_satisfies_ceiling(change.to, rule.max_version):
             continue
@@ -206,33 +192,24 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
     timeout = resolve_timeout_apply()
     resolved = _cargo_resolved_versions(ws, timeout=timeout)
     for crate_name, versions in sorted(resolved.items()):
-        audit_override = _AUDIT_VERSION_OVERRIDES.get(crate_name)
         rule = _resolve_crate_hold(ws, crate_name)
-        if audit_override is not None:
-            violating = [version for version in versions if version != audit_override]
-            target = audit_override
-            ceiling_label = f"audit override {audit_override}"
-            expected_landed = f"== {audit_override}"
-        elif rule is not None:
-            violating = [
-                version
-                for version in versions
-                if not version_satisfies_ceiling(version, rule.max_version)
-            ]
-            candidates = [
-                version
-                for version in versions
-                if version_satisfies_ceiling(version, rule.max_version)
-            ]
-            target = (
-                max(candidates, key=semver_tuple)
-                if candidates
-                else _cargo_precise_version(crate_name, rule.max_version)
-            )
-            ceiling_label = f"hold ceiling {rule.max_version}"
-            expected_landed = f"<= {rule.max_version}"
-        else:
+        if rule is None:
             continue
+        violating = [
+            version
+            for version in versions
+            if not version_satisfies_ceiling(version, rule.max_version)
+        ]
+        candidates = [
+            version for version in versions if version_satisfies_ceiling(version, rule.max_version)
+        ]
+        target = (
+            max(candidates, key=semver_tuple)
+            if candidates
+            else _cargo_precise_version(crate_name, rule.max_version)
+        )
+        ceiling_label = f"hold ceiling {rule.max_version}"
+        expected_landed = f"<= {rule.max_version}"
         if not violating:
             continue
         for resolved_version in violating:
@@ -254,14 +231,9 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
                     f"back to {ceiling_label} (cargo): {proc.stderr.strip()}"
                 )
         landed = _cargo_resolved_versions(ws, timeout=timeout).get(crate_name, ())
-        if audit_override is not None:
-            still_invalid = not landed or any(version != audit_override for version in landed)
-        elif rule is not None:
-            still_invalid = not landed or any(
-                not version_satisfies_ceiling(version, rule.max_version) for version in landed
-            )
-        else:
-            still_invalid = True
+        still_invalid = not landed or any(
+            not version_satisfies_ceiling(version, rule.max_version) for version in landed
+        )
         if still_invalid:
             raise RuntimeError(
                 f"hold: {crate_name} still at {', '.join(landed) or violating[-1]} "
