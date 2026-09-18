@@ -272,7 +272,14 @@ def _cargo_latest_direct_changes_cached(
     dependencies = _cargo_manifest_dependencies(manifest)
     changes: list[Change] = []
     for crate_name, entries in sorted(dependencies.items()):
-        latest = max(_cargo_registry_versions(crate_name), key=semver_tuple, default=None)
+        # A prerelease is only a target for a requirement that already opts into
+        # one: crates.io lists libc 1.0.0-alpha above every stable 0.2.
+        opted_in = any("-" in requirement for _, requirement in entries)
+        latest = max(
+            (v for v in _cargo_registry_versions(crate_name) if opted_in or "-" not in v),
+            key=semver_tuple,
+            default=None,
+        )
         if latest is None or all(
             _cargo_requirement_satisfied(latest, requirement) for _, requirement in entries
         ):
@@ -427,6 +434,11 @@ def _apply_cargo_targeted_bumps(
             ws.path,
             timeout=TIMEOUT_APPLY,
         )
+        if proc.returncode != 0:
+            # --precise moves every locked copy of the crate, so it fails when a
+            # dependency still needs the old major; a plain -p re-resolve adds the
+            # new major beside it instead.
+            proc = run(["cargo", "update", "-p", candidate.name], ws.path, timeout=TIMEOUT_APPLY)
         lock_advanced = snapshot_file(lockfile) != lock_snapshot
         if proc.returncode == 0 and lock_advanced:
             continue

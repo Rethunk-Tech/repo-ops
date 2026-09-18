@@ -307,3 +307,53 @@ def test_rust_targeted_bump_skips_non_registry_dependencies(
 
     assert result == ([], [])
     assert registry_calls == []
+
+
+def test_cargo_latest_skips_prereleases_unless_requirement_opts_in(
+    tmp_path: Path, make_workspace
+) -> None:
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\n\n'
+        '[dependencies]\nlibc = "0.2"\nalpha = "0.9.0-beta.1"\n',
+        encoding="utf-8",
+    )
+    registry = {
+        "libc": ("0.2.180", "1.0.0-alpha.4"),
+        "alpha": ("0.9.0-beta.1", "1.0.0-rc.1"),
+    }
+    with patch("repo_ops_rust.rust._cargo_registry_versions", side_effect=registry.__getitem__):
+        changes = _cargo_latest_direct_changes(
+            make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
+        )
+
+    assert [(change.name, change.to) for change in changes] == [("alpha", "1.0.0-rc.1")]
+
+
+def test_apply_rust_falls_back_when_old_major_is_still_required(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
+    manifest = tmp_path / "Cargo.toml"
+    lockfile = tmp_path / "Cargo.lock"
+    manifest.write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\n\n[dependencies]\nserde = "1"\n',
+        encoding="utf-8",
+    )
+    lockfile.write_text("serde 1.0.0\n", encoding="utf-8")
+
+    def fake_run(cmd, cwd, timeout=0):
+        if cmd == ["cargo", "update", "-p", "serde", "--precise", "2.0.0"]:
+            return make_proc(101, stderr='failed to select a version for `serde = "^1"`')
+        if cmd == ["cargo", "update", "-p", "serde"]:
+            lockfile.write_text("serde 1.0.0\nserde 2.0.0\n", encoding="utf-8")
+        return make_proc()
+
+    with (
+        patch("repo_ops_rust.rust.run", side_effect=fake_run),
+        patch("repo_ops_rust.rust._cargo_registry_versions", return_value=("2.0.0",)),
+    ):
+        remaining = apply_rust(
+            make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
+        )
+
+    assert remaining == []
+    assert 'serde = "2.0.0"' in manifest.read_text(encoding="utf-8")
