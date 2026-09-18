@@ -223,7 +223,7 @@ def restore_worktree_state(repo: Path, before: WorktreeState | None) -> bool:
 
     A file dirty now but clean before is checked out from HEAD, or deleted when
     untracked; a file dirty before gets its captured bytes back, so an
-    operator's --allow-dirty edit survives even when apply rewrote that file.
+    operator's own edit in a named checkout survives even when apply rewrote that file.
     Returns False when the state could not be fully restored.
     """
     if before is None:

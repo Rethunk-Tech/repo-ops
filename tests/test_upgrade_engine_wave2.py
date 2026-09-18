@@ -101,7 +101,7 @@ class TestVerifyExtraManagers:
             patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/pdm"),
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
-            assert verify_workspace(ws, verify_test=False) is None
+            assert verify_workspace(ws) is None
         assert calls == [["pdm", "sync", "--clean"]]
 
     def test_pipenv_runs_verify(self, tmp_path: Path, make_workspace) -> None:
@@ -118,7 +118,7 @@ class TestVerifyExtraManagers:
             patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/pipenv"),
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
-            assert verify_workspace(ws, verify_test=False) is None
+            assert verify_workspace(ws) is None
         assert calls == [["pipenv", "verify"]]
 
     def test_hatch_without_uv_lock_skips_sync_locked(self, tmp_path: Path, make_workspace) -> None:
@@ -136,7 +136,7 @@ class TestVerifyExtraManagers:
 
         ws = make_workspace(tmp_path, manager="hatch", ecosystem=None, label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            assert verify_workspace(ws, verify_test=False) is None
+            assert verify_workspace(ws) is None
         assert not any(c[:3] == ["uv", "sync", "--locked"] for c in calls)
 
     def test_hatch_with_uv_lock_runs_sync_locked(self, tmp_path: Path, make_workspace) -> None:
@@ -155,7 +155,7 @@ class TestVerifyExtraManagers:
 
         ws = make_workspace(tmp_path, manager="hatch", ecosystem=None, label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            assert verify_workspace(ws, verify_test=False) is None
+            assert verify_workspace(ws) is None
         assert calls[0] == ["uv", "sync", "--locked"]
 
     def test_deno_with_lock_runs_install_frozen(self, tmp_path: Path, make_workspace) -> None:
@@ -173,7 +173,7 @@ class TestVerifyExtraManagers:
             patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/deno"),
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
-            assert verify_workspace(ws, verify_test=False) is None
+            assert verify_workspace(ws) is None
         assert calls == [["deno", "install", "--frozen"]]
 
     def test_precommit_validate_config(self, tmp_path: Path, make_workspace) -> None:
@@ -193,20 +193,20 @@ class TestVerifyExtraManagers:
             ),
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
-            assert verify_workspace(ws, verify_test=False) is None
+            assert verify_workspace(ws) is None
         assert calls == [["pre-commit", "validate-config"]]
 
     def test_container_verify_is_intentional_noop(self, tmp_path: Path, make_workspace) -> None:
         """container v1: image builds out of scope — verify returns None."""
         ws = make_workspace(tmp_path, manager="container", ecosystem="container", label="demo")
         with patch("repo_ops_upgrade.verify.run") as mock_run:
-            assert verify_workspace(ws, verify_test=False) is None
+            assert verify_workspace(ws) is None
         mock_run.assert_not_called()
 
     def test_pdm_missing_binary_fails(self, tmp_path: Path, make_workspace) -> None:
         ws = make_workspace(tmp_path, manager="pdm", ecosystem=None, label="demo")
         with patch("repo_ops_upgrade.verify.shutil.which", return_value=None):
-            err = verify_workspace(ws, verify_test=False)
+            err = verify_workspace(ws)
         assert err == "pdm not on PATH"
 
 
@@ -284,8 +284,6 @@ def test_remediations_not_run_after_apply_fail(tmp_path: Path, make_workspace) -
             wr,
             do_apply=True,
             do_verify=False,
-            verify_test=False,
-            skip_remediations=set(),
             allow_dirty=False,
         )
 
@@ -321,8 +319,6 @@ def test_missing_applier_maps_to_workspace_fail(tmp_path: Path, make_workspace) 
             wr,
             do_apply=True,
             do_verify=False,
-            verify_test=False,
-            skip_remediations=set(),
             allow_dirty=False,
         )
 
@@ -378,8 +374,6 @@ def test_revert_subprocess_timeout_sets_disposition(tmp_path: Path, make_workspa
             wr,
             do_apply=True,
             do_verify=True,
-            verify_test=False,
-            skip_remediations=set(),
             allow_dirty=False,
             on_verify_fail="revert",
         )

@@ -24,12 +24,8 @@ def _fake_args(**overrides) -> MagicMock:
     """Minimal argparse.Namespace stand-in for _run_upgrade_body."""
     defaults: dict = {
         # Selection
-        "skip_actions": False,
         "eco_filter": None,
-        "manager_filter": None,
         "exclude_patterns": None,
-        "submodules": False,
-        "submodule_order": "discovery",
         # Upgrade policy
         "conservative": False,
         "migrate_to_uv_lock": False,
@@ -41,17 +37,8 @@ def _fake_args(**overrides) -> MagicMock:
         "actions_upgrade_mode": None,
         "actions_lint_level": None,
         # Safety
-        "strict_exit": False,
         # Output
-        "json": False,
-        "json_report_path": None,
-        "compact": False,
-        "quiet": True,
-        "top": 10,
-        "max_failures": 20,
-        "only_outdated": False,
         # Execution
-        "fail_fast": False,
         "jobs": 1,
     }
     defaults.update(overrides)

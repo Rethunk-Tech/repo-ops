@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import json
-import os
-import tempfile
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -20,7 +17,8 @@ from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 
 UpgradeMode = Literal["plan", "apply"]
 
-DEFAULT_MAX_FAILURE_LINES = 20
+_MAX_FAILURE_LINES = 20
+_TOP_CHANGES = 10
 
 # Generic behind-latest note for a manager with no specific wording below.
 _LATEST_HINT_DEFAULT = "could not be moved automatically — bump manually"
@@ -314,82 +312,12 @@ def build_json_payload(
     return payload
 
 
-def print_json_report(
-    bundles: dict[Path, RepoBundle],
-    *,
-    roots: list[str],
-    mode: UpgradeMode,
-    diagnostics: DiscoveryDiagnostics | None = None,
-    submodules: list[dict[str, str]] | None = None,
-    submodule_pointer_hints: list[dict[str, str]] | None = None,
-    compact: bool = False,
-    exit_code: int | None = None,
-    excluded_count: int = 0,
-) -> None:
-    payload = build_json_payload(
-        bundles,
-        roots=roots,
-        mode=mode,
-        diagnostics=diagnostics,
-        submodules=submodules,
-        submodule_pointer_hints=submodule_pointer_hints,
-        exit_code=exit_code,
-        excluded_count=excluded_count,
-    )
-    print(json.dumps(payload, indent=None if compact else 2))
-
-
-def write_json_report(
-    path: Path,
-    bundles: dict[Path, RepoBundle],
-    *,
-    roots: list[str],
-    mode: UpgradeMode,
-    diagnostics: DiscoveryDiagnostics | None = None,
-    submodules: list[dict[str, str]] | None = None,
-    submodule_pointer_hints: list[dict[str, str]] | None = None,
-    compact: bool = False,
-    exit_code: int | None = None,
-    excluded_count: int = 0,
-) -> Path:
-    """Write one JSON document to path via temp file + rename. Returns resolved path."""
-    path = Path(path).expanduser().resolve()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = build_json_payload(
-        bundles,
-        roots=roots,
-        mode=mode,
-        diagnostics=diagnostics,
-        submodules=submodules,
-        submodule_pointer_hints=submodule_pointer_hints,
-        exit_code=exit_code,
-        excluded_count=excluded_count,
-    )
-    text = json.dumps(payload, indent=None if compact else 2) + "\n"
-    fd, tmp_name = tempfile.mkstemp(
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-    )
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-            handle.write(text)
-        os.replace(tmp_path, path)
-    except BaseException:
-        tmp_path.unlink(missing_ok=True)
-        raise
-    return path
-
-
 def print_human_report(
     bundles: dict[Path, RepoBundle],
     *,
     dry_run: bool,
-    only_outdated: bool,
-    top_n: int,
-    include_actions: bool,
 ) -> None:
+    top_n = _TOP_CHANGES
     mode = "plan" if dry_run else "apply"
     print(f"repo-ops {mode}")
     print()
@@ -397,23 +325,14 @@ def print_human_report(
     def _bundle_upgrade_count(b: RepoBundle) -> int:
         return sum(len(wr.changes) for wr in b.workspaces)
 
-    if only_outdated:
-        # Heaviest-first so the most-outdated repos surface at the top;
-        # tie-break alphabetically for stable output.
-        ordered = sorted(
-            bundles.values(),
-            key=lambda b: (-_bundle_upgrade_count(b), b.label),
-        )
-    else:
-        ordered = sorted(bundles.values(), key=lambda b: b.label)
+    # Heaviest-first so the most-outdated repos surface at the top;
+    # tie-break alphabetically for stable output.
+    ordered = sorted(bundles.values(), key=lambda b: (-_bundle_upgrade_count(b), b.label))
 
     def _is_visible(wr: WorkspaceResult) -> bool:
-        # Single display gate shared by header suppression and the row loop so
-        # they never disagree. A clean ok workspace is hidden under
-        # --only-outdated; everything else is shown.
+        # A clean ok workspace is hidden; everything else is shown.
         return not (
-            only_outdated
-            and len(wr.changes) == 0
+            len(wr.changes) == 0
             and not wr.behind_latest
             and wr.status == "ok"
             and not wr.remediations
@@ -421,9 +340,23 @@ def print_human_report(
 
     for repo in ordered:
         visible = [wr for wr in repo.workspaces if _is_visible(wr)]
-        # Under --only-outdated --skip-actions a bundle that renders no rows and
-        # no actions gets no header (and no trailing blank) at all.
-        if not visible and not include_actions:
+        summary = repo.actions_summary()
+        seen_action_pins: set[tuple[str, str]] = set()
+        action_rows: list = []
+        policy_rows: list = []
+        for ab in repo.actions:
+            if ab.status in ("policy", "policy-blocked", "warn"):
+                policy_rows.append(ab)
+                continue
+            if ab.pin == ab.latest and ab.status == "ok":
+                continue
+            key = (ab.action, ab.pin)
+            if key in seen_action_pins:
+                continue
+            seen_action_pins.add(key)
+            action_rows.append(ab)
+        # A repo with nothing to act on gets no section at all.
+        if not visible and not action_rows and not policy_rows:
             continue
         print(f"## {repo.label}")
         for wr in visible:
@@ -487,42 +420,24 @@ def print_human_report(
             for rem in wr.remediations:
                 if rem.get("status") != "ok" or rem.get("detail"):
                     print(f"    [{rem.get('id')}] {rem.get('detail') or rem.get('status')}")
-        if include_actions:
-            summary = repo.actions_summary()
-            seen_action_pins: set[tuple[str, str]] = set()
-            action_rows: list = []
-            policy_rows: list = []
-            for ab in repo.actions:
-                if ab.status in ("policy", "policy-blocked", "warn"):
-                    policy_rows.append(ab)
-                    continue
-                if ab.pin == ab.latest and ab.status == "ok":
-                    continue
-                key = (ab.action, ab.pin)
-                if key in seen_action_pins:
-                    continue
-                seen_action_pins.add(key)
-                action_rows.append(ab)
-            if action_rows or policy_rows:
-                print("  Actions:")
-                for ab in action_rows:
-                    # Rows apply never rewrites carry a "report only" detail;
-                    # printing their status ("ok") reads as an applied bump.
-                    marker = (
-                        "report-only" if ab.detail and "report only" in ab.detail else ab.status
-                    )
-                    print(f"    {ab.workflow}: {ab.action}@{ab.pin} → {ab.latest} [{marker}]")
-                for ab in policy_rows:
-                    explanation = ab.detail or "org policy violation"
-                    print(f"    {ab.workflow}: {ab.action}@{ab.pin} [{ab.status}] {explanation}")
-            print(
-                "  Actions: "
-                f"{summary['bumps']} bump(s) "
-                f"({summary['workflows_scanned']} workflow(s) scanned)"
-            )
-            policy_count = summary.get("policy_violations", 0)
-            if policy_count:
-                print(f"  Actions policy violations: {policy_count}")
+        if action_rows or policy_rows:
+            print("  Actions:")
+            for ab in action_rows:
+                # Rows apply never rewrites carry a "report only" detail;
+                # printing their status ("ok") reads as an applied bump.
+                marker = "report-only" if ab.detail and "report only" in ab.detail else ab.status
+                print(f"    {ab.workflow}: {ab.action}@{ab.pin} → {ab.latest} [{marker}]")
+            for ab in policy_rows:
+                explanation = ab.detail or "org policy violation"
+                print(f"    {ab.workflow}: {ab.action}@{ab.pin} [{ab.status}] {explanation}")
+        print(
+            "  Actions: "
+            f"{summary['bumps']} bump(s) "
+            f"({summary['workflows_scanned']} workflow(s) scanned)"
+        )
+        policy_count = summary.get("policy_violations", 0)
+        if policy_count:
+            print(f"  Actions policy violations: {policy_count}")
         print()
 
 
@@ -557,19 +472,11 @@ def count_failures(bundles: dict[Path, RepoBundle]) -> int:
     return n
 
 
-def any_workspace_skip_or_fail(bundles: dict[Path, RepoBundle]) -> bool:
-    return any(
-        wr.status in ("fail", "skip") for bundle in bundles.values() for wr in bundle.workspaces
-    )
-
-
 def print_run_footer(
     *,
     summary: dict[str, Any],
     failures: list[tuple[str, str]],
     exit_code: int,
-    max_failures: int = DEFAULT_MAX_FAILURE_LINES,
-    show_skips: bool = False,
     submodule_pointer_hints: list[dict[str, str]] | None = None,
     discovery_skips: list[dict[str, str]] | None = None,
 ) -> None:
@@ -646,7 +553,7 @@ def print_run_footer(
     if failures:
         print()
         print("Failures:")
-        shown = failures[: max(0, max_failures)]
+        shown = failures[:_MAX_FAILURE_LINES]
         for label, reason in shown:
             print(f"  {label}: {reason}")
         remaining = len(failures) - len(shown)
@@ -660,7 +567,7 @@ def print_run_footer(
         # block above so a clean run never reads as if it had problems.
         print()
         print("Skipped (not actionable — informational, no action needed):")
-        shown_skips = discovery_skips[: max(0, max_failures)]
+        shown_skips = discovery_skips[:_MAX_FAILURE_LINES]
         for entry in shown_skips:
             eco = entry.get("ecosystem", "?")
             print(f"  [{eco}] {entry.get('path', '')} — {entry.get('reason', '')}")
@@ -670,6 +577,4 @@ def print_run_footer(
 
     print()
     print(f"failures: {summary['failure_count']}")
-    if show_skips and summary["workspaces_skip"] > 0:
-        print(f"skips: {summary['workspaces_skip']}")
     print(f"exit_code: {exit_code}")

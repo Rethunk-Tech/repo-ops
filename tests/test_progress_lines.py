@@ -181,52 +181,11 @@ def test_process_workspace_sets_elapsed_s(tmp_path: Path) -> None:
             result,
             do_apply=False,
             do_verify=False,
-            verify_test=False,
-            skip_remediations=set(),
             allow_dirty=False,
         )
 
     assert out.elapsed_s is not None
     assert out.elapsed_s >= 0.0
-
-
-def test_process_workspace_quiet_suppresses_progress(tmp_path: Path) -> None:
-    """quiet=True must not emit any stderr progress line."""
-    from unittest.mock import patch as _patch
-
-    from repo_ops_upgrade.orchestration import process_workspace
-
-    ws = _make_ws(tmp_path)
-    result = WorkspaceResult(workspace=ws)
-
-    def _fake_check(workspace):
-        return WorkspaceResult(workspace=workspace, status="ok")
-
-    buf = StringIO()
-    env = {k: v for k, v in os.environ.items() if k != "REPO_OPS_NO_PROGRESS"}
-    with (
-        patch.object(sys, "stderr", buf),
-        _patch("repo_ops_upgrade.orchestration.should_exclude", return_value=False),
-        _patch(
-            "repo_ops_upgrade.orchestration.ecosystems.check_workspace",
-            side_effect=_fake_check,
-        ),
-        _patch(
-            "repo_ops_upgrade.orchestration.remediations.run_remediations",
-        ),
-        patch.dict(os.environ, env, clear=True),
-    ):
-        process_workspace(
-            result,
-            do_apply=False,
-            do_verify=False,
-            verify_test=False,
-            skip_remediations=set(),
-            allow_dirty=False,
-            quiet=True,
-        )
-
-    assert buf.getvalue() == ""
 
 
 def test_workspace_result_to_json_includes_elapsed_s(tmp_path: Path) -> None:

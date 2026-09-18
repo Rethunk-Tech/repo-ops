@@ -49,16 +49,3 @@ def test_exclude_flag_accepted():
     assert args.exclude_patterns == ["vendor", "node_modules"]
     args2 = parser.parse_args([])
     assert args2.exclude_patterns is None
-
-
-def test_skip_remediations_flag_accepted():
-    """--skip-remediations is apply-only and parses a CSV list."""
-    import pytest
-
-    from repo_ops_core.cli import build_upgrade_parser
-
-    parser = build_upgrade_parser(apply=True)
-    args = parser.parse_args(["--skip-remediations", "go_generate,gofmt"])
-    assert args.skip_remediations == "go_generate,gofmt"
-    with pytest.raises(SystemExit):
-        build_upgrade_parser(apply=False).parse_args(["--skip-remediations", "go_generate"])

@@ -331,10 +331,7 @@ def _bundle_apply_ok(bundle: RepoBundle) -> tuple[bool, str | None]:
         # sibling's bump still commits. The dirty workspace contributes no
         # wr.changes, so upgrade_scoped_paths excludes it and its dirty files are
         # never staged; if every workspace was skipped, scoping yields nothing and
-        # the commit skips as "no upgrade-scoped changes". (fail-fast,
-        # which signals an aborted run, still vetoes.)
-        if wr.status == "skip" and wr.error == "fail-fast":
-            return False, "fail-fast"
+        # the commit skips as "no upgrade-scoped changes".
         if wr.status == "fail":
             if wr.verify_error:
                 return False, f"verify failed: {wr.verify_error}"

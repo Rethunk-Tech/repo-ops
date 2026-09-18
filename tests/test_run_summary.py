@@ -49,7 +49,7 @@ def test_build_run_summary_counts(tmp_path: Path) -> None:
                 WorkspaceResult(
                     workspace=ws,
                     status="skip",
-                    error="dirty git worktree (use --allow-dirty)",
+                    error="dirty git worktree (name the checkout as a root to update it anyway)",
                 ),
                 WorkspaceResult(
                     workspace=ws,
@@ -184,12 +184,11 @@ def test_print_run_footer_caps_failure_list(tmp_path: Path) -> None:
     failures = [(f"repo-{i}", f"reason {i}") for i in range(5)]
 
     buf = io.StringIO()
-    with patch("sys.stdout", buf):
+    with patch("sys.stdout", buf), patch("repo_ops_upgrade.report._MAX_FAILURE_LINES", 2):
         print_run_footer(
             summary=summary,
             failures=failures,
             exit_code=1,
-            max_failures=2,
         )
     out = buf.getvalue()
     assert "repo-0: reason 0" in out

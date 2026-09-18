@@ -17,12 +17,8 @@ from repo_ops_upgrade.post_apply_commit import CommitOutcome
 
 def _fake_args(**overrides) -> MagicMock:
     defaults: dict = {
-        "skip_actions": True,
         "eco_filter": None,
-        "manager_filter": None,
         "exclude_patterns": None,
-        "submodules": False,
-        "submodule_order": "discovery",
         "conservative": False,
         "migrate_to_uv_lock": False,
         "actions_org_policy": False,
@@ -32,21 +28,9 @@ def _fake_args(**overrides) -> MagicMock:
         "actions_tag_style": "major",
         "actions_upgrade_mode": None,
         "actions_lint_level": None,
-        "strict_exit": False,
-        "json": False,
-        "json_report_path": None,
-        "compact": False,
-        "quiet": True,
-        "top": 10,
-        "max_failures": 20,
-        "only_outdated": False,
-        "fail_fast": False,
         "jobs": 1,
-        "skip_remediations": "",
         "no_verify": True,
-        "verify_test": False,
         "no_commit": True,
-        "follow_symlinks": False,
         # Real run_upgrade() always sets these before _run_upgrade_body runs;
         # a bare MagicMock auto-vivifies a missing attribute into a truthy
         # non-dict mock, which corrupts settings resolution (e.g. `in` on it
@@ -140,36 +124,6 @@ def test_exclude_never_drops_a_named_root(tmp_path: Path, monkeypatch: pytest.Mo
         apply=False, args=_fake_args(exclude_patterns=["vendor"]), roots=[str(repo)]
     )
     assert processed == ["org/vendor-repo"]
-
-
-def test_skip_remediations_passed_to_process_workspace(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """--skip-remediations CSV is forwarded into process_workspace."""
-    ws = _npm_ws(tmp_path)
-    wr = WorkspaceResult(workspace=ws)
-    bundles = {tmp_path: RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])}
-    captured: list[set[str]] = []
-
-    monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws])
-    monkeypatch.setattr(orch_mod, "filter_workspaces", lambda found, *a, **kw: found)
-    monkeypatch.setattr(disc_mod, "group_by_repo", lambda *a, **kw: bundles)
-    monkeypatch.setattr(disc_mod, "merge_action_only_bundles", lambda b, *a, **kw: b)
-
-    def _process(result: WorkspaceResult, **kw) -> WorkspaceResult:
-        captured.append(set(kw.get("skip_remediations") or set()))
-        result.status = "ok"
-        return result
-
-    monkeypatch.setattr(orch_mod, "process_workspace", _process)
-
-    run_mod._run_upgrade_body(
-        apply=True,
-        args=_fake_args(skip_remediations="go_generate,biome_schema"),
-        roots=[str(tmp_path)],
-    )
-    assert captured
-    assert captured[0] == {"go_generate", "biome_schema"}
 
 
 def test_children_first_processes_child_depth_before_parent(

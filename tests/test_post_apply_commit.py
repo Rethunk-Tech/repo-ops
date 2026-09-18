@@ -159,7 +159,7 @@ def test_skipped_dirty_sibling_workspace_does_not_block_commit(
         ),
         status="skip",
     )
-    sibling.error = "dirty git worktree (use --allow-dirty)"
+    sibling.error = "dirty git worktree (name the checkout as a root to update it anyway)"
     sibling.started_dirty = True
     bundle.workspaces.append(sibling)
 

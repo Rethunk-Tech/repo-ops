@@ -51,8 +51,8 @@ def _fail(stdout: str = "", stderr: str = "err") -> CompletedProcess[str]:
 
 
 class TestGoVerifyGates:
-    def test_go_build_runs_after_mod_verify(self, tmp_path: Path, make_workspace) -> None:
-        """go build ./... must be called after go mod verify when both pass."""
+    def test_go_build_and_test_run_after_mod_verify(self, tmp_path: Path, make_workspace) -> None:
+        """go build and go test run after go mod verify when both pass."""
         calls: list[list[str]] = []
 
         def fake_run(
@@ -63,7 +63,7 @@ class TestGoVerifyGates:
 
         ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is None
         # The gate probe may sit between them; the ordering that matters is
@@ -71,6 +71,7 @@ class TestGoVerifyGates:
         assert [c for c in calls if c[0] == "go"] == [
             ["go", "mod", "verify"],
             ["go", "build", "./..."],
+            ["go", "test", "./..."],
         ]
 
     def test_go_mod_verify_failure_short_circuits(self, tmp_path: Path, make_workspace) -> None:
@@ -87,7 +88,7 @@ class TestGoVerifyGates:
 
         ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is not None
         assert "checksum" in result
@@ -107,7 +108,7 @@ class TestGoVerifyGates:
 
         ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is not None
         assert "undefined" in result
@@ -115,7 +116,7 @@ class TestGoVerifyGates:
     def test_go_test_runs_after_build_when_verify_test(
         self, tmp_path: Path, make_workspace
     ) -> None:
-        """go test ./... must run after go build when verify_test=True."""
+        """go test ./... must run after go build when."""
         calls: list[list[str]] = []
 
         def fake_run(
@@ -126,7 +127,7 @@ class TestGoVerifyGates:
 
         ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=True)
+            result = verify_workspace(ws)
 
         assert result is None
         cmd_strs = [" ".join(c) for c in calls]
@@ -153,7 +154,7 @@ class TestGoVerifyGates:
 
         ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            verify_workspace(ws, verify_test=True)
+            verify_workspace(ws)
 
         assert not called_test
 
@@ -162,7 +163,7 @@ class TestRustVerifyGates:
     def test_rust_test_runs_after_check_when_verify_test(
         self, tmp_path: Path, make_workspace
     ) -> None:
-        """cargo test must run after cargo check when verify_test=True."""
+        """cargo test must run after cargo check when."""
         calls: list[list[str]] = []
 
         def fake_run(
@@ -173,7 +174,7 @@ class TestRustVerifyGates:
 
         ws = make_workspace(tmp_path, manager="rust", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=True)
+            result = verify_workspace(ws)
 
         assert result is None
         cmd_strs = [" ".join(c) for c in calls]
@@ -208,7 +209,7 @@ class TestUvRuffGate:
 
         ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is None
         assert ["uv", "run", "check"] in calls
@@ -230,7 +231,7 @@ class TestUvRuffGate:
 
         ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is None
         assert any(cmd[:4] == ["uv", "run", "ruff", "check"] for cmd in calls)
@@ -248,7 +249,7 @@ class TestUvRuffGate:
 
         ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is None
         assert not any(cmd[:4] == ["uv", "run", "ruff", "check"] for cmd in calls)
@@ -269,7 +270,7 @@ class TestUvRuffGate:
 
         ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is not None
         assert "error" in result.lower() or "ruff" in result.lower()
@@ -291,7 +292,7 @@ class TestUvRuffGate:
 
         ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            verify_workspace(ws, verify_test=False)
+            verify_workspace(ws)
 
         assert not called_ruff
 
@@ -335,7 +336,7 @@ class TestPythonManagerFastGates:
             patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is None
         # The gate probe may sit between them; the ordering that matters is
@@ -380,7 +381,7 @@ class TestPythonManagerFastGates:
             patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is not None
         assert "failed" in result
@@ -411,7 +412,7 @@ class TestPythonManagerFastGates:
             patch("repo_ops_upgrade.verify.shutil.which", return_value=None),
             patch("repo_ops_upgrade.verify.run") as run_mock,
         ):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result == f"{binary} not on PATH"
         run_mock.assert_not_called()
@@ -454,7 +455,7 @@ class TestPythonManagerFastGates:
             patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is not None
         assert "fast gate failed" in result
@@ -686,7 +687,7 @@ class TestVerifyHatchFast:
 
         ws = self._hatch_ws(tmp_path, make_workspace)
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is None
         assert expected_cmd in calls
@@ -709,7 +710,7 @@ class TestVerifyHatchFast:
 
         ws = self._hatch_ws(tmp_path, make_workspace)
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is not None
         assert "check" in result or "type" in result
@@ -782,7 +783,7 @@ class TestTimeoutEnvOverride:
 
         ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            verify_workspace(ws, verify_test=False)
+            verify_workspace(ws)
 
         build_call = next(c for c in captured if c["cmd"] == ["go", "build", "./..."])
         assert build_call["timeout"] == 77
@@ -806,7 +807,7 @@ class TestTimeoutEnvOverride:
 
         ws = make_workspace(tmp_path, manager="uv", ecosystem="python", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            verify_workspace(ws, verify_test=False)
+            verify_workspace(ws)
 
         ruff_call = next(
             (c for c in captured if c["cmd"][:4] == ["uv", "run", "ruff", "check"]),
@@ -934,29 +935,6 @@ class TestGateDelegation:
         assert result is None
         assert calls[-1] == ["gate", "--timeout", "0", "run", "build", "sqlfluff"]
 
-    def test_verify_test_off_drops_the_test_gate(self, tmp_path: Path, make_workspace) -> None:
-        """--verify-test stays meaningful: the declared test gate is excluded when it is off."""
-        calls: list[list[str]] = []
-
-        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
-        with (
-            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/gate"),
-            patch("repo_ops_upgrade.verify.run", side_effect=_gate_aware_run(calls)),
-        ):
-            result = verify_workspace(ws, verify_test=False)
-
-        assert result is None
-        assert calls[-1] == [
-            "gate",
-            "--timeout",
-            "0",
-            "run",
-            "build",
-            "typecheck",
-            "lint",
-            "workflows",
-        ]
-
 
 _PYTHON_GATE_LIST = _gate_json("typecheck", "lint", "workflows", "test", "vuln")
 
@@ -983,7 +961,7 @@ class TestPythonGateDelegation:
                 side_effect=_gate_aware_run(calls, _PYTHON_GATE_LIST),
             ),
         ):
-            result = verify_workspace(ws, verify_test=True)
+            result = verify_workspace(ws)
 
         assert result is None
         # The lockfile gate is not something gate checks, so it still leads.
@@ -1019,7 +997,7 @@ class TestPythonGateDelegation:
             patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
-            result = verify_workspace(ws, verify_test=True)
+            result = verify_workspace(ws)
 
         assert result == "lint failed: 2 errors"
 
@@ -1039,35 +1017,8 @@ class TestPythonGateDelegation:
                 side_effect=_gate_aware_run(calls, _PYTHON_GATE_LIST),
             ),
         ):
-            result = verify_workspace(ws, verify_test=True)
+            result = verify_workspace(ws)
 
         assert result is None
         assert ["uv", "run", "check"] in calls
         assert not [c for c in calls if c[0] == "gate"]
-
-    def test_verify_test_off_drops_the_test_gate(self, tmp_path: Path, make_workspace) -> None:
-        """--verify-test stays meaningful across every Python runner, not just uv."""
-        self._write_pyproject(tmp_path)
-        calls: list[list[str]] = []
-
-        ws = make_workspace(tmp_path, manager="poetry", ecosystem="python", label="demo")
-        with (
-            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/tool"),
-            patch(
-                "repo_ops_upgrade.verify.run",
-                side_effect=_gate_aware_run(calls, _PYTHON_GATE_LIST),
-            ),
-        ):
-            result = verify_workspace(ws, verify_test=False)
-
-        assert result is None
-        assert calls[-1] == [
-            "gate",
-            "--timeout",
-            "0",
-            "run",
-            "typecheck",
-            "lint",
-            "workflows",
-            "vuln",
-        ]

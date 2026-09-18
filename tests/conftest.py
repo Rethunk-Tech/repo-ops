@@ -194,6 +194,17 @@ def _isolate_state_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     # Same reasoning for the config dir: the operator's real
     # ~/.config/repo-ops/config.toml must never reach a test's settings.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
+    # Every plan/apply writes a run dir under XDG_STATE_HOME.
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg-state"))
+
+
+@pytest.fixture
+def run_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Pin the run dir plan/apply write their log and report.json into."""
+    d = tmp_path / "run"
+    d.mkdir()
+    monkeypatch.setattr("repo_ops_upgrade.run.new_run_dir", lambda _command: d)
+    return d
 
 
 @pytest.fixture(autouse=True)

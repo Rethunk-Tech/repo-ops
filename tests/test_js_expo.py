@@ -108,9 +108,7 @@ def test_plan_caps_bundled_aligns_below_and_leaves_excluded_free(
     )
     buf = io.StringIO()
     with patch("sys.stdout", buf):
-        print_human_report(
-            {tmp_path: bundle}, dry_run=True, only_outdated=False, top_n=10, include_actions=False
-        )
+        print_human_report({tmp_path: bundle}, dry_run=True)
     out = buf.getvalue()
     assert "→ 3.3.0 (latest; held <= 2.32, expo SDK 57 bundles ~2.32.0)" in out
     assert "→ 0.86.3 (expo SDK 57 bundles 0.86.3)" in out

@@ -17,7 +17,7 @@ def test_any_dirty_skip_true_when_marker_present(tmp_path: Path, make_workspace)
     wr = WorkspaceResult(
         workspace=make_workspace(tmp_path, ecosystem="py", manager="uv", label=""),
         status="skip",
-        error=f"{models_mod.DIRTY_SKIP_MARKER} (use --allow-dirty)",
+        error=f"{models_mod.DIRTY_SKIP_MARKER} (name the checkout as a root to update it anyway)",
     )
     bundle = RepoBundle(git_repo=Path("/tmp/repo"), label="", workspaces=[wr])
     assert bundle.any_dirty_skip() is True
@@ -45,7 +45,7 @@ def test_any_dirty_skip_uses_shared_constant_not_a_hardcoded_literal(
     wr = WorkspaceResult(
         workspace=make_workspace(tmp_path, ecosystem="py", manager="uv", label=""),
         status="skip",
-        error="dirty git worktree (use --allow-dirty)",
+        error="dirty git worktree (name the checkout as a root to update it anyway)",
     )
     bundle = RepoBundle(git_repo=Path("/tmp/repo"), label="", workspaces=[wr])
     # Monkeypatched constant; fixture uses a mismatched skip marker.

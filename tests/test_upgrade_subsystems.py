@@ -29,7 +29,7 @@ def test_repo_bundle_any_dirty_skip(tmp_path: Path) -> None:
     dirty = WorkspaceResult(
         workspace=ws,
         status="skip",
-        error="dirty git worktree (use --allow-dirty)",
+        error="dirty git worktree (name the checkout as a root to update it anyway)",
     )
     other = WorkspaceResult(workspace=ws, status="skip", error="excluded path")
     bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[dirty, other])
@@ -61,9 +61,6 @@ def test_print_human_report_header(capsys) -> None:
     print_human_report(
         {},
         dry_run=True,
-        only_outdated=False,
-        top_n=10,
-        include_actions=False,
     )
     out = capsys.readouterr().out
     assert "repo-ops plan" in out
@@ -95,8 +92,8 @@ def test_scan_actions_empty_repo(tmp_path: Path) -> None:
     assert scanned == 0
 
 
-def test_actions_summary_in_json_and_human_report(tmp_path: Path) -> None:
-    from repo_ops_upgrade.report import build_json_payload, print_human_report
+def test_actions_summary_in_json(tmp_path: Path) -> None:
+    from repo_ops_upgrade.report import build_json_payload
 
     wf_dir = tmp_path / ".github" / "workflows"
     wf_dir.mkdir(parents=True)
@@ -111,20 +108,6 @@ def test_actions_summary_in_json_and_human_report(tmp_path: Path) -> None:
     )
     payload = build_json_payload({tmp_path: bundle}, roots=["/tmp"], mode="plan")
     assert payload["repos"][0]["actions_summary"]["workflows_scanned"] == 1
-
-    import io
-
-    buf = io.StringIO()
-    with patch("sys.stdout", buf):
-        print_human_report(
-            {tmp_path: bundle},
-            dry_run=True,
-            only_outdated=False,
-            top_n=10,
-            include_actions=True,
-        )
-    out = buf.getvalue()
-    assert "1 workflow(s) scanned" in out
 
 
 def test_run_remediations_no_detected(tmp_path: Path) -> None:
@@ -159,8 +142,6 @@ def test_process_workspace_plan_mode(tmp_path: Path) -> None:
             wr,
             do_apply=False,
             do_verify=False,
-            verify_test=False,
-            skip_remediations=set(),
             allow_dirty=False,
         )
     assert out.changes[0].name == "dep"
@@ -210,9 +191,6 @@ def test_print_human_report_actions_dedup_and_no_op_filter(tmp_path: Path, capsy
     print_human_report(
         {tmp_path: bundle},
         dry_run=True,
-        only_outdated=False,
-        top_n=10,
-        include_actions=True,
     )
     out = capsys.readouterr().out
     # genuine bump appears exactly once
@@ -249,9 +227,6 @@ def test_print_human_report_report_only_marker(tmp_path: Path, capsys) -> None:
     print_human_report(
         {tmp_path: bundle},
         dry_run=True,
-        only_outdated=False,
-        top_n=10,
-        include_actions=True,
     )
     out = capsys.readouterr().out
     assert "codecov/codecov-action@v6 → v7 [report-only]" in out
@@ -320,10 +295,7 @@ def test_only_outdated_human_report_sort_suppress_align(tmp_path: Path, capsys) 
 
     print_human_report(
         bundles,
-        dry_run=True,
-        only_outdated=True,
-        top_n=10,
-        include_actions=False,  # --skip-actions
+        dry_run=True,  # --skip-actions
     )
     out = capsys.readouterr().out
 

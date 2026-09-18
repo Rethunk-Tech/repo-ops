@@ -38,7 +38,6 @@ def test_apply_verify_failure_exits_nonzero(tmp_path: Path, init_git_repo) -> No
         rc = main_apply(
             [
                 str(tmp_path),
-                "--skip-actions",
             ]
         )
     assert rc == 1
@@ -67,8 +66,6 @@ with patch(
 ):
     sys.exit(main_apply([
         {str(tmp_path)!r},
-        "--skip-actions",
-        "--quiet",
     ]))
 """
     proc = subprocess.run(
@@ -80,13 +77,14 @@ with patch(
     assert proc.returncode == 1
 
 
-def test_apply_worker_exception_reports_fail_not_clean(tmp_path: Path, init_git_repo) -> None:
+def test_apply_worker_exception_reports_fail_not_clean(
+    tmp_path: Path, init_git_repo, run_dir: Path
+) -> None:
     """A worker that raises must surface as a FAILED workspace, not a silent
     clean exit 0. Exit code alone is insufficient: the defensive
     fallthrough would also yield rc=1, so the error text ("boom") pins that the
     guard path in _process_one actually ran and recorded the exception."""
     _npm_workspace(tmp_path, init_git_repo=init_git_repo)
-    out_file = tmp_path / "apply.json"
     register_all()
     with patch(
         "repo_ops_upgrade.run.orchestration.process_workspace",
@@ -95,14 +93,11 @@ def test_apply_worker_exception_reports_fail_not_clean(tmp_path: Path, init_git_
         rc = main_apply(
             [
                 str(tmp_path),
-                "--skip-actions",
-                "--json",
-                f"--json-out={out_file}",
             ]
         )
     # (a) crashed worker => non-zero exit, never silent success.
     assert rc != 0
-    payload = json.loads(out_file.read_text(encoding="utf-8"))
+    payload = json.loads((run_dir / "report.json").read_text())
     workspaces = [ws for repo in payload["repos"] for ws in repo["workspaces"]]
     assert workspaces, "expected the crashed workspace to be reported"
     # (b) the affected workspace is reported fail/not-clean, with the original
@@ -111,9 +106,9 @@ def test_apply_worker_exception_reports_fail_not_clean(tmp_path: Path, init_git_
     assert any("boom" in (ws["error"] or "") for ws in workspaces)
 
 
-def test_apply_log_file_captures_transcript(tmp_path: Path, init_git_repo) -> None:
+def test_apply_run_log_captures_transcript(tmp_path: Path, init_git_repo, run_dir: Path) -> None:
     _npm_workspace(tmp_path, init_git_repo=init_git_repo)
-    log_path = tmp_path / "apply.log"
+    log_path = run_dir / "log"
     register_all()
     with patch(
         "repo_ops_upgrade.run.orchestration.process_workspace",
@@ -122,10 +117,6 @@ def test_apply_log_file_captures_transcript(tmp_path: Path, init_git_repo) -> No
         rc = main_apply(
             [
                 str(tmp_path),
-                "--skip-actions",
-                "--quiet",
-                "--log-file",
-                str(log_path),
             ]
         )
     assert rc == 1
@@ -136,9 +127,9 @@ def test_apply_log_file_captures_transcript(tmp_path: Path, init_git_repo) -> No
     assert "workspaces fail" in transcript
 
 
-def test_plan_log_file_includes_footer(tmp_path: Path, capsys, init_git_repo) -> None:
+def test_plan_run_log_includes_footer(tmp_path: Path, capsys, init_git_repo, run_dir: Path) -> None:
     _npm_workspace(tmp_path, init_git_repo=init_git_repo)
-    log_path = tmp_path / "plan.log"
+    log_path = run_dir / "log"
     register_all()
 
     def _noop(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
@@ -151,10 +142,6 @@ def test_plan_log_file_includes_footer(tmp_path: Path, capsys, init_git_repo) ->
         rc = main_plan(
             [
                 str(tmp_path),
-                "--skip-actions",
-                "--quiet",
-                "--log-file",
-                str(log_path),
             ]
         )
     assert rc == 0
@@ -165,7 +152,7 @@ def test_plan_log_file_includes_footer(tmp_path: Path, capsys, init_git_repo) ->
 
 def _dirty_skip(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
     wr.status = "skip"
-    wr.error = "dirty git worktree (use --allow-dirty)"
+    wr.error = "dirty git worktree (name the checkout as a root to update it anyway)"
     return wr
 
 
@@ -190,30 +177,9 @@ def test_apply_dirty_skip_does_not_scan_actions(tmp_path: Path, init_git_repo) -
         ),
         patch("repo_ops_upgrade.run.actions.scan_actions", side_effect=track_scan),
     ):
-        main_apply([str(tmp_path), "--quiet"])
+        main_apply([str(tmp_path)])
 
     assert scan_calls == []
-
-
-def test_strict_exit_counts_dirty_skip(tmp_path: Path, init_git_repo) -> None:
-    _npm_workspace(tmp_path, init_git_repo=init_git_repo)
-    register_all()
-
-    with patch(
-        "repo_ops_upgrade.run.orchestration.process_workspace",
-        side_effect=_dirty_skip,
-    ):
-        rc_normal = main_apply([str(tmp_path), "--skip-actions", "--quiet"])
-        rc_strict = main_apply(
-            [
-                str(tmp_path),
-                "--skip-actions",
-                "--quiet",
-                "--strict-exit",
-            ]
-        )
-    assert rc_normal == 0
-    assert rc_strict == 1
 
 
 def test_apply_snapshots_repo_dirty_state_once_per_bundle(tmp_path: Path, init_git_repo) -> None:
@@ -240,7 +206,7 @@ def test_apply_snapshots_repo_dirty_state_once_per_bundle(tmp_path: Path, init_g
         ),
         patch("repo_ops_upgrade.run.is_git_dirty", return_value=False) as mock_dirty,
     ):
-        rc = main_apply([str(tmp_path), "--skip-actions", "--quiet"])
+        rc = main_apply([str(tmp_path)])
 
     assert rc == 0
     assert len(calls) == 2  # npm root workspace + precommit workspace
@@ -248,14 +214,3 @@ def test_apply_snapshots_repo_dirty_state_once_per_bundle(tmp_path: Path, init_g
     assert mock_dirty.call_count == 1
     # Both sibling workspaces receive the same snapshotted value.
     assert all(c["repo_started_dirty"] is False for c in calls)
-
-
-def test_upgrade_parser_exposes_log_file_and_strict_exit() -> None:
-    from repo_ops_core.cli import build_upgrade_parser
-
-    for apply in (False, True):
-        parser = build_upgrade_parser(apply=apply)
-        dests = {a.dest for a in parser._actions}
-        assert "log_file" in dests
-        assert "strict_exit" in dests
-        assert "max_failures" in dests

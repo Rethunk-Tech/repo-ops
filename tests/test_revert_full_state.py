@@ -41,11 +41,8 @@ def _process(ws: Workspace, *, allow_dirty: bool = False) -> WorkspaceResult:
         WorkspaceResult(workspace=ws),
         do_apply=True,
         do_verify=True,
-        verify_test=False,
-        skip_remediations=set(),
         allow_dirty=allow_dirty,
         on_verify_fail="revert",
-        quiet=True,
     )
 
 
@@ -168,8 +165,9 @@ def test_revert_keeps_preexisting_edit_to_a_file_apply_rewrote(
 
 
 def test_vetoed_commit_rolls_back_passing_siblings(tmp_path: Path, init_git_repo) -> None:
+    repo = tmp_path / "repo"
     _commit_tree(
-        tmp_path,
+        repo,
         {
             "package.json": '{"name":"root","packageManager":"npm@10.0.0"}\n',
             "package-lock.json": "{}\n",
@@ -180,9 +178,9 @@ def test_vetoed_commit_rolls_back_passing_siblings(tmp_path: Path, init_git_repo
 
     def _apply(ws: Workspace) -> None:
         if ws.manager == "npm":
-            (tmp_path / "package-lock.json").write_text('{"bumped":true}\n')
+            (repo / "package-lock.json").write_text('{"bumped":true}\n')
         else:
-            (tmp_path / "Dockerfile").write_text("FROM alpine:3.20\n")
+            (repo / "Dockerfile").write_text("FROM alpine:3.20\n")
 
     def _verify(ws: Workspace, **_kw) -> str | None:
         return "container verify failed" if ws.manager == "container" else None
@@ -193,11 +191,11 @@ def test_vetoed_commit_rolls_back_passing_siblings(tmp_path: Path, init_git_repo
         patch("repo_ops_upgrade.orchestration.remediations.run_remediations"),
         patch("repo_ops_upgrade.orchestration.verify_mod.verify_workspace", side_effect=_verify),
         # A fleet sweep (no roots named) is what reverts a vetoed repo.
-        patch("repo_ops_core.cli.DEFAULT_ROOTS", [str(tmp_path)]),
-        patch("repo_ops_upgrade.run.DEFAULT_ROOTS", [str(tmp_path)]),
+        patch("repo_ops_core.cli.DEFAULT_ROOTS", [str(repo)]),
+        patch("repo_ops_upgrade.run.DEFAULT_ROOTS", [str(repo)]),
     ):
-        rc = main_apply(["--skip-actions", "--quiet"])
+        rc = main_apply([])
 
     assert rc == 1
-    assert _git(tmp_path, "status", "--porcelain") == ""
-    assert _git(tmp_path, "rev-list", "--count", "HEAD").strip() == "1"
+    assert _git(repo, "status", "--porcelain") == ""
+    assert _git(repo, "rev-list", "--count", "HEAD").strip() == "1"

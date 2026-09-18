@@ -154,8 +154,6 @@ def test_dirty_skip_records_in_cache(tmp_path: Path, monkeypatch: pytest.MonkeyP
             result,
             do_apply=True,
             do_verify=False,
-            verify_test=False,
-            skip_remediations=set(),
             allow_dirty=False,
         )
 
@@ -190,8 +188,6 @@ def test_repo_started_dirty_override_skips_even_when_live_check_is_clean(
             result,
             do_apply=True,
             do_verify=False,
-            verify_test=False,
-            skip_remediations=set(),
             allow_dirty=False,
             repo_started_dirty=True,
         )
@@ -235,8 +231,6 @@ def test_repo_started_dirty_override_proceeds_even_when_live_check_is_dirty(
             result,
             do_apply=True,
             do_verify=False,
-            verify_test=False,
-            skip_remediations=set(),
             allow_dirty=False,
             repo_started_dirty=False,
         )
@@ -277,8 +271,6 @@ def test_clean_run_clears_cache_entry(tmp_path: Path, monkeypatch: pytest.Monkey
             result,
             do_apply=True,
             do_verify=False,
-            verify_test=False,
-            skip_remediations=set(),
             allow_dirty=False,
         )
 
@@ -317,7 +309,7 @@ def test_human_report_skip_shows_aging(tmp_path: Path, monkeypatch: pytest.Monke
             WorkspaceResult(
                 workspace=ws,
                 status="skip",
-                error="dirty git worktree (use --allow-dirty)",
+                error="dirty git worktree (name the checkout as a root to update it anyway)",
             )
         ],
     )
@@ -326,9 +318,6 @@ def test_human_report_skip_shows_aging(tmp_path: Path, monkeypatch: pytest.Monke
         print_human_report(
             {tmp_path: bundle},
             dry_run=False,
-            only_outdated=False,
-            top_n=10,
-            include_actions=False,
         )
 
     out = buf.getvalue()
@@ -362,7 +351,7 @@ def test_human_report_skip_no_aging_when_no_state(
             WorkspaceResult(
                 workspace=ws,
                 status="skip",
-                error="dirty git worktree (use --allow-dirty)",
+                error="dirty git worktree (name the checkout as a root to update it anyway)",
             )
         ],
     )
@@ -371,9 +360,6 @@ def test_human_report_skip_no_aging_when_no_state(
         print_human_report(
             {tmp_path: bundle},
             dry_run=False,
-            only_outdated=False,
-            top_n=10,
-            include_actions=False,
         )
 
     out = buf.getvalue()
@@ -411,7 +397,7 @@ def test_json_payload_dirty_skip_fields(tmp_path: Path, monkeypatch: pytest.Monk
             WorkspaceResult(
                 workspace=ws,
                 status="skip",
-                error="dirty git worktree (use --allow-dirty)",
+                error="dirty git worktree (name the checkout as a root to update it anyway)",
             )
         ],
     )

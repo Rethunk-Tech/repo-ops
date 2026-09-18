@@ -2,7 +2,6 @@
 
 Asserts that every manager/ecosystem that discovery can emit is:
   1. Registered in repo_ops_upgrade.registry.CHECKERS and APPLIERS after register_all()
-  2. Present in MANAGER_FILTER_CHOICES (CLI filter parity)
   3. Present in ECO_FILTER_CHOICES when the manager maps to a new ecosystem
 
 Also adds one behavioral end-to-end test per new ecosystem (pdm/pipenv/deno) that
@@ -19,7 +18,7 @@ from unittest.mock import patch
 import pytest
 
 from repo_ops._register import register_all
-from repo_ops_core.cli import ECO_FILTER_CHOICES, MANAGER_FILTER_CHOICES
+from repo_ops_core.cli import ECO_FILTER_CHOICES
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -65,14 +64,6 @@ class TestRegistryCompleteness:
         assert manager in self._appliers, (
             f"register_all() did not register applier for {manager!r}; "
             f"APPLIERS={sorted(self._appliers)}"
-        )
-
-    def test_manager_filter_choices_covers_all_checkers(self) -> None:
-        """MANAGER_FILTER_CHOICES must equal CHECKERS keys (CLI parity)."""
-        assert set(MANAGER_FILTER_CHOICES) == self._checkers, (
-            f"MANAGER_FILTER_CHOICES out of sync with CHECKERS.\n"
-            f"  Missing from choices: {self._checkers - set(MANAGER_FILTER_CHOICES)}\n"
-            f"  Extra in choices:     {set(MANAGER_FILTER_CHOICES) - self._checkers}"
         )
 
     def test_deno_in_eco_filter_choices(self) -> None:

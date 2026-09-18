@@ -445,13 +445,6 @@ def test_dependabot_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert "Pipfile.lock" in out
 
 
-def test_dependabot_json_empty_repos(tmp_path: Path) -> None:
-    """No repos discovered → JSON with empty repos list, exit 0."""
-    with patch("repo_ops_dependabot.dependabot.discover_repos", return_value={}):
-        result = main(["--json", str(tmp_path)])
-    assert result == 0
-
-
 def test_dependabot_dry_run_no_close_calls(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -521,29 +514,6 @@ def test_dependabot_exclude_unions_cli_and_config(
     assert scanned_paths == {kept}
     assert "excluded: 2 repo(s)" in capsys.readouterr().out
 
-    with (
-        patch(
-            "repo_ops_dependabot.dependabot.discover_repos",
-            return_value=discovered,
-        ),
-        patch(
-            "repo_ops_dependabot.dependabot.load_global_config",
-            return_value={},
-        ),
-        patch(
-            "repo_ops_dependabot.dependabot._github_remote",
-            return_value="https://github.com/owner/repo",
-        ),
-        patch(
-            "repo_ops_dependabot.dependabot._gh_list_dependabot_prs",
-            return_value=([], ""),
-        ),
-        patch("repo_ops_dependabot.dependabot.run_git"),
-    ):
-        assert main(["--exclude", "cli-excluded", "--json", str(tmp_path)]) == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["summary"]["excluded"] == 2
-
 
 def test_dependabot_exclude_filters_repositories_from_config(
     tmp_path: Path,
@@ -588,10 +558,6 @@ def test_dependabot_exclude_filters_repositories_from_config(
     assert main([str(tmp_path)]) == 0
     assert seen == [str(keep)]
     assert "excluded: 1 repo(s)" in capsys.readouterr().out
-
-    assert main([str(tmp_path), "--json"]) == 0
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["summary"]["excluded"] == 1
 
 
 def test_dependabot_close_calls_gh_pr_close(tmp_path: Path) -> None:

@@ -233,9 +233,6 @@ def test_yarn_behind_latest_note_when_targeted_bump_already_requested(
         print_human_report(
             {tmp_path: bundle},
             dry_run=True,
-            only_outdated=False,
-            top_n=10,
-            include_actions=False,
         )
     out = buf.getvalue()
     assert "the targeted bump was attempted but could not move them" in out
@@ -302,8 +299,6 @@ def test_behind_latest_workspace_does_not_change_plan_exit_code(
         rc = main_plan(
             [
                 str(tmp_path),
-                "--skip-actions",
-                "--quiet",
             ]
         )
     assert rc == 0

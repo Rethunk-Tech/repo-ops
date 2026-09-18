@@ -21,14 +21,11 @@ FIND_TIMEOUT_ENV = "REPO_OPS_FIND_TIMEOUT"
 def discover_repos(
     roots: list[str],
     *,
-    follow_symlinks: bool = False,
     timeout: float | None = None,
 ) -> dict[str, str]:
     """Map git-common-dir -> representative working tree path.
 
-    By default ``find`` does not follow symlinks (safer for large monorepo trees).
-    Pass ``follow_symlinks=True`` (CLI ``--follow-symlinks``) to add ``-L`` so
-    symlinked ``.git`` metadata dirs are not missed.
+    ``find`` does not follow symlinks (safer for large monorepo trees).
     Both sides of the dedup key are os.path.realpath-normalised so that a
     symlinked repo and its canonical path map to the same key.
     Prunes directories in SKIP_DIRS except ``.git`` (we must match repo roots).
@@ -68,8 +65,6 @@ def discover_repos(
         # `gitdir: ../.git/modules/<name>` rather than being the repo's own git
         # dir), then prune so find does not descend into it.
         cmd = ["find"]
-        if follow_symlinks:
-            cmd.append("-L")
         cmd.extend(
             [
                 str(root_path),

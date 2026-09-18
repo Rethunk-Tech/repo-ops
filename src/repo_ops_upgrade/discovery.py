@@ -276,7 +276,6 @@ def discover_workspaces_in_root(
     root: Path,
     *,
     diagnostics: DiscoveryDiagnostics | None = None,
-    follow_symlinks: bool = False,
 ) -> list[Workspace]:
     found: list[Workspace] = []
     # Workspace roots whose members are governed by a single root lockfile and
@@ -490,7 +489,7 @@ def discover_workspaces_in_root(
     # (rather than ``root`` wholesale) keeps the scan scoped to real repos
     # and lets per-repo workspace-member suppression run in tree order.
     dir_iter: list[tuple[Path, set[str]]] = []
-    repos = discover_repos([str(root)], follow_symlinks=follow_symlinks)
+    repos = discover_repos([str(root)])
     for repo_s in sorted(set(repos.values())):
         dir_iter.extend(iter_scanned_dirs(Path(repo_s)))
     if not dir_iter:
@@ -533,7 +532,6 @@ def discover_all(
     roots: list[str],
     *,
     diagnostics: DiscoveryDiagnostics | None = None,
-    follow_symlinks: bool = False,
 ) -> list[Workspace]:
     all_ws: list[Workspace] = []
     seen: set[tuple[str, str]] = set()
@@ -548,7 +546,6 @@ def discover_all(
         for ws in discover_workspaces_in_root(
             root,
             diagnostics=diagnostics,
-            follow_symlinks=follow_symlinks,
         ):
             key = (str(ws.path), ws.manager)
             if key not in seen:
@@ -572,11 +569,9 @@ def group_by_repo(workspaces: list[Workspace], roots: list[str]) -> dict[Path, R
 def merge_action_only_bundles(
     bundles: dict[Path, RepoBundle],
     roots: list[str],
-    *,
-    follow_symlinks: bool = False,
 ) -> dict[Path, RepoBundle]:
     """Add git repos that have workflows but no dependency workspaces."""
-    for repo_s in discover_repos(roots, follow_symlinks=follow_symlinks).values():
+    for repo_s in discover_repos(roots).values():
         git_repo = Path(repo_s).resolve()
         if git_repo in bundles:
             continue

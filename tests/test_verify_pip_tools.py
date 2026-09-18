@@ -28,7 +28,6 @@ def test_pip_tools_verify_detects_drift(tmp_path: Path, make_workspace, make_pro
     ):
         result = verify_workspace(
             make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"),
-            verify_test=False,
         )
 
     assert result is not None, "expected a drift error, got None (silent pass)"
@@ -53,7 +52,6 @@ def test_pip_tools_verify_passes_when_in_sync(tmp_path: Path, make_workspace, ma
     ):
         result = verify_workspace(
             make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"),
-            verify_test=False,
         )
 
     assert result is None, f"expected None (in sync), got: {result!r}"
@@ -75,7 +73,6 @@ def test_pip_tools_verify_compile_failure_returns_error(
     ):
         result = verify_workspace(
             make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"),
-            verify_test=False,
         )
 
     assert result is not None, "expected an error on compile failure, got None"
@@ -86,6 +83,5 @@ def test_pip_tools_verify_no_req_in_skips_silently(tmp_path: Path, make_workspac
     """verify_workspace must return None when requirements.in is absent (no-op gracefully)."""
     result = verify_workspace(
         make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"),
-        verify_test=False,
     )
     assert result is None

@@ -33,9 +33,6 @@ def _render_and_summarize(tmp_path: Path, bundle: RepoBundle) -> tuple[str, dict
         print_human_report(
             {tmp_path: bundle},
             dry_run=True,
-            only_outdated=False,
-            top_n=10,
-            include_actions=False,
         )
     summary = build_run_summary({tmp_path: bundle})
     return buf.getvalue(), summary

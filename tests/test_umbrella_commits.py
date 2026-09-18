@@ -70,7 +70,6 @@ def test_no_child_commits_produces_no_umbrella_commit(
     outcomes, code = commit_umbrella_submodule_pointers(
         links,
         child_outcomes,
-        quiet=True,
     )
     assert outcomes == []
     assert code == 0
@@ -146,7 +145,6 @@ def test_stages_only_committed_child_gitlinks(
         outcomes, code = commit_umbrella_submodule_pointers(
             links,
             child_outcomes,
-            quiet=True,
         )
 
     assert code == 0
@@ -206,7 +204,6 @@ def test_umbrella_commit_message_shape(
         outcomes, code = commit_umbrella_submodule_pointers(
             links,
             child_outcomes,
-            quiet=True,
         )
 
     assert code == 0

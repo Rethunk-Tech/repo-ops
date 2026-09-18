@@ -135,8 +135,6 @@ def test_process_workspace_records_plan_behind_latest(tmp_path, monkeypatch, mak
             WorkspaceResult(workspace=ws),
             do_apply=False,
             do_verify=False,
-            verify_test=False,
-            skip_remediations=set(),
             allow_dirty=False,
         )
     assert out.status == "ok"

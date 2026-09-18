@@ -77,7 +77,6 @@ class _RemediationsProxy:
 # ``orchestration.remediations.run_remediations`` via this name.
 remediations = _RemediationsProxy()
 
-FAIL_FAST_EVENT = threading.Event()
 OnVerifyFail = Literal["keep", "revert"]
 
 # Protects stderr progress lines so parallel workers never interleave.
@@ -96,8 +95,7 @@ def _format_elapsed(elapsed_s: float) -> str:
 def _emit_progress(result: WorkspaceResult, *, elapsed_s: float) -> None:
     """Emit one [done] line to stderr if progress is enabled.
 
-    Suppressed by ``REPO_OPS_NO_PROGRESS=1`` or when the ``quiet`` parameter
-    is passed to :func:`process_workspace`.  The lock prevents torn lines under
+    Suppressed by ``REPO_OPS_NO_PROGRESS=1``. The lock prevents torn lines under
     parallel execution.
     """
     if os.environ.get("REPO_OPS_NO_PROGRESS") == "1":
@@ -119,11 +117,8 @@ def process_workspace(
     *,
     do_apply: bool,
     do_verify: bool,
-    verify_test: bool,
-    skip_remediations: set[str],
     allow_dirty: bool,
     on_verify_fail: OnVerifyFail = "keep",
-    quiet: bool = False,
     repo_started_dirty: bool | None = None,
 ) -> WorkspaceResult:
     _t0 = time.monotonic()
@@ -131,8 +126,6 @@ def process_workspace(
         result,
         do_apply=do_apply,
         do_verify=do_verify,
-        verify_test=verify_test,
-        skip_remediations=skip_remediations,
         allow_dirty=allow_dirty,
         on_verify_fail=on_verify_fail,
         repo_started_dirty=repo_started_dirty,
@@ -150,8 +143,7 @@ def process_workspace(
             len(out.behind_latest),
             date.today(),
         )
-    if not quiet:
-        _emit_progress(out, elapsed_s=elapsed)
+    _emit_progress(out, elapsed_s=elapsed)
     return out
 
 
@@ -160,18 +152,11 @@ def _process_workspace_body(
     *,
     do_apply: bool,
     do_verify: bool,
-    verify_test: bool,
-    skip_remediations: set[str],
     allow_dirty: bool,
     on_verify_fail: OnVerifyFail,
     repo_started_dirty: bool | None = None,
 ) -> WorkspaceResult:
     ws = result.workspace
-    if FAIL_FAST_EVENT.is_set():
-        result.status = "skip"
-        result.error = "fail-fast"
-        return result
-
     if should_exclude(str(ws.path)):
         result.status = "skip"
         result.error = "excluded path"
@@ -192,7 +177,7 @@ def _process_workspace_body(
         )
         if result.started_dirty and not allow_dirty:
             result.status = "skip"
-            result.error = f"{DIRTY_SKIP_MARKER} (use --allow-dirty)"
+            result.error = f"{DIRTY_SKIP_MARKER} (name the checkout as a root to update it anyway)"
             cache_record_dirty_skip(ws.git_repo, date.today())
             return result
         # Repo processed cleanly — clear any stale dirty-skip entry.
@@ -219,12 +204,12 @@ def _process_workspace_body(
 
     if not (do_apply and result.status == "fail"):
         result.pre_apply_snapshot = before_snap or {}
-        remediations.run_remediations(result, apply=do_apply, skip=skip_remediations)
+        remediations.run_remediations(result, apply=do_apply, skip=set())
         result.pre_apply_snapshot = {}
 
     if do_apply and do_verify and result.status != "fail":
         try:
-            verr = verify_mod.verify_workspace(ws, verify_test=verify_test)
+            verr = verify_mod.verify_workspace(ws)
         except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as exc:
             # A verify that cannot finish (e.g. a gate timeout) is a failed
             # verify, and must reach the revert below like any other.

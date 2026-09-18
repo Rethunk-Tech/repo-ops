@@ -12,7 +12,6 @@ import pytest
 from repo_ops._register import register_all
 from repo_ops_core.cli import (
     ECO_FILTER_HELP,
-    MANAGER_FILTER_CHOICES,
     add_eco_filter_argument,
     build_upgrade_parser,
     positive_int,
@@ -49,17 +48,6 @@ def test_upgrade_parser_rejects_non_positive_jobs():
         parser.parse_args(["--jobs", "0"])
     with pytest.raises(SystemExit):
         parser.parse_args(["--jobs", "-1"])
-
-
-def test_upgrade_parser_rejects_non_positive_top():
-    """--top accepted negative integers, corrupting change list slices."""
-    parser = build_upgrade_parser(apply=False)
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--top", "-1"])
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--top", "0"])
-    args = parser.parse_args(["--top", "5"])
-    assert args.top == 5
 
 
 def test_positive_int_rejects_zero_and_negative():
@@ -128,19 +116,6 @@ def test_cli_handler_dicts_have_matching_keys() -> None:
     builder_keys = set(cli._HELP_BUILDERS)
     help_keys = set(cli._SUBCOMMAND_HELP)
     assert handler_keys == builder_keys == help_keys
-
-
-def test_manager_filter_choices_match_registry() -> None:
-    """--manager choices stay in sync with the registry's CHECKERS keys.
-
-    The choices are a static tuple in core to avoid a core->upgrade circular
-    import; this guard fails loudly if a new manager is registered but the
-    filter tuple is not updated.
-    """
-    register_all()
-    from repo_ops_upgrade.registry import CHECKERS
-
-    assert set(MANAGER_FILTER_CHOICES) == set(CHECKERS.keys())
 
 
 def test_upgrade_parser_exclude_repeatable():

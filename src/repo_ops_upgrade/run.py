@@ -10,7 +10,7 @@ import sys
 import threading
 from itertools import groupby
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from repo_ops_core.cli import (
     build_upgrade_parser,
@@ -26,6 +26,7 @@ from repo_ops_core.config import (
 )
 from repo_ops_core.constants import DEFAULT_ROOTS
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
+from repo_ops_core.filesystem import new_run_dir, write_json_atomic
 from repo_ops_core.git import is_git_dirty
 from repo_ops_core.parallel import run_bounded_pool
 from repo_ops_core.tee import tee_stdout_stderr
@@ -44,8 +45,6 @@ from repo_ops_upgrade.post_apply import (
     reinstall_from_lockfile,
     restore_worktree_state,
 )
-
-_FAIL_FAST = orchestration.FAIL_FAST_EVENT
 
 
 def _has_actionable_work(bundles: dict[Path, RepoBundle]) -> bool:
@@ -67,11 +66,8 @@ def _resolve_exit_code(
     bundles: dict[Path, RepoBundle],
     *,
     apply: bool,
-    strict_exit: bool,
     has_actionable_work: bool,
 ) -> int:
-    if strict_exit and report.any_workspace_skip_or_fail(bundles):
-        return 1
     if report.count_failures(bundles) > 0:
         return 1
     if not apply and has_actionable_work:
@@ -119,7 +115,7 @@ def _run_upgrade_body(
     args: argparse.Namespace,
     roots: list[str],
     fleet: bool = False,
-    follow_symlinks: bool = False,
+    report_path: Path | None = None,
 ) -> int:
     # Apply commits each verified repo unless told not to; an unverified apply
     # never commits.
@@ -130,33 +126,12 @@ def _run_upgrade_body(
     # verify keeps the changes for inspection.
     allow_dirty = not fleet
     on_verify_fail = "revert" if fleet else "keep"
-    skip_remediations = set()
-    if apply:
-        skip_remediations = {s.strip() for s in args.skip_remediations.split(",") if s.strip()}
-
-    use_json = args.json
-    json_report_path = getattr(args, "json_report_path", None)
-    # Always collect discovery diagnostics so found-but-unactionable manifests are
-    # counted (and surfaced) in human runs too, not only under --json.
     diagnostics = DiscoveryDiagnostics()
-    found: list[Workspace] = workspace_discovery.discover_all(
-        roots,
-        diagnostics=diagnostics,
-        follow_symlinks=follow_symlinks,
-    )
-    found = orchestration.filter_workspaces(
-        found,
-        args.eco_filter,
-        getattr(args, "manager_filter", None),
-    )
+    found: list[Workspace] = workspace_discovery.discover_all(roots, diagnostics=diagnostics)
+    found = orchestration.filter_workspaces(found, args.eco_filter, None)
 
     bundles = workspace_discovery.group_by_repo(found, roots)
-    if not args.skip_actions:
-        bundles = workspace_discovery.merge_action_only_bundles(
-            bundles,
-            roots,
-            follow_symlinks=follow_symlinks,
-        )
+    bundles = workspace_discovery.merge_action_only_bundles(bundles, roots)
 
     _global_cfg: dict[str, Any] = getattr(args, "_repo_ops_global_config", {})
     _ambient_env: dict[str, str] = getattr(args, "_repo_ops_ambient_env", {})
@@ -181,24 +156,15 @@ def _run_upgrade_body(
         excluded_count += bundle_excluded
     bundles = {path: bundles[path] for path in kept_paths}
 
-    include_submodules = _cli_flag(args, "submodules")
-    submodule_order = getattr(args, "submodule_order", "discovery")
-    need_submodule_scan = include_submodules or (apply and submodule_order == "children-first")
-    submodule_links: list[submodules.SubmoduleLink] = []
-    submodules_json: list[dict[str, str]] | None = None
-    if need_submodule_scan:
-        submodule_links = submodules.discover_submodules_under_roots(roots)
-        if include_submodules:
-            submodules_json = submodules.submodules_to_json(submodule_links)
+    submodule_links = submodules.discover_submodules_under_roots(roots)
+    submodules_json = submodules.submodules_to_json(submodule_links)
 
     bundle_order = list(bundles.keys())
-    if apply and submodule_order == "children-first" and submodule_links:
+    if apply and submodule_links:
         bundle_order = submodules.sort_bundles_children_first(
             bundle_order,
             submodule_links,
         )
-
-    _FAIL_FAST.clear()
 
     def _process_one(
         wr: WorkspaceResult, *, repo_started_dirty: bool | None = None
@@ -216,11 +182,8 @@ def _run_upgrade_body(
                     wr,
                     do_apply=apply,
                     do_verify=apply and not args.no_verify,
-                    verify_test=apply and args.verify_test,
-                    skip_remediations=skip_remediations,
                     allow_dirty=allow_dirty,
                     on_verify_fail=on_verify_fail,
-                    quiet=args.quiet,
                     repo_started_dirty=repo_started_dirty,
                 )
             except Exception as exc:
@@ -250,9 +213,6 @@ def _run_upgrade_body(
             for wr in bundle.workspaces:
                 updated = _process_one(wr, repo_started_dirty=repo_started_dirty)
                 results.append(updated)
-                if args.fail_fast and updated.status == "fail":
-                    _FAIL_FAST.set()
-                    break
             if rollback_on_veto and any(r.status == "fail" for r in results):
                 _rollback_vetoed_repo(bundle.git_repo, repo_before, results)
             return results
@@ -264,14 +224,7 @@ def _run_upgrade_body(
         ]
         pending_bundles = ordered_bundles
 
-        def _repo_failed(batch: list[WorkspaceResult]) -> bool:
-            if args.fail_fast and any(r.status == "fail" for r in batch):
-                _FAIL_FAST.set()
-                return True
-            return False
-
-        children_first = submodule_order == "children-first" and bool(submodule_links)
-        if children_first:
+        if submodule_links:
             # Build a depth map: children have depth 0, parents have depth > 0.
             # Bundles at the same depth are independent and can run in parallel.
             pending_keys = [
@@ -293,74 +246,32 @@ def _run_upgrade_body(
                         _changed = True
             sorted_keys = sorted(pending_keys, key=lambda k: depth_map.get(k, 0))
             for _level, level_keys_iter in groupby(sorted_keys, key=lambda k: depth_map.get(k, 0)):
-                if _FAIL_FAST.is_set():
-                    break
-                level_keys = list(level_keys_iter)
-                level_bundles = [bundles[k] for k in level_keys]
-                if len(level_bundles) == 1:
-                    batch = _process_repo(level_bundles[0])
-                    all_results.extend(batch)
-                    if _repo_failed(batch):
-                        break
-                else:
-                    level_failed = False
-                    with concurrent.futures.ThreadPoolExecutor(
-                        max_workers=args.jobs
-                    ) as _level_pool:
-                        for batch in run_bounded_pool(
-                            _level_pool,
-                            level_bundles,
-                            _process_repo,
-                            max_in_flight=args.jobs,
-                            should_stop=_FAIL_FAST.is_set,
-                            stop_on_result=_repo_failed,
-                        ):
-                            all_results.extend(batch)
-                            if _FAIL_FAST.is_set():
-                                level_failed = True
-                                break
-                    if level_failed:
-                        break
+                level_bundles = [bundles[k] for k in level_keys_iter]
+                with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as _level_pool:
+                    for batch in run_bounded_pool(
+                        _level_pool, level_bundles, _process_repo, max_in_flight=args.jobs
+                    ):
+                        all_results.extend(batch)
         else:
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
                 for batch in run_bounded_pool(
-                    pool,
-                    pending_bundles,
-                    _process_repo,
-                    max_in_flight=args.jobs,
-                    should_stop=_FAIL_FAST.is_set,
-                    stop_on_result=_repo_failed,
+                    pool, pending_bundles, _process_repo, max_in_flight=args.jobs
                 ):
                     all_results.extend(batch)
     else:
         all_wrs = [wr for bundle in bundles.values() for wr in bundle.workspaces]
-
-        def _workspace_failed(wr: WorkspaceResult) -> bool:
-            if args.fail_fast and wr.status == "fail":
-                _FAIL_FAST.set()
-                return True
-            return False
-
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-            all_results = run_bounded_pool(
-                pool,
-                all_wrs,
-                _process_one,
-                max_in_flight=args.jobs,
-                should_stop=_FAIL_FAST.is_set,
-                stop_on_result=_workspace_failed,
-            )
+            all_results = run_bounded_pool(pool, all_wrs, _process_one, max_in_flight=args.jobs)
 
     # Retry each failed repo once, alone, after the parallel sweep. Rollback left
     # it at its pre-apply state, so the retry is a clean re-apply. Failures that
     # only exist under fleet-wide concurrency (a resolver blip in govulncheck,
     # golangci-lint's machine-wide runner lock, a test timeout under load) failed
     # 9 of 9 repos in one sweep, and all 9 passed when re-run one at a time.
-    if rollback_on_veto and not args.fail_fast:
+    if rollback_on_veto:
         failed_repos = sorted({r.workspace.git_repo for r in all_results if r.status == "fail"})
         if failed_repos:
-            if not args.quiet:
-                print(f"retrying {len(failed_repos)} failed repo(s) one at a time")
+            print(f"retrying {len(failed_repos)} failed repo(s) one at a time")
             retry_set = set(failed_repos)
             all_results = [r for r in all_results if r.workspace.git_repo not in retry_set]
             for key in failed_repos:
@@ -372,7 +283,7 @@ def _run_upgrade_body(
 
     # Key by (path, manager): a single directory can host multiple ecosystems
     # (e.g. npm + container). Path-only keys let the last worker overwrite the
-    # earlier result, dropping non-container workspaces from --json/--json-out.
+    # earlier result, dropping non-container workspaces from the report.
     path_to_result = {(r.workspace.path, r.workspace.manager): r for r in all_results}
     for bundle in bundles.values():
         updated: list[WorkspaceResult] = []
@@ -380,12 +291,8 @@ def _run_upgrade_body(
             result_key = (wr.workspace.path, wr.workspace.manager)
             if result_key in path_to_result:
                 updated.append(path_to_result[result_key])
-            elif _FAIL_FAST.is_set():
-                wr.status = "skip"
-                wr.error = "fail-fast"
-                updated.append(wr)
             else:
-                # No result and not fail-fast: the worker crashed and dropped
+                # No result: the worker crashed and dropped
                 # this workspace. Mark it failed rather than re-appending the
                 # original (default-status) result as a silent clean pass.
                 wr.status = "fail"
@@ -393,65 +300,59 @@ def _run_upgrade_body(
                 updated.append(wr)
         bundle.workspaces = updated
 
-    if not args.skip_actions:
-        # One shared cache for the whole run so each (action, ref) is resolved
-        # at most once across all repos — avoids redundant GitHub API calls.
-        # The cache is shared across threads; we copy-in before each slow API
-        # call and merge-in after under lock to avoid dict mutation races.
-        run_tag_cache: dict[str, dict | None] = {}
-        _tag_cache_lock = threading.Lock()
+    # One shared cache for the whole run so each (action, ref) is resolved
+    # at most once across all repos — avoids redundant GitHub API calls.
+    # The cache is shared across threads; we copy-in before each slow API
+    # call and merge-in after under lock to avoid dict mutation races.
+    run_tag_cache: dict[str, dict | None] = {}
+    _tag_cache_lock = threading.Lock()
 
-        def _scan_one_bundle_actions(bundle: RepoBundle) -> None:
-            if apply and (bundle.any_fail() or bundle.any_dirty_skip()):
-                return
-            local_cache: dict[str, dict | None] = {}
-            with _tag_cache_lock:
-                local_cache.update(run_tag_cache)
-            with checkout_config_scope(
-                global_cfg=_global_cfg,
-                repo_cfg=_repo_cfgs.get(bundle.git_repo),
-            ):
-                try:
-                    bumps, count = actions.scan_actions(
-                        bundle.git_repo,
-                        apply=apply,
-                        tag_cache=local_cache,
+    def _scan_one_bundle_actions(bundle: RepoBundle) -> None:
+        if apply and (bundle.any_fail() or bundle.any_dirty_skip()):
+            return
+        local_cache: dict[str, dict | None] = {}
+        with _tag_cache_lock:
+            local_cache.update(run_tag_cache)
+        with checkout_config_scope(
+            global_cfg=_global_cfg,
+            repo_cfg=_repo_cfgs.get(bundle.git_repo),
+        ):
+            try:
+                bumps, count = actions.scan_actions(
+                    bundle.git_repo,
+                    apply=apply,
+                    tag_cache=local_cache,
+                )
+            except Exception as exc:
+                # Isolate: a non-WorkflowParseError (e.g. OSError writing a
+                # workflow) must surface as a FAILED actions entry rather than
+                # propagating through the pool and tearing down the whole run
+                # AFTER lockfiles were already mutated on disk (#TASK-2).
+                bundle.actions = [
+                    ActionBump(
+                        workflow="(error)",
+                        action="(worker)",
+                        pin="",
+                        latest="",
+                        status="fail",
+                        detail=str(exc),
                     )
-                except Exception as exc:
-                    # Isolate: a non-WorkflowParseError (e.g. OSError writing a
-                    # workflow) must surface as a FAILED actions entry rather than
-                    # propagating through the pool and tearing down the whole run
-                    # AFTER lockfiles were already mutated on disk (#TASK-2).
-                    bundle.actions = [
-                        ActionBump(
-                            workflow="(error)",
-                            action="(worker)",
-                            pin="",
-                            latest="",
-                            status="fail",
-                            detail=str(exc),
-                        )
-                    ]
-                    bundle.actions_workflows_scanned = 0
-                    return
-            with _tag_cache_lock:
-                run_tag_cache.update(local_cache)
-            bundle.actions = bumps
-            bundle.actions_workflows_scanned = count
+                ]
+                bundle.actions_workflows_scanned = 0
+                return
+        with _tag_cache_lock:
+            run_tag_cache.update(local_cache)
+        bundle.actions = bumps
+        bundle.actions_workflows_scanned = count
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as _actions_pool:
-            list(_actions_pool.map(_scan_one_bundle_actions, list(bundles.values())))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as _actions_pool:
+        list(_actions_pool.map(_scan_one_bundle_actions, list(bundles.values())))
 
-    # Display-only concern: the human renderer applies its own visibility gate,
-    # so filtering here as well would strip clean workspaces out of the JSON
-    # report too, which is meant to be a complete record of what was scanned.
-    only_outdated = _cli_flag(args, "only_outdated")
-
-    # Submodule tag advances (apply-only, opt-in via --submodules).
+    # Submodule tag advances (apply-only).
     # Runs BEFORE pointer_hints so that staged gitlinks are visible to the
     # hint scan and are committed by the post-apply commit phase.
     submodule_gitlink_map: dict[Path, set[str]] = {}
-    if apply and include_submodules and submodule_links:
+    if apply and submodule_links:
         _sub_bumps = submodules.apply_submodule_tag_advances(
             submodule_links,
             allow_dirty=allow_dirty,
@@ -460,74 +361,19 @@ def _run_upgrade_body(
             if _bump.is_actionable:
                 submodule_gitlink_map.setdefault(_bump.parent, set()).add(_bump.path)
 
-    pointer_hints: list[dict[str, str]] | None = None
-    if submodule_links and (apply or include_submodules):
-        pointer_hints = submodules.parent_repos_needing_pointer_commit(
-            submodule_links,
-        )
-        if not pointer_hints:
-            pointer_hints = None
-
-    json_submodules = submodules_json if include_submodules else None
-    json_pointer_hints = pointer_hints if (apply and pointer_hints) else None
-    if include_submodules and pointer_hints and not apply:
-        json_pointer_hints = pointer_hints
+    pointer_hints = submodules.parent_repos_needing_pointer_commit(submodule_links) or None
 
     exit_code = _resolve_exit_code(
-        bundles,
-        apply=apply,
-        strict_exit=args.strict_exit,
-        has_actionable_work=_has_actionable_work(bundles),
+        bundles, apply=apply, has_actionable_work=_has_actionable_work(bundles)
     )
 
-    if use_json:
-        mode: Literal["plan", "apply"] = "apply" if apply else "plan"
-        compact = _cli_flag(args, "compact")
-        if json_report_path:
-            written = report.write_json_report(
-                Path(json_report_path),
-                bundles,
-                roots=roots,
-                mode=mode,
-                diagnostics=diagnostics,
-                submodules=json_submodules,
-                submodule_pointer_hints=json_pointer_hints,
-                compact=compact,
-                exit_code=exit_code,
-                excluded_count=excluded_count,
-            )
-            print(written)
-        else:
-            report.print_json_report(
-                bundles,
-                roots=roots,
-                mode=mode,
-                diagnostics=diagnostics,
-                submodules=json_submodules,
-                submodule_pointer_hints=json_pointer_hints,
-                compact=compact,
-                exit_code=exit_code,
-                excluded_count=excluded_count,
-            )
-    elif not args.quiet:
-        top_n = getattr(args, "top", 10)
-        report.print_human_report(
-            bundles,
-            dry_run=not apply,
-            only_outdated=only_outdated,
-            top_n=top_n,
-            include_actions=not args.skip_actions,
-        )
-        if include_submodules and submodules_json:
-            report.print_submodule_section(
-                submodules_json,
-                pointer_hints=pointer_hints,
-            )
+    report.print_human_report(bundles, dry_run=not apply)
+    if submodules_json:
+        report.print_submodule_section(submodules_json, pointer_hints=pointer_hints)
 
     if commit:
         child_outcomes, commit_exit = post_apply_commit.run_post_apply_commits(
             bundles,
-            quiet=args.quiet,
             max_workers=args.jobs,
             submodule_gitlink_map=submodule_gitlink_map if submodule_gitlink_map else None,
         )
@@ -538,34 +384,37 @@ def _run_upgrade_body(
         # commits this run.
         if submodule_links:
             _, umbrella_exit = post_apply_commit.commit_umbrella_submodule_pointers(
-                submodule_links, child_outcomes, quiet=args.quiet
+                submodule_links, child_outcomes
             )
             if umbrella_exit != 0:
                 exit_code = 1 if exit_code == 0 else exit_code
             # The footer reports what is still dirty, not the pre-commit state.
             pointer_hints = submodules.parent_repos_needing_pointer_commit(submodule_links) or None
 
-    if not use_json:
-        footer_hints = pointer_hints if apply else None
-        if include_submodules and pointer_hints and not apply:
-            footer_hints = pointer_hints
-        if excluded_count:
-            print(
-                f"excluded {excluded_count} repo(s) by exclude patterns",
-                file=sys.stderr,
-            )
-        report.print_run_footer(
-            summary=report.build_run_summary(
+    if excluded_count:
+        print(f"excluded {excluded_count} repo(s) by exclude patterns", file=sys.stderr)
+    report.print_run_footer(
+        summary=report.build_run_summary(
+            bundles, diagnostics=diagnostics, excluded_count=excluded_count
+        ),
+        failures=report.collect_run_failures(bundles),
+        exit_code=exit_code,
+        submodule_pointer_hints=pointer_hints,
+        discovery_skips=diagnostics.skipped,
+    )
+    if report_path is not None:
+        write_json_atomic(
+            report_path,
+            report.build_json_payload(
                 bundles,
+                roots=roots,
+                mode="apply" if apply else "plan",
                 diagnostics=diagnostics,
+                submodules=submodules_json,
+                submodule_pointer_hints=pointer_hints,
+                exit_code=exit_code,
                 excluded_count=excluded_count,
             ),
-            failures=report.collect_run_failures(bundles),
-            exit_code=exit_code,
-            max_failures=args.max_failures,
-            show_skips=args.strict_exit,
-            submodule_pointer_hints=footer_hints,
-            discovery_skips=diagnostics.skipped,
         )
     return exit_code
 
@@ -573,8 +422,6 @@ def _run_upgrade_body(
 def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     parser = build_upgrade_parser(apply=apply)
     args = parser.parse_args(argv)
-    if getattr(args, "json_report_path", None) and not args.json:
-        parser.error("--json-out requires --json")
 
     # Config-file settings layer (CLI flag > env > config file > default).
     _g_cfg = load_global_config()
@@ -621,23 +468,18 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
         (_g_cfg or {}).get("exclude"),
     )
 
-    follow_symlinks = _cli_flag(args, "follow_symlinks")
-    if args.log_file:
-        with tee_stdout_stderr(Path(args.log_file).expanduser()):
-            return _run_upgrade_body(
-                apply=apply,
-                args=args,
-                roots=roots,
-                fleet=args.roots == DEFAULT_ROOTS,
-                follow_symlinks=follow_symlinks,
-            )
-    return _run_upgrade_body(
-        apply=apply,
-        args=args,
-        roots=roots,
-        fleet=args.roots == DEFAULT_ROOTS,
-        follow_symlinks=follow_symlinks,
-    )
+    run_dir = new_run_dir("apply" if apply else "plan")
+    log_path, report_path = run_dir / "log", run_dir / "report.json"
+    with tee_stdout_stderr(log_path):
+        code = _run_upgrade_body(
+            apply=apply,
+            args=args,
+            roots=roots,
+            fleet=args.roots == DEFAULT_ROOTS,
+            report_path=report_path,
+        )
+    print(f"repo-ops: log {log_path}  report {report_path}")
+    return code
 
 
 def main_plan(argv: list[str] | None = None) -> int:

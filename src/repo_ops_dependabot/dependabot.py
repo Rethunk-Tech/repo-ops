@@ -61,15 +61,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from repo_ops_core.cli import (
-    add_exclude_argument,
-    add_follow_symlinks_argument,
-    add_json_argument,
-    add_roots_argument,
-    add_verbose_argument,
-    resolve_scan_roots,
-    wire_verbose,
-)
+from repo_ops_core.cli import add_scan_arguments, resolve_scan_roots, wire_verbose
 from repo_ops_core.config import load_global_config, load_repo_config
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.discovery import discover_repos
@@ -624,10 +616,9 @@ def _parse_group_body(body: str) -> list[GroupRow] | None:
 def _discover_repo_paths(
     roots: list[str],
     *,
-    follow_symlinks: bool = False,
     exclude_patterns: list[str] | None = None,
 ) -> tuple[list[str], int]:
-    common_to_repo = discover_repos(roots, follow_symlinks=follow_symlinks)
+    common_to_repo = discover_repos(roots)
     repo_paths = [Path(repo) for repo in common_to_repo.values()]
     if not exclude_patterns:
         return sorted(str(repo) for repo in repo_paths), 0
@@ -643,14 +634,13 @@ def _discover_repo_paths(
 def scan_repos(
     roots: list[str],
     *,
-    follow_symlinks: bool = False,
     do_close: bool = False,
     default_branch_comment: bool = True,
     repo_paths: list[str] | None = None,
 ) -> list[RepoResult]:
     """Discover repos, list Dependabot PRs, check supersession."""
     if repo_paths is None:
-        repo_paths = list(discover_repos(roots, follow_symlinks=follow_symlinks).values())
+        repo_paths = list(discover_repos(roots).values())
     results: list[RepoResult] = []
 
     for repo in sorted(repo_paths):
@@ -878,7 +868,7 @@ def build_dependabot_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 exit codes:
-  0  success (including dry-run; use --json to machine-check counts)
+  0  success (including the default dry run)
   1  unexpected error (gh unavailable, etc.)
 
 precision:
@@ -891,9 +881,7 @@ precision:
   Unparseable titles/bodies: always report-only, never closed.
 """,
     )
-    add_roots_argument(parser)
-    add_follow_symlinks_argument(parser)
-    add_exclude_argument(parser)
+    add_scan_arguments(parser)
     parser.add_argument(
         "--close",
         action="store_true",
@@ -902,8 +890,6 @@ precision:
             "Default: dry-run only (print the would-close list)."
         ),
     )
-    add_json_argument(parser, dest="json_out")
-    add_verbose_argument(parser)
     return parser
 
 
@@ -918,113 +904,20 @@ def main(argv: list[str] | None = None) -> int:
     try:
         global_config = load_global_config()
         repo_config = load_repo_config(Path.cwd())
-        config_exclude = (
-            repo_config["exclude"] if "exclude" in repo_config else global_config.get("exclude")
-        )
         exclude_patterns = merge_exclude_patterns(
-            getattr(args, "exclude_patterns", None), config_exclude
+            args.exclude_patterns, repo_config.get("exclude"), global_config.get("exclude")
         )
         roots = resolve_scan_roots(list(args.roots), parser)
-        follow_symlinks = bool(getattr(args, "follow_symlinks", False))
-        repo_paths, excluded_count = _discover_repo_paths(
-            roots,
-            follow_symlinks=follow_symlinks,
-            exclude_patterns=exclude_patterns,
-        )
+        repo_paths, excluded_count = _discover_repo_paths(roots, exclude_patterns=exclude_patterns)
 
         results = scan_repos(
             roots,
-            follow_symlinks=follow_symlinks,
             do_close=do_close,
             repo_paths=repo_paths,
         )
     except Exception as exc:
         print(f"repo-ops dependabot: unexpected error: {exc}", file=sys.stderr)
         return 1
-
-    if args.json_out:
-        payload: dict[str, object] = {
-            "schema_version": 1,
-            "roots": roots,
-            "exclude_patterns": exclude_patterns,
-            "dry_run": not do_close,
-            "repos": [
-                {
-                    "label": rr.label,
-                    "path": rr.path,
-                    "remote": rr.remote,
-                    "gh_error": rr.gh_error or None,
-                    "prs": [
-                        {
-                            "number": pr.number,
-                            "title": pr.title,
-                            "head_ref": pr.head_ref,
-                            "is_grouped": pr.is_grouped,
-                            "is_security": pr.is_security,
-                            "is_unparseable": pr.is_unparseable,
-                            "unparseable_reason": pr.unparseable_reason or None,
-                            "package": pr.bump.package if pr.bump else None,
-                            "from_ver": pr.bump.from_ver if pr.bump else None,
-                            "to_ver": pr.bump.to_ver if pr.bump else None,
-                            "superseded": pr.superseded,
-                            "low_confidence": pr.low_confidence,
-                            "current_ver": pr.current_ver,
-                            "group_rows": (
-                                [
-                                    {
-                                        "package": row.package,
-                                        "from_ver": row.from_ver,
-                                        "to_ver": row.to_ver,
-                                        "superseded": row.superseded,
-                                        "current_ver": row.current_ver,
-                                        "low_confidence": row.low_confidence,
-                                    }
-                                    for row in pr.group_rows
-                                ]
-                                if pr.is_grouped
-                                else None
-                            ),
-                            "closed": (
-                                not pr.close_error
-                                if (
-                                    do_close
-                                    and pr.superseded
-                                    and not pr.low_confidence
-                                    and not pr.is_unparseable
-                                )
-                                else None
-                            ),
-                            "close_error": pr.close_error or None,
-                        }
-                        for pr in rr.prs
-                    ],
-                }
-                for rr in results
-            ],
-            "summary": {
-                "repos": len(results),
-                "excluded": excluded_count,
-                "total_prs": sum(len(r.prs) for r in results),
-                "superseded": sum(
-                    1
-                    for r in results
-                    for pr in r.prs
-                    if pr.superseded is True and not pr.low_confidence
-                ),
-                "not_yet": sum(1 for r in results for pr in r.prs if pr.superseded is False),
-                "unknown": sum(
-                    1 for r in results for pr in r.prs if pr.superseded is None or pr.is_unparseable
-                ),
-                "low_confidence": sum(
-                    1
-                    for r in results
-                    for pr in r.prs
-                    if pr.superseded is True and pr.low_confidence
-                ),
-            },
-        }
-        print(json.dumps(payload, indent=None if args.compact else 2))
-        return 0
 
     print_dependabot_report(
         results,

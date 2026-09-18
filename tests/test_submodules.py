@@ -60,7 +60,9 @@ def test_sort_bundles_children_first(tmp_path: Path) -> None:
     assert ordered[1] == parent_p
 
 
-def test_plan_json_includes_submodules(tmp_path: Path, capsys, init_git_repo) -> None:
+def test_plan_json_includes_submodules(
+    tmp_path: Path, capsys, init_git_repo, run_dir: Path
+) -> None:
     parent = tmp_path / "umbrella"
     child = parent / "pkg"
     child.mkdir(parents=True)
@@ -83,10 +85,10 @@ def test_plan_json_includes_submodules(tmp_path: Path, capsys, init_git_repo) ->
         side_effect=_noop_workspace,
     ):
         code = main_plan(
-            ["--json", "--submodules", str(parent)],
+            [str(parent)],
         )
     assert code == 0
-    payload = json.loads(capsys.readouterr().out)
+    payload = json.loads((run_dir / "report.json").read_text())
     assert "submodules" in payload
     assert len(payload["submodules"]) == 1
     assert payload["submodules"][0]["path"] == "pkg"

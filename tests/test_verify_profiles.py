@@ -225,7 +225,7 @@ class TestVerifySkip:
 
         ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         # skip=true is not a verify failure: returns None so orchestration
         # does not mark the workspace failed or trigger a revert.
@@ -248,7 +248,7 @@ class TestVerifySkip:
 
         ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is None
         assert calls, "expected at least one run() call"
@@ -268,7 +268,7 @@ class TestVerifySkip:
             return _ok()
 
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            result = verify_workspace(ws, verify_test=False)
+            result = verify_workspace(ws)
 
         assert result is None
         assert calls
@@ -292,7 +292,7 @@ class TestVerifySkip:
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
             for path in (broken, clean):
                 ws = make_workspace(path, git_repo=tmp_path, manager="go", ecosystem="go")
-                assert verify_workspace(ws, verify_test=False) is None
+                assert verify_workspace(ws) is None
 
         assert broken not in calls
         assert clean in calls
@@ -320,7 +320,7 @@ class TestVerifyTimeout:
 
         ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            verify_workspace(ws, verify_test=False)
+            verify_workspace(ws)
 
         build_call = next((c for c in captured if c["cmd"] == ["go", "build", "./..."]), None)
         assert build_call is not None
@@ -341,7 +341,7 @@ class TestVerifyTimeout:
 
         ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
         with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
-            verify_workspace(ws, verify_test=False)
+            verify_workspace(ws)
 
         build_call = next((c for c in captured if c["cmd"] == ["go", "build", "./..."]), None)
         assert build_call is not None

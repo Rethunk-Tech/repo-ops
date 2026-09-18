@@ -4,24 +4,21 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import tomllib
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from repo_ops_core.constants import EXCLUDE_PATH_FRAGMENTS
 
 
-def write_json_atomic(path: Path, payload: Any, *, compact: bool = False) -> Path:
-    """Serialise ``payload`` to ``path`` via temp file + atomic rename.
-
-    Generic counterpart to the bundle-specific ``write_json_report`` in
-    repo-ops-upgrade: any command can write its JSON document atomically.
-    Returns the resolved path. ``compact`` emits single-line JSON.
-    """
+def write_json_atomic(path: Path, payload: Any) -> Path:
+    """Serialise ``payload`` to ``path`` via temp file + atomic rename; returns the path."""
     path = Path(path).expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(payload, indent=None if compact else 2) + "\n"
+    text = json.dumps(payload, indent=2) + "\n"
     fd, tmp_name = tempfile.mkstemp(
         dir=path.parent,
         prefix=f".{path.name}.",
@@ -36,6 +33,26 @@ def write_json_atomic(path: Path, payload: Any, *, compact: bool = False) -> Pat
         tmp_path.unlink(missing_ok=True)
         raise
     return path
+
+
+# ponytail: keep-last-N pruning; age-based expiry if runs ever need keeping longer.
+_RUNS_KEPT = 50
+
+
+def new_run_dir(command: str) -> Path:
+    """Create ``$XDG_STATE_HOME/repo-ops/runs/<utc>-<command>/`` and prune old runs.
+
+    Every plan/apply writes its transcript and JSON report here, so no run needs
+    a flag to be inspectable afterwards. Only the newest ``_RUNS_KEPT`` survive.
+    """
+    state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
+    runs = state / "repo-ops" / "runs"
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+    run_dir = runs / f"{stamp}-{command}"
+    run_dir.mkdir(parents=True)
+    for old in sorted(p for p in runs.iterdir() if p.is_dir())[:-_RUNS_KEPT]:
+        shutil.rmtree(old, ignore_errors=True)
+    return run_dir
 
 
 def should_exclude(path: str) -> bool:

@@ -110,9 +110,6 @@ def test_print_human_report_renders_policy_rows(tmp_path: Path) -> None:
         print_human_report(
             bundles,
             dry_run=True,
-            only_outdated=False,
-            top_n=10,
-            include_actions=True,
         )
     out = buf.getvalue()
     assert "bad-corp/evil-action" in out
@@ -144,9 +141,6 @@ def test_print_human_report_renders_policy_status_marker(tmp_path: Path, status:
         print_human_report(
             bundles,
             dry_run=True,
-            only_outdated=False,
-            top_n=10,
-            include_actions=True,
         )
     out = buf.getvalue()
     assert f"[{status}]" in out
@@ -176,9 +170,6 @@ def test_print_human_report_policy_violation_count_line(tmp_path: Path) -> None:
         print_human_report(
             bundles,
             dry_run=True,
-            only_outdated=False,
-            top_n=10,
-            include_actions=True,
         )
     out = buf.getvalue()
     assert "Actions policy violations: 1" in out
@@ -200,9 +191,6 @@ def test_print_human_report_no_policy_count_when_zero(tmp_path: Path) -> None:
         print_human_report(
             bundles,
             dry_run=True,
-            only_outdated=False,
-            top_n=10,
-            include_actions=True,
         )
     out = buf.getvalue()
     assert "policy violations" not in out.lower()

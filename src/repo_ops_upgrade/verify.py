@@ -108,7 +108,6 @@ def _verify_hatch_fast(
     *,
     timeout: int | None = None,
     runner: list[str] | None = None,
-    include_test: bool = True,
 ) -> str | None:
     """Verify a Python workspace, preferring the gates it declares.
 
@@ -128,7 +127,7 @@ def _verify_hatch_fast(
     if timeout is None:
         timeout = resolve_timeout_verify()
     # What the project declares outranks this module's guess at it.
-    handled, gate_err = _gate_verify(ws, timeout=timeout, include_test=include_test)
+    handled, gate_err = _gate_verify(ws, timeout=timeout)
     if handled:
         return gate_err
     # "test" script wins outright
@@ -195,7 +194,6 @@ def _gate_verify(
     ws: Workspace,
     *,
     timeout: int,
-    include_test: bool = True,
 ) -> tuple[bool, str | None]:
     """Verify *ws* by running the gates the project itself declares.
 
@@ -205,8 +203,8 @@ def _gate_verify(
     ``gate --json`` executes nothing and exits 0 even when it detects nothing,
     so it is both the availability probe and the gate set: a bare ``gate`` run
     against a project declaring none exits 129, which is not a verify failure.
-    ``gate run NAME...`` filters that same detected set, so dropping ``test``
-    keeps ``--verify-test`` meaningful without re-deriving anything.
+    Every detected gate runs, tests included: a partial gate reporting green
+    is the failure mode verify exists to catch.
     """
     if not shutil.which("gate"):
         # Audible at the default log level: this verify is weaker than what the
@@ -223,8 +221,6 @@ def _gate_verify(
         names = [g["name"] for g in json.loads(listing.stdout).get("gates") or []]
     except (ValueError, AttributeError, TypeError, KeyError):
         names = []
-    if not include_test:
-        names = [n for n in names if n != "test"]
     if listing.returncode != 0 or not names:
         logger.info("gate detects no gate for %s; falling back to built-in verify gates", ws.path)
         return (False, None)
@@ -361,7 +357,7 @@ def verify_node(ws: Workspace) -> str | None:
     return None
 
 
-def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
+def verify_workspace(ws: Workspace) -> str | None:
     """Run the appropriate verify gate for *ws*.
 
     Respects per-repo ``[verify]`` config keys:
@@ -387,7 +383,7 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
         proc = run(["go", "mod", "verify"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "go mod verify failed"
-        handled, gate_err = _gate_verify(ws, timeout=timeout, include_test=verify_test)
+        handled, gate_err = _gate_verify(ws, timeout=timeout)
         if handled:
             return gate_err
         # Default post-upgrade build gate: catches API-breaking bumps that
@@ -395,22 +391,20 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
         proc_build = run(["go", "build", "./..."], ws.path, timeout=timeout)
         if proc_build.returncode != 0:
             return proc_build.stderr.strip() or "go build ./... failed"
-        if verify_test:
-            proc2 = run(["go", "test", "./..."], ws.path, timeout=timeout)
-            if proc2.returncode != 0:
-                return proc2.stderr.strip() or "go test failed"
+        proc2 = run(["go", "test", "./..."], ws.path, timeout=timeout)
+        if proc2.returncode != 0:
+            return proc2.stderr.strip() or "go test failed"
         return None
     if mgr == "rust":
-        handled, gate_err = _gate_verify(ws, timeout=timeout, include_test=verify_test)
+        handled, gate_err = _gate_verify(ws, timeout=timeout)
         if handled:
             return gate_err
         proc = run(["cargo", "check"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "cargo check failed"
-        if verify_test:
-            proc2 = run(["cargo", "test"], ws.path, timeout=timeout)
-            if proc2.returncode != 0:
-                return proc2.stderr.strip() or "cargo test failed"
+        proc2 = run(["cargo", "test"], ws.path, timeout=timeout)
+        if proc2.returncode != 0:
+            return proc2.stderr.strip() or "cargo test failed"
         return None
     if mgr in ("uv", "hatch"):
         # Hatch without uv.lock: apply is a no-op unless migrate-to-uv-lock;
@@ -420,7 +414,7 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
                 "hatch verify: no uv.lock at %s; skipping uv sync --locked",
                 ws.path,
             )
-            return _verify_hatch_fast(ws, timeout=timeout, include_test=verify_test)
+            return _verify_hatch_fast(ws, timeout=timeout)
         if not shutil.which("uv"):
             return "uv not on PATH"
         # gate does not check that a lockfile is frozen-installable, so this
@@ -428,34 +422,28 @@ def verify_workspace(ws: Workspace, *, verify_test: bool) -> str | None:
         proc = run(["uv", "sync", "--locked"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "uv sync --locked failed"
-        return _verify_hatch_fast(ws, timeout=timeout, include_test=verify_test)
+        return _verify_hatch_fast(ws, timeout=timeout)
     if mgr == "poetry":
         if not shutil.which("poetry"):
             return "poetry not on PATH"
         proc = run(["poetry", "check"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return proc.stderr.strip() or "poetry check failed"
-        return _verify_hatch_fast(
-            ws, timeout=timeout, runner=["poetry", "run"], include_test=verify_test
-        )
+        return _verify_hatch_fast(ws, timeout=timeout, runner=["poetry", "run"])
     if mgr == "pdm":
         if not shutil.which("pdm"):
             return "pdm not on PATH"
         proc = run(["pdm", "sync", "--clean"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "pdm sync --clean failed"
-        return _verify_hatch_fast(
-            ws, timeout=timeout, runner=["pdm", "run"], include_test=verify_test
-        )
+        return _verify_hatch_fast(ws, timeout=timeout, runner=["pdm", "run"])
     if mgr == "pipenv":
         if not shutil.which("pipenv"):
             return "pipenv not on PATH"
         proc = run(["pipenv", "verify"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "pipenv verify failed"
-        return _verify_hatch_fast(
-            ws, timeout=timeout, runner=["pipenv", "run"], include_test=verify_test
-        )
+        return _verify_hatch_fast(ws, timeout=timeout, runner=["pipenv", "run"])
     if mgr == "pip-tools":
         return _verify_pip_tools(ws, timeout=timeout)
     if mgr == "deno":

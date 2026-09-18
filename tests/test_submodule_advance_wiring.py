@@ -151,7 +151,7 @@ def test_apply_submodule_tag_advances_invoked_via_run(
     with contextlib.suppress(SystemExit):
         run_mod.run_upgrade(
             apply=True,
-            argv=[str(root), "--submodules", "--quiet"],
+            argv=[str(root)],
         )
 
     assert len(called_with) == 1, (
@@ -393,7 +393,6 @@ def test_run_post_apply_commits_passes_gitlink_map(tmp_path: Path) -> None:
     with patch.object(post_apply_commit, "plan_repo_commit", side_effect=_spy_plan):
         post_apply_commit.run_post_apply_commits(
             bundles,
-            quiet=True,
             submodule_gitlink_map={git_repo: {"libs/child"}},
         )
 

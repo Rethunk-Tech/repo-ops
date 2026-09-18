@@ -63,8 +63,6 @@ def test_verify_fail_revert_restores_lockfile(tmp_path: Path, init_git_repo) -> 
             wr,
             do_apply=True,
             do_verify=True,
-            verify_test=False,
-            skip_remediations=set(),
             allow_dirty=False,
             on_verify_fail="revert",
         )
@@ -99,8 +97,6 @@ def test_verify_fail_keep_leaves_changes(tmp_path: Path, init_git_repo) -> None:
             wr,
             do_apply=True,
             do_verify=True,
-            verify_test=False,
-            skip_remediations=set(),
             allow_dirty=False,
             on_verify_fail="keep",
         )
@@ -109,10 +105,11 @@ def test_verify_fail_keep_leaves_changes(tmp_path: Path, init_git_repo) -> None:
     assert b"mutated" in lock.read_bytes()
 
 
-def test_apply_json_includes_verify_fail_disposition(tmp_path: Path, capsys, init_git_repo) -> None:
+def test_apply_json_includes_verify_fail_disposition(
+    tmp_path: Path, capsys, init_git_repo, run_dir: Path
+) -> None:
     _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     register_all()
-    out_file = tmp_path / "apply.json"
 
     def _fail_verify(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
         wr.status = "fail"
@@ -127,13 +124,10 @@ def test_apply_json_includes_verify_fail_disposition(tmp_path: Path, capsys, ini
         rc = main_apply(
             [
                 str(tmp_path),
-                "--skip-actions",
-                "--json",
-                f"--json-out={out_file}",
             ]
         )
 
     assert rc == 1
-    payload = json.loads(out_file.read_text(encoding="utf-8"))
+    payload = json.loads((run_dir / "report.json").read_text())
     ws_json = payload["repos"][0]["workspaces"][0]
     assert ws_json["verify_fail_disposition"] == FAILED_WITH_CHANGES
