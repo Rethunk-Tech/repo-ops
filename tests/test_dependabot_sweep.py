@@ -443,8 +443,6 @@ def test_dependabot_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert "poetry.lock" in out
     assert "pdm.lock" in out
     assert "Pipfile.lock" in out
-    assert "bun.lockb" in out
-    assert "requires bun" in out
 
 
 def test_dependabot_json_empty_repos(tmp_path: Path) -> None:
@@ -696,46 +694,6 @@ def test_deno_lock_resolves_npm_and_jsr_high_confidence(tmp_path: Path) -> None:
     assert all(pr.low_confidence is False for pr in prs)
     assert {pr.current_ver for pr in prs} == {"5.3.0", "1.2.3"}
     assert mock_close.call_count == 2
-
-
-def test_bun_lockb_without_bun_never_closes_dependabot_pr(
-    tmp_path: Path,
-) -> None:
-    """A binary-only Bun repo cannot satisfy supersession without bun."""
-    fake_repo = str(tmp_path)
-    (tmp_path / "bun.lockb").write_bytes(b"\x00")
-    mock_pr_data = [
-        {
-            "number": 43,
-            "title": "Bump foo from 1.0.0 to 2.0.0",
-            "headRefName": "dependabot/bun/foo-2.0.0",
-        }
-    ]
-    mock_git_result = MagicMock(returncode=0, stdout="origin/main\n")
-
-    with (
-        patch(
-            "repo_ops_dependabot.dependabot.discover_repos",
-            return_value={"common": fake_repo},
-        ),
-        patch(
-            "repo_ops_dependabot.dependabot._github_remote",
-            return_value="https://github.com/owner/repo",
-        ),
-        patch(
-            "repo_ops_dependabot.dependabot._gh_list_dependabot_prs",
-            return_value=(mock_pr_data, ""),
-        ),
-        patch(
-            "repo_ops_dependabot.dependabot.versions_bun_lockb",
-            return_value=set(),
-        ),
-        patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
-        patch("repo_ops_dependabot.dependabot._gh_close_pr", return_value="") as mock_close,
-    ):
-        main(["--close", fake_repo])
-
-    mock_close.assert_not_called()
 
 
 def test_dependabot_close_comment_when_default_branch_unresolved(

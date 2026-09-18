@@ -400,7 +400,6 @@ def classify_commit_subject(files: list[str]) -> str:
             "pnpm-workspace.yaml",
             "yarn.lock",
             "bun.lock",
-            "bun.lockb",
         )
         for n in names
     )

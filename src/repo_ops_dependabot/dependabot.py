@@ -79,7 +79,6 @@ from repo_ops_core.version_utils import semver_tuple
 from repo_ops_lockfiles.parsers import (
     split_name_version,
     versions_bun_lock,
-    versions_bun_lockb,
     versions_deno_lock,
     versions_npm_lock,
     versions_pdm_lock,
@@ -300,7 +299,7 @@ def _gh_close_pr(owner_repo: str, pr_number: int, comment: str) -> str:
 
 def _lockfile_entry_parsers():
     """(filename, parser) pairs shared by the highest-version resolver and the
-    raw-entry scanner below; bun.lockb and deno.lock are resolver-only (see
+    raw-entry scanner below; deno.lock is resolver-only (see
     _lockfile_resolved) so they're walked separately.
 
     Built fresh on each call (rather than a module-level constant) so tests
@@ -363,20 +362,6 @@ def _lockfile_resolved(repo: str) -> dict[str, str]:
                 pkg, ver = _split_name_ver(entry)
                 if pkg:
                     _update(pkg, ver)
-
-    # bun.lockb is bun's binary lockfile; skip when a bun.lock (text) sibling
-    # already covers the same directory to avoid double-counting.
-    for lockfile in root.rglob("bun.lockb"):
-        if _in_skip_dir(root, lockfile):
-            continue
-        if lockfile.with_name("bun.lock").exists():
-            continue
-        with contextlib.suppress(Exception):
-            for entry in versions_bun_lockb(lockfile):
-                if "@" in entry:
-                    pkg, ver = _split_name_ver(entry)
-                    if pkg:
-                        _update(pkg, ver)
 
     # deno.lock entries carry an npm:/jsr: prefix; a jsr-scoped package also
     # registers under its unscoped name since Dependabot's PR title uses it.
@@ -899,8 +884,6 @@ exit codes:
 precision:
   High-confidence: lockfile parser (npm/yarn/pnpm/bun/uv.lock/poetry.lock/
   pdm.lock/Pipfile.lock) or go.mod/Cargo.lock.
-  Binary bun.lockb: high-confidence resolution requires bun; missing bun
-  leaves the binary lockfile unresolved.
   Low-confidence: text-search fallback.  Low-confidence matches are NEVER
   auto-closed regardless of --close.
 

@@ -69,7 +69,7 @@ def lockfile_manager(mdir: Path) -> str | None:
         return "npm"
     if (mdir / "pnpm-lock.yaml").exists():
         return "pnpm"
-    if (mdir / "bun.lock").exists() or (mdir / "bun.lockb").exists():
+    if (mdir / "bun.lock").exists():
         return "bun"
     if (mdir / "yarn.lock").exists():
         return "yarn"

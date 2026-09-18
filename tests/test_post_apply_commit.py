@@ -501,8 +501,8 @@ def test_collect_changes_root_workspace_and_non_dep_fields_excluded(
     assert "version" not in names, f"version field leaked into changes: {changes}"
 
 
-def test_collect_changes_json_yaml_lockb_fallback(tmp_path: Path) -> None:
-    """package-lock.json, pnpm-lock.yaml, bun.lockb must appear in fallback changes.
+def test_collect_changes_json_yaml_bun_lock_fallback(tmp_path: Path) -> None:
+    """package-lock.json, pnpm-lock.yaml, bun.lock must appear in fallback changes.
 
     These filenames don't match .endswith(".lock") but are in NODE_LOCKFILES, so
     the git diff --name-only gate already filters to them. The elif must use
@@ -521,7 +521,7 @@ def test_collect_changes_json_yaml_lockb_fallback(tmp_path: Path) -> None:
             return CompletedProcess(
                 cmd,
                 0,
-                stdout="package-lock.json\npnpm-lock.yaml\nbun.lockb\n",
+                stdout="package-lock.json\npnpm-lock.yaml\nbun.lock\n",
                 stderr="",
             )
         return CompletedProcess(cmd, 0, stdout="", stderr="")
@@ -532,7 +532,7 @@ def test_collect_changes_json_yaml_lockb_fallback(tmp_path: Path) -> None:
     names = {c.name for c in changes}
     assert "package-lock.json" in names, f"package-lock.json missing from changes: {changes}"
     assert "pnpm-lock.yaml" in names, f"pnpm-lock.yaml missing from changes: {changes}"
-    assert "bun.lockb" in names, f"bun.lockb missing from changes: {changes}"
+    assert "bun.lock" in names, f"bun.lock missing from changes: {changes}"
 
 
 # ---------------------------------------------------------------------------

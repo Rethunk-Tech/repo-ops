@@ -191,13 +191,11 @@ whether the bump is already satisfied by local lockfiles or manifests.
 
 Precision caveats:
 
-- **High-confidence:** lockfile parsers resolve npm/yarn/pnpm/bun (text
-  `bun.lock`, and binary `bun.lockb` when `bun` can dump it), `uv.lock`,
+- **High-confidence:** lockfile parsers resolve npm/yarn/pnpm/bun, `uv.lock`,
   `poetry.lock`, `pdm.lock`, and `Pipfile.lock` versions; go.mod `require`
   blocks and Cargo.lock `[[package]]` entries are parsed structurally. These
   Python lockfile matches can qualify Dependabot PRs for `--close`; grouped
-  PRs still require every row to be high-confidence and satisfied. Missing
-  `bun` leaves `bun.lockb` low-confidence / unresolved.
+  PRs still require every row to be high-confidence and satisfied.
 - **Low-confidence:** text-search fallback on lockfile `name@version` strings when
   parsers cannot resolve a package. Low-confidence matches are **never** auto-closed.
 - **Grouped PRs:** closed only when **all** rows are high-confidence satisfied.

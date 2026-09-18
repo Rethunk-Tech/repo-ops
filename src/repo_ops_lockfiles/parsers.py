@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
-import tempfile
 from pathlib import Path
 
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
 from repo_ops_core.filesystem import read_json_file, read_toml_file
-from repo_ops_core.process import run
 
 _PNPM_LOCK_YAML = YAML(typ="safe")
 
@@ -215,43 +212,6 @@ def versions_bun_lock(p: Path) -> set[str]:
         elif isinstance(val, list) and val and isinstance(val[0], str) and "@" in val[0]:
             out.add(val[0])
     return out
-
-
-def versions_bun_lockb(path_or_mdir: Path) -> set[str]:
-    """Legacy binary ``bun.lockb`` → set of name@version.
-
-    Bun prints a yarn.lock-compatible text representation when invoked with a
-    readable binary lockfile.  Missing bun, dump failures, and invalid output
-    return an empty set.
-    """
-    path = Path(path_or_mdir)
-    lockb = path if path.name == "bun.lockb" else path / "bun.lockb"
-    try:
-        proc = run(["bun", str(lockb)], cwd=lockb.parent, timeout=60)
-    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-        return set()
-    text = (proc.stdout or "").strip()
-    if proc.returncode != 0 or not text:
-        return set()
-    if text.lower().startswith("error") or "InvalidLockfile" in (proc.stderr or ""):
-        return set()
-
-    tmp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            suffix=".lock",
-            delete=False,
-        ) as handle:
-            handle.write(proc.stdout)
-            tmp_path = Path(handle.name)
-        return versions_yarn_lock(tmp_path)
-    except Exception:
-        return set()
-    finally:
-        if tmp_path is not None:
-            tmp_path.unlink(missing_ok=True)
 
 
 def _versions_toml_lock(p: Path) -> set[str]:
