@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.holds import HoldRule, resolve_package_hold
+from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
@@ -436,7 +436,7 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
     still_behind: list[Change] = []
     for change in behind:
         hold = _resolve_deno_hold(ws, change.name)
-        if hold is not None and not version_satisfies_ceiling(change.to, hold.max_version):
+        if not target_within_hold(change.to, hold):
             still_behind.append(change)
             continue
         snapshot = _snapshot_deno_workspace(ws)
@@ -457,7 +457,7 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
                 _restore_deno_workspace(ws, snapshot)
                 still_behind.append(change)
                 continue
-            if hold is not None and not version_satisfies_ceiling(landed, hold.max_version):
+            if not target_within_hold(landed, hold):
                 _restore_deno_workspace(ws, snapshot)
                 still_behind.append(change)
                 continue

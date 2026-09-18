@@ -8,8 +8,8 @@ from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
+from repo_ops_core.holds import target_within_hold
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_js.guards import (
     assert_targets_resolved,
     fold_blocked_into_behind,
@@ -200,7 +200,7 @@ def _check_npm_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
         still_behind: list[Change] = []
         for c in behind:
             held_rule = resolve_package_hold(ws, c.name)
-            if held_rule is not None and not version_satisfies_ceiling(c.to, held_rule.max_version):
+            if not target_within_hold(c.to, held_rule):
                 still_behind.append(c)
                 continue
             promoted.append(c)

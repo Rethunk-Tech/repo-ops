@@ -16,8 +16,9 @@ from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY
 from repo_ops_core.filesystem import read_json_file
+from repo_ops_core.holds import target_within_hold
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
+from repo_ops_core.version_utils import semver_tuple
 from repo_ops_js.guards import (
     fold_blocked_into_behind,
     unresolved_targets,
@@ -475,7 +476,7 @@ def check_yarn_snapshot(
             # never trip in practice — but a held-and-over-ceiling landed
             # version must never be promoted into the plan preview.
             held_rule = resolve_package_hold(ws, c.name)
-            if held_rule is not None and not version_satisfies_ceiling(c.to, held_rule.max_version):
+            if not target_within_hold(c.to, held_rule):
                 behind.append(c)
                 continue
             if not any(existing.name == c.name for existing in changes):

@@ -8,8 +8,8 @@ from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
+from repo_ops_core.holds import target_within_hold
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_js.expo import with_expo_alignment
 from repo_ops_js.guards import (
     assert_targets_resolved,
@@ -93,9 +93,7 @@ def _changes_from_bun_json(
         latest = str(meta.get("latest", "?"))
         if cur != latest and latest not in ("?", ""):
             held_rule = resolve_package_hold(ws, str(name)) if ws is not None else None
-            if held_rule is not None and not version_satisfies_ceiling(
-                latest, held_rule.max_version
-            ):
+            if not target_within_hold(latest, held_rule):
                 behind_latest.append(Change(str(name), cur, latest))
             else:
                 changes.append(Change(str(name), cur, latest))
@@ -143,7 +141,7 @@ def _changes_from_bun_text(
         if not current or not target or current == target:
             continue
         held_rule = resolve_package_hold(ws, name) if ws is not None else None
-        if held_rule is not None and not version_satisfies_ceiling(target, held_rule.max_version):
+        if not target_within_hold(target, held_rule):
             behind_latest.append(Change(name, current, target))
             continue
         changes.append(Change(name, current, target))

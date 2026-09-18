@@ -12,8 +12,9 @@ from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY
 from repo_ops_core.filesystem import read_json_file
+from repo_ops_core.holds import target_within_hold
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
+from repo_ops_core.version_utils import semver_tuple
 from repo_ops_js.holds import resolve_package_hold
 from repo_ops_js.overrides import package_json_paths
 from repo_ops_models import Change, Workspace
@@ -205,7 +206,7 @@ def peer_lockstep(ws: Workspace, planned: list[Change], *, write: bool) -> list[
             if version == peer.group(2) or semver_tuple(version) < semver_tuple(peer.group(2)):
                 continue
             rule = resolve_package_hold(member, name)
-            if rule is not None and not version_satisfies_ceiling(version, rule.max_version):
+            if not target_within_hold(version, rule):
                 continue
             member_moved.append(Change(name, str(spec), peer.group(1) + version, rel))
         if write and member_moved:

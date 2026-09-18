@@ -5,12 +5,11 @@ from __future__ import annotations
 import re
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.holds import resolve_package_hold
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import hold_ceiling_spec, version_satisfies_ceiling
 from repo_ops_lockfiles.parsers import toml_lock_versions
 from repo_ops_models import Change, Workspace
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
+from repo_ops_py.version_ceiling import enforce_version_ceilings
 
 # ---------------------------------------------------------------------------
 # Package version-ceiling ("hold") rules
@@ -28,42 +27,21 @@ def _uv_lock_versions(ws: Workspace) -> dict[str, str]:
 
 
 def _enforce_version_ceilings(ws: Workspace) -> None:
-    """Post-apply lock-only clamp: correct any resolved package above its ceiling.
+    """Post-apply lock-only clamp: ``uv lock --upgrade-package <pkg><=ceiling``.
 
-    Reads every package's resolved version from ``uv.lock`` and, for those
-    with an active hold rule the resolved version violates, runs
-    ``uv lock --upgrade-package <pkg><=ceiling>`` so only the lockfile changes.
-    Raises if the correction still can't satisfy the ceiling — a hold that
-    silently didn't hold is worse than a loud failure. Also catches a hold
-    added after the package was already locked above the ceiling (``uv lock
-    --upgrade --dry-run`` only reports packages that would move, so a package
-    already resolved past a brand-new ceiling never appears in
-    ``check_uv_lock``'s changes).
+    Also catches a hold added after the package was already locked above the
+    ceiling: ``uv lock --upgrade --dry-run`` only reports packages that would
+    move, so a package already past a brand-new ceiling never appears in
+    ``check_uv_lock``'s changes.
     """
-    versions = _uv_lock_versions(ws)
-    if not versions:
-        return
-    for name, resolved in versions.items():
-        rule = resolve_package_hold(ws, name)
-        if rule is None or version_satisfies_ceiling(resolved, rule.max_version):
-            continue
-        spec = f"{name}{hold_ceiling_spec(rule.max_version)}"
-        proc = run(
-            ["uv", "lock", "--upgrade-package", spec],
-            ws.path,
-            timeout=TIMEOUT_APPLY,
-        )
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"hold: failed to clamp {name} back to <={rule.max_version} "
-                f"(uv): {proc.stderr.strip()}"
-            )
-        landed = _uv_lock_versions(ws).get(name)
-        if landed is None or not version_satisfies_ceiling(landed, rule.max_version):
-            raise RuntimeError(
-                f"hold: {name} still at {landed or resolved} after clamp "
-                f"attempt, expected <= {rule.max_version} (uv)"
-            )
+    enforce_version_ceilings(
+        ws,
+        tool="uv",
+        manifest_name="pyproject.toml",
+        lock_versions=_uv_lock_versions,
+        clamp_command=lambda name, spec: ["uv", "lock", "--upgrade-package", spec],
+        run=run,
+    )
 
 
 def check_uv_lock(ws: Workspace) -> list[Change]:

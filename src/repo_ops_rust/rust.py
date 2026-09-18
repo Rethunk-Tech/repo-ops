@@ -18,7 +18,7 @@ from urllib.parse import quote
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import restore_file, snapshot_file
-from repo_ops_core.holds import HoldRule, resolve_package_hold
+from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
@@ -160,7 +160,7 @@ def _filter_held_rust_changes(ws: Workspace, changes: list[Change]) -> list[Chan
     kept: list[Change] = []
     for change in changes:
         rule = _resolve_crate_hold(ws, change.name)
-        if rule is not None and not version_satisfies_ceiling(change.to, rule.max_version):
+        if not target_within_hold(change.to, rule):
             continue
         kept.append(change)
     return kept
@@ -401,7 +401,7 @@ def _apply_cargo_targeted_bumps(
     remaining: list[Change] = []
     for candidate in candidates:
         rule = _resolve_crate_hold(ws, candidate.name)
-        if rule is not None and not version_satisfies_ceiling(candidate.to, rule.max_version):
+        if not target_within_hold(candidate.to, rule):
             remaining.append(candidate)
             continue
         manifest_snapshot = snapshot_file(manifest)

@@ -19,11 +19,6 @@ from repo_ops_upgrade.tags import is_semver_tag as _is_semver_tag
 logger = logging.getLogger(__name__)
 
 
-def target_within_hold(target: str, rule: HoldRule | None) -> bool:
-    """Return whether *target* is allowed by *rule* (``None`` = no active hold)."""
-    return rule is None or version_satisfies_ceiling(target.lstrip("v"), rule.max_version)
-
-
 def resolve_hold_tag_target(
     current_rev: str, tags: list[str], rule: HoldRule, *, context: str
 ) -> str | None:

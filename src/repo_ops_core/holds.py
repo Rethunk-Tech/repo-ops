@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core.config import load_global_config, load_repo_config
+from repo_ops_core.version_utils import version_satisfies_ceiling
 
 
 @dataclass(frozen=True)
@@ -276,3 +277,8 @@ def clear_hold_caches() -> None:
     """Drop the cached global/per-repo hold rules."""
     _global_holds_cached.cache_clear()
     _repo_holds_cached.cache_clear()
+
+
+def target_within_hold(target: str, rule: HoldRule | None) -> bool:
+    """Return whether *target* is allowed by *rule* (``None`` = no active hold)."""
+    return rule is None or version_satisfies_ceiling(target.lstrip("v"), rule.max_version)

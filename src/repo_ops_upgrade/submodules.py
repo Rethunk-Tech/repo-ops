@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
-from repo_ops_core.holds import HoldRule, resolve_package_hold
+from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_upgrade import holds, tags
 from repo_ops_upgrade.tags import is_semver_tag
@@ -376,7 +376,7 @@ def _resolve_submodule_hold(link: SubmoduleLink) -> HoldRule | None:
 
 def _target_within_hold(link: SubmoduleLink, target_tag: str) -> bool:
     """Return whether a resolved tag target is allowed by its active hold."""
-    return holds.target_within_hold(target_tag, _resolve_submodule_hold(link))
+    return target_within_hold(target_tag, _resolve_submodule_hold(link))
 
 
 def _resolve_hold_tag_target(current_tag: str, tags: list[str], rule: HoldRule) -> str | None:

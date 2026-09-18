@@ -9,10 +9,10 @@ from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_toml_file, restore_file, snapshot_file
-from repo_ops_core.holds import resolve_package_hold
+from repo_ops_core.holds import resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
-from repo_ops_core.version_utils import version_parts, version_satisfies_ceiling
+from repo_ops_core.version_utils import version_parts
 from repo_ops_lockfiles.parsers import toml_lock_versions
 from repo_ops_models import Change, Workspace
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
@@ -127,7 +127,7 @@ def _apply_poetry_targeted_bumps(
             remaining.append(candidate)
             continue
         rule = resolve_package_hold(ws, candidate.name)
-        if rule is not None and not version_satisfies_ceiling(candidate.to, rule.max_version):
+        if not target_within_hold(candidate.to, rule):
             remaining.append(candidate)
             continue
         manifest_snapshot = snapshot_file(manifest)

@@ -14,10 +14,10 @@ from repo_ops_core.filesystem import (
     restore_file,
     snapshot_file,
 )
-from repo_ops_core.holds import resolve_package_hold
+from repo_ops_core.holds import resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
-from repo_ops_core.version_utils import version_parts, version_satisfies_ceiling
+from repo_ops_core.version_utils import version_parts
 from repo_ops_models import Change, Workspace
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
 from repo_ops_py.pypi import pypi_latest as _pypi_latest
@@ -115,7 +115,7 @@ def _apply_pipenv_targeted_bumps(
     remaining: list[Change] = []
     for candidate in candidates:
         rule = resolve_package_hold(ws, candidate.name)
-        if rule is not None and not version_satisfies_ceiling(candidate.to, rule.max_version):
+        if not target_within_hold(candidate.to, rule):
             remaining.append(candidate)
             continue
         manifest_snapshot = snapshot_file(manifest)

@@ -26,7 +26,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from repo_ops_core.holds import HoldRule, resolve_package_hold
+from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade import holds
@@ -161,7 +161,7 @@ def _resolve_precommit_hold(ws: Workspace, package: str) -> HoldRule | None:
 
 def _target_within_hold(ws: Workspace, package: str, target_version: str) -> bool:
     """Return whether a resolved tag target is allowed by its active hold."""
-    return holds.target_within_hold(target_version, _resolve_precommit_hold(ws, package))
+    return target_within_hold(target_version, _resolve_precommit_hold(ws, package))
 
 
 # ---------------------------------------------------------------------------

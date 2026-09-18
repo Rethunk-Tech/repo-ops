@@ -9,7 +9,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.holds import HoldRule, resolve_package_hold
+from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import (
     hold_ceiling_spec,
@@ -227,7 +227,7 @@ def _filter_held_go_changes(ws: Workspace, changes: list[Change]) -> list[Change
     kept: list[Change] = []
     for c in changes:
         rule = _resolve_module_hold(ws, c.name)
-        if rule is not None and not version_satisfies_ceiling(c.to, rule.max_version):
+        if not target_within_hold(c.to, rule):
             continue
         kept.append(c)
     return kept
@@ -422,9 +422,7 @@ def _explicit_go_get_targets(ws: Workspace) -> list[str]:
             if recorded is not None and path not in recorded:
                 continue
             held_rule = _resolve_module_hold(ws, path)
-            if held_rule is not None and not version_satisfies_ceiling(
-                version, held_rule.max_version
-            ):
+            if not target_within_hold(version, held_rule):
                 continue
             spec = f"{path}@{version}"
             if _valid_go_get_target(spec):

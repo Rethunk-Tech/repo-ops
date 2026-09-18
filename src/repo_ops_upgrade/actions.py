@@ -20,11 +20,10 @@ from typing import Any
 
 from repo_ops_core.filesystem import write_json_atomic
 from repo_ops_core.git import github_owner_repo, github_remote
-from repo_ops_core.holds import HoldRule, resolve_package_hold
+from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_models import ActionBump
-from repo_ops_upgrade import holds
 from repo_ops_upgrade.workflow_uses import (
     PinReplacement,
     WorkflowParseError,
@@ -536,7 +535,7 @@ def _resolve_actions_hold(repo: Path, package: str) -> HoldRule | None:
 
 def _target_within_hold(repo: Path, package: str, target_version: str) -> bool:
     """Return whether a resolved action tag is allowed by its active hold."""
-    return holds.target_within_hold(target_version, _resolve_actions_hold(repo, package))
+    return target_within_hold(target_version, _resolve_actions_hold(repo, package))
 
 
 def _action_tag_version(tag: str) -> tuple[int, ...] | None:
