@@ -51,4 +51,6 @@ repo-ops apply --commit=conventional /path/to/Bastion --log-file apply.log
 
 With `--commit`, each parent then gets one `chore(submodules)` commit staging exactly the gitlinks of children committed this run. Plan/apply JSON gains `submodules: [{path, git_repo, parent}]` unless `--no-submodules` is passed.
 
+Every sweep bumps every child that has a newer release, so an umbrella gets a pointer commit per sweep. That is deliberate: a single pass converges (measured on bastion-core), and a per-repo throttle or a release-age cooldown were both declined in favour of always-latest.
+
 Then push children first, and push the parent last. A pointer still dirty after the run (a child whose commit failed, or `--commit=none`) is listed in the footer and in `submodule_pointer_hints`.
