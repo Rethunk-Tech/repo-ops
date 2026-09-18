@@ -162,7 +162,7 @@ class PinReplacement:
     action: str
     pin: str
     latest: str
-    line: int | None = None
+    line: int
     # ``(old, new)`` version hint in the trailing comment (e.g. ``"v6.0.2"`` →
     # ``"v6.0.3"``), so the hint keeps naming the release the new ref points at.
     comment_rewrite: tuple[str, str] | None = None
@@ -233,10 +233,7 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
     substituted; all other bytes (indentation, comments, quoting, line
     endings) are left untouched.
 
-    When a ``PinReplacement`` carries a ``line`` number, only that line is
-    edited.  When ``line`` is ``None``, every line containing the action@pin
-    is updated (backwards-compatible fallback for callers that do not supply
-    line numbers).
+    Each ``PinReplacement`` edits only its own 1-based ``line``.
 
     When ``comment_rewrite`` is set, the old comment text is also replaced by
     the new comment text on the same line after the pin replacement — used for
@@ -259,35 +256,17 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
         if old_pin == new_pin:
             continue
 
-        if repl.line is not None:
-            # Targeted single-line edit (preferred path).
-            idx = repl.line - 1  # 1-based → 0-based
-            if 0 <= idx < len(lines):
-                new_line = _apply_pin_to_line(lines[idx], action, old_pin, new_pin)
-                if repl.comment_rewrite is not None:
-                    old_cmt, new_cmt = repl.comment_rewrite
-                    new_line = _apply_comment_rewrite_to_line(new_line, old_cmt, new_cmt)
-                if repl.set_comment is not None:
-                    new_line = _apply_comment_to_line(new_line, repl.set_comment)
-                if new_line != lines[idx]:
-                    lines[idx] = new_line
-                    changed = True
-        else:
-            # No line hint — scan all lines for action@pin.
-            for idx, line in enumerate(lines):
-                new_line = _apply_pin_to_line(line, action, old_pin, new_pin)
-                if repl.comment_rewrite is not None:
-                    old_cmt, new_cmt = repl.comment_rewrite
-                    new_line = _apply_comment_rewrite_to_line(new_line, old_cmt, new_cmt)
-                if repl.set_comment is not None and new_line != line:
-                    # Only when the pin substitution actually matched this
-                    # line — set_comment is not content-scoped like
-                    # comment_rewrite, so applying it unconditionally in this
-                    # scan-all-lines fallback would corrupt unrelated lines.
-                    new_line = _apply_comment_to_line(new_line, repl.set_comment)
-                if new_line != line:
-                    lines[idx] = new_line
-                    changed = True
+        idx = repl.line - 1  # 1-based → 0-based
+        if 0 <= idx < len(lines):
+            new_line = _apply_pin_to_line(lines[idx], action, old_pin, new_pin)
+            if repl.comment_rewrite is not None:
+                old_cmt, new_cmt = repl.comment_rewrite
+                new_line = _apply_comment_rewrite_to_line(new_line, old_cmt, new_cmt)
+            if repl.set_comment is not None:
+                new_line = _apply_comment_to_line(new_line, repl.set_comment)
+            if new_line != lines[idx]:
+                lines[idx] = new_line
+                changed = True
 
     if not changed:
         return False

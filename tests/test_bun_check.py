@@ -10,30 +10,6 @@ from unittest.mock import patch
 from repo_ops_core.constants import TIMEOUT_CHECK
 from repo_ops_js_bun.bun import check_bun
 
-
-def test_check_bun_prefers_json(tmp_path: Path, make_workspace) -> None:
-    payload = {"vite": {"current": "5.0.0", "latest": "6.0.0"}}
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, cwd, timeout=600, env=None):
-        calls.append(list(cmd))
-        if "--json" in cmd:
-            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
-        raise AssertionError("text outdated should not run when JSON succeeds")
-
-    with patch("repo_ops_js_bun.bun.run", fake_run):
-        changes, behind_latest = check_bun(
-            make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
-        )
-
-    assert calls == [["bun", "outdated", "--json"]]
-    assert len(changes) == 1
-    assert changes[0].name == "vite"
-    assert changes[0].from_ver == "5.0.0"
-    assert changes[0].to == "6.0.0"
-    assert behind_latest == []
-
-
 # Real `bun outdated` (>=1.3) output: no `--json` support, an ANSI-coloured box
 # table led by a `bun outdated vX (hash)` banner. The banner must NOT be parsed
 # as a package "bun" at version "(hash)" — the original `bun update bun@(hash)`
@@ -54,20 +30,17 @@ _REAL_BUN_TABLE = (
 
 def _patched_check(table_stdout: str, tmp_path: Path, make_workspace):
     def fake_run(cmd, cwd, timeout=600, env=None):
-        if "--json" in cmd:
-            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
         return subprocess.CompletedProcess(cmd, 0, stdout=table_stdout, stderr="")
 
     with patch("repo_ops_js_bun.bun.run", fake_run):
         return check_bun(make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo"))
 
 
-def test_check_bun_latest_column_when_opted_in(monkeypatch, tmp_path: Path, make_workspace) -> None:
+def test_check_bun_targets_latest_column(tmp_path: Path, make_workspace) -> None:
     changes, behind_latest = _patched_check(_REAL_BUN_TABLE, tmp_path, make_workspace)
 
     # Latest column: @hono now upgrades out-of-range to 2.0.4.
     assert ("@hono/node-server", "2.0.4") in [(c.name, c.to) for c in changes]
-    # When latest-mode is on, no behind_latest entries are emitted.
     assert behind_latest == []
 
 
@@ -135,28 +108,17 @@ def test_check_bun_parses_ascii_pipe_table(tmp_path: Path, make_workspace) -> No
 
 
 def test_check_bun_passes_timeout_check(tmp_path: Path, make_workspace) -> None:
-    """Both bun outdated calls must use TIMEOUT_CHECK (600s), not the default 300s."""
+    """``bun outdated`` must use TIMEOUT_CHECK, not run()'s default."""
     captured: list[dict] = []
 
     def fake_run(cmd, cwd, timeout=None):
         captured.append({"cmd": list(cmd), "timeout": timeout})
-        if "--json" in cmd:
-            # Simulate bun >= 1.3 not supporting --json: empty output, returncode=1.
-            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     with patch("repo_ops_js_bun.bun.run", fake_run):
         check_bun(make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo"))
 
-    assert len(captured) == 2, f"expected 2 run() calls, got {len(captured)}"
-    assert captured[0]["cmd"] == ["bun", "outdated", "--json"]
-    assert captured[0]["timeout"] == TIMEOUT_CHECK, (
-        f"--json call used timeout={captured[0]['timeout']!r}, want {TIMEOUT_CHECK}"
-    )
-    assert captured[1]["cmd"] == ["bun", "outdated"]
-    assert captured[1]["timeout"] == TIMEOUT_CHECK, (
-        f"text call used timeout={captured[1]['timeout']!r}, want {TIMEOUT_CHECK}"
-    )
+    assert captured == [{"cmd": ["bun", "outdated"], "timeout": TIMEOUT_CHECK}]
 
 
 def test_check_bun_checks_each_workspace_member(
@@ -170,8 +132,6 @@ def test_check_bun_checks_each_workspace_member(
     tables = {web: "│ Package │ Current │ Update │ Latest │\n│ next │ 16.3.0 │ 16.3.0 │ 16.3.5 │\n"}
 
     def fake_run(cmd, cwd, timeout=600, env=None):
-        if "--json" in cmd:
-            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
         return subprocess.CompletedProcess(cmd, 0, stdout=tables.get(cwd, ""), stderr="")
 
     with patch("repo_ops_js_bun.bun.run", fake_run):
@@ -217,8 +177,6 @@ def test_check_bun_proposes_private_member_peer_lockstep(
     }
 
     def fake_run(cmd, cwd, timeout=600, env=None):
-        if "--json" in cmd:
-            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
         return subprocess.CompletedProcess(cmd, 0, stdout=tables.get(cwd, ""), stderr="")
 
     with patch("repo_ops_js_bun.bun.run", fake_run):

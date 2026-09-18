@@ -72,8 +72,11 @@ def _fake_run(tmp_path: Path, mobile: Path, calls: list[tuple[list[str], Path]])
     def fake_run(cmd, cwd, timeout=600, env=None):
         calls.append((list(cmd), cwd))
         if cmd[:2] == ["bun", "outdated"]:
-            payload = _OUTDATED if cwd == mobile else {}
-            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+            rows = _OUTDATED.items() if cwd == mobile else ()
+            table = "".join(
+                f"│ {n} │ {m['current']} │ {m['update']} │ {m['latest']} │\n" for n, m in rows
+            )
+            return subprocess.CompletedProcess(cmd, 0, stdout=table, stderr="")
         for arg in cmd[2:]:
             name, sep, spec = arg.rpartition("@")
             if sep and name and (spec[:1].isdigit() or spec[:1] in ("~", "^")):

@@ -1,11 +1,9 @@
-"""Regression tests for bun JSON / ANSI parsing (sub-task 8a).
+"""Regression tests for bun outdated table parsing.
 
 Covers:
   * _changes_from_bun_text: ANSI escape codes stripped, (dev)/(peer)/(optional)
     suffixes removed, banner line and box borders skipped, literal package named
     "bun" accepted (i.e. NOT filtered by name).
-  * _changes_from_bun_json: forward-compat JSON path.
-  * audit bun path: JSON-first with text fallback when json.loads fails.
 
 No subprocess or network calls are made.
 """
@@ -15,7 +13,6 @@ from __future__ import annotations
 import json
 
 from repo_ops_js_bun.bun import (
-    _changes_from_bun_json,
     _changes_from_bun_text,
     _valid_bun_package_name,
 )
@@ -189,52 +186,3 @@ _NPM_AUDIT_JSON_WITH_VULNS = json.dumps(
         },
     }
 )
-
-
-# ---------------------------------------------------------------------------
-# _changes_from_bun_json — consolidated from former test_bun_json_parser.py
-# ---------------------------------------------------------------------------
-
-
-def test_changes_from_bun_json_invalid_json_returns_empty() -> None:
-    changes, behind = _changes_from_bun_json("not json")
-    assert changes == []
-    assert behind == []
-
-
-def test_changes_from_bun_json_non_dict_top_level_returns_empty() -> None:
-    changes, behind = _changes_from_bun_json(json.dumps([1, 2, 3]))
-    assert changes == []
-    assert behind == []
-
-
-def test_changes_from_bun_json_skips_invalid_name_and_non_dict_meta() -> None:
-    """Header-like/dash-prefixed names and non-dict meta values are skipped."""
-    data = {
-        "Package": {"current": "1.0.0", "update": "1.1.0", "latest": "1.1.0"},
-        "-bad": {"current": "1.0.0", "update": "1.1.0", "latest": "1.1.0"},
-        "not-a-dict": "oops",
-    }
-    changes, behind = _changes_from_bun_json(json.dumps(data))
-    assert changes == []
-    assert behind == []
-
-
-def test_changes_from_bun_json_want_latest_on_targets_latest_field(
-    monkeypatch,
-) -> None:
-    data = {"foo": {"current": "1.0.0", "update": "1.1.0", "latest": "2.0.0"}}
-    changes, behind = _changes_from_bun_json(json.dumps(data))
-    assert len(changes) == 1
-    assert changes[0].to == "2.0.0"
-    assert behind == []
-
-
-def test_changes_from_bun_json_no_behind_latest_bucket_when_want_latest_on(
-    monkeypatch,
-) -> None:
-    """With want_latest on, the behind_latest branch is unreachable (target IS latest)."""
-    data = {"foo": {"current": "1.0.0", "update": "1.0.0", "latest": "1.0.0"}}
-    changes, behind = _changes_from_bun_json(json.dumps(data))
-    assert changes == []
-    assert behind == []

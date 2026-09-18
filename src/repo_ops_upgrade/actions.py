@@ -658,7 +658,7 @@ def _enforce_version_ceilings(
                     action=action,
                     pin=pin,
                     latest=target_sha,
-                    line=uses.line or None,
+                    line=uses.line,
                     comment_rewrite=_comment_rewrite_for(uses.comment, target_tag),
                 )
             )
@@ -683,7 +683,7 @@ def _enforce_version_ceilings(
                 action=action,
                 pin=pin,
                 latest=target,
-                line=uses.line or None,
+                line=uses.line,
             )
         )
     return replacements
@@ -920,7 +920,7 @@ def scan_actions(
                                     action=action,
                                     pin=pin,
                                     latest=new_sha,
-                                    line=uses.line or None,
+                                    line=uses.line,
                                     comment_rewrite=_comment_rewrite_for(uses.comment, tag),
                                 )
                             )
@@ -1001,7 +1001,7 @@ def scan_actions(
                                 action=action,
                                 pin=pin,
                                 latest=new_sha,
-                                line=uses.line or None,
+                                line=uses.line,
                                 set_comment=f"# {tag_label}",
                             )
                         )
@@ -1055,7 +1055,7 @@ def scan_actions(
                             action=action,
                             pin=pin,
                             latest=latest_target,
-                            line=uses.line or None,
+                            line=uses.line,
                         )
                     )
             elif pin == desired:
@@ -1101,7 +1101,7 @@ def scan_actions(
                                 action=action,
                                 pin=pin,
                                 latest=desired,
-                                line=uses.line or None,
+                                line=uses.line,
                             )
                         )
                 else:

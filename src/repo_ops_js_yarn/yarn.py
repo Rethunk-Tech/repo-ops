@@ -144,7 +144,7 @@ _PNP_SENTINELS = (".pnp.cjs", ".pnp.loader.mjs")
 def _is_pnp_workspace(ws_path: Path) -> bool:
     """Return True when the yarn workspace uses Plug'n'Play (no node_modules).
 
-    Detection is intentionally conservative: if we cannot determine the linker
+    Detection errs on the safe side: if we cannot determine the linker
     we assume node-modules is NOT in use (i.e. PnP), to avoid false-fail on
     layouts we cannot read.  The integration fixture explicitly sets
     ``nodeLinker: node-modules`` so it is guarded.

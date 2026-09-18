@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
@@ -32,9 +31,7 @@ from repo_ops_js.workspaces import (
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
 
-# `bun outdated` has no --json flag (as of bun 1.x; the codebase checks
-# opportunistically via check_bun but falls back here when JSON is absent).
-# It always prints a table led by a `bun outdated vX (hash)` banner.  Parse
+# `bun outdated` has no --json flag (bun 1.4). It always prints a table led by a `bun outdated vX (hash)` banner.  Parse
 # that table row-by-row rather than whitespace-splitting (which mis-read the
 # banner as a package named "bun" at version "(hash)" and fed
 # `bun update bun@(hash)` → hard failure).
@@ -60,44 +57,6 @@ def _valid_bun_package_name(name: str) -> bool:
     if not n or n.startswith("-") or n == "Package":
         return False
     return bool(_PKG_NAME_RE.match(n))
-
-
-def _changes_from_bun_json(
-    stdout: str, *, ws: Workspace | None = None
-) -> tuple[list[Change], list[Change]]:
-    """Forward-compatible parser for a future `bun outdated --json`.
-
-    Range-respecting by default (``update`` field); ``latest`` when opted in.
-
-    Returns ``(changes, behind_latest)`` where ``behind_latest`` contains
-    packages whose ``latest`` an active hold rule blocks.
-
-    A package with an active hold rule whose ceiling ``target`` would
-    violate is not promoted into ``changes`` — it lands in ``behind_latest``
-    instead. ``ws`` is optional and keyword-only so direct unit tests
-    exercising the parser in isolation (no ``Workspace``) keep prior
-    behavior; ``check_bun`` always passes the real workspace.
-    """
-    changes: list[Change] = []
-    behind_latest: list[Change] = []
-    try:
-        data = json.loads(stdout)
-    except json.JSONDecodeError:
-        return changes, behind_latest
-    if not isinstance(data, dict):
-        return changes, behind_latest
-    for name, meta in data.items():
-        if not _valid_bun_package_name(str(name)) or not isinstance(meta, dict):
-            continue
-        cur = str(meta.get("current") or meta.get("installed") or "?")
-        latest = str(meta.get("latest", "?"))
-        if cur != latest and latest not in ("?", ""):
-            held_rule = resolve_package_hold(ws, str(name)) if ws is not None else None
-            if not target_within_hold(latest, held_rule):
-                behind_latest.append(Change(str(name), cur, latest))
-            else:
-                changes.append(Change(str(name), cur, latest))
-    return changes, behind_latest
 
 
 def _changes_from_bun_text(
@@ -162,16 +121,6 @@ def check_bun(ws: Workspace, *, members: bool = True) -> tuple[list[Change], lis
 
 
 def _check_bun_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
-    proc_json = run(["bun", "outdated", "--json"], ws.path, timeout=TIMEOUT_CHECK)
-    if proc_json.returncode in (0, 1) and proc_json.stdout.strip():
-        try:
-            data = json.loads(proc_json.stdout)
-        except json.JSONDecodeError:
-            data = None
-        if isinstance(data, dict):
-            changes, behind = _changes_from_bun_json(proc_json.stdout, ws=ws)
-            return with_expo_alignment(ws, changes), behind
-
     proc = run(["bun", "outdated"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode not in (0, 1):
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "bun outdated failed")

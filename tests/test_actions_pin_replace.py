@@ -27,7 +27,7 @@ def test_update_pin_skips_non_matching_longer_tag(tmp_path: Path) -> None:
     wf.write_text("uses: 8398a7/action-slack@v3.19.0\n", encoding="utf-8")
     update_workflow_pins(
         wf,
-        [PinReplacement("8398a7/action-slack", "v3", "v3.19.0")],
+        [PinReplacement("8398a7/action-slack", "v3", "v3.19.0", line=1)],
     )
     assert wf.read_text(encoding="utf-8") == "uses: 8398a7/action-slack@v3.19.0\n"
 
@@ -37,7 +37,7 @@ def test_update_pin_exact_uses_line(tmp_path: Path) -> None:
     wf.write_text("uses: 8398a7/action-slack@v3\n", encoding="utf-8")
     update_workflow_pins(
         wf,
-        [PinReplacement("8398a7/action-slack", "v3", "v3.19.0")],
+        [PinReplacement("8398a7/action-slack", "v3", "v3.19.0", line=1)],
     )
     out = wf.read_text(encoding="utf-8")
     assert out == "uses: 8398a7/action-slack@v3.19.0\n"
@@ -56,7 +56,7 @@ def test_update_pin_same_file_mixed_pins(tmp_path: Path) -> None:
     )
     update_workflow_pins(
         wf,
-        [PinReplacement("8398a7/action-slack", "v3", "v3.19.0")],
+        [PinReplacement("8398a7/action-slack", "v3", "v3.19.0", line=4)],
     )
     out = wf.read_text(encoding="utf-8")
     assert "uses: 8398a7/action-slack@v3.19.0" in out
@@ -83,7 +83,7 @@ def test_update_workflow_pins_write_oserror_raises_parse_error(
     ):
         update_workflow_pins(
             wf,
-            [PinReplacement("actions/checkout", "v3", "v4")],
+            [PinReplacement("actions/checkout", "v3", "v4", line=1)],
         )
 
 
@@ -95,5 +95,5 @@ def test_update_workflow_pins_load_oserror_raises_parse_error(
     with pytest.raises(WorkflowParseError):
         update_workflow_pins(
             missing,
-            [PinReplacement("actions/checkout", "v3", "v4")],
+            [PinReplacement("actions/checkout", "v3", "v4", line=1)],
         )

@@ -181,10 +181,10 @@ def test_targeted_bump_uses_hold_ceiling_instead_of_latest(
 
 def _bun_check(tmp_path, monkeypatch, make_workspace, make_proc, latest):
     ws = make_workspace(tmp_path, ecosystem="node", manager="bun", label="demo")
-    payload = {"typescript": {"current": "6.5.0", "latest": latest}}
+    table = f"│ Package │ Current │ Update │ Latest │\n│ typescript │ 6.5.0 │ 6.5.0 │ {latest} │\n"
 
     def _fake_run(cmd, cwd, timeout=None, env=None):
-        return make_proc(stdout=json.dumps(payload))
+        return make_proc(stdout=table)
 
     with patch(_run_patch("bun"), side_effect=_fake_run):
         return check_bun(ws)
