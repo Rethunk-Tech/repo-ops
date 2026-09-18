@@ -14,18 +14,11 @@ from __future__ import annotations
 
 import re
 
+from repo_ops_core.version_utils import version_parts
+
 _CONSTRAINT = re.compile(
     r"^(~=|<=|>=|==|!=|<|>|=|~|\^)?\s*(\d+(?:\.\d+){0,2}|\*)",
 )
-
-
-def _version_parts(version: str) -> tuple[int, int, int]:
-    match = re.search(r"\d+(?:\.\d+){0,2}", version.strip().lstrip("vV"))
-    if match is None:
-        return (0, 0, 0)
-    parts = [int(part) for part in match.group(0).split(".")]
-    padded = [*parts, 0, 0, 0][:3]
-    return padded[0], padded[1], padded[2]
 
 
 def _caret_upper_bound(parts: tuple[int, int, int]) -> tuple[int, int, int]:
@@ -52,7 +45,7 @@ def requirement_satisfied(
     """Return whether *version* matches *requirement* under *default_operator*."""
     if not requirement or requirement.strip() == "*":
         return True
-    candidate = _version_parts(version)
+    candidate = version_parts(version)
     normalized = _normalize_requirement(requirement)
     if not normalized or normalized == "*":
         return True
@@ -70,7 +63,7 @@ def requirement_satisfied(
             raw_version = match.group(2)
             if raw_version == "*":
                 continue
-            parts = _version_parts(raw_version)
+            parts = version_parts(raw_version)
             if operator == "^":
                 if not (candidate >= parts and candidate < _caret_upper_bound(parts)):
                     satisfied = False

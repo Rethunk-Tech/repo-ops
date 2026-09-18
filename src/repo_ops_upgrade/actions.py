@@ -18,6 +18,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from repo_ops_core.filesystem import write_json_atomic
 from repo_ops_core.git import github_owner_repo, github_remote
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.process import run
@@ -281,10 +282,7 @@ def _save_lint_cache(path: Path, cache: dict[str, dict]) -> None:
         sorted_keys = sorted(pruned, key=lambda k: pruned[k].get("ts", 0), reverse=True)
         pruned = {k: pruned[k] for k in sorted_keys[:_LINT_CACHE_MAX_ENTRIES]}
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(pruned, indent=2), encoding="utf-8")
-        os.replace(tmp, path)
+        write_json_atomic(path, pruned)
     except (OSError, TypeError) as exc:
         # Non-fatal: the cache is a speed-up, so a failed write only costs a
         # re-lint next run.

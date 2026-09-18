@@ -9,45 +9,6 @@ commits, and later sections assume the earlier ones. The plan comes from an
 audit (waste/debt/bypass lenses) measured against 362 unique recorded
 invocations. Every decision below was taken by the operator; none is open.
 
-## 6. Helpers bypassed in the code that survives
-
-After sections 2–5, these remain:
-
-- 8 git calls bypass `repo_ops_core.git.run_git` with hardcoded timeouts:
-  `actions.py:152`, `post_apply.py:68,81,147,175,253`,
-  `remediations_core/remediations.py:69`. (`tags.py:41` `ls-remote` has no
-  repo dir; leave it.)
-- Hold ceiling check inlined ~11 times though `upgrade/holds.py:22`
-  `target_within_hold` exists; `js/holds.py:46` `is_within_ceiling` is a
-  one-line alias (7 sites). Move the helper to `repo_ops_core.holds`, delete
-  the alias.
-- Workspace-member matcher / `_under` in 3 copies (`js/workspaces.py:146`,
-  `py_uv/uv.py:26`, `upgrade/discovery.py:178`); the yarn copy drifted
-  (`rstrip('/*')`, no `/*` branch).
-- TOML lock name→version parsing copied in `py/uv_lock.py:25`, `pdm.py:36`,
-  `poetry.py:32`; use `lockfiles/parsers.py:257`.
-- `verify.py:493` private `parse_requirements_lines` (drifted: no `.`→`-`
-  normalisation); use `py/requirements.py:8`.
-- `requirement.py:22` copies `version_parts`; `deno.py:278` copies
-  `restore_workspace_snapshot`; `tags.py:114` inlines
-  `holds.matching_sha_tags`; `actions.py:149` GitHub-remote parser drifted
-  from `dependabot.py:188` (origin only, no `ssh://`) — keep the dependabot one.
-- `actions.py:330-345` hand-writes its cache instead of `write_json_atomic`.
-
-The other 24 production jscpd clones are contextual (per-manager defaults,
-different data shapes, docstrings) and stay.
-
-### Traps
-
-- **Drifted copies change behaviour when unified.** The yarn matcher, the
-  requirements normaliser and the remote parser each fix a real miss when
-  consolidated; add one test per drift that fails on the old copy.
-
-### Acceptance
-
-- `rg -n 'subprocess.*\["git"' src` lists only `tags.py`.
-- One commit per helper family; full gate green.
-
 ## 7. Tests hand-roll what conftest should provide
 
 363 test clones (4,389 lines), 297 same-file: 261 local `def fake_run`,
