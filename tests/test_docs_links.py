@@ -27,19 +27,9 @@ SKIP_DIRS = {
     ".ruff_cache",
 }
 
-#: The bundled skill ships standalone; `install-skill` rewrites its relative
-#: links to github.com URLs at copy time, so they are not expected to resolve
-#: in-tree. test_install_skill covers that rewrite.
-SKIP_FILES = {Path("src/repo_ops/skills/repo-ops/REFERENCE.md")}
-
 
 def _markdown_files() -> list[Path]:
-    return sorted(
-        p
-        for p in _ROOT.rglob("*.md")
-        if not SKIP_DIRS & set(p.relative_to(_ROOT).parts)
-        and p.relative_to(_ROOT) not in SKIP_FILES
-    )
+    return sorted(p for p in _ROOT.rglob("*.md") if not SKIP_DIRS & set(p.relative_to(_ROOT).parts))
 
 
 def _anchors(text: str) -> set[str]:

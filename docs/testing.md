@@ -20,27 +20,26 @@ uv build
 Every test lives in `tests/` — one `testpaths` entry. A bare `uv run pytest` runs the blocking
 non-integration lane; pass `-m integration` to run the advisory integration lane.
 
-Config: root `pyproject.toml` `[tool.pytest.ini_options]`. CI runs the same checks on Python 3.12–3.14; tag `v*` triggers [release.yml](../.github/workflows/release.yml). When changing Markdown tiers, run the doc-audit skill on the repo root (e.g. `~/.cursor/skills/doc-audit` or `~/.claude/skills/doc-audit`).
+Config: root `pyproject.toml` `[tool.pytest.ini_options]`. CI runs the same checks on Python 3.12–3.14; tag `v*` triggers [release.yml](../.github/workflows/release.yml).
 
 ## Coverage floor
 
-Current ratchet: **78 %**; a raise sets the floor to `floor(actual) − 5`. Update `[tool.coverage.report] fail_under` in `pyproject.toml` and `--cov-fail-under` in both `.github/workflows/ci.yml` and `.github/workflows/release.yml` together.
+Current ratchet: **78 %**; a raise sets the floor to `floor(actual) − 5`. Update `[tool.coverage.report] fail_under` in `pyproject.toml` and `--cov-fail-under` in `.github/workflows/verify.yml` together.
 
 Coverage source (`[tool.coverage.run] source` in root `pyproject.toml`) is `src`, which covers every module in the package.
 
 ## Test markers
 
-The `integration` marker flags tests that require real external tools (bun, yarn, npm registry, go, govulncheck audit, git network calls). CI splits these into two jobs in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml):
+The `integration` marker flags tests that require real external tools (bun, yarn, npm registry, go, git network calls). CI splits these into two jobs in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml):
 
 | Job | Marker | Blocking? | Toolchain setup |
 | ----- | -------- | ----------- | ----------------- |
 | `ci` | `-m "not integration"` | Yes (PR gate) | Python matrix only |
-| `integration` | `-m integration` | No (`continue-on-error: true`) | Node 24 + Corepack (yarn), bun, Go stable, govulncheck |
+| `integration` | `-m integration` | No (`continue-on-error: true`) | Node 24 + Corepack (yarn), bun, Go stable |
 
 The advisory job runs only `pytest -m integration` — not the blocking lint, pyrefly, or coverage gates. To match its toolchain locally:
 
 ```bash
 corepack enable
-go install golang.org/x/vuln/cmd/govulncheck@latest
 uv run pytest -q -m integration
 ```

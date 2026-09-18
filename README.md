@@ -6,43 +6,67 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/Rethunk-Tech/repo-ops/actions/workflows/ci.yml/badge.svg)](https://github.com/Rethunk-Tech/repo-ops/actions/workflows/ci.yml)
 
-Local repository operations and dependency maintenance tools for Rethunk-Tech
+Dependency maintenance for local git checkouts
 
 </div>
 
 ---
 
-repo-ops is a Python CLI for scanning local git checkouts: dependency footprint, read-only upgrade planning, apply-with-verify upgrades (including GitHub Actions pins), and push-reflog audits. See [releases](https://github.com/Rethunk-Tech/repo-ops/releases) for the latest version ([changelog](CHANGELOG.md)).
-
-## Quick start
-
-```bash
-uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git"
-repo-ops doctor
-```
-
-Full install, requirements, and operator runbook: [HUMANS.md](HUMANS.md).
+`repo-ops apply` finds every checkout under its scan roots, moves each dependency to its newest release (Node, Go, Rust, Python, Deno, containers, pre-commit, submodules and GitHub Actions pins), runs each repo's own gates, and commits every repo that passes. It never pushes. Releases: [GitHub](https://github.com/Rethunk-Tech/repo-ops/releases) ([changelog](CHANGELOG.md)).
 
 ## Highlights
 
-- Single CLI: `inventory`, `plan`, `apply`, `audit`, `dependabot`, `sbom`, `license`, `doctor`, and `install-skill` (bundled agent skill for Cursor/Claude)
-- Read-only `plan`; `apply` runs ecosystem updates, Corepack, verify gates, and GitHub Actions pin sweep (`--skip-actions` to omit)
-- Discovery: validated scan roots, optional `--follow-symlinks`, `--flat` and actions-only repos; full sweep by default, `--conservative` to stay in-range ([usage](docs/usage.md#ecosystem-upgrade-modes-plan-and-apply))
-- uv-locked single package (`uv_build`); Python >= 3.12; ecosystem plugins (Node, Go, Rust, Python) with remediations
-- Built for Rethunk-Tech monorepo and sibling checkout trees under shared roots
+- One command: `repo-ops apply` updates, verifies and commits every checkout.
+- Newest release everywhere, across ranges and majors, with per-package [holds](docs/usage.md#holds).
+- Verifies with each repo's own gates; a fleet failure is reverted, not committed.
+
+## Quick start
+
+Needs [uv](https://docs.astral.sh/uv/), Python 3.12 or newer, and git. Each ecosystem's own CLI (`bun`, `go`, `cargo`, `uv`, …) is needed only for repos that use it; `gh` enables the Actions org-policy check and `dependabot`.
+
+```bash
+uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git"
+repo-ops --version
+```
+
+Agent skill, for Claude Code and Cursor:
+
+```bash
+bunx skills add Rethunk-Tech/repo-ops
+```
+
+Uninstall with `uv tool uninstall repo-ops`.
+
+## Use
+
+```bash
+repo-ops apply                    # sweep DEFAULT_ROOTS, commit each verified repo
+repo-ops apply /path/to/checkout  # one checkout, even if dirty
+repo-ops plan /path/to/checkout   # read-only preview, exit 1 on drift
+repo-ops dependabot --close       # close Dependabot PRs the sweep superseded
+```
+
+Every run writes a log and `report.json`; their paths are the last line printed.
+
+## Develop
+
+```bash
+git clone https://github.com/Rethunk-Tech/repo-ops.git && cd repo-ops
+uv sync --group dev
+uv run repo-ops plan --help
+```
+
+Then [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/testing.md](docs/testing.md). Security reports: [SECURITY.md](SECURITY.md).
 
 ## Documentation
 
 | Document | Purpose |
-| ---------- | --------- |
-| [Humans guide](HUMANS.md) | Quickstart, requirements, uninstall, and doc index |
-| [Agents guide](AGENTS.md) | Agent quick reference, coordination, and workflows |
-| [Contributing](CONTRIBUTING.md) | Contributor guidelines and code style |
-| [Security](SECURITY.md) | Vulnerability reporting |
-| [Changelog](CHANGELOG.md) | Release history (Keep a Changelog style) |
-| [Code of conduct](CODE_OF_CONDUCT.md) | Community standards and enforcement |
-| [License](LICENSE) | MIT License |
+| --- | --- |
+| [Usage](docs/usage.md) | What each command does, config, exit codes |
+| [Bulk maintenance](docs/bulk-maintenance.md) | Fleet sweeps and submodule umbrellas |
+| [Contributor guide](AGENTS.md) | Layout, gate, invariants, release |
+| [Changelog](CHANGELOG.md) | Release history |
 
 ## License
 
-Copyright (c) 2026 Rethunk Tech. Licensed under the MIT License — see [LICENSE](LICENSE) for details.
+Copyright (c) 2026 Rethunk Tech. MIT, see [LICENSE](LICENSE).

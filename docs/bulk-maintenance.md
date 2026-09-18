@@ -1,56 +1,25 @@
 # Bulk Maintenance
 
-Running `plan`/`apply` across many checkouts under a parent root, and the submodule-umbrella ordering that needs.
+Fleet sweeps and submodule umbrellas.
 
-## Playbook
-
-**1. Plan first and keep the output.** Apply never substitutes for plan.
+## Sweep
 
 ```bash
-repo-ops plan /path/to/parent/root --log-file plan.log
-repo-ops plan --json --json-out plan.json /path/to/parent/root   # machine-readable
+repo-ops apply
 ```
 
-Prefer `--log-file` over a shell pipe: it keeps the process exit code. If you do pipe, `set -o pipefail` first, or `tee` exiting 0 masks a failed run.
+The report ends with a summary (workspaces ok, failed and skipped; dirty skips; verify failures; Actions bumps) and the log and `report.json` paths. Then:
 
-**2. Review dirty skips.** Repos with uncommitted changes are skipped — look for `dirty git worktree` in plan JSON or stderr. Commit, stash, or re-run with `--allow-dirty` when applying on a dirty tree is intended.
-
-**3. Apply.** Output ends with a **Summary** roll-up (workspace ok/fail/skip, dirty skips, verify failures, actions bumps), a **Failures** list capped by `--max-failures` (default 20), then `failures:` and `exit_code:` for automation. JSON carries the same counts under `summary`. `--strict-exit` also exits `1` on `skip`, which otherwise does not fail the run.
-
-**4. Verify failures are not always bad bumps.** Apply runs ecosystem build/test gates, so a failure may be a missing env var (Next.js `build` needing secrets), a flaky test, or a toolchain gap. Read the log before reverting. `--on-verify-fail=revert` (default) rolls back apply artifacts for failed workspaces; `keep` preserves them for triage. Output sets `verify_fail_disposition` to `FAILED_WITH_CHANGES` or `FAILED_CLEAN`.
-
-**5. Optionally commit.** After a green apply:
-
-| Flag | Meaning |
-| ------ | --------- |
-| `--commit=none` | Default: no commits. |
-| `--commit=conventional` | One `chore(deps): …` commit per repo via guarded local `git`. |
-| `--commit=agent` | Draft the subject via a commit-agent provider (default [Cursor SDK](https://cursor.com/docs/sdk/python)); needs `CURSOR_API_KEY` and `uv pip install 'repo-ops[commit-agent-cursor]'`. |
-| `--commit-dry-run` | Print intended messages and file lists; no commit. |
-| `--commit-on-fail` | Commit even when verify failed (default: skip failed repos). |
-
-**Guardrails:** skips repos dirty at start unless `--allow-dirty`; never stages `.env`, credential-like paths, or key material; fails closed when verify failed.
-
-**Branch / PR mode:** `--pr` (with optional `--pr-base`, `--branch-prefix`) pushes a branch and opens a PR via authenticated `gh` instead of leaving commits on the current branch — [usage.md § Branch / PR workflow](usage.md#branch--pr-workflow-apply). A checkout with no git remote has no push or PR flow at all; its commits stay local.
-
-## Apply traps
-
-- **Read the tree, not the roll-up.** `git status` each touched repo before planning commits — the Summary counts what apply attempted, and a lockfile can move without the headline dep changing.
-- **Actions majors report before they rewrite.** Rows printed `[report-only]` changed nothing; the Summary's `actions bumps` count is what actually landed.
-- **Yarn `file:` workspace links churn the lockfile.** A `file:../…` sibling rewrites resolution hashes with no version change — discard those commits rather than reading them as upgrades.
-- **`--latest` leaves companion ranges behind.** A lockfile-only bump of `vitest` with `@vitest/coverage-v8` still on its old `package.json` range breaks verify (YN0060); `playwright-core` vs `@playwright/test` has the same shape. Forward-align the companion range in the same change.
+- **Dirty skips** are repos a colleague or another session is working in. Leave them, or run `repo-ops apply <path>` on one once it is yours.
+- **Verify failures** are not always bad bumps: a build that needs secrets, a flaky test, or a missing toolchain fails the same way. Read the log before holding a package. Fleet failures were already reverted.
+- **Read the tree, not the roll-up.** A lockfile can move without the headline dependency changing.
+- **Yarn `file:` links churn the lockfile.** A `file:../…` sibling rewrites resolution hashes with no version change.
+- **Companion ranges.** `vitest` with `@vitest/coverage-v8`, or `playwright-core` with `@playwright/test`, must move together; a lockfile-only bump of one breaks verify.
 
 ## Submodule umbrellas
 
-Umbrella repos (Bastion-style, many Go/Node submodules) need **children-first** ordering: apply and push each child, then commit the parent's submodule pointer, then push the parent. Both halves are on by default — `--submodules` reads `.gitmodules` for parent/child links, and `--submodule-order=children-first` orders the apply. The same dependency-first rule as the `git-push-order` skill.
+Umbrella repos (many Go or Node submodules) are applied children first. Each parent then gets one `chore(submodules)` commit staging exactly the gitlinks of children committed this run. A pointer still dirty afterwards (a child whose verify failed) is listed in the footer and in `submodule_pointer_hints`.
 
-```bash
-repo-ops plan --json --json-out plan.json /path/to/Bastion
-repo-ops apply --commit=conventional /path/to/Bastion --log-file apply.log
-```
+Push children first and the parent last, the same order as the `git-push-order` skill.
 
-With `--commit`, each parent then gets one `chore(submodules)` commit staging exactly the gitlinks of children committed this run. Plan/apply JSON gains `submodules: [{path, git_repo, parent}]` unless `--no-submodules` is passed.
-
-Every sweep bumps every child that has a newer release, so an umbrella gets a pointer commit per sweep. That is deliberate: a single pass converges (measured on bastion-core), and a per-repo throttle or a release-age cooldown were both declined in favour of always-latest.
-
-Then push children first, and push the parent last. A pointer still dirty after the run (a child whose commit failed, or `--commit=none`) is listed in the footer and in `submodule_pointer_hints`.
+Every sweep bumps every child with a newer release, so an umbrella gets a pointer commit per sweep. That is deliberate: a single pass converges (measured on bastion-core), and a per-repo throttle or a release-age cooldown were both declined in favour of always-latest.
