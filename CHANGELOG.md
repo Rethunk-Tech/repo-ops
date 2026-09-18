@@ -7,54 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [0.25.0] - 2026-09-18
 
-- **Expo apps hold their SDK-coupled packages at the installed SDK's bundled versions.** A default `apply` over majordomo moved `react-native`, `react-native-gesture-handler` (`~2.32` to `3.3`) and nine more `apps/mobile` packages past what Expo SDK 57 bundles; `bun run ci:offline` passed and `check:native-config` (expo-doctor) broke, and the fix was 11 hand-written `[[hold]]` rules that go stale on every SDK bump. For a workspace depending on `expo`, every package listed in the installed `expo/bundledNativeModules.json` is now held at its bundled spec, apply writes that spec, `plan` proposes moving an out-of-spec package onto it, `expo` is held at its installed major, and `expo.install.exclude` opts out. Rows carry the reason (`expo SDK 57 bundles ~2.32.0`) in the human report and JSON `hold_reason`. Docs: [usage § Expo SDK alignment](docs/usage.md#holds).
+repo-ops is now an apply-first tool. Across 362 recorded invocations the operator ran `apply` and `plan` and almost nothing else, passed the same handful of flags every time, and read a 1,126-word `apply --help` 114 times. This release keeps the three commands that carry the work, makes the flags everyone passed the defaults, and deletes the rest: `repo-ops apply` with no arguments now updates, verifies and commits every checkout under the default roots.
+
+### Upgrading from 0.24
+
+| 0.24 | 0.25 |
+| --- | --- |
+| `repo-ops apply --commit=conventional` | `repo-ops apply` (commits by default; `--no-commit` to opt out) |
+| `apply --flat --allow-dirty --on-verify-fail=keep /path` | `repo-ops apply /path` (a named root implies all three) |
+| `--log-file`, `--json`, `--json-out`, `--compact` | every run writes `$XDG_STATE_HOME/repo-ops/runs/<utc>-<cmd>/{log,report.json}` and prints both paths last |
+| `--conservative`, `--go-upgrade-mode`, `--actions-*`, `--migrate-to-uv-lock` | removed; the full sweep is the only mode |
+| `repo-ops audit` | `osv-scanner`, `govulncheck`, `uv audit` |
+| `repo-ops license`, `repo-ops sbom` | `osv-scanner --licenses` |
+| `repo-ops inventory` (`--status`), `repo-ops pushed` | `project-register` |
+| `repo-ops doctor` | the ecosystem CLIs' own `--version` |
+| `repo-ops install-skill` | `bunx skills add Rethunk-Tech/repo-ops` |
+| `dependabot --scaffold/--write/--schedule` | removed (they generated the PRs the fleet closes) |
+| `REPO_OPS_*` environment variables | removed; the only config is two files and three keys |
+| `[tool.repo-ops]` in `pyproject.toml` | move it to `.repo-ops.toml` |
 
 ### Changed
 
-- **Umbrella submodule pointer commits are always on under `--commit`.** `--commit-umbrella`, `REPO_OPS_COMMIT_UMBRELLA` and the `commit_umbrella` setting are gone. After the child commits, each umbrella repo gets one `chore(submodules)` commit staging exactly the gitlinks of children committed this run; every Bastion sweep otherwise ended with 17 dirty gitlinks to commit by hand. The footer's submodule pointer list is recomputed after that commit, so it names only pointers still dirty.
-- **A repo that fails during `apply` is retried once, alone, after the sweep** (when `--on-verify-fail=revert` and `--commit` roll it back). In one fleet sweep 9 of 9 failures were concurrency artefacts (a resolver blip in `govulncheck`, golangci-lint's machine-wide runner lock, test timeouts under load) and all 9 passed when re-run one at a time.
+- **BREAKING: `apply` commits each verified repo by default.** One conventional commit per repo, staging only the files apply touched (`git commit -- <paths>`), never `.env` or key material, and never pushing. `--no-commit` leaves the tree dirty; `--no-verify` implies it. The `agent` commit mode and its Cursor SDK extra are gone: SDK pipelines do not live in product repos.
+- **BREAKING: dirty and failure handling follow from whether roots were named.** With no roots, `apply` sweeps `DEFAULT_ROOTS`: dirty repos are skipped, a repo whose verify fails is reverted, and it is retried once on its own after the sweep (9 of 9 failures in one sweep were concurrency artefacts that passed alone). A named root is a checkout the operator is working in: it is processed even when dirty, only apply's own files are committed, a failed verify keeps the changes for inspection, and `--exclude` never drops it. This replaces `--flat`, `--allow-dirty` and `--on-verify-fail`, which were passed on 88/88, 29/30 and 15/15 explicit-root runs.
+- **BREAKING: one mode, the full sweep.** Every ecosystem crosses ranges and majors, runs a targeted bump for anything still behind, and refreshes or pins SHAs for Actions, containers, pre-commit hooks and submodules. `--conservative`, the 22 sweep settings behind it (0 set anywhere on the fleet), the Go `patch`/`mvs` modes, the Actions tag-style/unpin/policy-level knobs and the hatch migration switch are deleted. Floating Actions tags become SHA pins, hatch projects always gain a `uv.lock`, and the org allowed-actions check runs whenever `gh` is authenticated. Held packages are the way to stay behind on purpose.
+- **BREAKING: config is two files and three keys.** `~/.config/repo-ops/config.toml` and a per-repo `.repo-ops.toml`, keys `exclude`, `[[hold]]` and `[verify]`. `exclude` is the union of both files and `--exclude`. All 48 `REPO_OPS_*` environment variables, the `pyproject.toml [tool.repo-ops]` layer and the timeout and concurrency settings are gone; timeouts are constants. A `.repo-ops.toml` in a workspace below the repo root can carry its own `[verify]`, so `skip = true` opts out one workspace.
+- **BREAKING: six flags.** `plan` and `apply` take `root ...`, `--exclude`, `--jobs`, `-v` and `--filter`; `apply` adds `--no-commit` and `--no-verify`; `dependabot` takes the same scan flags plus `--close`. All three share one parser, so a flag means the same thing everywhere and the 13 "X requires Y" checks (9 of them silent no-ops) went with their flags. `apply --help` is 139 words, down from 1,126.
+- **Every run writes a run directory.** `log` and `report.json` land under `$XDG_STATE_HOME/repo-ops/runs/<utc>-<cmd>/` (newest 50 kept), and their paths are the last line printed, replacing `--log-file` and the `--json`/`--json-out` pair that errored 16 times when only one half was passed. The human report lists only repos with something to show.
+- **Verify runs the gates a project declares.** Where the `gate` CLI detects gates, verify runs them (Makefile targets, turbo tasks, `.gate.toml`), tests included, after the ecosystem's lockfile check. Measured on Routed, the old Node ladder ran `bun run build` where `gate` detects five gates; on paper-trail the Python ladder ran only a pytest collection where `gate` detects six. The built-in ladders remain for repos without `gate`.
+- **Umbrella repos get their pointer commit automatically.** Children are applied first, then each parent gets one `chore(submodules)` commit staging exactly the gitlinks of children committed this run. A Bastion sweep previously ended with 17 dirty gitlinks to commit by hand.
+- **Actions tag lines always carry a SHA**, as `gh api` returns them, so the name-only parsing path and the tag-normalise branch it fed are gone.
+
+### Added
+
+- **Expo apps hold their SDK-coupled packages at the installed SDK's bundled versions.** A default sweep over majordomo moved `react-native`, `react-native-gesture-handler` (`~2.32` to `3.3`) and nine more `apps/mobile` packages past what Expo SDK 57 bundles, and expo-doctor broke. For a workspace depending on `expo`, every package in the installed `expo/bundledNativeModules.json` is held at its bundled spec, `expo` at its installed major, and `expo.install.exclude` opts out. Rows carry the reason (`expo SDK 57 bundles ~2.32.0`).
+- **`manifest_format` remediation.** bun, npm and pnpm re-serialise `package.json` fully expanded, so a repo whose Biome config sets `json.formatter.expand: "never"` failed verify on every manifest a sweep touched (prepaudit: five). The repo's own `biome format --write` now runs on exactly the rewritten manifests when a Biome config governs them.
+
+### Fixed
+
+- **Auto-commits could sweep up whatever was already staged.** The commit now names its paths, so an operator's staged work stays out of repo-ops' commit.
+- **Child commits in umbrella repos failed on `index.lock: File exists`.** A parallel `git status` in the umbrella took the submodules' index locks (27 of 300 adds failed in a local repro). `GIT_OPTIONAL_LOCKS=0` is set for repo-ops and every subprocess (0 of 300).
+- **A failed verify now returns the repo to its exact pre-apply state.** Revert restored only lockfiles and manifests, so a `biome migrate` `$schema` bump and the upgraded `node_modules` survived (citadel and six Biome repos). Every file changed since apply is restored, edits that predate apply are kept, the tree is reinstalled from the restored lockfile, and a verify that raises reverts too.
+- **Workspace members were never checked.** bun and pnpm outdated scope to the cwd, and npm saved member bumps into the root manifest. Members are now checked and bumped from their own directories.
+- **Private members' peer pins follow their own dependency bumps.** A sweep moved `next` to 16.3.5 but left `peerDependencies.next` at 16.3.1 (prepaudit and caldera), and bun warned on every install. Exact peer pins move and `^`/`~` floors rise, never fall, subject to holds at the member path.
+- **Holds scoped to a member were reported as `(latest)`.** Entries now carry their member path, holds resolve there, and `packages_held` counts them.
+- **Go holds on untagged modules blocked nothing.** Pseudo-versions compared as `0.0.0`; they now order by base version then commit time and clamp exactly.
+- **Actions pins:** sub-path actions (`owner/repo/setup-go`) fetch tags from `owner/repo`; two-part `vN.M` tags order by semver; the `# vX.Y.Z` comment is rewritten to the tag the new SHA resolves to.
+- **bun.lock's workspace mirror held the literal `latest`** after `bun update --latest` (91 entries across 26 repos). It is resynced after an apply that changed something.
+- **bun checks no longer probe `bun outdated --json`**, which bun 1.4 does not support; every bun workspace spent a failing subprocess on it.
+- **pip-tools verify treated `zope.interface` and `zope-interface` as different packages** and reported drift. Names are normalised per PEP 503.
+- **`dependabot` matched skip directories anywhere in a repo's absolute path** rather than below the repo root, and used either the repo or the global exclude list instead of both.
 
 ### Removed
 
-- **`pushed` and the `repo_ops_pushed` package.** `project-register` answers it over the same fleet, from the same source — `update by push` entries in the `refs/remotes/*` reflog, windowed on when the push happened and counting the range each push delivered. Coverage was measured before removing anything: over 40 repositories with pushes in a 168-hour window, both tools report the same 40 repositories and the same 1843 commits, with zero disagreements. Every option is answered except `--source=gh`, which is deliberately out of scope there — the register's forge tier owns anything that costs a request, and this read stays answerable with the network gone. `--exclude`, `--follow-symlinks` and `--jobs` are settings the register holds in its own config rather than per-invocation flags. The two `pushed`-specific JSON tests were dropped because the `--json-out` and `--compact` contracts they covered are the same shared paths already asserted for `inventory` and `plan`; the `parse_iso8601` invalid-string case they carried moved into `tests/test_cli.py`, which had been deferring to them for it.
+- **Commands:** `audit`, `license`, `sbom`, `doctor`, `inventory`, `install-skill` and `pushed`, with their packages. Each had a better-maintained replacement (see the table above) or no recorded use; `audit` alone was 2,756 lines, all of its recorded runs against a repo-ops test probe.
+- **`--pr`, `--pr-base`, `--branch-prefix`** (pushed without per-push approval), **`--resume`** and its checkpoint, and the remaining zero-use flags (`--top`, `--only-outdated`, `--strict-exit`, `--fail-fast`, `--skip-remediations`, `--verify-test`, `--max-failures`, `--quiet`, `--log-level`, `--follow-symlinks`, `--manager`, `--submodules`, `--submodule-order`).
+- **Binary `bun.lockb` support.** No fleet repo has one and bun 1.4 no longer writes it.
+- **The `go_generate` remediation and the Go directive/toolchain toggles**; `plan` no longer mutates `go.work`.
+- **Docs:** `HUMANS.md`, `docs/installation.md` and `docs/programmatic-imports.md` (no importer exists); the skill is one `SKILL.md` under `skills/repo-ops/`. Docs and skill went from about 9,600 words to 2,474.
 
-- **`inventory --status` and the `repo_ops_status` package.** `project-register` answers the same question over the same fleet, and two installed tools answering "where does this checkout stand" is how they come to disagree. Coverage was measured before removing anything: over 48 repositories under one root, all 240 values (branch, upstream, ahead, behind, dirty) agree, and the two apparent differences are cases where `--status` was wrong — a repository with an unborn `HEAD` and a configured upstream had `main...origin/main [gone]` packed into its branch field and a null upstream, where `git status --porcelain=v2 --branch` reports `main` and `origin/main` separately. `--fetch` goes with it, having existed only to serve `--status`. `inventory` itself, and every dependency-footprint mode, is unchanged.
+### Internal
 
-### Fixed
-
-- **Child commits in umbrella repos failed on `index.lock: File exists`.** A parallel `git status` in the umbrella recurses into its submodules and takes their index lock for an opportunistic refresh, racing the child's `git add` (27 of 300 adds failed in a local repro). `repo-ops` now sets `GIT_OPTIONAL_LOCKS=0` for itself and every subprocess (0 of 300).
-
-- **`--on-verify-fail=revert` returns the repo to its pre-apply state.** A sweep left citadel and six Biome repos dirty after verify failed: revert restored only the manager's lockfiles and manifests, so a `biome migrate` `$schema` bump survived, and `node_modules` kept the upgraded packages verify had installed. Revert now captures every dirty file before apply and restores any file changed since, keeping edits that predate apply (the old HEAD checkout discarded them under `--allow-dirty`), then reinstalls from the restored lockfile. A verify that raises, such as a `gate` timeout, now reverts instead of bypassing revert, and with `--commit` a failure also reverts the repo's passing workspaces, whose commit it vetoes.
-
-- **Private workspace members' peer pins follow their own dependency bumps.** A sweep moved `next` to 16.3.5 in devDependencies but left `"peerDependencies": { "next": "16.3.1" }` beside it (prepaudit and caldera `packages/auth` and `packages/ui`), and bun warns `incorrect peer dependency` on every install while it trails. Both repos wrote each peer as a copy of the same manifest's dev spec and moved them together by hand. For a `"private": true` npm, pnpm or bun member, an exact peer pin now moves to the member's own dependency version and a `^`/`~` floor is raised to it, never lowered, subject to holds at the member path; `plan` proposes it and `apply` reinstalls, since bun.lock mirrors peer ranges and `--frozen-lockfile` accepts a stale copy. Published members are untouched, and the target is the member's own spec rather than the repo's newest copy, so one app's hold (majordomo's Expo react) cannot raise a shared package's floor past it.
-
-- **Holds scoped to a monorepo member are reported as held.** Member behind-latest entries were merged into the root workspace's result and their hold resolved at the root path, so a `workspace = "apps/mobile"` rule still declined the bump but the entry read `(latest)` and `packages_held` stayed 0 (majordomo: react, react-dom, @types/react, react-native). Entries now carry their member path (JSON `member`), holds resolve there, and JSON `behind_latest` entries carry `held` for root and member alike.
-
-- **Apply no longer fails Biome lint on the manifests it bumps.** bun, npm and pnpm re-serialise `package.json` with every object expanded, so a repo whose Biome config sets `json.formatter.expand: "never"` failed verify on each member manifest a sweep touched (prepaudit: five). A new `manifest_format` remediation runs the repo's installed `biome format --write` on exactly the `package.json` files whose bytes the apply changed, and only when a `biome.json`/`biome.jsonc` governs the workspace. Root manifests rarely showed it because their dependency objects are too long to collapse and bun keeps short arrays inline.
-
-- **`repo-ops audit`'s `py-uv` path audited the installed environment, not the lockfile.** It shelled out to `uv run pip-audit`, so a project whose `uv.lock` was full of advisories but whose local `.venv` happened to have newer packages installed would report clean. Switched to `uv audit --frozen --output-format json`, which audits `uv.lock` as committed without mutating or failing on a stale lock. A missing `uv.lock` now skips with a clear reason instead of gating on pip-audit availability. The other Python managers (poetry/pdm/pipenv/hatch/pip-tools) still export a requirements file and audit that with pip-audit, which is unaffected.
-
-### Changed
-
-- **`[verify]` config is also read from the workspace directory.** A `.repo-ops.toml` or `[tool.repo-ops]` table beside a workspace below the repo root now layers over the repo's own `[verify]`, so `skip = true` opts out one workspace. Every sweep reported `Rethunk-Tech/gh-actions`' deliberately broken self-test fixtures (`go-app-broken`, `python-app-broken`) as verify failures, and the only existing knob, repo-level `verify.skip`, would also have hidden the clean fixtures beside them.
-
-- **Apply verification runs the gates a project declares, through `gate`, instead of re-deriving them.** The Node waterfall (`ci` → `ci:pushgate` → `build` → `lint`) and the hard-coded Go and Rust commands could only see package.json scripts and a fixed command list, so they ranked below the Makefile-target and turbo-task tiers `gate` ranks highest. Measured on `Routed`: verify ran `bun run build` alone where `gate --list` detects five gates (build, typecheck, lint, workflows, test). Verification now probes `gate --list` and, when it detects anything, runs `gate --timeout 0 run <names>`; the ecosystem lockfile checks (`bun install --frozen-lockfile`, `go mod verify`, `uv sync --locked`) still run first, and `REPO_OPS_NODE_VERIFY_SCRIPT` / `verify.script` still override both. Without `gate` on PATH the built-in gates run as before, with a warning saying this verify is the weaker one. `--verify-test` stays meaningful by dropping the declared `test` gate from the delegated run.
-
-  The Python managers (uv, hatch, poetry, pdm, pipenv) all funnel through `_verify_hatch_fast`, which picked one command from a ladder of guesses (`test` script → pytest → `check`/`typecheck` script → mypy → pyrefly → ruff) and stopped there, so they get the same delegation from that one place. Measured on `paper-trail`: verify ran `uv sync --locked` then `uv run pytest -q --co -q` — a test *collection*, and the only gate it ran — where `gate --list` detects six (typecheck, lint, workflows, test, vuln, deps). It now runs `uv sync --locked` followed by `gate --timeout 0 run typecheck lint workflows vuln deps`, adding `test` only under `--verify-test`, which previously changed nothing on the Python path.
-
-- **Removed historic tombstones and ticket provenance from comments and docstrings.** 368 issue/task citations (`Issue #108`, `Task #18`, `(#136)`), 73 audit finding IDs (`F041`, `F145`), and every audit-wave label (`TASK A:`, `Task 1 —`) are gone from `src/` and `tests/`, per the standing rule that a comment explains non-obvious *why*, never history. Where a comment described how the code used to behave — "the old default was `keep_sha=False`", "`#136` deleted every `--*-targeted-bump` flag", "dropping them when outdated is empty was the silent-skip bug" — it now states the requirement in the present tense, so it reads as a rule to keep rather than an incident to remember. No behaviour changed; the descriptive half of every comment was preserved.
-
-### Fixed
-
-- **The settings table in `docs/usage.md` had drifted from `SETTINGS_TABLE`.** It was a hand-maintained copy of a code structure: two settings were missing (`actions_pin_sha`, `actions_refresh_sha`), one that no longer exists was still listed (`remediate_go_generate`), and 42 values disagreed — every `--conservative` setting was documented as flagless with default `0` when the code says `--conservative` and `1`, with a paragraph above the table explaining that the table was not to be believed. Replaced by the naming rule (`REPO_OPS_<NAME>` / `<name>`, with `jobs` and `exclude_patterns` the only exceptions), one sentence for the 22-setting `--conservative` family, and a table of the rest. A test now asserts the page and the code agree.
-- **A drifted comment and a misplaced setting in `config.py`.** The sweep-defaults block was annotated "these 20 keys" when it governs 22, and `yarn_max_concurrency` — which is invocation-scoped, not a sweep gate — sat inside it. The comment no longer hardcodes a count, and the setting moved next to `jobs` where it belongs.
-- **A broken link in `.github/pull_request_template.md`.** `docs/testing.md` resolved relative to `.github/`. A test now walks every tracked Markdown file and checks each relative link and `#anchor` resolves.
-
-### Changed
-
-- **Documentation trimmed by ~19 % (2,400 words) without losing behaviour.** The cuts were duplication and restatement, not detail: package-hold enforcement stated one shared rule plus a per-ecosystem deviations table instead of repeating the rule eleven times; `AGENTS.md` and the bundled `REFERENCE.md` no longer carry 53 % identical text; `programmatic-imports.md` collapsed fifteen rows that each said `register()`; the global-flag paragraph became a table. Also corrected the stale "org/proj two-level walk" description of `--flat` left behind by the git-aware discovery change, dropped release history from `docs/testing.md` (docs describe current state), and removed a footer of seven tracking issues, six of them closed.
+- Duplicated helpers consolidated: one GitHub-remote parser, one workspace-member matcher, one TOML lock parser, one requirements parser, one hold check (`repo_ops_core.holds.target_within_hold`), one lock clamp for uv/pdm/poetry/pipenv.
+- Tests: 30 duplicate or dead-feature tests and 40 unused helpers removed after per-test coverage comparison; shared `fake_run` and `upgrade_args` fixtures, the latter built from the real parser so it cannot drift.
 
 ## [0.24.0] - 2026-08-18
 
@@ -902,7 +919,10 @@ Note: `v0.20.1` was tagged but its release build failed the `ruff format --check
 
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.22.1...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.24.0...v0.25.0
+[0.24.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.23.0...v0.24.0
+[0.23.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.20.4...v0.21.0
