@@ -31,47 +31,21 @@ ECO_FILTER_CHOICES = (
     "precommit",
     "actions",
 )
-ECO_FILTER_HELP = f"Limit upgrade workspaces to one ecosystem ({'/'.join(ECO_FILTER_CHOICES)})."
-
-DEFAULT_ROOTS_HELP = (
-    "Root directories to scan. When omitted, uses DEFAULT_ROOTS: "
-    + ", ".join(DEFAULT_ROOTS)
-    + ". Named roots are treated as checkouts the operator is working in."
-)
-
-PLAN_DESCRIPTION = (
-    "Plan dependency updates, GitHub Actions pin drift, and remediations "
-    "(read-only; no lockfile or workflow writes)."
-)
-
-APPLY_DESCRIPTION = (
-    "Apply dependency updates, GitHub Actions pin bumps, and remediations, "
-    "then run per-workspace verify gates unless --no-verify."
-)
-
 PLAN_EPILOG = """\
-exit codes:
-  0  no actionable drift
-  1  drift, remediations, or Actions pin changes exist (CI-friendly)
-
-Every run writes $XDG_STATE_HOME/repo-ops/runs/<utc>-plan/{log,report.json};
-both paths are the last line printed. Full reference: docs/usage.md.
+exit codes: 0 nothing to do, 1 drift exists.
+Writes $XDG_STATE_HOME/repo-ops/runs/<utc>-plan/{log,report.json}; both paths
+are the last line printed. Reference: docs/usage.md.
 """
 
 APPLY_EPILOG = """\
-exit codes:
-  0  no workspace failures (dirty skips are ok)
-  1  any workspace fail
-
 roots:
-  omitted  fleet sweep of DEFAULT_ROOTS: dirty repos are skipped; a repo that
-           fails verify is reverted and retried once on its own
+  omitted  sweep DEFAULT_ROOTS: dirty repos skipped, failed verify reverted
   named    that checkout, even if dirty (only files apply touched are
-           committed); a failed verify keeps the changes for inspection
+           committed); failed verify keeps the changes
 
-Each verified repo gets one conventional commit; nothing is pushed.
-Every run writes $XDG_STATE_HOME/repo-ops/runs/<utc>-apply/{log,report.json};
-both paths are the last line printed. Full reference: docs/usage.md.
+exit codes: 0 no workspace failed, 1 any workspace failed.
+Writes $XDG_STATE_HOME/repo-ops/runs/<utc>-apply/{log,report.json}; both paths
+are the last line printed. Reference: docs/usage.md.
 """
 
 
@@ -136,55 +110,29 @@ def resolve_scan_roots(
     return resolved
 
 
-def add_roots_argument(
-    parser: argparse._ActionsContainer,
-    *,
-    default: list[str] | None = None,
-    help_text: str | None = None,
-) -> None:
-    """Add unified 'roots' positional arg using DEFAULT_ROOTS by default."""
-    if default is None:
-        default = DEFAULT_ROOTS
+def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
+    """Flags every root-scanning subcommand shares: roots, --exclude, --jobs, -v."""
     parser.add_argument(
         "roots",
         nargs="*",
-        default=default,
-        metavar="root_dir",
-        help=help_text or DEFAULT_ROOTS_HELP,
+        default=DEFAULT_ROOTS,
+        metavar="root",
+        help="Checkouts to process (default: " + ", ".join(DEFAULT_ROOTS) + ").",
     )
-
-
-def add_eco_filter_argument(parser: argparse._ActionsContainer) -> None:
-    """Add --filter for a single ecosystem."""
-    parser.add_argument(
-        "--filter",
-        choices=list(ECO_FILTER_CHOICES),
-        dest="eco_filter",
-        metavar="ECO",
-        help=ECO_FILTER_HELP,
-    )
-
-
-def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
-    """Flags every root-scanning subcommand shares: roots, --exclude, --jobs, -v."""
-    add_roots_argument(parser)
     parser.add_argument(
         "--exclude",
         action="append",
         dest="exclude_patterns",
         default=None,
         metavar="PAT",
-        help=(
-            "Skip discovered repos whose label or path contains PAT (substring or "
-            "glob). Repeatable; unioned with the config `exclude` list."
-        ),
+        help="Skip discovered repos whose path matches PAT (substring or glob; repeatable).",
     )
     parser.add_argument(
         "--jobs",
         type=positive_int,
         default=None,
         metavar="N",
-        help="Parallel workers (default: min(16, cpu count)).",
+        help="Parallel workers (default: min(16, cpus)).",
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="Echo subprocesses.")
 
@@ -198,25 +146,32 @@ def wire_verbose(args: argparse.Namespace) -> None:
 def build_upgrade_parser(*, apply: bool) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="repo-ops apply" if apply else "repo-ops plan",
-        description=APPLY_DESCRIPTION if apply else PLAN_DESCRIPTION,
+        description=(
+            "Update, verify and commit dependencies in each checkout."
+            if apply
+            else "Preview what apply would change (read-only)."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=APPLY_EPILOG if apply else PLAN_EPILOG,
         allow_abbrev=False,
     )
     add_scan_arguments(parser)
-    add_eco_filter_argument(parser)
+    parser.add_argument(
+        "--filter",
+        choices=list(ECO_FILTER_CHOICES),
+        dest="eco_filter",
+        metavar="ECO",
+        help="One ecosystem: " + "|".join(ECO_FILTER_CHOICES) + ".",
+    )
     if apply:
         parser.add_argument(
             "--no-commit",
             action="store_true",
-            help=(
-                "Leave changes uncommitted (default: one conventional commit per "
-                "verified repo; never pushes)."
-            ),
+            help="Leave changes uncommitted (default: one commit per verified repo; never pushes).",
         )
         parser.add_argument(
             "--no-verify",
             action="store_true",
-            help="Skip verify gates after apply (implies --no-commit).",
+            help="Skip the repo gate (implies --no-commit).",
         )
     return parser

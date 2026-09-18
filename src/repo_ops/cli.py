@@ -68,7 +68,7 @@ def _resolve_version() -> str:
 _TOP_LEVEL_DESCRIPTION = """\
 Dependency maintenance for local checkouts (plan, apply, dependabot).
 
-When no root_dir arguments are passed, subcommands scan DEFAULT_ROOTS
+When no root is passed, subcommands scan DEFAULT_ROOTS
 (see repo-ops plan --help).
 """
 
@@ -118,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     for name, help_text in _SUBCOMMAND_HELP.items():
         # add_help=False: delegate --help to the full subcommand parser so flags
-        # and root_dir are documented; parse_known_args forwards real argv.
+        # and roots are documented; parse_known_args forwards real argv.
         sub.add_parser(name, help=help_text, add_help=False)
 
     args, remainder = parser.parse_known_args(argv)

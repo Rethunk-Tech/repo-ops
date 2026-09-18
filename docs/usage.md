@@ -4,7 +4,7 @@ What `plan`, `apply` and `dependabot` do, how they are configured, and what they
 
 ## Roots
 
-With no `root_dir`, every command scans [`DEFAULT_ROOTS`](../src/repo_ops_core/constants.py) for git checkouts. That is a fleet sweep: repos with uncommitted changes are skipped, and a repo whose verify fails is reverted and retried once on its own after the sweep. A named root is a checkout the operator is working in: it is processed even when dirty (only files apply touched are committed), and a failed verify keeps the changes for inspection.
+With no `root`, every command scans [`DEFAULT_ROOTS`](../src/repo_ops_core/constants.py) for git checkouts. That is a fleet sweep: repos with uncommitted changes are skipped, and a repo whose verify fails is reverted and retried once on its own after the sweep. A named root is a checkout the operator is working in: it is processed even when dirty (only files apply touched are committed), and a failed verify keeps the changes for inspection.
 
 `--exclude PAT` (substring or glob, matched against a repo's label and path) is unioned with the config `exclude` lists, so a flag can never pull a permanently excluded repo back in. A named root is never excluded. Scan roots must be existing directories; symlinks are not followed.
 
