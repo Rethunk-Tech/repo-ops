@@ -1,4 +1,4 @@
-"""Directory walks shared by inventory counting and upgrade discovery."""
+"""Directory walks for upgrade discovery."""
 
 from __future__ import annotations
 

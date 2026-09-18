@@ -1,11 +1,8 @@
 """discover_repos must find git submodules, whose .git is a *file* (gitlink),
 not just normal repos, whose .git is a directory.
 
-Regression for a real gap: the underlying `find -type d -name .git` predicate
-structurally cannot match a gitlink, so every submodule in a monorepo (e.g.
-Rethunk-Tech/Bastion's ~30 nested repos) was invisible to every repo-ops scan
-regardless of --submodules (that flag only annotates parent-pointer-commit
-metadata; it was never wired into repo discovery itself).
+A `find -type d -name .git` predicate cannot match a gitlink, so an umbrella
+repo's submodules (Bastion has ~30) would be invisible without the file case.
 """
 
 from __future__ import annotations

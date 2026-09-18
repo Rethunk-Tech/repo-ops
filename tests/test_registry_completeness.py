@@ -40,7 +40,6 @@ class TestRegistryCompleteness:
         self._checkers: set[str] = set(registry.CHECKERS)
         self._appliers: set[str] = set(registry.APPLIERS)
 
-    # Managers added in this fix
     @pytest.mark.parametrize("manager", ["pdm", "pipenv", "deno"])
     def test_new_manager_has_checker(self, manager: str) -> None:
         """After register_all(), pdm/pipenv/deno must have a checker."""

@@ -101,13 +101,7 @@ def test_apply_pnpm_guard_skipped_when_resolver_returns_none(
 def test_bucket_pnpm_pkg_falls_through_when_latest_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """latest=='?' must fall through
-    to the wanted check so a package with a known in-range bump is not omitted.
-
-    Before the fix: the early ``return`` after the ``latest not in ('?','')``
-    block swallowed packages where latest was '?' even when wanted > current,
-    causing apply to silently skip an actionable in-range upgrade.
-    """
+    """latest=='?' falls through to the wanted check, so a known in-range bump is kept."""
 
     changes: list[Change] = []
     behind_latest: list[Change] = []

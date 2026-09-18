@@ -106,7 +106,7 @@ def test_sort_bundles_self_referential_link_terminates(tmp_path: Path) -> None:
     p.mkdir()
     # Construct the pathological link directly (no git init needed).
     self_link = submodules.SubmoduleLink(path="sub", git_repo=p, parent=p)
-    # Must terminate (would hang before the fix) and must exclude the bad link.
+    # Must terminate and must exclude the bad link.
     ordered = submodules.sort_bundles_children_first([p], [self_link])
     assert ordered == [p]
 

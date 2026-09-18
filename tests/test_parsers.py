@@ -110,9 +110,8 @@ packages:
 
 
 def test_versions_pnpm_lock_v5_peer_suffix_not_swallowed():
-    """V5 path lines with @peer-suffix must parse correctly via _RE_PATH —.
+    """V5 path lines with @peer-suffix parse via _RE_PATH, not _RE_AT.
 
-    Before the fix _RE_AT matched these first and emitted a garbled token.
     A plain name@version line must still parse correctly too.
     """
     content = """lockfileVersion: 5

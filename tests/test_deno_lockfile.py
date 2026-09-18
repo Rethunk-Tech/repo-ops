@@ -1,14 +1,4 @@
-"""TDD tests for Deno lockfile parser (all format versions).
-
-On-disk fixtures under ``tests/fixtures/deno_v*.lock`` are the single source of
-truth; tmp-path tests copy from those files so drift is caught by
-``test_deno_fixture_files_on_disk``.
-
-Fixture spike output (run against tests/fixtures/):
-  v2 versions: ['npm:chalk@5.1.0']                           (count=1)
-  v3 versions: ['jsr:@std/assert@0.221.0', 'npm:chalk@5.2.0']  (count=2)
-  v4 versions: ['jsr:@std/assert@1.0.0', 'npm:chalk@5.3.0']    (count=2)
-"""
+"""Deno lockfile parser across format versions v2-v4 (fixtures in tests/fixtures/)."""
 
 from __future__ import annotations
 

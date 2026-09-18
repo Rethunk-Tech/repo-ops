@@ -234,7 +234,7 @@ def test_print_human_report_report_only_marker(tmp_path: Path, capsys) -> None:
 
 
 def test_human_report_sort_suppress_align(tmp_path: Path, capsys) -> None:
-    """--only-outdated sorts heaviest-first, suppresses empty headers,
+    """The human report sorts heaviest-first, suppresses empty headers,
     and aligns change rows; build_run_summary carries packages_upgraded."""
     heavy_repo = tmp_path / "heavy"
     light_repo = tmp_path / "light"
@@ -295,7 +295,7 @@ def test_human_report_sort_suppress_align(tmp_path: Path, capsys) -> None:
 
     print_human_report(
         bundles,
-        dry_run=True,  # --skip-actions
+        dry_run=True,
     )
     out = capsys.readouterr().out
 

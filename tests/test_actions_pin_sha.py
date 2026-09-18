@@ -74,7 +74,7 @@ def test_pin_sha_exact_tag_pins_to_own_sha_and_replaces_no_comment(
     checkout = [b for b in bumps if b.action == "actions/checkout"]
     assert len(checkout) == 1
     # Stays within v7 (the pin's own major); resolves to the highest exact
-    # release in that major, matching refresh_sha's within-major behavior.
+    # release in that major, the same as a digest refresh.
     assert checkout[0].latest == _V7_0_1
 
     text = wf.read_text(encoding="utf-8")

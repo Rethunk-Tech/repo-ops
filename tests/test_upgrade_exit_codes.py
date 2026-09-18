@@ -1,4 +1,4 @@
-"""Exit codes, --log-file, and --strict-exit for plan/apply."""
+"""Exit codes for plan/apply."""
 
 from __future__ import annotations
 

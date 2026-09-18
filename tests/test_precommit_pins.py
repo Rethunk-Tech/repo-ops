@@ -4,7 +4,7 @@ Covers:
   * is_precommit_workspace: detects .pre-commit-config.yaml / .yml
   * _parse_precommit_repos: 2-space, 4-space, quoted revs, multiple repos,
     no-rev repo skipped
-  * _is_sha_rev / _is_semver_like / _has_v_prefix / _resolve_latest_precommit_rev
+  * _is_sha_rev / _resolve_latest_precommit_rev
   * _fetch_tags_for_repo: happy path, git not found, timeout, non-zero exit
   * check_precommit: actionable bump, SHA pin, non-semver rev, network error,
     already-at-latest, cross-major
@@ -491,9 +491,7 @@ def test_apply_precommit_refreshes_sha_pin(tmp_path: Path, monkeypatch: pytest.M
 
 
 def test_apply_precommit_rev_collision_two_repos_get_own_target(tmp_path: Path) -> None:
-    """Bug 1 fix: two repos pinned at the SAME current rev but with DIFFERENT
-    latest tags must each receive their own correct target — not the same
-    last-write-wins value that the old from_ver-keyed dict produced."""
+    """Two repos pinned at the same rev with different latest tags each get their own target."""
     original = (
         "repos:\n"
         "- repo: https://github.com/org/repo-a\n"

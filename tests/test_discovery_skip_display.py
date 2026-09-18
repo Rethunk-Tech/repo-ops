@@ -31,7 +31,7 @@ def _summary(*, discovery_skipped: int = 1, failure_count: int = 0) -> dict:
 
 
 def test_not_actionable_skips_render_as_informational() -> None:
-    """Skips render under an informational header, not the old warning-ish one."""
+    """Skips render under an informational header, not a warning."""
     skips = [
         {
             "ecosystem": "node",

@@ -2,8 +2,8 @@
 
 Exercises ``assert_targets_resolved`` against a real ``node_modules`` tree
 populated by ``pnpm install``.  pnpm v9+ reads override pins from
-``pnpm-workspace.yaml``; the root ``package.json`` still carries
-``pnpm.overrides`` for repo-ops audit paths.
+``pnpm-workspace.yaml``; the root ``package.json`` also carries
+``pnpm.overrides``.
 
 We call ``assert_targets_resolved`` directly (same integration boundary as
 ``test_npm_ghost_bump.py``) because pnpm outdated with an active override reports

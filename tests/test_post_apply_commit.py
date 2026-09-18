@@ -142,8 +142,7 @@ def test_skipped_dirty_sibling_workspace_does_not_block_commit(
 ) -> None:
     # a *sibling workspace* skipped as dirty (status="skip",
     # error "dirty git worktree") must not veto committing a clean workspace's
-    # applied bump. Exercises the second gate (_bundle_apply_ok), which the
-    # original fix left in place — fails before the skip-dirty veto was removed.
+    # applied bump (the _bundle_apply_ok gate).
     bundle = _bundle(tmp_path, init_git_repo=init_git_repo)  # clean root workspace, status "ok"
     bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
     (tmp_path / "package.json").write_text('{"version":"1.0.0"}', encoding="utf-8")

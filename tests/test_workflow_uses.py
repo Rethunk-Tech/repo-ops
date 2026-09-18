@@ -213,8 +213,7 @@ def test_pin_bump_produces_exactly_one_line_diff(tmp_path: Path) -> None:
 
     A workflow with 6-space-indented steps and inline comments must have
     exactly one line changed (and only the @ref portion of that line) after
-    a pin bump.  The old ruamel.yaml dump path would reindent the entire
-    block-sequence, producing 51 insertions/51 deletions for a single bump.
+    a pin bump; a YAML dump would reindent the whole block sequence.
     """
     wf = tmp_path / "release.yml"
     wf.write_text(_SIX_SPACE_WORKFLOW, encoding="utf-8")

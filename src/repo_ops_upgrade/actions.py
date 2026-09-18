@@ -175,12 +175,7 @@ def _action_policy_violation(action: str, policy: dict, org_owner: str | None = 
 
 
 def _fetch_org_policy_cached(owner: str, store: dict[str, dict | None]) -> dict | None:
-    """Return cached org policy for *owner*, fetching via ``gh api`` on miss.
-
-    Identical in behaviour to ``_fetch_org_policy`` but uses *store* instead of
-    the module-level ``_ORG_POLICY_CACHE``, allowing test isolation via an
-    injected ``{}``.
-    """
+    """Return cached org policy for *owner* from *store*, fetching via ``gh api`` on miss."""
     if owner in store:
         return store[owner]
 
@@ -423,8 +418,7 @@ def action_tag_info(action: str, *, cache: dict[str, dict | None] | None = None)
 def _resolve_sha_major(sha: str, *, comment_hint: str | None, info: dict | None) -> int | None:
     """Resolve the floating major (integer N) a SHA pin belongs to.
 
-    Mirrors step 1 of ``_resolve_sha_target``: prefer the ``# vN`` comment hint,
-    else look the SHA up in the tags API (full SHA or unique short-prefix). Returns
+    Prefers the ``# vN`` comment hint, else looks the SHA up in the tags API (full SHA or unique short-prefix). Returns
     ``None`` when the major cannot be determined.
     """
     if comment_hint:
@@ -870,7 +864,7 @@ def scan_actions(
                 # Cross-major SHA refresh: advance to max_major if it has a
                 # real vN.M.P release.
                 # Falls back to the current major when the newest major has
-                # no exact tag (same safety check as the unpin path).
+                # no exact tag.
                 target_major = major
                 if info is not None and major is not None:
                     max_major = info.get("max_major")

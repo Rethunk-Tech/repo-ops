@@ -1,4 +1,4 @@
-"""Shared upgrade/inventory data models."""
+"""Shared upgrade data models."""
 
 from repo_ops_models.models import (
     DIRTY_SKIP_MARKER,

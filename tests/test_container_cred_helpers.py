@@ -1,4 +1,4 @@
-"""Tests for container credential-helper resolution (sub-task 8b).
+"""Tests for container credential-helper resolution.
 
 Covers:
   * _cred_helper_name_for_host: credHelpers per-host, credsStore global fallback

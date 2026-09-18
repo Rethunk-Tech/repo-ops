@@ -1,4 +1,4 @@
-"""--on-verify-fail=revert|keep after verify failure."""
+"""Verify-failure disposition: revert on a fleet sweep, keep on a named root."""
 
 from __future__ import annotations
 

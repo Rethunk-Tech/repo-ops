@@ -146,8 +146,3 @@ def test_valid_bun_package_name_dash_prefix_rejected() -> None:
 
 def test_valid_bun_package_name_scoped_accepted() -> None:
     assert _valid_bun_package_name("@types/node") is True
-
-
-# ---------------------------------------------------------------------------
-# bun audit: JSON-first path in _audit_node
-# ---------------------------------------------------------------------------

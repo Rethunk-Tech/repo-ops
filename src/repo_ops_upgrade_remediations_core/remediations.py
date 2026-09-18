@@ -59,9 +59,6 @@ def changed_files_since_head(
     touched a manifest/lockfile).  Files whose basename is in *exclude_names*
     are dropped (e.g. a formatter's own config/lock files, which are not a
     "source" reformat).
-
-    Uses ``run_git`` (not the repo_ops_core.process.run helper) so tests that
-    mock the process helper can still exercise the fallback path.
     """
     try:
         proc = run_git(ws.git_repo, "diff", "--name-only", "HEAD", timeout=30)

@@ -1,8 +1,7 @@
 """Yarn behind-after-up surfacing.
 
 After ``yarn up -R '*'``, peer/group-constrained direct deps can be left below
-their newest published version. repo-ops now reports those as ``behind_latest``
-instead of silently omitting them.
+their newest published version; they are reported as ``behind_latest``.
 """
 
 from __future__ import annotations

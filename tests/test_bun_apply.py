@@ -15,8 +15,6 @@ from repo_ops_lockfiles.snapshots import restore_workspace_snapshot, snapshot_wo
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade_remediations_js.remediations import _rewritten_manifests
 
-# Guard now lives in repo_ops_js.guards; patch the resolver there so all
-# managers' tests point at the same canonical location.
 _RESOLVER_PATH = "repo_ops_js.guards.resolved_version_from_node_modules"
 
 

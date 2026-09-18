@@ -1,4 +1,4 @@
-"""Data-loss regression tests for --on-verify-fail=revert path scoping.
+"""Revert after a failed verify touches only what apply changed.
 
 Proves that revert_workspace_after_verify_fail at repo root:
   (a) Restores apply artifacts (lockfile changes reverted to pre-apply content).

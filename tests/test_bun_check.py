@@ -44,12 +44,6 @@ def test_check_bun_targets_latest_column(tmp_path: Path, make_workspace) -> None
     assert behind_latest == []
 
 
-# a package where current < update < latest (all distinct) must
-# land in EXACTLY ONE bucket — changes — matching the JSON parser's if/elif
-# semantics.  The old text parser appended to changes AND then also to
-# behind_latest via a separate trailing `if`, causing double-counting.
-
-
 # a real npm dependency literally named ``bun`` must be detected
 # as a Change, while the ``bun outdated vX (hash)`` banner on the same output is
 # still NOT emitted. The discriminator is structural — the banner is not a
@@ -74,11 +68,8 @@ def test_check_bun_detects_real_bun_dep_but_not_banner(tmp_path: Path, make_work
     assert all("0d9b296a" not in c.to for c in changes)
 
 
-# on a non-UTF-8 terminal (GitHub Actions runners, minimal
-# containers) bun renders the SAME outdated table with ASCII ``|`` separators
-# instead of Unicode ``│`` box drawing.  The old parser only recognised ``│``
-# rows, so CI parsed ZERO changes and apply_bun returned early — the ghost-bump
-# guard never ran.  Fixture is verbatim `bun outdated` v1.3.14 (0d9b296a)
+# On a non-UTF-8 terminal (GitHub Actions runners, minimal containers) bun
+# renders the same table with ASCII ``|`` separators.  Fixture is verbatim `bun outdated` v1.3.14 (0d9b296a)
 # output captured in an ubuntu:24.04 container (no locales installed).
 _ASCII_PIPE_TABLE = (
     "bun outdated v1.3.14 (0d9b296a)\n"

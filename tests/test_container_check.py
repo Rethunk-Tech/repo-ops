@@ -324,9 +324,6 @@ def test_check_container_suffix_bump(tmp_path: Path) -> None:
 
 
 def test_check_container_compose_file(tmp_path: Path) -> None:
-    # Use patch versions within the same major so both images have semver bumps
-    # (major version bumps like 15→16 require allow_cross_major and are tested
-    # separately via test_check_container_cross_major_env).
     (tmp_path / "docker-compose.yml").write_text(
         "services:\n  web:\n    image: nginx:1.25\n  db:\n    image: postgres:15.3\n"
     )

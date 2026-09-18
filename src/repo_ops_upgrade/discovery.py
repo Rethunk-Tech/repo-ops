@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -179,7 +178,7 @@ def cargo_workspace_excludes(mdir: Path) -> set[str]:
 
 @dataclass
 class DiscoveryDiagnostics:
-    """Discovery SKIP/WARN events; collected for --json, printed to stderr otherwise."""
+    """Discovery SKIP/WARN events, reported in the human report and report.json."""
 
     warnings: list[dict[str, str]] = field(default_factory=list)
     skipped: list[dict[str, str]] = field(default_factory=list)
@@ -244,7 +243,7 @@ def _register_workspace(
 def discover_workspaces_in_root(
     root: Path,
     *,
-    diagnostics: DiscoveryDiagnostics | None = None,
+    diagnostics: DiscoveryDiagnostics,
 ) -> list[Workspace]:
     found: list[Workspace] = []
     # Workspace roots whose members are governed by a single root lockfile and
@@ -262,10 +261,7 @@ def discover_workspaces_in_root(
         Silent omission makes a coverage gap read
         identically to "nothing to upgrade".
         """
-        if diagnostics is not None:
-            diagnostics.skip(mdir, ecosystem, reason)
-        else:
-            print(f"SKIP {ecosystem} {mdir}: {reason}", file=sys.stderr)
+        diagnostics.skip(mdir, ecosystem, reason)
 
     def consider_node(mdir: Path) -> None:
         if not (mdir / "package.json").exists():
@@ -284,10 +280,7 @@ def discover_workspaces_in_root(
             record_skip(mdir, "node", warn or "unrecognized package manager")
             return
         if warn:
-            if diagnostics is not None:
-                diagnostics.warn(mdir, warn)
-            else:
-                print(f"WARN {mdir}: {warn}", file=sys.stderr)
+            diagnostics.warn(mdir, warn)
         members = yarn_workspace_members(mdir)
         if members:
             node_workspace_roots[mdir] = members
@@ -487,11 +480,8 @@ def discover_workspaces_in_root(
             consider_deno(mdir)
         consider_container(mdir)
         consider_precommit(mdir)
-        # Mark this dir visited unconditionally (not only when a workspace was
-        # added) so that skip-only dirs are deduped across nested-repo overlap.
-        # Without this, a dir that produces only a record_skip is walked a
-        # second time by the overlapping repo walk, printing SKIP twice on
-        # stderr (diagnostics._seen_skips dedupes --json only).
+        # Mark every visited dir, not only ones that yielded a workspace, so a
+        # nested repo's overlapping walk does not rescan skip-only dirs.
         seen_paths.add(key)
 
     return found
@@ -502,15 +492,14 @@ def discover_all(
     *,
     diagnostics: DiscoveryDiagnostics | None = None,
 ) -> list[Workspace]:
+    if diagnostics is None:
+        diagnostics = DiscoveryDiagnostics()
     all_ws: list[Workspace] = []
     seen: set[tuple[str, str]] = set()
     for r in roots:
         root = Path(r).expanduser().resolve()
         if not root.is_dir():
-            if diagnostics is not None:
-                diagnostics.warn_root_not_found(root)
-            else:
-                print(f"WARN: root not found: {root}", file=sys.stderr)
+            diagnostics.warn_root_not_found(root)
             continue
         for ws in discover_workspaces_in_root(
             root,

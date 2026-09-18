@@ -147,7 +147,7 @@ def _process_workspace_body(
         try:
             behind_after = ecosystems.apply_workspace(ws)
             if behind_after:
-                # Direct deps a latest-mode apply left behind (yarn).
+                # Direct deps the apply left behind (yarn).
                 result.behind_latest = behind_after
             after_snap = snapshot_workspace_files(ws.path, ws.manager)
             result.changes = diff_workspace_snapshots(before_snap, after_snap, ws.manager)

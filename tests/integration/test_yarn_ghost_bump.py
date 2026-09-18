@@ -12,9 +12,8 @@ old version even though the range in package.json would allow a newer one.
 ``resolutions`` entry keeps ``is-odd`` at 0.1.2 while the dependency range
 (``>=0.1.0 <2.0.0``) would permit 1.0.0+.
 
-``test_yarn_apply_raises_ghost_bump_with_resolutions_pin`` asserts ``apply_yarn``
-raises ``RuntimeError("ghost bump: …")`` when resolutions block an in-range
-upgrade (guard wired in ``repo_ops_js_yarn.yarn.apply_yarn``).
+``test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising`` asserts
+the targeted bump releases an unheld ``resolutions`` pin and retries.
 
 Yarn / corepack setup
 ---------------------
@@ -69,8 +68,7 @@ def test_yarn_guard_fires_when_resolutions_block_upgrade(
 def test_yarn_apply_targeted_bump_releases_unheld_pin_instead_of_raising(
     yarn_ghost_apply_root: Path, monkeypatch
 ) -> None:
-    """With ``--yarn-targeted-bump``, an unheld resolutions pin must not hard-fail
-    the whole workspace — it gets released and retried, the same as any other
+    """An unheld resolutions pin must not hard-fail the whole workspace — it gets released and retried, the same as any other
     targeted-bump gap.
 
     No ``.repo-ops.toml``/global hold covers ``is-odd`` here, so this pin is

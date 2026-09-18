@@ -92,9 +92,7 @@ def test_detect_playwright_peer_and_optional_deps(tmp_path: Path) -> None:
 
     The detect function returns True when the package is present in deps AND
     _playwright_missing_browsers signals browsers are missing (simulated here).
-    The key invariant under test: packages in peer/optional sections are included
-    in the dep lookup — without the fix those sections were invisible and the
-    function returned False before ever reaching the browser check.
+    The key invariant: packages in peer/optional sections count in the dep lookup.
     """
     from repo_ops_models import Workspace
 

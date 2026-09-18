@@ -362,7 +362,7 @@ def test_apply_calls_fetch_checkout_add_for_actionable(tmp_path: Path, make_proc
     calls = mock_git.call_args_list
     # fetch: second arg is "fetch"
     assert calls[0][0][1] == "fetch"
-    # checkout: now uses --detach refs/tags/<tag> for unambiguous resolution
+    # checkout uses --detach refs/tags/<tag> for unambiguous resolution
     assert calls[1][0][1] == "checkout"
     assert calls[1][0][2] == "--detach"
     assert calls[1][0][3] == "refs/tags/v1.1.0"

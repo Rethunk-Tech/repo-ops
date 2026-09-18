@@ -6,8 +6,7 @@ paths included in upgrade_scoped_paths).  Unit tests for the pure-logic
 helpers live in test_submodule_tag_advance.py.
 
 Key invariants:
-  1. apply_submodule_tag_advances is invoked from the apply flow when
-     --submodules is passed (dead-code bug fixed).
+  1. apply_submodule_tag_advances is invoked from the apply flow.
   2. The gitlink pointer ends up committed (included in upgrade_scoped_paths)
      not left staged-but-uncommitted.
   3. The dirty-tree guard prevents checkout over uncommitted changes.
@@ -73,11 +72,7 @@ def _make_bundle(git_repo: Path, *, with_change: bool = False) -> RepoBundle:
 def test_apply_submodule_tag_advances_invoked_via_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
 ) -> None:
-    """apply_submodule_tag_advances is called when --submodules + apply.
-
-    Verifies the dead-code wiring bug (1) is fixed: the function
-    must be reachable from the normal apply flow.
-    """
+    """apply_submodule_tag_advances is reachable from the normal apply flow."""
     import repo_ops_upgrade.run as run_mod
     import repo_ops_upgrade.submodules as sub_mod
 
@@ -303,7 +298,6 @@ def test_checkout_uses_detach_with_full_tag_ref(tmp_path: Path, make_proc) -> No
     """apply_submodule_tag_advances checkouts with --detach refs/tags/<tag>.
 
     Bare `git checkout <tag>` is ambiguous when a branch shadows the tag name.
-    The fix uses `--detach refs/tags/<tag>` to resolve the ref unambiguously.
     """
     link = SubmoduleLink(
         path="sub",
@@ -338,9 +332,7 @@ def test_checkout_uses_detach_with_full_tag_ref(tmp_path: Path, make_proc) -> No
     assert "refs/tags/v1.1.0" in checkout_args, (
         f"full tag ref missing from checkout args: {checkout_args}"
     )
-    # Bare tag name must NOT appear (old ambiguous form)
     assert "v1.1.0" in str(checkout_args)  # present as refs/tags/v1.1.0
-    # The old form would be just the tag name as second arg after "checkout"
     assert checkout_args[2] == "--detach", "second arg must be --detach, not the bare tag"
 
 

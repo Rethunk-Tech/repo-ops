@@ -1,9 +1,4 @@
-"""Upgrade-local constants and regexes.
-
-Subprocess timeouts (TIMEOUT_CHECK / TIMEOUT_APPLY /
-TIMEOUT_VERIFY) live in
-repo_ops_core.constants; import them from there directly.
-"""
+"""Upgrade-local constants and regexes."""
 
 from __future__ import annotations
 

@@ -51,8 +51,7 @@ class HoldRule:
 def _parse_hold_table(raw: Any, *, source: str) -> list[HoldRule]:
     """Parse a ``hold`` config value into rules, dropping malformed entries.
 
-    Tolerant by design (matches ``_load_toml``'s "skip rather than raise"
-    style elsewhere in this package): an entry missing ``package`` or
+    Tolerant by design: an entry missing ``package`` or
     ``max_version``, or that isn't a table at all, is silently skipped
     rather than failing the whole run over one bad TOML entry.
     """
