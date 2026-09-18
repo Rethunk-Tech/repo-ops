@@ -95,7 +95,7 @@ addopts = '-m "not integration" -n auto'
 testpaths = ["tests"]
 pythonpath = []
 markers = [
-  "integration: tests requiring real external tools (bun, yarn, npm registry, go, govulncheck audit, git network)",
+  "integration: tests requiring real external tools (bun, yarn, npm registry, go, git network)",
 ]
 
 [tool.ruff]
