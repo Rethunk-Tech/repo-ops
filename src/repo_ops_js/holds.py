@@ -43,10 +43,6 @@ def hold_version_spec(rule: HoldRule) -> str:
     return rule.spec or f"<={rule.max_version}"
 
 
-def is_within_ceiling(resolved_version: str, rule: HoldRule) -> bool:
-    return version_satisfies_ceiling(resolved_version, rule.max_version)
-
-
 def direct_dependency_names(pkg_data: dict[str, object]) -> set[str]:
     """All direct dependency names from a parsed ``package.json``.
 
@@ -119,7 +115,7 @@ def enforce_holds(
         if rule is None:
             continue
         resolved = _resolved(ws, name)
-        if resolved is None or is_within_ceiling(resolved, rule):
+        if resolved is None or version_satisfies_ceiling(resolved, rule.max_version):
             continue
         over_ceiling = resolved
         proc = run_install(name, hold_version_spec(rule))
@@ -129,7 +125,7 @@ def enforce_holds(
                 f"({manager}): {(proc.stderr or '').strip()}"
             )
         landed = _resolved(ws, name)
-        if landed is None or not is_within_ceiling(landed, rule):
+        if landed is None or not version_satisfies_ceiling(landed, rule.max_version):
             raise RuntimeError(
                 f"hold: {name} still at {landed or over_ceiling} after clamp "
                 f"attempt, expected <= {rule.max_version} ({manager})"

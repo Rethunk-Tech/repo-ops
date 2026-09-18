@@ -15,7 +15,7 @@ from ruamel.yaml.error import YAMLError
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import normalize_version, semver_tuple
+from repo_ops_core.version_utils import normalize_version, semver_tuple, version_satisfies_ceiling
 from repo_ops_js.guards import (
     assert_targets_resolved,
     fold_blocked_into_behind,
@@ -26,7 +26,6 @@ from repo_ops_js.holds import (
     enforce_holds,
     fold_held_into_behind,
     hold_version_spec,
-    is_within_ceiling,
     resolve_package_hold,
 )
 from repo_ops_js.overrides import release_unheld_pin
@@ -223,7 +222,7 @@ def _bucket_pnpm_pkg(
     # in-range bump is not silently omitted.
     if latest not in ("?", "") and cur != latest:
         held_rule = resolve_package_hold(ws, name) if ws is not None else None
-        if held_rule is not None and not is_within_ceiling(latest, held_rule):
+        if held_rule is not None and not version_satisfies_ceiling(latest, held_rule.max_version):
             behind_latest.append(Change(name, cur, latest))
             return
         changes.append(Change(name, cur, latest))
@@ -361,7 +360,7 @@ def _check_pnpm_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
         still_behind: list[Change] = []
         for c in behind:
             held_rule = resolve_package_hold(ws, c.name)
-            if held_rule is not None and not is_within_ceiling(c.to, held_rule):
+            if held_rule is not None and not version_satisfies_ceiling(c.to, held_rule.max_version):
                 still_behind.append(c)
                 continue
             promoted.append(c)

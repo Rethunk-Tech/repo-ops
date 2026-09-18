@@ -9,6 +9,7 @@ from pathlib import Path
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.process import run
+from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_js.expo import with_expo_alignment
 from repo_ops_js.guards import (
     assert_targets_resolved,
@@ -20,7 +21,6 @@ from repo_ops_js.holds import (
     enforce_holds,
     fold_held_into_behind,
     hold_version_spec,
-    is_within_ceiling,
     resolve_package_hold,
 )
 from repo_ops_js.overrides import release_unheld_pin
@@ -93,7 +93,9 @@ def _changes_from_bun_json(
         latest = str(meta.get("latest", "?"))
         if cur != latest and latest not in ("?", ""):
             held_rule = resolve_package_hold(ws, str(name)) if ws is not None else None
-            if held_rule is not None and not is_within_ceiling(latest, held_rule):
+            if held_rule is not None and not version_satisfies_ceiling(
+                latest, held_rule.max_version
+            ):
                 behind_latest.append(Change(str(name), cur, latest))
             else:
                 changes.append(Change(str(name), cur, latest))
@@ -141,7 +143,7 @@ def _changes_from_bun_text(
         if not current or not target or current == target:
             continue
         held_rule = resolve_package_hold(ws, name) if ws is not None else None
-        if held_rule is not None and not is_within_ceiling(target, held_rule):
+        if held_rule is not None and not version_satisfies_ceiling(target, held_rule.max_version):
             behind_latest.append(Change(name, current, target))
             continue
         changes.append(Change(name, current, target))
