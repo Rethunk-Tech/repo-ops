@@ -167,7 +167,15 @@ def _process_workspace_body(
         dispatch_remediations(result, apply=do_apply)
         result.pre_apply_snapshot = {}
 
-    if do_apply and do_verify and result.status != "fail":
+    # Verify exists to catch an upgrade this run made. When the apply and its
+    # remediations wrote nothing, the gate can only be judging state the run
+    # never touched, which is CI's job and costs a full gate per repo.
+    wrote_nothing = (
+        do_apply and before_tree is not None and capture_worktree_state(ws.git_repo) == before_tree
+    )
+    if wrote_nothing:
+        result.verify_skipped = True
+    if do_apply and do_verify and result.status != "fail" and not wrote_nothing:
         try:
             verr = verify_mod.verify_workspace(ws)
         except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as exc:

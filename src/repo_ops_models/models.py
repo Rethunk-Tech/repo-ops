@@ -46,6 +46,7 @@ class WorkspaceResult:
     behind_latest: list[Change] = field(default_factory=list)
     overrides_audit: list[dict[str, str]] = field(default_factory=list)
     remediations: list[dict[str, Any]] = field(default_factory=list)
+    verify_skipped: bool = False
     error: str | None = None
     verify_error: str | None = None
     verify_fail_disposition: str | None = None
@@ -67,6 +68,7 @@ class WorkspaceResult:
             "behind_latest": [c.to_json() for c in self.behind_latest],
             "overrides_audit": self.overrides_audit,
             "remediations": self.remediations,
+            "verify_skipped": self.verify_skipped,
         }
         if self.error is not None:
             out["error"] = self.error
