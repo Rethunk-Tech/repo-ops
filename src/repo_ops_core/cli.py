@@ -132,7 +132,7 @@ def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
         type=positive_int,
         default=None,
         metavar="N",
-        help="Parallel workers (default: min(16, cpus)).",
+        help="Parallel workers (default: cpus/4, capped to 8; each runs a full gate).",
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="Echo subprocesses.")
 

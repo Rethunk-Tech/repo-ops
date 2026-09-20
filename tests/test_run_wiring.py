@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from unittest.mock import patch
 
 
-def test_jobs_default_resolves_to_cpu_count():
-    """--jobs default None resolves to min(16, cpu_count or 4) in run_upgrade."""
-    from repo_ops_upgrade.run import run_upgrade
+def test_jobs_default_resolves_to_gate_sized_pool():
+    """--jobs default None resolves to the gate-sized default in run_upgrade."""
+    from repo_ops_upgrade.run import _default_jobs, run_upgrade
 
     called_with_jobs: list[int] = []
 
@@ -20,7 +19,7 @@ def test_jobs_default_resolves_to_cpu_count():
         run_upgrade(apply=False, argv=["/tmp"])
 
     assert len(called_with_jobs) == 1
-    expected = min(16, os.cpu_count() or 4)
+    expected = _default_jobs()
     assert called_with_jobs[0] == expected
 
 

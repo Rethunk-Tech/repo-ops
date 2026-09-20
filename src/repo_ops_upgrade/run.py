@@ -393,6 +393,29 @@ def _run_upgrade_body(
     return exit_code
 
 
+def _default_jobs() -> int:
+    """Workers for the repo pool, sized for gates rather than for I/O.
+
+    Each worker runs a project's whole gate (build, vet, govulncheck, tests),
+    and every one of those saturates the machine on its own. One worker per CPU
+    oversubscribes by the gate's own parallelism squared, which wedged this
+    machine hard enough to need processes killed by hand.
+    """
+    return max(2, min(8, (os.cpu_count() or 4) // 4))
+
+
+def _cap_child_cpu(jobs: int) -> None:
+    """Give each worker an equal share of the CPUs via the child environment.
+
+    Go tooling (go build/test, govulncheck, golangci-lint) reads GOMAXPROCS and
+    otherwise takes the whole machine per invocation. Setting it here, in the
+    parent, reaches every subprocess by inheritance. An explicit GOMAXPROCS from
+    the caller wins.
+    """
+    share = max(1, (os.cpu_count() or 4) // max(1, jobs))
+    os.environ.setdefault("GOMAXPROCS", str(share))
+
+
 def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     parser = build_upgrade_parser(apply=apply)
     args = parser.parse_args(argv)
@@ -400,7 +423,8 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     wire_verbose(args)
     roots = resolve_scan_roots(list(args.roots or DEFAULT_ROOTS), parser)
     if args.jobs is None:
-        args.jobs = min(16, os.cpu_count() or 4)
+        args.jobs = _default_jobs()
+    _cap_child_cpu(args.jobs)
     # The global exclude list joins --exclude here; each repo's own
     # .repo-ops.toml exclude is added per repo in the body.
     args.exclude_patterns = merge_exclude_patterns(
