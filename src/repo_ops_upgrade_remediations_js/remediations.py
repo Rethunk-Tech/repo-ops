@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -135,26 +136,37 @@ def _playwright_version_changed(ws: Workspace, ctx: dict[str, Any]) -> bool:
     return False
 
 
-def _playwright_missing_browsers(ws: Workspace) -> bool:
+_INSTALL_LOCATION = re.compile(r"^\s*Install location:\s*(\S.*?)\s*$", re.MULTILINE)
+
+# Browsers live in one machine-wide cache keyed by playwright version, so the
+# answer for a version is the answer for every workspace pinning it. Without
+# this the fleet paid one probe and one install per repo for the same bytes.
+_BROWSER_PROBE: dict[str, bool] = {}
+_BROWSER_PROBE_LOCK = threading.Lock()
+
+
+def _playwright_missing_browsers(ws: Workspace, version: str) -> bool:
+    with _BROWSER_PROBE_LOCK:
+        if version in _BROWSER_PROBE:
+            return _BROWSER_PROBE[version]
     prefix = pm_exec_prefix(ws.manager)
     proc = run(
         [*prefix, "playwright", "install", "--dry-run"],
         ws.path,
         timeout=120,
     )
-    if proc.returncode != 0:
-        return False
-    combined = (proc.stdout + proc.stderr).lower()
-    return any(
-        tok in combined
-        for tok in (
-            "download",
-            "installing",
-            "missing",
-            "will download",
-            "needs install",
-        )
+    # A dry-run prints an "Install location:" per browser whether or not it is
+    # there, and a "Download url:" beside it either way, so the paths are the
+    # only thing that says what is actually on disk.
+    locations = _INSTALL_LOCATION.findall(proc.stdout + proc.stderr)
+    missing = (
+        False
+        if proc.returncode != 0 or not locations
+        else any(not Path(loc).exists() for loc in locations)
     )
+    with _BROWSER_PROBE_LOCK:
+        _BROWSER_PROBE[version] = missing
+    return missing
 
 
 def detect_playwright(ws: Workspace, ctx: dict[str, Any]) -> bool:
@@ -178,7 +190,7 @@ def detect_playwright(ws: Workspace, ctx: dict[str, Any]) -> bool:
     # plan/detect never triggers a PM subprocess just to probe browsers.
     if not ctx.get("apply", True):
         return False
-    return _playwright_missing_browsers(ws)
+    return _playwright_missing_browsers(ws, str(deps[PLAYWRIGHT_PKG]))
 
 
 def report_playwright(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
