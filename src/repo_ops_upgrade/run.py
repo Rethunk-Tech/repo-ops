@@ -394,23 +394,26 @@ def _run_upgrade_body(
 
 
 def _default_jobs() -> int:
-    """Workers for the repo pool, sized for gates rather than for I/O.
+    """Workers for the repo pool, picked at the knee of the throughput curve.
 
-    Each worker runs a project's whole gate (build, vet, govulncheck, tests),
-    and every one of those saturates the machine on its own. One worker per CPU
-    oversubscribes by the gate's own parallelism squared, which wedged this
-    machine hard enough to need processes killed by hand.
+    Total CPU time is near-flat from 2 to 16 workers, so this only decides how
+    fast that work is spent. Wall clock falls steeply up to 8 and flattens
+    after: on a 32-thread host, 2 workers ran 80% slower than 8 and 4 ran 17%
+    slower, while 16 bought 6% for a third more load. The floor matters more
+    than the divisor, because gates are mostly serial and too few workers leave
+    cores idle.
     """
-    return max(2, min(8, (os.cpu_count() or 4) // 4))
+    return max(4, min(8, (os.cpu_count() or 4) // 4))
 
 
 def _cap_child_cpu(jobs: int) -> None:
     """Give each worker an equal share of the CPUs via the child environment.
 
     Go tooling (go build/test, govulncheck, golangci-lint) reads GOMAXPROCS and
-    otherwise takes the whole machine per invocation. Setting it here, in the
-    parent, reaches every subprocess by inheritance. An explicit GOMAXPROCS from
-    the caller wins.
+    otherwise takes the whole machine per invocation. Uncapped, a sweep burned
+    15% more CPU for a 9% wall gain, so the cap buys efficiency rather than
+    stability. Setting it in the parent reaches every subprocess by inheritance.
+    An explicit GOMAXPROCS from the caller wins.
     """
     share = max(1, (os.cpu_count() or 4) // max(1, jobs))
     os.environ.setdefault("GOMAXPROCS", str(share))

@@ -9,7 +9,7 @@ def test_default_jobs_leaves_headroom_for_gate_parallelism(monkeypatch):
     monkeypatch.setattr(os, "cpu_count", lambda: 32)
     assert _default_jobs() == 8
     monkeypatch.setattr(os, "cpu_count", lambda: 4)
-    assert _default_jobs() == 2
+    assert _default_jobs() == 4
 
 
 def test_cap_child_cpu_divides_the_machine_and_respects_an_explicit_value(monkeypatch):
