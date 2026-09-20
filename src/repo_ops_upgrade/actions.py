@@ -34,6 +34,82 @@ from repo_ops_upgrade.workflow_uses import (
 logger = logging.getLogger(__name__)
 
 _TAG_CACHE: dict[str, dict | None] = {}
+# Action tags move on release cadence, not on sweep cadence, so a few hours of
+# reuse costs at most one sweep's delay on a bump and saves a `gh api` round
+# trip per action on every run.
+_TAG_CACHE_MAX_AGE_S = 6 * 60 * 60
+
+
+def _tag_cache_path() -> Path:
+    """Return ``$XDG_CACHE_HOME/repo-ops/action-tags.json``."""
+    base = os.environ.get("XDG_CACHE_HOME")
+    return (Path(base) if base else Path.home() / ".cache") / "repo-ops" / "action-tags.json"
+
+
+def _tag_from_disk(raw: dict) -> dict | None:
+    """Rebuild the in-memory shape (sets) from the JSON-safe stored shape."""
+    if raw.get("miss"):
+        return None
+    return {
+        "bare_majors": set(raw.get("bare_majors") or []),
+        "max_major": raw.get("max_major"),
+        "all_tags": set(raw.get("all_tags") or []),
+        "sha_to_tags": raw.get("sha_to_tags") or {},
+        "truncated": bool(raw.get("truncated")),
+    }
+
+
+def _tag_to_disk(info: dict | None) -> dict:
+    if info is None:
+        return {"miss": True, "ts": time.time()}
+    return {
+        "bare_majors": sorted(info["bare_majors"]),
+        "max_major": info["max_major"],
+        "all_tags": sorted(info["all_tags"]),
+        "sha_to_tags": info["sha_to_tags"],
+        "truncated": info.get("truncated", False),
+        "ts": time.time(),
+    }
+
+
+def load_tag_cache_into(store: dict[str, dict | None]) -> None:
+    """Seed *store* from disk, dropping entries older than the max age."""
+    path = _tag_cache_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict):
+        return
+    now = time.time()
+    for repo, raw in data.items():
+        if isinstance(raw, dict) and now - raw.get("ts", 0) <= _TAG_CACHE_MAX_AGE_S:
+            store[repo] = _tag_from_disk(raw)
+
+
+def save_tag_cache_from(store: dict[str, dict | None]) -> None:
+    """Persist *store*, merged over unexpired entries already on disk."""
+    if not store:
+        return
+    path = _tag_cache_path()
+    merged: dict[str, dict] = {}
+    try:
+        existing = json.loads(path.read_text(encoding="utf-8"))
+        now = time.time()
+        if isinstance(existing, dict):
+            merged = {
+                k: v
+                for k, v in existing.items()
+                if isinstance(v, dict) and now - v.get("ts", 0) <= _TAG_CACHE_MAX_AGE_S
+            }
+    except (OSError, ValueError):
+        pass
+    for repo, info in store.items():
+        merged[repo] = _tag_to_disk(info)
+    with contextlib.suppress(OSError):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_json_atomic(path, merged)
+
 
 # ---------------------------------------------------------------------------
 # Org allowed-actions policy cache
@@ -341,6 +417,121 @@ def discover_workflow_files(repo: Path) -> list[Path]:
     if not wf_dir.is_dir():
         return []
     return sorted(p for p in wf_dir.iterdir() if p.suffix in (".yml", ".yaml") and p.is_file())
+
+
+# The newest tags answer everything a bump needs: the highest major, which
+# majors have a bare vN, and the tag list. sha_to_tags only resolves a SHA pin
+# whose `# vN` comment is missing, and a pin without one cannot be bumped
+# safely anyway, so a page of recent tags is the whole job -- walking all 906
+# tags of an action to learn its latest major was the cost with nothing behind it.
+_GRAPHQL_TAG_PAGE = 100
+# Aliases per request. The whole fleet fits in one round trip at this size,
+# and a smaller batch only trades latency for more of them.
+_GRAPHQL_BATCH = 46
+
+
+def _tag_nodes_to_info(nodes: list[dict], *, truncated: bool = False) -> dict:
+    """Build the action_tag_info shape from GraphQL ref nodes."""
+    bare_majors: set[int] = set()
+    all_majors: set[int] = set()
+    all_tags: set[str] = set()
+    sha_to_tags: dict[str, list[str]] = {}
+    for node in nodes:
+        name = (node or {}).get("name")
+        target = (node or {}).get("target") or {}
+        # An annotated tag's own oid is the tag object; the commit is one hop in,
+        # and that is what the REST tags endpoint reports as commit.sha.
+        inner = target.get("target") or {}
+        sha = inner.get("oid") or target.get("oid")
+        if not name or not sha:
+            continue
+        sha_to_tags.setdefault(sha.lower(), []).append(name)
+        if re.fullmatch(r"v\d+", name):
+            with contextlib.suppress(ValueError):
+                bare_majors.add(int(name[1:]))
+        m = _MAJOR_TAG_RE.match(name)
+        if m:
+            all_tags.add(name)
+            with contextlib.suppress(ValueError):
+                all_majors.add(int(m.group(1)))
+    return {
+        "bare_majors": bare_majors,
+        "max_major": max(all_majors) if all_majors else None,
+        "all_tags": all_tags,
+        "sha_to_tags": sha_to_tags,
+        # Older majors may sit past the page, so a "no bare vN" answer for a
+        # major below the newest one is unknown rather than no.
+        "truncated": truncated,
+    }
+
+
+# A leading ./ marks a composite action inside the repo, which has no GitHub
+# repository to look up; matching it sent owner "." into the batch.
+_SKIM_USES = re.compile(
+    r"^\s*-?\s*uses\s*:\s*['\"]?"
+    r"([A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_][A-Za-z0-9_.-]*)",
+    re.MULTILINE,
+)
+
+
+def skim_workflow_uses(path: Path) -> list[str]:
+    """Owner/repo for every ``uses:`` in *path*, by regex rather than YAML parse.
+
+    Only feeds the batched tag prefetch, so a miss costs a REST call and a
+    false hit costs one wasted alias; neither needs the real parser's care.
+    """
+    return _SKIM_USES.findall(path.read_text(encoding="utf-8", errors="replace"))
+
+
+def prefetch_tag_info(action_names: list[str], store: dict[str, dict | None]) -> None:
+    """Fill *store* for many actions in one GraphQL round trip each batch.
+
+    One REST call per action costs a round trip apiece; aliasing them into a
+    single query collapses the fleet into one. Anything this cannot answer
+    (over a page of tags, an unresolvable repo, any error at all) is simply
+    left out, and the per-action REST path fills it in as before.
+    """
+    if not shutil.which("gh"):
+        return
+    repos = sorted(
+        {"/".join(a.split("/")[:2]) for a in action_names if a.count("/") >= 1} - set(store)
+    )
+    for start in range(0, len(repos), _GRAPHQL_BATCH):
+        chunk = repos[start : start + _GRAPHQL_BATCH]
+        parts = []
+        for idx, repo in enumerate(chunk):
+            owner, _, name = repo.partition("/")
+            if not owner or not name:
+                continue
+            parts.append(
+                f'a{idx}: repository(owner: "{owner}", name: "{name}") {{ '
+                f'refs(refPrefix: "refs/tags/", first: {_GRAPHQL_TAG_PAGE}, '
+                "orderBy: {field: TAG_COMMIT_DATE, direction: DESC}) "
+                "{ totalCount nodes { name target { oid ... on Tag { target { oid } } } } } }"
+            )
+        if not parts:
+            continue
+        try:
+            proc = run(
+                ["gh", "api", "graphql", "-F", "query=@-"],
+                Path.cwd(),
+                timeout=60,
+                stdin="query {" + " ".join(parts) + "}",
+            )
+            # A single unresolvable alias fails the whole request, and the
+            # resolved ones still come back in `data` beside the errors.
+            data = (json.loads(proc.stdout) or {}).get("data") or {}
+        except (ValueError, OSError, subprocess.TimeoutExpired):
+            continue
+        for idx, repo in enumerate(chunk):
+            node = data.get(f"a{idx}")
+            refs = (node or {}).get("refs") or {}
+            nodes = refs.get("nodes") or []
+            if not node or not nodes:
+                continue
+            store[repo] = _tag_nodes_to_info(
+                nodes, truncated=refs.get("totalCount", 0) > _GRAPHQL_TAG_PAGE
+            )
 
 
 def action_tag_info(action: str, *, cache: dict[str, dict | None] | None = None) -> dict | None:
@@ -1003,6 +1194,13 @@ def scan_actions(
             # Unresolvable digest for this major — fall through to the
             # tag-normalize logic below (report only; stays tag-pinned).
 
+            if (
+                info.get("truncated")
+                and info.get("max_major") != M
+                and M not in info["bare_majors"]
+                and (full := action_tag_info(action, cache={})) is not None
+            ):
+                info = full
             bare_major_exists = M in info["bare_majors"]
             max_major = info["max_major"]
             hold_rule = _resolve_actions_hold(repo, action)

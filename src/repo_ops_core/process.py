@@ -53,6 +53,7 @@ def run(
     cwd: Path | str,
     timeout: float = 300,
     env: dict[str, str] | None = None,
+    stdin: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     cwd_path = Path(cwd)
     if not cwd_path.is_dir():
@@ -70,6 +71,7 @@ def run(
         text=True,
         timeout=timeout,
         env=merged,
+        input=stdin,
     )
     if VERBOSE and proc.returncode != 0 and (proc.stderr or proc.stdout):
         err = (proc.stderr or proc.stdout).strip()

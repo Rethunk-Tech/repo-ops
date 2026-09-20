@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import os
 import sys
 import threading
@@ -283,6 +284,7 @@ def _run_upgrade_body(
     # The cache is shared across threads; we copy-in before each slow API
     # call and merge-in after under lock to avoid dict mutation races.
     run_tag_cache: dict[str, dict | None] = {}
+    actions.load_tag_cache_into(run_tag_cache)
     _tag_cache_lock = threading.Lock()
 
     def _scan_one_bundle_actions(bundle: RepoBundle) -> None:
@@ -319,8 +321,21 @@ def _run_upgrade_body(
         bundle.actions = bumps
         bundle.actions_workflows_scanned = count
 
+    # One batched lookup for every action the fleet references, before the pool
+    # asks for them one at a time. Only repo names are needed here, so the
+    # workflows are skimmed rather than parsed; scan_actions parses them
+    # properly a moment later and a name this misses just takes the REST path.
+    _all_uses: list[str] = []
+    for _bundle in bundles.values():
+        for _wf in actions.discover_workflow_files(_bundle.git_repo):
+            with contextlib.suppress(OSError):
+                _all_uses.extend(actions.skim_workflow_uses(_wf))
+    if _all_uses:
+        actions.prefetch_tag_info(_all_uses, run_tag_cache)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as _actions_pool:
         list(_actions_pool.map(_scan_one_bundle_actions, list(bundles.values())))
+    actions.save_tag_cache_from(run_tag_cache)
 
     # Submodule tag advances (apply-only).
     # Runs BEFORE pointer_hints so that staged gitlinks are visible to the
