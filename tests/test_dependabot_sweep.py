@@ -403,6 +403,33 @@ def test_manifest_versions_cargo_lock(tmp_path: Path) -> None:
     assert versions.get("serde") == "1.0.197"
 
 
+def test_manifest_versions_reads_dockerfile_image_pins(tmp_path: Path) -> None:
+    """Container PRs are only resolvable if FROM pins reach the version map."""
+    (tmp_path / "frontend").mkdir()
+    (tmp_path / "frontend" / "Dockerfile").write_text(
+        "FROM oven/bun:1.4.2-alpine AS deps\n"
+        "FROM node:26.9.0-slim AS builder\n"
+        "FROM node:26.9.0-slim AS runner\n"
+    )
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "Dockerfile").write_text("FROM node:18-slim\n")
+
+    versions = _manifest_versions(str(tmp_path))
+
+    assert versions["oven/bun"] == "1.4.2-alpine"
+    # Vendored trees are pruned rather than read.
+    assert versions["node"] == "26.9.0-slim"
+
+
+def test_manifest_versions_keeps_highest_pin_across_stages(tmp_path: Path) -> None:
+    """A stale early stage must not mask a current one."""
+    (tmp_path / "Dockerfile").write_text(
+        "FROM node:22-slim AS old\nFROM node:26.9.0-slim AS new\n"
+    )
+
+    assert _manifest_versions(str(tmp_path))["node"] == "26.9.0-slim"
+
+
 def test_manifest_versions_empty_repo(tmp_path: Path) -> None:
     versions = _manifest_versions(str(tmp_path))
     assert versions == {}

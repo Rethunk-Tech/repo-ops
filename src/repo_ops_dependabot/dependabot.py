@@ -54,6 +54,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -61,6 +62,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from repo_ops_container.container import find_container_files, _parse_image_refs
 from repo_ops_core.cli import add_scan_arguments, resolve_scan_roots, wire_verbose
 from repo_ops_core.config import load_global_config, load_repo_config
 from repo_ops_core.constants import SKIP_DIRS
@@ -367,7 +369,7 @@ def _lockfile_versions(repo: str) -> set[str]:
 
 
 def _manifest_versions(repo: str) -> dict[str, str]:
-    """Scan go.mod, Cargo.toml, and pyproject.toml for declared versions.
+    """Scan go.mod, Cargo.toml, pyproject.toml and Dockerfiles for declared versions.
 
     Returns {package_name: version} for packages explicitly declared in manifests.
     This is a best-effort extraction; complex constraints are not fully evaluated.
@@ -392,6 +394,25 @@ def _manifest_versions(repo: str) -> dict[str, str]:
                 ver_m = re.search(r'version\s*=\s*"([^"]+)"', block)
                 if name_m and ver_m:
                     result[name_m.group(1)] = ver_m.group(1)
+
+    # Containers: image pins in FROM lines.  Dependabot names these by image
+    # ("node", "oven/bun"), and the tag carries the version; a suffixed tag
+    # like 26.9.0-slim compares correctly because semver_tuple drops the
+    # suffix.  Keep the highest tag when a multi-stage file pins one image
+    # more than once, so a stale early stage cannot mask a current one.
+    with contextlib.suppress(Exception):
+        # find_container_files is per-directory, so walk the repo ourselves
+        # and prune the vendored trees before descending into them.
+        for dirpath, dirnames, _ in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+            for cf in find_container_files(Path(dirpath)):
+                for ref in _parse_image_refs(cf):
+                    if ref["is_stage_ref"] or not ref["tag"]:
+                        continue
+                    image, tag = ref["image"], ref["tag"]
+                    seen = result.get(image)
+                    if seen is None or semver_tuple(tag) > semver_tuple(seen):
+                        result[image] = tag
 
     return result
 

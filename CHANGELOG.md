@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refreshed only the pinned tag's digest and returned before the tag resolver
   ran, so `image:tag@sha256:...` stayed put while the report showed no drift.
   Tag and digest now advance together.
+- Container Dependabot PRs could never be resolved as superseded: the version
+  map read go.mod, Cargo.lock and pyproject.toml but not Dockerfile `FROM`
+  pins, so every image bump reported as unknown.
 - Dependabot PR titles carrying a doubled conventional-commit scope
   (`chore(deps)(deps): bump ...`, emitted when a repo sets its own
   commit-message prefix) were reported as unparseable.
