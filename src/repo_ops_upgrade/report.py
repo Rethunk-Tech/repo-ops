@@ -135,6 +135,7 @@ def build_run_summary(
     actions_behind_latest = 0
     packages_upgraded = 0
     behind_latest_by_manager: dict[str, int] = {}
+    held_by_manager_counts: dict[str, int] = {}
 
     actions_policy_violations = 0
 
@@ -158,7 +159,12 @@ def build_run_summary(
                 behind_latest_by_manager[manager] = (
                     behind_latest_by_manager.get(manager, 0) + n_behind
                 )
-                packages_held += sum(1 for rule in _behind_latest_holds(wr) if rule is not None)
+                n_held = sum(1 for rule in _behind_latest_holds(wr) if rule is not None)
+                packages_held += n_held
+                if n_held:
+                    held_by_manager_counts[manager] = (
+                        held_by_manager_counts.get(manager, 0) + n_held
+                    )
         action_totals = bundle.actions_summary()
         actions_bumps += action_totals["bumps"]
         actions_failures += action_totals["failures"]
@@ -180,6 +186,7 @@ def build_run_summary(
         "packages_behind_latest": packages_behind_latest,
         "packages_behind_latest_by_manager": behind_latest_by_manager,
         "packages_held": packages_held,
+        "packages_held_by_manager": held_by_manager_counts,
         "actions_behind_latest": actions_behind_latest,
         "failure_count": count_failures(bundles),
         "excluded": excluded_count,
@@ -396,13 +403,23 @@ def print_human_report(
             if len(wr.changes) > top_n:
                 print(f"    ... and {len(wr.changes) - top_n} more")
             if behind_n > 0:
-                hint = _behind_latest_hint(ws.manager)
                 behind_holds = _behind_latest_holds(wr)
                 held_n = sum(1 for rule in behind_holds if rule is not None)
+                if held_n == behind_n:
+                    # Nothing was stuck; a hold pins every one of them.
+                    print(
+                        f"    behind-latest: {behind_n} package(s) not actioned, "
+                        "all held by an active hold"
+                    )
+                    _skip_hint = True
+                else:
+                    _skip_hint = False
+                hint = _behind_latest_hint(ws.manager)
                 held_suffix = f", {held_n} held" if held_n else ""
-                print(
-                    f"    behind-latest: {behind_n} package(s) not actioned{held_suffix} ({hint})"
-                )
+                if not _skip_hint:
+                    print(
+                        f"    behind-latest: {behind_n} package(s) not actioned{held_suffix} ({hint})"
+                    )
                 shown_behind = wr.behind_latest[:top_n]
                 shown_holds = behind_holds[:top_n]
                 bname_w = column_width([c.name for c in shown_behind], "")
@@ -524,10 +541,23 @@ def print_run_footer(
         parts: list[str] = []
         if packages_behind > 0:
             by_manager: dict[str, int] = summary.get("packages_behind_latest_by_manager", {})
+            held_by_manager: dict[str, int] = summary.get("packages_held_by_manager", {})
             if by_manager:
                 # One line per manager so the remediation advice fits each.
                 for manager in sorted(by_manager):
                     count = by_manager[manager]
+                    held = held_by_manager.get(manager, 0)
+                    if held:
+                        # "bump manually" is wrong advice for a pinned package:
+                        # an Expo SDK accepts only the version it bundles.
+                        parts.append(
+                            f"{count} {manager} package(s) behind latest, {held} held by an "
+                            "active hold (the rest: " + _behind_latest_hint(manager) + ")"
+                            if count > held
+                            else f"{count} {manager} package(s) behind latest, all held by an "
+                            "active hold — pinned deliberately, not stuck"
+                        )
+                        continue
                     manager_hint = _behind_latest_hint(manager)
                     parts.append(f"{count} {manager} package(s) behind latest ({manager_hint})")
             else:

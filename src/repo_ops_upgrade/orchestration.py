@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from typing import Literal
@@ -18,6 +19,7 @@ from repo_ops_core.state import (
     cache_record_behind_latest,
     cache_record_dirty_skip,
 )
+from repo_ops_js.holds import resolve_package_hold
 from repo_ops_js.overrides import overrides_audit
 from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
@@ -97,10 +99,24 @@ def process_workspace(
         # Skipped/failed workspaces carry no fresh behind data, so recording
         # only ok results keeps a dirty-skipped repo from spuriously resetting
         # its first-behind aging clock.
+        # A package an active hold pins is not drifting, so it must not age a
+        # repo's staleness score: an Expo app scored highest in the fleet purely
+        # on dependencies its SDK bundles.
+        # Resolve per monorepo member: an Expo app's package.json sits in its
+        # own member dir, and the repo root knows nothing about the SDK.
+        _ws = out.workspace
+        unheld_behind = sum(
+            1
+            for c in out.behind_latest
+            if resolve_package_hold(
+                replace(_ws, path=_ws.path / c.member) if c.member else _ws, c.name
+            )
+            is None
+        )
         cache_record_behind_latest(
             out.workspace.git_repo,
             out.workspace.manager,
-            len(out.behind_latest),
+            unheld_behind,
             date.today(),
         )
     _emit_progress(out, elapsed_s=elapsed)

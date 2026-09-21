@@ -40,7 +40,7 @@ def _render_and_summarize(tmp_path: Path, bundle: RepoBundle) -> tuple[str, dict
 
 def test_held_behind_latest_row_header_and_summary(tmp_path: Path, make_workspace) -> None:
     """A repo-scoped hold that declines a bump is named in the row, the
-    section header gets a held count, and the summary counts it."""
+    section header says the hold is why, and the summary counts it."""
     _write_hold_config(tmp_path, until="2026-11-01")
     wr = WorkspaceResult(
         workspace=make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"),
@@ -48,7 +48,9 @@ def test_held_behind_latest_row_header_and_summary(tmp_path: Path, make_workspac
     )
     out, summary = _render_and_summarize(tmp_path, _bundle(tmp_path, wr))
 
-    assert "behind-latest: 1 package(s) not actioned, 1 held (" in out
+    assert "behind-latest: 1 package(s) not actioned, all held by an active hold" in out
+    # A pinned package is not stuck, so the manual-bump advice must not appear.
+    assert "bump manually" not in out
     assert "typescript" in out
     assert "→ 7.0.0 (latest; held <= 6, until 2026-11-01)" in out
     assert summary["packages_held"] == 1
