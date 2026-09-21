@@ -497,6 +497,9 @@ def test_digest_refresh_check_reports_update(
     (tmp_path / "Dockerfile").write_text(f"FROM nginx:1.25@{_OLD_DIGEST}\n")
 
     with patch(
+        "repo_ops_container.container._fetch_tags",
+        return_value=["1.25"],
+    ), patch(
         "repo_ops_container.container._fetch_manifest_digest",
         return_value=_NEW_DIGEST,
     ):
@@ -509,6 +512,47 @@ def test_digest_refresh_check_reports_update(
     assert c.to == _NEW_DIGEST
 
 
+def test_digest_pinned_tag_advances_with_its_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tag+digest pin advances the tag, carrying the new tag's digest."""
+    (tmp_path / "Dockerfile").write_text(f"FROM nginx:1.25@{_OLD_DIGEST}\n")
+
+    with patch(
+        "repo_ops_container.container._fetch_tags",
+        return_value=["1.25", "1.27"],
+    ), patch(
+        "repo_ops_container.container._fetch_manifest_digest",
+        return_value=_NEW_DIGEST,
+    ):
+        changes = check_container(_make_ws(tmp_path))
+
+    assert len(changes) == 1
+    c = changes[0]
+    assert "[report-only]" not in c.to
+    assert c.from_ver == f"1.25@{_OLD_DIGEST}"
+    assert c.to == f"1.27@{_NEW_DIGEST}"
+
+
+def test_digest_pinned_tag_advance_applies_both_halves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Applying a tag advance rewrites tag and digest together, never just one."""
+    df = tmp_path / "Dockerfile"
+    df.write_text(f"FROM nginx:1.25@{_OLD_DIGEST} AS build\nRUN true\n")
+
+    with patch(
+        "repo_ops_container.container._fetch_tags",
+        return_value=["1.25", "1.27"],
+    ), patch(
+        "repo_ops_container.container._fetch_manifest_digest",
+        return_value=_NEW_DIGEST,
+    ):
+        apply_container(_make_ws(tmp_path))
+
+    assert df.read_text() == f"FROM nginx:1.27@{_NEW_DIGEST} AS build\nRUN true\n"
+
+
 def test_digest_refresh_check_already_current(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -516,6 +560,9 @@ def test_digest_refresh_check_already_current(
     (tmp_path / "Dockerfile").write_text(f"FROM nginx:1.25@{_OLD_DIGEST}\n")
 
     with patch(
+        "repo_ops_container.container._fetch_tags",
+        return_value=["1.25"],
+    ), patch(
         "repo_ops_container.container._fetch_manifest_digest",
         return_value=_OLD_DIGEST,
     ):
@@ -560,6 +607,9 @@ def test_digest_refresh_apply_byte_preserving(
     dockerfile.write_text(original, encoding="utf-8")
 
     with patch(
+        "repo_ops_container.container._fetch_tags",
+        return_value=["1.25"],
+    ), patch(
         "repo_ops_container.container._fetch_manifest_digest",
         return_value=_NEW_DIGEST,
     ):
@@ -615,6 +665,9 @@ def test_digest_refresh_check_multi_stage_stale_occurrence_detected(
     )
 
     with patch(
+        "repo_ops_container.container._fetch_tags",
+        return_value=["1.25"],
+    ), patch(
         "repo_ops_container.container._fetch_manifest_digest",
         return_value=_NEW_DIGEST,
     ) as mock_digest:

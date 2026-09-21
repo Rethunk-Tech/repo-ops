@@ -927,6 +927,32 @@ def _resolve_hold_tag_target(current_tag: str, tags: list[str], rule: HoldRule) 
 _REPORT_ONLY_PREFIX = "[report-only] "
 
 
+def _resolve_tag_target(ws: Workspace, image: str, tag: str) -> tuple[str | None, str | None]:
+    """Resolve the tag *image*:*tag* should move to.
+
+    Returns ``(target_tag, None)`` when a move is available, ``(None, None)``
+    when the tag is already current, and ``(None, reason)`` when the pin is
+    not actionable and the caller should emit a report-only change.
+    """
+    if not _is_semver_tag(tag):
+        return None, "non-semver tag; manual review required"
+
+    available = _fetch_tags(image)
+    if available is None:
+        return None, "registry query failed"
+
+    rule = _resolve_container_hold(ws, image)
+    if rule is not None:
+        clamp_target = _resolve_hold_tag_target(tag, available, rule)
+        if clamp_target is not None:
+            return clamp_target, None
+
+    latest = _resolve_latest_tag(tag, available)
+    if latest is None or not _target_within_hold(ws, image, latest):
+        return None, None
+    return latest, None
+
+
 def check_container(ws: Workspace) -> list[Change]:
     """Read-only check: parse image pins and query registries.
 
@@ -977,7 +1003,40 @@ def check_container(ws: Workspace) -> list[Change]:
                 continue
 
             if sha and tag:
-                # tag+sha pin: digest refresh
+                # tag+sha pin: advance the tag first, then fall back to a
+                # digest refresh of the tag already pinned.  Rewriting the tag
+                # without its matching digest would leave a pin that resolves
+                # to the old image, so both move together as one change.
+                target_tag, reason = _resolve_tag_target(ws, image, tag)
+                if reason is not None:
+                    changes.append(
+                        Change(
+                            name=f"{image}:{tag}",
+                            from_ver=tag,
+                            to=f"{_REPORT_ONLY_PREFIX}{reason}",
+                        )
+                    )
+                    continue
+                if target_tag is not None:
+                    target_digest = _fetch_manifest_digest(image, target_tag)
+                    if target_digest is None:
+                        changes.append(
+                            Change(
+                                name=f"{image}:{tag}",
+                                from_ver=tag,
+                                to=f"{_REPORT_ONLY_PREFIX}digest query failed for {target_tag}",
+                            )
+                        )
+                    else:
+                        changes.append(
+                            Change(
+                                name=f"{image}:{tag}",
+                                from_ver=f"{tag}@{sha}",
+                                to=f"{target_tag}@{target_digest}",
+                            )
+                        )
+                    continue
+
                 cache_key = (image, tag)
                 if cache_key in digest_cache:
                     new_digest = digest_cache[cache_key]
@@ -1019,50 +1078,18 @@ def check_container(ws: Workspace) -> list[Change]:
                 )
                 continue
 
-            # Non-semver tag (latest, stable, …) → report only
-            if not _is_semver_tag(tag):
+            target_tag, reason = _resolve_tag_target(ws, image, tag)
+            if reason is not None:
                 changes.append(
                     Change(
                         name=f"{image}:{tag}",
                         from_ver=tag,
-                        to=f"{_REPORT_ONLY_PREFIX}non-semver tag; manual review required",
+                        to=f"{_REPORT_ONLY_PREFIX}{reason}",
                     )
                 )
                 continue
-
-            # Query registry
-            available = _fetch_tags(image)
-            if available is None:
-                changes.append(
-                    Change(
-                        name=f"{image}:{tag}",
-                        from_ver=tag,
-                        to=f"{_REPORT_ONLY_PREFIX}registry query failed",
-                    )
-                )
-                continue
-
-            rule = _resolve_container_hold(ws, image)
-            if rule is not None:
-                clamp_target = _resolve_hold_tag_target(tag, available, rule)
-                if clamp_target is not None:
-                    changes.append(
-                        Change(
-                            name=f"{image}:{tag}",
-                            from_ver=tag,
-                            to=clamp_target,
-                        )
-                    )
-                    continue
-
-            latest = _resolve_latest_tag(tag, available)
-            if latest is None:
-                # Already at latest or indeterminate
-                continue
-
-            if not _target_within_hold(ws, image, latest):
-                continue
-            changes.append(Change(name=f"{image}:{tag}", from_ver=tag, to=latest))
+            if target_tag is not None:
+                changes.append(Change(name=f"{image}:{tag}", from_ver=tag, to=target_tag))
 
     return changes
 
@@ -1177,12 +1204,18 @@ def apply_container(ws: Workspace) -> None:
     # Reuse check_container so tag/digest resolution cannot drift from plan.
     tag_bumps: list[tuple[str, str, str]] = []
     sha_bumps: list[tuple[str, str, str, str]] = []
+    # tag+digest pins moving to a new tag: both halves rewritten together.
+    ref_bumps: list[tuple[str, str, str, str, str]] = []
     for ch in check_container(ws):
         if ch.to.startswith(_REPORT_ONLY_PREFIX):
             continue
         image, tag = ch.name.rsplit(":", 1)
         if ch.from_ver.startswith("sha256:"):
             sha_bumps.append((image, tag, ch.from_ver, ch.to))
+        elif "@" in ch.from_ver:
+            old_tag, old_sha = ch.from_ver.split("@", 1)
+            new_tag, new_sha = ch.to.split("@", 1)
+            ref_bumps.append((image, old_tag, old_sha, new_tag, new_sha))
         else:
             tag_bumps.append((image, ch.from_ver, ch.to))
 
@@ -1218,6 +1251,15 @@ def apply_container(ws: Workspace) -> None:
         for image, old_tag, new_tag in tag_bumps:
             for i, line in enumerate(lines):
                 updated = _replace_tag_in_line(line, image, old_tag, new_tag)
+                if updated != line:
+                    lines[i] = updated
+                    changed = True
+
+        for image, old_tag, old_sha, new_tag, new_sha in ref_bumps:
+            for i, line in enumerate(lines):
+                updated = _replace_image_ref_in_line(
+                    line, image, old_tag, old_sha, new_tag, new_sha
+                )
                 if updated != line:
                     lines[i] = updated
                     changed = True
