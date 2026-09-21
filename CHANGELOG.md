@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Digest-pinned container images never left their original tag. `check_container`
+  refreshed only the pinned tag's digest and returned before the tag resolver
+  ran, so `image:tag@sha256:...` stayed put while the report showed no drift.
+  Tag and digest now advance together.
+- Dependabot PR titles carrying a doubled conventional-commit scope
+  (`chore(deps)(deps): bump ...`, emitted when a repo sets its own
+  commit-message prefix) were reported as unparseable.
+
 ## [0.25.0] - 2026-09-18
 
 repo-ops is now an apply-first tool. Across 362 recorded invocations the operator ran `apply` and `plan` and almost nothing else, passed the same handful of flags every time, and read a 1,126-word `apply --help` 114 times. This release keeps the three commands that carry the work, makes the flags everyone passed the defaults, and deletes the rest: `repo-ops apply` with no arguments now updates, verifies and commits every checkout under the default roots.
