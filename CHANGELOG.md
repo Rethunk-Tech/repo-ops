@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-09-21
+
 ### Fixed
 
 - Digest-pinned container images never left their original tag. `check_container`
@@ -932,7 +934,8 @@ Note: `v0.20.1` was tagged but its release build failed the `ruff format --check
 
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.1...HEAD
+[0.25.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.22.1...v0.23.0
