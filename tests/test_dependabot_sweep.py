@@ -68,6 +68,11 @@ _PARSE_BUMP_CASES = [
     ("Bump golang.org/x/net from 0.14.0 to 0.17.0", "golang.org/x/net", "0.17.0"),
     ("Bump foo and bar from 1.0 to 2.0", "foo", "2.0"),
     ("[Security] Bump lodash from 4.17.11 to 4.17.21", "lodash", "4.17.21"),
+    (
+        "chore(deps)(deps): bump node from 22-slim to 25-slim in /frontend",
+        "node",
+        "25-slim",
+    ),
 ]
 
 
@@ -84,6 +89,7 @@ _PARSE_BUMP_CASES = [
         "go-module",
         "multi-package-takes-first",
         "security-prefix",
+        "doubled-conventional-scope",
     ],
 )
 def test_parse_bump(title, expected_package, expected_to) -> None:

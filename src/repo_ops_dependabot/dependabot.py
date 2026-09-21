@@ -88,7 +88,7 @@ from repo_ops_lockfiles.parsers import (
 # ---------------------------------------------------------------------------
 
 # Conventional-commit prefixes (chore(deps): / build(deps-dev): / etc.)
-_CC_PREFIX = r"(?:[a-zA-Z]+(?:\([^)]*\))?:\s*)?"
+_CC_PREFIX = r"(?:[a-zA-Z]+(?:\([^)]*\))*:\s*)?"
 
 # [Security] prefix
 _SEC_PREFIX = r"(?:\[Security\]\s*)?"
