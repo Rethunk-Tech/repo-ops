@@ -62,7 +62,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from repo_ops_container.container import find_container_files, _parse_image_refs
+from repo_ops_container.container import _parse_image_refs, find_container_files
 from repo_ops_core.cli import add_scan_arguments, resolve_scan_roots, wire_verbose
 from repo_ops_core.config import load_global_config, load_repo_config
 from repo_ops_core.constants import SKIP_DIRS

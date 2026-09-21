@@ -496,12 +496,15 @@ def test_digest_refresh_check_reports_update(
     """A changed digest for the same tag → actionable Change."""
     (tmp_path / "Dockerfile").write_text(f"FROM nginx:1.25@{_OLD_DIGEST}\n")
 
-    with patch(
-        "repo_ops_container.container._fetch_tags",
-        return_value=["1.25"],
-    ), patch(
-        "repo_ops_container.container._fetch_manifest_digest",
-        return_value=_NEW_DIGEST,
+    with (
+        patch(
+            "repo_ops_container.container._fetch_tags",
+            return_value=["1.25"],
+        ),
+        patch(
+            "repo_ops_container.container._fetch_manifest_digest",
+            return_value=_NEW_DIGEST,
+        ),
     ):
         changes = check_container(_make_ws(tmp_path))
 
@@ -518,12 +521,15 @@ def test_digest_pinned_tag_advances_with_its_digest(
     """A tag+digest pin advances the tag, carrying the new tag's digest."""
     (tmp_path / "Dockerfile").write_text(f"FROM nginx:1.25@{_OLD_DIGEST}\n")
 
-    with patch(
-        "repo_ops_container.container._fetch_tags",
-        return_value=["1.25", "1.27"],
-    ), patch(
-        "repo_ops_container.container._fetch_manifest_digest",
-        return_value=_NEW_DIGEST,
+    with (
+        patch(
+            "repo_ops_container.container._fetch_tags",
+            return_value=["1.25", "1.27"],
+        ),
+        patch(
+            "repo_ops_container.container._fetch_manifest_digest",
+            return_value=_NEW_DIGEST,
+        ),
     ):
         changes = check_container(_make_ws(tmp_path))
 
@@ -541,12 +547,15 @@ def test_digest_pinned_tag_advance_applies_both_halves(
     df = tmp_path / "Dockerfile"
     df.write_text(f"FROM nginx:1.25@{_OLD_DIGEST} AS build\nRUN true\n")
 
-    with patch(
-        "repo_ops_container.container._fetch_tags",
-        return_value=["1.25", "1.27"],
-    ), patch(
-        "repo_ops_container.container._fetch_manifest_digest",
-        return_value=_NEW_DIGEST,
+    with (
+        patch(
+            "repo_ops_container.container._fetch_tags",
+            return_value=["1.25", "1.27"],
+        ),
+        patch(
+            "repo_ops_container.container._fetch_manifest_digest",
+            return_value=_NEW_DIGEST,
+        ),
     ):
         apply_container(_make_ws(tmp_path))
 
@@ -559,12 +568,15 @@ def test_digest_refresh_check_already_current(
     """Digest is already current → no Change emitted."""
     (tmp_path / "Dockerfile").write_text(f"FROM nginx:1.25@{_OLD_DIGEST}\n")
 
-    with patch(
-        "repo_ops_container.container._fetch_tags",
-        return_value=["1.25"],
-    ), patch(
-        "repo_ops_container.container._fetch_manifest_digest",
-        return_value=_OLD_DIGEST,
+    with (
+        patch(
+            "repo_ops_container.container._fetch_tags",
+            return_value=["1.25"],
+        ),
+        patch(
+            "repo_ops_container.container._fetch_manifest_digest",
+            return_value=_OLD_DIGEST,
+        ),
     ):
         changes = check_container(_make_ws(tmp_path))
 
@@ -606,12 +618,15 @@ def test_digest_refresh_apply_byte_preserving(
     )
     dockerfile.write_text(original, encoding="utf-8")
 
-    with patch(
-        "repo_ops_container.container._fetch_tags",
-        return_value=["1.25"],
-    ), patch(
-        "repo_ops_container.container._fetch_manifest_digest",
-        return_value=_NEW_DIGEST,
+    with (
+        patch(
+            "repo_ops_container.container._fetch_tags",
+            return_value=["1.25"],
+        ),
+        patch(
+            "repo_ops_container.container._fetch_manifest_digest",
+            return_value=_NEW_DIGEST,
+        ),
     ):
         apply_container(_make_ws(tmp_path))
 
@@ -664,13 +679,16 @@ def test_digest_refresh_check_multi_stage_stale_occurrence_detected(
         f"FROM nginx:1.25@{_NEW_DIGEST} AS build\nFROM nginx:1.25@{_OLD_DIGEST} AS runtime\n"
     )
 
-    with patch(
-        "repo_ops_container.container._fetch_tags",
-        return_value=["1.25"],
-    ), patch(
-        "repo_ops_container.container._fetch_manifest_digest",
-        return_value=_NEW_DIGEST,
-    ) as mock_digest:
+    with (
+        patch(
+            "repo_ops_container.container._fetch_tags",
+            return_value=["1.25"],
+        ),
+        patch(
+            "repo_ops_container.container._fetch_manifest_digest",
+            return_value=_NEW_DIGEST,
+        ) as mock_digest,
+    ):
         changes = check_container(_make_ws(tmp_path))
 
     assert len(changes) == 1

@@ -95,10 +95,13 @@ def test_check_container_filters_digest_refresh_above_ceiling(
     ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
     _write_global_hold(tmp_path)
 
-    with patch.object(container, "_fetch_tags", return_value=["1.5.0"]), patch.object(
-        container,
-        "_fetch_manifest_digest",
-        return_value=f"sha256:{'b' * 64}",
+    with (
+        patch.object(container, "_fetch_tags", return_value=["1.5.0"]),
+        patch.object(
+            container,
+            "_fetch_manifest_digest",
+            return_value=f"sha256:{'b' * 64}",
+        ),
     ):
         assert container.check_container(ws) == []
 
