@@ -1,4 +1,4 @@
-"""repo-ops dispatcher: plan, apply, dependabot."""
+"""repo-ops dispatcher: plan, apply, gates, dependabot."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from repo_ops._register import register_all
 from repo_ops_core.cli import build_upgrade_parser
 from repo_ops_dependabot.dependabot import build_dependabot_parser
 from repo_ops_dependabot.dependabot import main as dependabot_main
+from repo_ops_gates.gates import build_gates_parser, main_gates
 from repo_ops_upgrade.run import main_apply, main_plan
 
 
@@ -36,6 +37,11 @@ _SUBCOMMANDS: dict[str, _Subcommand] = {
         main_apply,
         lambda: build_upgrade_parser(apply=True),
         "Apply upgrades with verify gates",
+    ),
+    "gates": _Subcommand(
+        main_gates,
+        build_gates_parser,
+        "Run every repo's own gate across the fleet; exits non-zero on any failure",
     ),
     "dependabot": _Subcommand(
         dependabot_main,
