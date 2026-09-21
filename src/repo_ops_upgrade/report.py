@@ -18,6 +18,9 @@ from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 UpgradeMode = Literal["plan", "apply"]
 
 _MAX_FAILURE_LINES = 20
+# Sweeps a repo can be dirty-skipped for before the footer names it: past this
+# it is drift nobody was told about, not a checkout somebody is mid-edit on.
+_STUCK_DIRTY_RUNS = 10
 _TOP_CHANGES = 10
 
 # Generic behind-latest note for a manager with no specific wording below.
@@ -127,6 +130,7 @@ def build_run_summary(
     workspaces_fail = 0
     workspaces_skip = 0
     dirty_skips = 0
+    stuck_dirty: list[dict[str, Any]] = []
     verify_failures = 0
     actions_bumps = 0
     actions_failures = 0
@@ -150,6 +154,19 @@ def build_run_summary(
                 workspaces_skip += 1
                 if wr.error and DIRTY_SKIP_MARKER in wr.error:
                     dirty_skips += 1
+                    # A repo left dirty is skipped silently forever, so an
+                    # interrupted sweep's own uncommitted output can stop that
+                    # repo being updated again. Name the long ones.
+                    entry = cache_get_dirty_skip(wr.workspace.git_repo)
+                    runs = (entry or {}).get("runs") or 0
+                    if runs >= _STUCK_DIRTY_RUNS:
+                        stuck_dirty.append(
+                            {
+                                "repo": bundle.label,
+                                "runs": runs,
+                                "since": (entry or {}).get("first_seen"),
+                            }
+                        )
             if wr.verify_error:
                 verify_failures += 1
             n_behind = len(wr.behind_latest)
@@ -177,6 +194,7 @@ def build_run_summary(
         "workspaces_fail": workspaces_fail,
         "workspaces_skip": workspaces_skip,
         "dirty_skips": dirty_skips,
+        "stuck_dirty": sorted(stuck_dirty, key=lambda d: -d["runs"]),
         "verify_failures": verify_failures,
         "actions_bumps": actions_bumps,
         "actions_failures": actions_failures,
@@ -570,6 +588,15 @@ def print_run_footer(
         print()
         for part in parts:
             print(f"  behind-latest: {part}")
+
+    stuck = summary.get("stuck_dirty") or []
+    if stuck:
+        print()
+        for item in stuck[:5]:
+            print(
+                f"  not updated for {item['runs']} run(s): {item['repo']} "
+                f"(dirty since {item['since']}; commit or discard it to resume updates)"
+            )
 
     # One-line staleness roll-up: top-3 repos by behind-count x days-behind.
     # ``staleness_top`` is only present in the summary when some repo scores
