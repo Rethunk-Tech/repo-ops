@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -10,9 +11,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from repo_ops_container.container import is_container_workspace
+from repo_ops_core.constants import FIND_TIMEOUT
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.filesystem import is_workspace_member, read_toml_file
 from repo_ops_core.git import git_repo_for, repo_label
+from repo_ops_core.process import run
 from repo_ops_core.walk import iter_scanned_dirs
 from repo_ops_js.workspaces import (
     detect_node_manager,
@@ -240,6 +243,24 @@ def _register_workspace(
     )
 
 
+def _git_ignored_dirs(repo: Path) -> frozenset[str]:
+    """Realpaths of the directories *repo* ignores: build output, vendored trees, caches.
+
+    A manifest there is a copy (a release tree's package.json, say), not a project,
+    and would otherwise be swept or reported as unactionable.
+    """
+    proc = run(
+        ["git", "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"],
+        repo,
+        timeout=FIND_TIMEOUT,
+    )
+    if proc.returncode != 0:
+        return frozenset()
+    return frozenset(
+        os.path.realpath(repo / entry) for entry in proc.stdout.split("\0") if entry.endswith("/")
+    )
+
+
 def discover_workspaces_in_root(
     root: Path,
     *,
@@ -453,7 +474,7 @@ def discover_workspaces_in_root(
     dir_iter: list[tuple[Path, set[str]]] = []
     repos = discover_repos([str(root)])
     for repo_s in sorted(set(repos.values())):
-        dir_iter.extend(iter_scanned_dirs(Path(repo_s)))
+        dir_iter.extend(iter_scanned_dirs(Path(repo_s), prune=_git_ignored_dirs(Path(repo_s))))
     if not dir_iter:
         dir_iter = list(iter_scanned_dirs(root))
 
