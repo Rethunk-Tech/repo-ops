@@ -260,3 +260,23 @@ def test_apply_pm_pin_success(tmp_path: Path) -> None:
     assert "bun@1.1.0" in detail
     pkg = json.loads((tmp_path / "package.json").read_text())
     assert pkg["packageManager"] == "bun@1.1.0"
+
+
+def test_pm_pin_moves_to_registry_latest_past_a_stale_runtime(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(json.dumps({"packageManager": "bun@1.4.0"}))
+    ws = _sample_workspace(tmp_path)
+    with (
+        patch.object(remediations, "_pm_runtime_version", return_value="1.4.0"),
+        patch.object(remediations, "_pm_registry_latest", return_value="1.4.2"),
+    ):
+        assert remediations.detect_pm_pin(ws, {}) is True
+        ok, _ = remediations.apply_pm_pin(ws, {})
+    assert ok is True
+    assert json.loads((tmp_path / "package.json").read_text())["packageManager"] == "bun@1.4.2"
+
+
+def test_pm_pin_never_downgrades_to_a_stale_runtime(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(json.dumps({"packageManager": "bun@1.4.2"}))
+    ws = _sample_workspace(tmp_path)
+    with patch.object(remediations, "_pm_runtime_version", return_value="1.4.0"):
+        assert remediations.detect_pm_pin(ws, {}) is False

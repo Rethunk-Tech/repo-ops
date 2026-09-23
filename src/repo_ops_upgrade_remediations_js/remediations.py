@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 import threading
 from pathlib import Path
 from typing import Any
 
-from repo_ops_core.constants import TIMEOUT_APPLY
+from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
+from repo_ops_core.http import open_url
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version, semver_tuple
 from repo_ops_js.workspaces import (
@@ -254,6 +256,32 @@ def _pm_runtime_version(name: str, ws: Workspace) -> str | None:
     return proc.stdout.strip().lstrip("v")
 
 
+# The npm package ``yarn`` is Yarn Classic, so a Berry pin would be walked
+# onto the wrong line; yarn pins follow the runtime only.
+_PM_REGISTRY_PACKAGES = frozenset({"bun", "npm", "pnpm"})
+
+
+@functools.cache
+def _pm_registry_latest(name: str) -> str | None:
+    if name not in _PM_REGISTRY_PACKAGES:
+        return None
+    try:
+        with open_url(f"https://registry.npmjs.org/{name}/latest", timeout=TIMEOUT_CHECK) as resp:
+            version = json.load(resp).get("version")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return version if isinstance(version, str) else None
+
+
+def _pm_target_version(name: str, ws: Workspace) -> str | None:
+    """Newest of the local runtime and the registry's latest release.
+
+    A host whose manager lags the registry would otherwise hold the pin back.
+    """
+    found = [v for v in (_pm_runtime_version(name, ws), _pm_registry_latest(name)) if v]
+    return max(found, key=semver_tuple, default=None)
+
+
 def detect_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> bool:
     if ws.ecosystem != "node":
         return False
@@ -262,10 +290,10 @@ def detect_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> bool:
     if not pm_field:
         return False
     name, pinned = pm_field
-    actual = _pm_runtime_version(name, ws)
-    if actual is None:
+    target = _pm_target_version(name, ws)
+    if target is None:
         return False
-    return normalize_version(pinned) != normalize_version(actual)
+    return semver_tuple(target) > semver_tuple(pinned)
 
 
 def report_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
@@ -275,8 +303,8 @@ def report_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
         return []
     name, _pinned = pm_field
     pm = (pkg.get("packageManager") or "").strip()
-    actual = _pm_runtime_version(name, ws) or "?"
-    return [f"REMEDIATE package_manager_pin: {pm} → {name}@{actual}"]
+    target = _pm_target_version(name, ws) or "?"
+    return [f"REMEDIATE package_manager_pin: {pm} → {name}@{target}"]
 
 
 def apply_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
@@ -288,7 +316,7 @@ def apply_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     if not pm_field:
         return False, "packageManager pin (failed: no packageManager field)"
     name, _ = pm_field
-    actual = _pm_runtime_version(name, ws)
+    actual = _pm_target_version(name, ws)
     if actual is None:
         return False, f"packageManager pin (failed: {name} --version)"
     pkg["packageManager"] = f"{name}@{actual}"

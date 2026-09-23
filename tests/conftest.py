@@ -249,3 +249,11 @@ def fake_run() -> _FakeRun:
     output; folding them into a scripted fixture was measured and declined.
     """
     return _FakeRun()
+
+
+@pytest.fixture(autouse=True)
+def _offline_pm_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the packageManager pin remediation off the npm registry."""
+    monkeypatch.setattr(
+        "repo_ops_upgrade_remediations_js.remediations._pm_registry_latest", lambda name: None
+    )

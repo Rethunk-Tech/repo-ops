@@ -260,13 +260,11 @@ def _apply_bun_dir(ws: Workspace, root: Path) -> list[Change]:
             continue
         targets.append(f"{name}@{version}")
         requested.append(Change(name, ch.from_ver, version))
-    if not changes and not targets:
-        return _finalize_bun_apply(ws, changes, behind, root=root, mutated=False)
     if not targets:
-        # Bare ``bun update`` — no per-package target args; the guard is still
-        # applied to any changes whose target version IS known (skip
-        # unparseable '?' entries but guard what IS known from the original
-        # check output).
+        # Bare ``bun update`` — no per-package target args. It also runs when no
+        # direct dep is outdated, because it is what refreshes transitive
+        # lockfile entries. The guard is still applied to any changes whose
+        # target version IS known.
         proc = run(["bun", "update"], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "bun update failed")

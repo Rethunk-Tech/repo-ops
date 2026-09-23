@@ -167,7 +167,7 @@ def test_apply_bun_ok_when_resolved_meets_or_exceeds_target() -> None:
             apply_bun(_ghost_ws())  # must not raise
 
 
-def test_apply_bun_noop_when_nothing_outdated(monkeypatch, fake_run: Any) -> None:
+def test_apply_bun_refreshes_lockfile_when_nothing_outdated(monkeypatch, fake_run: Any) -> None:
 
     ws = Workspace(
         path=Path("/tmp/proj"),
@@ -182,7 +182,7 @@ def test_apply_bun_noop_when_nothing_outdated(monkeypatch, fake_run: Any) -> Non
     ):
         apply_bun(ws)
 
-    assert fake_run.calls == []
+    assert fake_run.calls == [["bun", "update"], ["bun", "install"]]
 
 
 # ---------------------------------------------------------------------------
