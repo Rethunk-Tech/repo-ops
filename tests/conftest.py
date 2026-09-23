@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
+from repo_ops_go import vulndb
 from repo_ops_models.models import Change, Workspace
 
 
@@ -257,3 +258,11 @@ def _offline_pm_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "repo_ops_upgrade_remediations_js.remediations._pm_registry_latest", lambda name: None
     )
+
+
+@pytest.fixture(autouse=True)
+def _offline_go_vulndb(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep Go upgrade screening off vuln.go.dev: no advisories unless a test supplies them."""
+    monkeypatch.setattr("repo_ops_go.vulndb._fetch_json", lambda url: [])
+    vulndb._module_advisories.cache_clear()
+    vulndb._affected_ranges.cache_clear()

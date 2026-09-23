@@ -18,6 +18,7 @@ from repo_ops_core.version_utils import (
     semver_precedence,
     version_satisfies_ceiling,
 )
+from repo_ops_go.vulndb import safe_go_target
 from repo_ops_models import Change, Workspace
 
 _GO_GET_BATCH = 40
@@ -408,6 +409,23 @@ def _raise_classified(stderr: str, fallback: str, ws_path: Path) -> None:
     raise RuntimeError(msg)
 
 
+def _released_go_versions(ws: Workspace, module_path: str) -> list[str]:
+    proc = _go(["list", "-m", "-versions", "-json", module_path], ws.path, timeout=TIMEOUT_CHECK)
+    if proc.returncode != 0:
+        return []
+    try:
+        doc = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return []
+    versions = doc.get("Versions") if isinstance(doc, dict) else None
+    return [v for v in versions or [] if isinstance(v, str)]
+
+
+def _screened_target(ws: Workspace, path: str, current: str, proposed: str) -> str | None:
+    """*proposed*, or the newest release below it that the Go vulnerability database clears."""
+    return safe_go_target(path, current, proposed, lambda: _released_go_versions(ws, path))
+
+
 def _changes_from_go_list_json(ws: Workspace) -> list[Change]:
     proc = _go(["list", "-m", "-u", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
@@ -427,7 +445,10 @@ def _changes_from_go_list_json(ws: Workspace) -> list[Change]:
             have_recorded = True
         if recorded is not None and path not in recorded:
             continue
-        changes.append(Change(path, cur, new))
+        screened = _screened_target(ws, path, cur, new)
+        if screened is None:
+            continue
+        changes.append(Change(path, cur, screened))
     return changes
 
 
@@ -453,7 +474,10 @@ def _explicit_go_get_targets(ws: Workspace) -> list[str]:
             held_rule = _resolve_module_hold(ws, path)
             if not target_within_hold(version, held_rule):
                 continue
-            spec = f"{path}@{version}"
+            screened = _screened_target(ws, path, mod.get("Version") or "", version)
+            if screened is None:
+                continue
+            spec = f"{path}@{screened}"
             if _valid_go_get_target(spec):
                 targets.append(spec)
     return targets
