@@ -826,3 +826,16 @@ def test_dependabot_security_pr_is_flagged(tmp_path: Path) -> None:
         prs = results[0].prs
         assert len(prs) == 1
         assert prs[0].is_security is True
+
+
+def test_single_update_group_body_is_parsed_from_its_sentence() -> None:
+    body = (
+        "Updated UnityEngine.Modules from 6000.5.11 to 6000.6.2.\n\n"
+        "[![Dependabot compatibility score](https://example.invalid/badge)](https://example.invalid)\n\n"
+        "Dependabot will resolve any conflicts with this PR as long as you don't alter it yourself.\n"
+    )
+    rows = _parse_group_body(body)
+    assert rows is not None
+    assert [(r.package, r.from_ver, r.to_ver) for r in rows] == [
+        ("UnityEngine.Modules", "6000.5.11", "6000.6.2")
+    ]

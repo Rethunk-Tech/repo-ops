@@ -553,6 +553,15 @@ _TABLE_FROM_TO_RE = re.compile(
 )
 
 
+# A group with a single update has no table, only a sentence:
+#   Updated UnityEngine.Modules from 6000.5.11 to 6000.6.2.
+_SENTENCE_RE = re.compile(
+    r"^(?:Updated|Bumps)\s+\[?`?([^\s`\]]+)`?\]?(?:\([^)]*\))?"
+    r"\s+from\s+`?([^\s`]+?)`?\s+to\s+`?([^\s`]+?)`?\.?$",
+    re.IGNORECASE,
+)
+
+
 def _parse_group_body(body: str) -> list[GroupRow] | None:
     """Parse the update table from a grouped Dependabot PR body.
 
@@ -598,7 +607,12 @@ def _parse_group_body(body: str) -> list[GroupRow] | None:
                 rows.append(GroupRow(package=pkg, from_ver=frm, to_ver=to_))
 
     if not in_table:
-        return None
+        sentences = [
+            GroupRow(package=m.group(1), from_ver=m.group(2), to_ver=m.group(3))
+            for line in body.splitlines()
+            if (m := _SENTENCE_RE.match(line.strip()))
+        ]
+        return sentences or None
     return rows
 
 
