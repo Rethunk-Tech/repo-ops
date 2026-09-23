@@ -1,11 +1,11 @@
-"""Integration tests: real-``go`` env-classification via ``check_go``.
+"""Integration tests: real-``go`` ``check_go`` against local-setup problems.
 
-Covers two no-network paths that exercise ``classify_go_error`` end-to-end:
+Covers two no-network paths:
 
-1. go.work directive mismatch — ``go`` directive older than a member module.
-2. Missing replace target — ``replace`` points at a sibling that is absent.
+1. go.work directive mismatch: ``go`` directive older than a member module.
+2. Missing replace target: ``replace`` points at a sibling that is absent.
 
-Both call real ``go list``; failures happen before any module proxy fetch.
+Both call real ``go list``; nothing reaches a module proxy.
 Skip the whole module when ``go`` is not on ``PATH``.
 """
 
@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from repo_ops_go.go import check_go, register_go_work_dir
-from repo_ops_models import Workspace
+from repo_ops_models import Change, Workspace
 
 pytestmark = pytest.mark.integration
 
@@ -26,8 +26,8 @@ _GO = shutil.which("go")
 
 
 @pytest.mark.skipif(_GO is None, reason="go not on PATH")
-def test_go_work_directive_mismatch_raises_env_error() -> None:
-    """check_go raises [env] error with 'go work use' hint on go directive mismatch."""
+def test_go_work_directive_mismatch_is_planned_not_fatal() -> None:
+    """Module-mode ``go list`` ignores the stale go.work; check_go plans its sync."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         member = root / "member"
@@ -51,15 +51,10 @@ def test_go_work_directive_mismatch_raises_env_error() -> None:
             git_repo=root,
             label="go-env-test",
         )
-        # Register the go.work directory so classify_go_error includes its path.
+        # Registration is what makes check_go plan the go.work directive sync.
         register_go_work_dir(member, root)
 
-        with pytest.raises(RuntimeError) as exc_info:
-            check_go(ws)
-
-        msg = str(exc_info.value)
-        assert msg.startswith("[env] "), f"expected [env] prefix, got: {msg!r}"
-        assert "go work use" in msg, f"expected 'go work use' hint, got: {msg!r}"
+        assert check_go(ws) == [Change("go.work go directive", "1.21", "1.24")]
 
 
 @pytest.mark.skipif(_GO is None, reason="go not on PATH")

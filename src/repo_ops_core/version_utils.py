@@ -46,7 +46,7 @@ def is_go_pseudo_version(version: str) -> bool:
     return _GO_PSEUDO_VERSION_RE.match(version.strip()) is not None
 
 
-def _semver_precedence(
+def semver_precedence(
     version: str,
 ) -> tuple[tuple[int, ...], bool, tuple[tuple[int, int, str], ...]]:
     """Sort key following SemVer 2.0 precedence, prerelease identifiers included.
@@ -88,7 +88,7 @@ def version_satisfies_ceiling(version: str, ceiling: str) -> bool:
     would never block one.
     """
     if is_go_pseudo_version(ceiling):
-        return _semver_precedence(version) <= _semver_precedence(ceiling)
+        return semver_precedence(version) <= semver_precedence(ceiling)
     v_parts = semver_tuple(version)
     c_parts = semver_tuple(ceiling)
     for v_part, c_part in zip(v_parts, c_parts, strict=False):

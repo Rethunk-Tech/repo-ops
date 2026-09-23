@@ -5,15 +5,17 @@ from __future__ import annotations
 import json
 import logging
 import re
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
-from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
+from repo_ops_core.constants import GO_MODULE_MODE_ENV, TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import (
     hold_ceiling_spec,
     is_go_pseudo_version,
+    semver_precedence,
     version_satisfies_ceiling,
 )
 from repo_ops_models import Change, Workspace
@@ -29,6 +31,10 @@ _GO_DIRECTIVE_RE = re.compile(r"^go\s+(\d+\.\d+(?:\.\d+)?)$", re.MULTILINE)
 # Populated by discovery (register_go_work_dir); consulted by classify_go_error
 # so that remediation hints can name the go.work file location.
 _go_work_dirs: dict[Path, Path] = {}
+
+
+def _go(args: list[str], cwd: Path, timeout: float) -> subprocess.CompletedProcess[str]:
+    return run(["go", *args], cwd, timeout=timeout, env=GO_MODULE_MODE_ENV)
 
 
 def register_go_work_dir(ws_path: Path, go_work_dir: Path) -> None:
@@ -159,7 +165,13 @@ def _gomod_require_paths(ws: Workspace) -> set[str] | None:
     ``go mod tidy``, so reporting them produces ghost upgrades.
     Returns None when go.mod cannot be read (callers then skip filtering).
     """
-    proc = run(["go", "mod", "edit", "-json"], ws.path, timeout=TIMEOUT_CHECK)
+    requires = _gomod_requires(ws)
+    return None if requires is None else set(requires)
+
+
+def _gomod_requires(ws: Workspace) -> dict[str, str] | None:
+    """Map each go.mod ``require`` path to its recorded version (``""`` if absent)."""
+    proc = _go(["mod", "edit", "-json"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         return None
     try:
@@ -169,7 +181,24 @@ def _gomod_require_paths(ws: Workspace) -> set[str] | None:
     if not isinstance(doc, dict):
         return None
     requires = doc.get("Require") or []
-    return {r["Path"] for r in requires if isinstance(r, dict) and isinstance(r.get("Path"), str)}
+    return {
+        r["Path"]: str(r.get("Version") or "")
+        for r in requires
+        if isinstance(r, dict) and isinstance(r.get("Path"), str)
+    }
+
+
+def _raise_on_downgrade(before: dict[str, str] | None, after: dict[str, str] | None) -> None:
+    """Fail when a require still in go.mod landed below its pre-apply version."""
+    if not before or not after:
+        return
+    lowered = [
+        f"{path} {old} -> {new}"
+        for path, new in sorted(after.items())
+        if (old := before.get(path)) and new and semver_precedence(new) < semver_precedence(old)
+    ]
+    if lowered:
+        raise RuntimeError("go apply downgraded " + ", ".join(lowered))
 
 
 # ---------------------------------------------------------------------------
@@ -205,8 +234,8 @@ def _go_ceiling_query(max_version: str) -> str:
 
 def _resolved_go_module_version(ws: Workspace, module_path: str) -> str | None:
     """Read the currently resolved version of *module_path* via ``go list -m -json``."""
-    proc = run(
-        ["go", "list", "-m", "-json", module_path],
+    proc = _go(
+        ["list", "-m", "-json", module_path],
         ws.path,
         timeout=TIMEOUT_CHECK,
     )
@@ -257,8 +286,8 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
         resolved = _resolved_go_module_version(ws, module_path)
         if resolved is None or version_satisfies_ceiling(resolved, rule.max_version):
             continue
-        proc = run(
-            ["go", "get", f"{module_path}@{_go_ceiling_query(rule.max_version)}"],
+        proc = _go(
+            ["get", f"{module_path}@{_go_ceiling_query(rule.max_version)}"],
             ws.path,
             timeout=TIMEOUT_APPLY,
         )
@@ -275,7 +304,7 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
             )
         corrected_any = True
     if corrected_any:
-        proc = run(["go", "mod", "tidy"], ws.path, timeout=TIMEOUT_APPLY)
+        proc = _go(["mod", "tidy"], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             _raise_classified(proc.stderr, "go mod tidy failed", ws.path)
 
@@ -380,7 +409,7 @@ def _raise_classified(stderr: str, fallback: str, ws_path: Path) -> None:
 
 
 def _changes_from_go_list_json(ws: Workspace) -> list[Change]:
-    proc = run(["go", "list", "-m", "-u", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK)
+    proc = _go(["list", "-m", "-u", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go list failed", ws.path)
     recorded: set[str] | None = None
@@ -403,7 +432,7 @@ def _changes_from_go_list_json(ws: Workspace) -> list[Change]:
 
 
 def _explicit_go_get_targets(ws: Workspace) -> list[str]:
-    proc = run(["go", "list", "-m", "-u", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK)
+    proc = _go(["list", "-m", "-u", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go list failed", ws.path)
     recorded: set[str] | None = None
@@ -463,13 +492,15 @@ def apply_go(ws: Workspace) -> None:
     # 1. Sync go.work directive first (prevents downstream go list failures).
     _apply_go_work_directive(ws)
 
+    before = _gomod_requires(ws)
     targets = _explicit_go_get_targets(ws)
     for i in range(0, len(targets), _GO_GET_BATCH):
         batch = targets[i : i + _GO_GET_BATCH]
-        proc = run(["go", "get", "--", *batch], ws.path, timeout=TIMEOUT_APPLY)
+        proc = _go(["get", "--", *batch], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             _raise_classified(proc.stderr, "go get failed", ws.path)
-    proc = run(["go", "mod", "tidy"], ws.path, timeout=TIMEOUT_APPLY)
+    proc = _go(["mod", "tidy"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go mod tidy failed", ws.path)
+    _raise_on_downgrade(before, _gomod_requires(ws))
     _enforce_version_ceilings(ws)

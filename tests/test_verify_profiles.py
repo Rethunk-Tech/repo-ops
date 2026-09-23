@@ -130,7 +130,7 @@ class TestVerifyScriptFromConfig:
         (tmp_path / ".repo-ops.toml").write_text('[verify]\nscript = "gate"\n', encoding="utf-8")
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             if "gate" in cmd:
                 return _fail(stderr="gate failed")
@@ -156,7 +156,7 @@ class TestVerifySkip:
         called: list[bool] = []
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             called.append(True)
             return _ok()
@@ -206,7 +206,7 @@ class TestVerifySkip:
         calls: list[Path] = []
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             calls.append(cwd)
             return _ok()
@@ -234,7 +234,7 @@ class TestVerifyTimeout:
         captured: list[dict] = []
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             captured.append({"cmd": cmd, "timeout": timeout})
             return _ok()
@@ -257,7 +257,7 @@ class TestVerifyTimeout:
         captured: list[dict] = []
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             captured.append({"cmd": cmd, "timeout": timeout})
             return _ok()

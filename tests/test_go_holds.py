@@ -34,7 +34,7 @@ def _fake_run_with_gomod(list_stdout: str, require_paths: list[str], make_proc):
         }
     )
 
-    def fake_run(cmd, cwd, timeout=0):
+    def fake_run(cmd, cwd, timeout=0, env=None):
         stdout = gomod if cmd[:3] == ["go", "mod", "edit"] else list_stdout
         return make_proc(stdout=stdout)
 
@@ -122,7 +122,7 @@ def test_enforce_version_ceilings_clamps_resolved_above_ceiling(
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
     versions = {_MODULE: "v1.8.0"}
 
-    def fake_run(cmd, cwd, timeout=0):
+    def fake_run(cmd, cwd, timeout=0, env=None):
         if cmd[:3] == ["go", "mod", "edit"]:
             return make_proc(
                 stdout=json.dumps(
@@ -154,7 +154,7 @@ def test_enforce_version_ceilings_raises_when_still_above_ceiling(
 ) -> None:
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
-    def fake_run(cmd, cwd, timeout=0):
+    def fake_run(cmd, cwd, timeout=0, env=None):
         if cmd[:3] == ["go", "mod", "edit"]:
             return make_proc(
                 stdout=json.dumps(
@@ -190,7 +190,7 @@ def test_enforce_version_ceilings_skips_unheld_and_already_compliant(
     compliant = "example.com/compliant"
     get_calls: list[list[str]] = []
 
-    def fake_run(cmd, cwd, timeout=0):
+    def fake_run(cmd, cwd, timeout=0, env=None):
         if cmd[:3] == ["go", "mod", "edit"]:
             return make_proc(
                 stdout=json.dumps(
@@ -232,7 +232,7 @@ def test_enforce_version_ceilings_raises_when_corrective_get_command_fails(
     corrective `go get` command itself errors out (e.g. network failure)."""
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
 
-    def fake_run(cmd, cwd, timeout=0):
+    def fake_run(cmd, cwd, timeout=0, env=None):
         if cmd[:3] == ["go", "mod", "edit"]:
             return make_proc(
                 stdout=json.dumps(

@@ -35,7 +35,7 @@ from repo_ops_core.config import (
     load_global_config,
     load_repo_config,
 )
-from repo_ops_core.constants import TIMEOUT_VERIFY
+from repo_ops_core.constants import GO_MODULE_MODE_ENV, TIMEOUT_VERIFY
 from repo_ops_core.filesystem import read_json_file, read_toml_file
 from repo_ops_core.process import run
 from repo_ops_js.workspaces import pm_run_prefix
@@ -343,7 +343,7 @@ def verify_workspace(ws: Workspace) -> str | None:
     if mgr in ("yarn", "npm", "bun", "pnpm"):
         return verify_node(ws)
     if mgr == "go":
-        proc = run(["go", "mod", "verify"], ws.path, timeout=timeout)
+        proc = run(["go", "mod", "verify"], ws.path, timeout=timeout, env=GO_MODULE_MODE_ENV)
         if proc.returncode != 0:
             return proc.stderr.strip() or "go mod verify failed"
         handled, gate_err = _gate_verify(ws, timeout=timeout)
@@ -351,10 +351,10 @@ def verify_workspace(ws: Workspace) -> str | None:
             return gate_err
         # Default post-upgrade build gate: catches API-breaking bumps that
         # go mod verify (checksum-only) would pass silently.
-        proc_build = run(["go", "build", "./..."], ws.path, timeout=timeout)
+        proc_build = run(["go", "build", "./..."], ws.path, timeout=timeout, env=GO_MODULE_MODE_ENV)
         if proc_build.returncode != 0:
             return proc_build.stderr.strip() or "go build ./... failed"
-        proc2 = run(["go", "test", "./..."], ws.path, timeout=timeout)
+        proc2 = run(["go", "test", "./..."], ws.path, timeout=timeout, env=GO_MODULE_MODE_ENV)
         if proc2.returncode != 0:
             return proc2.stderr.strip() or "go test failed"
         return None

@@ -63,7 +63,7 @@ class TestGoVerifyGates:
         calls: list[list[str]] = []
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             calls.append(cmd)
             if cmd[0:3] == ["go", "mod", "verify"]:
@@ -82,7 +82,7 @@ class TestGoVerifyGates:
         """go build failure must surface as an error string."""
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             if cmd[0:3] == ["go", "mod", "verify"]:
                 return _ok()
@@ -102,7 +102,7 @@ class TestGoVerifyGates:
         called_test = False
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             nonlocal called_test
             if cmd[0:3] == ["go", "test"]:
@@ -199,7 +199,7 @@ class TestUvRuffGate:
         )
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             if cmd[:4] == ["uv", "run", "ruff", "check"]:
                 return CompletedProcess([], 1, stdout="Found 3 errors.\n", stderr="")
@@ -218,7 +218,7 @@ class TestUvRuffGate:
         called_ruff = False
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             nonlocal called_ruff
             if cmd[:4] == ["uv", "run", "ruff", "check"]:
@@ -302,7 +302,7 @@ class TestPythonManagerFastGates:
         calls: list[list[str]] = []
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             calls.append(cmd)
             return _fail(stderr="lock gate failed") if cmd == lock_cmd else _ok()
@@ -375,7 +375,7 @@ class TestPythonManagerFastGates:
         )
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             if cmd == fast_cmd:
                 return _fail(stderr="fast gate failed")
@@ -547,7 +547,7 @@ class TestVerifyHatchFast:
         )
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             if cmd == ["uv", "run", "check"]:
                 return _fail(stderr="type error found")
@@ -579,7 +579,9 @@ _GATE_LIST = _gate_json("build", "typecheck", "lint", "workflows", "test")
 def _gate_aware_run(calls: list[list[str]], listing: str = _GATE_LIST):
     """A ``run`` double that answers ``gate --json`` with *listing*."""
 
-    def fake_run(cmd: list[str], cwd: Path, timeout: int | None = None) -> CompletedProcess[str]:
+    def fake_run(
+        cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+    ) -> CompletedProcess[str]:
         calls.append(cmd)
         return _ok(stdout=listing if cmd[:2] == ["gate", "--json"] else "")
 
@@ -628,7 +630,7 @@ class TestGateDelegation:
         self._write_pkg(tmp_path)
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             if cmd[:2] == ["gate", "--json"]:
                 return _ok(stdout=_GATE_LIST)
@@ -728,7 +730,7 @@ class TestPythonGateDelegation:
         self._write_pyproject(tmp_path)
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
             if cmd[:2] == ["gate", "--json"]:
                 return _ok(stdout=_PYTHON_GATE_LIST)

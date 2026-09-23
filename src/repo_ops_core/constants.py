@@ -54,5 +54,10 @@ DEFAULT_ROOTS = [
 TIMEOUT_CHECK = 60
 TIMEOUT_APPLY = 60
 TIMEOUT_VERIFY = 60
+
+# An enclosing go.work (a superproject over submodule checkouts) makes MVS select
+# the newest version any member requires, hiding updates the module's own go.mod
+# still needs and building against sibling checkouts instead of that go.mod.
+GO_MODULE_MODE_ENV = {"GOWORK": "off"}
 FIND_TIMEOUT = 60
 GIT_TIMEOUT = 10

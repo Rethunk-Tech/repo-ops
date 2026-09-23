@@ -6,9 +6,12 @@ import json
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from repo_ops_go.go import (
     _changes_from_go_list_json,
     _explicit_go_get_targets,
+    _raise_on_downgrade,
     _valid_go_get_target,
     apply_go,
 )
@@ -52,7 +55,7 @@ def _fake_run_with_gomod(list_stdout: str, require_paths: list[str]):
         }
     )
 
-    def fake_run(cmd, cwd, timeout=0):
+    def fake_run(cmd, cwd, timeout=0, env=None):
         stdout = gomod if cmd[:3] == ["go", "mod", "edit"] else list_stdout
         return type("Proc", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
 
@@ -131,7 +134,7 @@ def test_unreadable_gomod_skips_filtering(tmp_path) -> None:
         }
     )
 
-    def fake_run(cmd, cwd, timeout=0):
+    def fake_run(cmd, cwd, timeout=0, env=None):
         if cmd[:3] == ["go", "mod", "edit"]:
             return type("Proc", (), {"returncode": 1, "stdout": "", "stderr": "boom"})()
         return type("Proc", (), {"returncode": 0, "stdout": line, "stderr": ""})()
@@ -195,3 +198,13 @@ def test_apply_go_explicit_mode_uses_get_separator(tmp_path, fake_run: Any) -> N
         apply_go(ws)
     assert ["go", "get", "--", "example.com/foo@v1.0.1"] in fake_run.calls
     assert ["go", "mod", "tidy"] in fake_run.calls
+
+
+def test_raise_on_downgrade_flags_lowered_require_only() -> None:
+    before = {"example.com/a": "v1.2.0", "example.com/b": "v0.0.0-20260917231906-eeb232e0883d"}
+    _raise_on_downgrade(before, {"example.com/a": "v1.3.0", "example.com/c": "v1.0.0"})
+    with pytest.raises(RuntimeError, match=r"example\.com/b"):
+        _raise_on_downgrade(
+            before,
+            {"example.com/a": "v1.2.0", "example.com/b": "v0.0.0-20260901000000-aaaaaaaaaaaa"},
+        )
