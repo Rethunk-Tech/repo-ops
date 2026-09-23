@@ -532,6 +532,10 @@ def execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
             "failed",
             detail=err,
         )
+    # A pre-commit hook that rewrites and re-adds these files (a version sync, say)
+    # does so in the pathspec commit's temporary index, so the real index keeps the
+    # pre-hook content and shows them staged back to it. Point them at HEAD again.
+    run_git(plan.git_repo, "reset", "-q", "--", *plan.files, timeout=120)
     return CommitOutcome(
         plan.git_repo,
         plan.label,

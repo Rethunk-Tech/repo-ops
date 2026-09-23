@@ -826,3 +826,26 @@ def test_commit_leaves_previously_staged_files_out(tmp_path: Path, init_git_repo
 
     assert _git("show", "--name-only", "--format=", "HEAD").split() == ["package-lock.json"]
     assert _git("diff", "--cached", "--name-only").split() == ["notes.md"]
+
+
+def test_a_hook_that_rewrites_committed_files_leaves_nothing_staged(
+    tmp_path: Path, init_git_repo
+) -> None:
+    init_git_repo(tmp_path, commit=True, filename="version.txt")
+    (tmp_path / "version.txt").write_text("1\n")
+    hook = tmp_path / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\necho 2 > version.txt && git add version.txt\n")
+    hook.chmod(0o755)
+
+    plan = post_apply_commit.CommitPlan(tmp_path, "repo", "chore: bump", files=["version.txt"])
+    outcome = post_apply_commit.execute_commit_plan(plan)
+
+    assert outcome.status == "committed"
+    git = ["git", "-C", str(tmp_path)]
+    assert (
+        subprocess.run([*git, "show", "HEAD:version.txt"], capture_output=True, text=True).stdout
+        == "2\n"
+    )
+    assert (
+        subprocess.run([*git, "status", "--porcelain"], capture_output=True, text=True).stdout == ""
+    )
