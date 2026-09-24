@@ -238,6 +238,8 @@ def _compile_requirements(
                     "-o",
                     str(out),
                     "--upgrade",
+                    "--custom-compile-command",
+                    "uv pip compile requirements.in -o requirements.txt",
                     *(
                         ["--upgrade-package", upgrade_package]
                         if upgrade_package is not None
