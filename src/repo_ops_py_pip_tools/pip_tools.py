@@ -12,7 +12,7 @@ from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import restore_file, snapshot_file
-from repo_ops_core.holds import resolve_package_hold
+from repo_ops_core.holds import resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
 from repo_ops_core.version_utils import hold_ceiling_spec, version_parts
@@ -273,6 +273,12 @@ def _compile_requirements(
 
 def _pip_tools_bumped_requirement(requirement: str, latest: str) -> str:
     stripped = requirement.strip()
+    # An exclusive bound rewritten with the same operator excludes `latest`
+    # (`<82` → `<84.0.0` cannot install `==84.0.0`). Include it.
+    if stripped.startswith("<") and not stripped.startswith("<="):
+        return f"<={latest}"
+    if stripped.startswith(">") and not stripped.startswith(">="):
+        return f">={latest}"
     for operator in ("^", "~=", "~", "==", ">=", "<=", "!=", ">", "<", "="):
         if stripped.startswith(operator):
             return f"{operator}{latest}"
@@ -322,6 +328,9 @@ def _apply_pip_tools_targeted_bumps(
     req_txt = ws.path / "requirements.txt"
     remaining: list[Change] = []
     for candidate in candidates:
+        if not target_within_hold(candidate.to, resolve_package_hold(ws, candidate.name)):
+            remaining.append(candidate)
+            continue
         in_snapshot = snapshot_file(req_in)
         txt_snapshot = snapshot_file(req_txt)
         if not _rewrite_requirements_in(req_in, candidate.name, candidate.to):

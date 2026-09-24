@@ -7,8 +7,10 @@ from unittest.mock import patch
 
 import pytest
 
+from repo_ops_core.holds import HoldRule
 from repo_ops_py_pip_tools.pip_tools import (
     _compile_requirements,
+    _pip_tools_bumped_requirement,
     apply_pip_tools,
     check_pip_tools,
 )
@@ -183,6 +185,30 @@ def test_compile_requirements_pip_compile_fails_raises(
         pytest.raises(RuntimeError, match="pip-compile broke"),
     ):
         _compile_requirements(ws, out, req_in)
+
+
+def test_exclusive_bound_includes_latest_and_hold_skips_the_lift(
+    tmp_path: Path, make_workspace
+) -> None:
+    """`<82` must become `<=84.0.0`, and a hold below latest must leave the pin."""
+    assert _pip_tools_bumped_requirement("<82", "84.0.0") == "<=84.0.0"
+    assert _pip_tools_bumped_requirement(">1", "2.0.0") == ">=2.0.0"
+    assert _pip_tools_bumped_requirement("<=81", "81.0.1") == "<=81.0.1"
+
+    req_in = tmp_path / "requirements.in"
+    req_in.write_text("setuptools<82\n")
+    (tmp_path / "requirements.txt").write_text("setuptools==81.0.0\n")
+    ws = make_workspace(tmp_path, ecosystem="py", manager="pip-tools", label="demo")
+    held = HoldRule(package="setuptools", max_version="81", ecosystem="py")
+
+    with (
+        patch("repo_ops_py_pip_tools.pip_tools._compile_requirements"),
+        patch("repo_ops_py_pip_tools.pip_tools._pypi_latest", return_value="84.0.0"),
+        patch("repo_ops_py_pip_tools.pip_tools.resolve_package_hold", return_value=held),
+    ):
+        apply_pip_tools(ws)
+
+    assert req_in.read_text() == "setuptools<82\n"
 
 
 def test_apply_pip_tools_missing_requirements_in_raises(tmp_path: Path, make_workspace) -> None:
