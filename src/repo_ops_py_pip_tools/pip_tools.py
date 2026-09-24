@@ -167,6 +167,8 @@ def check_pip_tools(
                 ws.path,
                 timeout=TIMEOUT_CHECK,
             )
+            # uv writes `-o -` to stdout and also to a file named `-` in cwd.
+            (ws.path / "-").unlink(missing_ok=True)
             if proc.returncode == 0 and proc.stdout.strip():
                 proposed = parse_requirements_lines(proc.stdout)
             elif proc.returncode != 0:
