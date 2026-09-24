@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import sys
-import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -120,11 +118,11 @@ def _hold_constraints_file(ws: Workspace, req_in: Path):
     if not lines:
         yield None
         return
-    fd, raw_path = tempfile.mkstemp(prefix="repo-ops-hold-", suffix=".txt", dir=str(ws.path))
-    path = Path(raw_path)
+    # Stable name: uv records the constraints path in `# via` comments, and a
+    # random mkstemp name rewrote requirements.txt on every apply.
+    path = ws.path / ".repo-ops-holds.txt"
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write("\n".join(lines) + "\n")
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         yield path
     finally:
         path.unlink(missing_ok=True)
