@@ -81,6 +81,17 @@ def test_discover_all_enumerates_multiple_and_subdir_workspaces(tmp_path: Path, 
     assert (subdir_only / "web").resolve() in by_path, "subdir-only repo missed"
 
 
+def test_discover_all_skips_go_mod_without_module_directive(tmp_path: Path, init_git_repo):
+    """A go.mod holding only a ``go`` line (a pattern artifact) is not a module."""
+    repo = tmp_path / "com.github" / "Acme" / "canon"
+    init_git_repo(repo)
+    (repo / "go.mod").write_text("go 1.27.1\n")
+
+    diag = DiscoveryDiagnostics()
+    assert discover_all([str(tmp_path)], diagnostics=diag) == []
+    assert any("no module directive" in s["reason"] for s in diag.skipped)
+
+
 def test_discover_all_suppresses_uv_workspace_members(tmp_path: Path, init_git_repo):
     """uv workspace members (governed by the root ``uv.lock``) must NOT each
     surface as standalone workspaces."""

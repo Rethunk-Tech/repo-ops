@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -329,7 +330,11 @@ def discover_workspaces_in_root(
         return None
 
     def consider_go(mdir: Path) -> None:
-        if not (mdir / "go.mod").exists():
+        gomod = mdir / "go.mod"
+        if not gomod.exists():
+            return
+        if not re.search(r"^\s*module\s", gomod.read_text(errors="replace"), re.M):
+            record_skip(mdir, "go", "go.mod has no module directive")
             return
         git = git_repo_for(mdir)
         if not git:
