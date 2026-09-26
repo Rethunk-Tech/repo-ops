@@ -67,6 +67,8 @@ Three keys:
 
 ```toml
 exclude = ["archived-*", "vendor-fork"]   # repos to skip; unioned across files and --exclude
+# In a repo's own .repo-ops.toml, an entry also skips the workspace at that
+# repo-relative path or glob (e.g. "go/__patterns/*"); the root workspace never matches.
 
 [verify]
 script = "build:prod"   # Node script to run instead of gate detection; "" skips the script step

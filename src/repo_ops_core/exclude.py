@@ -18,6 +18,16 @@ def repo_matches_exclude(label: str, path_str: str, patterns: list[str]) -> bool
     )
 
 
+def workspace_matches_exclude(git_repo: Path, workspace: Path, patterns: list[str]) -> bool:
+    """Return whether a repo's own pattern names this workspace by its repo-relative path.
+
+    Exact or glob match only: a bare substring like ``mobile`` must not catch
+    ``mobile-api`` or every path under a checkout whose name contains it.
+    """
+    rel = workspace.relative_to(git_repo).as_posix()
+    return rel != "." and any(rel == p.strip("/") or fnmatch.fnmatch(rel, p) for p in patterns)
+
+
 def merge_exclude_patterns(cli_patterns: list[str] | None, *config_excludes: object) -> list[str]:
     """Union CLI and every config layer's patterns, preserving first-seen order.
 

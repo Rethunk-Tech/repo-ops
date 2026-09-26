@@ -21,7 +21,11 @@ from repo_ops_core.config import (
     load_repo_config,
 )
 from repo_ops_core.constants import DEFAULT_ROOTS
-from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
+from repo_ops_core.exclude import (
+    filter_repo_paths,
+    merge_exclude_patterns,
+    workspace_matches_exclude,
+)
 from repo_ops_core.filesystem import new_run_dir, write_json_atomic
 from repo_ops_core.git import is_git_dirty
 from repo_ops_core.parallel import run_bounded_pool
@@ -142,6 +146,16 @@ def _run_upgrade_body(
         kept_paths.extend(bundle_kept)
         excluded_count += bundle_excluded
     bundles = {path: bundles[path] for path in kept_paths}
+    for bundle in bundles.values():
+        repo_exclude = _repo_cfgs.get(bundle.git_repo, {}).get("exclude")
+        if isinstance(repo_exclude, str):
+            repo_exclude = [repo_exclude]
+        if repo_exclude:
+            bundle.workspaces = [
+                w
+                for w in bundle.workspaces
+                if not workspace_matches_exclude(bundle.git_repo, w.workspace.path, repo_exclude)
+            ]
 
     submodule_links = submodules.discover_submodules_under_roots(roots)
     submodules_json = submodules.submodules_to_json(submodule_links)

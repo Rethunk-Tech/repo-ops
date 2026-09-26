@@ -4,6 +4,7 @@ from repo_ops_core.exclude import (
     filter_repo_paths,
     merge_exclude_patterns,
     repo_matches_exclude,
+    workspace_matches_exclude,
 )
 
 
@@ -30,3 +31,11 @@ def test_filter_repo_paths_returns_kept_paths_and_count(tmp_path: Path) -> None:
 
     assert kept == [keep]
     assert excluded == 1
+
+
+def test_workspace_matches_exclude_uses_repo_relative_path() -> None:
+    repo = Path("/src/canon")
+    assert workspace_matches_exclude(repo, repo / "go/__patterns/go-mod", ["go/__patterns/go-mod"])
+    assert workspace_matches_exclude(repo, repo / "go/__patterns/go-mod", ["go/__patterns/*"])
+    assert not workspace_matches_exclude(repo, repo / "mobile-api", ["mobile"])
+    assert not workspace_matches_exclude(repo, repo, ["*"])
