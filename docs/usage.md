@@ -36,7 +36,7 @@ Every dependency moves to its newest release, across semver ranges and majors. E
 | containers | `FROM` and `image:` tags to the newest; digest pins refresh for the same tag |
 | GitHub Actions | newest major; digest pins advance (comment updated), floating tags become SHA pins |
 
-Node monorepos cover every workspace member, each bumped from its own directory. A private member's `peerDependencies` follow the version the same manifest depends on. When `gh` is authenticated, Actions rewrites are checked against the org's allowed-actions policy and violations are reported.
+Node monorepos cover every workspace member, each bumped from its own directory. A private member's `peerDependencies` follow the version the same manifest depends on. When `gh` is authenticated, Actions rewrites are checked against the org's allowed-actions policy and violations are reported. Actions scanning covers both `.github/workflows/*.yml` and every composite-action `action.yml`/`action.yaml` in the repo; a `uses:` pin under an excluded workspace glob is left untouched.
 
 ### Remediations
 

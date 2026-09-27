@@ -307,11 +307,15 @@ def _run_upgrade_body(
         local_cache: dict[str, dict | None] = {}
         with _tag_cache_lock:
             local_cache.update(run_tag_cache)
+        repo_exclude = _repo_cfgs.get(bundle.git_repo, {}).get("exclude")
+        if isinstance(repo_exclude, str):
+            repo_exclude = [repo_exclude]
         try:
             bumps, count = actions.scan_actions(
                 bundle.git_repo,
                 apply=apply,
                 tag_cache=local_cache,
+                exclude_patterns=repo_exclude or None,
             )
         except Exception as exc:
             # Isolate: a non-WorkflowParseError (e.g. OSError writing a
@@ -341,7 +345,9 @@ def _run_upgrade_body(
     # properly a moment later and a name this misses just takes the REST path.
     _all_uses: list[str] = []
     for _bundle in bundles.values():
-        for _wf in actions.discover_workflow_files(_bundle.git_repo):
+        for _wf in actions.discover_workflow_files(
+            _bundle.git_repo
+        ) + actions.discover_action_files(_bundle.git_repo):
             with contextlib.suppress(OSError):
                 _all_uses.extend(actions.skim_workflow_uses(_wf))
     if _all_uses:

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Actions scanning only ever read `.github/workflows/*.yml`, so a `uses:` pin
+  inside a composite action's `action.yml`/`action.yaml` never got bumped or
+  policy-checked. Both files are now discovered and scanned the same way,
+  respecting the repo's exclude globs.
+
 ## [0.25.1] - 2026-09-21
 
 ### Fixed

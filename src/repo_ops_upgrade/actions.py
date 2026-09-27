@@ -18,6 +18,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from repo_ops_core.exclude import workspace_matches_exclude
 from repo_ops_core.filesystem import write_json_atomic
 from repo_ops_core.git import github_owner_repo, github_remote
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
@@ -417,6 +418,29 @@ def discover_workflow_files(repo: Path) -> list[Path]:
     if not wf_dir.is_dir():
         return []
     return sorted(p for p in wf_dir.iterdir() if p.suffix in (".yml", ".yaml") and p.is_file())
+
+
+def discover_action_files(repo: Path) -> list[Path]:
+    """Return every composite-action manifest under *repo*.
+
+    A composite action's ``action.yml``/``action.yaml`` can live anywhere in
+    the tree (a package's own root, ``.github/actions/*/``, …), unlike
+    workflows which only live in ``.github/workflows/``, so this walks the
+    whole repo rather than a fixed directory.
+    """
+    return sorted(
+        p
+        for pattern in ("action.yml", "action.yaml")
+        for p in repo.rglob(pattern)
+        if p.is_file() and ".git" not in p.relative_to(repo).parts
+    )
+
+
+def _filter_excluded(paths: list[Path], repo: Path, patterns: list[str] | None) -> list[Path]:
+    """Drop paths whose repo-relative directory matches an exclude glob."""
+    if not patterns:
+        return paths
+    return [p for p in paths if not workspace_matches_exclude(repo, p.parent, patterns)]
 
 
 # The newest tags answer everything a bump needs: the highest major, which
@@ -951,15 +975,16 @@ def scan_actions(
     *,
     tag_cache: dict[str, dict | None] | None = None,
     org_policy_cache: dict[str, dict | None] | None = None,
+    exclude_patterns: list[str] | None = None,
 ) -> tuple[list[ActionBump], int]:
-    """Scan GitHub Actions workflow files and produce bump recommendations.
+    """Scan GitHub Actions workflow and composite-action files for bump recommendations.
 
     Parameters
     ----------
     repo:
         Repository root (parent of ``.github/workflows/``).
     apply:
-        When True, rewrite workflow files for actionable bumps.
+        When True, rewrite workflow/action files for actionable bumps.
     tag_cache:
         Optional shared cache dict mapping action name → tag info (or None on
         failure).  When provided, entries are reused across calls so each
@@ -970,10 +995,18 @@ def scan_actions(
         When ``None``, the module-level ``_ORG_POLICY_CACHE`` is used.  Callers
         may pass a fresh ``{}`` for test isolation.  Policy checks run only when
         ``gh`` is authenticated; otherwise they are skipped (zero ``gh`` calls).
+    exclude_patterns:
+        Repo-relative glob patterns (the repo's own ``.repo-ops.toml``
+        ``exclude``) whose matching workflow/action files are neither scanned
+        nor rewritten.
     """
     if not shutil.which("actionlint"):
         print("WARN: actionlint not on PATH; skipping action validation", file=sys.stderr)
-    workflows = discover_workflow_files(repo)
+    workflows = _filter_excluded(discover_workflow_files(repo), repo, exclude_patterns)
+    action_files = _filter_excluded(discover_action_files(repo), repo, exclude_patterns)
+    targets: list[tuple[Path, bool]] = [(w, True) for w in workflows] + [
+        (a, False) for a in action_files
+    ]
     bumps: list[ActionBump] = []
     _cache: dict[str, dict | None] = tag_cache if tag_cache is not None else {}
 
@@ -998,9 +1031,12 @@ def scan_actions(
     _lint_cache_path = _actionlint_cache_path()
     _lint_cache = _load_lint_cache(_lint_cache_path)
 
-    for wf in workflows:
+    for wf, is_workflow in targets:
         rel = str(wf.relative_to(repo))
-        lint_res = _run_actionlint(wf, repo, lint_cache=_lint_cache)
+        # actionlint validates workflow YAML shape (jobs/steps); a composite
+        # action.yml has a different top-level shape (runs.steps) and is not
+        # a lint target, but its `uses:` pins are scanned the same way.
+        lint_res = _run_actionlint(wf, repo, lint_cache=_lint_cache) if is_workflow else None
         if lint_res:
             lint_msg, lint_sev = lint_res
             fatal = lint_sev == "error"
@@ -1345,4 +1381,4 @@ def scan_actions(
     # Persist the actionlint cache (atomic write; best-effort).
     _save_lint_cache(_lint_cache_path, _lint_cache)
 
-    return bumps, len(workflows)
+    return bumps, len(targets)
