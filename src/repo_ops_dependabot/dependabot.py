@@ -117,6 +117,13 @@ _SEC_RE = re.compile(r"^\[Security\]", re.IGNORECASE)
 # Normalise version strings: strip leading "v"
 _VER_RE = re.compile(r"^v?(\d.*)$")
 
+# Workflow step `uses: owner/repo[/path]@ref  # vX.Y`
+_USES_PIN_RE = re.compile(
+    r"^\s*-?\s*uses\s*:\s*['\"]?([A-Za-z0-9_.-]+/[^@\s'\"]+)@([^\s'\"#]+)['\"]?(?:\s*#\s*(\S+))?",
+    re.MULTILINE,
+)
+_SHA_PIN_RE = re.compile(r"[0-9a-f]{40}")
+
 
 def _strip_v(ver: str) -> str:
     m = _VER_RE.match(ver.strip())
@@ -369,7 +376,7 @@ def _lockfile_versions(repo: str) -> set[str]:
 
 
 def _manifest_versions(repo: str) -> dict[str, str]:
-    """Scan go.mod, Cargo.toml, pyproject.toml and Dockerfiles for declared versions.
+    """Scan go.mod, Cargo.lock, Dockerfiles and Actions `uses:` pins for declared versions.
 
     Returns {package_name: version} for packages explicitly declared in manifests.
     This is a best-effort extraction; complex constraints are not fully evaluated.
@@ -413,6 +420,30 @@ def _manifest_versions(repo: str) -> dict[str, str]:
                     seen = result.get(image)
                     if seen is None or semver_tuple(tag) > semver_tuple(seen):
                         result[image] = tag
+
+    # GitHub Actions: Dependabot names these by the full `uses:` path
+    # (owner/repo/sub/path).  A SHA pin carries its version in the trailing
+    # `# vX.Y` comment; a SHA with no comment has no comparable version.
+    with contextlib.suppress(Exception):
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+            in_workflows = Path(dirpath).parts[-2:] == (".github", "workflows")
+            for name in filenames:
+                if not (
+                    name in ("action.yml", "action.yaml")
+                    or (in_workflows and name.endswith((".yml", ".yaml")))
+                ):
+                    continue
+                text = (Path(dirpath) / name).read_text(encoding="utf-8", errors="replace")
+                for m in _USES_PIN_RE.finditer(text):
+                    action, ref, comment = m.groups()
+                    tag = comment if _SHA_PIN_RE.fullmatch(ref) else ref
+                    if not tag or not _VER_RE.match(tag):
+                        continue
+                    ver = _strip_v(tag)
+                    seen = result.get(action)
+                    if seen is None or semver_tuple(ver) > semver_tuple(seen):
+                        result[action] = ver
 
     return result
 

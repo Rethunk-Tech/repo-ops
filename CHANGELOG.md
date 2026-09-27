@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inside a composite action's `action.yml`/`action.yaml` never got bumped or
   policy-checked. Both files are now discovered and scanned the same way,
   respecting the repo's exclude globs.
+- `dependabot` never read workflow `uses:` pins, so every GitHub Actions bump
+  PR came back unknown and `--close` could not close it. Pins in workflows and
+  composite `action.yml` files now resolve, a SHA pin by its `# vX.Y` comment.
 
 ## [0.25.1] - 2026-09-21
 

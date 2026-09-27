@@ -428,6 +428,35 @@ def test_manifest_versions_keeps_highest_pin_across_stages(tmp_path: Path) -> No
     assert _manifest_versions(str(tmp_path))["node"] == "26.9.0-slim"
 
 
+def test_manifest_versions_reads_actions_pins(tmp_path: Path) -> None:
+    """Actions PRs name the full uses: path; a SHA pin's version is its comment."""
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    sha = "99dfb9093ab089d28f76d8036322a7c062259e76"
+    (wf / "ci.yml").write_text(
+        "jobs:\n  a:\n    steps:\n"
+        f"      - uses: Rethunk-Tech/gh-actions/setup-go@{sha} # v1.13\n"
+        "      - uses: actions/checkout@v4\n"
+        f"      - uses: actions/cache@{sha}\n"
+    )
+    (wf / "old.yml").write_text(f"      - uses: Rethunk-Tech/gh-actions/setup-go@{sha} # v1.12\n")
+
+    versions = _manifest_versions(str(tmp_path))
+
+    assert versions["Rethunk-Tech/gh-actions/setup-go"] == "1.13"
+    assert versions["actions/checkout"] == "4"
+    # An uncommented SHA carries no comparable version.
+    assert "actions/cache" not in versions
+
+    title = (
+        "chore(deps): bump Rethunk-Tech/gh-actions/setup-go from 1.12 to 1.13 in the actions group"
+    )
+    pr = DependabotPR(
+        number=3, title=title, head_ref="", repo_path="", repo_label_str="", bump=_parse_bump(title)
+    )
+    assert _check_superseded(pr, set(), versions) == (True, "1.13")
+
+
 def test_manifest_versions_empty_repo(tmp_path: Path) -> None:
     versions = _manifest_versions(str(tmp_path))
     assert versions == {}
