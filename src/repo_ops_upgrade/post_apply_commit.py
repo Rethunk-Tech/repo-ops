@@ -495,6 +495,17 @@ def plan_repo_commit(
     return CommitPlan(repo, bundle.label, build_conventional_message(bundle, safe), files=safe)
 
 
+def _resync_index_to_head(repo: Path) -> None:
+    # A pre-commit hook that rewrites and re-adds files (a version sync, say) does so
+    # in the pathspec commit's temporary index, so the real index keeps the pre-hook
+    # content and shows them staged back to it. That includes files the hook adds
+    # beyond the pathspec, so point every path HEAD just recorded at HEAD again.
+    changed = run_git(repo, "diff-tree", "--no-commit-id", "--name-only", "-r", "-z", "HEAD")
+    paths = [p for p in changed.stdout.split("\0") if p]
+    if paths:
+        run_git(repo, "reset", "-q", "--", *paths, timeout=120)
+
+
 def execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
     if plan.skipped_reason:
         return CommitOutcome(
@@ -532,10 +543,7 @@ def execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
             "failed",
             detail=err,
         )
-    # A pre-commit hook that rewrites and re-adds these files (a version sync, say)
-    # does so in the pathspec commit's temporary index, so the real index keeps the
-    # pre-hook content and shows them staged back to it. Point them at HEAD again.
-    run_git(plan.git_repo, "reset", "-q", "--", *plan.files, timeout=120)
+    _resync_index_to_head(plan.git_repo)
     return CommitOutcome(
         plan.git_repo,
         plan.label,
@@ -716,6 +724,7 @@ def commit_umbrella_submodule_pointers(
                 _print_outcome(outcome)
             exit_code = 1
             continue
+        _resync_index_to_head(umbrella)
 
         outcome = CommitOutcome(
             umbrella,
