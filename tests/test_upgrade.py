@@ -92,3 +92,42 @@ def test_is_git_dirty_clean_repo(tmp_path):
 
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
     assert is_git_dirty(tmp_path) is False
+
+
+def test_is_git_dirty_ignores_dirty_submodule_content(tmp_path):
+    from repo_ops_core.git import is_git_dirty
+
+    def git(cwd, *args):
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "protocol.file.allow=always",
+                *args,
+            ],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+        )
+
+    child, parent = tmp_path / "child", tmp_path / "parent"
+    for d in (child, parent):
+        d.mkdir()
+        git(d, "init", "-q")
+    (child / "f").write_text("1")
+    git(child, "add", "f")
+    git(child, "commit", "-qm", "c")
+    git(parent, "submodule", "add", "-q", str(child), "child")
+    git(parent, "commit", "-qm", "p")
+    assert is_git_dirty(parent) is False
+
+    (parent / "child" / "f").write_text("2")
+    assert is_git_dirty(parent) is False
+    assert is_git_dirty(parent / "child") is True
+
+    git(parent / "child", "commit", "-qam", "bump")
+    assert is_git_dirty(parent) is True

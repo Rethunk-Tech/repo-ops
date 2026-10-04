@@ -54,8 +54,13 @@ def git_common_dir(repo: Path | str) -> str | None:
 
 
 def is_git_dirty(repo: Path | str) -> bool:
-    """True when the worktree has any unstaged or uncommitted changes."""
-    proc = run_git(repo, "status", "--porcelain", timeout=30)
+    """True when the worktree has any unstaged or uncommitted changes.
+
+    Uncommitted work inside a submodule is the child's own state (it gets its
+    own dirty check); counting it here would skip an umbrella parent whenever a
+    child had just been upgraded in the same run. Moved gitlinks still count.
+    """
+    proc = run_git(repo, "status", "--porcelain", "--ignore-submodules=dirty", timeout=30)
     return proc.returncode == 0 and bool(proc.stdout.strip())
 
 
