@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 from repo_ops_core.constants import TIMEOUT_APPLY
 from repo_ops_core.process import run
@@ -17,10 +18,9 @@ from repo_ops_lockfiles.constants import (
 )
 from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
-    restore_workspace_snapshot,
     snapshot_workspace_files,
 )
-from repo_ops_models import Change, Workspace
+from repo_ops_models import Change, OwnedEdit, Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -218,39 +218,90 @@ def capture_worktree_state(repo: Path) -> WorktreeState | None:
     return state
 
 
-def restore_worktree_state(repo: Path, before: WorktreeState | None) -> bool:
-    """Return every non-ignored file in *repo* to *before* (see capture).
+def _tree_state(tree: WorktreeState, rel: str) -> tuple[bool, bytes | None]:
+    """(dirty, bytes) of *rel* in a captured tree; a path absent from it equals HEAD."""
+    return (rel in tree, tree.get(rel))
 
-    A file dirty now but clean before is checked out from HEAD, or deleted when
-    untracked; a file dirty before gets its captured bytes back, so an
-    operator's own edit in a named checkout survives even when apply rewrote that file.
-    Returns False when the state could not be fully restored.
-    """
-    if before is None:
-        logger.warning("no pre-apply worktree state for %s; git revert skipped", repo)
-        return False
-    now = _dirty_paths(repo)
+
+def tree_diff(repo: Path, expected: WorktreeState) -> list[str] | None:
+    """Repo-relative paths whose state differs from *expected*, None if git failed."""
+    now = capture_worktree_state(repo)
     if now is None:
-        return False
-    checkout: list[str] = []
-    for rel in set(now) | set(before):
-        p = repo / rel
-        if rel in before:
-            want = before[rel]
-            if want is None:
-                p.unlink(missing_ok=True)
-            elif not p.is_file() or p.read_bytes() != want:
-                p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_bytes(want)
-        elif p.is_dir():
+        return None
+    return sorted(
+        rel
+        for rel in set(now) | set(expected)
+        if _tree_state(now, rel) != _tree_state(expected, rel)
+    )
+
+
+def record_owned_edits(
+    ws: Workspace,
+    before_snap: dict[Path, bytes],
+    before_tree: WorktreeState | None,
+    applied_tree: WorktreeState | None,
+) -> dict[str, OwnedEdit]:
+    """The paths *ws*'s apply (and remediations) wrote, with their bytes on both sides.
+
+    Taken once the writes are done, so a rollback can tell what repo-ops wrote
+    from what another process wrote afterwards. Lockfiles the repo gitignores
+    are absent from git's view and come from the manifest/lockfile snapshots.
+    """
+    if before_tree is None or applied_tree is None:
+        return {}
+    edits: dict[str, OwnedEdit] = {}
+    for rel in set(applied_tree) | set(before_tree):
+        before = _tree_state(before_tree, rel)
+        applied = _tree_state(applied_tree, rel)
+        if before != applied:
+            edits[rel] = OwnedEdit(before=before[1], from_head=not before[0], applied=applied[1])
+    repo = ws.git_repo.resolve()
+    after_snap = snapshot_workspace_files(ws.path, ws.manager)
+    for path in set(before_snap) | set(after_snap):
+        if before_snap.get(path) == after_snap.get(path):
             continue
-        elif now[rel] == "??":
+        try:
+            rel = str(path.resolve().relative_to(repo))
+        except ValueError:
+            continue
+        edits.setdefault(
+            rel,
+            OwnedEdit(before=before_snap.get(path), from_head=False, applied=after_snap.get(path)),
+        )
+    return edits
+
+
+def rollback_owned_edits(repo: Path, edits: dict[str, OwnedEdit]) -> bool:
+    """Undo *edits*, touching no path that is not one of them.
+
+    A path whose bytes no longer equal what repo-ops wrote was changed by
+    someone else since, and is left alone. Returns False when git failed.
+    """
+    head_restore: list[str] = []
+    for rel, edit in edits.items():
+        p = repo / rel
+        cur = p.read_bytes() if p.is_file() else None
+        if cur != edit.applied:
+            continue
+        if edit.from_head:
+            head_restore.append(rel)
+        elif edit.before is None:
             p.unlink(missing_ok=True)
         else:
-            checkout.append(rel)
-    if not checkout:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(edit.before)
+    if not head_restore:
         return True
-    proc = run(["git", "checkout", "HEAD", "--", *checkout], repo, timeout=120)
+    tracked = run(["git", "ls-tree", "-r", "--name-only", "HEAD", "--", *head_restore], repo)
+    if tracked.returncode != 0:
+        return False
+    in_head = set(tracked.stdout.splitlines())
+    for rel in head_restore:
+        if rel not in in_head:
+            (repo / rel).unlink(missing_ok=True)
+    if not in_head:
+        return True
+    proc = run(["git", "checkout", "HEAD", "--", *sorted(in_head)], repo, timeout=120)
     if proc.returncode != 0:
         logger.warning(
             "git checkout failed during revert for %s (rc=%d): %s",
@@ -286,20 +337,37 @@ def reinstall_from_lockfile(ws: Workspace) -> bool:
     return True
 
 
+def note_foreign_changes(error: str | None, foreign: list[str]) -> str:
+    note = f"left in place, changed by another writer: {', '.join(foreign)}"
+    return f"{error}; {note}" if error else note
+
+
+def note_retry_skipped(error: str | None) -> str:
+    note = "not retried: the checkout is dirty"
+    return f"{error}; {note}" if error else note
+
+
+class RevertOutcome(NamedTuple):
+    ok: bool
+    # Paths still differing from the pre-apply tree: another writer's edits,
+    # which rollback never touches.
+    foreign: list[str]
+
+
 def revert_workspace_after_verify_fail(
     ws: Workspace,
-    before_snap: dict[Path, bytes],
+    edits: dict[str, OwnedEdit],
     before_tree: WorktreeState | None,
-) -> bool:
-    """Return the repo to its state before *ws* was applied, then reinstall.
+) -> RevertOutcome:
+    """Undo what *ws*'s apply wrote, then reinstall from the restored lockfile.
 
-    *before_tree* is :func:`capture_worktree_state` taken right before apply.
-    Workspaces in one repo are applied serially, so every change since then is
-    this workspace's: manifests, lockfiles and whatever a remediation rewrote.
-    *before_snap* additionally restores lockfiles the repo gitignores.
-
-    Returns False when any step failed and the repo may be partially reverted.
+    Only the paths in *edits* are touched. Whatever else differs from
+    *before_tree* afterwards belongs to a concurrent writer and is reported.
     """
-    restore_workspace_snapshot(ws.path, before_snap, ws.manager)
-    tree_ok = restore_worktree_state(ws.git_repo, before_tree)
-    return reinstall_from_lockfile(ws) and tree_ok
+    if before_tree is None:
+        logger.warning("no pre-apply worktree state for %s; git revert skipped", ws.git_repo)
+        return RevertOutcome(False, [])
+    git_ok = rollback_owned_edits(ws.git_repo, edits)
+    foreign = tree_diff(ws.git_repo, before_tree)
+    reinstalled = reinstall_from_lockfile(ws)
+    return RevertOutcome(git_ok and reinstalled and foreign == [], foreign or [])

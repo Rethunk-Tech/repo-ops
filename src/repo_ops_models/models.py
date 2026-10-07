@@ -39,6 +39,16 @@ class Workspace:
 
 
 @dataclass
+class OwnedEdit:
+    """One path repo-ops wrote: its bytes before (None = absent), after, and whether
+    "before" is simply HEAD's version."""
+
+    before: bytes | None
+    from_head: bool
+    applied: bytes | None
+
+
+@dataclass
 class WorkspaceResult:
     workspace: Workspace
     status: str = "ok"
@@ -57,6 +67,9 @@ class WorkspaceResult:
     # rewrote. Cleared once hooks run: a fleet run keeps every result, and
     # holding each workspace's lockfile bytes until the report is waste.
     pre_apply_snapshot: dict[Path, bytes] = field(default_factory=dict, repr=False, compare=False)
+    # Repo-relative paths this workspace's apply wrote; the only paths a rollback
+    # may touch. Dropped once the repo's commit decision is made.
+    owned_edits: dict[str, OwnedEdit] = field(default_factory=dict, repr=False, compare=False)
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {

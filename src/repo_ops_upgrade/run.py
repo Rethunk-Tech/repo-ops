@@ -42,8 +42,11 @@ from repo_ops_upgrade import discovery as workspace_discovery
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 from repo_ops_upgrade.post_apply import (
     capture_worktree_state,
+    note_foreign_changes,
+    note_retry_skipped,
     reinstall_from_lockfile,
-    restore_worktree_state,
+    rollback_owned_edits,
+    tree_diff,
 )
 
 
@@ -80,16 +83,26 @@ def _rollback_vetoed_repo(
     repo_before: dict[str, bytes | None] | None,
     results: list[WorkspaceResult],
 ) -> None:
-    tree_ok = restore_worktree_state(repo, repo_before)
+    """Undo the passing siblings of a failed workspace, touching only their own edits."""
+    tree_ok = repo_before is not None
     for wr in results:
         # A verify-failed workspace already reverted and reinstalled itself.
+        if wr.status == "skip" or wr.verify_fail_disposition is not None:
+            continue
+        tree_ok = rollback_owned_edits(repo, wr.owned_edits) and tree_ok
+    foreign = tree_diff(repo, repo_before) if repo_before is not None else None
+    if foreign is None:
+        tree_ok = False
+    for wr in results:
         if wr.status == "skip" or wr.verify_fail_disposition is not None:
             continue
         installed_ok = reinstall_from_lockfile(wr.workspace)
         if wr.status == "ok":
             wr.status = "skip"
             wr.error = "reverted: another workspace in this repo failed"
-        wr.reverted_ok = wr.reverted_ok and tree_ok and installed_ok
+        if foreign:
+            wr.error = note_foreign_changes(wr.error, foreign)
+        wr.reverted_ok = wr.reverted_ok and tree_ok and installed_ok and not foreign
 
 
 def _cli_flag(args: object, name: str) -> bool:
@@ -199,19 +212,29 @@ def _run_upgrade_body(
 
     def _process_repo(bundle: RepoBundle) -> list[WorkspaceResult]:
         results: list[WorkspaceResult] = []
-        # Snapshot the repo's dirty state once, before any workspace in this
-        # bundle is processed, rather than re-checking live per workspace. All
-        # workspaces in a bundle share bundle.git_repo and share one commit at
-        # the end of the run, so an earlier sibling's own already-applied (not
-        # yet committed) changes must not make a later sibling look dirty and
-        # get skipped outright.
-        repo_started_dirty = is_git_dirty(bundle.git_repo) if apply else None
+        # Dirtiness is judged right before each workspace, not once per bundle: a
+        # concurrent writer can touch the checkout at any point of a long sweep,
+        # and a rollback after that would otherwise sit on top of their edits.
+        # Siblings' own applied-but-uncommitted edits are expected, so after the
+        # first workspace the tree is compared with its state after the last one.
         repo_before = capture_worktree_state(bundle.git_repo) if rollback_on_veto else None
+        expected: dict[str, bytes | None] | None = None
+        started_dirty = is_git_dirty(bundle.git_repo) if apply and allow_dirty else None
         for wr in bundle.workspaces:
-            updated = _process_one(wr, repo_started_dirty=repo_started_dirty)
+            dirty = started_dirty
+            if apply and not allow_dirty:
+                if expected is None:
+                    dirty = is_git_dirty(bundle.git_repo)
+                else:
+                    dirty = capture_worktree_state(bundle.git_repo) != expected
+            updated = _process_one(wr, repo_started_dirty=dirty)
             results.append(updated)
+            if apply and not allow_dirty:
+                expected = capture_worktree_state(bundle.git_repo)
         if rollback_on_veto and any(r.status == "fail" for r in results):
             _rollback_vetoed_repo(bundle.git_repo, repo_before, results)
+        for wr in results:
+            wr.owned_edits = {}
         return results
 
     all_results: list[WorkspaceResult] = []
@@ -270,9 +293,19 @@ def _run_upgrade_body(
         if failed_repos:
             print(f"retrying {len(failed_repos)} failed repo(s) one at a time")
             retry_set = set(failed_repos)
+            failed_results = {
+                key: [r for r in all_results if r.workspace.git_repo == key] for key in failed_repos
+            }
             all_results = [r for r in all_results if r.workspace.git_repo not in retry_set]
             for key in failed_repos:
                 bundle = bundles[key]
+                if is_git_dirty(bundle.git_repo):
+                    # Rollback left foreign edits, or someone started working
+                    # here since: a re-apply would sit on top of them.
+                    for r in failed_results[key]:
+                        r.error = note_retry_skipped(r.error)
+                    all_results.extend(failed_results[key])
+                    continue
                 bundle.workspaces = [
                     WorkspaceResult(workspace=wr.workspace) for wr in bundle.workspaces
                 ]

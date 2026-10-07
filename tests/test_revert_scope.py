@@ -17,8 +17,16 @@ from repo_ops_lockfiles.snapshots import snapshot_workspace_files
 from repo_ops_models import Workspace
 from repo_ops_upgrade.post_apply import (
     capture_worktree_state,
+    record_owned_edits,
     revert_workspace_after_verify_fail,
 )
+
+
+def _revert(ws: Workspace, before_snap, before_tree) -> bool:
+    """Revert as the pipeline does: record what apply wrote, then roll back."""
+    edits = record_owned_edits(ws, before_snap, before_tree, capture_worktree_state(ws.git_repo))
+    return revert_workspace_after_verify_fail(ws, edits, before_tree).ok
+
 
 # ---------------------------------------------------------------------------
 # Shared fixture helpers
@@ -66,7 +74,7 @@ def test_revert_restores_modified_lockfile(tmp_path: Path, init_git_repo) -> Non
     before_tree = capture_worktree_state(ws.git_repo)
     lock.write_text('{"lockfileVersion":2,"mutated":true}', encoding="utf-8")
 
-    reverted_ok = revert_workspace_after_verify_fail(ws, before_snap, before_tree)
+    reverted_ok = _revert(ws, before_snap, before_tree)
 
     assert reverted_ok is True
     assert lock.read_bytes() == original, "revert must restore lockfile to pre-apply content"
@@ -96,7 +104,7 @@ def test_revert_preserves_preexisting_untracked_file(tmp_path: Path, init_git_re
     # Simulate apply: mutate the lockfile.
     lock.write_text('{"lockfileVersion":2}', encoding="utf-8")
 
-    revert_workspace_after_verify_fail(ws, before_snap, before_tree)
+    _revert(ws, before_snap, before_tree)
 
     assert notes.exists(), "revert must not delete a pre-existing untracked file (notes.txt)"
 
@@ -136,7 +144,7 @@ def test_revert_preserves_preexisting_dirty_tracked_edit(tmp_path: Path, init_gi
     # Simulate apply mutating the lockfile.
     lock.write_text('{"lockfileVersion":2}', encoding="utf-8")
 
-    revert_workspace_after_verify_fail(ws, before_snap, before_tree)
+    _revert(ws, before_snap, before_tree)
 
     assert app_py.read_bytes() == dirty_content, (
         "revert must not discard a pre-existing dirty tracked edit (app.py)"
@@ -198,7 +206,7 @@ def test_revert_preserves_preexisting_dirty_artifact_not_in_snapshot(
     original_lock = lock.read_bytes()
     lock.write_text('{"lockfileVersion":2,"mutated":true}', encoding="utf-8")
 
-    reverted_ok = revert_workspace_after_verify_fail(ws, before_snap, before_tree)
+    reverted_ok = _revert(ws, before_snap, before_tree)
 
     assert reverted_ok is True
     # Operator's pre-existing dirty edit must survive — apply never touched this file.

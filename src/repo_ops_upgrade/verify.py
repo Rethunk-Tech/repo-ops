@@ -211,7 +211,11 @@ def _gate_verify(
     # indented like gate names, and scraping them ran ``gate run git``.
     listing = run(["gate", "--json"], ws.path, timeout=timeout)
     try:
-        names = [g["name"] for g in json.loads(listing.stdout).get("gates") or []]
+        # Opt-in e2e gates are listed but skipped by a default gate run; running
+        # them by name here is what made verify outlast its timeout.
+        names = [
+            g["name"] for g in json.loads(listing.stdout).get("gates") or [] if not g.get("skipped")
+        ]
     except (ValueError, AttributeError, TypeError, KeyError):
         names = []
     if listing.returncode != 0 or not names:

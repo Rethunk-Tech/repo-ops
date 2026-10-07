@@ -188,7 +188,6 @@ def test_failed_repo_is_retried_alone_after_the_sweep(
     monkeypatch.setattr(disc_mod, "group_by_repo", lambda *a, **kw: bundles)
     monkeypatch.setattr(disc_mod, "merge_action_only_bundles", lambda b, *a, **kw: b)
     monkeypatch.setattr(run_mod, "capture_worktree_state", lambda *a, **kw: {})
-    monkeypatch.setattr(run_mod, "restore_worktree_state", lambda *a, **kw: True)
     monkeypatch.setattr(run_mod, "reinstall_from_lockfile", lambda *a, **kw: True)
 
     calls: list[str] = []

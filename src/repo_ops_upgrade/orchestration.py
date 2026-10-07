@@ -32,6 +32,8 @@ from repo_ops_upgrade.post_apply import (
     capture_worktree_state,
     classify_verify_fail_disposition,
     collect_changes_after_apply,
+    note_foreign_changes,
+    record_owned_edits,
     revert_workspace_after_verify_fail,
 )
 from repo_ops_upgrade_remediations_core.remediations import dispatch as dispatch_remediations
@@ -174,6 +176,9 @@ def _process_workspace_body(
         except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as exc:
             result.status = "fail"
             result.error = str(exc)
+            result.owned_edits = record_owned_edits(
+                ws, before_snap, before_tree, capture_worktree_state(ws.git_repo)
+            )
             return result
     else:
         result = ecosystems.check_workspace(ws)
@@ -186,9 +191,10 @@ def _process_workspace_body(
     # Verify exists to catch an upgrade this run made. When the apply and its
     # remediations wrote nothing, the gate can only be judging state the run
     # never touched, which is CI's job and costs a full gate per repo.
-    wrote_nothing = (
-        do_apply and before_tree is not None and capture_worktree_state(ws.git_repo) == before_tree
-    )
+    applied_tree = capture_worktree_state(ws.git_repo) if do_apply else None
+    if before_snap is not None:
+        result.owned_edits = record_owned_edits(ws, before_snap, before_tree, applied_tree)
+    wrote_nothing = do_apply and before_tree is not None and applied_tree == before_tree
     if wrote_nothing:
         result.verify_skipped = True
     if do_apply and do_verify and result.status != "fail" and not wrote_nothing:
@@ -205,9 +211,12 @@ def _process_workspace_body(
                 reverted_ok = True
                 if on_verify_fail == "revert":
                     try:
-                        reverted_ok = revert_workspace_after_verify_fail(
-                            ws, before_snap, before_tree
+                        outcome = revert_workspace_after_verify_fail(
+                            ws, result.owned_edits, before_tree
                         )
+                        reverted_ok = outcome.ok
+                        if outcome.foreign:
+                            result.error = note_foreign_changes(result.error, outcome.foreign)
                     except (
                         RuntimeError,
                         OSError,

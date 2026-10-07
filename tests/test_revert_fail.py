@@ -13,12 +13,13 @@ from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import patch
 
-from repo_ops_models import Workspace
+from repo_ops_models import OwnedEdit, Workspace
 from repo_ops_upgrade.post_apply import (
     FAILED_CLEAN,
     FAILED_WITH_CHANGES,
     capture_worktree_state,
     classify_verify_fail_disposition,
+    record_owned_edits,
     revert_workspace_after_verify_fail,
 )
 
@@ -43,13 +44,22 @@ def _make_workspace(tmp_path: Path, init_git_repo) -> Workspace:
     )
 
 
+def _lock_edits(repo: Path) -> dict[str, OwnedEdit]:
+    return {"package-lock.json": OwnedEdit(None, True, (repo / "package-lock.json").read_bytes())}
+
+
 def _checkout_fails(cmd: list[str], cwd: Path, **kwargs: object) -> CompletedProcess[str]:
-    if cmd[:2] == ["git", "status"]:
-        # A tracked file apply changed, so revert has something to check out.
-        return CompletedProcess(cmd, 0, stdout=" M package-lock.json\0", stderr="")
+    if cmd[:2] == ["git", "ls-tree"]:
+        return CompletedProcess(cmd, 0, stdout="package-lock.json\n", stderr="")
     if cmd[:2] == ["git", "checkout"]:
         return CompletedProcess(cmd, 1, stdout="", stderr="error: conflict")
     return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+
+def _revert(ws: Workspace, before_snap, before_tree) -> bool:
+    """Revert as the pipeline does: record what apply wrote, then roll back."""
+    edits = record_owned_edits(ws, before_snap, before_tree, capture_worktree_state(ws.git_repo))
+    return revert_workspace_after_verify_fail(ws, edits, before_tree).ok
 
 
 # ---------------------------------------------------------------------------
@@ -60,12 +70,11 @@ def _checkout_fails(cmd: list[str], cwd: Path, **kwargs: object) -> CompletedPro
 def test_checkout_failure_returns_reverted_ok_false(tmp_path: Path, init_git_repo) -> None:
     """A non-zero git checkout during revert must return False."""
     ws = _make_workspace(tmp_path, init_git_repo=init_git_repo)
-    before_snap: dict[Path, bytes] = {}
 
     with patch("repo_ops_upgrade.post_apply.run", side_effect=_checkout_fails):
-        result = revert_workspace_after_verify_fail(ws, before_snap, {})
+        result = revert_workspace_after_verify_fail(ws, _lock_edits(tmp_path), {})
 
-    assert result is False
+    assert result.ok is False
 
 
 def test_classify_uses_reverted_ok_flag(tmp_path: Path, init_git_repo) -> None:
@@ -86,7 +95,7 @@ def test_classify_failed_checkout_end_to_end(tmp_path: Path, init_git_repo) -> N
     before_snap: dict[Path, bytes] = {}
 
     with patch("repo_ops_upgrade.post_apply.run", side_effect=_checkout_fails):
-        reverted_ok = revert_workspace_after_verify_fail(ws, before_snap, {})
+        reverted_ok = revert_workspace_after_verify_fail(ws, _lock_edits(tmp_path), {}).ok
         disposition = classify_verify_fail_disposition(ws, before_snap, reverted_ok=reverted_ok)
 
     assert reverted_ok is False
@@ -112,7 +121,7 @@ def test_revert_removes_untracked_apply_files(tmp_path: Path, init_git_repo) -> 
     new_file.write_text("# apply created this\n", encoding="utf-8")
     assert new_file.exists()
 
-    reverted_ok = revert_workspace_after_verify_fail(ws, before_snap, before_tree)
+    reverted_ok = _revert(ws, before_snap, before_tree)
 
     assert reverted_ok is True
     assert not new_file.exists(), "revert should have removed the untracked apply artifact"
@@ -125,8 +134,6 @@ def test_revert_ok_succeeds_when_nothing_to_revert(tmp_path: Path, init_git_repo
     before_snap = {lock: lock.read_bytes()}
 
     # No mutations: workspace is clean.
-    reverted_ok = revert_workspace_after_verify_fail(
-        ws, before_snap, capture_worktree_state(ws.git_repo)
-    )
+    reverted_ok = _revert(ws, before_snap, capture_worktree_state(ws.git_repo))
 
     assert reverted_ok is True
