@@ -130,6 +130,7 @@ def _run_upgrade_body(
     exclude_patterns: list[str] = getattr(args, "exclude_patterns", None) or []
     kept_paths: list[Path] = []
     excluded_count = 0
+    excluded_repos: list[Path] = []
     # Exclude filters what discovery found, never a checkout named on the CLI.
     named_roots = set() if fleet else {Path(r).resolve() for r in roots}
     for path, bundle in bundles.items():
@@ -145,7 +146,10 @@ def _run_upgrade_body(
         )
         kept_paths.extend(bundle_kept)
         excluded_count += bundle_excluded
+        if bundle_excluded:
+            excluded_repos.append(bundle.git_repo)
     bundles = {path: bundles[path] for path in kept_paths}
+    diagnostics.drop_under(excluded_repos)
     for bundle in bundles.values():
         repo_exclude = _repo_cfgs.get(bundle.git_repo, {}).get("exclude")
         if isinstance(repo_exclude, str):

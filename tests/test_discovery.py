@@ -453,3 +453,13 @@ def test_workspace_member_match_is_separator_bound():
     # Glob member: real children still match.
     assert is_child(root / "packages/foo", root, {"packages/*"}) is True
     assert is_child(root / "packages/foobar", root, {"packages/*"}) is True
+
+
+def test_drop_under_forgets_events_inside_excluded_repos(tmp_path: Path) -> None:
+    diags = DiscoveryDiagnostics()
+    diags.skip_node(tmp_path / "biome" / "fixture", "no packageManager field and no lockfile")
+    diags.skip_node(tmp_path / "biome-repro", "no packageManager field and no lockfile")
+    diags.warn(tmp_path / "biome" / "x", "boom")
+    diags.drop_under([tmp_path / "biome"])
+    assert [e["path"] for e in diags.skipped] == [str(tmp_path / "biome-repro")]
+    assert diags.warnings == []

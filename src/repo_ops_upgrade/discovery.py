@@ -205,6 +205,17 @@ class DiscoveryDiagnostics:
             {"path": str(path), "ecosystem": ecosystem, "reason": reason},
         )
 
+    def drop_under(self, repos: list[Path]) -> None:
+        """Forget events inside excluded repos: excluded means absent from the report."""
+        if not repos:
+            return
+
+        def kept(event: dict[str, str]) -> bool:
+            return not any(Path(event["path"]).is_relative_to(r) for r in repos)
+
+        self.skipped = [e for e in self.skipped if kept(e)]
+        self.warnings = [e for e in self.warnings if kept(e)]
+
     def skip_node(self, path: Path, reason: str) -> None:
         self.skip(path, "node", reason)
 
