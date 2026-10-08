@@ -19,4 +19,4 @@ One wheel; every `src/repo_ops_*` package ships in it (`module-name` in `pyproje
 
 ## Release
 
-Tag `v*` on `main`; [release.yml](.github/workflows/release.yml) builds and attaches the wheel. After changing the CLI, reinstall from committed HEAD: `uv tool install --reinstall .`.
+Tag `v*` on `main`; [release.yml](.github/workflows/release.yml) builds and attaches the wheel. After changing the CLI, reinstall from committed HEAD: `uv tool install --reinstall "git+file://$PWD@$(git rev-parse HEAD)"`.
