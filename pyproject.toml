@@ -81,7 +81,7 @@ module-name = [
 ]
 
 # deptry runs as `deptry src` (see .gate.toml). The module roots are under
-# src/, and naming that directory as the scan root is what makes the 31
+# src/, and naming that directory as the scan root is what makes the
 # repo_ops_* packages resolve as first-party — the alternative is listing every
 # one of them in known_first_party by hand.
 [tool.deptry.package_module_name_map]
