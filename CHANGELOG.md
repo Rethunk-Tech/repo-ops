@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.2] - 2026-10-09
+
+### Added
+
+- `upgrade` can sync versions in an optional `SOUP.md` on a dependency bump,
+  writing the lockfile-resolved version.
+
 ### Fixed
 
 - Actions scanning only ever read `.github/workflows/*.yml`, so a `uses:` pin
@@ -16,6 +23,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `dependabot` never read workflow `uses:` pins, so every GitHub Actions bump
   PR came back unknown and `--close` could not close it. Pins in workflows and
   composite `action.yml` files now resolve, a SHA pin by its `# vX.Y` comment.
+- Per-repo `exclude` skips workspaces by repo-relative path; discovery skips
+  directories the repository gitignores and `go.mod` files without a `module`
+  directive.
+- `apply` rolls back only repo-ops' own writes when verify fails, omits
+  discovery skips and warnings for excluded repos, and an umbrella parent no
+  longer skips as dirty because a child was updated.
+- Commits resync every path a pre-commit hook adds or rewrites, not just the
+  planned files.
+- Go upgrades run module commands with `GOWORK=off` and avoid versions the Go
+  vulnerability database lists; Bun upgrades refresh the lockfile and move the
+  `packageManager` pin to the registry version.
+- pip-tools compiles keep the requirements header free of the hold-file path,
+  use a stable hold-constraints filename, delete the file uv creates for a
+  stdout compile, and lift an exclusive bound so it still contains latest.
+- Single-update group Dependabot PRs are read from their `Updated X from` text.
+- The local gate enforces the CI coverage floor, the verify step names the gate
+  step that failed, and the wheel ships `py.typed`.
 
 ## [0.25.1] - 2026-09-21
 
@@ -944,7 +968,8 @@ Note: `v0.20.1` was tagged but its release build failed the `ruff format --check
 
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.1...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.2...HEAD
+[0.25.2]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.23.0...v0.24.0
