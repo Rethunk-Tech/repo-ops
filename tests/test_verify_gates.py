@@ -625,6 +625,41 @@ class TestGateDelegation:
         ]
         assert ["bun", "run", "build"] not in calls
 
+    def test_failure_names_the_failed_step_not_the_install_progress_line(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
+        """gate's stderr opens with an install progress line; the FAIL line must lead."""
+        self._write_pkg(tmp_path)
+        out = (
+            "gate: ok  build  1s  /var/tmp/gate/build.log\n"
+            "gate: FAIL exit 1  bun run soup  2s\n"
+            "--- last 1 line(s) ---\nstale SOUP row\n"
+            "gate: full log  /var/tmp/gate/soup.log\n"
+        )
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+        ) -> CompletedProcess[str]:
+            if cmd[:2] == ["gate", "--json"]:
+                return _ok(stdout=_GATE_LIST)
+            if cmd[0] == "gate":
+                return _fail(
+                    stdout=out, stderr="gate: install: bun install --frozen-lockfile (in /x)"
+                )
+            return _ok()
+
+        ws = make_workspace(tmp_path, manager="bun", ecosystem="node", label="demo")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/gate"),
+            patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
+        ):
+            result = verify_node(ws)
+
+        assert result is not None
+        assert result.startswith("gate: FAIL exit 1  bun run soup")
+        assert "gate: install:" not in result
+        assert "/var/tmp/gate/soup.log" in result
+
     def test_gate_failure_is_the_verify_error(self, tmp_path: Path, make_workspace) -> None:
         """A failing gate run must surface gate's own output as the verify failure."""
         self._write_pkg(tmp_path)

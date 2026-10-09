@@ -183,6 +183,21 @@ def _verify_hatch_fast(
 _NODE_VERIFY_CANDIDATES = ("ci", "ci:pushgate", "build", "lint")
 
 
+def _gate_failure_detail(proc: Any, names: list[str]) -> str:
+    """Failure text starting at the first ``gate: FAIL`` line.
+
+    gate writes progress lines (``gate: install: ...``) to stderr before any
+    step runs; leading with stderr names a step that passed. The FAIL line and
+    the ``full log`` path that follows it name the step that did not.
+    """
+    lines = (proc.stdout + "\n" + proc.stderr).splitlines()
+    start = next((i for i, ln in enumerate(lines) if ln.startswith("gate: FAIL")), None)
+    if start is not None:
+        tail = [ln for ln in lines[start:] if not ln.startswith("gate: install:")]
+        return "\n".join(tail).strip()
+    return (proc.stderr or proc.stdout).strip() or f"gate run {' '.join(names)} failed"
+
+
 def _gate_verify(
     ws: Workspace,
     *,
@@ -225,7 +240,7 @@ def _gate_verify(
     # leaves the caller's verify timeout the single authority.
     proc = run(["gate", "--timeout", "0", "run", *names], ws.path, timeout=timeout)
     if proc.returncode != 0:
-        return (True, (proc.stderr or proc.stdout).strip() or f"gate run {' '.join(names)} failed")
+        return (True, _gate_failure_detail(proc, names))
     return (True, None)
 
 
