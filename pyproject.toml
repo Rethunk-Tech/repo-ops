@@ -92,7 +92,7 @@ ruamel-yaml = ["ruamel"]
 [tool.pytest.ini_options]
 # The default lane excludes external-tool tests while retaining parallel workers. Pass -n0 for a
 # debugging run, since --pdb needs a single process.
-addopts = '-m "not integration" -n auto'
+addopts = '-m "not integration" -n auto --maxprocesses=8'
 testpaths = ["tests"]
 pythonpath = []
 markers = [

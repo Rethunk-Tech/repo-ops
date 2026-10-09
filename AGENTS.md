@@ -20,3 +20,7 @@ One wheel; every `src/repo_ops_*` package ships in it (`module-name` in `pyproje
 ## Release
 
 Tag `v*` on `main`; [release.yml](.github/workflows/release.yml) builds and attaches the wheel. After changing the CLI, reinstall from committed HEAD: `uv tool install --reinstall "git+file://$PWD@$(git rev-parse HEAD)"`.
+
+## Gate budget
+
+Measured 2026-10-09 at load 10-14 on 32 cores. pytest runs under xdist, and `-n auto` alone spawned 32 workers: warm `gate --profile` cost 46 s CPU for 5.6 s wall. `--maxprocesses=8` in `addopts` cut it to 12.6 s CPU and 4.2 s wall; keep the cap. Cold (fresh copy, new `.venv`, throwaway uv cache) is 6.3 s wall and 21.7 s CPU. Both are under the 10 s warm and 30 s cold bar. pytest with coverage is the slowest step; no step is duplicated between `.gate.toml` and the project.
