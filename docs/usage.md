@@ -63,7 +63,7 @@ Two TOML files, read only:
 - Global: `$XDG_CONFIG_HOME/repo-ops/config.toml` (default `~/.config/repo-ops/config.toml`).
 - Per repo: `.repo-ops.toml` at the repo root. A workspace below the root may carry its own, read for `[verify]` only.
 
-Three keys:
+Four keys:
 
 ```toml
 exclude = ["archived-*", "vendor-fork"]   # repos to skip; unioned across files and --exclude
@@ -74,6 +74,9 @@ exclude = ["archived-*", "vendor-fork"]   # repos to skip; unioned across files 
 script = "build:prod"   # Node script to run instead of gate detection; "" skips the script step
 skip = true             # skip verify for this repo or workspace
 timeout = 600           # seconds per verify command (default 60)
+
+[soup]
+path = "docs/SOUP.md"   # repo-relative table whose `name` | `version` rows follow each bump
 
 [[hold]]
 package = "typescript"  # name or glob, e.g. "@types/*"

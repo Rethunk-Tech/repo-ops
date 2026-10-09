@@ -36,6 +36,7 @@ from repo_ops_upgrade.post_apply import (
     record_owned_edits,
     revert_workspace_after_verify_fail,
 )
+from repo_ops_upgrade.soup import sync_soup_versions
 from repo_ops_upgrade_remediations_core.remediations import dispatch as dispatch_remediations
 from repo_ops_upgrade_remediations_core.remediations import load_ecosystem_hooks
 
@@ -171,6 +172,7 @@ def _process_workspace_body(
             result.changes = diff_workspace_snapshots(before_snap, after_snap, ws.manager)
             if not result.changes:
                 result.changes = collect_changes_after_apply(ws)
+            sync_soup_versions(ws.git_repo, result.changes)
             if ws.ecosystem == "node":
                 result.overrides_audit = overrides_audit(ws.path, ws.manager)
         except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as exc:

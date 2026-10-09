@@ -15,7 +15,7 @@ One wheel; every `src/repo_ops_*` package ships in it (`module-name` in `pyproje
 - `plan` writes nothing to lockfiles, manifests or workflows; Yarn checks may run `corepack prepare`.
 - Commits stage only the files apply touched (`git commit -- <paths>`), never `.env` or key material, and never push.
 - SHA-pinned Actions and images stay pinned: digests advance, never revert to floating tags.
-- Config is two files and three keys ([docs/usage.md § Config](docs/usage.md#config)). No env vars; a new knob needs a measured case first.
+- Config is two files and four keys ([docs/usage.md § Config](docs/usage.md#config)). No env vars; a new knob needs a measured case first.
 
 ## Release
 
