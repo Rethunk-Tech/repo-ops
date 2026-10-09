@@ -172,7 +172,7 @@ def _process_workspace_body(
             result.changes = diff_workspace_snapshots(before_snap, after_snap, ws.manager)
             if not result.changes:
                 result.changes = collect_changes_after_apply(ws)
-            sync_soup_versions(ws.git_repo, result.changes)
+            sync_soup_versions(ws.git_repo, result.changes, [ws.path, ws.git_repo])
             if ws.ecosystem == "node":
                 result.overrides_audit = overrides_audit(ws.path, ws.manager)
         except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as exc:

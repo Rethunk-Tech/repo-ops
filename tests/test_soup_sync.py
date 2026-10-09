@@ -33,3 +33,13 @@ def test_not_configured_is_a_no_op(tmp_path: Path) -> None:
     repo = _repo(tmp_path, config="")
     assert not sync_soup_versions(repo, [Change("next", "16.3.0", "16.4.0")])
     assert (repo / "docs/SOUP.md").read_text() == TABLE
+
+
+def test_version_cell_takes_the_lockfile_resolution_over_the_manifest_range(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "bun.lock").write_text(
+        '{\n  "packages": {\n    "next": ["next@16.4.2", "", {}, "sha"],\n'
+        '    "x/next": ["next@15.0.0", "", {}, "sha"],\n  },\n}\n'
+    )
+    assert sync_soup_versions(repo, [Change("next", "^16.3.0", "^16.4.0")])
+    assert (repo / "docs/SOUP.md").read_text() == TABLE.replace("16.3.0", "16.4.2")
