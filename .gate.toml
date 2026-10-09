@@ -12,3 +12,7 @@ run = "uv run deptry src"
 # that rejects unformatted files.
 [gates.format]
 run = "uv run ruff format --check ."
+
+# Same invocation and coverage floor as the CI test step.
+[gates.test]
+run = 'uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=78'
