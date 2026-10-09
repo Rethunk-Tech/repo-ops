@@ -8,8 +8,7 @@
 [gates.deps]
 run = "uv run deptry src"
 
-# Detection infers `ruff check` but not the formatter, so the CI step that
-# rejects unformatted files had no local counterpart — which is how main came
-# to fail it.
+# Detection infers `ruff check` but not the formatter; this mirrors the CI step
+# that rejects unformatted files.
 [gates.format]
 run = "uv run ruff format --check ."

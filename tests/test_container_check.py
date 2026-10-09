@@ -41,9 +41,8 @@ from repo_ops_models import Workspace
         ({"llama-cpp.compose.yml": "services:\n  s:\n    image: nginx:1.25\n"}, True),
         ({}, False),
         ({"README.md": "# readme\n", "main.go": "package main\n"}, False),
-        # Any `.<suffix>` counts, so Containerfile.md matches exactly as
-        # Dockerfile.md always has — the suffix rule is what makes
-        # Dockerfile.prod work and it does not inspect the suffix.
+        # Any `.<suffix>` counts (the rule that makes Dockerfile.prod work does
+        # not inspect the suffix), so Containerfile.md and Dockerfile.md match.
         ({"Containerfile.md": "# notes\n"}, True),
         # But a name that merely contains the word must not qualify.
         ({"compose-notes.md": "# notes\n", "my-dockerfile-guide.txt": "x\n"}, False),
