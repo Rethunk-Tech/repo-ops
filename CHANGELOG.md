@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `gates` names a timed-out or interrupted gate, and its log, from gate's
+  result record. The text summary is used only when that record is not this run.
+
 ## [0.25.2] - 2026-10-09
 
 ### Added

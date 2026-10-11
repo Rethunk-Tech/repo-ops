@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import hashlib
 import json
 import os
 import re
@@ -16,6 +17,7 @@ import shutil
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from repo_ops_core.cli import add_scan_arguments, resolve_scan_roots, wire_verbose
@@ -24,7 +26,7 @@ from repo_ops_core.constants import DEFAULT_ROOTS
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
 from repo_ops_core.filesystem import new_run_dir, write_json_atomic
-from repo_ops_core.git import repo_label
+from repo_ops_core.git import repo_label, run_git
 from repo_ops_core.parallel import run_bounded_pool
 from repo_ops_core.process import run
 from repo_ops_core.tee import tee_stdout_stderr
@@ -37,6 +39,11 @@ TIMEOUT_LIST = 60
 # ``gate`` separates its summary columns by two or more spaces.
 _FIELD_SPLIT = re.compile(r"\s{2,}")
 
+# Status words from gate's result record that mean the gate did not pass.
+# ``TIMEOUT`` and ``INTERRUPTED`` are not ``gate: FAIL`` lines, so the text
+# scraper never sees them; the record is the source that names them.
+_RECORD_FAILURES = frozenset({"fail", "timeout", "interrupted", "not-found", "error"})
+
 
 @dataclass
 class GateResult:
@@ -45,6 +52,7 @@ class GateResult:
     status: str = "ok"  # ok | fail | none | error
     gates: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
+    logs: list[str] = field(default_factory=list)
     elapsed_s: float = 0.0
     detail: str = ""
 
@@ -55,24 +63,118 @@ class GateResult:
             "status": self.status,
             "gates": self.gates,
             "failed": self.failed,
+            "logs": self.logs,
             "elapsed_s": round(self.elapsed_s, 2),
             "detail": self.detail,
         }
 
 
-def _gate_names(repo: Path) -> list[str]:
-    """Gate names *repo* declares, via ``gate --json``.
+def _gate_listing(repo: Path) -> tuple[list[str], str]:
+    """Gate names and the project root ``gate --json`` reports.
 
     ``gate --json`` executes nothing and exits 0 even where it detects nothing,
-    so it doubles as the availability probe and the gate set.
+    so it doubles as the availability probe and the gate set. The root is the
+    path gate hashes into its result record; an empty root means the listing
+    did not name one.
     """
     proc = run(["gate", "--json"], repo, timeout=TIMEOUT_LIST)
     if proc.returncode != 0:
-        return []
+        return [], ""
     try:
-        return [g["name"] for g in json.loads(proc.stdout).get("gates") or []]
+        payload = json.loads(proc.stdout)
+        names = [g["name"] for g in payload.get("gates") or []]
+        root = payload.get("root") or ""
     except (ValueError, AttributeError, TypeError, KeyError):
-        return []
+        return [], ""
+    return names, root if isinstance(root, str) else ""
+
+
+def _state_dir() -> Path:
+    """Directory gate uses for its result records.
+
+    A relative ``XDG_STATE_HOME`` is ignored, matching gate: the XDG spec says
+    a reader then assumes ``~/.local/state``.
+    """
+    raw = os.environ.get("XDG_STATE_HOME", "")
+    if raw and Path(raw).is_absolute():
+        return Path(raw)
+    return Path.home() / ".local" / "state"
+
+
+def _record_path(root: str) -> Path:
+    """Path of gate's result record for *root*.
+
+    Gate hashes the symlink-resolved project root and writes
+    ``$XDG_STATE_HOME/gate/results/<sha256>.json``.
+    """
+    canonical = os.path.realpath(root)
+    digest = hashlib.sha256(os.fsencode(canonical)).hexdigest()
+    return _state_dir() / "gate" / "results" / f"{digest}.json"
+
+
+def _checkout_head(repo: Path) -> str | None:
+    proc = run_git(repo, "rev-parse", "--verify", "--quiet", "HEAD")
+    if proc.returncode != 0:
+        return None
+    head = proc.stdout.strip()
+    return head or None
+
+
+def _gate_label(gate: dict[str, object]) -> str:
+    display = gate.get("display")
+    if isinstance(display, str) and display:
+        return display
+    name = gate.get("name")
+    if isinstance(name, str) and name:
+        return name
+    argv = gate.get("argv")
+    if isinstance(argv, list) and argv and all(isinstance(part, str) for part in argv):
+        return " ".join(argv)
+    return ""
+
+
+def _failures_from_record(
+    repo: Path, root: str, started: datetime
+) -> tuple[list[str], list[str]] | None:
+    """Failed gate names and their logs, when the record is this invocation.
+
+    The record is this run only when its ``head`` is the checkout's HEAD and
+    ``finished`` is after *started*. Anything else is a previous run, and the
+    caller keeps the text scraper.
+    """
+    head = _checkout_head(repo)
+    if head is None or not root:
+        return None
+    try:
+        record = json.loads(_record_path(root).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or record.get("schema") != 1 or record.get("head") != head:
+        return None
+    finished_raw = record.get("finished")
+    if not isinstance(finished_raw, str):
+        return None
+    try:
+        finished = datetime.fromisoformat(finished_raw)
+    except ValueError:
+        return None
+    if finished.tzinfo is None or finished <= started:
+        return None
+    gates = record.get("gates")
+    if not isinstance(gates, list):
+        return None
+    failed: list[str] = []
+    logs: list[str] = []
+    for gate in gates:
+        if not isinstance(gate, dict) or gate.get("status") not in _RECORD_FAILURES:
+            continue
+        label = _gate_label(gate)
+        if not label:
+            continue
+        log = gate.get("log")
+        failed.append(label)
+        logs.append(log if isinstance(log, str) else "")
+    return failed, logs
 
 
 def _failed_gate_names(stdout: str) -> list[str]:
@@ -98,12 +200,13 @@ def _run_one(repo: Path, roots: list[str]) -> GateResult:
     result = GateResult(repo=repo, label=repo_label(repo, roots))
     started = time.monotonic()
     try:
-        names = _gate_names(repo)
+        names, root = _gate_listing(repo)
         if not names:
             result.status = "none"
             return result
         result.gates = names
         # gate's own per-gate timeout would race this one; 0 disables it.
+        started_at = datetime.now().astimezone()
         proc = run(
             ["gate", "--timeout", "0", "run", *names],
             repo,
@@ -112,7 +215,11 @@ def _run_one(repo: Path, roots: list[str]) -> GateResult:
         if proc.returncode != 0:
             result.status = "fail"
             out = proc.stdout + proc.stderr
-            result.failed = _failed_gate_names(out)
+            recorded = _failures_from_record(repo, root, started_at)
+            if recorded is None:
+                result.failed = _failed_gate_names(out)
+            else:
+                result.failed, result.logs = recorded
             result.detail = (proc.stderr or proc.stdout or "").strip()[-2000:]
     except (OSError, ValueError) as exc:
         result.status = "error"
@@ -128,13 +235,12 @@ def _print_report(results: list[GateResult], *, elapsed: float) -> None:
     if broken:
         print()
         for r in sorted(broken, key=lambda r: r.label):
-            names = ", ".join(r.failed) if r.failed else r.detail.splitlines()[:1]
             print(f"  FAIL {r.label}")
-            for name in r.failed or []:
-                print(f"       {name}")
+            for index, name in enumerate(r.failed):
+                log = r.logs[index] if index < len(r.logs) else ""
+                print(f"       {name}  {log}" if log else f"       {name}")
             if not r.failed and r.detail:
                 print(f"       {r.detail.splitlines()[0][:160]}")
-            del names
     slowest = sorted(ran, key=lambda r: -r.elapsed_s)[:5]
     print()
     print("Summary")
