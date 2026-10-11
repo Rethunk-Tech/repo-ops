@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -40,9 +41,10 @@ TIMEOUT_LIST = 60
 _FIELD_SPLIT = re.compile(r"\s{2,}")
 
 # Status words from gate's result record that mean the gate did not pass.
-# ``TIMEOUT`` and ``INTERRUPTED`` are not ``gate: FAIL`` lines, so the text
-# scraper never sees them; the record is the source that names them.
+# ``INTERRUPTED`` is not a ``gate: FAIL`` line. ``TIMEOUT`` is scraped from
+# the text when the record is not this run.
 _RECORD_FAILURES = frozenset({"fail", "timeout", "interrupted", "not-found", "error"})
+_RECORD_SCHEMA = 2
 
 
 @dataclass
@@ -55,6 +57,7 @@ class GateResult:
     logs: list[str] = field(default_factory=list)
     elapsed_s: float = 0.0
     detail: str = ""
+    e2e_left_out: int = 0
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -66,27 +69,35 @@ class GateResult:
             "logs": self.logs,
             "elapsed_s": round(self.elapsed_s, 2),
             "detail": self.detail,
+            "e2e_left_out": self.e2e_left_out,
         }
 
 
-def _gate_listing(repo: Path) -> tuple[list[str], str]:
-    """Gate names and the project root ``gate --json`` reports.
+def _gate_listing(repo: Path, *, e2e: bool) -> tuple[list[str], str, int]:
+    """Gate names to run, the project root, and how many e2e gates were left out.
 
     ``gate --json`` executes nothing and exits 0 even where it detects nothing,
     so it doubles as the availability probe and the gate set. The root is the
     path gate hashes into its result record; an empty root means the listing
-    did not name one.
+    did not name one. A default listing marks e2e gates ``skipped``; those stay
+    out unless *e2e* is set, the same choice ``verify`` makes.
     """
     proc = run(["gate", "--json"], repo, timeout=TIMEOUT_LIST)
     if proc.returncode != 0:
-        return [], ""
+        return [], "", 0
     try:
         payload = json.loads(proc.stdout)
-        names = [g["name"] for g in payload.get("gates") or []]
+        names: list[str] = []
+        left_out = 0
+        for gate in payload.get("gates") or []:
+            if gate.get("skipped") and not e2e:
+                left_out += 1
+                continue
+            names.append(gate["name"])
         root = payload.get("root") or ""
     except (ValueError, AttributeError, TypeError, KeyError):
-        return [], ""
-    return names, root if isinstance(root, str) else ""
+        return [], "", 0
+    return names, root if isinstance(root, str) else "", left_out
 
 
 def _state_dir() -> Path:
@@ -120,6 +131,104 @@ def _checkout_head(repo: Path) -> str | None:
     return head or None
 
 
+def _git_bytes(repo: Path, *args: str) -> bytes | None:
+    """Stdout of a git read, or None when git fails.
+
+    The flags match gate's result-record hash: no fsmonitor program, no color,
+    no optional locks, so the bytes do not depend on which of those is set.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "-c", "core.fsmonitor=", "-c", "color.ui=false", *args],
+            check=False,
+            capture_output=True,
+            env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout
+
+
+def _untracked_paths(status: bytes) -> list[bytes]:
+    """``??`` paths from porcelain v1 ``-z``. A rename or copy is two paths."""
+    paths: list[bytes] = []
+    while status:
+        end = status.find(b"\0")
+        if end < 0:
+            break
+        rec = status[:end]
+        status = status[end + 1 :]
+        if len(rec) < 4 or rec[2:3] != b" ":
+            continue
+        xy, path = rec[:2], rec[3:]
+        if xy[0:1] in (b"R", b"C") or xy[1:2] in (b"R", b"C"):
+            nxt = status.find(b"\0")
+            if nxt < 0:
+                break
+            status = status[nxt + 1 :]
+        if xy == b"??":
+            paths.append(path)
+    return paths
+
+
+def _untracked_files(repo: Path, status: bytes) -> list[str] | None:
+    """Untracked files, directories expanded, in the order status printed them."""
+    files: list[bytes] = []
+    for path in _untracked_paths(status):
+        if path.endswith(b"/"):
+            listed = _git_bytes(
+                repo,
+                "ls-files",
+                "-z",
+                "--others",
+                "--exclude-standard",
+                "--",
+                os.fsdecode(path[:-1]),
+            )
+            if listed is None:
+                return None
+            files.extend(part for part in listed.split(b"\0") if part)
+            continue
+        files.append(path)
+    return [os.fsdecode(path) for path in files]
+
+
+def _hash_objects(repo: Path, files: list[str]) -> bytes | None:
+    """Concatenated ``git hash-object`` stdout. Never passed ``-w``."""
+    if not files:
+        return b""
+    out = bytearray()
+    batch = 50
+    for start in range(0, len(files), batch):
+        hashed = _git_bytes(repo, "hash-object", "--", *files[start : start + batch])
+        if hashed is None:
+            return None
+        out.extend(hashed)
+    return bytes(out)
+
+
+def _status_hash(root: Path) -> str | None:
+    """SHA-256 gate writes as ``status`` on a schema-2 result record.
+
+    The bytes are concatenated, in order: porcelain v1 ``-z`` status,
+    ``git diff HEAD``, and ``git hash-object`` (no ``-w``) of each untracked
+    file. A clean tree is empty status plus an empty diff.
+    """
+    status = _git_bytes(root, "status", "--porcelain=v1", "-z")
+    diff = _git_bytes(root, "diff", "HEAD")
+    if status is None or diff is None:
+        return None
+    files = _untracked_files(root, status)
+    if files is None:
+        return None
+    blobs = _hash_objects(root, files)
+    if blobs is None:
+        return None
+    return hashlib.sha256(status + diff + blobs).hexdigest()
+
+
 def _gate_label(gate: dict[str, object]) -> str:
     display = gate.get("display")
     if isinstance(display, str) and display:
@@ -138,9 +247,10 @@ def _failures_from_record(
 ) -> tuple[list[str], list[str]] | None:
     """Failed gate names and their logs, when the record is this invocation.
 
-    The record is this run only when its ``head`` is the checkout's HEAD and
-    ``finished`` is after *started*. Anything else is a previous run, and the
-    caller keeps the text scraper.
+    The record is this run only when its schema is 2, its ``head`` is the
+    checkout's HEAD, its ``status`` is this working tree, and ``finished`` is
+    after *started*. Anything else is a previous run, and the caller scrapes
+    failure and timeout names from the text.
     """
     head = _checkout_head(repo)
     if head is None or not root:
@@ -149,7 +259,15 @@ def _failures_from_record(
         record = json.loads(_record_path(root).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(record, dict) or record.get("schema") != 1 or record.get("head") != head:
+    status = _status_hash(Path(root))
+    if (
+        not isinstance(record, dict)
+        or record.get("schema") != _RECORD_SCHEMA
+        or record.get("head") != head
+        or not isinstance(record.get("status"), str)
+        or status is None
+        or record.get("status") != status
+    ):
         return None
     finished_raw = record.get("finished")
     if not isinstance(finished_raw, str):
@@ -180,29 +298,40 @@ def _failures_from_record(
 def _failed_gate_names(stdout: str) -> list[str]:
     """Gate names ``gate`` reported as failing, from its own summary lines.
 
-    ``gate`` writes ``gate: FAIL exit <n>  <command>  <duration>`` and separates
-    those fields by two or more spaces, so a command containing single spaces
+    ``gate`` writes ``gate: FAIL exit <n>  <command>  <duration>`` and
+    ``gate: TIMEOUT after <d>  <command>  (killed, not failed)``. Fields are
+    separated by two or more spaces, so a command containing single spaces
     survives the split intact.
     """
     failed: list[str] = []
     for line in stdout.splitlines():
         stripped = line.strip()
-        if not stripped.startswith("gate: FAIL"):
-            continue
-        rest = stripped.removeprefix("gate: FAIL").strip()
-        fields = _FIELD_SPLIT.split(rest)
-        # fields: ["exit <n>", "<command>", "<duration>", ...]
-        failed.append(fields[1] if len(fields) > 1 else rest)
+        if stripped.startswith("gate: FAIL"):
+            rest = stripped.removeprefix("gate: FAIL").strip()
+            fields = _FIELD_SPLIT.split(rest)
+            # fields: ["exit <n>", "<command>", "<duration>", ...]
+            failed.append(fields[1] if len(fields) > 1 else rest)
+        elif stripped.startswith("gate: TIMEOUT"):
+            rest = stripped.removeprefix("gate: TIMEOUT").strip()
+            fields = _FIELD_SPLIT.split(rest)
+            # fields: ["after <d>", "<command>", "(killed, not failed)", ...]
+            if len(fields) > 1:
+                failed.append(fields[1])
+            elif rest:
+                failed.append(rest)
     return failed
 
 
-def _run_one(repo: Path, roots: list[str]) -> GateResult:
+def _run_one(repo: Path, roots: list[str], *, e2e: bool = False) -> GateResult:
     result = GateResult(repo=repo, label=repo_label(repo, roots))
     started = time.monotonic()
     try:
-        names, root = _gate_listing(repo)
+        names, root, left_out = _gate_listing(repo, e2e=e2e)
+        result.e2e_left_out = left_out
         if not names:
-            result.status = "none"
+            # Every gate was e2e and left out. The repo still counts as gated
+            # for the gates that ran (none); it is not "no gate declared".
+            result.status = "ok" if left_out else "none"
             return result
         result.gates = names
         # gate's own per-gate timeout would race this one; 0 disables it.
@@ -248,6 +377,7 @@ def _print_report(results: list[GateResult], *, elapsed: float) -> None:
     print(f"  passing           {sum(1 for r in ran if r.status == 'ok')}")
     print(f"  failing           {len(broken)}")
     print(f"  no gate declared  {sum(1 for r in results if r.status == 'none')}")
+    print(f"  e2e left out      {sum(r.e2e_left_out for r in results)}")
     print(f"  wall              {elapsed:.1f}s")
     if slowest:
         print()
@@ -262,6 +392,11 @@ def build_gates_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     add_scan_arguments(parser)
+    parser.add_argument(
+        "--e2e",
+        action="store_true",
+        help="Also run e2e gates a default gate run skips.",
+    )
     return parser
 
 
@@ -289,7 +424,7 @@ def main_gates(argv: list[str] | None = None) -> int:
         started = time.monotonic()
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
             results = run_bounded_pool(
-                pool, kept, lambda r: _run_one(r, roots), max_in_flight=args.jobs
+                pool, kept, lambda r: _run_one(r, roots, e2e=args.e2e), max_in_flight=args.jobs
             )
         elapsed = time.monotonic() - started
         _print_report(results, elapsed=elapsed)
@@ -302,6 +437,7 @@ def main_gates(argv: list[str] | None = None) -> int:
                 "roots": roots,
                 "elapsed_s": round(elapsed, 2),
                 "excluded": excluded,
+                "e2e_left_out": sum(r.e2e_left_out for r in results),
                 "exit_code": exit_code,
                 "repos": [r.to_json() for r in results],
             },

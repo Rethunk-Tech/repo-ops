@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `gates` names a timed-out or interrupted gate, and its log, from gate's
   result record. The text summary is used only when that record is not this run.
+- `gates` reads result schema 2, and only when `status` is this working tree.
+  A record that is not this run falls back to the text, including `TIMEOUT` lines.
+- `gates` leaves out e2e gates the way `verify` does. `gates --e2e` runs them.
+  The summary counts the repo for the gates that ran, and prints how many e2e
+  gates were left out.
 
 ## [0.25.2] - 2026-10-09
 
