@@ -133,7 +133,7 @@ def _verify_hatch_fast(
         return None
     # pytest runner (explicit dep or tests/ dir)
     if "pytest" in dev or (ws.path / "tests").is_dir():
-        proc = run([*runner, "pytest", "-q", "--co", "-q"], ws.path, timeout=timeout)
+        proc = run([*runner, "pytest", "-q"], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or f"{' '.join([*runner, 'pytest'])} failed"
         return None

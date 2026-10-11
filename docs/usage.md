@@ -48,7 +48,7 @@ Each changed workspace is verified before it is committed:
 
 1. The ecosystem's lockfile check (`npm ci`, `bun install --frozen-lockfile`, `go mod verify`, `uv sync --locked`, …).
 2. The project's declared gates via the [`gate`](https://github.com/Rethunk-Tech/rethunk-gate-cli) CLI (Makefile targets, turbo tasks, `.gate.toml`), tests included.
-3. Without `gate`, or where it detects nothing, built-in gates: the first of `ci`, `ci:pushgate`, `build`, `lint` in `package.json`; `go build` and `go test`; `cargo check` and `cargo test`; ruff, mypy and pyrefly when configured.
+3. Without `gate`, or where it detects nothing, built-in gates: the first of `ci`, `ci:pushgate`, `build`, `lint` in `package.json`; `go build` and `go test`; `cargo check` and `cargo test`; `pytest` when it is a dependency or `tests/` exists; ruff, mypy and pyrefly when configured.
 
 A failed verify on a fleet sweep restores only the files the workspace's apply wrote, and only while they still hold what apply wrote; anything else that changed in the checkout since (another agent's edits, new files) is left alone and named in the failure, which is then `FAILED_WITH_CHANGES`. The repo's commit is vetoed. Dirtiness is re-checked before each workspace and before the retry; a dirty checkout is skipped, and a failed repo whose checkout became dirty is not retried. Opt-in e2e gates that `gate` lists as skipped are not run by verify. `--no-verify` skips verification and therefore commits nothing.
 

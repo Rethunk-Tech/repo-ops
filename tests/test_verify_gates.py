@@ -508,6 +508,12 @@ _HATCH_FAST_CASES = [
         ["uv", "run", "pyrefly", "check", "."],
         id="mypy_over_pyrefly",
     ),
+    pytest.param(
+        '[tool.uv]\ndev-dependencies = ["pytest>=8"]\n',
+        ["uv", "run", "pytest", "-q"],
+        None,
+        id="pytest_dev_deps",
+    ),
 ]
 
 
@@ -559,6 +565,31 @@ class TestVerifyHatchFast:
 
         assert result is not None
         assert "check" in result or "type" in result
+
+    def test_pytest_failure_returns_error(self, tmp_path: Path, make_workspace) -> None:
+        """A failing pytest run fails verify, the same way go test does."""
+        self._write_pyproject(
+            tmp_path,
+            '[tool.uv]\ndev-dependencies = ["pytest>=8"]\n',
+        )
+        calls: list[list[str]] = []
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+        ) -> CompletedProcess[str]:
+            calls.append(cmd)
+            if cmd == ["uv", "run", "pytest", "-q"]:
+                return _fail(stderr="1 failed")
+            return _ok()
+
+        ws = self._hatch_ws(tmp_path, make_workspace)
+        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
+            result = verify_workspace(ws)
+
+        assert ["uv", "run", "pytest", "-q"] in calls
+        assert not any("--co" in part for cmd in calls for part in cmd)
+        assert result is not None
+        assert "1 failed" in result
 
 
 # ---------------------------------------------------------------------------
