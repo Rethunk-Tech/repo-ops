@@ -66,6 +66,7 @@ def _write_record(
     schema: int = 2,
     status: str | None = None,
     exit_code: int | None = None,
+    partial: bool | None = None,
 ) -> None:
     # The suite points XDG_STATE_HOME at a directory inside the checkout. Creating
     # the record there is an untracked path, so the hash taken before the write
@@ -86,6 +87,8 @@ def _write_record(
         body["status"] = _status_hash(repo) if status is None else status
     if exit_code is not None:
         body["exit"] = exit_code
+    if partial is not None:
+        body["partial"] = partial
     path.write_text(json.dumps(body), encoding="utf-8")
 
 
@@ -417,3 +420,46 @@ def test_skip_fresh_still_runs_a_failed_or_missing_record(
     failed = _run_one(tmp_path, [str(tmp_path)], skip_fresh=True)
     assert calls == [["gate", "--timeout", "0", "run", "lint"]]
     assert failed.status == "fail"
+
+
+def test_skip_fresh_reruns_a_partial_pass_and_skips_a_full_one(
+    tmp_path: Path, monkeypatch, make_proc, init_git_repo
+) -> None:
+    head = init_git_repo(tmp_path, commit=True)
+    assert head is not None
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout):
+        calls.append(list(cmd))
+        return make_proc(returncode=0)
+
+    monkeypatch.setattr(
+        "repo_ops_gates.gates._gate_listing",
+        lambda repo, *, e2e: (["lint"], str(tmp_path), 0),
+    )
+    monkeypatch.setattr("repo_ops_gates.gates.run", fake_run)
+
+    _write_record(
+        tmp_path,
+        head,
+        datetime.now().astimezone(),
+        [{"name": "lint", "display": "bun run lint", "status": "ok"}],
+        exit_code=0,
+        partial=True,
+    )
+    partial = _run_one(tmp_path, [str(tmp_path)], skip_fresh=True)
+    assert calls == [["gate", "--timeout", "0", "run", "lint"]]
+    assert partial.status == "ok"
+    calls.clear()
+
+    _write_record(
+        tmp_path,
+        head,
+        datetime.now().astimezone(),
+        [{"name": "lint", "display": "bun run lint", "status": "ok"}],
+        exit_code=0,
+        partial=False,
+    )
+    full = _run_one(tmp_path, [str(tmp_path)], skip_fresh=True)
+    assert calls == []
+    assert full.status == "skipped"

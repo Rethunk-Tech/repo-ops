@@ -10,10 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `gates --skip-fresh` skips a repo whose schema-2 result matches this HEAD
-  and working tree and exited 0. A dirty tree, or a failed, stale, or missing
-  record, still runs. The summary and report count those repos as skipped.
+  and working tree, exited 0, and is not partial. A partial record still runs,
+  as does a dirty tree, or a failed, stale, or missing record. The summary and
+  report count skipped repos as skipped.
 
 ### Fixed
+
+- `gates --skip-fresh` treats a fresh partial pass as not fresh enough to
+  skip. `partial: true` with exit 0 still runs `gate`. A fresh non-partial
+  pass still skips.
 
 - `gates` names a timed-out or interrupted gate, and its log, from gate's
   result record. The text summary is used only when that record is not this run.

@@ -54,7 +54,7 @@ A failed verify on a fleet sweep restores only the files the workspace's apply w
 
 ## gates
 
-`gates` runs each repo's own gate and reports the failures together. `gates --e2e` includes the e2e gates a default run leaves out. `gates --skip-fresh` skips a repo whose schema-2 result matches the current HEAD and working-tree hash and exited 0; the summary and `report.json` count those repos as skipped. A dirty tree, or a failed, stale, or missing record, still runs `gate run`. The two flags combine: a fresh record skips the run, and a run that happens still follows `--e2e`. Apply and verify are unchanged.
+`gates` runs each repo's own gate and reports the failures together. `gates --e2e` includes the e2e gates a default run leaves out. `gates --skip-fresh` skips a repo whose schema-2 result matches the current HEAD and working-tree hash, exited 0, and is not partial; the summary and `report.json` count those repos as skipped. A partial record still runs `gate run`, even when it exited 0: that record is a named run, not the whole gate. A dirty tree, or a failed, stale, or missing record, still runs. The two flags combine: a fresh non-partial pass skips the run, and a run that happens still follows `--e2e`. Apply and verify are unchanged.
 
 ### Commits
 

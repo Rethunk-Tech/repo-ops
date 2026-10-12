@@ -348,10 +348,11 @@ def _run_one(
             result.status = "ok" if left_out else "none"
             return result
         result.gates = names
-        # A previous pass for this commit and this tree is still that pass.
+        # A previous full pass for this commit and this tree is still that pass.
+        # ``partial`` is a named ``gate run``: exit 0 there is not the whole gate.
         # ``--e2e`` only changes the names a run that still happens receives.
         record = _current_record(repo, root) if skip_fresh else None
-        if record is not None and record.get("exit") == 0:
+        if record is not None and record.get("exit") == 0 and not record.get("partial"):
             result.status = "skipped"
             return result
         # gate's own per-gate timeout would race this one; 0 disables it.
@@ -421,7 +422,7 @@ def build_gates_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--skip-fresh",
         action="store_true",
-        help="Skip a repo whose schema-2 result matches this tree and exited 0.",
+        help="Skip a repo whose schema-2 result matches this tree, exited 0, and is not partial.",
     )
     return parser
 
