@@ -12,6 +12,7 @@ from repo_ops_gates.gates import (
     _failed_gate_names,
     _print_report,
     _record_path,
+    _report_document,
     _run_one,
     _status_hash,
 )
@@ -479,3 +480,11 @@ def test_skip_fresh_reruns_a_partial_pass_and_skips_a_full_one(
     assert full.to_json()["skip_reason"] == "fresh"
     assert "gate_record_reason" not in full.to_json()
     assert "record_partial" not in full.to_json()
+    report = _report_document(
+        [partial, full],
+        roots=[str(tmp_path)],
+        elapsed=0,
+        excluded=0,
+        exit_code=0,
+    )
+    assert report["record_partial"] == 1

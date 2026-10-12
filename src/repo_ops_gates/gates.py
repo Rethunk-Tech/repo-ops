@@ -466,6 +466,28 @@ def build_gates_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _report_document(
+    results: list[GateResult],
+    *,
+    roots: list[str],
+    elapsed: float,
+    excluded: int,
+    exit_code: int,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "mode": "gates",
+        "roots": roots,
+        "elapsed_s": round(elapsed, 2),
+        "excluded": excluded,
+        "e2e_left_out": sum(r.e2e_left_out for r in results),
+        "skipped": sum(1 for r in results if r.status == "skipped"),
+        "record_partial": sum(1 for r in results if r.record_partial),
+        "exit_code": exit_code,
+        "repos": [r.to_json() for r in results],
+    }
+
+
 def main_gates(argv: list[str] | None = None) -> int:
     parser = build_gates_parser()
     args = parser.parse_args(argv)
@@ -500,17 +522,13 @@ def main_gates(argv: list[str] | None = None) -> int:
         exit_code = 1 if any(r.status in ("fail", "error") for r in results) else 0
         write_json_atomic(
             report_path,
-            {
-                "schema_version": 1,
-                "mode": "gates",
-                "roots": roots,
-                "elapsed_s": round(elapsed, 2),
-                "excluded": excluded,
-                "e2e_left_out": sum(r.e2e_left_out for r in results),
-                "skipped": sum(1 for r in results if r.status == "skipped"),
-                "exit_code": exit_code,
-                "repos": [r.to_json() for r in results],
-            },
+            _report_document(
+                results,
+                roots=roots,
+                elapsed=elapsed,
+                excluded=excluded,
+                exit_code=exit_code,
+            ),
         )
     print(f"repo-ops: log {log_path}  report {report_path}")
     return exit_code
