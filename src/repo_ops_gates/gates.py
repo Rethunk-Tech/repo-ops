@@ -60,6 +60,7 @@ class GateResult:
     e2e_left_out: int = 0
     skip_reason: str = ""
     record_partial: bool = False
+    gate_record_reason: str = ""
 
     def to_json(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -77,6 +78,8 @@ class GateResult:
             payload["skip_reason"] = self.skip_reason
         if self.record_partial:
             payload["record_partial"] = True
+        if self.gate_record_reason:
+            payload["gate_record_reason"] = self.gate_record_reason
         return payload
 
 
@@ -249,29 +252,53 @@ def _gate_label(gate: dict[str, object]) -> str:
     return ""
 
 
+def _matching_record(repo: Path, root: str) -> tuple[dict[str, object] | None, str | None]:
+    """Schema-2 record for this tree, and why it is not a fresh pass.
+
+    The second value is ``missing``, ``stale``, ``partial``, ``failed``, or
+    None when the record is a fresh non-partial pass. The order is the one
+    ``gate --json record`` uses: a tree or schema mismatch is stale even when
+    the run failed, a non-zero exit is failed even when partial, and partial
+    is what remains. The status hash is the one already computed for the skip,
+    so this does not spawn ``gate`` or hash the tree a second time.
+    """
+    if not root:
+        return None, "missing"
+    path = _record_path(root)
+    if not path.is_file():
+        return None, "missing"
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, "stale"
+    head = _checkout_head(repo)
+    status = _status_hash(Path(root)) if head is not None else None
+    if (
+        not isinstance(loaded, dict)
+        or head is None
+        or status is None
+        or loaded.get("schema") != _RECORD_SCHEMA
+        or loaded.get("head") != head
+        or not isinstance(loaded.get("status"), str)
+        or loaded.get("status") != status
+    ):
+        return None, "stale"
+    if loaded.get("exit") == 0 and loaded.get("partial"):
+        return loaded, "partial"
+    if loaded.get("exit") == 0:
+        return loaded, None
+    return loaded, "failed"
+
+
 def _current_record(repo: Path, root: str) -> dict[str, object] | None:
     """Schema-2 result for this HEAD and this working tree, or None.
 
     ``head`` is the checkout's HEAD and ``status`` is the hash of the tree in
     front of us. A dirty edit, another commit, or a missing file is not this
-    record.
+    record. A matching record is returned whether or not the run passed.
     """
-    head = _checkout_head(repo)
-    if head is None or not root:
-        return None
-    try:
-        record = json.loads(_record_path(root).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    status = _status_hash(Path(root))
-    if (
-        not isinstance(record, dict)
-        or record.get("schema") != _RECORD_SCHEMA
-        or record.get("head") != head
-        or not isinstance(record.get("status"), str)
-        or status is None
-        or record.get("status") != status
-    ):
+    record, reason = _matching_record(repo, root)
+    if reason in ("missing", "stale"):
         return None
     return record
 
@@ -358,13 +385,15 @@ def _run_one(
         # A previous full pass for this commit and this tree is still that pass.
         # ``partial`` is a named ``gate run``: exit 0 there is not the whole gate.
         # ``--e2e`` only changes the names a run that still happens receives.
-        record = _current_record(repo, root) if skip_fresh else None
-        if record is not None and record.get("exit") == 0 and not record.get("partial"):
-            result.status = "skipped"
-            result.skip_reason = "fresh"
-            return result
-        if record is not None and record.get("exit") == 0 and record.get("partial"):
-            result.record_partial = True
+        if skip_fresh:
+            _, reason = _matching_record(repo, root)
+            if reason is None:
+                result.status = "skipped"
+                result.skip_reason = "fresh"
+                return result
+            result.gate_record_reason = reason
+            if reason == "partial":
+                result.record_partial = True
         # gate's own per-gate timeout would race this one; 0 disables it.
         started_at = datetime.now().astimezone()
         proc = run(

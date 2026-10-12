@@ -372,6 +372,7 @@ def test_skip_fresh_does_not_run_a_passing_tree_and_reruns_a_dirty_one(
     assert fresh.status == "skipped"
     assert fresh.to_json()["status"] == "skipped"
     assert fresh.to_json()["skip_reason"] == "fresh"
+    assert "gate_record_reason" not in fresh.to_json()
     assert fresh.gates == ["lint"]
 
     with_e2e = _run_one(tmp_path, [str(tmp_path)], e2e=True, skip_fresh=True)
@@ -383,6 +384,7 @@ def test_skip_fresh_does_not_run_a_passing_tree_and_reruns_a_dirty_one(
     assert calls == [["gate", "--timeout", "0", "run", "lint"]]
     assert without_flag.status == "ok"
     assert "skip_reason" not in without_flag.to_json()
+    assert "gate_record_reason" not in without_flag.to_json()
     calls.clear()
 
     (tmp_path / "note").write_text("hello\n", encoding="utf-8")
@@ -390,6 +392,7 @@ def test_skip_fresh_does_not_run_a_passing_tree_and_reruns_a_dirty_one(
     assert calls == [["gate", "--timeout", "0", "run", "lint", "e2e"]]
     assert dirty.status == "ok"
     assert "skip_reason" not in dirty.to_json()
+    assert dirty.to_json()["gate_record_reason"] == "stale"
 
 
 def test_skip_fresh_still_runs_a_failed_or_missing_record(
@@ -412,6 +415,7 @@ def test_skip_fresh_still_runs_a_failed_or_missing_record(
     missing = _run_one(tmp_path, [str(tmp_path)], skip_fresh=True)
     assert calls == [["gate", "--timeout", "0", "run", "lint"]]
     assert missing.status == "fail"
+    assert missing.to_json()["gate_record_reason"] == "missing"
     calls.clear()
 
     _write_record(
@@ -424,6 +428,7 @@ def test_skip_fresh_still_runs_a_failed_or_missing_record(
     failed = _run_one(tmp_path, [str(tmp_path)], skip_fresh=True)
     assert calls == [["gate", "--timeout", "0", "run", "lint"]]
     assert failed.status == "fail"
+    assert failed.to_json()["gate_record_reason"] == "failed"
 
 
 def test_skip_fresh_reruns_a_partial_pass_and_skips_a_full_one(
@@ -456,6 +461,7 @@ def test_skip_fresh_reruns_a_partial_pass_and_skips_a_full_one(
     assert partial.status == "ok"
     assert partial.status != "skipped"
     assert partial.to_json()["record_partial"] is True
+    assert partial.to_json()["gate_record_reason"] == "partial"
     assert "skip_reason" not in partial.to_json()
     calls.clear()
 
@@ -471,4 +477,5 @@ def test_skip_fresh_reruns_a_partial_pass_and_skips_a_full_one(
     assert calls == []
     assert full.status == "skipped"
     assert full.to_json()["skip_reason"] == "fresh"
+    assert "gate_record_reason" not in full.to_json()
     assert "record_partial" not in full.to_json()

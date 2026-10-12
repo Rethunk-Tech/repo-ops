@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `gates` row that still runs under `--skip-fresh` includes
+  `gate_record_reason` (`missing`, `stale`, `partial`, or `failed`), the same
+  reason `gate --json record` reports. A skipped fresh row keeps
+  `skip_reason: "fresh"` and omits `gate_record_reason`.
 - A `gates` report row includes `skip_reason: "fresh"` when `--skip-fresh`
   skipped a fresh non-partial pass, and `record_partial: true` when the run
   happened because that matching record was partial. Both keys are omitted
