@@ -52,6 +52,10 @@ Each changed workspace is verified before it is committed:
 
 A failed verify on a fleet sweep restores only the files the workspace's apply wrote, and only while they still hold what apply wrote; anything else that changed in the checkout since (another agent's edits, new files) is left alone and named in the failure, which is then `FAILED_WITH_CHANGES`. The repo's commit is vetoed. Dirtiness is re-checked before each workspace and before the retry; a dirty checkout is skipped, and a failed repo whose checkout became dirty is not retried. Opt-in e2e gates that `gate` lists as skipped are not run by verify or by `gates`. `gates --e2e` runs them. `--no-verify` skips verification and therefore commits nothing.
 
+## gates
+
+`gates` runs each repo's own gate and reports the failures together. `gates --e2e` includes the e2e gates a default run leaves out. `gates --skip-fresh` skips a repo whose schema-2 result matches the current HEAD and working-tree hash and exited 0; the summary and `report.json` count those repos as skipped. A dirty tree, or a failed, stale, or missing record, still runs `gate run`. The two flags combine: a fresh record skips the run, and a run that happens still follows `--e2e`. Apply and verify are unchanged.
+
 ### Commits
 
 Each verified repo gets one conventional commit staging only the files apply touched, never `.env` or key material. `--no-commit` leaves the changes in the tree. An umbrella repo's children are applied first, and the parent then gets one `chore(submodules)` commit for the gitlinks of children committed this run. Nothing is pushed.
@@ -106,3 +110,4 @@ Lists open Dependabot PRs in repos with a GitHub remote (via `gh`) and marks eac
 | `plan` | nothing to do | drift, remediations or Actions changes exist |
 | `apply` | no workspace failed (dirty skips are fine) | any workspace failed |
 | `dependabot` | success | `gh` unavailable or another error |
+| `gates` | no repo failed | a repo's gate failed or errored |

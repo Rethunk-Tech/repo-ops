@@ -51,7 +51,7 @@ _RECORD_SCHEMA = 2
 class GateResult:
     repo: Path
     label: str
-    status: str = "ok"  # ok | fail | none | error
+    status: str = "ok"  # ok | fail | none | error | skipped
     gates: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
     logs: list[str] = field(default_factory=list)
@@ -242,15 +242,12 @@ def _gate_label(gate: dict[str, object]) -> str:
     return ""
 
 
-def _failures_from_record(
-    repo: Path, root: str, started: datetime
-) -> tuple[list[str], list[str]] | None:
-    """Failed gate names and their logs, when the record is this invocation.
+def _current_record(repo: Path, root: str) -> dict[str, object] | None:
+    """Schema-2 result for this HEAD and this working tree, or None.
 
-    The record is this run only when its schema is 2, its ``head`` is the
-    checkout's HEAD, its ``status`` is this working tree, and ``finished`` is
-    after *started*. Anything else is a previous run, and the caller scrapes
-    failure and timeout names from the text.
+    ``head`` is the checkout's HEAD and ``status`` is the hash of the tree in
+    front of us. A dirty edit, another commit, or a missing file is not this
+    record.
     """
     head = _checkout_head(repo)
     if head is None or not root:
@@ -268,6 +265,21 @@ def _failures_from_record(
         or status is None
         or record.get("status") != status
     ):
+        return None
+    return record
+
+
+def _failures_from_record(
+    repo: Path, root: str, started: datetime
+) -> tuple[list[str], list[str]] | None:
+    """Failed gate names and their logs, when the record is this invocation.
+
+    The record is this run only when it is the current tree and ``finished``
+    is after *started*. Anything else is a previous run, and the caller
+    scrapes failure and timeout names from the text.
+    """
+    record = _current_record(repo, root)
+    if record is None:
         return None
     finished_raw = record.get("finished")
     if not isinstance(finished_raw, str):
@@ -322,7 +334,9 @@ def _failed_gate_names(stdout: str) -> list[str]:
     return failed
 
 
-def _run_one(repo: Path, roots: list[str], *, e2e: bool = False) -> GateResult:
+def _run_one(
+    repo: Path, roots: list[str], *, e2e: bool = False, skip_fresh: bool = False
+) -> GateResult:
     result = GateResult(repo=repo, label=repo_label(repo, roots))
     started = time.monotonic()
     try:
@@ -334,6 +348,12 @@ def _run_one(repo: Path, roots: list[str], *, e2e: bool = False) -> GateResult:
             result.status = "ok" if left_out else "none"
             return result
         result.gates = names
+        # A previous pass for this commit and this tree is still that pass.
+        # ``--e2e`` only changes the names a run that still happens receives.
+        record = _current_record(repo, root) if skip_fresh else None
+        if record is not None and record.get("exit") == 0:
+            result.status = "skipped"
+            return result
         # gate's own per-gate timeout would race this one; 0 disables it.
         started_at = datetime.now().astimezone()
         proc = run(
@@ -360,7 +380,7 @@ def _run_one(repo: Path, roots: list[str], *, e2e: bool = False) -> GateResult:
 
 def _print_report(results: list[GateResult], *, elapsed: float) -> None:
     broken = [r for r in results if r.status in ("fail", "error")]
-    ran = [r for r in results if r.status != "none"]
+    ran = [r for r in results if r.status not in ("none", "skipped")]
     if broken:
         print()
         for r in sorted(broken, key=lambda r: r.label):
@@ -376,6 +396,7 @@ def _print_report(results: list[GateResult], *, elapsed: float) -> None:
     print(f"  repos gated       {len(ran)}")
     print(f"  passing           {sum(1 for r in ran if r.status == 'ok')}")
     print(f"  failing           {len(broken)}")
+    print(f"  skipped           {sum(1 for r in results if r.status == 'skipped')}")
     print(f"  no gate declared  {sum(1 for r in results if r.status == 'none')}")
     print(f"  e2e left out      {sum(r.e2e_left_out for r in results)}")
     print(f"  wall              {elapsed:.1f}s")
@@ -396,6 +417,11 @@ def build_gates_parser() -> argparse.ArgumentParser:
         "--e2e",
         action="store_true",
         help="Also run e2e gates a default gate run skips.",
+    )
+    parser.add_argument(
+        "--skip-fresh",
+        action="store_true",
+        help="Skip a repo whose schema-2 result matches this tree and exited 0.",
     )
     return parser
 
@@ -424,7 +450,10 @@ def main_gates(argv: list[str] | None = None) -> int:
         started = time.monotonic()
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
             results = run_bounded_pool(
-                pool, kept, lambda r: _run_one(r, roots, e2e=args.e2e), max_in_flight=args.jobs
+                pool,
+                kept,
+                lambda r: _run_one(r, roots, e2e=args.e2e, skip_fresh=args.skip_fresh),
+                max_in_flight=args.jobs,
             )
         elapsed = time.monotonic() - started
         _print_report(results, elapsed=elapsed)
@@ -438,6 +467,7 @@ def main_gates(argv: list[str] | None = None) -> int:
                 "elapsed_s": round(elapsed, 2),
                 "excluded": excluded,
                 "e2e_left_out": sum(r.e2e_left_out for r in results),
+                "skipped": sum(1 for r in results if r.status == "skipped"),
                 "exit_code": exit_code,
                 "repos": [r.to_json() for r in results],
             },

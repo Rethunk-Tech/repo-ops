@@ -65,6 +65,7 @@ def _write_record(
     *,
     schema: int = 2,
     status: str | None = None,
+    exit_code: int | None = None,
 ) -> None:
     # The suite points XDG_STATE_HOME at a directory inside the checkout. Creating
     # the record there is an untracked path, so the hash taken before the write
@@ -83,6 +84,8 @@ def _write_record(
     }
     if schema == 2:
         body["status"] = _status_hash(repo) if status is None else status
+    if exit_code is not None:
+        body["exit"] = exit_code
     path.write_text(json.dumps(body), encoding="utf-8")
 
 
@@ -319,4 +322,98 @@ def test_summary_counts_the_repo_and_names_e2e_gates_left_out(capsys) -> None:
     out = capsys.readouterr().out
     assert "repos gated       1" in out
     assert "passing           1" in out
+    assert "skipped           0" in out
     assert "e2e left out      2" in out
+
+
+def test_summary_counts_a_skipped_repo_apart_from_ones_that_ran(capsys) -> None:
+    results = [
+        GateResult(repo=Path("/a"), label="a", status="skipped"),
+        GateResult(repo=Path("/b"), label="b", status="ok"),
+        GateResult(repo=Path("/c"), label="c", status="none"),
+    ]
+    _print_report(results, elapsed=1)
+    out = capsys.readouterr().out
+    assert "repos gated       1" in out
+    assert "passing           1" in out
+    assert "skipped           1" in out
+    assert "no gate declared  1" in out
+
+
+def test_skip_fresh_does_not_run_a_passing_tree_and_reruns_a_dirty_one(
+    tmp_path: Path, monkeypatch, make_proc, init_git_repo
+) -> None:
+    head = init_git_repo(tmp_path, commit=True)
+    assert head is not None
+    _write_record(
+        tmp_path,
+        head,
+        datetime.now().astimezone(),
+        [{"name": "lint", "display": "bun run lint", "status": "ok"}],
+        exit_code=0,
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout):
+        calls.append(list(cmd))
+        return make_proc(returncode=0)
+
+    monkeypatch.setattr(
+        "repo_ops_gates.gates._gate_listing",
+        lambda repo, *, e2e: (["lint", "e2e"] if e2e else ["lint"], str(tmp_path), 0 if e2e else 1),
+    )
+    monkeypatch.setattr("repo_ops_gates.gates.run", fake_run)
+
+    fresh = _run_one(tmp_path, [str(tmp_path)], skip_fresh=True)
+    assert calls == []
+    assert fresh.status == "skipped"
+    assert fresh.to_json()["status"] == "skipped"
+    assert fresh.gates == ["lint"]
+
+    with_e2e = _run_one(tmp_path, [str(tmp_path)], e2e=True, skip_fresh=True)
+    assert calls == []
+    assert with_e2e.status == "skipped"
+
+    without_flag = _run_one(tmp_path, [str(tmp_path)])
+    assert calls == [["gate", "--timeout", "0", "run", "lint"]]
+    assert without_flag.status == "ok"
+    calls.clear()
+
+    (tmp_path / "note").write_text("hello\n", encoding="utf-8")
+    dirty = _run_one(tmp_path, [str(tmp_path)], e2e=True, skip_fresh=True)
+    assert calls == [["gate", "--timeout", "0", "run", "lint", "e2e"]]
+    assert dirty.status == "ok"
+
+
+def test_skip_fresh_still_runs_a_failed_or_missing_record(
+    tmp_path: Path, monkeypatch, make_proc, init_git_repo
+) -> None:
+    head = init_git_repo(tmp_path, commit=True)
+    assert head is not None
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout):
+        calls.append(list(cmd))
+        return make_proc(returncode=1, stdout="gate: FAIL exit 1  bun run lint  2s\n")
+
+    monkeypatch.setattr(
+        "repo_ops_gates.gates._gate_listing",
+        lambda repo, *, e2e: (["lint"], str(tmp_path), 0),
+    )
+    monkeypatch.setattr("repo_ops_gates.gates.run", fake_run)
+
+    missing = _run_one(tmp_path, [str(tmp_path)], skip_fresh=True)
+    assert calls == [["gate", "--timeout", "0", "run", "lint"]]
+    assert missing.status == "fail"
+    calls.clear()
+
+    _write_record(
+        tmp_path,
+        head,
+        datetime.now().astimezone(),
+        [{"display": "bun run lint", "status": "fail"}],
+        exit_code=1,
+    )
+    failed = _run_one(tmp_path, [str(tmp_path)], skip_fresh=True)
+    assert calls == [["gate", "--timeout", "0", "run", "lint"]]
+    assert failed.status == "fail"

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `gates --skip-fresh` skips a repo whose schema-2 result matches this HEAD
+  and working tree and exited 0. A dirty tree, or a failed, stale, or missing
+  record, still runs. The summary and report count those repos as skipped.
+
 ### Fixed
 
 - `gates` names a timed-out or interrupted gate, and its log, from gate's
