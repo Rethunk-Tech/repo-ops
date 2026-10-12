@@ -58,9 +58,11 @@ class GateResult:
     elapsed_s: float = 0.0
     detail: str = ""
     e2e_left_out: int = 0
+    skip_reason: str = ""
+    record_partial: bool = False
 
     def to_json(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "repo": str(self.repo),
             "label": self.label,
             "status": self.status,
@@ -71,6 +73,11 @@ class GateResult:
             "detail": self.detail,
             "e2e_left_out": self.e2e_left_out,
         }
+        if self.skip_reason:
+            payload["skip_reason"] = self.skip_reason
+        if self.record_partial:
+            payload["record_partial"] = True
+        return payload
 
 
 def _gate_listing(repo: Path, *, e2e: bool) -> tuple[list[str], str, int]:
@@ -354,7 +361,10 @@ def _run_one(
         record = _current_record(repo, root) if skip_fresh else None
         if record is not None and record.get("exit") == 0 and not record.get("partial"):
             result.status = "skipped"
+            result.skip_reason = "fresh"
             return result
+        if record is not None and record.get("exit") == 0 and record.get("partial"):
+            result.record_partial = True
         # gate's own per-gate timeout would race this one; 0 disables it.
         started_at = datetime.now().astimezone()
         proc = run(

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `gates` report row includes `skip_reason: "fresh"` when `--skip-fresh`
+  skipped a fresh non-partial pass, and `record_partial: true` when the run
+  happened because that matching record was partial. Both keys are omitted
+  otherwise.
 - `gates --skip-fresh` skips a repo whose schema-2 result matches this HEAD
   and working tree, exited 0, and is not partial. A partial record still runs,
   as does a dirty tree, or a failed, stale, or missing record. The summary and
