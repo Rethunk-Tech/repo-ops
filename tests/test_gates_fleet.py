@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from repo_ops_gates.gates import (
     GateResult,
     _failed_gate_names,
+    _matching_record,
     _print_report,
-    _record_path,
     _report_document,
     _run_one,
-    _status_hash,
 )
 
 
@@ -58,39 +56,57 @@ def test_a_failing_gate_is_named(tmp_path: Path, monkeypatch, make_proc):
     assert result.logs == []
 
 
-def _write_record(
-    repo: Path,
+_RECORD_CMD = ["gate", "--json", "record"]
+
+
+def _record_view(
     head: str,
     finished: datetime,
     gates: list[dict[str, object]],
     *,
     schema: int = 2,
-    status: str | None = None,
+    stale: bool = False,
     exit_code: int | None = None,
     partial: bool | None = None,
-) -> None:
-    # The suite points XDG_STATE_HOME at a directory inside the checkout. Creating
-    # the record there is an untracked path, so the hash taken before the write
-    # is not the hash a reader sees. Keep the state directory beside the repo.
-    state = repo.parent / "gate-record-state"
-    state.mkdir(parents=True, exist_ok=True)
-    os.environ["XDG_STATE_HOME"] = str(state)
-    path = _record_path(str(repo))
-    path.parent.mkdir(parents=True, exist_ok=True)
+) -> dict[str, object]:
+    """What ``gate --json record`` prints, with gate's own order for ``reason``."""
     body: dict[str, object] = {
         "schema": schema,
-        "root": str(repo),
+        "root": "/repo",
         "head": head,
         "finished": finished.isoformat(),
         "gates": gates,
     }
     if schema == 2:
-        body["status"] = _status_hash(repo) if status is None else status
+        body["status"] = "0" * 64
     if exit_code is not None:
         body["exit"] = exit_code
     if partial is not None:
         body["partial"] = partial
-    path.write_text(json.dumps(body), encoding="utf-8")
+    reason = None
+    if stale:
+        reason = "stale"
+    elif exit_code != 0:
+        reason = "failed"
+    elif partial:
+        reason = "partial"
+    current = {"head": head, "status": "0" * 64, "dirty": False}
+    return {**body, "fresh": reason is None, "reason": reason, "current": current}
+
+
+def _serve(monkeypatch, make_proc, state: dict[str, object], inner=None) -> None:
+    """Answer ``gate --json record`` from ``state["view"]``; anything else goes to *inner*."""
+
+    def fake_run(cmd, cwd, timeout):
+        if cmd == _RECORD_CMD:
+            view = state.get("view") or {"fresh": False, "reason": "missing"}
+            assert isinstance(view, dict)
+            return make_proc(returncode=0 if view["fresh"] else 1, stdout=json.dumps(view))
+        if inner is None:
+            return make_proc(returncode=0)
+        return inner(cmd, cwd, timeout)
+
+    monkeypatch.setattr("repo_ops_gates.gates.run", fake_run)
 
 
 def test_a_matching_record_names_timeout_and_interrupted_with_logs(
@@ -99,8 +115,8 @@ def test_a_matching_record_names_timeout_and_interrupted_with_logs(
     head = init_git_repo(tmp_path, commit=True)
     assert head is not None
     log = "/var/tmp/gate/sleep-30.log"
-    _write_record(
-        tmp_path,
+    state: dict[str, object] = {}
+    state["view"] = _record_view(
         head,
         datetime.now().astimezone() + timedelta(hours=1),
         [
@@ -134,7 +150,7 @@ def test_a_matching_record_names_timeout_and_interrupted_with_logs(
         "repo_ops_gates.gates._gate_listing",
         lambda repo, *, e2e: (["lint", "test"], str(tmp_path), 0),
     )
-    monkeypatch.setattr("repo_ops_gates.gates.run", fake_run)
+    _serve(monkeypatch, make_proc, state, fake_run)
     result = _run_one(tmp_path, [str(tmp_path)])
     assert seen["cmd"] == ["gate", "--timeout", "0", "run", "lint", "test"]
     assert seen["timeout"] == 1800
@@ -162,23 +178,25 @@ def test_a_record_from_another_run_falls_back_to_the_summary(
     monkeypatch.setattr(
         "repo_ops_gates.gates._gate_listing", lambda repo, *, e2e: (["lint"], str(tmp_path), 0)
     )
-    monkeypatch.setattr(
-        "repo_ops_gates.gates.run",
+    state: dict[str, object] = {}
+    _serve(
+        monkeypatch,
+        make_proc,
+        state,
         lambda *a, **k: make_proc(returncode=1, stdout="gate: FAIL exit 1  bun run lint  2s\n"),
     )
 
-    _write_record(
-        tmp_path,
+    state["view"] = _record_view(
         "0" * 40,
         datetime.now().astimezone() + timedelta(hours=1),
         [{"display": "sleep 30", "status": "timeout", "log": "/var/tmp/gate/sleep.log"}],
+        stale=True,
     )
     wrong_head = _run_one(tmp_path, [str(tmp_path)])
     assert wrong_head.failed == ["bun run lint"]
     assert wrong_head.logs == []
 
-    _write_record(
-        tmp_path,
+    state["view"] = _record_view(
         head,
         datetime.now().astimezone() - timedelta(hours=1),
         [{"display": "sleep 30", "status": "timeout", "log": "/var/tmp/gate/sleep.log"}],
@@ -194,16 +212,17 @@ def test_a_passing_process_stays_passing_when_a_record_names_a_timeout(
 ):
     head = init_git_repo(tmp_path, commit=True)
     assert head is not None
-    _write_record(
-        tmp_path,
-        head,
-        datetime.now().astimezone() + timedelta(hours=1),
-        [{"display": "bun run test", "status": "timeout", "log": "/var/tmp/gate/sleep.log"}],
-    )
+    state: dict[str, object] = {
+        "view": _record_view(
+            head,
+            datetime.now().astimezone() + timedelta(hours=1),
+            [{"display": "bun run test", "status": "timeout", "log": "/var/tmp/gate/sleep.log"}],
+        )
+    }
     monkeypatch.setattr(
         "repo_ops_gates.gates._gate_listing", lambda repo, *, e2e: (["test"], str(tmp_path), 0)
     )
-    monkeypatch.setattr("repo_ops_gates.gates.run", lambda *a, **k: make_proc(returncode=0))
+    _serve(monkeypatch, make_proc, state)
     result = _run_one(tmp_path, [str(tmp_path)])
     assert result.status == "ok"
     assert result.failed == []
@@ -218,17 +237,52 @@ def test_to_json_round_trips_the_fields_the_report_reads():
     assert payload["e2e_left_out"] == 0
 
 
-def test_status_hash_is_empty_status_and_diff_until_the_tree_changes(
-    tmp_path: Path, init_git_repo
+def test_matching_record_reports_the_reason_gate_record_gives(
+    tmp_path: Path, monkeypatch, make_proc
 ) -> None:
-    init_git_repo(tmp_path, commit=True)
-    clean = _status_hash(tmp_path)
-    assert clean == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    (tmp_path / "note").write_text("hello\n", encoding="utf-8")
-    dirty = _status_hash(tmp_path)
-    assert dirty is not None and dirty != clean
-    (tmp_path / "note").write_text("other\n", encoding="utf-8")
-    assert _status_hash(tmp_path) != dirty
+    state: dict[str, object] = {}
+    _serve(monkeypatch, make_proc, state)
+    root = str(tmp_path)
+    finished = datetime.now().astimezone()
+    gates: list[dict[str, object]] = [{"name": "lint", "status": "ok"}]
+
+    assert _matching_record(root) == (None, "missing")
+    assert _matching_record("") == (None, "missing")
+
+    state["view"] = _record_view("h", finished, gates, exit_code=0)
+    record, reason = _matching_record(root)
+    assert reason is None
+    assert record is not None and record["gates"] == gates
+    assert not {"fresh", "reason", "current"} & record.keys()
+
+    state["view"] = _record_view("h", finished, gates, exit_code=0, partial=True)
+    assert _matching_record(root)[1] == "partial"
+    state["view"] = _record_view("h", finished, gates, exit_code=1, partial=True)
+    assert _matching_record(root)[1] == "failed"
+    state["view"] = _record_view("h", finished, gates, exit_code=1, stale=True)
+    assert _matching_record(root) == (None, "stale")
+
+
+def test_an_unreadable_gate_record_is_stale(tmp_path: Path, monkeypatch, make_proc) -> None:
+    root = str(tmp_path)
+
+    def serve(stdout: str) -> None:
+        monkeypatch.setattr(
+            "repo_ops_gates.gates.run", lambda *a, **k: make_proc(returncode=1, stdout=stdout)
+        )
+
+    serve("not json")
+    assert _matching_record(root) == (None, "stale")
+    serve(json.dumps({"gates": [{"argv": ["record"]}]}))
+    assert _matching_record(root) == (None, "stale")
+    serve(json.dumps({"fresh": False, "reason": "bogus"}))
+    assert _matching_record(root) == (None, "stale")
+
+    def absent(*a, **k):
+        raise FileNotFoundError("gate")
+
+    monkeypatch.setattr("repo_ops_gates.gates.run", absent)
+    assert _matching_record(root) == (None, "stale")
 
 
 def test_a_record_for_another_tree_falls_back_to_timeout_text(
@@ -237,18 +291,21 @@ def test_a_record_for_another_tree_falls_back_to_timeout_text(
     head = init_git_repo(tmp_path, commit=True)
     assert head is not None
     (tmp_path / "note").write_text("hello\n", encoding="utf-8")
-    _write_record(
-        tmp_path,
-        head,
-        datetime.now().astimezone() + timedelta(hours=1),
-        [{"display": "sleep 30", "status": "timeout", "log": "/var/tmp/gate/sleep.log"}],
-        status="0" * 64,
-    )
+    state: dict[str, object] = {
+        "view": _record_view(
+            head,
+            datetime.now().astimezone() + timedelta(hours=1),
+            [{"display": "sleep 30", "status": "timeout", "log": "/var/tmp/gate/sleep.log"}],
+            stale=True,
+        )
+    }
     monkeypatch.setattr(
         "repo_ops_gates.gates._gate_listing", lambda repo, *, e2e: (["test"], str(tmp_path), 0)
     )
-    monkeypatch.setattr(
-        "repo_ops_gates.gates.run",
+    _serve(
+        monkeypatch,
+        make_proc,
+        state,
         lambda *a, **k: make_proc(
             returncode=124,
             stderr="gate: TIMEOUT after 30s  bun run test  (killed, not failed)\n",
@@ -258,12 +315,12 @@ def test_a_record_for_another_tree_falls_back_to_timeout_text(
     assert result.failed == ["bun run test"]
     assert result.logs == []
 
-    _write_record(
-        tmp_path,
+    state["view"] = _record_view(
         head,
         datetime.now().astimezone() + timedelta(hours=1),
         [{"display": "sleep 30", "status": "timeout", "log": "/var/tmp/gate/sleep.log"}],
         schema=1,
+        stale=True,
     )
     old = _run_one(tmp_path, [str(tmp_path)])
     assert old.failed == ["bun run test"]
@@ -349,13 +406,6 @@ def test_skip_fresh_does_not_run_a_passing_tree_and_reruns_a_dirty_one(
 ) -> None:
     head = init_git_repo(tmp_path, commit=True)
     assert head is not None
-    _write_record(
-        tmp_path,
-        head,
-        datetime.now().astimezone(),
-        [{"name": "lint", "display": "bun run lint", "status": "ok"}],
-        exit_code=0,
-    )
     calls: list[list[str]] = []
 
     def fake_run(cmd, cwd, timeout):
@@ -366,7 +416,14 @@ def test_skip_fresh_does_not_run_a_passing_tree_and_reruns_a_dirty_one(
         "repo_ops_gates.gates._gate_listing",
         lambda repo, *, e2e: (["lint", "e2e"] if e2e else ["lint"], str(tmp_path), 0 if e2e else 1),
     )
-    monkeypatch.setattr("repo_ops_gates.gates.run", fake_run)
+    state: dict[str, object] = {}
+    _serve(monkeypatch, make_proc, state, fake_run)
+    state["view"] = _record_view(
+        head,
+        datetime.now().astimezone(),
+        [{"name": "lint", "display": "bun run lint", "status": "ok"}],
+        exit_code=0,
+    )
 
     fresh = _run_one(tmp_path, [str(tmp_path)], skip_fresh=True)
     assert calls == []
@@ -388,7 +445,13 @@ def test_skip_fresh_does_not_run_a_passing_tree_and_reruns_a_dirty_one(
     assert "gate_record_reason" not in without_flag.to_json()
     calls.clear()
 
-    (tmp_path / "note").write_text("hello\n", encoding="utf-8")
+    state["view"] = _record_view(
+        head,
+        datetime.now().astimezone(),
+        [{"name": "lint", "display": "bun run lint", "status": "ok"}],
+        exit_code=0,
+        stale=True,
+    )
     dirty = _run_one(tmp_path, [str(tmp_path)], e2e=True, skip_fresh=True)
     assert calls == [["gate", "--timeout", "0", "run", "lint", "e2e"]]
     assert dirty.status == "ok"
@@ -411,7 +474,8 @@ def test_skip_fresh_still_runs_a_failed_or_missing_record(
         "repo_ops_gates.gates._gate_listing",
         lambda repo, *, e2e: (["lint"], str(tmp_path), 0),
     )
-    monkeypatch.setattr("repo_ops_gates.gates.run", fake_run)
+    state: dict[str, object] = {}
+    _serve(monkeypatch, make_proc, state, fake_run)
 
     missing = _run_one(tmp_path, [str(tmp_path)], skip_fresh=True)
     assert calls == [["gate", "--timeout", "0", "run", "lint"]]
@@ -419,8 +483,7 @@ def test_skip_fresh_still_runs_a_failed_or_missing_record(
     assert missing.to_json()["gate_record_reason"] == "missing"
     calls.clear()
 
-    _write_record(
-        tmp_path,
+    state["view"] = _record_view(
         head,
         datetime.now().astimezone(),
         [{"display": "bun run lint", "status": "fail"}],
@@ -447,10 +510,10 @@ def test_skip_fresh_reruns_a_partial_pass_and_skips_a_full_one(
         "repo_ops_gates.gates._gate_listing",
         lambda repo, *, e2e: (["lint"], str(tmp_path), 0),
     )
-    monkeypatch.setattr("repo_ops_gates.gates.run", fake_run)
+    state: dict[str, object] = {}
+    _serve(monkeypatch, make_proc, state, fake_run)
 
-    _write_record(
-        tmp_path,
+    state["view"] = _record_view(
         head,
         datetime.now().astimezone(),
         [{"name": "lint", "display": "bun run lint", "status": "ok"}],
@@ -466,8 +529,7 @@ def test_skip_fresh_reruns_a_partial_pass_and_skips_a_full_one(
     assert "skip_reason" not in partial.to_json()
     calls.clear()
 
-    _write_record(
-        tmp_path,
+    state["view"] = _record_view(
         head,
         datetime.now().astimezone(),
         [{"name": "lint", "display": "bun run lint", "status": "ok"}],
