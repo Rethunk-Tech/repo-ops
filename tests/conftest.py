@@ -230,7 +230,10 @@ def upgrade_args() -> Any:
 
 
 class _FakeRun:
-    """A ``run()`` stand-in that records each argv in ``calls`` and succeeds."""
+    """A ``run()`` stand-in that records each argv in ``calls`` and succeeds.
+
+    ``gate --json`` answers with one declared gate, ``test``.
+    """
 
     def __init__(self) -> None:
         self.calls: list[list[str]] = []
@@ -239,7 +242,8 @@ class _FakeRun:
         self, cmd: list[str], *args: Any, **kwargs: Any
     ) -> subprocess.CompletedProcess[str]:
         self.calls.append(list(cmd))
-        return subprocess.CompletedProcess(list(cmd), 0, stdout="", stderr="")
+        stdout = '{"gates": [{"name": "test"}]}' if cmd[:2] == ["gate", "--json"] else ""
+        return subprocess.CompletedProcess(list(cmd), 0, stdout=stdout, stderr="")
 
 
 @pytest.fixture
@@ -250,6 +254,12 @@ def fake_run() -> _FakeRun:
     output; folding them into a scripted fixture was measured and declined.
     """
     return _FakeRun()
+
+
+@pytest.fixture
+def gate_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make every binary ``verify`` looks up, ``gate`` included, resolve on PATH."""
+    monkeypatch.setattr("repo_ops_upgrade.verify.shutil.which", lambda name: f"/usr/bin/{name}")
 
 
 @pytest.fixture(autouse=True)

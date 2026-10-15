@@ -35,7 +35,11 @@ class TestVerifyExtraManagers:
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
             assert verify_workspace(ws) is None
-        assert fake_run.calls == [["pdm", "sync", "--clean"]]
+        assert fake_run.calls == [
+            ["pdm", "sync", "--clean"],
+            ["gate", "--json"],
+            ["gate", "--timeout", "0", "run", "test"],
+        ]
 
     def test_pipenv_runs_verify(self, tmp_path: Path, make_workspace, fake_run: Any) -> None:
 
@@ -45,10 +49,14 @@ class TestVerifyExtraManagers:
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
             assert verify_workspace(ws) is None
-        assert fake_run.calls == [["pipenv", "verify"]]
+        assert fake_run.calls == [
+            ["pipenv", "verify"],
+            ["gate", "--json"],
+            ["gate", "--timeout", "0", "run", "test"],
+        ]
 
     def test_hatch_without_uv_lock_skips_sync_locked(
-        self, tmp_path: Path, make_workspace, fake_run: Any
+        self, tmp_path: Path, make_workspace, fake_run: Any, gate_on_path: None
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\nversion = "0.1.0"\n',
@@ -61,7 +69,7 @@ class TestVerifyExtraManagers:
         assert not any(c[:3] == ["uv", "sync", "--locked"] for c in fake_run.calls)
 
     def test_hatch_with_uv_lock_runs_sync_locked(
-        self, tmp_path: Path, make_workspace, fake_run: Any
+        self, tmp_path: Path, make_workspace, fake_run: Any, gate_on_path: None
     ) -> None:
         (tmp_path / "pyproject.toml").write_text(
             '[project]\nname = "demo"\nversion = "0.1.0"\n',

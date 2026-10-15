@@ -2,7 +2,7 @@
 
 Covers:
 - .repo-ops.toml read (flat keys)
-- verify.script honored (config override of the Node waterfall)
+- verify.script honored (config override of gate delegation)
 - verify.skip short-circuits verify gate entirely
 - verify.timeout passed to run()
 """
@@ -83,10 +83,10 @@ class TestDotRepoOpsToml:
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 class TestVerifyScriptFromConfig:
-    def test_config_script_used_instead_of_waterfall(
+    def test_config_script_used_instead_of_gate(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace, fake_run: Any
     ) -> None:
-        """verify.script in config overrides the waterfall when env var absent."""
+        """verify.script in config overrides gate delegation."""
         _write_pkg(tmp_path, {"ci": "echo ci", "build:prod": "echo build"})
         (tmp_path / ".repo-ops.toml").write_text(
             '[verify]\nscript = "build:prod"\n', encoding="utf-8"
@@ -100,10 +100,9 @@ class TestVerifyScriptFromConfig:
         assert any("build:prod" in c for c in fake_run.calls), (
             f"expected build:prod in {fake_run.calls}"
         )
-        # waterfall 'ci' must NOT have been called as a script-run step
-        # (npm ci = immutable install; npm run ci = waterfall script — check for the latter)
-        assert not any("run" in c and c[-1] == "ci" for c in fake_run.calls), (
-            f"waterfall script 'ci' must not run when config overrides: {fake_run.calls}"
+        # gate must NOT have been called when config names the script
+        assert not any(c[0] == "gate" for c in fake_run.calls), (
+            f"gate must not run when config overrides: {fake_run.calls}"
         )
 
     def test_config_script_empty_string_skips_script_step(
@@ -171,7 +170,12 @@ class TestVerifySkip:
         assert not called, "run() must not be called when skip=true"
 
     def test_skip_false_runs_normally(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace, fake_run: Any
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        make_workspace,
+        fake_run: Any,
+        gate_on_path: None,
     ) -> None:
         (tmp_path / ".repo-ops.toml").write_text("[verify]\nskip = false\n", encoding="utf-8")
         _write_pkg(tmp_path, {"ci": "echo ci"})
@@ -184,7 +188,12 @@ class TestVerifySkip:
         assert fake_run.calls, "expected at least one run() call"
 
     def test_skip_absent_runs_normally(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace, fake_run: Any
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        make_workspace,
+        fake_run: Any,
+        gate_on_path: None,
     ) -> None:
         _write_pkg(tmp_path, {"ci": "echo ci"})
         ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
@@ -196,7 +205,7 @@ class TestVerifySkip:
         assert fake_run.calls
 
     def test_workspace_sidecar_skips_only_that_workspace(
-        self, tmp_path: Path, make_workspace
+        self, tmp_path: Path, make_workspace, fake_run: Any, gate_on_path: None
     ) -> None:
         broken = tmp_path / "fixtures" / "broken"
         clean = tmp_path / "fixtures" / "clean"
@@ -205,13 +214,11 @@ class TestVerifySkip:
         (broken / ".repo-ops.toml").write_text("[verify]\nskip = true\n", encoding="utf-8")
         calls: list[Path] = []
 
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
-        ) -> CompletedProcess[str]:
+        def run_in(cmd: list[str], cwd: Path, **kwargs: Any) -> CompletedProcess[str]:
             calls.append(cwd)
-            return _ok()
+            return fake_run(cmd)
 
-        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
+        with patch("repo_ops_upgrade.verify.run", side_effect=run_in):
             for path in (broken, clean):
                 ws = make_workspace(path, git_repo=tmp_path, manager="go", ecosystem="go")
                 assert verify_workspace(ws) is None
@@ -228,24 +235,24 @@ class TestVerifySkip:
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib required")
 class TestVerifyTimeout:
     def test_config_timeout_passed_to_run(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace
+        self, tmp_path: Path, make_workspace, fake_run: Any, gate_on_path: None
     ) -> None:
         (tmp_path / ".repo-ops.toml").write_text("[verify]\ntimeout = 42\n", encoding="utf-8")
         captured: list[dict] = []
 
-        def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+        def run_timed(
+            cmd: list[str], cwd: Path, timeout: int | None = None, **kwargs: Any
         ) -> CompletedProcess[str]:
             captured.append({"cmd": cmd, "timeout": timeout})
-            return _ok()
+            return fake_run(cmd)
 
         ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
-        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
+        with patch("repo_ops_upgrade.verify.run", side_effect=run_timed):
             verify_workspace(ws)
 
-        build_call = next((c for c in captured if c["cmd"] == ["go", "build", "./..."]), None)
-        assert build_call is not None
-        assert build_call["timeout"] == 42
+        gate_call = next((c for c in captured if c["cmd"][:1] == ["gate"]), None)
+        assert gate_call is not None
+        assert gate_call["timeout"] == 42
 
     def test_node_config_timeout_used(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_workspace

@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as does a dirty tree, or a failed, stale, or missing record. The summary and
   report count skipped repos as skipped.
 
+### Changed
+
+- Verify requires `gate`. Without it, or where it detects no gate, verify fails
+  instead of running the first of `ci`, `ci:pushgate`, `build`, `lint`,
+  `go build`/`go test`, `cargo check`/`cargo test`, or the Python
+  pytest/mypy/pyrefly/ruff ladder. Lockfile steps are unchanged.
+
 ### Fixed
 
 - `gates --skip-fresh` treats a fresh partial pass as not fresh enough to
