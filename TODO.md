@@ -16,18 +16,17 @@ section and leave the registry alone.
 - `README.md:15` lists what `apply` bumps: Node, Go, Rust, Python, Deno,
   containers, pre-commit, submodules, and GitHub Actions pins. NuGet/dotnet is
   absent.
-- Registration is `register_all()` in `src/repo_ops/_register.py:37-54` (the
+- Registration is `register_all()` in `src/repo_ops/_register.py:37-52` (the
   `plugins` dict) plus `register_precommit()` at `_register.py:15`. No NuGet or
-  dotnet name is registered. `docs/architecture.md:10` lists the same check/apply
-  plugin packages; `docs/architecture.md:17` is the `register_all()` call site.
-  Actions and submodule pins are sweep paths under `repo_ops_upgrade/`, not
-  entries in that dict.
+  dotnet name is registered. `docs/architecture.md:10` lists the check/apply
+  plugin packages. Actions and submodule pins are sweep paths under
+  `repo_ops_upgrade/`, not entries in that dict.
 - Scan roots, when the CLI omits them, are `DEFAULT_ROOTS` in
   `src/repo_ops_core/constants.py:46-51`.
 - The gh-actions measurement is not this count. `gh-actions/AGENTS.md:63`
-  dropped `setup-dotnet` because only two CI callers existed
-  (`mortar-bepinex-bridge` and `mortar-smapi-bridge`), each a one-line
-  `actions/setup-dotnet` passthrough. That is a composite-action caller count.
+  records two CI callers (`mortar-bepinex-bridge` and `mortar-smapi-bridge`),
+  each a one-line `actions/setup-dotnet` passthrough. That is a composite-action
+  caller count.
 
 ### Traps
 
