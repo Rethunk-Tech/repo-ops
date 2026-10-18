@@ -164,7 +164,7 @@ def verify_workspace(ws: Workspace) -> str | None:
     Respects per-repo ``[verify]`` config keys:
     - ``skip = true`` → returns ``None`` immediately (gate treated as passed)
       after logging ``verify skipped (config)``.
-    - ``timeout`` → used as the verify timeout (env var still wins).
+    - ``timeout`` → used as the verify timeout.
     - ``script`` → forwarded to the Node path via :func:`verify_node`.
 
     Returns ``None`` on success (or intentional skip); a non-empty string is
@@ -239,11 +239,11 @@ def verify_workspace(ws: Workspace) -> str | None:
             )
             if proc.returncode != 0:
                 return (proc.stderr or proc.stdout).strip() or "deno install --frozen failed"
-            return None
+            return _gate_verify(ws, timeout=timeout)
         proc = run(["deno", "check", "."], ws.path, timeout=timeout)
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "deno check failed"
-        return None
+        return _gate_verify(ws, timeout=timeout)
     if mgr == "precommit":
         if not shutil.which("pre-commit"):
             return "pre-commit not on PATH"
@@ -288,7 +288,7 @@ def _verify_pip_tools(ws: Workspace, *, timeout: int | None = None) -> str | Non
             return proc.stderr.strip() or "pip-compile failed"
         compiled = proc.stdout
     else:
-        return None
+        return "uv not on PATH"
     if not req_txt.exists():
         return "requirements.txt missing after apply"
     current = parse_requirements_lines(req_txt.read_text(encoding="utf-8", errors="replace"))

@@ -93,7 +93,8 @@ class TestVerifyExtraManagers:
             patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
         ):
             assert verify_workspace(ws) is None
-        assert fake_run.calls == [["deno", "install", "--frozen"]]
+        assert fake_run.calls[0] == ["deno", "install", "--frozen"]
+        assert fake_run.calls[-1] == ["gate", "--timeout", "0", "run", "test"]
 
     def test_precommit_validate_config(self, tmp_path: Path, make_workspace, fake_run: Any) -> None:
 

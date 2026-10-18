@@ -772,3 +772,42 @@ class TestPythonGateDelegation:
         assert result is not None
         assert "gate not on PATH" in result
         assert calls == [["uv", "sync", "--locked"]]
+
+
+class TestDenoVerify:
+    def test_frozen_install_then_gate(
+        self, tmp_path: Path, make_workspace, fake_run: Any, gate_on_path: None
+    ) -> None:
+        (tmp_path / "deno.lock").write_text("{}\n", encoding="utf-8")
+        ws = make_workspace(tmp_path, manager="deno", ecosystem="deno", label="demo")
+        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
+            result = verify_workspace(ws)
+
+        assert result is None
+        assert fake_run.calls[0] == ["deno", "install", "--frozen"]
+        assert fake_run.calls[-1] == _GATE_RUN_TEST
+
+    def test_check_then_gate_without_lock(
+        self, tmp_path: Path, make_workspace, fake_run: Any, gate_on_path: None
+    ) -> None:
+        ws = make_workspace(tmp_path, manager="deno", ecosystem="deno", label="demo")
+        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
+            result = verify_workspace(ws)
+
+        assert result is None
+        assert fake_run.calls[0] == ["deno", "check", "."]
+        assert fake_run.calls[-1] == _GATE_RUN_TEST
+
+    def test_frozen_install_without_gate_is_an_error(self, tmp_path: Path, make_workspace) -> None:
+        (tmp_path / "deno.lock").write_text("{}\n", encoding="utf-8")
+        calls: list[list[str]] = []
+        ws = make_workspace(tmp_path, manager="deno", ecosystem="deno", label="demo")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", side_effect=_no_gate),
+            patch("repo_ops_upgrade.verify.run", side_effect=_gate_aware_run(calls)),
+        ):
+            result = verify_workspace(ws)
+
+        assert result is not None
+        assert "gate not on PATH" in result
+        assert calls == [["deno", "install", "--frozen"]]

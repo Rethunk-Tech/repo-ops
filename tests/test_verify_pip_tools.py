@@ -97,6 +97,20 @@ def test_pip_tools_verify_compile_failure_returns_error(
     assert "compile" in result or "error" in result.lower()
 
 
+def test_pip_tools_verify_errors_when_compiler_missing(tmp_path: Path, make_workspace) -> None:
+    """Neither uv nor pip-compile on PATH is a verify failure, not a silent pass."""
+    (tmp_path / "requirements.in").write_text("requests\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("requests==2.31.0\n", encoding="utf-8")
+
+    with patch("repo_ops_upgrade.verify.shutil.which", return_value=None):
+        result = verify_workspace(
+            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo"),
+        )
+
+    assert result is not None
+    assert "uv not on PATH" in result
+
+
 def test_pip_tools_verify_no_req_in_skips_silently(tmp_path: Path, make_workspace) -> None:
     """verify_workspace must return None when requirements.in is absent (no-op gracefully)."""
     result = verify_workspace(
