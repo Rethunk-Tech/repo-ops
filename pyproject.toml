@@ -1,5 +1,5 @@
 [build-system]
-requires = ["uv_build>=0.12.4,<0.13.0"]
+requires = ["uv_build>=0.13.1,<0.14.0"]
 build-backend = "uv_build"
 
 [project]
@@ -23,7 +23,7 @@ classifiers = [
   "Topic :: Software Development :: Version Control",
   "Topic :: Utilities",
 ]
-dependencies = ["ruamel.yaml>=0.18"]
+dependencies = ["ruamel.yaml>=0.19.1"]
 
 [project.scripts]
 repo-ops = "repo_ops.cli:main"
@@ -35,12 +35,12 @@ Changelog = "https://github.com/Rethunk-Tech/repo-ops/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
-  "ruff>=0.11.0",
-  "pytest>=8",
-  "pytest-cov>=5.0",
+  "ruff>=0.17.1",
+  "pytest>=9.1.1",
+  "pytest-cov>=7.1.0",
   # The suite is wait-bound (subprocess tool probes, temp git repos), so it parallelises well.
-  "pytest-xdist>=3.6",
-  "pyrefly>=0.1",
+  "pytest-xdist>=3.8.0",
+  "pyrefly>=1.4.0",
   "deptry>=0.25.1",
 ]
 
