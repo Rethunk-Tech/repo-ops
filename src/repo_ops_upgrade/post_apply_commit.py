@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from repo_ops_core.config import load_repo_config
 from repo_ops_core.filesystem import is_workspace_member
 from repo_ops_core.git import run_git
 from repo_ops_js.workspaces import yarn_workspace_members
@@ -150,6 +151,8 @@ def upgrade_scoped_paths(
       is the monorepo root. Sourced from the hook's own declaration rather than
       hand-enumerated per manager, so it also covers future remediations that
       write a root-level file.
+    - The configured ``[soup].path`` table this apply rewrote, matched by exact
+      repo-relative path the same way as remediation files.
     """
     # root_wanted: basenames valid at the repo root (no subdirectory prefix).
     root_wanted: set[str] = set()
@@ -169,6 +172,8 @@ def upgrade_scoped_paths(
     # the workspace directory, so the container module's own discovery is the
     # only thing that knows the full set.
     container_paths: set[str] = set()
+    # soup_paths: exact repo-relative path of the configured SOUP table.
+    soup_paths: set[str] = set()
 
     for wr in bundle.workspaces:
         if not (wr.changes or wr.remediations):
@@ -216,6 +221,12 @@ def upgrade_scoped_paths(
                     continue
                 remediation_paths.add(str(rem_rel).replace("\\", "/"))
 
+    if any(wr.changes or wr.remediations for wr in bundle.workspaces):
+        soup = load_repo_config(bundle.git_repo).get("soup")
+        soup_rel = soup.get("path") if isinstance(soup, dict) else None
+        if isinstance(soup_rel, str) and soup_rel.strip():
+            soup_paths.add(soup_rel.replace("\\", "/"))
+
     for ab in bundle.actions:
         if ab.workflow and ab.status == "ok" and ab.pin != ab.latest:
             # Stage only workflow files whose pins were actually changed this run.
@@ -241,6 +252,10 @@ def upgrade_scoped_paths(
             continue
         # File an applied remediation hook declared it touched.
         if norm in remediation_paths:
+            scoped.append(path)
+            continue
+        # Configured SOUP table rewritten by this apply.
+        if norm in soup_paths:
             scoped.append(path)
             continue
         # Dockerfile/compose file a container workspace repinned.

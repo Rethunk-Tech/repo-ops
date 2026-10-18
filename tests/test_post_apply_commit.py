@@ -515,6 +515,30 @@ def test_upgrade_scoped_paths_excludes_non_member_nested_package_json(
 # ---------------------------------------------------------------------------
 
 
+def test_upgrade_scoped_paths_includes_soup_table(
+    tmp_path: Path,
+    init_git_repo,
+) -> None:
+    """A SOUP table rewritten on apply must be staged with the deps commit."""
+    init_git_repo(tmp_path)
+    (tmp_path / ".repo-ops.toml").write_text('[soup]\npath = "docs/SOUP.md"\n', encoding="utf-8")
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="yarn",
+        git_repo=tmp_path,
+        label="root",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("next", "^16.3.0", "^16.4.0")]
+    bundle = RepoBundle(git_repo=tmp_path, label="root", workspaces=[wr])
+
+    porcelain = ["yarn.lock", "docs/SOUP.md"]
+    scoped = post_apply_commit.upgrade_scoped_paths(bundle, porcelain)
+    assert "yarn.lock" in scoped
+    assert "docs/SOUP.md" in scoped
+
+
 def test_upgrade_scoped_paths_includes_applied_remediation_file(
     tmp_path: Path,
     init_git_repo,
