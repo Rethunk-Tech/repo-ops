@@ -136,7 +136,12 @@ def _run_upgrade_body(
     on_verify_fail = "revert" if fleet else "keep"
     diagnostics = DiscoveryDiagnostics()
     found: list[Workspace] = workspace_discovery.discover_all(roots, diagnostics=diagnostics)
-    found = orchestration.filter_workspaces(found, args.eco_filter, None)
+    manager_filter = getattr(args, "manager_filter", None)
+    found = orchestration.filter_workspaces(
+        found,
+        args.eco_filter,
+        manager_filter if isinstance(manager_filter, str) else None,
+    )
 
     bundles = workspace_discovery.group_by_repo(found, roots)
     if args.eco_filter in (None, "actions"):

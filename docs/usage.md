@@ -12,7 +12,7 @@ With no `root`, every command scans [`DEFAULT_ROOTS`](../src/repo_ops_core/const
 
 `plan` reports what `apply` would do and writes nothing, except that Yarn checks run `corepack prepare` in a temporary copy. `apply` makes the changes, runs remediations, verifies each workspace, and commits.
 
-Shared flags: `root ...`, `--exclude PAT`, `--jobs N` (default `max(4, min(8, cpus/4))`), `-v` / `--verbose`, `--filter ECO` (`node|go|rust|py|deno|container|precommit|actions|submodules`). `apply` also takes `--no-commit` and `--no-verify` (which implies `--no-commit`).
+Shared flags: `root ...`, `--exclude PAT`, `--jobs N` (default `max(4, min(8, cpus/4))`), `-v` / `--verbose`, `--filter ECO` (`node|go|rust|py|deno|container|precommit|actions|submodules`), `--manager MANAGER`. `apply` also takes `--no-commit` and `--no-verify` (which implies `--no-commit`).
 
 Every run writes `$XDG_STATE_HOME/repo-ops/runs/<utc>-<cmd>/log` and `report.json` (the newest 50 runs are kept) and prints both paths last. The human report lists only repos with something to show; `report.json` has every row plus a `summary` block.
 

@@ -32,6 +32,22 @@ ECO_FILTER_CHOICES = (
     "actions",
     "submodules",
 )
+# Plugin dict names minus ecosystems/sweep paths that are not managers.
+MANAGER_FILTER_CHOICES = (
+    "bun",
+    "npm",
+    "pnpm",
+    "yarn",
+    "go",
+    "rust",
+    "uv",
+    "poetry",
+    "pip-tools",
+    "hatch",
+    "pdm",
+    "pipenv",
+    "deno",
+)
 PLAN_EPILOG = """\
 exit codes: 0 nothing to do, 1 drift exists.
 Writes $XDG_STATE_HOME/repo-ops/runs/<utc>-plan/{log,report.json}; both paths
@@ -163,6 +179,13 @@ def build_upgrade_parser(*, apply: bool) -> argparse.ArgumentParser:
         dest="eco_filter",
         metavar="ECO",
         help="One ecosystem: " + "|".join(ECO_FILTER_CHOICES) + ".",
+    )
+    parser.add_argument(
+        "--manager",
+        choices=list(MANAGER_FILTER_CHOICES),
+        dest="manager_filter",
+        metavar="MANAGER",
+        help="One manager: " + "|".join(MANAGER_FILTER_CHOICES) + ".",
     )
     if apply:
         parser.add_argument(

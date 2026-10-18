@@ -82,42 +82,6 @@ measured-not-worth here.
 - If it is not written anywhere under the scan roots: this section says
   measured-not-worth and the tuple is unchanged.
 
-## `--filter` has no manager counterpart
-
-`filter_workspaces` already accepts `manager_filter` and applies it when
-set. `run_upgrade` always passes `None`. `--filter` is ecosystem-only
-(`ECO_FILTER_CHOICES`). A caller who wants `uv` but not `poetry` cannot
-say so without a new flag.
-
-Deferred because a new public flag is a CLI contract, and the brief
-forbids changing existing contracts. Shape is decided: do not overload
-`--filter` with manager names (`uv` is not in `ECO_FILTER_CHOICES`; `py`
-is). Add a separate `--manager` with the registered plugin names.
-
-### Read
-
-1. `src/repo_ops_upgrade/orchestration.py:246` `filter_workspaces`.
-2. `src/repo_ops_upgrade/run.py:137` call site, third arg `None`.
-3. `src/repo_ops_core/cli.py:24` `ECO_FILTER_CHOICES` and `:160` `--filter`.
-4. `src/repo_ops/_register.py:37` plugin manager names.
-
-### Traps
-
-- `container`, `precommit`, `actions`, and `submodules` are ecosystems
-  (or sweep paths), not rows in the plugin dict. `--manager` must not
-  silently accept them as managers.
-- `--filter py --manager npm` is empty, not an error today. Decide:
-  empty result exit 0 vs argparse error. Empty 0 matches `--filter`
-  with no matching workspace.
-
-### Acceptance
-
-- `repo-ops apply --manager uv PATH` processes only `manager == "uv"`
-  workspaces. Other Python managers in that checkout are untouched.
-- `--filter` choices, help text, and current matching are unchanged.
-- `repo-ops apply --help` documents `--manager`. Plan gets the same flag
-  because it shares `build_upgrade_parser`.
-
 ## precommit apply still uses the generic commit subject
 
 Root `.pre-commit-config.yaml` is now in commit scope. The subject for

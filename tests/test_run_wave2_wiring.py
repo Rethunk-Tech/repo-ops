@@ -328,3 +328,38 @@ def test_no_verify_prints_commit_skip_unless_no_commit(
     both = capsys.readouterr()
     assert note not in both.out
     assert note not in both.err
+
+
+def test_manager_filter_keeps_only_matching_manager(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, upgrade_args
+) -> None:
+    uv_path = tmp_path / "uv-ws"
+    poetry_path = tmp_path / "poetry-ws"
+    uv_path.mkdir()
+    poetry_path.mkdir()
+    ws_uv = Workspace(path=uv_path, ecosystem="py", manager="uv", git_repo=uv_path, label="uv-ws")
+    ws_poetry = Workspace(
+        path=poetry_path,
+        ecosystem="py",
+        manager="poetry",
+        git_repo=poetry_path,
+        label="poetry-ws",
+    )
+    monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws_uv, ws_poetry])
+    monkeypatch.setattr(disc_mod, "merge_action_only_bundles", lambda b, *a, **kw: b)
+    processed: list[str] = []
+
+    def _process(wr: WorkspaceResult, **kw: object) -> WorkspaceResult:
+        processed.append(wr.workspace.manager)
+        wr.status = "ok"
+        return wr
+
+    monkeypatch.setattr(orch_mod, "process_workspace", _process)
+    rc = run_mod._run_upgrade_body(
+        apply=False,
+        args=upgrade_args(manager_filter="uv"),
+        roots=[str(tmp_path)],
+        fleet=False,
+    )
+    assert rc == 0
+    assert processed == ["uv"]

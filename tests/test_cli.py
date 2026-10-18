@@ -11,6 +11,8 @@ import pytest
 
 from repo_ops._register import register_all
 from repo_ops_core.cli import (
+    ECO_FILTER_CHOICES,
+    MANAGER_FILTER_CHOICES,
     build_upgrade_parser,
     positive_int,
 )
@@ -125,6 +127,27 @@ def test_apply_help_matches_wired_flags_and_defaults() -> None:
     assert "Skip verification (implies --no-commit)." in apply_help
     assert "--no-commit" in apply_help
     assert "--filter" in apply_help
+    assert "--manager" in apply_help
+    assert "--manager" in plan_help
     assert "--no-commit" not in plan_help
     assert "--no-verify" not in plan_help
     assert "Skip verification (implies --no-commit)." not in plan_help
+
+
+def test_upgrade_parser_manager_filter() -> None:
+    """--manager is the plugin names; --filter choices stay ecosystem-only."""
+    assert "uv" in MANAGER_FILTER_CHOICES
+    assert "container" not in MANAGER_FILTER_CHOICES
+    assert "precommit" not in MANAGER_FILTER_CHOICES
+    assert "actions" not in MANAGER_FILTER_CHOICES
+    assert "submodules" not in MANAGER_FILTER_CHOICES
+    parser = build_upgrade_parser(apply=True)
+    args = parser.parse_args(["--manager", "uv", "."])
+    assert args.manager_filter == "uv"
+    assert args.eco_filter is None
+    filter_help = parser._option_string_actions["--filter"].help
+    assert filter_help == "One ecosystem: " + "|".join(ECO_FILTER_CHOICES) + "."
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--manager", "container"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--manager", "npm", "--filter", "not-an-eco"])
