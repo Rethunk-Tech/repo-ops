@@ -4,15 +4,11 @@
 
 ## Test Plan
 
-- [ ] [Verification and testing](../docs/testing.md) passed (at minimum `uv run pytest` for code changes)
-- [ ] New behavior covered by tests (if applicable)
+- [ ] [docs/testing.md](../docs/testing.md) (at minimum `uv run pytest` for code changes)
+- [ ] New behavior covered by tests
 - [ ] Manual CLI check if user-facing behavior changed
 
 ## Documentation
 
-- [ ] `CONTRIBUTING.md` / `AGENTS.md` / `HUMANS.md` updated if conventions or processes changed
-- [ ] `README.md` Documentation table updated only if new top-level doc added
-
-## Related
-
-- See `CONTRIBUTING.md` for commit conventions and review process.
+- [ ] `CONTRIBUTING.md` / `AGENTS.md` / `HUMANS.md` if conventions changed
+- [ ] `README.md` table only if a new top-level doc was added
