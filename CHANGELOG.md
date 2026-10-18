@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.4] - 2026-10-18
+
+- feat(apply): digest-check rewritten container image refs
+- fix(apply): classify pre-commit-only apply as chore(hooks)
+- fix(apply): scope and classify leftover bun.lockb
+- feat(apply): add --manager to select a registered plugin
+- fix(apply): say why --no-verify skips the post-apply commit
+- fix(apply): enumerate container files in mixed commit subjects
+
 ## [0.25.3] - 2026-10-18
 
 ### Added
