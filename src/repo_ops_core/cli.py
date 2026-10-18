@@ -126,14 +126,14 @@ def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
         dest="exclude_patterns",
         default=None,
         metavar="PAT",
-        help="Skip discovered repos whose path matches PAT (substring or glob; repeatable).",
+        help="Skip discovered repos whose label or path matches PAT (substring or glob; repeatable).",
     )
     parser.add_argument(
         "--jobs",
         type=positive_int,
         default=None,
         metavar="N",
-        help="Parallel workers (default: cpus/4, capped to 8; each runs a full gate).",
+        help="Parallel workers (default: max(4, min(8, cpus/4))).",
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="Echo subprocesses.")
 
@@ -173,6 +173,6 @@ def build_upgrade_parser(*, apply: bool) -> argparse.ArgumentParser:
         parser.add_argument(
             "--no-verify",
             action="store_true",
-            help="Skip the repo gate (implies --no-commit).",
+            help="Skip verification (implies --no-commit).",
         )
     return parser

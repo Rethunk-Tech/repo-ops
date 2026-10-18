@@ -114,3 +114,17 @@ def test_upgrade_parser_exclude_repeatable():
     assert args.exclude_patterns == ["foo", "bar"]
     args_none = parser.parse_args([])
     assert args_none.exclude_patterns is None
+
+
+def test_apply_help_matches_wired_flags_and_defaults() -> None:
+    """apply --help must name the real jobs default, exclude match, and apply-only flags."""
+    apply_help = build_upgrade_parser(apply=True).format_help()
+    plan_help = build_upgrade_parser(apply=False).format_help()
+    assert "max(4, min(8, cpus/4))" in apply_help
+    assert "label or path" in apply_help
+    assert "Skip verification (implies --no-commit)." in apply_help
+    assert "--no-commit" in apply_help
+    assert "--filter" in apply_help
+    assert "--no-commit" not in plan_help
+    assert "--no-verify" not in plan_help
+    assert "Skip verification (implies --no-commit)." not in plan_help

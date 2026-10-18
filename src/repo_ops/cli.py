@@ -36,7 +36,7 @@ _SUBCOMMANDS: dict[str, _Subcommand] = {
     "apply": _Subcommand(
         main_apply,
         lambda: build_upgrade_parser(apply=True),
-        "Apply upgrades with verify gates",
+        "Update, verify and commit dependencies",
     ),
     "gates": _Subcommand(
         main_gates,

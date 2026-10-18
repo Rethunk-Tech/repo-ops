@@ -12,6 +12,8 @@ With no `root`, every command scans [`DEFAULT_ROOTS`](../src/repo_ops_core/const
 
 `plan` reports what `apply` would do and writes nothing, except that Yarn checks run `corepack prepare` in a temporary copy. `apply` makes the changes, runs remediations, verifies each workspace, and commits.
 
+Shared flags: `root ...`, `--exclude PAT`, `--jobs N` (default `max(4, min(8, cpus/4))`), `-v` / `--verbose`, `--filter ECO` (`node|go|rust|py|deno|container|precommit|actions|submodules`). `apply` also takes `--no-commit` and `--no-verify` (which implies `--no-commit`).
+
 Every run writes `$XDG_STATE_HOME/repo-ops/runs/<utc>-<cmd>/log` and `report.json` (the newest 50 runs are kept) and prints both paths last. The human report lists only repos with something to show; `report.json` has every row plus a `summary` block.
 
 ### What moves
@@ -40,7 +42,7 @@ Node monorepos cover every workspace member, each bumped from its own directory.
 
 ### Remediations
 
-After an update, `apply` runs the fixes the new versions need: Biome schema migration, Playwright browsers, a declared codegen script, the `packageManager` pin and Biome formatting of rewritten manifests for Node; `gofmt` for Go; `ruff check --fix` and `ruff format` for Python; `cargo fix` for Rust; Deno lint fixes. `plan` lists them.
+After an update, `apply` runs the fixes the new versions need: Biome schema migration, Playwright browsers, a declared codegen script, the `packageManager` pin and Biome formatting of rewritten manifests for Node; `gofmt` for Go; `ruff check --fix` and `ruff format` for Python; `cargo fmt` for Rust; `deno fmt` for Deno. `plan` lists them.
 
 ### Verify
 
@@ -65,7 +67,7 @@ Each verified repo gets one conventional commit staging only the files apply tou
 Two TOML files, read only:
 
 - Global: `$XDG_CONFIG_HOME/repo-ops/config.toml` (default `~/.config/repo-ops/config.toml`).
-- Per repo: `.repo-ops.toml` at the repo root. A workspace below the root may carry its own, read for `[verify]` only.
+- Per repo: `.repo-ops.toml` at the repo root. `[verify]` merges global, then this file, then a workspace `.repo-ops.toml` below the root (that nested file is read for `[verify]` only).
 
 Four keys:
 
@@ -75,9 +77,9 @@ exclude = ["archived-*", "vendor-fork"]   # repos to skip; unioned across files 
 # repo-relative path or glob (e.g. "go/__patterns/*"); the root workspace never matches.
 
 [verify]
-script = "build:prod"   # Node script to run instead of gate detection; "" skips the script step
+script = "build:prod"   # Node: this package.json script instead of gate; "" is lockfile check only
 skip = true             # skip verify for this repo or workspace
-timeout = 600           # seconds per verify command (default 60)
+timeout = 120           # seconds per verify command (default 60)
 
 [soup]
 path = "docs/SOUP.md"   # repo-relative table whose `name` | `version` rows follow each bump
