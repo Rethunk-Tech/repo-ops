@@ -852,6 +852,19 @@ def test_classify_single_ecosystem_unchanged() -> None:
     assert post_apply_commit.classify_commit_subject([".github/workflows/ci.yml"]) == (
         "chore(ci): bump GitHub Actions pins"
     )
+    assert post_apply_commit.classify_commit_subject([".pre-commit-config.yaml"]) == (
+        "chore(hooks): bump pre-commit hook pins"
+    )
+    assert post_apply_commit.classify_commit_subject([".pre-commit-config.yml"]) == (
+        "chore(hooks): bump pre-commit hook pins"
+    )
+
+
+def test_classify_mixed_precommit_and_node() -> None:
+    subject = post_apply_commit.classify_commit_subject([".pre-commit-config.yaml", "yarn.lock"])
+    assert "Node" in subject
+    assert "hook" in subject
+    assert subject != "chore(deps): update Node lockfiles and manifests"
 
 
 # ---------------------------------------------------------------------------

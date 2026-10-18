@@ -458,6 +458,7 @@ def classify_commit_subject(files: list[str]) -> str:
         for n in names
     )
     has_container = any(_is_container_basename(n) for n in names)
+    has_hooks = any(n in (".pre-commit-config.yaml", ".pre-commit-config.yml") for n in names)
 
     dep_parts: list[str] = []
     if has_go:
@@ -475,12 +476,16 @@ def classify_commit_subject(files: list[str]) -> str:
 
     has_deps = bool(dep_parts)
 
-    if not has_deps and not has_ci:
+    if not has_deps and not has_ci and not has_hooks:
         return "chore(deps): apply repo-ops dependency updates"
-    if has_ci and not has_deps:
+    if has_hooks and not has_deps and not has_ci:
+        return "chore(hooks): bump pre-commit hook pins"
+    if has_ci and not has_deps and not has_hooks:
         # Actions-only: keep the original single-ecosystem subject.
         return "chore(ci): bump GitHub Actions pins"
-    if has_deps and not has_ci:
+    if has_ci and has_hooks and not has_deps:
+        return "chore(hooks,ci): bump pre-commit hook pins and CI pins"
+    if has_deps and not has_ci and not has_hooks:
         if len(dep_parts) == 1:
             # Single ecosystem: keep the original subject wording.
             labels = {
@@ -497,12 +502,20 @@ def classify_commit_subject(files: list[str]) -> str:
         # Multiple dep ecosystems, no CI: "deps" scope, enumerate them.
         parts_str = ", ".join(dep_parts[:-1]) + ", and " + dep_parts[-1]
         return f"chore(deps): update {parts_str}"
-    # Mixed deps + CI pins.
     if len(dep_parts) == 1:
         parts_str = dep_parts[0]
     else:
         parts_str = ", ".join(dep_parts[:-1]) + ", and " + dep_parts[-1]
-    return f"chore(deps,ci): update {parts_str} and CI pins"
+    extras: list[str] = []
+    scopes = ["deps"]
+    if has_hooks:
+        extras.append("hook pins")
+        scopes.append("hooks")
+    if has_ci:
+        extras.append("CI pins")
+        scopes.append("ci")
+    extra_str = " and " + " and ".join(extras)
+    return f"chore({','.join(scopes)}): update {parts_str}{extra_str}"
 
 
 def build_conventional_message(bundle: RepoBundle, files: list[str]) -> str:

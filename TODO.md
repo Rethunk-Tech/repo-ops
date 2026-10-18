@@ -48,36 +48,6 @@ section and leave the registry alone.
 3. Otherwise write measured-not-worth into this section and do not add an
    ecosystem, a plugin package, or a README line.
 
-## precommit apply still uses the generic commit subject
-
-Root `.pre-commit-config.yaml` is now in commit scope. The subject for
-that path alone is still `chore(deps): apply repo-ops dependency
-updates` because `classify_commit_subject` has no precommit basenames.
-
-Adding a `precommit` part changes that subject string (a contract for
-anyone matching it) and must decide `chore(deps)` vs `chore(hooks)`.
-
-### Read
-
-1. `src/repo_ops_upgrade/post_apply_commit.py:370` `classify_commit_subject`.
-2. `src/repo_ops_upgrade/post_apply_commit.py` `_manifest_names_for_manager`
-   for `precommit`.
-3. `src/repo_ops_upgrade/precommit.py:41` the two config basenames.
-
-### Traps
-
-- Only `.pre-commit-config.yaml` and `.pre-commit-config.yml`. Do not
-  match `.pre-commit-hooks.yaml` (that's an upstream hook repo's
-  hook definition, not this checkout's pin file).
-
-### Acceptance
-
-- `classify_commit_subject([".pre-commit-config.yaml"])` is a dedicated
-  conventional subject, documented next to the other single-ecosystem
-  strings in `test_classify_single_ecosystem_unchanged`.
-- Mixed precommit + Node enumerates both. Node-only and CI-only strings
-  stay identical.
-
 ## container verify is a no-op
 
 `verify_workspace` returns `None` for `manager == "container"` with a
