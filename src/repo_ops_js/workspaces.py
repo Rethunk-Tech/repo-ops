@@ -27,6 +27,17 @@ KNOWN_PACKAGE_MANAGERS = frozenset({"npm", "pnpm", "yarn", "bun"})
 COREPACK_MANAGERS = frozenset({"npm", "pnpm", "yarn"})
 
 
+def pm_argv(manager: str, *args: str) -> list[str]:
+    """Invoke a Node package manager without relying on a process-global shim.
+
+    ``corepack <pm> …`` reads ``packageManager`` for that cwd, so parallel
+    applies cannot steal an ``--activate``d default from each other.
+    """
+    if manager in COREPACK_MANAGERS:
+        return ["corepack", manager, *args]
+    return [manager, *args]
+
+
 def pm_exec_prefix(manager: str) -> list[str]:
     return {
         "yarn": ["yarn"],
@@ -121,10 +132,10 @@ def corepack_prepare(manager: str, mdir: Path) -> None:
         return
     if pm.split("@", 1)[0].strip().lower() not in COREPACK_MANAGERS:
         return
-    proc_prepare = run(["corepack", "prepare", pm, "--activate"], mdir, timeout=120)
+    proc_prepare = run(["corepack", "prepare", pm], mdir, timeout=120)
     if proc_prepare.returncode != 0:
         print(
-            f"WARN corepack prepare {pm} --activate failed: {_proc_error(proc_prepare)}",
+            f"WARN corepack prepare {pm} failed: {_proc_error(proc_prepare)}",
             file=sys.stderr,
         )
 
@@ -241,7 +252,7 @@ def apply_with_members(
         merge_changes(behind, _in_member(apply_dir(member, ws.path), ws, member))
     if peer_lockstep(ws, [], write=True):
         # bun.lock mirrors member peer ranges and --frozen-lockfile passes a stale copy.
-        proc = run([ws.manager, "install"], ws.path, timeout=TIMEOUT_APPLY)
+        proc = run(pm_argv(ws.manager, "install"), ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             raise RuntimeError(f"{ws.manager} install after peer lockstep: {_proc_error(proc)}")
     return behind

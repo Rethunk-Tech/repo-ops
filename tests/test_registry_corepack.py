@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from repo_ops_js.workspaces import corepack_prepare
+from repo_ops_js.workspaces import corepack_prepare, pm_argv
 from repo_ops_models import Change, Workspace
 from repo_ops_upgrade import registry
 
@@ -163,8 +163,9 @@ def test_corepack_prepare_activates_supported_managers(manager: str, tmp_path: P
 
     assert calls == [
         ["corepack", "enable"],
-        ["corepack", "prepare", f"{manager}@1.2.3", "--activate"],
+        ["corepack", "prepare", f"{manager}@1.2.3"],
     ]
+    assert all("--activate" not in c for c in calls)
 
 
 def test_corepack_prepare_skips_unsupported_manager_pin(tmp_path: Path) -> None:
@@ -176,6 +177,11 @@ def test_corepack_prepare_skips_unsupported_manager_pin(tmp_path: Path) -> None:
         corepack_prepare("yarn", tmp_path)
 
     assert calls == [["corepack", "enable"]]
+
+
+def test_pm_argv_invokes_via_corepack_without_activate() -> None:
+    assert pm_argv("yarn", "install") == ["corepack", "yarn", "install"]
+    assert pm_argv("bun", "install") == ["bun", "install"]
 
 
 def test_corepack_prepare_warn_falls_back_to_stdout(tmp_path: Path, capsys) -> None:
@@ -192,5 +198,5 @@ def test_corepack_prepare_warn_falls_back_to_stdout(tmp_path: Path, capsys) -> N
         corepack_prepare("yarn", tmp_path)
 
     err = capsys.readouterr().err
-    assert "WARN corepack prepare yarn@4.10.3 --activate failed:" in err
+    assert "WARN corepack prepare yarn@4.10.3 failed:" in err
     assert "Unsupported package manager specification" in err

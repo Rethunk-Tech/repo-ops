@@ -9,7 +9,7 @@ from pathlib import Path
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.holds import target_within_hold
-from repo_ops_core.process import run
+from repo_ops_core.process import run as _process_run
 from repo_ops_js.guards import (
     assert_targets_resolved,
     fold_blocked_into_behind,
@@ -24,13 +24,27 @@ from repo_ops_js.holds import (
 from repo_ops_js.overrides import release_unheld_pin
 from repo_ops_js.targeted_bump import run_targeted_bump
 from repo_ops_js.workspaces import (
+    COREPACK_MANAGERS,
     apply_with_members,
     check_with_members,
     member_workspaces,
     merge_changes,
+    pm_argv,
 )
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
+
+
+def run(
+    cmd: list[str],
+    cwd: Path | str,
+    timeout: float = 300,
+    env: dict[str, str] | None = None,
+    stdin: str | None = None,
+):
+    if cmd and cmd[0] in COREPACK_MANAGERS:
+        cmd = pm_argv(cmd[0], *cmd[1:])
+    return _process_run(cmd, cwd, timeout=timeout, env=env, stdin=stdin)
 
 
 def _save_flag_for(name: str, pkg_data: dict[str, object]) -> list[str]:
