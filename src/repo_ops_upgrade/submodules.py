@@ -380,18 +380,6 @@ def _target_within_hold(link: SubmoduleLink, target_tag: str) -> bool:
     return target_within_hold(target_tag, _resolve_submodule_hold(link))
 
 
-def _resolve_hold_tag_target(current_tag: str, tags: list[str], rule: HoldRule) -> str | None:
-    """Return the highest tag at or below *rule* when *current_tag* violates it."""
-    return holds.resolve_hold_tag_target(current_tag, tags, rule, context="submodule")
-
-
-def _matching_sha_tags(
-    current_sha: str, refs: list[tuple[str, str]]
-) -> list[tuple[tuple[int, ...], str, str]]:
-    """Return semver tags attached to *current_sha*."""
-    return holds.matching_sha_tags(current_sha, refs, context="submodule")
-
-
 def _resolve_hold_sha_target(
     current_sha: str, refs: list[tuple[str, str]], rule: HoldRule
 ) -> str | None:
@@ -511,7 +499,9 @@ def check_submodule_tag_advances(
 
         hold = _resolve_submodule_hold(link)
         if hold is not None:
-            hold_target = _resolve_hold_tag_target(current_tag, tags, hold)
+            hold_target = holds.resolve_hold_tag_target(
+                current_tag, tags, hold, context="submodule"
+            )
             if hold_target is not None:
                 bumps.append(
                     SubmoduleTagBump(
@@ -660,7 +650,7 @@ def _enforce_version_ceilings(links: list[SubmoduleLink], *, allow_dirty: bool) 
                         "while resolving SHA pin"
                     )
                 continue
-            matching_tags = _matching_sha_tags(current_sha or "", refs)
+            matching_tags = holds.matching_sha_tags(current_sha or "", refs, context="submodule")
             if not matching_tags:
                 continue
             _, current_tag, _ = max(matching_tags, key=lambda item: (item[0], item[1]))
@@ -683,7 +673,7 @@ def _enforce_version_ceilings(links: list[SubmoduleLink], *, allow_dirty: bool) 
                     f"{rule.max_version} (submodule): tag fetch failed "
                     "while resolving tag pin"
                 )
-            target_tag = _resolve_hold_tag_target(current_tag, tags, rule)
+            target_tag = holds.resolve_hold_tag_target(current_tag, tags, rule, context="submodule")
             if target_tag is None:
                 raise RuntimeError(
                     f"hold: failed to clamp {link.path} back to <="

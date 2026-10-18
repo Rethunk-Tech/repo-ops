@@ -154,14 +154,9 @@ def _repo_short_name(repo_url: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_precommit_hold(ws: Workspace, package: str) -> HoldRule | None:
-    """Return the active pre-commit hold for *package*, if any."""
-    return resolve_package_hold(ws, package)
-
-
 def _target_within_hold(ws: Workspace, package: str, target_version: str) -> bool:
     """Return whether a resolved tag target is allowed by its active hold."""
-    return target_within_hold(target_version, _resolve_precommit_hold(ws, package))
+    return target_within_hold(target_version, resolve_package_hold(ws, package))
 
 
 # ---------------------------------------------------------------------------
@@ -235,29 +230,6 @@ def _clear_tag_cache() -> None:
         _TAG_REF_CACHE.clear()
 
 
-def _resolve_sha_refresh(
-    current_sha: str, refs: list[tuple[str, str]]
-) -> tuple[str, str, str] | None:
-    """Resolve a SHA pin to the newest digest within its tagged major.
-
-    The tags attached to the pinned commit establish the hook's version intent.
-    The target keeps that tag's prefix style and major.
-    """
-    return tag_utils.resolve_sha_refresh(current_sha, refs, context="pre-commit")
-
-
-def _resolve_hold_tag_target(current_rev: str, tags: list[str], rule: HoldRule) -> str | None:
-    """Return the highest tag at or below *rule* when *current_rev* violates it."""
-    return holds.resolve_hold_tag_target(current_rev, tags, rule, context="pre-commit")
-
-
-def _matching_sha_tags(
-    current_sha: str, refs: list[tuple[str, str]]
-) -> list[tuple[tuple[int, ...], str, str]]:
-    """Return semver tags attached to *current_sha*."""
-    return holds.matching_sha_tags(current_sha, refs, context="pre-commit")
-
-
 def _resolve_hold_sha_target(
     current_sha: str, refs: list[tuple[str, str]], rule: HoldRule
 ) -> str | None:
@@ -303,7 +275,7 @@ def check_precommit(ws: Workspace) -> list[Change]:
 
         # SHA-pinned: report-only unless the tag history can establish intent.
         if _is_sha_rev(rev):
-            hold = _resolve_precommit_hold(ws, label)
+            hold = resolve_package_hold(ws, label)
             refs: list[tuple[str, str]] | None = None
             if hold is not None:
                 refs = _fetch_tag_refs_for_repo(repo_url)
@@ -313,7 +285,7 @@ def check_precommit(ws: Workspace) -> list[Change]:
                         changes.append(Change(name=label, from_ver=rev, to=hold_target))
                         continue
             refs = refs if refs is not None else _fetch_tag_refs_for_repo(repo_url)
-            resolved = _resolve_sha_refresh(rev, refs or [])
+            resolved = tag_utils.resolve_sha_refresh(rev, refs or [], context="pre-commit")
             if resolved is not None:
                 latest_sha, _current_tag, latest_tag = resolved
                 if not _target_within_hold(ws, label, latest_tag):
@@ -352,9 +324,9 @@ def check_precommit(ws: Workspace) -> list[Change]:
             )
             continue
 
-        hold = _resolve_precommit_hold(ws, label)
+        hold = resolve_package_hold(ws, label)
         if hold is not None:
-            hold_target = _resolve_hold_tag_target(rev, tags, hold)
+            hold_target = holds.resolve_hold_tag_target(rev, tags, hold, context="pre-commit")
             if hold_target is not None:
                 changes.append(Change(name=label, from_ver=rev, to=hold_target))
                 continue
@@ -383,7 +355,7 @@ def _enforce_version_ceilings(ws: Workspace, repos: list[dict[str, Any]]) -> dic
         rev: str = entry["rev"]
         line_no: int = entry["rev_line_no"]
         package = _repo_short_name(repo_url)
-        rule = _resolve_precommit_hold(ws, package)
+        rule = resolve_package_hold(ws, package)
         if rule is None:
             continue
 
@@ -394,7 +366,7 @@ def _enforce_version_ceilings(ws: Workspace, repos: list[dict[str, Any]]) -> dic
                     f"hold: failed to clamp {package} back to <={rule.max_version} "
                     "(pre-commit): tag fetch failed while resolving SHA pin"
                 )
-            matching_tags = _matching_sha_tags(rev, refs)
+            matching_tags = holds.matching_sha_tags(rev, refs, context="pre-commit")
             if not matching_tags:
                 continue
             _, current_tag, _ = max(matching_tags, key=lambda item: (item[0], item[1]))
@@ -415,7 +387,7 @@ def _enforce_version_ceilings(ws: Workspace, repos: list[dict[str, Any]]) -> dic
                     f"hold: failed to clamp {package} back to <={rule.max_version} "
                     "(pre-commit): tag fetch failed while resolving tag rev"
                 )
-            target = _resolve_hold_tag_target(rev, tags, rule)
+            target = holds.resolve_hold_tag_target(rev, tags, rule, context="pre-commit")
             if target is None:
                 raise RuntimeError(
                     f"hold: failed to clamp {package} back to <={rule.max_version} "
@@ -475,7 +447,7 @@ def apply_precommit(ws: Workspace) -> None:
 
         if _is_sha_rev(from_ver):
             refs = _fetch_tag_refs_for_repo(repo_url)
-            resolved = _resolve_sha_refresh(from_ver, refs or [])
+            resolved = tag_utils.resolve_sha_refresh(from_ver, refs or [], context="pre-commit")
             if resolved is not None:
                 new_sha, _current_tag, latest_tag = resolved
                 if not _target_within_hold(ws, _repo_short_name(repo_url), latest_tag):
