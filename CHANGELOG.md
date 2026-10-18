@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.3] - 2026-10-18
+
 ### Added
 
 - The `gates` `report.json` summary includes `record_partial`, the count of
@@ -33,10 +35,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `apply` commits only owned edits, vetoes on action fail, restores a 600s
+  timeout, keeps Actions and submodule work on their filters, includes the
+  SOUP table in the deps commit, and stages Deno, pip-tools, precommit, and
+  Python files ruff rewrites. Post-apply collection covers Deno manifests and
+  Cargo.toml. Untrusted paths are contained; gh tokens are discarded.
+- `apply` snapshots pip-tools `requirements.in` for revert, treats unset
+  `no_verify` as false on mock args, verifies gitignored lockfile writes, and
+  reinstalls poetry, pipenv, rust, go, deno, and pip-tools on revert. Nested
+  `package.json` objects stay inside dep sections.
+- Submodule bumps fail when fetch or checkout fails. SOUP versions resolve
+  from the workspace lockfile. JS Corepack runs without activating a shared
+  shim. Verify runs gate for Deno and fails without a compiler, and runs
+  pytest instead of collecting tests.
 - `gates --skip-fresh` treats a fresh partial pass as not fresh enough to
   skip. `partial: true` with exit 0 still runs `gate`. A fresh non-partial
   pass still skips.
-
 - `gates` names a timed-out or interrupted gate, and its log, from gate's
   result record. The text summary is used only when that record is not this run.
 - `gates` reads result schema 2, and only when `status` is this working tree.
@@ -44,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `gates` leaves out e2e gates the way `verify` does. `gates --e2e` runs them.
   The summary counts the repo for the gates that ran, and prints how many e2e
   gates were left out.
+- Local `gate` caps pytest-xdist at 8 workers.
 
 ## [0.25.2] - 2026-10-09
 
@@ -1006,7 +1021,8 @@ Note: `v0.20.1` was tagged but its release build failed the `ruff format --check
 
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.2...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.3...HEAD
+[0.25.3]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.2...v0.25.3
 [0.25.2]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.24.0...v0.25.0
