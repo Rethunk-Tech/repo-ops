@@ -132,6 +132,56 @@ def test_apply_submodule_tag_advances_invoked_via_run(
     )
 
 
+def test_apply_filter_node_skips_actions_and_submodules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo
+) -> None:
+    """``apply --filter node`` must not rewrite Actions pins or checkout submodule tags."""
+    import repo_ops_upgrade.discovery as disc
+    import repo_ops_upgrade.run as run_mod
+    import repo_ops_upgrade.submodules as sub_mod
+
+    root = tmp_path / "root"
+    repo = root / "myrepo"
+    repo.mkdir(parents=True)
+    init_git_repo(repo, commit=True, filename="file.txt", content="v1\n")
+
+    merge_calls: list[object] = []
+    scan_calls: list[object] = []
+    sub_calls: list[object] = []
+
+    monkeypatch.setattr(disc, "discover_all", lambda *a, **kw: [])
+    monkeypatch.setattr(disc, "group_by_repo", lambda *a, **kw: {})
+    monkeypatch.setattr(
+        run_mod.workspace_discovery,
+        "merge_action_only_bundles",
+        lambda *a, **kw: merge_calls.append(a) or {},
+    )
+    monkeypatch.setattr(
+        run_mod.actions, "scan_actions", lambda *a, **kw: scan_calls.append(a) or ([], 0)
+    )
+    monkeypatch.setattr(
+        run_mod.submodules,
+        "apply_submodule_tag_advances",
+        lambda *a, **kw: sub_calls.append(a) or [],
+    )
+    fake_link = SubmoduleLink(
+        path="sub",
+        git_repo=(repo / "sub").resolve(),
+        parent=repo.resolve(),
+        url="https://example.com/sub.git",
+    )
+    monkeypatch.setattr(sub_mod, "discover_submodules_under_roots", lambda *a, **kw: [fake_link])
+
+    import contextlib
+
+    with contextlib.suppress(SystemExit):
+        run_mod.run_upgrade(apply=True, argv=["--filter", "node", str(root)])
+
+    assert merge_calls == []
+    assert scan_calls == []
+    assert sub_calls == []
+
+
 # ---------------------------------------------------------------------------
 # 2. Gitlink pointer is included in upgrade_scoped_paths (committed, not left dirty)
 # ---------------------------------------------------------------------------

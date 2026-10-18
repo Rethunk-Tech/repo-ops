@@ -137,7 +137,8 @@ def _run_upgrade_body(
     found = orchestration.filter_workspaces(found, args.eco_filter, None)
 
     bundles = workspace_discovery.group_by_repo(found, roots)
-    bundles = workspace_discovery.merge_action_only_bundles(bundles, roots)
+    if args.eco_filter in (None, "actions"):
+        bundles = workspace_discovery.merge_action_only_bundles(bundles, roots)
 
     _repo_cfgs = {bundle.git_repo: load_repo_config(bundle.git_repo) for bundle in bundles.values()}
     exclude_patterns: list[str] = getattr(args, "exclude_patterns", None) or []
@@ -335,70 +336,71 @@ def _run_upgrade_body(
     # The cache is shared across threads; we copy-in before each slow API
     # call and merge-in after under lock to avoid dict mutation races.
     run_tag_cache: dict[str, dict | None] = {}
-    actions.load_tag_cache_into(run_tag_cache)
-    _tag_cache_lock = threading.Lock()
+    if args.eco_filter in (None, "actions"):
+        actions.load_tag_cache_into(run_tag_cache)
+        _tag_cache_lock = threading.Lock()
 
-    def _scan_one_bundle_actions(bundle: RepoBundle) -> None:
-        if apply and (bundle.any_fail() or bundle.any_dirty_skip()):
-            return
-        local_cache: dict[str, dict | None] = {}
-        with _tag_cache_lock:
-            local_cache.update(run_tag_cache)
-        repo_exclude = _repo_cfgs.get(bundle.git_repo, {}).get("exclude")
-        if isinstance(repo_exclude, str):
-            repo_exclude = [repo_exclude]
-        try:
-            bumps, count = actions.scan_actions(
-                bundle.git_repo,
-                apply=apply,
-                tag_cache=local_cache,
-                exclude_patterns=repo_exclude or None,
-            )
-        except Exception as exc:
-            # Isolate: a non-WorkflowParseError (e.g. OSError writing a
-            # workflow) must surface as a FAILED actions entry rather than
-            # propagating through the pool and tearing down the whole run
-            # AFTER lockfiles were already mutated on disk (#TASK-2).
-            bundle.actions = [
-                ActionBump(
-                    workflow="(error)",
-                    action="(worker)",
-                    pin="",
-                    latest="",
-                    status="fail",
-                    detail=str(exc),
+        def _scan_one_bundle_actions(bundle: RepoBundle) -> None:
+            if apply and (bundle.any_fail() or bundle.any_dirty_skip()):
+                return
+            local_cache: dict[str, dict | None] = {}
+            with _tag_cache_lock:
+                local_cache.update(run_tag_cache)
+            repo_exclude = _repo_cfgs.get(bundle.git_repo, {}).get("exclude")
+            if isinstance(repo_exclude, str):
+                repo_exclude = [repo_exclude]
+            try:
+                bumps, count = actions.scan_actions(
+                    bundle.git_repo,
+                    apply=apply,
+                    tag_cache=local_cache,
+                    exclude_patterns=repo_exclude or None,
                 )
-            ]
-            bundle.actions_workflows_scanned = 0
-            return
-        with _tag_cache_lock:
-            run_tag_cache.update(local_cache)
-        bundle.actions = bumps
-        bundle.actions_workflows_scanned = count
+            except Exception as exc:
+                # Isolate: a non-WorkflowParseError (e.g. OSError writing a
+                # workflow) must surface as a FAILED actions entry rather than
+                # propagating through the pool and tearing down the whole run
+                # AFTER lockfiles were already mutated on disk (#TASK-2).
+                bundle.actions = [
+                    ActionBump(
+                        workflow="(error)",
+                        action="(worker)",
+                        pin="",
+                        latest="",
+                        status="fail",
+                        detail=str(exc),
+                    )
+                ]
+                bundle.actions_workflows_scanned = 0
+                return
+            with _tag_cache_lock:
+                run_tag_cache.update(local_cache)
+            bundle.actions = bumps
+            bundle.actions_workflows_scanned = count
 
-    # One batched lookup for every action the fleet references, before the pool
-    # asks for them one at a time. Only repo names are needed here, so the
-    # workflows are skimmed rather than parsed; scan_actions parses them
-    # properly a moment later and a name this misses just takes the REST path.
-    _all_uses: list[str] = []
-    for _bundle in bundles.values():
-        for _wf in actions.discover_workflow_files(
-            _bundle.git_repo
-        ) + actions.discover_action_files(_bundle.git_repo):
-            with contextlib.suppress(OSError):
-                _all_uses.extend(actions.skim_workflow_uses(_wf))
-    if _all_uses:
-        actions.prefetch_tag_info(_all_uses, run_tag_cache)
+        # One batched lookup for every action the fleet references, before the pool
+        # asks for them one at a time. Only repo names are needed here, so the
+        # workflows are skimmed rather than parsed; scan_actions parses them
+        # properly a moment later and a name this misses just takes the REST path.
+        _all_uses: list[str] = []
+        for _bundle in bundles.values():
+            for _wf in actions.discover_workflow_files(
+                _bundle.git_repo
+            ) + actions.discover_action_files(_bundle.git_repo):
+                with contextlib.suppress(OSError):
+                    _all_uses.extend(actions.skim_workflow_uses(_wf))
+        if _all_uses:
+            actions.prefetch_tag_info(_all_uses, run_tag_cache)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as _actions_pool:
-        list(_actions_pool.map(_scan_one_bundle_actions, list(bundles.values())))
-    actions.save_tag_cache_from(run_tag_cache)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as _actions_pool:
+            list(_actions_pool.map(_scan_one_bundle_actions, list(bundles.values())))
+        actions.save_tag_cache_from(run_tag_cache)
 
     # Submodule tag advances (apply-only).
     # Runs BEFORE pointer_hints so that staged gitlinks are visible to the
     # hint scan and are committed by the post-apply commit phase.
     submodule_gitlink_map: dict[Path, set[str]] = {}
-    if apply and submodule_links:
+    if apply and submodule_links and args.eco_filter in (None, "submodules"):
         _sub_bumps = submodules.apply_submodule_tag_advances(
             submodule_links,
             allow_dirty=allow_dirty,

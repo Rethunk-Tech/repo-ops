@@ -30,6 +30,7 @@ ECO_FILTER_CHOICES = (
     "container",
     "precommit",
     "actions",
+    "submodules",
 )
 PLAN_EPILOG = """\
 exit codes: 0 nothing to do, 1 drift exists.
