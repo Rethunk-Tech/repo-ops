@@ -6,7 +6,8 @@ import configparser
 import contextlib
 import logging
 import os
-from dataclasses import dataclass, field
+import sys
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -571,9 +572,11 @@ def apply_submodule_tag_advances(
     so the caller can report all findings in one pass.
     """
     bumps = check_submodule_tag_advances(links)
+    applied: list[SubmoduleTagBump] = []
 
     for bump in bumps:
         if not bump.is_actionable:
+            applied.append(bump)
             continue
         submod_dir = bump.git_repo
 
@@ -581,6 +584,7 @@ def apply_submodule_tag_advances(
         # changes — checking out a new tag over a dirty tree risks data loss.
         # Mirrors the allow_dirty guard in orchestration.py.
         if not allow_dirty and is_git_dirty(submod_dir):
+            applied.append(bump)
             continue
 
         try:
@@ -594,9 +598,12 @@ def apply_submodule_tag_advances(
                 env={**os.environ, "GIT_ALLOW_PROTOCOL": "https:ssh"},
                 timeout=120,
             )
-        except (FileNotFoundError, OSError):
+        except (FileNotFoundError, OSError) as exc:
+            applied.append(_fail_submodule_advance(bump, f"fetch failed: {exc}"))
             continue
         if fetch_proc.returncode != 0:
+            err = (fetch_proc.stderr or fetch_proc.stdout or "git fetch failed").strip()
+            applied.append(_fail_submodule_advance(bump, f"fetch failed: {err}"))
             continue
 
         try:
@@ -609,18 +616,29 @@ def apply_submodule_tag_advances(
                 f"refs/tags/{bump.latest_tag}",
                 timeout=30,
             )
-        except (FileNotFoundError, OSError):
+        except (FileNotFoundError, OSError) as exc:
+            applied.append(_fail_submodule_advance(bump, f"checkout failed: {exc}"))
             continue
         if checkout_proc.returncode != 0:
+            err = (checkout_proc.stderr or checkout_proc.stdout or "git checkout failed").strip()
+            applied.append(_fail_submodule_advance(bump, f"checkout failed: {err}"))
             continue
 
         # Stage the updated gitlink in the parent.  A failure here is unlikely
         # (checkout succeeded) but non-fatal — the caller can commit manually.
         with contextlib.suppress(FileNotFoundError, OSError):
             run_git(bump.parent, "add", bump.path, timeout=30)
+        applied.append(bump)
 
     _enforce_version_ceilings(links, allow_dirty=allow_dirty)
-    return bumps
+    return applied
+
+
+def _fail_submodule_advance(bump: SubmoduleTagBump, reason: str) -> SubmoduleTagBump:
+    """Log a failed fetch/checkout and mark the bump so gitlink staging skips it."""
+    logger.warning("submodule %s: %s", bump.path, reason)
+    print(f"WARN submodule {bump.path}: {reason}", file=sys.stderr)
+    return replace(bump, latest_tag=f"{_REPORT_ONLY_PREFIX}{reason}")
 
 
 def _enforce_version_ceilings(links: list[SubmoduleLink], *, allow_dirty: bool) -> None:

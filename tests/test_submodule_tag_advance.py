@@ -395,7 +395,7 @@ def test_apply_refreshes_sha_only_pin(
     assert mock_git.call_args_list[1][0][3] == "refs/tags/v1.1.0"
 
 
-def test_apply_continues_on_fetch_failure(tmp_path: Path, make_proc) -> None:
+def test_apply_continues_on_fetch_failure(tmp_path: Path, make_proc, capsys) -> None:
     """A failing fetch for one submodule does not abort others."""
     link_a = _make_link(tmp_path, path="sub-a", url="https://example.com/a.git")
     link_b = _make_link(tmp_path, path="sub-b", url="https://example.com/b.git")
@@ -421,7 +421,11 @@ def test_apply_continues_on_fetch_failure(tmp_path: Path, make_proc) -> None:
     ):
         bumps = apply_submodule_tag_advances([link_a, link_b])
 
-    assert len([b for b in bumps if b.is_actionable]) == 2
+    assert len([b for b in bumps if b.is_actionable]) == 1
+    failed = next(b for b in bumps if not b.is_actionable)
+    assert failed.path == "sub-a"
+    assert "fetch failed" in failed.latest_tag
+    assert "WARN submodule sub-a" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------
