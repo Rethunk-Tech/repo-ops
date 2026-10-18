@@ -66,7 +66,10 @@ class CommitOutcome:
 def is_forbidden_commit_path(path: str) -> bool:
     """True when path must never be staged for an automated deps commit."""
     norm = path.replace("\\", "/").strip()
-    base = Path(norm).name
+    candidate = Path(norm)
+    if not norm or candidate.is_absolute() or ".." in candidate.parts:
+        return True
+    base = candidate.name
     lower_base = base.lower()
     if lower_base in _FORBIDDEN_BASENAMES or base in _FORBIDDEN_BASENAMES:
         return True

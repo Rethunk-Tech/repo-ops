@@ -19,7 +19,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from repo_ops_core.exclude import workspace_matches_exclude
-from repo_ops_core.filesystem import write_json_atomic
+from repo_ops_core.filesystem import is_under_root, write_json_atomic
 from repo_ops_core.git import github_owner_repo, github_remote
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
@@ -39,6 +39,7 @@ _TAG_CACHE: dict[str, dict | None] = {}
 # reuse costs at most one sweep's delay on a bump and saves a `gh api` round
 # trip per action on every run.
 _TAG_CACHE_MAX_AGE_S = 6 * 60 * 60
+_GITHUB_OWNER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
 
 
 def _tag_cache_path() -> Path:
@@ -256,6 +257,10 @@ def _fetch_org_policy_cached(owner: str, store: dict[str, dict | None]) -> dict 
     if owner in store:
         return store[owner]
 
+    if not _GITHUB_OWNER_RE.fullmatch(owner):
+        store[owner] = None
+        return None
+
     if not shutil.which("gh"):
         store[owner] = None
         return None
@@ -267,7 +272,8 @@ def _fetch_org_policy_cached(owner: str, store: dict[str, dict | None]) -> dict 
             text=True,
             timeout=15,
         )
-    except Exception:
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        logger.debug("org policy fetch failed for %s: %s", owner, exc)
         store[owner] = None
         return None
 
@@ -278,7 +284,8 @@ def _fetch_org_policy_cached(owner: str, store: dict[str, dict | None]) -> dict 
 
     try:
         data: object = json.loads(proc.stdout)
-    except Exception:
+    except ValueError as exc:
+        logger.debug("org policy JSON invalid for %s: %s", owner, exc)
         store[owner] = None
         return None
 
@@ -395,7 +402,8 @@ def _github_token_available() -> bool:
     The policy fetch shells out to ``gh api``, so the question is whether ``gh``
     itself is authenticated rather than whether any particular variable is set;
     ``gh auth token`` answers exactly that and honors the same precedence gh
-    uses for the real call. Any failure means no policy fetch, which is a
+    uses for the real call. Stdout is discarded so the token never lands in
+    the CompletedProcess. Any failure means no policy fetch, which is a
     skipped annotation rather than a failed run.
     """
     if not shutil.which("gh"):
@@ -403,21 +411,25 @@ def _github_token_available() -> bool:
     try:
         proc = subprocess.run(
             ["gh", "auth", "token"],
-            capture_output=True,
-            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             timeout=10,
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return False
-    return proc.returncode == 0 and bool(proc.stdout.strip())
+    return proc.returncode == 0
 
 
 def discover_workflow_files(repo: Path) -> list[Path]:
     wf_dir = repo / ".github" / "workflows"
     if not wf_dir.is_dir():
         return []
-    return sorted(p for p in wf_dir.iterdir() if p.suffix in (".yml", ".yaml") and p.is_file())
+    return sorted(
+        p
+        for p in wf_dir.iterdir()
+        if p.suffix in (".yml", ".yaml") and p.is_file() and is_under_root(repo, p)
+    )
 
 
 def discover_action_files(repo: Path) -> list[Path]:
@@ -428,12 +440,19 @@ def discover_action_files(repo: Path) -> list[Path]:
     workflows which only live in ``.github/workflows/``, so this walks the
     whole repo rather than a fixed directory.
     """
-    return sorted(
-        p
-        for pattern in ("action.yml", "action.yaml")
-        for p in repo.rglob(pattern)
-        if p.is_file() and ".git" not in p.relative_to(repo).parts
-    )
+    found: list[Path] = []
+    for pattern in ("action.yml", "action.yaml"):
+        for p in repo.rglob(pattern):
+            if not p.is_file():
+                continue
+            try:
+                rel_parts = p.relative_to(repo).parts
+            except ValueError:
+                continue
+            if ".git" in rel_parts or not is_under_root(repo, p):
+                continue
+            found.append(p)
+    return sorted(found)
 
 
 def _filter_excluded(paths: list[Path], repo: Path, patterns: list[str] | None) -> list[Path]:

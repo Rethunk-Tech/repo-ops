@@ -32,6 +32,8 @@ def test_forbidden_env_blocks_commit() -> None:
     assert post_apply_commit.is_forbidden_commit_path(".env")
     assert post_apply_commit.is_forbidden_commit_path("apps/web/.env.local")
     assert not post_apply_commit.is_forbidden_commit_path("package-lock.json")
+    assert post_apply_commit.is_forbidden_commit_path("../package-lock.json")
+    assert post_apply_commit.is_forbidden_commit_path("/etc/passwd")
 
 
 def test_parse_porcelain_unstaged_preserves_filename() -> None:

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from repo_ops_core.constants import TIMEOUT_APPLY
+from repo_ops_core.filesystem import contained_path
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version
 from repo_ops_lockfiles.constants import (
@@ -222,10 +223,13 @@ def capture_worktree_state(repo: Path) -> WorktreeState | None:
         return None
     state: WorktreeState = {}
     for rel in dirty:
-        p = repo / rel
-        if p.is_dir():
-            continue  # nested repository; never ours to snapshot or restore
-        state[rel] = p.read_bytes() if p.is_file() else None
+        p = contained_path(repo, rel)
+        if p is None or p.is_dir():
+            continue  # nested repository or path that escapes the checkout
+        try:
+            state[rel] = p.read_bytes() if p.is_file() else None
+        except OSError as exc:
+            logger.warning("could not snapshot %s: %s", p, exc)
     return state
 
 
@@ -290,8 +294,13 @@ def rollback_owned_edits(repo: Path, edits: dict[str, OwnedEdit]) -> bool:
     """
     head_restore: list[str] = []
     for rel, edit in edits.items():
-        p = repo / rel
-        cur = p.read_bytes() if p.is_file() else None
+        p = contained_path(repo, rel)
+        if p is None:
+            continue
+        try:
+            cur = p.read_bytes() if p.is_file() else None
+        except OSError:
+            continue
         if cur != edit.applied:
             continue
         if edit.from_head:
@@ -303,13 +312,19 @@ def rollback_owned_edits(repo: Path, edits: dict[str, OwnedEdit]) -> bool:
             p.write_bytes(edit.before)
     if not head_restore:
         return True
-    tracked = run(["git", "ls-tree", "-r", "--name-only", "HEAD", "--", *head_restore], repo)
+    tracked = run(
+        ["git", "ls-tree", "-r", "--name-only", "HEAD", "--", *head_restore],
+        repo,
+        timeout=60,
+    )
     if tracked.returncode != 0:
         return False
     in_head = set(tracked.stdout.splitlines())
     for rel in head_restore:
         if rel not in in_head:
-            (repo / rel).unlink(missing_ok=True)
+            p = contained_path(repo, rel)
+            if p is not None:
+                p.unlink(missing_ok=True)
     if not in_head:
         return True
     proc = run(["git", "checkout", "HEAD", "--", *sorted(in_head)], repo, timeout=120)

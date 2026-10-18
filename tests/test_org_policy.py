@@ -20,6 +20,7 @@ from repo_ops_upgrade.actions import (
     _action_policy_violation,
     _derive_owner,
     _fetch_org_policy_cached,
+    _github_token_available,
 )
 
 # ---------------------------------------------------------------------------
@@ -112,6 +113,38 @@ def test_fetch_policy_404_returns_none_and_caches() -> None:
     assert r1 is None
     assert r2 is None
     assert call_count[0] == 1  # not retried
+
+
+def test_fetch_policy_rejects_non_github_owner() -> None:
+    store: dict = {}
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.subprocess.run") as mock_run,
+    ):
+        assert _fetch_org_policy_cached("../evil", store) is None
+        assert _fetch_org_policy_cached("orgs/foo", store) is None
+    mock_run.assert_not_called()
+
+
+def test_github_token_probe_does_not_capture_stdout() -> None:
+    _github_token_available.cache_clear()
+    seen: dict[str, object] = {}
+
+    def fake_run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(
+            ["gh", "auth", "token"], 0, stdout="ghs_SECRET", stderr=""
+        )
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.subprocess.run", side_effect=fake_run),
+    ):
+        assert _github_token_available() is True
+    _github_token_available.cache_clear()
+    assert seen.get("stdout") is subprocess.DEVNULL
+    assert seen.get("stderr") is subprocess.DEVNULL
+    assert seen.get("capture_output") is not True
 
 
 def test_fetch_policy_gh_absent_returns_none() -> None:

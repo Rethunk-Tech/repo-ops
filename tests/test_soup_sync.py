@@ -35,6 +35,16 @@ def test_not_configured_is_a_no_op(tmp_path: Path) -> None:
     assert (repo / "docs/SOUP.md").read_text() == TABLE
 
 
+def test_soup_path_outside_repo_is_not_written(tmp_path: Path) -> None:
+    victim = tmp_path / "outside.md"
+    victim.write_text(TABLE)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".repo-ops.toml").write_text(f'[soup]\npath = "{victim}"\n')
+    assert not sync_soup_versions(repo, [Change("next", "16.3.0", "16.4.0")])
+    assert victim.read_text() == TABLE
+
+
 def test_version_cell_takes_the_lockfile_resolution_over_the_manifest_range(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / "bun.lock").write_text(

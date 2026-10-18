@@ -14,11 +14,12 @@ from pathlib import Path
 import pytest
 
 from repo_ops_lockfiles.snapshots import snapshot_workspace_files
-from repo_ops_models import Workspace
+from repo_ops_models import OwnedEdit, Workspace
 from repo_ops_upgrade.post_apply import (
     capture_worktree_state,
     record_owned_edits,
     revert_workspace_after_verify_fail,
+    rollback_owned_edits,
 )
 
 
@@ -237,3 +238,16 @@ def test_snapshot_captures_manager_lock(tmp_path: Path, lockfile_name: str, mana
     (tmp_path / lockfile_name).write_text("{}")
     snap = snapshot_workspace_files(tmp_path, manager)
     assert any(p.name == lockfile_name for p in snap)
+
+
+def test_rollback_does_not_write_escaping_paths(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    victim = tmp_path / "victim"
+    victim.write_bytes(b"keep")
+    edits = {
+        str(victim): OwnedEdit(before=b"pwned", from_head=False, applied=b"keep"),
+        "../victim": OwnedEdit(before=b"pwned", from_head=False, applied=b"keep"),
+    }
+    assert rollback_owned_edits(repo, edits) is True
+    assert victim.read_bytes() == b"keep"

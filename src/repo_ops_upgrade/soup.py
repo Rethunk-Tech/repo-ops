@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from repo_ops_core.config import load_repo_config
+from repo_ops_core.filesystem import contained_path
 from repo_ops_models import Change
 
 _ROW = re.compile(r"^(\|\s*`(?P<name>[^`]+)`\s*\|\s*`)(?P<version>[^`]+)(`\s*\|)")
@@ -56,7 +57,9 @@ def sync_soup_versions(
     rel = table.get("path") if isinstance(table, dict) else None
     if not isinstance(rel, str) or not rel:
         return False
-    path = repo_root / rel
+    path = contained_path(repo_root, rel)
+    if path is None:
+        return False
     bumped = _bumped_versions(changes)
     bumped |= {n: v for n, v in _resolved_versions(lock_dirs or [repo_root]).items() if n in bumped}
     if not bumped or not path.is_file():

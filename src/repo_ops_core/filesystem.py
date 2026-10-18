@@ -14,6 +14,35 @@ from typing import Any
 from repo_ops_core.constants import EXCLUDE_PATH_FRAGMENTS
 
 
+def contained_path(root: Path, rel: str) -> Path | None:
+    """Resolve *rel* under *root* when it cannot escape *root*.
+
+    Returns None for empty, NUL, absolute, or ``..``-bearing relative paths,
+    and for any path whose resolved location is not inside *root*.
+    """
+    if not rel or "\0" in rel:
+        return None
+    candidate = Path(rel)
+    if candidate.is_absolute() or os.pardir in candidate.parts:
+        return None
+    root_res = root.resolve()
+    full = (root_res / candidate).resolve()
+    try:
+        full.relative_to(root_res)
+    except ValueError:
+        return None
+    return full
+
+
+def is_under_root(root: Path, path: Path) -> bool:
+    """True when *path* resolves inside *root* (symlinks followed)."""
+    try:
+        path.resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def write_json_atomic(path: Path, payload: Any) -> Path:
     """Serialise ``payload`` to ``path`` via temp file + atomic rename; returns the path."""
     path = Path(path).expanduser().resolve()

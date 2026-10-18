@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from repo_ops_core.filesystem import (
+    contained_path,
+    is_under_root,
     read_json_file,
     read_toml_file,
     should_exclude,
@@ -74,3 +76,17 @@ def test_read_toml_file_happy_and_invalid(tmp_path: Path) -> None:
     bad = tmp_path / "bad.toml"
     bad.write_text("[[[broken", encoding="utf-8")
     assert read_toml_file(bad) is None
+
+
+def test_contained_path_rejects_escape(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    inside = (root / "lock.json").resolve()
+    assert contained_path(root, "lock.json") == inside
+    assert contained_path(root, "../outside") is None
+    assert contained_path(root, str(tmp_path / "outside")) is None
+    assert contained_path(root, "") is None
+    outsider = tmp_path / "outside"
+    outsider.write_text("x", encoding="utf-8")
+    assert not is_under_root(root, outsider)
+    assert is_under_root(root, root / "lock.json")
