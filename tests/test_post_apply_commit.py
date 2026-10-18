@@ -80,6 +80,13 @@ def test_classify_bun_lock_text_format_is_node() -> None:
     )
 
 
+def test_classify_bun_lockb_is_node() -> None:
+    """Legacy binary bun.lockb must classify as Node, not the generic deps subject."""
+    assert post_apply_commit.classify_commit_subject(["bun.lockb"]) == (
+        "chore(deps): update Node lockfiles and manifests"
+    )
+
+
 def test_classify_pnpm_workspace_catalog_is_node() -> None:
     """pnpm workspace catalog changes must classify as Node dependencies."""
     assert post_apply_commit.classify_commit_subject(["pnpm-workspace.yaml"]) == (
@@ -393,6 +400,26 @@ def test_owned_edits_exclude_unrelated_root_lockfile(tmp_path: Path, init_git_re
         bundle, ["package-lock.json", "package.json", "yarn.lock"]
     )
     assert scoped == ["package-lock.json", "package.json"]
+
+
+def test_owned_edits_exclude_unrelated_root_bun_lockb(tmp_path: Path, init_git_repo) -> None:
+    """A bun apply that only rewrote bun.lock must not stage a pre-dirty bun.lockb."""
+    init_git_repo(tmp_path)
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="bun",
+        git_repo=tmp_path,
+        label="root",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("pkg", "1", "2")]
+    wr.owned_edits = _owned("bun.lock", "package.json")
+    bundle = RepoBundle(git_repo=tmp_path, label="root", workspaces=[wr])
+    scoped = post_apply_commit.upgrade_scoped_paths(
+        bundle, ["bun.lock", "package.json", "bun.lockb"]
+    )
+    assert scoped == ["bun.lock", "package.json"]
 
 
 def test_owned_edits_exclude_dirty_file_under_nested_prefix(tmp_path: Path, init_git_repo) -> None:
@@ -851,6 +878,30 @@ def test_collect_changes_no_diff_reports_nothing(tmp_path: Path) -> None:
         changes = collect_changes_after_apply(ws)
 
     assert changes == [], f"clean diff must yield no changes, got {changes}"
+
+
+def test_bun_root_lockb_only_in_commit_scope(tmp_path: Path, init_git_repo) -> None:
+    """A root Bun workspace with only bun.lockb dirty stages it as a Node lockfile."""
+    init_git_repo(tmp_path)
+    (tmp_path / "package.json").write_text('{"name":"demo"}\n', encoding="utf-8")
+    (tmp_path / "bun.lockb").write_bytes(b"lockb-v0")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
+    (tmp_path / "bun.lockb").write_bytes(b"lockb-v1")
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="bun",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("pkg", "1", "2")]
+    bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
+    plan = post_apply_commit.plan_repo_commit(bundle)
+    assert plan.skipped_reason is None
+    assert plan.files == ["bun.lockb"]
+    assert plan.message.startswith("chore(deps): update Node lockfiles and manifests")
 
 
 def test_pdm_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_repo) -> None:

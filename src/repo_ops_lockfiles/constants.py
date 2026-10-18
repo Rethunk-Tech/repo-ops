@@ -7,6 +7,7 @@ NODE_LOCKFILES = (
     "yarn.lock",
     "pnpm-lock.yaml",
     "bun.lock",
+    "bun.lockb",
     "package.json",
 )
 PY_LOCKFILES = (

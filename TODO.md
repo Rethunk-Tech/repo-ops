@@ -48,40 +48,6 @@ section and leave the registry alone.
 3. Otherwise write measured-not-worth into this section and do not add an
    ecosystem, a plugin package, or a README line.
 
-## bun.lockb is not a commit-scope or classifier name
-
-`NODE_LOCKFILES` and `classify_commit_subject` know `bun.lock` (Bun ≥1.0
-text). A leftover binary `bun.lockb` at the repo root is not in that
-tuple, so a root Bun apply that still writes `bun.lockb` is unscoped
-(commit skip) and classified as the generic deps subject.
-
-This is only worth building if a measured checkout under `DEFAULT_ROOTS`
-still has `bun.lockb` and no `bun.lock`. Otherwise record
-measured-not-worth here.
-
-### Read
-
-1. `src/repo_ops_lockfiles/constants.py:5` `NODE_LOCKFILES`.
-2. `src/repo_ops_upgrade/post_apply_commit.py:80` `_lockfile_names_for_manager`
-   (`bun` → `NODE_LOCKFILES`) and `:370` `classify_commit_subject` (`bun.lock`
-   in the Node basename set, no `bun.lockb`).
-3. Bun apply in `src/repo_ops_js_bun/bun.py` — which lockfile name it writes.
-
-### Traps
-
-- Adding `bun.lockb` to `NODE_LOCKFILES` also changes plan-time snapshots
-  and collect-changes. A repo that has both files must not double-commit
-  unrelated dirt on the binary file if apply only rewrote the text lock.
-- `classify_commit_subject` compares `Path(p).name.lower()`, so
-  `bun.lockb` is a whole-name match, not a suffix.
-
-### Acceptance
-
-- If `bun.lockb` is still written: a root Bun workspace with only that
-  file dirty stages it, and the subject is the Node lockfile subject.
-- If it is not written anywhere under the scan roots: this section says
-  measured-not-worth and the tuple is unchanged.
-
 ## precommit apply still uses the generic commit subject
 
 Root `.pre-commit-config.yaml` is now in commit scope. The subject for
