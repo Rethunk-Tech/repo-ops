@@ -48,50 +48,6 @@ section and leave the registry alone.
 3. Otherwise write measured-not-worth into this section and do not add an
    ecosystem, a plugin package, or a README line.
 
-## collect_changes_after_apply does not parse Deno manifests
-
-`collect_changes_after_apply` now includes `DENO_LOCKFILES`, so a dirty
-`deno.lock` becomes a coarse `Change(fname, "changed", "updated")`. A
-`deno.json` / `deno.jsonc` import-map bump is invisible: those basenames
-are not in the lock-name list, and there is no Deno analogue of the
-`package.json` dependency-section walk.
-
-Remediations that key off `ctx["changes"]` after a Deno apply therefore
-see lockfile-only updates and miss import-map-only applies.
-
-Keep the existing package.json walker and the coarse lockfile fallback.
-Do not invent a second JSON walker that treats every string value as a
-package. Deno import maps mix URLs, `npm:`, `jsr:`, and path aliases.
-
-### Read
-
-1. `src/repo_ops_upgrade/post_apply.py:52` `collect_changes_after_apply` —
-   lock names at `:67`, package.json walk at `:86`, coarse lockfile
-   `Change` at `:129`.
-2. `src/repo_ops_lockfiles/constants.py:21` `DENO_LOCKFILES` is
-   `("deno.lock",)` only.
-3. `src/repo_ops_js/deno.py` apply/check — which fields of `deno.json`
-   an apply actually rewrites (imports vs tasks vs compilerOptions).
-
-### Traps
-
-- A `deno.json` `"tasks"` or `"compilerOptions"` edit is not a dependency
-  change. Walking every added JSON string would report them as packages.
-- `deno.jsonc` is JSON-with-comments; `json.loads` fails. The package.json
-  walker is line-oriented on `git diff` and does not parse JSONC either.
-- Coarse `Change("deno.json", "changed", "updated")` is enough for
-  remediations that only need a non-empty `changes` list. Per-package
-  names are only needed if a Deno remediation filters by package.
-
-### Acceptance
-
-- A git diff that only adds an import in `deno.json` or `deno.jsonc`
-  yields at least one `Change` from `collect_changes_after_apply`.
-- A git diff that only changes `"tasks"` does not invent a package name
-  from the task string.
-- `package.json` dependency extraction and coarse lockfile rows stay
-  identical. Existing collect-changes tests stay green.
-
 ## bun.lockb is not a commit-scope or classifier name
 
 `NODE_LOCKFILES` and `classify_commit_subject` know `bun.lock` (Bun ≥1.0
@@ -227,37 +183,6 @@ anyone matching it) and must decide `chore(deps)` vs `chore(hooks)`.
   strings in `test_classify_single_ecosystem_unchanged`.
 - Mixed precommit + Node enumerates both. Node-only and CI-only strings
   stay identical.
-
-## Cargo.toml edits are invisible to collect_changes_after_apply
-
-`RUST_LOCKFILES` is `("Cargo.lock",)`. A rust apply that rewrites
-version reqs in `Cargo.toml` without a lockfile byte change yields no
-post-apply `Change` rows. Commit scope already includes `Cargo.toml` via
-`_manifest_names_for_manager`. This gap is remediation context only.
-
-Do not add `Cargo.toml` to `RUST_LOCKFILES`: that tuple is also the
-snapshot set, and treating the manifest as a coarse lockfile would emit
-`Change("Cargo.toml", "changed", "updated")` instead of per-crate rows.
-
-### Read
-
-1. `src/repo_ops_lockfiles/constants.py:20` `RUST_LOCKFILES`.
-2. `src/repo_ops_upgrade/post_apply.py:52` `collect_changes_after_apply`.
-3. `src/repo_ops_rust/rust.py` `apply_rust` — whether it rewrites
-   `Cargo.toml` or only runs `cargo update`.
-
-### Traps
-
-- Coarse-diff on `Cargo.toml` is the wrong shape if rust remediations
-  ever filter by crate name.
-- Workspace member `Cargo.toml` paths are not basenames at repo root;
-  subdirectory workspaces already match by prefix in commit scope.
-
-### Acceptance
-
-- If `apply_rust` never writes `Cargo.toml`, write measured-not-worth
-  and stop. If it does, a toml-only diff yields at least one `Change`
-  and `Cargo.lock`-only diffs stay coarse lockfile rows.
 
 ## `--no-verify` implies `--no-commit` with no message
 

@@ -91,6 +91,95 @@ def test_collect_changes_nested_dep_objects(
 
 
 @pytest.mark.parametrize(
+    ("filename", "diff"),
+    [
+        (
+            "deno.json",
+            (
+                "diff --git a/deno.json b/deno.json\n"
+                "--- a/deno.json\n"
+                "+++ b/deno.json\n"
+                "@@ -1,6 +1,7 @@\n"
+                " {\n"
+                '   "imports": {\n'
+                '+    "left-pad": "npm:left-pad@1.3.0"\n'
+                "   }\n"
+                " }\n"
+            ),
+        ),
+        (
+            "deno.jsonc",
+            (
+                "diff --git a/deno.jsonc b/deno.jsonc\n"
+                "--- a/deno.jsonc\n"
+                "+++ b/deno.jsonc\n"
+                "@@ -1,6 +1,7 @@\n"
+                " {\n"
+                '   "imports": {\n'
+                '+    "@std/assert": "jsr:@std/assert@1.0.0"\n'
+                "   }\n"
+                " }\n"
+            ),
+        ),
+    ],
+    ids=("json", "jsonc"),
+)
+def test_collect_changes_deno_manifest_import_only(
+    tmp_path: Path, filename: str, diff: str
+) -> None:
+    ws = Workspace(path=tmp_path, ecosystem="deno", manager="deno", git_repo=tmp_path, label="demo")
+
+    def _fake_run(cmd: list[str], cwd: object, **kwargs: object) -> CompletedProcess[str]:
+        if "--name-only" in cmd:
+            return CompletedProcess(cmd, 0, stdout=f"{filename}\n", stderr="")
+        return CompletedProcess(cmd, 0, stdout=diff, stderr="")
+
+    with patch("repo_ops_upgrade.post_apply.run", side_effect=_fake_run):
+        changes = collect_changes_after_apply(ws)
+
+    assert changes, f"expected a Change from {filename} import-map bump"
+
+
+def test_collect_changes_deno_tasks_only_is_not_a_package(tmp_path: Path) -> None:
+    ws = Workspace(path=tmp_path, ecosystem="deno", manager="deno", git_repo=tmp_path, label="demo")
+    diff = (
+        "diff --git a/deno.json b/deno.json\n"
+        "--- a/deno.json\n"
+        "+++ b/deno.json\n"
+        "@@ -1,6 +1,7 @@\n"
+        " {\n"
+        '   "tasks": {\n'
+        '+    "test": "deno test"\n'
+        "   }\n"
+        " }\n"
+    )
+
+    def _fake_run(cmd: list[str], cwd: object, **kwargs: object) -> CompletedProcess[str]:
+        if "--name-only" in cmd:
+            return CompletedProcess(cmd, 0, stdout="deno.json\n", stderr="")
+        return CompletedProcess(cmd, 0, stdout=diff, stderr="")
+
+    with patch("repo_ops_upgrade.post_apply.run", side_effect=_fake_run):
+        changes = collect_changes_after_apply(ws)
+
+    assert "test" not in {c.name for c in changes}
+
+
+def test_collect_changes_cargo_toml_only(tmp_path: Path) -> None:
+    ws = Workspace(path=tmp_path, ecosystem="rust", manager="rust", git_repo=tmp_path, label="demo")
+
+    def _fake_run(cmd: list[str], cwd: object, **kwargs: object) -> CompletedProcess[str]:
+        if "--name-only" in cmd:
+            return CompletedProcess(cmd, 0, stdout="Cargo.toml\n", stderr="")
+        return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with patch("repo_ops_upgrade.post_apply.run", side_effect=_fake_run):
+        changes = collect_changes_after_apply(ws)
+
+    assert any(c.name == "Cargo.toml" for c in changes), changes
+
+
+@pytest.mark.parametrize(
     ("ws_rel", "repo_rel", "expected"),
     [
         (".", ".", "."),

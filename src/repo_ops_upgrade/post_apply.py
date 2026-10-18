@@ -50,6 +50,43 @@ _REINSTALL: dict[str, tuple[list[str], str]] = {
 
 WorktreeState = dict[str, bytes | None]
 
+_NODE_DEP_SECTIONS = frozenset(
+    ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
+)
+_DENO_IMPORT_SECTIONS = frozenset(("imports", "scopes"))
+# Manifests apply rewrites that are not lockfile snapshot members.
+_POST_APPLY_MANIFESTS = ("deno.json", "deno.jsonc", "Cargo.toml")
+
+
+def _json_section_string_adds(diff_text: str, sections: frozenset[str]) -> list[Change]:
+    """Added ``"key": "value"`` rows inside named JSON object sections of a diff."""
+    changes: list[Change] = []
+    in_section = False
+    brace_depth = 0
+    section_depth = -1
+    for diff_line in diff_text.splitlines():
+        sec_m = re.match(r'^[ +]\s*"([^"]+)":\s*\{', diff_line)
+        if sec_m:
+            brace_depth += 1
+            if sec_m.group(1) in sections:
+                in_section = True
+                section_depth = brace_depth
+            elif not in_section:
+                section_depth = -1
+            continue
+        if re.match(r"^[ +]\s*\}", diff_line):
+            if in_section and brace_depth == section_depth:
+                in_section = False
+                section_depth = -1
+            brace_depth = max(0, brace_depth - 1)
+            continue
+        if not in_section:
+            continue
+        dep_m = re.match(r'^\+\s*"([^"]+)":\s*"([^"]+)"', diff_line)
+        if dep_m:
+            changes.append(Change(dep_m.group(1), "?", normalize_version(dep_m.group(2))))
+    return changes
+
 
 def collect_changes_after_apply(ws: Workspace) -> list[Change]:
     """Lightweight post-apply change detection for remediation context.
@@ -73,12 +110,11 @@ def collect_changes_after_apply(ws: Workspace) -> list[Change]:
         + list(RUST_LOCKFILES)
         + list(DENO_LOCKFILES)
     )
-    _DEP_SECTIONS = frozenset(
-        ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
-    )
+    tracked = [*lock_names, *_POST_APPLY_MANIFESTS]
+    lock_name_set = set(lock_names)
 
     proc = run(
-        ["git", "diff", "--name-only", "--", *lock_names],
+        ["git", "diff", "--name-only", "--", *tracked],
         repo,
         timeout=60,
     )
@@ -96,42 +132,24 @@ def collect_changes_after_apply(ws: Workspace) -> list[Change]:
                     timeout=60,
                 )
                 if proc2.returncode == 0:
-                    in_dep_section = False
-                    brace_depth = 0
-                    dep_section_depth = -1
-                    for diff_line in proc2.stdout.splitlines():
-                        # Detect section header on context or added lines
-                        sec_m = re.match(r'^[ +]\s*"([^"]+)":\s*\{', diff_line)
-                        if sec_m:
-                            brace_depth += 1
-                            if sec_m.group(1) in _DEP_SECTIONS:
-                                in_dep_section = True
-                                dep_section_depth = brace_depth
-                            elif not in_dep_section:
-                                dep_section_depth = -1
-                            continue
-                        # Detect section close — only exit the dep section when
-                        # returning to the depth at which it opened, so nested
-                        # objects (e.g. peer-dependency ranges with sub-keys) do
-                        # not prematurely reset in_dep_section.
-                        if re.match(r"^[ +]\s*\}", diff_line):
-                            if in_dep_section and brace_depth == dep_section_depth:
-                                in_dep_section = False
-                                dep_section_depth = -1
-                            brace_depth = max(0, brace_depth - 1)
-                            continue
-                        if not in_dep_section:
-                            continue
-                        dep_m = re.match(r'^\+\s*"([^"]+)":\s*"([^"]+)"', diff_line)
-                        if dep_m:
-                            changes.append(
-                                Change(
-                                    dep_m.group(1),
-                                    "?",
-                                    normalize_version(dep_m.group(2)),
-                                )
-                            )
-            elif fname in set(lock_names):
+                    changes.extend(_json_section_string_adds(proc2.stdout, _NODE_DEP_SECTIONS))
+            elif fname in ("deno.json", "deno.jsonc"):
+                proc2 = run(
+                    ["git", "diff", "--", p],
+                    repo,
+                    timeout=60,
+                )
+                if proc2.returncode == 0:
+                    import_adds = _json_section_string_adds(proc2.stdout, _DENO_IMPORT_SECTIONS)
+                    if import_adds:
+                        changes.extend(import_adds)
+                    elif any(
+                        line.startswith("+") and not line.startswith("+++")
+                        for line in proc2.stdout.splitlines()
+                    ):
+                        # Nested import/scope edits that are not `"k": "v"` rows.
+                        changes.append(Change(fname, "changed", "updated"))
+            elif fname == "Cargo.toml" or fname in lock_name_set:
                 changes.append(Change(fname, "changed", "updated"))
         if changes:
             return changes
