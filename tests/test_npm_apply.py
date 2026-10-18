@@ -7,10 +7,16 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from repo_ops_core.constants import TIMEOUT_APPLY
 from repo_ops_js_npm.npm import (
     apply_npm,
 )
 from repo_ops_models import Change
+
+
+def test_timeout_apply_covers_install() -> None:
+    assert TIMEOUT_APPLY >= 300
+
 
 _RESOLVER_PATH = "repo_ops_js.guards.resolved_version_from_node_modules"
 _OUTDATED = "repo_ops_js_npm.npm._npm_outdated"

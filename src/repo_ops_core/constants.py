@@ -52,7 +52,7 @@ DEFAULT_ROOTS = [
 
 # Subprocess timeouts, in seconds.
 TIMEOUT_CHECK = 60
-TIMEOUT_APPLY = 60
+TIMEOUT_APPLY = 600
 TIMEOUT_VERIFY = 60
 
 # An enclosing go.work (a superproject over submodule checkouts) makes MVS select
