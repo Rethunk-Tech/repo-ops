@@ -196,7 +196,12 @@ def _process_workspace_body(
     applied_tree = capture_worktree_state(ws.git_repo) if do_apply else None
     if before_snap is not None:
         result.owned_edits = record_owned_edits(ws, before_snap, before_tree, applied_tree)
-    wrote_nothing = do_apply and before_tree is not None and applied_tree == before_tree
+    wrote_nothing = (
+        do_apply
+        and before_tree is not None
+        and applied_tree == before_tree
+        and not result.owned_edits
+    )
     if wrote_nothing:
         result.verify_skipped = True
     if do_apply and do_verify and result.status != "fail" and not wrote_nothing:
