@@ -148,37 +148,6 @@ anyone matching it) and must decide `chore(deps)` vs `chore(hooks)`.
 - Mixed precommit + Node enumerates both. Node-only and CI-only strings
   stay identical.
 
-## `--no-verify` implies `--no-commit` with no message
-
-`commit = apply and not no_commit and not no_verify`. `--no-verify`
-silently drops the post-apply commit. Help text says it implies
-`--no-commit`. A user who passed only `--no-verify` and expected a
-commit of unverified changes gets neither a commit nor a reason on
-stderr.
-
-Printing a one-line skip is an output-contract change.
-
-### Read
-
-1. `src/repo_ops_upgrade/run.py:126` commit gate.
-2. `src/repo_ops_core/cli.py:173` `--no-verify` help.
-3. `src/repo_ops_upgrade/post_apply_commit.py:609` `_print_outcome`
-   skip/fail/committed prefixes.
-
-### Traps
-
-- Do not commit unverified trees. The implication stays.
-- Fleet vs named-root does not change this; both honor the flag.
-- `--no-commit --no-verify` must not print the note twice.
-
-### Acceptance
-
-- `repo-ops apply --no-verify PATH` still does not commit.
-- stderr (or the existing `[commit skip]` stream) contains one line that
-  says verify was skipped so commit was skipped, unless `--no-commit`
-  was also passed.
-- Exit codes and report.json fields stay the same.
-
 ## container verify is a no-op
 
 `verify_workspace` returns `None` for `manager == "container"` with a

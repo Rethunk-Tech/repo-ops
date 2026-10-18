@@ -126,6 +126,8 @@ def _run_upgrade_body(
     # Apply commits each verified repo unless told not to; an unverified apply
     # never commits.
     commit = apply and not _cli_flag(args, "no_commit") and not _cli_flag(args, "no_verify")
+    if apply and _cli_flag(args, "no_verify") and not _cli_flag(args, "no_commit"):
+        print("[commit skip]: verify was skipped so commit was skipped")
     # A fleet sweep (no roots named) leaves dirty repos alone and reverts a
     # failed repo so the retry below starts clean. Named roots are checkouts the
     # operator is working in: they are processed even when dirty, and a failed

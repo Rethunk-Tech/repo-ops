@@ -273,3 +273,58 @@ def test_mock_args_without_no_verify_still_verify_and_commit(
     assert rc == 0
     assert seen.get("do_verify") is True
     assert committed == ["org/demo"]
+
+
+def test_no_verify_prints_commit_skip_unless_no_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    upgrade_args,
+) -> None:
+    repo = tmp_path / "demo"
+    repo.mkdir()
+    ws = _npm_ws(repo)
+    bundles = {
+        repo: RepoBundle(
+            git_repo=repo, label="org/demo", workspaces=[WorkspaceResult(workspace=ws)]
+        )
+    }
+    monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws])
+    monkeypatch.setattr(orch_mod, "filter_workspaces", lambda found, *a, **kw: found)
+    monkeypatch.setattr(disc_mod, "group_by_repo", lambda *a, **kw: bundles)
+    monkeypatch.setattr(disc_mod, "merge_action_only_bundles", lambda b, *a, **kw: b)
+
+    def _ok(wr: WorkspaceResult, **kw: object) -> WorkspaceResult:
+        wr.status = "ok"
+        return wr
+
+    monkeypatch.setattr(orch_mod, "process_workspace", _ok)
+    commits: list[object] = []
+
+    def _no_commits(*a: object, **kw: object) -> tuple[list[CommitOutcome], int]:
+        commits.append(1)
+        return [], 0
+
+    monkeypatch.setattr(run_mod.post_apply_commit, "run_post_apply_commits", _no_commits)
+
+    rc = run_mod._run_upgrade_body(
+        apply=True,
+        args=upgrade_args(no_verify=True, no_commit=False),
+        roots=[str(tmp_path)],
+        fleet=False,
+    )
+    assert rc == 0
+    assert commits == []
+    note = "[commit skip]: verify was skipped so commit was skipped"
+    captured = capsys.readouterr()
+    assert captured.out.count(note) == 1
+
+    run_mod._run_upgrade_body(
+        apply=True,
+        args=upgrade_args(no_verify=True, no_commit=True),
+        roots=[str(tmp_path)],
+        fleet=False,
+    )
+    both = capsys.readouterr()
+    assert note not in both.out
+    assert note not in both.err
