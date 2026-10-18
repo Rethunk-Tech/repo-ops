@@ -456,6 +456,7 @@ def classify_commit_subject(files: list[str]) -> str:
         )
         for n in names
     )
+    has_container = any(_is_container_basename(n) for n in names)
 
     dep_parts: list[str] = []
     if has_go:
@@ -468,13 +469,12 @@ def classify_commit_subject(files: list[str]) -> str:
         dep_parts.append("Node lockfiles and manifests")
     if has_deno:
         dep_parts.append("Deno lockfiles")
+    if has_container:
+        dep_parts.append("container image pins")
 
     has_deps = bool(dep_parts)
 
     if not has_deps and not has_ci:
-        names_lower = {Path(p).name.lower() for p in files}
-        if any(_is_container_basename(n) for n in names_lower):
-            return "chore(deps): update container image pins"
         return "chore(deps): apply repo-ops dependency updates"
     if has_ci and not has_deps:
         # Actions-only: keep the original single-ecosystem subject.
@@ -490,6 +490,7 @@ def classify_commit_subject(files: list[str]) -> str:
                     "chore(deps): update Node lockfiles and manifests"
                 ),
                 "Deno lockfiles": "chore(deps): update Deno lockfiles",
+                "container image pins": "chore(deps): update container image pins",
             }
             return labels[dep_parts[0]]
         # Multiple dep ecosystems, no CI: "deps" scope, enumerate them.

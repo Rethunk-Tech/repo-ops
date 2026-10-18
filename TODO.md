@@ -118,42 +118,6 @@ is). Add a separate `--manager` with the registered plugin names.
 - `repo-ops apply --help` documents `--manager`. Plan gets the same flag
   because it shares `build_upgrade_parser`.
 
-## classify_commit_subject ignores container files once any lockfile is present
-
-A Dockerfile-only commit now gets `chore(deps): update container image
-pins`. A mixed list (`yarn.lock` + `Dockerfile`, or a workflow +
-`Dockerfile`) still classifies as if the container file were absent, so
-a Node+container apply is attributed to Node alone and an actions-only
-subject can hide a digest bump.
-
-Completing that enumerates container in `dep_parts` the way Deno is
-enumerated. That **changes existing mixed-commit subjects**, which is
-why it is deferred.
-
-### Read
-
-1. `src/repo_ops_upgrade/post_apply_commit.py:370` `classify_commit_subject`.
-2. `src/repo_ops_upgrade/post_apply_commit.py` `_is_container_basename`.
-3. `tests/test_post_apply_commit.py` mixed-subject cases around the
-   `classify_commit_subject multi-ecosystem` section.
-
-### Traps
-
-- `compose.yaml` at repo root is a container file; `compose.yaml` under
-  `.github/` is not a workflow unless the path also contains `.github`.
-  Keep the existing `has_ci` predicate (basename yaml **and** `.github`
-  in the path).
-- `Dockerfile.md` matches the same prefix rule discovery already uses.
-  Tightening the suffix is a different change.
-
-### Acceptance
-
-- `["yarn.lock", "Dockerfile"]` mentions both Node and container image
-  pins. `[".github/workflows/ci.yml", "Dockerfile"]` is mixed deps+ci,
-  not `chore(ci)` only.
-- `["yarn.lock"]` and `[".github/workflows/ci.yml"]` subjects are
-  byte-identical to today.
-
 ## precommit apply still uses the generic commit subject
 
 Root `.pre-commit-config.yaml` is now in commit scope. The subject for

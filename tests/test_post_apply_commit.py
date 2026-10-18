@@ -802,6 +802,18 @@ def test_classify_container_only_dockerfile() -> None:
     )
 
 
+def test_classify_mixed_node_and_container() -> None:
+    assert post_apply_commit.classify_commit_subject(["yarn.lock", "Dockerfile"]) == (
+        "chore(deps): update Node lockfiles and manifests, and container image pins"
+    )
+
+
+def test_classify_mixed_container_and_ci_pins() -> None:
+    assert post_apply_commit.classify_commit_subject(
+        [".github/workflows/ci.yml", "Dockerfile"]
+    ) == ("chore(deps,ci): update container image pins and CI pins")
+
+
 def test_classify_single_ecosystem_unchanged() -> None:
     """Single-ecosystem commits must keep exact existing subject strings."""
     assert post_apply_commit.classify_commit_subject(["go.mod", "go.sum"]) == (
