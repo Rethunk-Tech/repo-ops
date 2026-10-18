@@ -107,8 +107,7 @@ def collect_changes_after_apply(ws: Workspace) -> list[Change]:
                             if sec_m.group(1) in _DEP_SECTIONS:
                                 in_dep_section = True
                                 dep_section_depth = brace_depth
-                            else:
-                                in_dep_section = False
+                            elif not in_dep_section:
                                 dep_section_depth = -1
                             continue
                         # Detect section close — only exit the dep section when
