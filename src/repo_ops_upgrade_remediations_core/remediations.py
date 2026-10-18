@@ -218,10 +218,6 @@ def run_hooks(
                     flush=True,
                 )
             if detected:
-                if hook.files is not None:
-                    files = hook.files(result.workspace)
-                    if files:
-                        entry["files"] = files
                 if apply:
                     ok, entry["detail"] = hook.apply(result.workspace, ctx)
                     entry["status"] = "applied" if ok else "fail"
@@ -231,6 +227,12 @@ def run_hooks(
                     lines = hook.report(result.workspace, ctx)
                     entry["detail"] = "; ".join(lines)
                     entry["status"] = "pending"
+                # After apply so formatters can declare the files they just wrote
+                # (ruff rewriting .py that were clean at HEAD).
+                if hook.files is not None:
+                    files = hook.files(result.workspace)
+                    if files:
+                        entry["files"] = files
             else:
                 entry["status"] = "ok"
         except FileNotFoundError as exc:

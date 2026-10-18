@@ -201,6 +201,29 @@ def test_run_remediations_plan_mode(tmp_path: Path, make_workspace, make_change)
     assert "REMEDIATE ruff" in result.remediations[0]["detail"]
 
 
+def test_ruff_files_lists_py_rewritten_after_apply(
+    tmp_path: Path, make_workspace, make_change, make_proc, init_git_repo
+) -> None:
+    """ruff_fix must declare rewritten .py so a root workspace commit stages them."""
+    init_git_repo(tmp_path, commit=True, filename="app.py", content="x=1\n")
+    (tmp_path / "ruff.toml").write_text("line-length = 88\n")
+    result = _result(tmp_path, make_workspace=make_workspace)
+    result.changes = [make_change("httpx")]
+
+    def _ruff_run(cmd, cwd, timeout=120):
+        (tmp_path / "app.py").write_text("x = 1\n")
+        return make_proc(0)
+
+    with (
+        patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"),
+        patch("repo_ops_upgrade_remediations_py.remediations.run", side_effect=_ruff_run),
+    ):
+        py_rem.run_remediations(result, apply=True)
+
+    assert result.remediations[0]["status"] == "applied"
+    assert "app.py" in result.remediations[0].get("files", [])
+
+
 def test_run_remediations_apply_mode(
     tmp_path: Path, make_workspace, make_change, make_proc
 ) -> None:

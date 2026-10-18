@@ -23,6 +23,7 @@ from repo_ops_models import Workspace
 from repo_ops_upgrade_remediations_core.remediations import (
     ApplyResult,
     RemediationHook,
+    changed_files_since_head,
     make_run_remediations,
     register,
     stderr_tail,
@@ -67,6 +68,20 @@ def report_ruff(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
     return ["REMEDIATE ruff: would run ruff check --fix (auto-fixable lint) + ruff format"]
 
 
+def ruff_files(ws: Workspace) -> list[str]:
+    """Workspace-relative ``.py`` paths ruff wrote (or would write), vs HEAD."""
+    changed = changed_files_since_head(ws, (".py",))
+    if not changed:
+        return []
+    out: list[str] = []
+    for abs_s in changed:
+        try:
+            out.append(str(Path(abs_s).relative_to(ws.path)))
+        except ValueError:
+            continue
+    return out
+
+
 def apply_ruff(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     """Run ``ruff check --fix`` then ``ruff format`` in the workspace root."""
     fix_proc = run(["ruff", "check", "--fix", "."], ws.path, timeout=120)
@@ -82,7 +97,7 @@ def apply_ruff(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
 
 
 REMEDIATIONS: list[RemediationHook] = [
-    RemediationHook("ruff_fix", detect_ruff, report_ruff, apply_ruff),
+    RemediationHook("ruff_fix", detect_ruff, report_ruff, apply_ruff, files=ruff_files),
 ]
 
 # Register all Python hooks in the global cross-ecosystem registry on import.
