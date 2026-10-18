@@ -37,7 +37,9 @@ Design notes
   registries that resolve no credentials fall back to anonymous access, and
   any host that still gets 401-after-token is reported read-only (detail
   string prefix ``[report-only]``).
-* Verify: v1 has no verify step; building images is out of scope.
+* Verify: digest-check rewritten ``FROM`` / compose ``image:`` refs only
+  (HEAD then GET of the tag or digest manifest; no pull, no build). A ref
+  that does not resolve fails verify with the ref and registry error named.
 """
 
 from __future__ import annotations
@@ -55,7 +57,7 @@ from typing import Any
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.http import open_url
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
-from repo_ops_models import Change, Workspace
+from repo_ops_models import Change, OwnedEdit, Workspace
 
 # ---------------------------------------------------------------------------
 # File patterns that signal a container workspace
@@ -744,11 +746,17 @@ def _fetch_tags(image: str) -> list[str] | None:
 # ---------------------------------------------------------------------------
 
 
-def _fetch_manifest_digest(image: str, tag: str) -> str | None:
-    """HEAD the manifest for *image*:*tag* and return the Docker-Content-Digest.
+def _network_error_text(exc: BaseException) -> str:
+    """Name a transport failure as network/offline rather than a registry status."""
+    reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+    return f"network error: {reason}"
 
-    Returns None on any error (caller treats as report-only).
-    Uses the same auth flow as _fetch_tags (including credential helpers).
+
+def _resolve_manifest_digest(image: str, tag: str) -> tuple[str | None, str | None]:
+    """HEAD/GET the manifest for *image*:*tag* and return ``(digest, error)``.
+
+    *tag* may also be a digest (``sha256:...``). Anonymous bearer token is
+    fetched when the registry challenges. Bounded timeout; no pull.
     """
     host, repo = _normalize_docker_image(image)
     basic_auth = _resolve_auth_for_host(host)
@@ -761,20 +769,37 @@ def _fetch_manifest_digest(image: str, tag: str) -> str | None:
         headers["Authorization"] = basic_auth
 
     url = f"https://{host}/v2/{repo}/manifests/{tag}"
-    # Try HEAD first (cheaper), fall back to GET if HEAD not supported
+    last_err: str | None = None
     for method in ("HEAD", "GET"):
         try:
             with open_url(url, headers=headers, method=method, timeout=_REGISTRY_TIMEOUT) as resp:
                 digest = resp.headers.get("Docker-Content-Digest", "")
                 if digest:
-                    return str(digest)
+                    return str(digest), None
+                last_err = "registry error: missing Docker-Content-Digest"
+                if method == "HEAD":
+                    continue
+                return None, last_err
         except urllib.error.HTTPError as exc:
             if method == "HEAD" and exc.code in (404, 405):
-                continue  # try GET
-            return None
-        except Exception:
-            return None
-    return None
+                last_err = f"registry error: HTTP {exc.code}"
+                continue
+            return None, f"registry error: HTTP {exc.code}"
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            return None, _network_error_text(exc)
+        except Exception as exc:
+            return None, _network_error_text(exc)
+    return None, last_err or "registry error: manifest not resolved"
+
+
+def _fetch_manifest_digest(image: str, tag: str) -> str | None:
+    """HEAD the manifest for *image*:*tag* and return the Docker-Content-Digest.
+
+    Returns None on any error (caller treats as report-only).
+    Uses the same auth flow as _fetch_tags (including credential helpers).
+    """
+    digest, _err = _resolve_manifest_digest(image, tag)
+    return digest
 
 
 # ---------------------------------------------------------------------------
@@ -1194,9 +1219,9 @@ def _enforce_version_ceilings(
 def apply_container(ws: Workspace) -> None:
     """Apply image tag bumps and digest refreshes in-place (byte-preserving single-line edits).
 
-    No verify step for v1: building images is out of scope.  Reuses
-    ``check_container`` for discovery so plan and apply share one resolution
-    path, then rewrites only the tag or digest portion of each matched line.
+    Reuses ``check_container`` for discovery so plan and apply share one
+    resolution path, then rewrites only the tag or digest portion of each
+    matched line. Verify digest-checks those rewritten refs (no pull/build).
 
     SHA-pinned images without a tag are skipped unconditionally (report-only
     by design).
@@ -1274,6 +1299,71 @@ def apply_container(ws: Workspace) -> None:
         if changed:
             with cf.open("w", encoding="utf-8", newline="") as fh:
                 fh.write("".join(lines))
+
+
+def _format_image_ref(image: str, tag: str | None, sha: str | None) -> str:
+    out = image
+    if tag:
+        out = f"{out}:{tag}"
+    if sha:
+        out = f"{out}@{sha}"
+    return out
+
+
+def _refs_on_changed_lines(
+    before: bytes | None, after: bytes, *, compose: bool
+) -> list[dict[str, Any]]:
+    """Image refs on lines the apply rewrite changed (or every ref in a new file)."""
+    after_text = after.decode("utf-8", errors="replace")
+    parsed = _parse_compose_images(after_text) if compose else _parse_from_lines(after_text)
+    by_line = {int(ref["line_no"]): ref for ref in parsed}
+    after_lines = after_text.splitlines()
+    if before is None:
+        return [ref for ref in parsed if not ref["is_stage_ref"]]
+    before_lines = before.decode("utf-8", errors="replace").splitlines()
+    n = max(len(before_lines), len(after_lines))
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str | None, str | None]] = set()
+    for i in range(n):
+        old = before_lines[i] if i < len(before_lines) else None
+        new = after_lines[i] if i < len(after_lines) else None
+        if old == new:
+            continue
+        ref = by_line.get(i + 1)
+        if ref is None or ref["is_stage_ref"]:
+            continue
+        key = (str(ref["image"]), ref["tag"], ref["sha"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(ref)
+    return out
+
+
+def verify_container(_ws: Workspace, owned_edits: dict[str, OwnedEdit]) -> str | None:
+    """Digest-check image refs rewritten by this apply. None means verified.
+
+    Only ``FROM`` / compose ``image:`` refs on lines in *owned_edits* are
+    resolved (HEAD then GET, anonymous token when challenged). Unchanged
+    pins in the same file are not queried. A ref that does not resolve
+    fails with the ref and the registry or network error named.
+    """
+    for rel, edit in owned_edits.items():
+        if edit.applied is None:
+            continue
+        name = Path(rel).name
+        if not (_DOCKERFILE_RE.match(name) or _is_compose_name(name)):
+            continue
+        compose = _is_compose_name(name)
+        for ref in _refs_on_changed_lines(edit.before, edit.applied, compose=compose):
+            image = str(ref["image"])
+            tag = ref["tag"]
+            sha = ref["sha"]
+            manifest_ref = tag or sha or "latest"
+            _digest, err = _resolve_manifest_digest(image, str(manifest_ref))
+            if err:
+                return f"{_format_image_ref(image, tag, sha)}: {err}"
+    return None
 
 
 # ---------------------------------------------------------------------------

@@ -47,28 +47,3 @@ section and leave the registry alone.
    checker/applier pair, and the `register_all()` name. Then build it.
 3. Otherwise write measured-not-worth into this section and do not add an
    ecosystem, a plugin package, or a README line.
-
-## container verify is a no-op
-
-`verify_workspace` returns `None` for `manager == "container"` with a
-comment that image builds are out of scope. An apply that rewrites a
-FROM line is therefore always "verified". Completing this means a
-policy (pull? `docker build`? digest check?) and a network dependency
-inside the apply verify budget. Not a small gap.
-
-### Read
-
-1. `src/repo_ops_upgrade/verify.py:258` the container fall-through.
-2. `src/repo_ops_container/container.py` apply docstring (v1 no build).
-
-### Traps
-
-- A pull of every bumped image on a fleet sweep is unbounded time and
-  disk. Any verify must be explicit and probably opt-in, which is a
-  config key — forbidden without a measured case.
-
-### Acceptance
-
-- Decided in a later spec: either keep the no-op and document it as
-  intentional in `docs/usage.md`, or add a bounded check that does not
-  require a new config key. Do not invent `REPO_OPS_CONTAINER_*` here.

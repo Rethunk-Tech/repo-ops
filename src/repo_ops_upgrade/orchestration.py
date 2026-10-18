@@ -206,7 +206,7 @@ def _process_workspace_body(
         result.verify_skipped = True
     if do_apply and do_verify and result.status != "fail" and not wrote_nothing:
         try:
-            verr = verify_mod.verify_workspace(ws)
+            verr = verify_mod.verify_workspace(ws, owned_edits=result.owned_edits)
         except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as exc:
             # A verify that cannot finish (e.g. a gate timeout) is a failed
             # verify, and must reach the revert below like any other.

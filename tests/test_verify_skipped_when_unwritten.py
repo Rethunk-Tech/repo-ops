@@ -23,7 +23,7 @@ def _run(monkeypatch: Any, ws: Any, *, writes: str | None) -> tuple[WorkspaceRes
     monkeypatch.setattr(
         orchestration.verify_mod,
         "verify_workspace",
-        lambda w: verified.append(str(w.path)) or None,
+        lambda w, **_k: verified.append(str(w.path)) or None,
     )
     result = orchestration._process_workspace_body(
         WorkspaceResult(workspace=ws),
@@ -66,7 +66,7 @@ def test_verify_runs_when_gitignored_lockfile_changed(
     monkeypatch.setattr(
         orchestration.verify_mod,
         "verify_workspace",
-        lambda w: verified.append(str(w.path)) or None,
+        lambda w, **_k: verified.append(str(w.path)) or None,
     )
     result = orchestration._process_workspace_body(
         WorkspaceResult(workspace=ws),

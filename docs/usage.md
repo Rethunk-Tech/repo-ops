@@ -52,7 +52,7 @@ Each changed workspace is verified before it is committed:
 2. The project's declared gates via the [`gate`](https://github.com/Rethunk-Tech/rethunk-gate-cli) CLI (Makefile targets, turbo tasks, `.gate.toml`), tests included.
 3. Without `gate`, or where it detects nothing, verify fails; no script or command is guessed. `verify.script` still names a `package.json` script explicitly.
 
-Two managers skip that pair: a `container` workspace is treated as verified after the pin rewrite (image builds are out of scope), and a `precommit` workspace runs `pre-commit validate-config` only — not `gate`.
+Two managers skip that pair: a `container` workspace digest-checks only the `FROM` / compose `image:` refs the apply rewrote (HEAD/GET of each rewritten ref's manifest; anonymous token when the registry challenges; no pull and no build). A ref that does not resolve fails verify with the ref and the registry or network error named. A `precommit` workspace runs `pre-commit validate-config` only — not `gate`.
 
 A failed verify on a fleet sweep restores only the files the workspace's apply wrote, and only while they still hold what apply wrote; anything else that changed in the checkout since (another agent's edits, new files) is left alone and named in the failure, which is then `FAILED_WITH_CHANGES`. The repo's commit is vetoed. Dirtiness is re-checked before each workspace and before the retry; a dirty checkout is skipped, and a failed repo whose checkout became dirty is not retried. Opt-in e2e gates that `gate` lists as skipped are not run by verify or by `gates`. `gates --e2e` runs them. `--no-verify` skips verification and therefore commits nothing.
 

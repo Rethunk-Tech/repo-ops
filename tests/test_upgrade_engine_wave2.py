@@ -109,13 +109,6 @@ class TestVerifyExtraManagers:
             assert verify_workspace(ws) is None
         assert fake_run.calls == [["pre-commit", "validate-config"]]
 
-    def test_container_verify_is_intentional_noop(self, tmp_path: Path, make_workspace) -> None:
-        """container v1: image builds out of scope — verify returns None."""
-        ws = make_workspace(tmp_path, manager="container", ecosystem="container", label="demo")
-        with patch("repo_ops_upgrade.verify.run") as mock_run:
-            assert verify_workspace(ws) is None
-        mock_run.assert_not_called()
-
     def test_pdm_missing_binary_fails(self, tmp_path: Path, make_workspace) -> None:
         ws = make_workspace(tmp_path, manager="pdm", ecosystem=None, label="demo")
         with patch("repo_ops_upgrade.verify.shutil.which", return_value=None):

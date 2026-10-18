@@ -35,7 +35,7 @@ from repo_ops_core.config import (
 from repo_ops_core.constants import GO_MODULE_MODE_ENV, TIMEOUT_VERIFY
 from repo_ops_core.process import run
 from repo_ops_js.workspaces import pm_run_prefix
-from repo_ops_models import Workspace
+from repo_ops_models import OwnedEdit, Workspace
 from repo_ops_py.requirements import parse_requirements_lines
 from repo_ops_upgrade.constants import YARN_PEER_WARN
 
@@ -158,7 +158,11 @@ def verify_node(ws: Workspace) -> str | None:
     return None
 
 
-def verify_workspace(ws: Workspace) -> str | None:
+def verify_workspace(
+    ws: Workspace,
+    *,
+    owned_edits: dict[str, OwnedEdit] | None = None,
+) -> str | None:
     """Run the appropriate verify gate for *ws*.
 
     Respects per-repo ``[verify]`` config keys:
@@ -169,6 +173,9 @@ def verify_workspace(ws: Workspace) -> str | None:
 
     Returns ``None`` on success (or intentional skip); a non-empty string is
     the verify failure detail.
+
+    *owned_edits* is the apply's own diff. Container verify digest-checks
+    only image refs on rewritten Dockerfile/compose lines in that diff.
     """
     profile = _load_verify_profile(ws)
 
@@ -255,7 +262,10 @@ def verify_workspace(ws: Workspace) -> str | None:
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or "pre-commit validate-config failed"
         return None
-    # container: image builds are out of scope for v1 (see container.apply docstring).
+    if mgr == "container":
+        from repo_ops_container.container import verify_container
+
+        return verify_container(ws, owned_edits or {})
     return None
 
 
