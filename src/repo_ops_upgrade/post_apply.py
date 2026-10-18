@@ -38,6 +38,12 @@ _REINSTALL: dict[str, tuple[list[str], str]] = {
     "uv": (["uv", "sync", "--locked"], ".venv"),
     "hatch": (["uv", "sync", "--locked"], ".venv"),
     "pdm": (["pdm", "sync", "--clean"], ".venv"),
+    "poetry": (["poetry", "install", "--sync"], ".venv"),
+    "pipenv": (["pipenv", "sync"], ".venv"),
+    "rust": (["cargo", "fetch", "--locked"], "target"),
+    "go": (["go", "mod", "vendor"], "vendor"),
+    "deno": (["deno", "install", "--frozen"], "node_modules"),
+    "pip-tools": (["uv", "pip", "sync", "requirements.txt"], ".venv"),
 }
 
 WorktreeState = dict[str, bytes | None]
@@ -322,7 +328,7 @@ def reinstall_from_lockfile(ws: Workspace) -> bool:
     if spec is None or not (ws.path / spec[1]).is_dir():
         return True
     cmd = spec[0]
-    if cmd[0] == "uv" and not (ws.path / "uv.lock").is_file():
+    if ws.manager in ("uv", "hatch") and not (ws.path / "uv.lock").is_file():
         return True
     proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:

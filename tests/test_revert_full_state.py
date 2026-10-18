@@ -12,6 +12,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from repo_ops._register import register_all
 from repo_ops_core import process
 from repo_ops_models import Workspace, WorkspaceResult
@@ -199,3 +201,35 @@ def test_vetoed_commit_rolls_back_passing_siblings(tmp_path: Path, init_git_repo
     assert rc == 1
     assert _git(repo, "status", "--porcelain") == ""
     assert _git(repo, "rev-list", "--count", "HEAD").strip() == "1"
+
+
+@pytest.mark.parametrize(
+    ("manager", "tree", "cmd_prefix"),
+    [
+        ("poetry", ".venv", ["poetry", "install", "--sync"]),
+        ("pipenv", ".venv", ["pipenv", "sync"]),
+        ("rust", "target", ["cargo", "fetch", "--locked"]),
+        ("go", "vendor", ["go", "mod", "vendor"]),
+        ("deno", "node_modules", ["deno", "install", "--frozen"]),
+        ("pip-tools", ".venv", ["uv", "pip", "sync"]),
+    ],
+)
+def test_reinstall_from_lockfile_covers_missing_managers(
+    tmp_path: Path, make_workspace, manager: str, tree: str, cmd_prefix: list[str]
+) -> None:
+    from repo_ops_upgrade.post_apply import reinstall_from_lockfile
+
+    (tmp_path / tree).mkdir()
+    if manager == "pip-tools":
+        (tmp_path / "requirements.txt").write_text("requests==2.31.0\n", encoding="utf-8")
+    ws = make_workspace(tmp_path, manager=manager, ecosystem="py", label="demo")
+    calls: list[list[str]] = []
+
+    def _ok(cmd, cwd, **kw):
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with patch("repo_ops_upgrade.post_apply.run", side_effect=_ok):
+        assert reinstall_from_lockfile(ws) is True
+    assert calls, f"{manager} must reinstall from the restored lockfile"
+    assert calls[0][: len(cmd_prefix)] == cmd_prefix
