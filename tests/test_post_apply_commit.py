@@ -341,6 +341,28 @@ def test_collect_changes_json_yaml_bun_lock_fallback(tmp_path: Path) -> None:
     assert "bun.lock" in names, f"bun.lock missing from changes: {changes}"
 
 
+def test_collect_changes_deno_lock_fallback(tmp_path: Path) -> None:
+    """deno.lock must appear in post-apply changes the way other lockfiles do."""
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="deno",
+        manager="deno",
+        git_repo=tmp_path,
+        label="root",
+    )
+
+    def _fake_run(cmd: list[str], cwd: object, **kwargs: object) -> CompletedProcess[str]:
+        if "--name-only" in cmd:
+            return CompletedProcess(cmd, 0, stdout="deno.lock\n", stderr="")
+        return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with patch("repo_ops_upgrade.post_apply.run", side_effect=_fake_run):
+        changes = collect_changes_after_apply(ws)
+
+    names = {c.name for c in changes}
+    assert "deno.lock" in names, f"deno.lock missing from changes: {changes}"
+
+
 # ---------------------------------------------------------------------------
 # Actions-only commit must not sweep pre-dirty files
 # ---------------------------------------------------------------------------
@@ -705,6 +727,15 @@ def test_classify_go_and_node_mixed() -> None:
     assert "Node" in subject
 
 
+def test_classify_container_only_dockerfile() -> None:
+    assert post_apply_commit.classify_commit_subject(["Dockerfile"]) == (
+        "chore(deps): update container image pins"
+    )
+    assert post_apply_commit.classify_commit_subject(["app.compose.yml"]) == (
+        "chore(deps): update container image pins"
+    )
+
+
 def test_classify_single_ecosystem_unchanged() -> None:
     """Single-ecosystem commits must keep exact existing subject strings."""
     assert post_apply_commit.classify_commit_subject(["go.mod", "go.sum"]) == (
@@ -770,6 +801,86 @@ def test_pdm_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_rep
     plan = post_apply_commit.plan_repo_commit(bundle)
     assert plan.skipped_reason is None
     assert set(plan.files) == {"pdm.lock", "pyproject.toml"}
+
+
+def test_pip_tools_root_lock_and_requirements_in_in_commit_scope(
+    tmp_path: Path, init_git_repo
+) -> None:
+    """requirements.txt + requirements.in are staged for root pip-tools workspaces."""
+    init_git_repo(tmp_path)
+    (tmp_path / "requirements.in").write_text("requests\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("requests==2.0.0\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
+    (tmp_path / "requirements.in").write_text("requests==2.1.0\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("requests==2.1.0\n", encoding="utf-8")
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="py",
+        manager="pip-tools",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("requests", "2.0.0", "2.1.0")]
+    bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
+    plan = post_apply_commit.plan_repo_commit(bundle)
+    assert plan.skipped_reason is None
+    assert set(plan.files) == {"requirements.in", "requirements.txt"}
+
+
+def test_precommit_root_config_in_commit_scope(tmp_path: Path, init_git_repo) -> None:
+    """`.pre-commit-config.yaml` is staged for a root precommit workspace."""
+    init_git_repo(tmp_path)
+    (tmp_path / ".pre-commit-config.yaml").write_text(
+        "repos:\n- repo: https://example.com/hooks\n  rev: v1.0.0\n",
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
+    (tmp_path / ".pre-commit-config.yaml").write_text(
+        "repos:\n- repo: https://example.com/hooks\n  rev: v1.1.0\n",
+        encoding="utf-8",
+    )
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="precommit",
+        manager="precommit",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("https://example.com/hooks", "v1.0.0", "v1.1.0")]
+    bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
+    plan = post_apply_commit.plan_repo_commit(bundle)
+    assert plan.skipped_reason is None
+    assert plan.files == [".pre-commit-config.yaml"]
+
+
+def test_deno_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_repo) -> None:
+    """deno.lock + deno.json are staged for root Deno workspaces."""
+    init_git_repo(tmp_path)
+    (tmp_path / "deno.json").write_text('{"imports":{"std/":"https://x/"}}\n', encoding="utf-8")
+    (tmp_path / "deno.lock").write_text("{}\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True)
+    (tmp_path / "deno.lock").write_text('{"version":"4"}\n', encoding="utf-8")
+    (tmp_path / "deno.json").write_text(
+        '{"imports":{"std/":"https://x/","oak":"jsr:@oak/oak"}}\n', encoding="utf-8"
+    )
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="deno",
+        manager="deno",
+        git_repo=tmp_path,
+        label="demo",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("jsr:@oak/oak", "?", "1.0.0")]
+    bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
+    plan = post_apply_commit.plan_repo_commit(bundle)
+    assert plan.skipped_reason is None
+    assert set(plan.files) == {"deno.lock", "deno.json"}
 
 
 def test_pipenv_root_lock_and_manifest_in_commit_scope(tmp_path: Path, init_git_repo) -> None:

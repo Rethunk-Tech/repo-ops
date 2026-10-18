@@ -11,6 +11,7 @@ from repo_ops_core.constants import TIMEOUT_APPLY
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version
 from repo_ops_lockfiles.constants import (
+    DENO_LOCKFILES,
     GO_LOCKFILES,
     NODE_LOCKFILES,
     PY_LOCKFILES,
@@ -65,7 +66,11 @@ def collect_changes_after_apply(ws: Workspace) -> list[Change]:
         rel = ws.path
     rel_s = str(rel)
     lock_names = (
-        list(NODE_LOCKFILES) + list(PY_LOCKFILES) + list(GO_LOCKFILES) + list(RUST_LOCKFILES)
+        list(NODE_LOCKFILES)
+        + list(PY_LOCKFILES)
+        + list(GO_LOCKFILES)
+        + list(RUST_LOCKFILES)
+        + list(DENO_LOCKFILES)
     )
     _DEP_SECTIONS = frozenset(
         ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")

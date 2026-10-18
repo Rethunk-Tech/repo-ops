@@ -13,6 +13,7 @@ from repo_ops_core.filesystem import is_workspace_member
 from repo_ops_core.git import run_git
 from repo_ops_js.workspaces import yarn_workspace_members
 from repo_ops_lockfiles.constants import (
+    DENO_LOCKFILES,
     GO_LOCKFILES,
     NODE_LOCKFILES,
     PY_LOCKFILES,
@@ -86,6 +87,8 @@ def _lockfile_names_for_manager(manager: str) -> frozenset[str]:
         return frozenset(GO_LOCKFILES)
     if manager == "rust":
         return frozenset(RUST_LOCKFILES)
+    if manager == "deno":
+        return frozenset(DENO_LOCKFILES)
     return frozenset()
 
 
@@ -102,14 +105,20 @@ def _manifest_names_for_manager(manager: str) -> frozenset[str]:
         if manager == "pnpm":
             names.add("pnpm-workspace.yaml")
         return frozenset(names)
-    if manager in ("uv", "hatch", "pip-tools", "poetry", "pdm"):
+    if manager in ("uv", "hatch", "poetry", "pdm"):
         return frozenset({"pyproject.toml"})
+    if manager == "pip-tools":
+        return frozenset({"requirements.in"})
     if manager == "pipenv":
         return frozenset({"Pipfile"})
     if manager == "go":
         return frozenset({"go.mod"})
     if manager == "rust":
         return frozenset({"Cargo.toml"})
+    if manager == "deno":
+        return frozenset({"deno.json", "deno.jsonc"})
+    if manager == "precommit":
+        return frozenset({".pre-commit-config.yaml", ".pre-commit-config.yml"})
     return frozenset()
 
 
@@ -367,6 +376,22 @@ def _has_actionable_repo_changes(bundle: RepoBundle) -> bool:
     return bool(porcelain_changed_paths(bundle.git_repo))
 
 
+def _is_container_basename(name: str) -> bool:
+    """True when *name* is a Dockerfile/Containerfile/compose basename."""
+    if name in {
+        "dockerfile",
+        "containerfile",
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        "compose.yml",
+        "compose.yaml",
+    }:
+        return True
+    if name.startswith("dockerfile.") or name.startswith("containerfile."):
+        return True
+    return name.endswith((".containerfile", ".compose.yml", ".compose.yaml"))
+
+
 def classify_commit_subject(files: list[str]) -> str:
     """One-line Conventional Commits subject from changed paths.
 
@@ -425,6 +450,9 @@ def classify_commit_subject(files: list[str]) -> str:
     has_deps = bool(dep_parts)
 
     if not has_deps and not has_ci:
+        names_lower = {Path(p).name.lower() for p in files}
+        if any(_is_container_basename(n) for n in names_lower):
+            return "chore(deps): update container image pins"
         return "chore(deps): apply repo-ops dependency updates"
     if has_ci and not has_deps:
         # Actions-only: keep the original single-ecosystem subject.
