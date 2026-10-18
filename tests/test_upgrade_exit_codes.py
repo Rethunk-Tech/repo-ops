@@ -156,6 +156,34 @@ def _dirty_skip(wr: WorkspaceResult, **_kwargs) -> WorkspaceResult:
     return wr
 
 
+def test_apply_verify_failure_still_scans_actions(tmp_path: Path, init_git_repo) -> None:
+    """A named-root verify fail must not skip Actions; only a fleet dirty-skip does."""
+    _npm_workspace(tmp_path, init_git_repo=init_git_repo)
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / ".github" / "workflows" / "ci.yml").write_text(
+        "jobs:\n  x:\n    steps:\n      - uses: actions/checkout@v3\n",
+        encoding="utf-8",
+    )
+    register_all()
+    scan_calls: list[tuple[Path, bool]] = []
+
+    def track_scan(repo: Path, *, apply: bool = False, **_kwargs):
+        scan_calls.append((repo, apply))
+        return [], 0
+
+    with (
+        patch(
+            "repo_ops_upgrade.run.orchestration.process_workspace",
+            side_effect=_fail_verify,
+        ),
+        patch("repo_ops_upgrade.run.actions.scan_actions", side_effect=track_scan),
+    ):
+        main_apply([str(tmp_path)])
+
+    assert len(scan_calls) == 1
+    assert scan_calls[0][1] is True
+
+
 def test_apply_dirty_skip_does_not_scan_actions(tmp_path: Path, init_git_repo) -> None:
     _npm_workspace(tmp_path, init_git_repo=init_git_repo)
     (tmp_path / ".github" / "workflows").mkdir(parents=True)

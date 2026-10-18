@@ -234,8 +234,6 @@ def _run_upgrade_body(
                 expected = capture_worktree_state(bundle.git_repo)
         if rollback_on_veto and any(r.status == "fail" for r in results):
             _rollback_vetoed_repo(bundle.git_repo, repo_before, results)
-        for wr in results:
-            wr.owned_edits = {}
         return results
 
     all_results: list[WorkspaceResult] = []
@@ -341,7 +339,10 @@ def _run_upgrade_body(
         _tag_cache_lock = threading.Lock()
 
         def _scan_one_bundle_actions(bundle: RepoBundle) -> None:
-            if apply and (bundle.any_fail() or bundle.any_dirty_skip()):
+            # Fleet dirty-skip leaves the checkout untouched; do not apply
+            # workflow pins on top of someone else's tree. A workspace fail
+            # (including named-root keep-on-verify-fail) still scans Actions.
+            if apply and bundle.any_dirty_skip():
                 return
             local_cache: dict[str, dict | None] = {}
             with _tag_cache_lock:
@@ -408,6 +409,23 @@ def _run_upgrade_body(
         for _bump in _sub_bumps:
             if _bump.is_actionable:
                 submodule_gitlink_map.setdefault(_bump.parent, set()).add(_bump.path)
+                continue
+            if "fetch failed" not in _bump.latest_tag and "checkout failed" not in _bump.latest_tag:
+                continue
+            for bundle in bundles.values():
+                if bundle.git_repo.resolve() != _bump.parent.resolve():
+                    continue
+                bundle.actions.append(
+                    ActionBump(
+                        workflow=_bump.path,
+                        action="git submodule",
+                        pin=_bump.current_tag,
+                        latest="",
+                        status="fail",
+                        detail=_bump.latest_tag,
+                    )
+                )
+                break
 
     pointer_hints = submodules.parent_repos_needing_pointer_commit(submodule_links) or None
 
@@ -450,6 +468,9 @@ def _run_upgrade_body(
         submodule_pointer_hints=pointer_hints,
         discovery_skips=diagnostics.skipped,
     )
+    for bundle in bundles.values():
+        for wr in bundle.workspaces:
+            wr.owned_edits = {}
     if report_path is not None:
         write_json_atomic(
             report_path,

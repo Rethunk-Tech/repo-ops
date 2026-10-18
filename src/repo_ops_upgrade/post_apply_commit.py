@@ -134,9 +134,16 @@ def upgrade_scoped_paths(
     """Porcelain paths that belong to this upgrade (not unrelated dirty files).
 
     Only paths this run actually modified are included:
-    - Root-workspace lockfiles/manifests matched by basename (no prefix ambiguity).
+    - Exact repo-relative paths from each workspace's ``owned_edits`` (what apply
+      recorded it wrote). When those are present, basename and directory-prefix
+      matching are not used for that workspace, so a nested dirty file or a
+      sibling lockfile (e.g. a pre-existing ``yarn.lock`` on an npm apply) is
+      never staged.
+    - Root-workspace lockfiles/manifests matched by basename when that workspace
+      has no ``owned_edits`` (tests and callers that only set ``changes``).
     - Subdirectory-workspace files matched by directory prefix with a "/" boundary
-      so "packages/foo" never matches "packages/foobar".
+      so "packages/foo" never matches "packages/foobar", also only when
+      ``owned_edits`` is empty.
     - Workflow files explicitly bumped by an actions run (exact path match).
     - When the bundle has actions bumps but no workspaces, only the bumped workflow
       file(s) are staged — pre-existing dirty files are never swept in.
@@ -186,14 +193,21 @@ def upgrade_scoped_paths(
     container_paths: set[str] = set()
     # soup_paths: exact repo-relative path of the configured SOUP table.
     soup_paths: set[str] = set()
+    # owned_paths: exact repo-relative paths record_owned_edits captured.
+    owned_paths: set[str] = set()
 
     for wr in bundle.workspaces:
-        if not (wr.changes or wr.remediations):
+        owned_paths.update(p.replace("\\", "/") for p in wr.owned_edits)
+        if not (wr.changes or wr.remediations or wr.owned_edits):
             continue
         try:
             rel = wr.workspace.path.resolve().relative_to(bundle.git_repo.resolve())
         except ValueError:
             rel = Path(".")
+        if wr.owned_edits:
+            # Exact owned paths already recorded; do not also match every
+            # lockfile basename or every file under a nested prefix.
+            continue
         if rel == Path("."):
             # Root workspace: scope by basename only; also include the manifest
             # so a root bump never commits the lockfile while dropping the manifest
@@ -250,6 +264,9 @@ def upgrade_scoped_paths(
     for path in porcelain:
         norm = path.replace("\\", "/")
         base = Path(norm).name
+        if norm in owned_paths:
+            scoped.append(path)
+            continue
         # Root-workspace lockfile/manifest: no directory component expected.
         if base in root_wanted and "/" not in norm:
             scoped.append(path)
@@ -364,6 +381,8 @@ def _bundle_apply_ok(bundle: RepoBundle) -> tuple[bool, str | None]:
             if wr.verify_error:
                 return False, f"verify failed: {wr.verify_error}"
             return False, wr.error or "apply failed"
+    if any(ab.status == "fail" for ab in bundle.actions):
+        return False, "action failures"
     if bundle.any_fail():
         return False, "workspace failures"
     return True, None

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from repo_ops_models import Change, RepoBundle, Workspace, WorkspaceResult
+from repo_ops_models import ActionBump, Change, OwnedEdit, RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import post_apply_commit
 from repo_ops_upgrade.post_apply import collect_changes_after_apply
 
@@ -368,6 +368,70 @@ def test_collect_changes_deno_lock_fallback(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Actions-only commit must not sweep pre-dirty files
 # ---------------------------------------------------------------------------
+
+
+def _owned(*rels: str) -> dict[str, OwnedEdit]:
+    return {rel: OwnedEdit(before=b"", from_head=True, applied=b"x") for rel in rels}
+
+
+def test_owned_edits_exclude_unrelated_root_lockfile(tmp_path: Path, init_git_repo) -> None:
+    """An npm apply must not stage a dirty yarn.lock just because NODE_LOCKFILES
+    lists every Node lockfile basename."""
+    init_git_repo(tmp_path)
+    ws = Workspace(
+        path=tmp_path,
+        ecosystem="node",
+        manager="npm",
+        git_repo=tmp_path,
+        label="root",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("pkg", "1", "2")]
+    wr.owned_edits = _owned("package-lock.json", "package.json")
+    bundle = RepoBundle(git_repo=tmp_path, label="root", workspaces=[wr])
+    scoped = post_apply_commit.upgrade_scoped_paths(
+        bundle, ["package-lock.json", "package.json", "yarn.lock"]
+    )
+    assert scoped == ["package-lock.json", "package.json"]
+
+
+def test_owned_edits_exclude_dirty_file_under_nested_prefix(tmp_path: Path, init_git_repo) -> None:
+    init_git_repo(tmp_path)
+    foo = tmp_path / "packages" / "foo"
+    foo.mkdir(parents=True)
+    ws = Workspace(
+        path=foo,
+        ecosystem="node",
+        manager="npm",
+        git_repo=tmp_path,
+        label="foo",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("pkg", "1", "2")]
+    wr.owned_edits = _owned("packages/foo/package.json")
+    bundle = RepoBundle(git_repo=tmp_path, label="nested", workspaces=[wr])
+    scoped = post_apply_commit.upgrade_scoped_paths(
+        bundle, ["packages/foo/package.json", "packages/foo/notes.md"]
+    )
+    assert scoped == ["packages/foo/package.json"]
+
+
+def test_action_fail_vetoes_repo_commit(tmp_path: Path, init_git_repo) -> None:
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
+    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
+    (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
+    bundle.actions = [
+        ActionBump(
+            workflow=".github/workflows/ci.yml",
+            action="actions/checkout",
+            pin="v4",
+            latest="v6",
+            status="fail",
+            detail="actionlint failed",
+        )
+    ]
+    plan = post_apply_commit.plan_repo_commit(bundle)
+    assert plan.skipped_reason == "action failures"
 
 
 def test_actions_only_does_not_sweep_predirty_lockfile(tmp_path: Path, init_git_repo) -> None:

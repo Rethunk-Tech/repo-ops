@@ -68,7 +68,7 @@ class WorkspaceResult:
     # holding each workspace's lockfile bytes until the report is waste.
     pre_apply_snapshot: dict[Path, bytes] = field(default_factory=dict, repr=False, compare=False)
     # Repo-relative paths this workspace's apply wrote; the only paths a rollback
-    # may touch. Dropped once the repo's commit decision is made.
+    # may touch, and the paths post-apply commit scopes to. Dropped after commit.
     owned_edits: dict[str, OwnedEdit] = field(default_factory=dict, repr=False, compare=False)
 
     def to_json(self) -> dict[str, Any]:
