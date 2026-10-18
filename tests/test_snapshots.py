@@ -86,6 +86,16 @@ def test_snapshot_workspace_files_pipenv(tmp_path: Path) -> None:
     assert lock in snap
 
 
+def test_snapshot_workspace_files_pip_tools_includes_requirements_in(tmp_path: Path) -> None:
+    req_in = tmp_path / "requirements.in"
+    req_txt = tmp_path / "requirements.txt"
+    req_in.write_text("requests\n", encoding="utf-8")
+    req_txt.write_text("requests==2.0.0\n", encoding="utf-8")
+    snap = snapshot_workspace_files(tmp_path, "pip-tools")
+    assert req_in in snap
+    assert req_txt in snap
+
+
 def test_snapshot_workspace_files_deno(tmp_path: Path) -> None:
     lock = tmp_path / "deno.lock"
     lock.write_text("{}", encoding="utf-8")
