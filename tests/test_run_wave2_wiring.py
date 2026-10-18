@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -224,3 +225,51 @@ def test_failed_repo_is_retried_alone_after_the_sweep(
     assert rc == 0
     assert sorted(calls) == ["org/flaky", "org/flaky", "org/steady"]
     assert sorted(committed) == ["org/flaky", "org/steady"]
+
+
+def test_mock_args_without_no_verify_still_verify_and_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``not args.no_verify`` treats a MagicMock auto-attr as True and skips
+    both verify and commit. Identity ``is True`` via ``_cli_flag`` does not."""
+    repo = tmp_path / "demo"
+    repo.mkdir()
+    ws = _npm_ws(repo)
+    bundles = {
+        repo: RepoBundle(
+            git_repo=repo, label="org/demo", workspaces=[WorkspaceResult(workspace=ws)]
+        )
+    }
+    monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws])
+    monkeypatch.setattr(orch_mod, "filter_workspaces", lambda found, *a, **kw: found)
+    monkeypatch.setattr(disc_mod, "group_by_repo", lambda *a, **kw: bundles)
+    monkeypatch.setattr(disc_mod, "merge_action_only_bundles", lambda b, *a, **kw: b)
+
+    seen: dict[str, bool] = {}
+
+    def _process(wr: WorkspaceResult, **kw: object) -> WorkspaceResult:
+        seen["do_verify"] = bool(kw.get("do_verify"))
+        wr.status = "ok"
+        wr.changes = [Change("pkg", "1", "2")]
+        return wr
+
+    monkeypatch.setattr(orch_mod, "process_workspace", _process)
+    committed: list[str] = []
+
+    def _commits(b: dict, **kw: object) -> tuple[list[CommitOutcome], int]:
+        committed.extend(bundle.label for bundle in b.values())
+        return [], 0
+
+    monkeypatch.setattr(run_mod.post_apply_commit, "run_post_apply_commits", _commits)
+
+    args = MagicMock()
+    args.jobs = 1
+    args.eco_filter = None
+    args.exclude_patterns = None
+    args.no_commit = False
+    # no_verify left unset so MagicMock fabricates a truthy attribute
+
+    rc = run_mod._run_upgrade_body(apply=True, args=args, roots=[str(tmp_path)], fleet=False)
+    assert rc == 0
+    assert seen.get("do_verify") is True
+    assert committed == ["org/demo"]

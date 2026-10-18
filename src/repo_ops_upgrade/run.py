@@ -125,7 +125,7 @@ def _run_upgrade_body(
 ) -> int:
     # Apply commits each verified repo unless told not to; an unverified apply
     # never commits.
-    commit = apply and not _cli_flag(args, "no_commit") and not args.no_verify
+    commit = apply and not _cli_flag(args, "no_commit") and not _cli_flag(args, "no_verify")
     # A fleet sweep (no roots named) leaves dirty repos alone and reverts a
     # failed repo so the retry below starts clean. Named roots are checkouts the
     # operator is working in: they are processed even when dirty, and a failed
@@ -196,7 +196,7 @@ def _run_upgrade_body(
             return orchestration.process_workspace(
                 wr,
                 do_apply=apply,
-                do_verify=apply and not args.no_verify,
+                do_verify=apply and not _cli_flag(args, "no_verify"),
                 allow_dirty=allow_dirty,
                 on_verify_fail=on_verify_fail,
                 repo_started_dirty=repo_started_dirty,
