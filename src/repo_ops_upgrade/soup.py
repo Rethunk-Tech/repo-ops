@@ -1,7 +1,8 @@
 """Keep a repo's SOUP inventory table in step with a dependency bump.
 
-The new version is the one ``bun.lock`` resolved after the install, not the manifest range, falling back to the
-manifest's own version when the package is not in the lock.
+The new version is the one the workspace lockfile resolved after the install, not
+the manifest range. When the lockfile does not name a landed version, that row
+is left alone.
 
 Opt-in with ``[soup] path = "docs/SOUP.md"`` in the repo's ``.repo-ops.toml``. Rows look like
 ``| `name` | `1.2.3` | ... |``; only the Version cell of a row whose package was bumped is rewritten.
@@ -10,10 +11,20 @@ Opt-in with ``[soup] path = "docs/SOUP.md"`` in the repo's ``.repo-ops.toml``. R
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from repo_ops_core.config import load_repo_config
 from repo_ops_core.filesystem import contained_path
+from repo_ops_core.version_utils import semver_tuple
+from repo_ops_lockfiles.parsers import (
+    split_name_version,
+    versions_bun_lock,
+    versions_npm_lock,
+    versions_pnpm_lock,
+    versions_uv_lock,
+    versions_yarn_lock,
+)
 from repo_ops_models import Change
 
 _ROW = re.compile(r"^(\|\s*`(?P<name>[^`]+)`\s*\|\s*`)(?P<version>[^`]+)(`\s*\|)")
@@ -21,31 +32,51 @@ _RANGE_PREFIX = re.compile(r"^[\^~>=<v\s]+")
 _VERSION = re.compile(r"^\d+(\.\d+)*([-+][0-9A-Za-z.+-]+)?$")
 
 
-def _bumped_versions(changes: list[Change]) -> dict[str, str]:
-    """Package name to its new concrete version; specs that are not versions (tags, urls) drop out."""
+def _bumped_names(changes: list[Change]) -> set[str]:
+    return {change.name for change in changes}
+
+
+def _entries_to_versions(entries: set[str]) -> dict[str, str]:
     out: dict[str, str] = {}
-    for change in changes:
-        version = _RANGE_PREFIX.sub("", change.to)
-        if _VERSION.match(version):
-            out[change.name] = version
+    for entry in entries:
+        name, ver = split_name_version(entry)
+        if not name or not ver:
+            continue
+        prev = out.get(name)
+        if prev is None:
+            out[name] = ver
+            continue
+        try:
+            if semver_tuple(ver) > semver_tuple(prev):
+                out[name] = ver
+        except (TypeError, ValueError):
+            pass
     return out
 
 
-_LOCK_ENTRY = re.compile(r'^\s*"(?P<key>[^"]+)":\s*\["(?P<spec>[^"]+)"', re.MULTILINE)
+def _lockfile_versions(directory: Path) -> dict[str, str]:
+    if not directory.is_dir():
+        return {}
+    parsers: tuple[tuple[str, Callable[[Path], dict[str, str]]], ...] = (
+        ("bun.lock", lambda p: _entries_to_versions(versions_bun_lock(p))),
+        ("package-lock.json", lambda p: _entries_to_versions(versions_npm_lock(p))),
+        ("pnpm-lock.yaml", lambda p: _entries_to_versions(versions_pnpm_lock(p))),
+        ("yarn.lock", lambda p: _entries_to_versions(versions_yarn_lock(p))),
+        ("uv.lock", lambda p: _entries_to_versions(versions_uv_lock(p))),
+    )
+    for name, parse in parsers:
+        path = directory / name
+        if path.is_file():
+            return parse(path)
+    return {}
 
 
 def _resolved_versions(lock_dirs: list[Path]) -> dict[str, str]:
-    """Package name to the version the first ``bun.lock`` in lock_dirs resolved for it."""
+    """Package name to the version the workspace lockfile resolved for it."""
     for directory in lock_dirs:
-        lock = directory / "bun.lock"
-        if not lock.is_file():
-            continue
-        out: dict[str, str] = {}
-        for m in _LOCK_ENTRY.finditer(lock.read_text(encoding="utf-8")):
-            name, _, version = m["spec"].rpartition("@")
-            if name == m["key"]:  # a top-level entry, not a nested copy under another package
-                out[name] = version
-        return out
+        found = _lockfile_versions(directory)
+        if found:
+            return found
     return {}
 
 
@@ -60,14 +91,18 @@ def sync_soup_versions(
     path = contained_path(repo_root, rel)
     if path is None:
         return False
-    bumped = _bumped_versions(changes)
-    bumped |= {n: v for n, v in _resolved_versions(lock_dirs or [repo_root]).items() if n in bumped}
-    if not bumped or not path.is_file():
+    names = _bumped_names(changes)
+    landed = {
+        name: version
+        for name, version in _resolved_versions(lock_dirs or [repo_root]).items()
+        if name in names and _VERSION.match(_RANGE_PREFIX.sub("", version))
+    }
+    if not landed or not path.is_file():
         return False
 
     def rewrite(line: str) -> str:
         m = _ROW.match(line)
-        new = bumped.get(m["name"]) if m else None
+        new = landed.get(m["name"]) if m else None
         if m is None or new is None or m["version"] == new:
             return line
         return f"{m.group(1)}{new}{m.group(4)}{line[m.end() :]}"

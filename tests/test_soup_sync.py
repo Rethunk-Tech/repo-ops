@@ -19,6 +19,10 @@ def _repo(tmp_path: Path, config: str = '[soup]\npath = "docs/SOUP.md"\n') -> Pa
 
 def test_bumped_row_version_cell_is_rewritten(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
+    (repo / "package-lock.json").write_text(
+        '{"packages":{"node_modules/next":{"version":"16.4.0"}}}',
+        encoding="utf-8",
+    )
     assert sync_soup_versions(repo, [Change("next", "^16.3.0", "^16.4.0")])
     assert (repo / "docs/SOUP.md").read_text() == TABLE.replace("16.3.0", "16.4.0")
 
@@ -43,6 +47,22 @@ def test_soup_path_outside_repo_is_not_written(tmp_path: Path) -> None:
     (repo / ".repo-ops.toml").write_text(f'[soup]\npath = "{victim}"\n')
     assert not sync_soup_versions(repo, [Change("next", "16.3.0", "16.4.0")])
     assert victim.read_text() == TABLE
+
+
+def test_soup_skips_when_landed_version_is_unknown(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    assert not sync_soup_versions(repo, [Change("next", "^16.3.0", "^16.4.0")])
+    assert (repo / "docs/SOUP.md").read_text() == TABLE
+
+
+def test_version_cell_takes_npm_lockfile_resolution(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "package-lock.json").write_text(
+        '{"packages":{"node_modules/next":{"name":"next","version":"16.4.2"}}}',
+        encoding="utf-8",
+    )
+    assert sync_soup_versions(repo, [Change("next", "^16.3.0", "^16.4.0")])
+    assert (repo / "docs/SOUP.md").read_text() == TABLE.replace("16.3.0", "16.4.2")
 
 
 def test_version_cell_takes_the_lockfile_resolution_over_the_manifest_range(tmp_path: Path) -> None:
