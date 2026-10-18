@@ -25,12 +25,12 @@ def register_all() -> None:
     from repo_ops_js_npm.npm import apply_npm, check_npm
     from repo_ops_js_pnpm.pnpm import apply_pnpm, check_pnpm
     from repo_ops_js_yarn.yarn import apply_yarn, check_yarn_snapshot
+    from repo_ops_py.uv_lock import apply_uv_lock, check_uv_lock
     from repo_ops_py_hatch.hatch import apply_hatch, check_hatch
     from repo_ops_py_pdm.pdm import apply_pdm, check_pdm
     from repo_ops_py_pip_tools.pip_tools import apply_pip_tools, check_pip_tools
     from repo_ops_py_pipenv.pipenv import apply_pipenv, check_pipenv
     from repo_ops_py_poetry.poetry import apply_poetry, check_poetry
-    from repo_ops_py_uv.uv import apply_uv, check_uv
     from repo_ops_rust.rust import apply_rust, check_rust
     from repo_ops_upgrade import registry
 
@@ -41,7 +41,7 @@ def register_all() -> None:
         "yarn": (check_yarn_snapshot, apply_yarn),
         "go": (check_go, apply_go),
         "rust": (check_rust, apply_rust),
-        "uv": (check_uv, apply_uv),
+        "uv": (check_uv_lock, apply_uv_lock),
         "poetry": (check_poetry, apply_poetry),
         "pip-tools": (check_pip_tools, apply_pip_tools),
         "hatch": (check_hatch, apply_hatch),
