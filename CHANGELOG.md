@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.5] - 2026-10-18
+
+### Fixed
+
+- `apply` skips package lifecycle scripts and refuses Corepack URL locators.
+- Container digest checks follow a token realm only over https on the registry's own host (Docker Hub's auth host excepted).
+- `apply` refuses more secret file names and fails closed when it owns no edits.
+- Run logs are redacted, and persisted verify errors are truncated.
+
 ## [0.25.4] - 2026-10-18
 
 - feat(apply): digest-check rewritten container image refs
