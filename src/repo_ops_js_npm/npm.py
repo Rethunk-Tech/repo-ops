@@ -30,6 +30,8 @@ from repo_ops_js.workspaces import (
     member_workspaces,
     merge_changes,
     pm_argv,
+    pm_ignore_scripts_env,
+    with_ignore_scripts,
 )
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
@@ -44,7 +46,11 @@ def run(
 ):
     if cmd and cmd[0] in COREPACK_MANAGERS:
         cmd = pm_argv(cmd[0], *cmd[1:])
-    return _process_run(cmd, cwd, timeout=timeout, env=env, stdin=stdin)
+    cmd = with_ignore_scripts(cmd)
+    merged = pm_ignore_scripts_env(cmd)
+    if env:
+        merged = {**merged, **env}
+    return _process_run(cmd, cwd, timeout=timeout, env=merged or None, stdin=stdin)
 
 
 def _save_flag_for(name: str, pkg_data: dict[str, object]) -> list[str]:

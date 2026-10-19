@@ -36,6 +36,8 @@ from repo_ops_js.workspaces import (
     apply_with_members,
     check_with_members,
     pm_argv,
+    pm_ignore_scripts_env,
+    with_ignore_scripts,
 )
 from repo_ops_lockfiles.parsers import split_name_version, versions_pnpm_lock
 from repo_ops_lockfiles.snapshots import (
@@ -55,7 +57,11 @@ def run(
 ):
     if cmd and cmd[0] in COREPACK_MANAGERS:
         cmd = pm_argv(cmd[0], *cmd[1:])
-    return _process_run(cmd, cwd, timeout=timeout, env=env, stdin=stdin)
+    cmd = with_ignore_scripts(cmd)
+    merged = pm_ignore_scripts_env(cmd)
+    if env:
+        merged = {**merged, **env}
+    return _process_run(cmd, cwd, timeout=timeout, env=merged or None, stdin=stdin)
 
 
 def _yaml_loader() -> YAML:

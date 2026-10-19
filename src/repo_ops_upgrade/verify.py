@@ -34,7 +34,7 @@ from repo_ops_core.config import (
 )
 from repo_ops_core.constants import GO_MODULE_MODE_ENV, TIMEOUT_VERIFY
 from repo_ops_core.process import run
-from repo_ops_js.workspaces import pm_run_prefix
+from repo_ops_js.workspaces import pm_ignore_scripts_env, pm_run_prefix, with_ignore_scripts
 from repo_ops_models import OwnedEdit, Workspace
 from repo_ops_py.requirements import parse_requirements_lines
 from repo_ops_upgrade.constants import YARN_PEER_WARN
@@ -139,7 +139,8 @@ def verify_node(ws: Workspace) -> str | None:
     }
     lock = lock_cmds.get(mgr)
     if lock:
-        proc = run(lock, ws.path, timeout=timeout)
+        lock = with_ignore_scripts(lock)
+        proc = run(lock, ws.path, timeout=timeout, env=pm_ignore_scripts_env(lock) or None)
         combined = proc.stdout + proc.stderr
         if proc.returncode != 0 or (mgr == "yarn" and YARN_PEER_WARN.search(combined)):
             return combined.strip() or f"{mgr} immutable install failed"

@@ -168,6 +168,18 @@ def test_corepack_prepare_activates_supported_managers(manager: str, tmp_path: P
     assert all("--activate" not in c for c in calls)
 
 
+def test_corepack_prepare_skips_url_locator(tmp_path: Path) -> None:
+    """A packageManager URL locator must never be passed to corepack prepare."""
+    _write_manifest(tmp_path, "yarn@https://attacker.example/payload.tgz")
+    calls: list[list[str]] = []
+
+    with patch("repo_ops_js.workspaces.run", _recording_run(calls)):
+        corepack_prepare("yarn", tmp_path)
+
+    assert calls == [["corepack", "enable"]]
+    assert not any("prepare" in c for c in calls)
+
+
 def test_corepack_prepare_skips_unsupported_manager_pin(tmp_path: Path) -> None:
     """An unsupported packageManager pin is skipped even if the manager differs."""
     _write_manifest(tmp_path, "bun@1.3.14")

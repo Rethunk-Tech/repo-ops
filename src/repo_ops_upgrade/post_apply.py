@@ -33,10 +33,10 @@ FAILED_CLEAN = "FAILED_CLEAN"
 # the tree they rebuild. Verify installs the upgraded lockfile, so restoring the
 # lockfile without reinstalling leaves the upgraded packages installed.
 _REINSTALL: dict[str, tuple[list[str], str]] = {
-    "bun": (["bun", "install", "--frozen-lockfile"], "node_modules"),
-    "pnpm": (["pnpm", "install", "--frozen-lockfile"], "node_modules"),
-    "npm": (["npm", "ci"], "node_modules"),
-    "yarn": (["yarn", "install", "--immutable"], "node_modules"),
+    "bun": (["bun", "install", "--frozen-lockfile", "--ignore-scripts"], "node_modules"),
+    "pnpm": (["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"], "node_modules"),
+    "npm": (["npm", "ci", "--ignore-scripts"], "node_modules"),
+    "yarn": (["yarn", "install", "--immutable", "--mode", "skip-build"], "node_modules"),
     "uv": (["uv", "sync", "--locked"], ".venv"),
     "hatch": (["uv", "sync", "--locked"], ".venv"),
     "pdm": (["pdm", "sync", "--clean"], ".venv"),

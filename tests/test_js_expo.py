@@ -140,12 +140,13 @@ def test_apply_writes_bundled_spec_and_never_installs_past_it(
 
     mobile_cmds = [" ".join(cmd) for cmd, cwd in calls if cwd == mobile]
     update = next(cmd for cmd, cwd in calls if cwd == mobile and cmd[:3] == ["bun", "update", "--"])
-    assert set(update[3:]) == {
+    assert {arg for arg in update[3:] if not arg.startswith("-")} == {
         "react-native@0.86.3",
         "react-native-gesture-handler@~2.32.0",
         "react-native-svg@15.16.0",
     }
+    assert "--ignore-scripts" in update
     joined = "\n".join(mobile_cmds)
     for past in ("react-native@0.87.0", "gesture-handler@3.3.0", "expo@58", "expo@<="):
         assert past not in joined
-    assert "bun add expo@~57.0.22" in mobile_cmds
+    assert any(cmd.startswith("bun add expo@~57.0.22") for cmd in mobile_cmds)

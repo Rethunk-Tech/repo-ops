@@ -34,7 +34,13 @@ from repo_ops_js.overrides import (
     release_unheld_pin,
 )
 from repo_ops_js.targeted_bump import run_targeted_bump
-from repo_ops_js.workspaces import COREPACK_MANAGERS, corepack_prepare, pm_argv
+from repo_ops_js.workspaces import (
+    COREPACK_MANAGERS,
+    corepack_prepare,
+    pm_argv,
+    pm_ignore_scripts_env,
+    with_ignore_scripts,
+)
 from repo_ops_lockfiles.parsers import versions_yarn_lock
 from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
@@ -53,7 +59,11 @@ def run(
 ) -> subprocess.CompletedProcess[str]:
     if cmd and cmd[0] in COREPACK_MANAGERS:
         cmd = pm_argv(cmd[0], *cmd[1:])
-    return _process_run(cmd, cwd, timeout=timeout, env=env, stdin=stdin)
+    cmd = with_ignore_scripts(cmd)
+    merged = pm_ignore_scripts_env(cmd)
+    if env:
+        merged = {**merged, **env}
+    return _process_run(cmd, cwd, timeout=timeout, env=merged or None, stdin=stdin)
 
 
 FILE_PROTOCOL_RE = re.compile(r"^file:(\.\./.+?)(?:#.*)?$")

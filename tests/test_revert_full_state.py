@@ -102,7 +102,7 @@ def test_revert_restores_remediation_edits_and_reinstalls(tmp_path: Path, init_g
     assert _git(tmp_path, "status", "--porcelain") == ""
     assert out.reverted_ok is True
     assert out.verify_fail_disposition == FAILED_CLEAN
-    assert installs == [(["bun", "install", "--frozen-lockfile"], ws_dir)]
+    assert installs == [(["bun", "install", "--frozen-lockfile", "--ignore-scripts"], ws_dir)]
 
 
 def test_revert_runs_when_verify_raises(tmp_path: Path, init_git_repo) -> None:

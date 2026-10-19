@@ -420,7 +420,7 @@ class TestNodeVerifyWithoutGate:
 
         assert result is not None
         assert "gate not on PATH" in result
-        assert fake_run.calls == [["npm", "ci"]]
+        assert fake_run.calls == [["npm", "ci", "--ignore-scripts"]]
 
     def test_biome_lint_is_not_run_when_gate_is_absent(
         self, tmp_path: Path, make_workspace, fake_run: Any
@@ -436,7 +436,7 @@ class TestNodeVerifyWithoutGate:
             result = verify_node(ws)
 
         assert result is not None
-        assert fake_run.calls == [["npm", "ci"]]
+        assert fake_run.calls == [["npm", "ci", "--ignore-scripts"]]
 
 
 # ---------------------------------------------------------------------------
@@ -651,7 +651,7 @@ class TestGateDelegation:
 
         assert result is not None
         assert "gate not on PATH" in result
-        assert calls == [["bun", "install", "--frozen-lockfile"]]
+        assert calls == [["bun", "install", "--frozen-lockfile", "--ignore-scripts"]]
 
     def test_gate_detecting_nothing_is_a_verify_error(self, tmp_path: Path, make_workspace) -> None:
         self._write_pkg(tmp_path)

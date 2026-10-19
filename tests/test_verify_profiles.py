@@ -118,7 +118,7 @@ class TestVerifyScriptFromConfig:
 
         assert result is None
         # npm ci (immutable) still ran
-        assert any("npm" in c and c[-1] == "ci" for c in fake_run.calls)
+        assert any("npm" in c and "ci" in c for c in fake_run.calls)
         # No package.json script was invoked
         assert not any("echo" in str(c) for c in fake_run.calls)
 

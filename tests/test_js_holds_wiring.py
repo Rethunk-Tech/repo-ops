@@ -429,7 +429,7 @@ PIN_CASES = [
         lambda pkg: pkg.get("overrides", {}),
         _mark_landed_nm,
         f"{_module('bun')}.release_unheld_pin",
-        [["bun", "add", "is-odd@latest"]],
+        [["bun", "add", "is-odd@latest", "--ignore-scripts"]],
     ),
     PinCase(
         "npm",

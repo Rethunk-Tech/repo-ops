@@ -26,6 +26,16 @@ KNOWN_PACKAGE_MANAGERS = frozenset({"npm", "pnpm", "yarn", "bun"})
 # skipped entirely and the real binary on PATH is used instead.
 COREPACK_MANAGERS = frozenset({"npm", "pnpm", "yarn"})
 
+# name@semver with optional Corepack integrity. Rejects URL / file locators.
+_PACKAGE_MANAGER_FIELD = re.compile(
+    r"^(?P<name>npm|pnpm|yarn|bun)@"
+    r"(?P<ver>v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)"
+    r"(?:\+sha(?:1|224|256|512)\.[0-9a-f]+)?$",
+    re.IGNORECASE,
+)
+
+_INSTALL_VERBS = frozenset({"install", "update", "ci", "add", "up"})
+
 
 def pm_argv(manager: str, *args: str) -> list[str]:
     """Invoke a Node package manager without relying on a process-global shim.
@@ -58,16 +68,45 @@ def pm_run_prefix(manager: str) -> list[str]:
 
 def parse_package_manager(pkg: dict) -> tuple[str, str] | None:
     pm = (pkg.get("packageManager") or "").strip()
-    if not pm or "@" not in pm:
+    match = _PACKAGE_MANAGER_FIELD.fullmatch(pm)
+    if not match:
         return None
-    name, ver = pm.split("@", 1)
-    name = name.strip().lower()
-    ver = ver.strip()
-    if not name or not ver:
+    return match.group("name").lower(), match.group("ver")
+
+
+def _pm_name(cmd: list[str]) -> str | None:
+    if not cmd:
         return None
-    if name not in KNOWN_PACKAGE_MANAGERS:
-        return None
-    return name, ver
+    if cmd[0] == "corepack" and len(cmd) > 1:
+        return cmd[1]
+    return cmd[0]
+
+
+def with_ignore_scripts(cmd: list[str]) -> list[str]:
+    """Append the ecosystem flag that skips lifecycle scripts on install/update."""
+    pm = _pm_name(cmd)
+    if pm is None:
+        return cmd
+    verb_at = 2 if cmd[0] == "corepack" else 1
+    if len(cmd) <= verb_at or cmd[verb_at] not in _INSTALL_VERBS:
+        return cmd
+    if "--ignore-scripts" in cmd or "--mode" in cmd:
+        return cmd
+    if pm in {"npm", "pnpm", "bun"}:
+        return [*cmd, "--ignore-scripts"]
+    if pm == "yarn" and cmd[verb_at] == "install":
+        return [*cmd, "--mode", "skip-build"]
+    return cmd
+
+
+def pm_ignore_scripts_env(cmd: list[str]) -> dict[str, str]:
+    """Env that disables lifecycle scripts for *cmd*'s package manager."""
+    pm = _pm_name(cmd)
+    if pm == "yarn":
+        return {"YARN_ENABLE_SCRIPTS": "false"}
+    if pm in {"npm", "pnpm"}:
+        return {"npm_config_ignore_scripts": "true"}
+    return {}
 
 
 def pm_version_argv(manager: str) -> list[str] | None:
@@ -127,11 +166,10 @@ def corepack_prepare(manager: str, mdir: Path) -> None:
             file=sys.stderr,
         )
     pkg = read_json_file(mdir / "package.json") or {}
+    parsed = parse_package_manager(pkg)
+    if parsed is None or parsed[0] not in COREPACK_MANAGERS:
+        return
     pm = (pkg.get("packageManager") or "").strip()
-    if not pm:
-        return
-    if pm.split("@", 1)[0].strip().lower() not in COREPACK_MANAGERS:
-        return
     proc_prepare = run(["corepack", "prepare", pm], mdir, timeout=120)
     if proc_prepare.returncode != 0:
         print(

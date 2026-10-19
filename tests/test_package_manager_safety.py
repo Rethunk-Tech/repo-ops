@@ -6,20 +6,53 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-from repo_ops_js.workspaces import parse_package_manager, pm_version_argv
+import pytest
+
+from repo_ops_js.workspaces import parse_package_manager, pm_version_argv, with_ignore_scripts
 from repo_ops_models import Workspace
 from repo_ops_upgrade_remediations_js.remediations import _pm_runtime_version
 
 
-def test_parse_package_manager_rejects_path_like_names():
-    assert parse_package_manager({"packageManager": "./evil@1.0.0"}) is None
-    assert parse_package_manager({"packageManager": "npm/evil@1.0.0"}) is None
-    assert parse_package_manager({"packageManager": "..\\evil@1.0.0"}) is None
+@pytest.mark.parametrize(
+    "field",
+    [
+        "./evil@1.0.0",
+        "npm/evil@1.0.0",
+        "..\\evil@1.0.0",
+        "yarn@https://attacker.example/payload.tgz",
+        "yarn@http://attacker.example/x",
+        "pnpm@file:../evil.tgz",
+        "npm@github:org/repo",
+    ],
+)
+def test_parse_package_manager_rejects_path_like_names(field: str):
+    assert parse_package_manager({"packageManager": field}) is None
 
 
 def test_parse_package_manager_accepts_known_managers():
     assert parse_package_manager({"packageManager": "pnpm@9.0.0"}) == ("pnpm", "9.0.0")
     assert parse_package_manager({"packageManager": "NPM@10.1.0"}) == ("npm", "10.1.0")
+    assert parse_package_manager({"packageManager": "yarn@4.10.3+sha224.aa"}) == (
+        "yarn",
+        "4.10.3",
+    )
+
+
+@pytest.mark.parametrize(
+    ("cmd", "want"),
+    [
+        (["npm", "update"], ["npm", "update", "--ignore-scripts"]),
+        (["npm", "install"], ["npm", "install", "--ignore-scripts"]),
+        (["pnpm", "install"], ["pnpm", "install", "--ignore-scripts"]),
+        (["corepack", "npm", "ci"], ["corepack", "npm", "ci", "--ignore-scripts"]),
+        (["yarn", "install"], ["yarn", "install", "--mode", "skip-build"]),
+        (["yarn", "up", "-R", "*"], ["yarn", "up", "-R", "*"]),
+        (["bun", "update"], ["bun", "update", "--ignore-scripts"]),
+        (["npm", "outdated", "--json"], ["npm", "outdated", "--json"]),
+    ],
+)
+def test_with_ignore_scripts_install_verbs(cmd: list[str], want: list[str]) -> None:
+    assert with_ignore_scripts(cmd) == want
 
 
 def test_pm_version_argv_rejects_unknown_manager():

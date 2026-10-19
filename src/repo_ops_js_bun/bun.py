@@ -27,6 +27,7 @@ from repo_ops_js.targeted_bump import run_targeted_bump
 from repo_ops_js.workspaces import (
     apply_with_members,
     check_with_members,
+    with_ignore_scripts,
 )
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
@@ -166,7 +167,7 @@ def targeted_bump_behind(
         # A ``~``/``^`` target is a hold's install spec (Expo's), saved as written.
         exact = [] if version[:1] in ("~", "^") else _exact_flag(name, pkg_data)
         install = run(
-            ["bun", "add", *exact, f"{name}@{version}"],
+            with_ignore_scripts(["bun", "add", *exact, f"{name}@{version}"]),
             ws.path,
             timeout=TIMEOUT_APPLY,
         )
@@ -218,7 +219,9 @@ def _finalize_bun_apply(
         candidate_names,
         manager="bun",
         run_install=lambda name, spec: run(
-            ["bun", "add", f"{name}@{spec}"], ws.path, timeout=TIMEOUT_APPLY
+            with_ignore_scripts(["bun", "add", f"{name}@{spec}"]),
+            ws.path,
+            timeout=TIMEOUT_APPLY,
         ),
     )
     # bun records the *requested* spec in bun.lock's workspace mirror rather
@@ -228,7 +231,7 @@ def _finalize_bun_apply(
     # something actually mutated, and best-effort: a failure here leaves the
     # cosmetic drift an apply would have left anyway.
     if mutated or applied or held:
-        run(["bun", "install"], ws.path, timeout=TIMEOUT_APPLY)
+        run(with_ignore_scripts(["bun", "install"]), ws.path, timeout=TIMEOUT_APPLY)
     return fold_held_into_behind(held, behind)
 
 
@@ -265,7 +268,7 @@ def _apply_bun_dir(ws: Workspace, root: Path) -> list[Change]:
         # direct dep is outdated, because it is what refreshes transitive
         # lockfile entries. The guard is still applied to any changes whose
         # target version IS known.
-        proc = run(["bun", "update"], ws.path, timeout=TIMEOUT_APPLY)
+        proc = run(with_ignore_scripts(["bun", "update"]), ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "bun update failed")
         # Re-check original changes for known target versions.
@@ -282,7 +285,11 @@ def _apply_bun_dir(ws: Workspace, root: Path) -> list[Change]:
             blocked = unresolved_targets(ws, guardable)
             behind = fold_blocked_into_behind(blocked, behind)
         return _finalize_bun_apply(ws, changes, behind, root=root, mutated=True)
-    proc = run(["bun", "update", "--", *targets], ws.path, timeout=TIMEOUT_APPLY)
+    proc = run(
+        with_ignore_scripts(["bun", "update", "--", *targets]),
+        ws.path,
+        timeout=TIMEOUT_APPLY,
+    )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "bun update failed")
     blocked = unresolved_targets(ws, requested)

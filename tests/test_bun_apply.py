@@ -36,7 +36,10 @@ def test_apply_bun_updates_reported_packages_not_latest_flag(monkeypatch, fake_r
     ):
         apply_bun(ws)
 
-    assert fake_run.calls == [["bun", "update", "--", "foo@1.1.0"], ["bun", "install"]]
+    assert fake_run.calls == [
+        ["bun", "update", "--", "foo@1.1.0", "--ignore-scripts"],
+        ["bun", "install", "--ignore-scripts"],
+    ]
     assert not any("--latest" in c for c in fake_run.calls)
 
 
@@ -58,7 +61,10 @@ def test_apply_bun_rejects_dash_prefixed_package_names(fake_run: Any) -> None:
     ):
         apply_bun(ws)
 
-    assert fake_run.calls == [["bun", "update"], ["bun", "install"]]
+    assert fake_run.calls == [
+        ["bun", "update", "--ignore-scripts"],
+        ["bun", "install", "--ignore-scripts"],
+    ]
 
 
 def _ghost_ws() -> Workspace:
@@ -144,7 +150,10 @@ def test_apply_bun_bare_update_defers_ghost_to_retry(monkeypatch, fake_run: Any)
         behind = apply_bun(_ghost_ws())
 
     initial_guard.assert_not_called()
-    assert fake_run.calls == [["bun", "update"], ["bun", "install"]]
+    assert fake_run.calls == [
+        ["bun", "update", "--ignore-scripts"],
+        ["bun", "install", "--ignore-scripts"],
+    ]
     assert retry_inputs == [[blocked]]
     assert behind == [blocked]
 
@@ -182,7 +191,10 @@ def test_apply_bun_refreshes_lockfile_when_nothing_outdated(monkeypatch, fake_ru
     ):
         apply_bun(ws)
 
-    assert fake_run.calls == [["bun", "update"], ["bun", "install"]]
+    assert fake_run.calls == [
+        ["bun", "update", "--ignore-scripts"],
+        ["bun", "install", "--ignore-scripts"],
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +225,10 @@ def test_apply_bun_fallback_guard_called_for_known_versions(fake_run: Any) -> No
     ):
         apply_bun(_ghost_ws())
 
-    assert fake_run.calls == [["bun", "update"], ["bun", "install"]]
+    assert fake_run.calls == [
+        ["bun", "update", "--ignore-scripts"],
+        ["bun", "install", "--ignore-scripts"],
+    ]
     # guardable empty ('?' excluded) → guard not called; that's correct behaviour
     assert guard_calls == []
 
@@ -303,7 +318,7 @@ def test_apply_bun_bumps_member_dep_from_member_directory(tmp_path: Path) -> Non
     ):
         apply_bun(ws)
 
-    assert (["bun", "update", "--", "next@16.3.5"], web) in calls
+    assert (["bun", "update", "--", "next@16.3.5", "--ignore-scripts"], web) in calls
     assert not any("next@16.3.5" in " ".join(cmd) for cmd, cwd in calls if cwd == tmp_path)
 
 
@@ -331,7 +346,7 @@ def test_apply_bun_moves_stale_private_peer_pin_and_refreshes_lockfile(tmp_path:
         apply_bun(ws)
 
     assert json.loads(member.read_text())["peerDependencies"] == {"next": "16.3.5"}
-    assert (["bun", "install"], tmp_path) in calls
+    assert (["bun", "install", "--ignore-scripts"], tmp_path) in calls
     assert _rewritten_manifests(ws, {"pre_apply_snapshot": snap}) == ["packages/auth/package.json"]
     restore_workspace_snapshot(tmp_path, snap, "bun")
     assert json.loads(member.read_text())["peerDependencies"] == {"next": "16.3.1"}
