@@ -31,16 +31,26 @@ _FORBIDDEN_BASENAMES = frozenset(
         "id_ed25519",
         ".netrc",
         ".npmrc",
+        ".yarnrc",
+        ".yarnrc.yml",
+        ".yarnrc.yaml",
+        ".pnpmrc",
+        ".pypirc",
+        ".git-credentials",
+        "credentials",
     }
 )
-_FORBIDDEN_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
+_FORBIDDEN_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".p8")
 _FORBIDDEN_FRAGMENTS = (
     "/.env.",
     "/.env/",
     "/secrets/",
     "/credentials/",
+    "/.aws/",
+    "/.docker/",
     "service-account",
     "private_key",
+    "npmauthtoken",
 )
 
 
@@ -77,7 +87,7 @@ def is_forbidden_commit_path(path: str) -> bool:
         return True
     if any(lower_base.endswith(s) for s in _FORBIDDEN_SUFFIXES):
         return True
-    lower_norm = norm.lower()
+    lower_norm = "/" + norm.lower().lstrip("/")
     return any(frag in lower_norm for frag in _FORBIDDEN_FRAGMENTS)
 
 
@@ -141,9 +151,9 @@ def upgrade_scoped_paths(
       never staged.
     - Root-workspace lockfiles/manifests matched by basename when that workspace
       has no ``owned_edits`` (tests and callers that only set ``changes``).
-    - Subdirectory-workspace files matched by directory prefix with a "/" boundary
-      so "packages/foo" never matches "packages/foobar", also only when
-      ``owned_edits`` is empty.
+    - Subdirectory workspaces without ``owned_edits`` contribute no prefix
+      match (fail closed): only exact owned paths, remediations, container
+      files, SOUP, actions, and declared member ``package.json`` files.
     - Workflow files explicitly bumped by an actions run (exact path match).
     - When the bundle has actions bumps but no workspaces, only the bumped workflow
       file(s) are staged — pre-existing dirty files are never swept in.
@@ -175,8 +185,6 @@ def upgrade_scoped_paths(
     """
     # root_wanted: basenames valid at the repo root (no subdirectory prefix).
     root_wanted: set[str] = set()
-    # sub_prefixes: dir prefixes for subdirectory workspaces (with "/" boundary).
-    sub_prefixes: set[str] = set()
     # action_paths: exact relative paths of bumped workflow files.
     action_paths: set[str] = set()
     # node_workspace_roots: (root path, member glob patterns) for root-scanned
@@ -218,10 +226,6 @@ def upgrade_scoped_paths(
                 members = yarn_workspace_members(wr.workspace.path)
                 if members:
                     node_workspace_roots.append((wr.workspace.path.resolve(), members))
-        else:
-            # Subdirectory workspace: scope by prefix with a strict "/" boundary
-            # so "packages/foo" cannot match "packages/foobar".
-            sub_prefixes.add(str(rel).replace("\\", "/"))
         if wr.workspace.manager == "container":
             from repo_ops_container.container import find_container_files
 
@@ -290,15 +294,6 @@ def upgrade_scoped_paths(
         # Dockerfile/compose file a container workspace repinned.
         if norm in container_paths:
             scoped.append(path)
-            continue
-        # Subdirectory workspace: prefix must match with a "/" boundary.
-        matched = False
-        for prefix in sub_prefixes:
-            if norm == prefix or norm.startswith(f"{prefix}/"):
-                scoped.append(path)
-                matched = True
-                break
-        if matched:
             continue
         # Nested workspace-member package.json touched by a root-scanned node
         # workspaces monorepo apply (e.g. yarn resolving a peer/group-constrained

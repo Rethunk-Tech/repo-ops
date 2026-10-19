@@ -28,12 +28,24 @@ def _bundle(tmp_path: Path, init_git_repo, *, started_dirty: bool = False) -> Re
     return RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
 
 
-def test_forbidden_env_blocks_commit() -> None:
-    assert post_apply_commit.is_forbidden_commit_path(".env")
-    assert post_apply_commit.is_forbidden_commit_path("apps/web/.env.local")
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".env",
+        "apps/web/.env.local",
+        "../package-lock.json",
+        "/etc/passwd",
+        ".yarnrc.yml",
+        "apps/.npmrc",
+        ".pypirc",
+        "signing.p8",
+        ".git-credentials",
+        ".aws/credentials",
+    ],
+)
+def test_forbidden_env_blocks_commit(path: str) -> None:
+    assert post_apply_commit.is_forbidden_commit_path(path)
     assert not post_apply_commit.is_forbidden_commit_path("package-lock.json")
-    assert post_apply_commit.is_forbidden_commit_path("../package-lock.json")
-    assert post_apply_commit.is_forbidden_commit_path("/etc/passwd")
 
 
 def test_parse_porcelain_unstaged_preserves_filename() -> None:
@@ -507,7 +519,7 @@ def test_actions_only_does_not_sweep_predirty_lockfile(tmp_path: Path, init_git_
 
 
 def test_upgrade_scoped_paths_prefix_boundary(tmp_path: Path, init_git_repo) -> None:
-    """'packages/foo' prefix must not match 'packages/foobar/yarn.lock'."""
+    """Owned edits must not sweep a sibling prefix or extra files under the dir."""
     init_git_repo(tmp_path)
     foo_dir = tmp_path / "packages" / "foo"
     foo_dir.mkdir(parents=True)
@@ -523,16 +535,39 @@ def test_upgrade_scoped_paths_prefix_boundary(tmp_path: Path, init_git_repo) -> 
     )
     wr = WorkspaceResult(workspace=ws, status="ok")
     wr.changes = [Change("pkg", "1", "2")]
+    wr.owned_edits = _owned("packages/foo/yarn.lock")
     bundle = RepoBundle(git_repo=tmp_path, label="boundary", workspaces=[wr])
 
-    # Porcelain includes the sibling workspace's lockfile which must NOT be staged.
     porcelain = [
         "packages/foo/yarn.lock",
-        "packages/foobar/yarn.lock",  # sibling — must be excluded
+        "packages/foo/.yarnrc.yml",
+        "packages/foobar/yarn.lock",
     ]
     scoped = post_apply_commit.upgrade_scoped_paths(bundle, porcelain)
-    assert "packages/foo/yarn.lock" in scoped
-    assert "packages/foobar/yarn.lock" not in scoped
+    assert scoped == ["packages/foo/yarn.lock"]
+
+
+def test_upgrade_scoped_paths_no_prefix_without_owned_edits(tmp_path: Path, init_git_repo) -> None:
+    """Missing owned_edits must not prefix-match a nested workspace tree."""
+    init_git_repo(tmp_path)
+    foo_dir = tmp_path / "packages" / "foo"
+    foo_dir.mkdir(parents=True)
+
+    ws = Workspace(
+        path=foo_dir,
+        ecosystem="node",
+        manager="yarn",
+        git_repo=tmp_path,
+        label="foo",
+    )
+    wr = WorkspaceResult(workspace=ws, status="ok")
+    wr.changes = [Change("pkg", "1", "2")]
+    bundle = RepoBundle(git_repo=tmp_path, label="closed", workspaces=[wr])
+
+    scoped = post_apply_commit.upgrade_scoped_paths(
+        bundle, ["packages/foo/yarn.lock", "packages/foo/.yarnrc.yml"]
+    )
+    assert scoped == []
 
 
 def test_upgrade_scoped_paths_root_exact_path(tmp_path: Path, init_git_repo) -> None:
@@ -753,8 +788,7 @@ def test_upgrade_scoped_paths_includes_nested_remediation_file(
 
     porcelain = ["frontend/yarn.lock", "frontend/biome.json"]
     scoped = post_apply_commit.upgrade_scoped_paths(bundle, porcelain)
-    assert "frontend/yarn.lock" in scoped
-    assert "frontend/biome.json" in scoped
+    assert scoped == ["frontend/biome.json"]
 
 
 # ---------------------------------------------------------------------------
