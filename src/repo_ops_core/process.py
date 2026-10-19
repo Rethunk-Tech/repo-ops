@@ -73,8 +73,4 @@ def run(
         env=merged,
         input=stdin,
     )
-    if VERBOSE and proc.returncode != 0 and (proc.stderr or proc.stdout):
-        err = (proc.stderr or proc.stdout).strip()
-        if err:
-            print(f"  ! exit {proc.returncode}:\n{err}", file=sys.stderr, flush=True)
     return proc

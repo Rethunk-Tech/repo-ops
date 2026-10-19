@@ -78,6 +78,19 @@ def test_workspace_result_to_json_includes_started_dirty(tmp_path: Path, make_wo
     )
 
 
+def test_workspace_result_to_json_truncates_verify_error(tmp_path: Path, make_workspace) -> None:
+    wr = WorkspaceResult(
+        workspace=make_workspace(tmp_path, ecosystem="py", manager="uv", label=""),
+        status="fail",
+        verify_error="x" * (models_mod.VERIFY_ERROR_MAX + 40),
+    )
+    payload = wr.to_json()
+    assert payload["verify_error"].endswith("...")
+    assert len(payload["verify_error"]) == models_mod.VERIFY_ERROR_MAX
+    wr.verify_error = "Authorization: secret-token-value"
+    assert "secret-token-value" not in wr.to_json()["verify_error"]
+
+
 def test_action_bump_to_json_optional_detail() -> None:
     bare = ActionBump(
         workflow=".github/workflows/ci.yml",

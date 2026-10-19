@@ -6,6 +6,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from repo_ops_core.tee import redact_secrets
+
+VERIFY_ERROR_MAX = 256
+
 # Shared marker substring for the dirty-worktree skip error message. Producers
 # that set WorkspaceResult.error for a dirty-skip (e.g. repo_ops_upgrade's
 # orchestration/report modules) should import and use this constant rather
@@ -86,7 +90,10 @@ class WorkspaceResult:
         if self.error is not None:
             out["error"] = self.error
         if self.verify_error is not None:
-            out["verify_error"] = self.verify_error
+            err = redact_secrets(self.verify_error)
+            if len(err) > VERIFY_ERROR_MAX:
+                err = err[: VERIFY_ERROR_MAX - 3] + "..."
+            out["verify_error"] = err
         if self.verify_fail_disposition is not None:
             out["verify_fail_disposition"] = self.verify_fail_disposition
         if self.started_dirty:

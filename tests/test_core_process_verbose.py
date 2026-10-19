@@ -19,8 +19,7 @@ def test_run_nonexistent_cwd_raises_file_not_found_error(tmp_path: Path) -> None
 def test_run_verbose_echoes_command_and_failure(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """VERBOSE=True echoes the command line, and a nonzero exit with output
-    also echoes the '! exit <code>' tail to stderr."""
+    """VERBOSE=True echoes the command line; child stderr is not persisted."""
     process.set_verbose(True)
     try:
         proc = process.run(
@@ -37,8 +36,7 @@ def test_run_verbose_echoes_command_and_failure(
     assert proc.returncode == 3
     captured = capsys.readouterr()
     assert f"  $ {sys.executable} -c" in captured.err
-    assert "! exit 3:" in captured.err
-    assert "boom" in captured.err
+    assert "! exit" not in captured.err
 
 
 def test_run_verbose_success_only_echoes_command(

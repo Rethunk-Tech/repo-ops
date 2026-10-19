@@ -3,11 +3,30 @@
 from __future__ import annotations
 
 import contextlib
+import re
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import IO
+
+_SECRET_RES = (
+    re.compile(r"(?i)(authorization:\s*).+"),
+    re.compile(r"(?i)\b(bearer\s+)\S+"),
+    re.compile(r"(?i)\b(basic\s+)[A-Za-z0-9+/=]+"),
+    re.compile(r"\bnpm_[A-Za-z0-9]{10,}"),
+    re.compile(r"\bghp_[A-Za-z0-9]{20,}"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}"),
+    re.compile(r"(?i)((?:password|secret|token|api[_-]?key)[=:]\s*)\S+"),
+)
+
+
+def redact_secrets(text: str) -> str:
+    """Replace known credential patterns so apply transcripts stay shareable."""
+    out = text
+    for pat in _SECRET_RES:
+        out = pat.sub(r"\1***" if pat.groups else "***", out)
+    return out
 
 
 class _TeeIO:
@@ -20,8 +39,9 @@ class _TeeIO:
     def write(self, data: str) -> int:
         if not data:
             return 0
-        self._stream.write(data)
-        self._log.write(data)
+        safe = redact_secrets(data)
+        self._stream.write(safe)
+        self._log.write(safe)
         return len(data)
 
     def flush(self) -> None:
