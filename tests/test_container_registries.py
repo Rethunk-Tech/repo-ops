@@ -238,6 +238,49 @@ def test_fetch_token_generic_registry_200_probe_returns_none() -> None:
     assert result is None
 
 
+def test_fetch_token_rejects_http_and_off_host_realm() -> None:
+    """A 401 realm must be https on the registry host; Basic never leaves that host."""
+    creds = base64.b64encode(b"user:pass").decode()
+    basic_auth = f"Basic {creds}"
+    seen: list[urllib.request.Request] = []
+
+    def side_effect(req: Any, timeout: int = 10) -> Any:
+        seen.append(req)
+        raise _make_http_error(
+            401,
+            headers={
+                "WWW-Authenticate": (
+                    'Bearer realm="http://169.254.169.254/latest/meta-data",service="evil.example"'
+                )
+            },
+        )
+
+    with patch("urllib.request.urlopen", side_effect=side_effect):
+        assert _fetch_token_for_registry("evil.example", "img", basic_auth) is None
+
+    assert all("169.254.169.254" not in req.full_url for req in seen)
+    assert all(req.get_header("Authorization") is None for req in seen)
+
+    seen.clear()
+
+    def off_host(req: Any, timeout: int = 10) -> Any:
+        seen.append(req)
+        raise _make_http_error(
+            401,
+            headers={
+                "WWW-Authenticate": (
+                    'Bearer realm="https://exfil.example/token",service="evil.example"'
+                )
+            },
+        )
+
+    with patch("urllib.request.urlopen", side_effect=off_host):
+        assert _fetch_token_for_registry("evil.example", "img", basic_auth) is None
+
+    assert all("exfil.example" not in req.full_url for req in seen)
+    assert all(req.get_header("Authorization") is None for req in seen)
+
+
 def test_fetch_token_with_basic_auth_forwarded() -> None:
     """Basic-auth is forwarded to the token endpoint."""
     creds = base64.b64encode(b"user:pass").decode()

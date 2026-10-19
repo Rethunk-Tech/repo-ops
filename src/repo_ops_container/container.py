@@ -619,16 +619,36 @@ def _parse_www_authenticate(header_value: str) -> dict[str, str]:
     return result
 
 
+def _realm_host_trusted(realm_host: str, registry_host: str) -> bool:
+    """True when a WWW-Authenticate realm host may be contacted for *registry_host*.
+
+    Same-host realms are accepted. Docker Hub's token service is the one
+    hardcoded third-party host (not taken from a challenge).
+    """
+    if realm_host.lower() == registry_host.lower():
+        return True
+    return registry_host == _DOCKER_REGISTRY_HOST and realm_host.lower() == "auth.docker.io"
+
+
 def _fetch_bearer_token(
     realm: str,
     service: str,
     scope: str,
     basic_auth: str | None = None,
+    *,
+    registry_host: str,
 ) -> str | None:
     """Fetch a bearer token from *realm* for *service*/*scope*.
 
     Uses anonymous access unless *basic_auth* is provided (``Basic <b64>``).
+    The realm must be https and its host must match *registry_host* (Docker
+    Hub's ``auth.docker.io`` is the sole exception). Stored Basic is never
+    sent to any other host.
     """
+    parsed = urllib.parse.urlparse(realm)
+    realm_host = (parsed.hostname or "").lower()
+    if parsed.scheme.lower() != "https" or not _realm_host_trusted(realm_host, registry_host):
+        return None
     # Built manually (not via urllib.parse.urlencode(..., quote_via=...)) so
     # both space-as-%20 (not quote_plus's "+") and the exact `quote()` safe=""
     # encoding stay explicit, without fighting typeshed's overloaded
@@ -639,10 +659,12 @@ def _fetch_bearer_token(
     )
     url = f"{realm}?{params}"
     headers: dict[str, str] = {"Accept": "application/json"}
-    if basic_auth:
+    if basic_auth and _realm_host_trusted(realm_host, registry_host):
         headers["Authorization"] = basic_auth
     try:
-        with open_url(url, headers=headers, timeout=_REGISTRY_TIMEOUT) as resp:
+        with open_url(
+            url, headers=headers, timeout=_REGISTRY_TIMEOUT, allowed_host=realm_host
+        ) as resp:
             data: dict[str, Any] = json.loads(resp.read())
             token = data.get("token") or data.get("access_token")
             return str(token) if token else None
@@ -663,6 +685,7 @@ def _fetch_token_for_registry(host: str, repo: str, basic_auth: str | None) -> s
             _DOCKER_AUTH_SERVICE,
             scope,
             basic_auth,
+            registry_host=host,
         )
 
     # Generic: probe /v2/ to trigger the 401 challenge.
@@ -692,7 +715,7 @@ def _fetch_token_for_registry(host: str, repo: str, basic_auth: str | None) -> s
         scope = f"repository:{repo}:pull"
         if not realm:
             return None
-        return _fetch_bearer_token(realm, service, scope, basic_auth)
+        return _fetch_bearer_token(realm, service, scope, basic_auth, registry_host=host)
     except Exception:
         return None
 

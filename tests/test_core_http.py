@@ -56,3 +56,10 @@ def test_open_url_refuses_non_http_schemes(tmp_path: Path) -> None:
     for url in (secret.as_uri(), "ftp://example.com/x", "/etc/hosts"):
         with pytest.raises(UnsupportedScheme):
             open_url(url, timeout=5)
+
+
+def test_open_url_allowed_host_requires_https_and_pin(server_url: str) -> None:
+    with pytest.raises(UnsupportedScheme):
+        open_url(server_url, timeout=5, allowed_host="127.0.0.1")
+    with pytest.raises(UnsupportedScheme):
+        open_url("https://evil.example/token", timeout=5, allowed_host="quay.io")

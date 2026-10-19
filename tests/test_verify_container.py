@@ -32,7 +32,12 @@ def _http_error(
 
 
 def _open_ok(
-    url: str, *, timeout: float, headers: dict[str, str] | None = None, method: str | None = None
+    url: str,
+    *,
+    timeout: float,
+    headers: dict[str, str] | None = None,
+    method: str | None = None,
+    **_: Any,
 ) -> MagicMock:
     del timeout, headers
     if url.rstrip("/").endswith("/v2"):
@@ -45,7 +50,12 @@ def _open_ok(
 
 
 def _open_manifest_404(
-    url: str, *, timeout: float, headers: dict[str, str] | None = None, method: str | None = None
+    url: str,
+    *,
+    timeout: float,
+    headers: dict[str, str] | None = None,
+    method: str | None = None,
+    **_: Any,
 ) -> MagicMock:
     del timeout, headers
     if url.rstrip("/").endswith("/v2"):
@@ -56,14 +66,24 @@ def _open_manifest_404(
 
 
 def _open_offline(
-    url: str, *, timeout: float, headers: dict[str, str] | None = None, method: str | None = None
+    url: str,
+    *,
+    timeout: float,
+    headers: dict[str, str] | None = None,
+    method: str | None = None,
+    **_: Any,
 ) -> MagicMock:
     del timeout, headers, method
     raise urllib.error.URLError("offline")
 
 
 def _open_token_then_digest(
-    url: str, *, timeout: float, headers: dict[str, str] | None = None, method: str | None = None
+    url: str,
+    *,
+    timeout: float,
+    headers: dict[str, str] | None = None,
+    method: str | None = None,
+    **_: Any,
 ) -> MagicMock:
     del timeout
     if url.rstrip("/").endswith("/v2"):
@@ -72,11 +92,11 @@ def _open_token_then_digest(
             401,
             {
                 "WWW-Authenticate": (
-                    'Bearer realm="https://auth.test/token",service="registry.test"'
+                    'Bearer realm="https://registry.test/token",service="registry.test"'
                 )
             },
         )
-    if url.startswith("https://auth.test/token"):
+    if url.startswith("https://registry.test/token"):
         return _resp(body=b'{"token":"anon"}')
     if "/manifests/" in url:
         assert headers and headers.get("Authorization") == "Bearer anon"
@@ -91,6 +111,7 @@ def _open_recording(seen: list[str]) -> Any:
         timeout: float,
         headers: dict[str, str] | None = None,
         method: str | None = None,
+        **_: Any,
     ) -> MagicMock:
         del timeout, headers
         seen.append(url)
