@@ -37,7 +37,7 @@ def test_apply_bun_updates_reported_packages_not_latest_flag(monkeypatch, fake_r
         apply_bun(ws)
 
     assert fake_run.calls == [
-        ["bun", "update", "--", "foo@1.1.0", "--ignore-scripts"],
+        ["bun", "update", "--ignore-scripts", "--", "foo@1.1.0"],
         ["bun", "install", "--ignore-scripts"],
     ]
     assert not any("--latest" in c for c in fake_run.calls)
@@ -318,7 +318,7 @@ def test_apply_bun_bumps_member_dep_from_member_directory(tmp_path: Path) -> Non
     ):
         apply_bun(ws)
 
-    assert (["bun", "update", "--", "next@16.3.5", "--ignore-scripts"], web) in calls
+    assert (["bun", "update", "--ignore-scripts", "--", "next@16.3.5"], web) in calls
     assert not any("next@16.3.5" in " ".join(cmd) for cmd, cwd in calls if cwd == tmp_path)
 
 

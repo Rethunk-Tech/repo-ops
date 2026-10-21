@@ -139,7 +139,9 @@ def test_apply_writes_bundled_spec_and_never_installs_past_it(
         apply_bun(ws)
 
     mobile_cmds = [" ".join(cmd) for cmd, cwd in calls if cwd == mobile]
-    update = next(cmd for cmd, cwd in calls if cwd == mobile and cmd[:3] == ["bun", "update", "--"])
+    update = next(
+        cmd for cmd, cwd in calls if cwd == mobile and cmd[:2] == ["bun", "update"] and "--" in cmd
+    )
     assert {arg for arg in update[3:] if not arg.startswith("-")} == {
         "react-native@0.86.3",
         "react-native-gesture-handler@~2.32.0",

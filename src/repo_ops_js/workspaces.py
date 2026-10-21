@@ -83,7 +83,7 @@ def _pm_name(cmd: list[str]) -> str | None:
 
 
 def with_ignore_scripts(cmd: list[str]) -> list[str]:
-    """Append the ecosystem flag that skips lifecycle scripts on install/update."""
+    """Add the ecosystem flag that skips lifecycle scripts on install/update, before any ``--``."""
     pm = _pm_name(cmd)
     if pm is None:
         return cmd
@@ -92,10 +92,13 @@ def with_ignore_scripts(cmd: list[str]) -> list[str]:
         return cmd
     if "--ignore-scripts" in cmd or "--mode" in cmd:
         return cmd
+    # After `--` a flag is read as a package name: `bun update -- a --ignore-scripts` fails with
+    # '"--ignore-scripts" is not in bun.lock'.
+    end = cmd.index("--") if "--" in cmd else len(cmd)
     if pm in {"npm", "pnpm", "bun"}:
-        return [*cmd, "--ignore-scripts"]
+        return [*cmd[:end], "--ignore-scripts", *cmd[end:]]
     if pm == "yarn" and cmd[verb_at] == "install":
-        return [*cmd, "--mode", "skip-build"]
+        return [*cmd[:end], "--mode", "skip-build", *cmd[end:]]
     return cmd
 
 

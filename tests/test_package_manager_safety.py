@@ -48,6 +48,7 @@ def test_parse_package_manager_accepts_known_managers():
         (["yarn", "install"], ["yarn", "install", "--mode", "skip-build"]),
         (["yarn", "up", "-R", "*"], ["yarn", "up", "-R", "*"]),
         (["bun", "update"], ["bun", "update", "--ignore-scripts"]),
+        (["bun", "update", "--", "a", "b"], ["bun", "update", "--ignore-scripts", "--", "a", "b"]),
         (["npm", "outdated", "--json"], ["npm", "outdated", "--json"]),
     ],
 )
