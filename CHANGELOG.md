@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `plan`/`apply` raise pinned Go (`go.mod`, `go.work`), Rust, Python and Node toolchain versions to the latest stable release, honouring `[[hold]]` rules named after the tool.
+
 ## [0.25.5] - 2026-10-18
 
 ### Fixed

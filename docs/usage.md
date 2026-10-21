@@ -40,6 +40,20 @@ Every dependency moves to its newest release, across semver ranges and majors. E
 
 Node monorepos cover every workspace member, each bumped from its own directory. A private member's `peerDependencies` follow the version the same manifest depends on. When `gh` is authenticated, Actions rewrites are checked against the org's allowed-actions policy and violations are reported. Actions scanning covers both `.github/workflows/*.yml` and every composite-action `action.yml`/`action.yaml` in the repo; a `uses:` pin under an excluded workspace glob is left untouched.
 
+### Toolchains
+
+Pinned toolchain versions move too, only upward, keeping the pin's precision (`1.27` waits for a new minor; `1.27.2` becomes `1.27.3`). They are reported like packages, and `plan` lists them.
+
+| Tool | Pin | Moves to |
+| --- | --- | --- |
+| go | `go` and `toolchain` lines in `go.mod`, and the `go` line of an enclosing `go.work` (kept level with the module it lists) | newest stable on go.dev |
+| rust | a version `channel` in `rust-toolchain.toml` or `rust-toolchain` (`stable`/`beta`/`nightly` stay; Cargo `rust-version` is never touched) | newest stable |
+| python | a version in `.python-version` (`requires-python` is never touched) | newest stable CPython |
+| node | a version in `.nvmrc` / `.node-version` (`lts/*` and aliases stay) | newest release of the same major |
+| pnpm, bun, npm | `packageManager` | registry latest (a remediation); Yarn follows the local runtime |
+
+Hold one with `[[hold]]` named `go`, `rust`, `python` or `node`. A failed lookup warns and leaves the pin alone.
+
 ### Remediations
 
 After an update, `apply` runs the fixes the new versions need: Biome schema migration, Playwright browsers, a declared codegen script, the `packageManager` pin and Biome formatting of rewritten manifests for Node; `gofmt` for Go; `ruff check --fix` and `ruff format` for Python; `cargo fmt` for Rust; `deno fmt` for Deno. `plan` lists them.
