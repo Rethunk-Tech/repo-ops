@@ -48,6 +48,11 @@ def register_go_work_dir(ws_path: Path, go_work_dir: Path) -> None:
     _go_work_dirs[ws_path.resolve()] = go_work_dir.resolve()
 
 
+def go_work_dir_for(ws_path: Path) -> Path | None:
+    """The go.work directory registered over *ws_path*, if discovery found one."""
+    return _go_work_dirs.get(ws_path.resolve())
+
+
 def classify_go_error(stderr: str, ws_path: Path | None = None) -> str:
     """Return an error string, prefixed with ``[env] `` for environment errors.
 

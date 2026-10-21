@@ -276,3 +276,9 @@ def _offline_go_vulndb(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("repo_ops_go.vulndb._fetch_json", lambda url: [])
     vulndb._module_advisories.cache_clear()
     vulndb._affected_ranges.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _offline_toolchains(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep toolchain pin lookups off the network."""
+    monkeypatch.setattr("repo_ops_upgrade.toolchains._fetch", lambda url: None)
