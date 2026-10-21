@@ -82,6 +82,13 @@ def _expo_app(
     return None
 
 
+# Tooling released in step with each SDK and versioned by its major, but missing from bundledNativeModules.json: expo-doctor
+# reads it from api.expo.dev, and babel-preset-expo 58 under SDK 57 fails its "packages match the SDK" check.
+_SDK_MAJOR_PACKAGES = frozenset(
+    {"babel-preset-expo", "jest-expo", "eslint-config-expo", "expo-module-scripts"}
+)
+
+
 def expo_hold(ws: Workspace, package: str) -> HoldRule | None:
     """The Expo SDK ceiling for *package* in *ws*, or ``None`` when Expo does not govern it."""
     app = _expo_app(ws)
@@ -99,6 +106,17 @@ def expo_hold(ws: Workspace, package: str) -> HoldRule | None:
             reason=f"expo SDK {sdk}: SDK upgrades are manual",
             source="expo",
             spec=f"~{version}",
+        )
+    if package in _SDK_MAJOR_PACKAGES and package not in bundled:
+        if _excluded(pkg, package, ""):
+            return None
+        return HoldRule(
+            package=package,
+            max_version=sdk,
+            workspace=workspace_rel(ws),
+            reason=f"expo SDK {sdk}: {package} is versioned with the SDK",
+            source="expo",
+            spec=f"~{sdk}.0.0",
         )
     spec = bundled.get(package)
     bounds = _bounds(spec) if spec else None

@@ -152,3 +152,18 @@ def test_apply_writes_bundled_spec_and_never_installs_past_it(
     for past in ("react-native@0.87.0", "gesture-handler@3.3.0", "expo@58", "expo@<="):
         assert past not in joined
     assert any(cmd.startswith("bun add expo@~57.0.22") for cmd in mobile_cmds)
+
+
+def test_sdk_versioned_tooling_is_held_at_the_sdk_major(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """babel-preset-expo is not in bundledNativeModules.json, yet expo-doctor fails on 58 under SDK 57."""
+    from types import SimpleNamespace
+
+    from repo_ops_js.expo import expo_hold
+
+    mobile = _expo_monorepo(tmp_path, monkeypatch)
+    ws = SimpleNamespace(path=mobile, git_repo=tmp_path, ecosystem="node", manager="bun")
+    rule = expo_hold(ws, "babel-preset-expo")
+    assert rule is not None and rule.max_version == "57" and rule.spec == "~57.0.0"
+    assert expo_hold(ws, "left-pad") is None
