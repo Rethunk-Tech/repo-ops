@@ -312,3 +312,22 @@ def test_cross_major_refresh_already_current_on_new_major_is_noop(
     b = checkout[0]
     assert b.detail == "SHA-pinned; report only"
     assert wf.read_text(encoding="utf-8") == original
+
+
+def test_refresh_never_moves_a_pin_back_to_an_older_release(tmp_path: Path) -> None:
+    """A pin at v6.0.4 (newer than any tag the stale list has) stays put rather than dropping to v6.0.3."""
+    pinned = "cccccccccccccccccccccccccccccccccccccccc"
+    wf = _wf(
+        tmp_path,
+        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{pinned} # v6.0.4\n",
+    )
+    tags_proc = _make_tags_proc(f"v6.0.3 {_NEW}", f"v6.0.2 {_OLD}", f"v6 {_NEW}")
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
+    ):
+        bumps, _ = scan_actions(tmp_path, apply=True)
+
+    assert pinned in wf.read_text(encoding="utf-8")
+    assert not [b for b in bumps if b.action == "actions/checkout" and b.latest == _NEW], bumps

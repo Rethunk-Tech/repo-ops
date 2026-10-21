@@ -718,6 +718,15 @@ def _highest_exact_digest_in_major(info: dict, major: int) -> tuple[str, str] | 
     return None
 
 
+def _pin_version(pin: str, comment: str | None, info: dict) -> tuple[int, ...] | None:
+    """The release a SHA pin already carries: its dotted ``# vN.M`` comment, else the exact tags on its commit."""
+    if comment and _EXACT_TAG_RE.fullmatch(comment):
+        return _tag_version(comment)
+    sha = pin.lower().removeprefix("sha")
+    tags = [t for t in info.get("sha_to_tags", {}).get(sha, []) if _exact_tag_major(t) is not None]
+    return max((_tag_version(t) for t in tags), default=None)
+
+
 def _comment_rewrite_for(comment: str | None, tag: str) -> tuple[str, str] | None:
     """Return the ``(old, new)`` version-hint rewrite so the comment names *tag*.
 
@@ -1131,6 +1140,10 @@ def scan_actions(
                     already_current = pin_norm == new_sha or (
                         len(pin_norm) < 40 and new_sha.startswith(pin_norm)
                     )
+                    # A tag list older than the pin (a cache filled before a release) must not move it back.
+                    carried = _pin_version(pin, uses.comment, info) if info is not None else None
+                    if carried is not None and carried >= _tag_version(tag):
+                        already_current = True
                     if not already_current and _target_within_hold(repo, action, tag):
                         cross_major = (
                             target_major is not None and major is not None and target_major != major
