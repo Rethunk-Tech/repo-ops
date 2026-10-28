@@ -38,6 +38,7 @@ def test_apply_bun_updates_reported_packages_not_latest_flag(monkeypatch, fake_r
 
     assert fake_run.calls == [
         ["bun", "update", "--ignore-scripts", "--", "foo@1.1.0"],
+        ["bun", "audit", "--json"],
         ["bun", "install", "--ignore-scripts"],
     ]
     assert not any("--latest" in c for c in fake_run.calls)
@@ -63,8 +64,26 @@ def test_apply_bun_rejects_dash_prefixed_package_names(fake_run: Any) -> None:
 
     assert fake_run.calls == [
         ["bun", "update", "--ignore-scripts"],
+        ["bun", "audit", "--json"],
         ["bun", "install", "--ignore-scripts"],
     ]
+
+
+def test_apply_bun_updates_packages_bun_audit_flags() -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(list(cmd))
+        out = '{"node-forge": [{"severity": "high"}]}' if cmd[:2] == ["bun", "audit"] else ""
+        return subprocess.CompletedProcess(list(cmd), 1 if out else 0, stdout=out, stderr="")
+
+    with (
+        patch("repo_ops_js_bun.bun.run", fake_run),
+        patch("repo_ops_js_bun.bun.check_bun", return_value=([], [])),
+    ):
+        apply_bun(_ghost_ws())
+
+    assert ["bun", "update", "--ignore-scripts", "--", "node-forge"] in calls
 
 
 def _ghost_ws() -> Workspace:
@@ -152,6 +171,7 @@ def test_apply_bun_bare_update_defers_ghost_to_retry(monkeypatch, fake_run: Any)
     initial_guard.assert_not_called()
     assert fake_run.calls == [
         ["bun", "update", "--ignore-scripts"],
+        ["bun", "audit", "--json"],
         ["bun", "install", "--ignore-scripts"],
     ]
     assert retry_inputs == [[blocked]]
@@ -193,6 +213,7 @@ def test_apply_bun_refreshes_lockfile_when_nothing_outdated(monkeypatch, fake_ru
 
     assert fake_run.calls == [
         ["bun", "update", "--ignore-scripts"],
+        ["bun", "audit", "--json"],
         ["bun", "install", "--ignore-scripts"],
     ]
 
@@ -227,6 +248,7 @@ def test_apply_bun_fallback_guard_called_for_known_versions(fake_run: Any) -> No
 
     assert fake_run.calls == [
         ["bun", "update", "--ignore-scripts"],
+        ["bun", "audit", "--json"],
         ["bun", "install", "--ignore-scripts"],
     ]
     # guardable empty ('?' excluded) → guard not called; that's correct behaviour

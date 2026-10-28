@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -198,6 +199,24 @@ def targeted_bump_behind(
     return applied, still_behind
 
 
+def _update_advised(ws: Workspace) -> None:
+    """``bun update`` every package ``bun audit`` flags, within its declared ranges.
+
+    A plain update only moves direct dependencies, so a transitive lockfile entry
+    with a fixed release in range survives the apply and fails CI's audit gate.
+    """
+    proc = run(["bun", "audit", "--json"], ws.path, timeout=TIMEOUT_CHECK)
+    try:
+        report = json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError:
+        return
+    names = (
+        sorted(n for n in report if _valid_bun_package_name(n)) if isinstance(report, dict) else []
+    )
+    if names:
+        run(with_ignore_scripts(["bun", "update", "--", *names]), ws.path, timeout=TIMEOUT_APPLY)
+
+
 def _finalize_bun_apply(
     ws: Workspace, changes: list[Change], behind: list[Change], *, mutated: bool, root: Path
 ) -> list[Change]:
@@ -224,6 +243,7 @@ def _finalize_bun_apply(
             timeout=TIMEOUT_APPLY,
         ),
     )
+    _update_advised(ws)
     # bun records the *requested* spec in bun.lock's workspace mirror rather
     # than the range it wrote to package.json, so a bare ``bun update --latest``
     # leaves the mirror holding "latest" against a caret manifest. A plain
