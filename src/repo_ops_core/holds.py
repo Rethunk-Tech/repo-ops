@@ -43,7 +43,7 @@ class HoldRule:
     ecosystem: str | None = None
     workspace: str | None = None
     reason: str | None = None
-    source: str = "global"  # "global" | "repo" | "expo" — precedence + debugging only
+    source: str = "global"  # "global" | "repo" | "expo" | "vscode" — precedence + debugging only
     # Install spec to write instead of ``<=max_version`` when the source dictates one (Expo's bundled spec).
     spec: str | None = None
 

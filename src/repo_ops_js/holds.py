@@ -13,11 +13,13 @@ held packages up front).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
 from typing import Protocol
 
 from repo_ops_core import holds as core_holds
-from repo_ops_core.holds import HoldRule
+from repo_ops_core.filesystem import read_json_file
+from repo_ops_core.holds import HoldRule, workspace_rel
 from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_js.expo import expo_hold
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
@@ -29,13 +31,39 @@ class _RunResult(Protocol):
     stderr: str
 
 
-def resolve_package_hold(ws: Workspace, package: str) -> HoldRule | None:
-    """The Expo SDK ceiling when Expo governs *package*, else the ``[[hold]]`` rules.
+def vscode_types_hold(ws: Workspace, package: str) -> HoldRule | None:
+    """``@types/vscode`` capped at the ``engines.vscode`` floor's major.minor.
 
-    Expo's bundled spec wins over a configured hold: the app's native build accepts
-    only that spec, and ``expo.install.exclude`` is the documented opt-out.
+    vsce refuses to package an extension whose typings are newer than the oldest
+    VS Code it declares support for; raising that floor is a product decision.
     """
-    return expo_hold(ws, package) or core_holds.resolve_package_hold(ws, package)
+    if package != "@types/vscode":
+        return None
+    engines = (read_json_file(ws.path / "package.json") or {}).get("engines")
+    engine = engines.get("vscode") if isinstance(engines, dict) else None
+    match = re.match(r"^\D*(\d+)\.(\d+)", engine) if isinstance(engine, str) else None
+    if match is None:
+        return None
+    return HoldRule(
+        package=package,
+        max_version=f"{match[1]}.{match[2]}",
+        workspace=workspace_rel(ws),
+        reason=f"vsce: @types/vscode may not exceed engines.vscode {engine}",
+        source="vscode",
+    )
+
+
+def resolve_package_hold(ws: Workspace, package: str) -> HoldRule | None:
+    """A derived ceiling (Expo SDK, ``engines.vscode``) when one governs *package*, else ``[[hold]]``.
+
+    A derived ceiling wins over a configured hold: the build accepts nothing past it,
+    and ``expo.install.exclude`` is Expo's documented opt-out.
+    """
+    return (
+        expo_hold(ws, package)
+        or vscode_types_hold(ws, package)
+        or core_holds.resolve_package_hold(ws, package)
+    )
 
 
 def hold_version_spec(rule: HoldRule) -> str:
