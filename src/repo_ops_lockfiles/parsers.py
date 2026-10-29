@@ -188,11 +188,36 @@ def versions_pnpm_lock(p: Path) -> set[str]:
     return out
 
 
-def versions_bun_lock(p: Path) -> set[str]:
+def _bun_lock_text(p: Path) -> str:
     txt = p.read_text(encoding="utf-8", errors="replace")
     txt = re.sub(r"/\*.*?\*/", "", txt, flags=re.S)
-    txt = re.sub(r"(^|[^:])//[^\n]*", lambda m: m.group(1), txt)
-    txt = re.sub(r",(\s*[}\]])", r"\1", txt)
+    # Whole-line comments only: integrity hashes are base64 and carry "//".
+    txt = re.sub(r"^\s*//[^\n]*", "", txt, flags=re.M)
+    return re.sub(r",(\s*[}\]])", r"\1", txt)
+
+
+def bun_lock_missing_optionals(p: Path) -> list[str]:
+    """``pkg -> optional`` pairs whose optional dependency has no entry in *p*.
+
+    bun drops an optional dependency it cannot resolve, so a lock written between a
+    release and its platform binaries' publish carries the package without them.
+    """
+    try:
+        packages = json.loads(_bun_lock_text(p), strict=False).get("packages") or {}
+    except (OSError, ValueError, AttributeError):
+        return []
+    keys = set(packages)
+    missing: list[str] = []
+    for key, val in packages.items():
+        meta = next((v for v in val if isinstance(v, dict)), {}) if isinstance(val, list) else {}
+        for name in meta.get("optionalDependencies") or {}:
+            if name not in keys and f"{key}/{name}" not in keys:
+                missing.append(f"{key} -> {name}")
+    return missing
+
+
+def versions_bun_lock(p: Path) -> set[str]:
+    txt = _bun_lock_text(p)
     try:
         d = json.loads(txt, strict=False)
     except Exception:

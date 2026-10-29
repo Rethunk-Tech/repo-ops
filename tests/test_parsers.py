@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 
 from repo_ops_lockfiles.parsers import (
+    bun_lock_missing_optionals,
     parse_package_json_direct,
     versions_bun_lock,
     versions_deno_lock,
@@ -184,3 +185,15 @@ def test_versions_bun_lock_json_and_fallback():
         p = Path(tmp) / "bun.lock"
         p.write_text(content)
         assert versions_bun_lock(p) == {"foo@1.2.3"}
+
+
+def test_bun_lock_missing_optionals_flags_unpublished_platform_binary(tmp_path: Path) -> None:
+    lock = tmp_path / "bun.lock"
+    lock.write_text(
+        '{\n  "lockfileVersion": 1,\n  "packages": {\n'
+        '    "@biomejs/biome": ["@biomejs/biome@2.6.4", "", { "optionalDependencies": '
+        '{ "@biomejs/cli-linux-x64": "2.6.4", "@biomejs/cli-darwin-arm64": "2.6.4" } }, "sha512-a//b=="],\n'
+        '    "@biomejs/cli-darwin-arm64": ["@biomejs/cli-darwin-arm64@2.6.4", "", {}, "sha512-c//d=="],\n'
+        "  },\n}\n"
+    )
+    assert bun_lock_missing_optionals(lock) == ["@biomejs/biome -> @biomejs/cli-linux-x64"]

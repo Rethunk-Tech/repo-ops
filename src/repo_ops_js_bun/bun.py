@@ -30,6 +30,7 @@ from repo_ops_js.workspaces import (
     check_with_members,
     with_ignore_scripts,
 )
+from repo_ops_lockfiles.parsers import bun_lock_missing_optionals
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
 
@@ -252,6 +253,12 @@ def _finalize_bun_apply(
     # cosmetic drift an apply would have left anyway.
     if mutated or applied or held:
         run(with_ignore_scripts(["bun", "install"]), ws.path, timeout=TIMEOUT_APPLY)
+    missing = bun_lock_missing_optionals(root / "bun.lock")
+    if missing:
+        raise RuntimeError(
+            "bun.lock lacks optional dependencies (a release still publishing?): "
+            + ", ".join(missing[:5])
+        )
     return fold_held_into_behind(held, behind)
 
 
