@@ -431,14 +431,28 @@ def _screened_target(ws: Workspace, path: str, current: str, proposed: str) -> s
     return safe_go_target(path, current, proposed, lambda: _released_go_versions(ws, path))
 
 
-def _changes_from_go_list_json(ws: Workspace) -> list[Change]:
-    proc = _go(["list", "-m", "-u", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK)
+def _go_list_updates(ws: Workspace) -> Iterator[dict]:
+    """``go list -m -u all`` modules; one whose metadata cannot load is logged and skipped.
+
+    Without ``-e`` a single unfetchable release (an upstream tag the module proxy cannot
+    serve) fails the listing for every other module in the repo.
+    """
+    proc = _go(["list", "-m", "-u", "-e", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK)
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go list failed", ws.path)
+    for mod in _iter_go_list_modules(proc.stdout):
+        err = mod.get("Error")
+        if err:
+            logger.warning("%s: skipping %s: %s", ws.path, mod.get("Path"), err.get("Err", err))
+            continue
+        yield mod
+
+
+def _changes_from_go_list_json(ws: Workspace) -> list[Change]:
     recorded: set[str] | None = None
     have_recorded = False
     changes: list[Change] = []
-    for mod in _iter_go_list_modules(proc.stdout):
+    for mod in _go_list_updates(ws):
         update = mod.get("Update")
         if not update:
             continue
@@ -458,13 +472,10 @@ def _changes_from_go_list_json(ws: Workspace) -> list[Change]:
 
 
 def _explicit_go_get_targets(ws: Workspace) -> list[str]:
-    proc = _go(["list", "-m", "-u", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK)
-    if proc.returncode != 0:
-        _raise_classified(proc.stderr, "go list failed", ws.path)
     recorded: set[str] | None = None
     have_recorded = False
     targets: list[str] = []
-    for mod in _iter_go_list_modules(proc.stdout):
+    for mod in _go_list_updates(ws):
         update = mod.get("Update")
         if not update:
             continue
