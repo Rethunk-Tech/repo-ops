@@ -61,6 +61,7 @@ module-name = [
   "repo_ops_js_yarn",
   "repo_ops_go",
   "repo_ops_rust",
+  "repo_ops_nuget",
   "repo_ops_container",
   "repo_ops_py",
   "repo_ops_py_uv",
