@@ -83,11 +83,12 @@ def version_satisfies_ceiling(version: str, ceiling: str) -> bool:
     differing component decides; if *version*'s prefix equals the ceiling
     exactly, it satisfies (remaining, unconstrained components are free).
 
-    A Go pseudo-version ceiling is an exact cap with full SemVer precedence:
-    its numeric prefix is shared by every later commit, so prefix semantics
-    would never block one.
+    A ceiling with a prerelease (a Go pseudo-version, NuGet's ``81.0.5-ngd.0``)
+    is an exact cap with full SemVer precedence: its numeric prefix is shared by
+    every later prerelease and by the release itself, so prefix semantics would
+    never block one.
     """
-    if is_go_pseudo_version(ceiling):
+    if is_go_pseudo_version(ceiling) or "-" in ceiling:
         return semver_precedence(version) <= semver_precedence(ceiling)
     v_parts = semver_tuple(version)
     c_parts = semver_tuple(ceiling)

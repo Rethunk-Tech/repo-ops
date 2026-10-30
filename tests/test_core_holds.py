@@ -41,6 +41,11 @@ from repo_ops_core.version_utils import version_satisfies_ceiling
         # Prerelease tags against plain ceilings keep prefix semantics.
         ("7.0.0-beta.1", "6", False),
         ("6.0.0-rc.1", "6", True),
+        # A prerelease ceiling is exact: later prereleases and the release exceed it.
+        ("81.0.5-ngd.0", "81.0.5-ngd.0", True),
+        ("81.0.5-ngd.1", "81.0.5-ngd.0", False),
+        ("81.0.5", "81.0.5-ngd.0", False),
+        ("81.0.0-ngd.0", "81.0.5-ngd.0", True),
     ],
 )
 def test_version_satisfies_ceiling(version: str, ceiling: str, expected: bool) -> None:
