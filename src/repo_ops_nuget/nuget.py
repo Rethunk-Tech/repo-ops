@@ -9,6 +9,7 @@ restore fails, so a version a feed cannot serve never lands.
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import re
@@ -130,34 +131,84 @@ def _feeds(ws: Workspace) -> tuple[str, ...]:
 
 def _get_json(url: str) -> object:
     with open_url(url, timeout=TIMEOUT_CHECK, headers={"User-Agent": "repo-ops"}) as response:
-        return json.loads(response.read().decode("utf-8"))
+        body = response.read()
+        if response.headers.get("Content-Encoding") == "gzip":
+            body = gzip.decompress(body)
+        return json.loads(body.decode("utf-8"))
+
+
+# The SemVer 2 registration first: nuget.org's unversioned one omits versions like 1.0.0-alpha.1.
+_REGISTRATION_TYPES = (
+    "RegistrationsBaseUrl/3.6.0",
+    "RegistrationsBaseUrl/Versioned",
+    "RegistrationsBaseUrl",
+)
 
 
 @cache
-def _package_base(feed: str) -> str:
+def _resources(feed: str) -> dict[str, str]:
     document = _get_json(feed)
     resources = document.get("resources") if isinstance(document, dict) else None
+    out: dict[str, str] = {}
     for resource in resources if isinstance(resources, list) else []:
-        if isinstance(resource, dict) and str(resource.get("@type", "")).startswith(
-            "PackageBaseAddress/3.0.0"
-        ):
-            return str(resource["@id"]).rstrip("/")
-    raise RuntimeError(f"NuGet feed {feed} has no PackageBaseAddress resource")
+        if isinstance(resource, dict) and isinstance(resource.get("@id"), str):
+            out.setdefault(str(resource.get("@type", "")), resource["@id"].rstrip("/"))
+    return out
+
+
+def _lookup(feed: str, package: str, url: str) -> object | None:
+    try:
+        return _get_json(url)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise RuntimeError(f"NuGet lookup of {package} on {feed} failed: HTTP {exc.code}") from exc
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(f"NuGet lookup of {package} on {feed} failed: {exc}") from exc
+
+
+def _registration_versions(feed: str, package: str, base: str) -> tuple[str, ...] | None:
+    """Listed versions from the registration, or None when the feed's registration is unusable."""
+    index = _lookup(feed, package, f"{base}/{package.lower()}/index.json")
+    if index is None:
+        return ()
+    pages = index.get("items") if isinstance(index, dict) else None
+    if not isinstance(pages, list):
+        return None
+    versions: list[str] = []
+    for page in pages:
+        if not isinstance(page, dict):
+            return None
+        leaves = page.get("items")
+        if leaves is None and isinstance(page.get("@id"), str):
+            fetched = _lookup(feed, package, page["@id"])
+            leaves = fetched.get("items") if isinstance(fetched, dict) else None
+        if not isinstance(leaves, list):
+            return None
+        for leaf in leaves:
+            entry = leaf.get("catalogEntry") if isinstance(leaf, dict) else None
+            if (
+                isinstance(entry, dict)
+                and isinstance(entry.get("version"), str)
+                and entry.get("listed", True) is not False
+            ):
+                versions.append(entry["version"])
+    return tuple(versions)
 
 
 @cache
 def _feed_versions(feed: str, package: str) -> tuple[str, ...]:
-    # ponytail: the flat container lists unlisted versions too; restore still
-    # resolves them, so this only matters if a publisher unlists a bad release.
-    url = f"{_package_base(feed)}/{package.lower()}/index.json"
-    try:
-        document = _get_json(url)
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            return ()
-        raise RuntimeError(f"NuGet lookup of {package} on {feed} failed: HTTP {exc.code}") from exc
-    except (OSError, ValueError) as exc:
-        raise RuntimeError(f"NuGet lookup of {package} on {feed} failed: {exc}") from exc
+    """Versions *feed* lists for *package*: an unlisted release is withdrawn, never a target."""
+    resources = _resources(feed)
+    registration = next((resources[t] for t in _REGISTRATION_TYPES if t in resources), None)
+    if registration is not None:
+        listed = _registration_versions(feed, package, registration)
+        if listed is not None:
+            return listed
+    base = resources.get("PackageBaseAddress/3.0.0")
+    if base is None:
+        raise RuntimeError(f"NuGet feed {feed} has no registration or PackageBaseAddress resource")
+    document = _lookup(feed, package, f"{base}/{package.lower()}/index.json")
     versions = document.get("versions") if isinstance(document, dict) else None
     return tuple(v for v in versions or () if isinstance(v, str))
 

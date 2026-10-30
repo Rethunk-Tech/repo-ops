@@ -96,3 +96,33 @@ def test_version_key_orders_four_parts_and_prereleases() -> None:
     ordered = ["1.0.0-alpha.2", "1.0.0-alpha.10", "1.0.0", "1.0.0.1", "1.0.1"]
     shuffled = [ordered[i] for i in (3, 0, 4, 2, 1)]
     assert sorted(shuffled, key=nuget.nuget_version_key) == ordered
+
+
+def test_feed_versions_skip_unlisted_and_follow_registration_pages() -> None:
+    documents = {
+        "https://feed.test/index.json": {
+            "resources": [
+                {"@type": "RegistrationsBaseUrl", "@id": "https://feed.test/semver1/"},
+                {"@type": "RegistrationsBaseUrl/3.6.0", "@id": "https://feed.test/semver2/"},
+            ]
+        },
+        "https://feed.test/semver2/pkg/index.json": {
+            "items": [
+                {"items": [{"catalogEntry": {"version": "1.0.0"}}]},
+                {"@id": "https://feed.test/semver2/pkg/page2.json"},
+            ]
+        },
+        "https://feed.test/semver2/pkg/page2.json": {
+            "items": [
+                {"catalogEntry": {"version": "1.0.1-alpha.2", "listed": True}},
+                {"catalogEntry": {"version": "1.0.4", "listed": False}},
+            ]
+        },
+    }
+    nuget._resources.cache_clear()
+    nuget._feed_versions.cache_clear()
+    with patch.object(nuget, "_get_json", side_effect=documents.__getitem__):
+        assert nuget._feed_versions("https://feed.test/index.json", "Pkg") == (
+            "1.0.0",
+            "1.0.1-alpha.2",
+        )
