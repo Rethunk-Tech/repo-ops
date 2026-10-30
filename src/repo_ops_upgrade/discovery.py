@@ -23,6 +23,7 @@ from repo_ops_js.workspaces import (
     yarn_workspace_members,
 )
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
+from repo_ops_nuget.nuget import is_nuget_root
 from repo_ops_py_uv.uv import uv_workspace_members
 from repo_ops_upgrade.actions import discover_workflow_files
 from repo_ops_upgrade.precommit import is_precommit_workspace
@@ -287,6 +288,8 @@ def discover_workspaces_in_root(
     node_workspace_roots: dict[Path, set[str]] = {}
     uv_roots: dict[Path, set[str]] = {}
     cargo_roots: dict[Path, set[str]] = {}
+    # A solution or project dir owns every project below it: one restore covers them.
+    nuget_roots: list[Path] = []
 
     def record_skip(mdir: Path, ecosystem: str, reason: str) -> None:
         """A manifest was found but is not actionable — count it, never drop it.
@@ -390,6 +393,12 @@ def discover_workspaces_in_root(
         if ws_members or ws_excludes:
             cargo_roots[mdir] = ws_members | ws_excludes
         _register_workspace(mdir, "rust", "rust", record_skip=record_skip, found=found)
+
+    def consider_nuget(mdir: Path) -> None:
+        if any(mdir.is_relative_to(root) for root in nuget_roots):
+            return
+        nuget_roots.append(mdir)
+        _register_workspace(mdir, "dotnet", "nuget", record_skip=record_skip, found=found)
 
     def consider_container(mdir: Path) -> None:
         if not is_container_workspace(mdir):
@@ -515,6 +524,8 @@ def discover_workspaces_in_root(
             consider_py(mdir)
         if names & {"deno.json", "deno.jsonc", "deno.lock"}:
             consider_deno(mdir)
+        if is_nuget_root(names):
+            consider_nuget(mdir)
         consider_container(mdir)
         consider_precommit(mdir)
         # Mark every visited dir, not only ones that yielded a workspace, so a

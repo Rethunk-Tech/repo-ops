@@ -27,6 +27,7 @@ ECO_FILTER_CHOICES = (
     "rust",
     "py",
     "deno",
+    "dotnet",
     "container",
     "precommit",
     "actions",
@@ -47,6 +48,7 @@ MANAGER_FILTER_CHOICES = (
     "pdm",
     "pipenv",
     "deno",
+    "nuget",
 )
 PLAN_EPILOG = """\
 exit codes: 0 nothing to do, 1 drift exists.

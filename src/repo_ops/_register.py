@@ -25,6 +25,7 @@ def register_all() -> None:
     from repo_ops_js_npm.npm import apply_npm, check_npm
     from repo_ops_js_pnpm.pnpm import apply_pnpm, check_pnpm
     from repo_ops_js_yarn.yarn import apply_yarn, check_yarn_snapshot
+    from repo_ops_nuget.nuget import apply_nuget, check_nuget
     from repo_ops_py.uv_lock import apply_uv_lock, check_uv_lock
     from repo_ops_py_hatch.hatch import apply_hatch, check_hatch
     from repo_ops_py_pdm.pdm import apply_pdm, check_pdm
@@ -49,6 +50,7 @@ def register_all() -> None:
         "pipenv": (check_pipenv, apply_pipenv),
         "deno": (check_deno, apply_deno),
         "container": (check_container, apply_container),
+        "nuget": (check_nuget, apply_nuget),
     }
     for name, (checker, applier) in plugins.items():
         registry.register(name, checker, applier)

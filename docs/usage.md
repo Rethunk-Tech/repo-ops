@@ -12,7 +12,7 @@ With no `root`, every command scans [`DEFAULT_ROOTS`](../src/repo_ops_core/const
 
 `plan` reports what `apply` would do and writes nothing, except that Yarn checks run `corepack prepare` in a temporary copy. `apply` makes the changes, runs remediations, verifies each workspace, and commits.
 
-Shared flags: `root ...`, `--exclude PAT`, `--jobs N` (default `max(4, min(8, cpus/4))`), `-v` / `--verbose`, `--filter ECO` (`node|go|rust|py|deno|container|precommit|actions|submodules`), `--manager MANAGER`. `apply` also takes `--no-commit` and `--no-verify` (which implies `--no-commit`).
+Shared flags: `root ...`, `--exclude PAT`, `--jobs N` (default `max(4, min(8, cpus/4))`), `-v` / `--verbose`, `--filter ECO` (`node|go|rust|py|deno|dotnet|container|precommit|actions|submodules`), `--manager MANAGER`. `apply` also takes `--no-commit` and `--no-verify` (which implies `--no-commit`).
 
 Every run writes `$XDG_STATE_HOME/repo-ops/runs/<utc>-<cmd>/log` and `report.json` (the newest 50 runs are kept) and prints both paths last. The human report lists only repos with something to show; `report.json` has every row plus a `summary` block.
 
@@ -28,6 +28,7 @@ Every dependency moves to its newest release, across semver ranges and majors. E
 | bun | `bun update` plus out-of-range packages from `bun outdated`, then `bun add <pkg>@<version>` |
 | go | every `go list -m -u` update via batched `go get path@version`, then `go mod tidy` |
 | rust | `cargo update`, plus Cargo.toml requirement bumps (including `[workspace.dependencies]`) |
+| nuget | literal `PackageReference`/`PackageVersion` pins in project, `.props` and `.targets` files and `global.json` `msbuild-sdks`, checked against nuget.org plus the feeds the projects and `NuGet.config` add; each bump is kept only when `dotnet restore` succeeds |
 | uv, hatch | `uv lock --upgrade`; a hatch project without `uv.lock` gets one |
 | poetry, pdm | `update`, then `add pkg@^X` when the range blocks the newest release |
 | pipenv | `pipenv update`, then `pipenv install` per gap when a venv exists |
@@ -113,7 +114,7 @@ reason = "TS7 migration pending"
 
 A hold caps one package without excluding the repo. Workspace-scoped rules beat repo-wide ones, which beat global ones. Targets above the ceiling are dropped from `plan`; a version already above it is clamped back on `apply`. Held packages show as `held <= <max_version>` in the report and count toward `packages_held`.
 
-Matching is by package name, module path (Go), crate (Rust), distribution (Python), hook repo (pre-commit), action repo (`actions/checkout`), image name without tag, or submodule path. Go holds cap within a major, since majors live in the module path. Rust clamps with `cargo update --precise` and needs an exact version when no release fits a prefix ceiling. pip-tools holds go through a temporary constraints file; `requirements.in` is untouched.
+Matching is by package name, module path (Go), crate (Rust), package id (NuGet), distribution (Python), hook repo (pre-commit), action repo (`actions/checkout`), image name without tag, or submodule path. Go holds cap within a major, since majors live in the module path. Rust clamps with `cargo update --precise` and needs an exact version when no release fits a prefix ceiling. pip-tools holds go through a temporary constraints file; `requirements.in` is untouched. A ceiling with a prerelease tag (`81.0.5-ngd.0`) is exact: later prereleases and the release itself exceed it.
 
 A workspace that depends on `expo` gets holds from the installed `expo/bundledNativeModules.json` with no config: each listed package is held at its bundled spec, `expo` itself at its installed major, and names in `expo.install.exclude` are skipped. The Expo hold wins over a `[[hold]]` for the same package.
 

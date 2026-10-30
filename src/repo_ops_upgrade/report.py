@@ -52,6 +52,9 @@ _TARGETED_TRIED_HINT: dict[str, str] = {
         "the targeted bump was attempted but could not move them "
         "(cargo failed or the lockfile did not advance) — bump manually"
     ),
+    "nuget": (
+        "the bump was attempted but could not move them (dotnet restore failed) — bump manually"
+    ),
     "poetry": (
         "the targeted bump was attempted but could not move them "
         "(poetry add failed or the lockfile did not land the target) — bump manually"

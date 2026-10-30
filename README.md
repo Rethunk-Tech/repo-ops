@@ -12,7 +12,7 @@ Dependency maintenance for local git checkouts
 
 ---
 
-`repo-ops apply` finds every checkout under its scan roots, moves each dependency to its newest release (Node, Go, Rust, Python, Deno, containers, pre-commit, submodules and GitHub Actions pins), runs each repo's own gates, and commits every repo that passes. It never pushes. Releases: [GitHub](https://github.com/Rethunk-Tech/repo-ops/releases) ([changelog](CHANGELOG.md)).
+`repo-ops apply` finds every checkout under its scan roots, moves each dependency to its newest release (Node, Go, Rust, .NET/NuGet, Python, Deno, containers, pre-commit, submodules and GitHub Actions pins), runs each repo's own gates, and commits every repo that passes. It never pushes. Releases: [GitHub](https://github.com/Rethunk-Tech/repo-ops/releases) ([changelog](CHANGELOG.md)).
 
 ## Highlights
 
@@ -22,7 +22,7 @@ Dependency maintenance for local git checkouts
 
 ## Quick start
 
-Needs [uv](https://docs.astral.sh/uv/), Python 3.12 or newer, and git. Each ecosystem's own CLI (`bun`, `go`, `cargo`, `uv`, …) is needed only for repos that use it; `gh` enables the Actions org-policy check and `dependabot`.
+Needs [uv](https://docs.astral.sh/uv/), Python 3.12 or newer, and git. Each ecosystem's own CLI (`bun`, `go`, `cargo`, `dotnet`, `uv`, …) is needed only for repos that use it; `gh` enables the Actions org-policy check and `dependabot`.
 
 ```bash
 uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git"

@@ -193,7 +193,7 @@ def verify_workspace(
         if proc.returncode != 0:
             return proc.stderr.strip() or "go mod verify failed"
         return _gate_verify(ws, timeout=timeout)
-    if mgr == "rust":
+    if mgr in ("rust", "nuget"):
         return _gate_verify(ws, timeout=timeout)
     if mgr in ("uv", "hatch"):
         # Hatch without uv.lock: apply is a no-op unless migrate-to-uv-lock;

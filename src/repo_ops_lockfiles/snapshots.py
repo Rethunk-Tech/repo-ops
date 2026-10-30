@@ -95,6 +95,10 @@ def snapshot_workspace_files(mdir: Path, manager: str) -> dict[Path, bytes]:
         from repo_ops_container.container import find_container_files
 
         return {p: p.read_bytes() for p in find_container_files(mdir) if p.is_file()}
+    if manager == "nuget":
+        from repo_ops_nuget.nuget import find_nuget_files
+
+        return {p: p.read_bytes() for p in find_nuget_files(mdir)}
     names: tuple[str, ...]
     if manager in ("yarn", "npm", "pnpm", "bun"):
         names = NODE_LOCKFILES
@@ -170,6 +174,10 @@ def diff_workspace_snapshots(
     after: dict[Path, bytes],
     manager: str,
 ) -> list[Change]:
+    if manager == "nuget":
+        from repo_ops_nuget.nuget import nuget_snapshot_changes
+
+        return nuget_snapshot_changes(before, after)
     changes: list[Change] = []
     seen: set[str] = set()
     for path in set(before) | set(after):

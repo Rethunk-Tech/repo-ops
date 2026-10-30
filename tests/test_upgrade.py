@@ -49,6 +49,7 @@ def test_ecosystem_checker_and_applier_registry_keys():
         "pipenv",
         "deno",
         "container",
+        "nuget",
         "precommit",
     }
     assert expected == set(registry.CHECKERS.keys())
