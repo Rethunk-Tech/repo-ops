@@ -440,7 +440,7 @@ def classify_commit_subject(files: list[str]) -> str:
     )
     has_deno = any(n in ("deno.lock", "deno.json", "deno.jsonc") for n in names)
     has_nuget = any(
-        n == "packages.lock.json"
+        n in ("packages.lock.json", "global.json")
         or n.endswith((".csproj", ".fsproj", ".vbproj", ".props", ".targets"))
         for n in names
     )
@@ -498,6 +498,7 @@ def classify_commit_subject(files: list[str]) -> str:
                     "chore(deps): update Node lockfiles and manifests"
                 ),
                 "Deno lockfiles": "chore(deps): update Deno lockfiles",
+                "NuGet packages": "chore(deps): update NuGet packages",
                 "container image pins": "chore(deps): update container image pins",
             }
             return labels[dep_parts[0]]
