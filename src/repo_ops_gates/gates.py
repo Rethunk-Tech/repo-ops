@@ -22,12 +22,11 @@ from pathlib import Path
 
 from repo_ops_core.cli import add_scan_arguments, resolve_scan_roots, wire_verbose
 from repo_ops_core.config import load_global_config
-from repo_ops_core.constants import DEFAULT_ROOTS
+from repo_ops_core.constants import DEFAULT_ROOTS, TIMEOUT_GATE
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
 from repo_ops_core.filesystem import new_run_dir, write_json_atomic
 from repo_ops_core.git import repo_label
-from repo_ops_core.constants import TIMEOUT_GATE
 from repo_ops_core.parallel import run_bounded_pool
 from repo_ops_core.process import run
 from repo_ops_core.tee import tee_stdout_stderr
