@@ -441,6 +441,17 @@ def _go_list_updates(ws: Workspace) -> Iterator[dict]:
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go list failed", ws.path)
     for mod in _iter_go_list_modules(proc.stdout):
+        # -e reports a local replace whose target has no go.mod as a normal module, so
+        # detect it here: it is a broken checkout, not one skippable release.
+        replace = mod.get("Replace") or {}
+        gomod = replace.get("GoMod")
+        if gomod and not replace.get("Version") and not Path(gomod).is_file():
+            _raise_classified(
+                f"go: {mod.get('Path')}@{mod.get('Version')} (replaced by {replace.get('Path')}):"
+                f" reading {replace.get('Path')}/go.mod: open {gomod}: no such file or directory",
+                "go list failed",
+                ws.path,
+            )
         err = mod.get("Error")
         if err:
             logger.warning("%s: skipping %s: %s", ws.path, mod.get("Path"), err.get("Err", err))
