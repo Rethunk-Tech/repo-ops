@@ -53,7 +53,10 @@ DEFAULT_ROOTS = [
 # Subprocess timeouts, in seconds.
 TIMEOUT_CHECK = 60
 TIMEOUT_APPLY = 600
-TIMEOUT_VERIFY = 60
+# A gate that runs a real test suite is slow; this is a ceiling for a hang, not
+# a budget. Verify runs the same full gate, so it shares the ceiling.
+TIMEOUT_GATE = 1800
+TIMEOUT_VERIFY = TIMEOUT_GATE
 
 # An enclosing go.work (a superproject over submodule checkouts) makes MVS select
 # the newest version any member requires, hiding updates the module's own go.mod

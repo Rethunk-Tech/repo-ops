@@ -27,13 +27,11 @@ from repo_ops_core.discovery import discover_repos
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
 from repo_ops_core.filesystem import new_run_dir, write_json_atomic
 from repo_ops_core.git import repo_label
+from repo_ops_core.constants import TIMEOUT_GATE
 from repo_ops_core.parallel import run_bounded_pool
 from repo_ops_core.process import run
 from repo_ops_core.tee import tee_stdout_stderr
 
-# A gate that runs a real test suite is slow; this is a ceiling for a hang, not
-# a budget. The per-gate timeout is disabled so this one is the only authority.
-TIMEOUT_GATE = 1800
 TIMEOUT_LIST = 60
 
 # ``gate`` separates its summary columns by two or more spaces.
