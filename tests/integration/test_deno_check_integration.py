@@ -1,6 +1,7 @@
 """Integration test: deno outdated via check_deno.
 
-Uses on-disk lock fixtures from ``tests/fixtures/`` plus a minimal ``deno.json``.
+A minimal ``deno.json`` with no lock: deno resolves and writes its own, since the
+``tests/fixtures`` locks carry placeholder integrity hashes that real deno rejects.
 Runs the real ``check_deno`` helper when ``deno`` is on PATH.
 
 Network: ``deno outdated`` may reach the JSR/npm registries; skipped on failure.
@@ -20,17 +21,11 @@ from repo_ops_models import Workspace
 pytestmark = pytest.mark.integration
 
 _DENO = shutil.which("deno")
-_FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 @pytest.mark.skipif(_DENO is None, reason="deno not on PATH")
 def test_check_deno_runs_outdated_against_fixture_lock(tmp_path: Path) -> None:
     """check_deno returns a list (possibly empty) for a real Deno workspace."""
-    lock_src = _FIXTURE_DIR / "deno_v3.lock"
-    if not lock_src.exists():
-        pytest.skip("deno_v3.lock fixture missing")
-
-    (tmp_path / "deno.lock").write_bytes(lock_src.read_bytes())
     (tmp_path / "deno.json").write_text(
         json.dumps(
             {
