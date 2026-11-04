@@ -523,7 +523,7 @@ def classify_commit_subject(files: list[str]) -> str:
 
 def build_conventional_message(bundle: RepoBundle, files: list[str]) -> str:
     subject = classify_commit_subject(files)
-    body_lines = [f"Automated post-apply commit for {bundle.label}."]
+    body_lines = [f"Automated post-apply commit for {bundle.git_repo.name}."]
     if bundle.workspaces:
         changed_ws = [wr for wr in bundle.workspaces if wr.changes]
         if changed_ws:
