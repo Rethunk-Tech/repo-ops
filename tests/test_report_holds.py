@@ -8,6 +8,7 @@ instead of indistinguishable from an ordinary behind-latest package.
 from __future__ import annotations
 
 import io
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -41,7 +42,8 @@ def _render_and_summarize(tmp_path: Path, bundle: RepoBundle) -> tuple[str, dict
 def test_held_behind_latest_row_header_and_summary(tmp_path: Path, make_workspace) -> None:
     """A repo-scoped hold that declines a bump is named in the row, the
     section header says the hold is why, and the summary counts it."""
-    _write_hold_config(tmp_path, until="2026-11-01")
+    until = (date.today() + timedelta(days=30)).isoformat()
+    _write_hold_config(tmp_path, until=until)
     wr = WorkspaceResult(
         workspace=make_workspace(tmp_path, ecosystem="node", manager="npm", label="demo"),
         behind_latest=[Change("typescript", "5.9.0", "7.0.0")],
@@ -52,7 +54,7 @@ def test_held_behind_latest_row_header_and_summary(tmp_path: Path, make_workspac
     # A pinned package is not stuck, so the manual-bump advice must not appear.
     assert "bump manually" not in out
     assert "typescript" in out
-    assert "→ 7.0.0 (latest; held <= 6, until 2026-11-01)" in out
+    assert f"→ 7.0.0 (latest; held <= 6, until {until})" in out
     assert summary["packages_held"] == 1
     assert summary["packages_behind_latest"] == 1
 
