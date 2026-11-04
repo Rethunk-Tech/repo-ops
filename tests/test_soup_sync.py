@@ -73,3 +73,25 @@ def test_version_cell_takes_the_lockfile_resolution_over_the_manifest_range(tmp_
     )
     assert sync_soup_versions(repo, [Change("next", "^16.3.0", "^16.4.0")])
     assert (repo / "docs/SOUP.md").read_text() == TABLE.replace("16.3.0", "16.4.2")
+
+
+def _lock_next(repo: Path, zod: str) -> None:
+    (repo / "package-lock.json").write_text(
+        '{"packages":{"node_modules/next":{"version":"16.4.0"},'
+        f'"node_modules/zod":{{"version":"{zod}"}}}}}}',
+        encoding="utf-8",
+    )
+
+
+def test_row_moved_by_another_packages_bump_follows_the_lockfile(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _lock_next(repo, "4.6.6")
+    assert sync_soup_versions(repo, [Change("next", "^16.3.0", "^16.4.0")])
+    assert "| `zod` | `4.6.6` |" in (repo / "docs/SOUP.md").read_text()
+
+
+def test_unbumped_row_the_lockfile_still_holds_is_left_alone(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _lock_next(repo, "4.6.5")
+    assert sync_soup_versions(repo, [Change("next", "^16.3.0", "^16.4.0")])
+    assert "| `zod` | `4.6.5` |" in (repo / "docs/SOUP.md").read_text()

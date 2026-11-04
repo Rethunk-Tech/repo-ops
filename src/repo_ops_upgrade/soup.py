@@ -36,28 +36,30 @@ def _bumped_names(changes: list[Change]) -> set[str]:
     return {change.name for change in changes}
 
 
-def _entries_to_versions(entries: set[str]) -> dict[str, str]:
-    out: dict[str, str] = {}
+def _entries_to_versions(entries: set[str]) -> dict[str, set[str]]:
+    out: dict[str, set[str]] = {}
     for entry in entries:
         name, ver = split_name_version(entry)
-        if not name or not ver:
-            continue
-        prev = out.get(name)
-        if prev is None:
-            out[name] = ver
-            continue
-        try:
-            if semver_tuple(ver) > semver_tuple(prev):
-                out[name] = ver
-        except (TypeError, ValueError):
-            pass
+        if name and ver:
+            out.setdefault(name, set()).add(ver)
     return out
 
 
-def _lockfile_versions(directory: Path) -> dict[str, str]:
+def _highest(versions: set[str]) -> str:
+    best = ""
+    for ver in sorted(versions):
+        try:
+            if not best or semver_tuple(ver) > semver_tuple(best):
+                best = ver
+        except (TypeError, ValueError):
+            pass
+    return best
+
+
+def _lockfile_versions(directory: Path) -> dict[str, set[str]]:
     if not directory.is_dir():
         return {}
-    parsers: tuple[tuple[str, Callable[[Path], dict[str, str]]], ...] = (
+    parsers: tuple[tuple[str, Callable[[Path], dict[str, set[str]]]], ...] = (
         ("bun.lock", lambda p: _entries_to_versions(versions_bun_lock(p))),
         ("package-lock.json", lambda p: _entries_to_versions(versions_npm_lock(p))),
         ("pnpm-lock.yaml", lambda p: _entries_to_versions(versions_pnpm_lock(p))),
@@ -71,8 +73,8 @@ def _lockfile_versions(directory: Path) -> dict[str, str]:
     return {}
 
 
-def _resolved_versions(lock_dirs: list[Path]) -> dict[str, str]:
-    """Package name to the version the workspace lockfile resolved for it."""
+def _resolved_versions(lock_dirs: list[Path]) -> dict[str, set[str]]:
+    """Package name to the versions the workspace lockfile resolved for it."""
     for directory in lock_dirs:
         found = _lockfile_versions(directory)
         if found:
@@ -92,18 +94,23 @@ def sync_soup_versions(
     if path is None:
         return False
     names = _bumped_names(changes)
+    if not names or not path.is_file():
+        return False
+    resolved = _resolved_versions(lock_dirs or [repo_root])
     landed = {
         name: version
-        for name, version in _resolved_versions(lock_dirs or [repo_root]).items()
-        if name in names and _VERSION.match(_RANGE_PREFIX.sub("", version))
+        for name, versions in resolved.items()
+        if _VERSION.match(_RANGE_PREFIX.sub("", version := _highest(versions)))
     }
-    if not landed or not path.is_file():
-        return False
 
     def rewrite(line: str) -> str:
         m = _ROW.match(line)
         new = landed.get(m["name"]) if m else None
         if m is None or new is None or m["version"] == new:
+            return line
+        # A dependency's bump can move a package the report never lists, like a peer
+        # pinned exactly by the bumped one; its row is stale once the lockfile drops it.
+        if m["name"] not in names and m["version"] in resolved[m["name"]]:
             return line
         return f"{m.group(1)}{new}{m.group(4)}{line[m.end() :]}"
 
