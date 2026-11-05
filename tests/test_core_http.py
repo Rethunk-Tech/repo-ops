@@ -33,7 +33,7 @@ class _Handler(BaseHTTPRequestHandler):
 @pytest.fixture
 def server_url() -> Iterator[str]:
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    threading.Thread(target=httpd.serve_forever, args=(0.01,), daemon=True).start()
     try:
         yield f"http://127.0.0.1:{httpd.server_address[1]}/"
     finally:
