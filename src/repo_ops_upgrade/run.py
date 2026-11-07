@@ -11,6 +11,7 @@ import threading
 from itertools import groupby
 from pathlib import Path
 
+from repo_ops_core import archived
 from repo_ops_core.cli import (
     build_upgrade_parser,
     resolve_scan_roots,
@@ -105,6 +106,26 @@ def _rollback_vetoed_repo(
         wr.reverted_ok = wr.reverted_ok and tree_ok and installed_ok and not foreign
 
 
+def _drop_archived(
+    bundles: dict[Path, RepoBundle],
+    *,
+    named_roots: set[Path],
+    fleet: bool,
+    lister: archived.ArchiveLister = archived.gh_archived_lister,
+) -> bool:
+    """Remove archived-upstream repos from *bundles*; True when a named path was refused."""
+    repos = sorted({b.git_repo for b in bundles.values()})
+    scan = archived.scan_archived(repos, lister)
+    archived.print_archive_report(scan, checked=len(repos))
+    refused = False
+    for path in [p for p, b in bundles.items() if b.git_repo in scan.archived]:
+        repo = bundles.pop(path).git_repo
+        if not fleet and repo.resolve() in named_roots:
+            print(archived.archived_message(repo, scan.archived[repo]), file=sys.stderr)
+            refused = True
+    return refused
+
+
 def _cli_flag(args: object, name: str) -> bool:
     """Return True only for an explicit True CLI flag.
 
@@ -146,6 +167,10 @@ def _run_upgrade_body(
     bundles = workspace_discovery.group_by_repo(found, roots)
     if args.eco_filter in (None, "actions"):
         bundles = workspace_discovery.merge_action_only_bundles(bundles, roots)
+
+    archive_refused = _drop_archived(
+        bundles, named_roots={Path(r).resolve() for r in roots}, fleet=fleet
+    )
 
     _repo_cfgs = {bundle.git_repo: load_repo_config(bundle.git_repo) for bundle in bundles.values()}
     exclude_patterns: list[str] = getattr(args, "exclude_patterns", None) or []
@@ -439,6 +464,8 @@ def _run_upgrade_body(
     exit_code = _resolve_exit_code(
         bundles, apply=apply, has_actionable_work=_has_actionable_work(bundles)
     )
+    if archive_refused:
+        exit_code = 1
 
     report.print_human_report(bundles, dry_run=not apply)
     if submodules_json:
