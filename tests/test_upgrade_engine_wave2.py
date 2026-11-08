@@ -308,13 +308,25 @@ def test_cargo_implicit_members_not_treated_as_children(tmp_path: Path) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def test_worker_crash_reconciliation_marks_fail(tmp_path: Path, make_workspace) -> None:
+@pytest.mark.parametrize(
+    ("fail_fast", "want_status", "want_error"),
+    [
+        (False, "fail", "worker crashed (no result returned)"),
+        (True, "skip", "fail-fast"),
+    ],
+)
+def test_worker_crash_reconciliation_marks_fail(
+    tmp_path: Path,
+    make_workspace,
+    fail_fast: bool,
+    want_status: str,
+    want_error: str,
+) -> None:
     """Mirrors run.py path_to_result merge when a worker drops a result."""
     ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
     wr = WorkspaceResult(workspace=ws, status="ok")
     bundle = RepoBundle(git_repo=tmp_path, label="demo", workspaces=[wr])
     path_to_result: dict[tuple[Path, str], WorkspaceResult] = {}
-    fail_fast = False
 
     updated: list[WorkspaceResult] = []
     for item in bundle.workspaces:
@@ -331,5 +343,5 @@ def test_worker_crash_reconciliation_marks_fail(tmp_path: Path, make_workspace) 
             updated.append(item)
     bundle.workspaces = updated
 
-    assert bundle.workspaces[0].status == "fail"
-    assert bundle.workspaces[0].error == "worker crashed (no result returned)"
+    assert bundle.workspaces[0].status == want_status
+    assert bundle.workspaces[0].error == want_error
