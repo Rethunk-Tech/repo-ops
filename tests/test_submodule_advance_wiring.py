@@ -20,16 +20,12 @@ from unittest.mock import patch
 
 import pytest
 
+import repo_ops_upgrade.submodules as sub_mod
 from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import post_apply_commit
 from repo_ops_upgrade.post_apply_commit import (
     CommitPlan,
     upgrade_scoped_paths,
-)
-from repo_ops_upgrade.submodules import (
-    SubmoduleLink,
-    _clear_submodule_tag_cache,
-    apply_submodule_tag_advances,
 )
 
 # ---------------------------------------------------------------------------
@@ -39,9 +35,9 @@ from repo_ops_upgrade.submodules import (
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
-    _clear_submodule_tag_cache()
+    sub_mod._clear_submodule_tag_cache()
     yield
-    _clear_submodule_tag_cache()
+    sub_mod._clear_submodule_tag_cache()
 
 
 def _make_bundle(git_repo: Path, *, with_change: bool = False) -> RepoBundle:
@@ -74,7 +70,6 @@ def test_apply_submodule_tag_advances_invoked_via_run(
 ) -> None:
     """apply_submodule_tag_advances is reachable from the normal apply flow."""
     import repo_ops_upgrade.run as run_mod
-    import repo_ops_upgrade.submodules as sub_mod
 
     # Set up a fake git repo so the run body has something to discover
     root = tmp_path / "root"
@@ -110,7 +105,7 @@ def test_apply_submodule_tag_advances_invoked_via_run(
     monkeypatch.setattr(disc, "merge_action_only_bundles", _fake_merge)
 
     # Submodule discovery returns a link so the advance path is entered
-    fake_link = SubmoduleLink(
+    fake_link = sub_mod.SubmoduleLink(
         path="sub",
         git_repo=(repo / "sub").resolve(),
         parent=repo.resolve(),
@@ -138,7 +133,6 @@ def test_apply_filter_node_skips_actions_and_submodules(
     """``apply --filter node`` must not rewrite Actions pins or checkout submodule tags."""
     import repo_ops_upgrade.discovery as disc
     import repo_ops_upgrade.run as run_mod
-    import repo_ops_upgrade.submodules as sub_mod
 
     root = tmp_path / "root"
     repo = root / "myrepo"
@@ -164,7 +158,7 @@ def test_apply_filter_node_skips_actions_and_submodules(
         "apply_submodule_tag_advances",
         lambda *a, **kw: sub_calls.append(a) or [],
     )
-    fake_link = SubmoduleLink(
+    fake_link = sub_mod.SubmoduleLink(
         path="sub",
         git_repo=(repo / "sub").resolve(),
         parent=repo.resolve(),
@@ -280,7 +274,7 @@ def test_dirty_guard_prevents_checkout_when_dirty(tmp_path: Path, make_proc) -> 
     with git checkout — that could destroy work.  The dirty guard (allow_dirty=False)
     must prevent the fetch/checkout/add sequence from running.
     """
-    link = SubmoduleLink(
+    link = sub_mod.SubmoduleLink(
         path="sub",
         git_repo=(tmp_path / "sub").resolve(),
         parent=tmp_path.resolve(),
@@ -301,7 +295,7 @@ def test_dirty_guard_prevents_checkout_when_dirty(tmp_path: Path, make_proc) -> 
         patch("repo_ops_upgrade.submodules.is_git_dirty", return_value=True),
         patch("repo_ops_upgrade.submodules.run_git", return_value=make_proc()) as mock_git,
     ):
-        bumps = apply_submodule_tag_advances([link], allow_dirty=False)
+        bumps = sub_mod.apply_submodule_tag_advances([link], allow_dirty=False)
 
     assert len(bumps) == 1
     assert bumps[0].is_actionable
@@ -311,7 +305,7 @@ def test_dirty_guard_prevents_checkout_when_dirty(tmp_path: Path, make_proc) -> 
 
 def test_dirty_guard_allows_checkout_when_allow_dirty(tmp_path: Path, make_proc) -> None:
     """allow_dirty=True bypasses the dirty guard and proceeds with checkout."""
-    link = SubmoduleLink(
+    link = sub_mod.SubmoduleLink(
         path="sub",
         git_repo=(tmp_path / "sub").resolve(),
         parent=tmp_path.resolve(),
@@ -331,7 +325,7 @@ def test_dirty_guard_allows_checkout_when_allow_dirty(tmp_path: Path, make_proc)
         patch("repo_ops_upgrade.submodules.is_git_dirty", return_value=True),
         patch("repo_ops_upgrade.submodules.run_git", return_value=make_proc()) as mock_git,
     ):
-        bumps = apply_submodule_tag_advances([link], allow_dirty=True)
+        bumps = sub_mod.apply_submodule_tag_advances([link], allow_dirty=True)
 
     assert len(bumps) == 1
     assert bumps[0].is_actionable
@@ -349,7 +343,7 @@ def test_checkout_uses_detach_with_full_tag_ref(tmp_path: Path, make_proc) -> No
 
     Bare `git checkout <tag>` is ambiguous when a branch shadows the tag name.
     """
-    link = SubmoduleLink(
+    link = sub_mod.SubmoduleLink(
         path="sub",
         git_repo=(tmp_path / "sub").resolve(),
         parent=tmp_path.resolve(),
@@ -369,7 +363,7 @@ def test_checkout_uses_detach_with_full_tag_ref(tmp_path: Path, make_proc) -> No
         patch("repo_ops_upgrade.submodules.is_git_dirty", return_value=False),
         patch("repo_ops_upgrade.submodules.run_git", return_value=make_proc()) as mock_git,
     ):
-        apply_submodule_tag_advances([link], allow_dirty=False)
+        sub_mod.apply_submodule_tag_advances([link], allow_dirty=False)
 
     assert mock_git.call_count == 3
     calls = mock_git.call_args_list
