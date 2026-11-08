@@ -97,7 +97,6 @@ def collect_changes_after_apply(ws: Workspace) -> list[Change]:
     graph-only upgrades that go mod tidy had already dropped.
     """
     repo = ws.git_repo
-    rel = ws.path
     try:
         rel = ws.path.relative_to(repo)
     except ValueError:

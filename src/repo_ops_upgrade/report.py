@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -391,9 +390,10 @@ def print_human_report(
             ws = wr.workspace
             n = len(wr.changes)
             status = wr.status.upper()
-            rel = ws.path
-            with contextlib.suppress(ValueError):
+            try:
                 rel = ws.path.relative_to(ws.git_repo)
+            except ValueError:
+                rel = ws.path
             behind_n = len(wr.behind_latest)
             print(f"  [{status}] {rel} ({ws.ecosystem}/{ws.manager}) — {n} upgrade(s)")
             if wr.error:
