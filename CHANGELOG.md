@@ -7,9 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.6] - 2026-11-08
+
 ### Added
 
 - `plan`/`apply` raise pinned Go (`go.mod`, `go.work`), Rust, Python and Node toolchain versions to the latest stable release, honouring `[[hold]]` rules named after the tool.
+- `plan`/`apply` check and apply .NET package and MSBuild SDK pins.
+
+### Fixed
+
+- `sweep` skips clones of archived repositories.
+- `soup` syncs a row whose version the lockfile no longer holds.
+- Automated commit bodies name the repository, not its path; a NuGet-only apply names NuGet in the subject.
+- NuGet never targets an unlisted version, and the wheel ships the NuGet plugin.
+- Go updates list modules with `-e`, so one unfetchable release skips only that module, and a missing local `replace` target is an environment error.
+- A verify gate shares the full gate's 30-minute hang ceiling.
+- Holds cap exactly at a ceiling that carries a prerelease tag.
+- Bun: an apply fails when `bun.lock` drops a package's optional binaries; packages `bun audit` flags are updated so transitive advisories clear; `--ignore-scripts` sits before `--`.
+- `@types/vscode` holds at the `engines.vscode` floor `vsce` enforces; Expo SDK-versioned tooling holds at the installed SDK major.
+- A SHA-pinned action never moves to an older release than the one it carries.
 
 ## [0.25.5] - 2026-10-18
 
@@ -1043,7 +1059,8 @@ Note: `v0.20.1` was tagged but its release build failed the `ruff format --check
 
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.3...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.6...HEAD
+[0.25.6]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.5...v0.25.6
 [0.25.3]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.2...v0.25.3
 [0.25.2]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.0...v0.25.1
