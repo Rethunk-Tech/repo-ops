@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from urllib.parse import urlparse
 
 from repo_ops_core.constants import GIT_TIMEOUT
 
@@ -93,8 +94,11 @@ def github_remote(repo: Path | str) -> str | None:
         return None
     for line in proc.stdout.splitlines():
         parts = line.split()
-        if len(parts) >= 2 and "github.com" in parts[1]:
-            return parts[1]
+        if len(parts) < 2:
+            continue
+        url = parts[1]
+        if url.startswith("git@github.com:") or urlparse(url).hostname == "github.com":
+            return url
     return None
 
 
