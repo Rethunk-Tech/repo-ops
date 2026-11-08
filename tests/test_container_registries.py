@@ -18,6 +18,7 @@ import json
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -161,7 +162,7 @@ def test_fetch_token_docker_io_direct() -> None:
     assert result == "mytoken123"
     # Should have called the Docker auth endpoint directly
     url_called = mock_open.call_args[0][0].full_url
-    assert "auth.docker.io" in url_called
+    assert urlsplit(url_called).hostname == "auth.docker.io"
 
 
 def test_fetch_token_generic_registry_challenge_flow() -> None:
@@ -355,7 +356,7 @@ def test_fetch_tags_challenge_flow_gcr(tmp_path: Path) -> None:
             raise probe_error
         if call_n == 2:
             url = req.full_url if hasattr(req, "full_url") else str(req)
-            assert "gcr.io" in url
+            assert urlsplit(url).hostname == "gcr.io"
             return token_resp
         return tags_resp
 
