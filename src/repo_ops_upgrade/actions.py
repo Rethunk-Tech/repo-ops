@@ -97,15 +97,15 @@ def save_tag_cache_from(store: dict[str, dict | None]) -> None:
     merged: dict[str, dict] = {}
     try:
         existing = json.loads(path.read_text(encoding="utf-8"))
-        now = time.time()
-        if isinstance(existing, dict):
-            merged = {
-                k: v
-                for k, v in existing.items()
-                if isinstance(v, dict) and now - v.get("ts", 0) <= _TAG_CACHE_MAX_AGE_S
-            }
     except (OSError, ValueError):
-        pass
+        existing = {}
+    now = time.time()
+    if isinstance(existing, dict):
+        merged = {
+            k: v
+            for k, v in existing.items()
+            if isinstance(v, dict) and now - v.get("ts", 0) <= _TAG_CACHE_MAX_AGE_S
+        }
     for repo, info in store.items():
         merged[repo] = _tag_to_disk(info)
     with contextlib.suppress(OSError):
@@ -182,9 +182,6 @@ _LINT_CACHE_MAX_AGE_S: int = 90 * 24 * 3600  # 90 days
 
 # Maximum number of entries kept in the cache file (simple LRU-by-touch).
 _LINT_CACHE_MAX_ENTRIES: int = 4096
-
-# In-process version string cache (populated on first _run_actionlint call).
-_actionlint_version_cache: str | None = None
 
 
 def _derive_owner(repo: Path) -> str | None:
@@ -376,11 +373,9 @@ def _lint_cache_key(wf_bytes: bytes, version: str) -> str:
     return h.hexdigest()
 
 
+@functools.cache
 def _get_actionlint_version() -> str:
     """Return the ``actionlint --version`` string, cached in-process."""
-    global _actionlint_version_cache
-    if _actionlint_version_cache is not None:
-        return _actionlint_version_cache
     try:
         proc = subprocess.run(
             ["actionlint", "--version"],
@@ -388,11 +383,9 @@ def _get_actionlint_version() -> str:
             text=True,
             timeout=10,
         )
-        ver = (proc.stdout.strip() or proc.stderr.strip() or "unknown").splitlines()[0]
+        return (proc.stdout.strip() or proc.stderr.strip() or "unknown").splitlines()[0]
     except Exception:
-        ver = "unknown"
-    _actionlint_version_cache = ver
-    return ver
+        return "unknown"
 
 
 @functools.cache
