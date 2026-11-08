@@ -566,7 +566,7 @@ def _plan_without_resolutions(ws: Workspace) -> list[Change]:
         try:
             moved_up = semver_tuple(after_ver) > semver_tuple(before_ver)
         except (TypeError, ValueError):
-            moved_up = after_ver != before_ver
+            moved_up = True
         if moved_up:
             result.append(Change(name, before_ver, after_ver))
     return result
