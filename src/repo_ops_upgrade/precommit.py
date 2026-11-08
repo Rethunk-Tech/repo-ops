@@ -20,6 +20,7 @@ Design notes
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 import threading
@@ -68,23 +69,19 @@ _REV_LINE_RE = re.compile(r"^(\s+)rev:\s+(.+?)\s*$")
 
 def is_precommit_workspace(directory: Path) -> bool:
     """True when *directory* contains a ``.pre-commit-config.yaml`` file."""
-    try:
+    with contextlib.suppress(PermissionError):
         for entry in directory.iterdir():
             if entry.is_file() and entry.name in _PRECOMMIT_CONFIG_NAMES:
                 return True
-    except PermissionError:
-        pass
     return False
 
 
 def _find_precommit_config(directory: Path) -> Path | None:
     """Return the first pre-commit config file found in *directory*, or None."""
-    try:
+    with contextlib.suppress(PermissionError):
         for entry in directory.iterdir():
             if entry.is_file() and entry.name in _PRECOMMIT_CONFIG_NAMES:
                 return entry
-    except PermissionError:
-        pass
     return None
 
 

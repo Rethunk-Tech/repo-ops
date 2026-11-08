@@ -45,6 +45,7 @@ Design notes
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import os
 import re
@@ -84,15 +85,13 @@ def _is_compose_name(name: str) -> bool:
 
 def is_container_workspace(directory: Path) -> bool:
     """True when *directory* contains at least one Dockerfile or compose file."""
-    try:
+    with contextlib.suppress(PermissionError):
         for entry in directory.iterdir():
             if entry.is_file():
                 if _DOCKERFILE_RE.match(entry.name):
                     return True
                 if _is_compose_name(entry.name):
                     return True
-    except PermissionError:
-        pass
     return False
 
 
@@ -107,7 +106,7 @@ def find_container_files(directory: Path) -> list[Path]:
     found: list[Path] = []
     resolved_paths: set[Path] = set()
 
-    try:
+    with contextlib.suppress(PermissionError):
         for entry in sorted(directory.iterdir()):
             if not entry.is_file():
                 continue
@@ -116,8 +115,6 @@ def find_container_files(directory: Path) -> list[Path]:
                 if rp not in resolved_paths:
                     resolved_paths.add(rp)
                     found.append(entry)
-    except PermissionError:
-        pass
 
     # For each compose file found, also collect referenced build Dockerfiles.
     for cf in list(found):

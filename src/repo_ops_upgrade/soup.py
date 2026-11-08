@@ -52,7 +52,7 @@ def _highest(versions: set[str]) -> str:
             if not best or semver_tuple(ver) > semver_tuple(best):
                 best = ver
         except (TypeError, ValueError):
-            pass
+            continue
     return best
 
 
