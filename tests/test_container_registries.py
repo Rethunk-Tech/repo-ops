@@ -18,9 +18,9 @@ import json
 import urllib.error
 import urllib.request
 from pathlib import Path
-from urllib.parse import urlsplit
 from typing import Any
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlsplit
 
 import pytest
 
