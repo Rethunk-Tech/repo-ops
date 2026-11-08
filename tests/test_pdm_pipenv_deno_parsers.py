@@ -1,4 +1,4 @@
-"""Parser unit tests for PDM, pipenv, uv, and Deno lockfiles."""
+"""Parser unit tests for PDM, pipenv, and uv lockfiles."""
 
 from __future__ import annotations
 
@@ -174,28 +174,3 @@ def test_versions_pipenv_lock_invalid_json():
         p.write_text("not json {{{")
         result = versions_pipenv_lock(p)
     assert result == set()
-
-
-# ---------------------------------------------------------------------------
-# Deno
-# ---------------------------------------------------------------------------
-
-_DENO_LOCK_V3 = {
-    "version": "3",
-    "packages": {
-        "specifiers": {
-            "jsr:@std/assert@^0.221.0": "jsr:@std/assert@0.221.0",
-            "npm:chalk@5": "npm:chalk@5.3.0",
-        },
-        "jsr": {
-            "@std/assert@0.221.0": {
-                "integrity": "sha256:abc",
-            }
-        },
-        "npm": {
-            "chalk@5.3.0": {
-                "integrity": "sha512-xyz",
-            }
-        },
-    },
-}

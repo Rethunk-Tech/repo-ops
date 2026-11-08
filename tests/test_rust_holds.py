@@ -7,7 +7,6 @@ from repo_ops_rust.rust import (
     _cargo_registry_versions,
 )
 
-_GLOBAL_HOLDS_CACHE = "repo_ops_core.holds._global_holds_cached"
 _REGISTRY_CONNECTION = "repo_ops_rust.rust.HTTPSConnection"
 _CRATE = "serde"
 

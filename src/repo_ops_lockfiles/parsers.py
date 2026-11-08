@@ -268,11 +268,6 @@ def versions_uv_lock(p: Path) -> set[str]:
     return _versions_toml_lock(p)
 
 
-_REQ_PIN_RE = re.compile(
-    r"^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?\s*==\s*([^;\s]+)",
-)
-
-
 def versions_pipenv_lock(p: Path) -> set[str]:
     """Pipfile.lock (JSON) → set of name@version.
 

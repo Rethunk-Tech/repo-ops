@@ -10,8 +10,6 @@ from repo_ops_lockfiles.parsers import versions_deno_lock
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
-_DENO_FIXTURES = ("deno_v2.lock", "deno_v3.lock", "deno_v4.lock")
-
 
 def _copy_lock_fixture(tmp_path: Path, fixture_name: str) -> Path:
     """Copy a canonical on-disk Deno lock fixture into *tmp_path*."""

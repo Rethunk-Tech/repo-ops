@@ -11,7 +11,6 @@ from repo_ops_js_pnpm.pnpm import targeted_bump_behind
 from repo_ops_models import Change
 
 _RESOLVER_PATH = "repo_ops_lockfiles.snapshots.resolved_version_from_node_modules"
-_OUTDATED = "repo_ops_js_pnpm.pnpm._pnpm_outdated"
 
 _VUE_BEHIND = [Change("vue", "3.0.0", "4.0.0")]
 

@@ -56,19 +56,3 @@ def test_unresolvable_sha_report_only(tmp_path: Path) -> None:
     assert "report only" in (b.detail or "").lower()
     # File must be unchanged
     assert wf.read_text(encoding="utf-8") == original
-
-
-# ---------------------------------------------------------------------------
-# (e) (the default) → SHA pins are report-only
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# (g) short-SHA prefix resolution
-# ---------------------------------------------------------------------------
-
-# Full 40-char SHA used as the key in sha_to_tags (as the real API returns).
-_FULL_SHA_A = "abc1234def5678901234567890abc1234def5678"
-# 7-char prefix of _FULL_SHA_A
-
-# A second full SHA whose first 7 chars differ from _FULL_SHA_A
