@@ -154,6 +154,33 @@ def _no_repo_holds(request: pytest.FixtureRequest) -> Iterator[None]:
         yield
 
 
+@pytest.fixture(scope="session")
+def _signing_gitconfig(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A git config with a throwaway SSH signing key, so ``git commit -S`` works anywhere, CI included."""
+    home = tmp_path_factory.mktemp("git-signing")
+    key = home / "signing_ed25519"
+    subprocess.run(
+        ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "repo-ops-tests", "-f", str(key)],
+        check=True,
+    )
+    config = home / "gitconfig"
+    config.write_text(
+        "[user]\n\tname = test\n\temail = test@example.com\n"
+        f"\tsigningkey = {key}.pub\n"
+        "[gpg]\n\tformat = ssh\n"
+        "[init]\n\tdefaultBranch = main\n",
+        encoding="utf-8",
+    )
+    return config
+
+
+@pytest.fixture(autouse=True)
+def _isolate_git_config(_signing_gitconfig: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every git call in a test reads the test config, never the operator's own."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(_signing_gitconfig))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+
 @pytest.fixture(autouse=True)
 def _isolate_state_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Point the XDG cache (and thus the repo-ops state store) at a tmp dir.

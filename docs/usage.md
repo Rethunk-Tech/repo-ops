@@ -77,7 +77,7 @@ A failed verify on a fleet sweep restores only the files the workspace's apply w
 
 ### Commits
 
-Each verified repo gets one conventional commit staging only the files apply touched, never `.env` or key material. `--no-commit` leaves the changes in the tree. An umbrella repo's children are applied first, and the parent then gets one `chore(submodules)` commit for the gitlinks of children committed this run. Nothing is pushed.
+Each verified repo gets one signed conventional commit staging only the files apply touched, never `.env` or key material. With no signing key configured, the commit fails rather than land unsigned. `--no-commit` leaves the changes in the tree. An umbrella repo's children are applied first, and the parent then gets one `chore(submodules)` commit for the gitlinks of children committed this run. Nothing is pushed.
 
 ## Config
 

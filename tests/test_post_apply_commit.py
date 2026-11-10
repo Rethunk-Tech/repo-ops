@@ -238,6 +238,14 @@ def test_conventional_commit_writes(tmp_path: Path, init_git_repo) -> None:
         check=True,
     )
     assert "chore(deps)" in log.stdout
+    raw = subprocess.run(
+        ["git", "cat-file", "commit", "HEAD"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "gpgsig " in raw.stdout, "repo-ops must sign every commit it makes"
 
 
 def test_collect_changes_no_phantom_downgrade(tmp_path: Path) -> None:
