@@ -384,8 +384,12 @@ def _manifest_versions(repo: str) -> dict[str, str]:
     root = Path(repo)
     result: dict[str, str] = {}
 
-    # Go: parse go.mod "require" lines
+    # Go: parse go.mod "require" lines. A vendored module's go.mod declares the
+    # dependency's own requirements, not this repo's; treating those as current
+    # versions makes a live Dependabot PR look superseded.
     for go_mod in root.rglob("go.mod"):
+        if _in_skip_dir(root, go_mod):
+            continue
         with contextlib.suppress(Exception):
             text = go_mod.read_text(encoding="utf-8", errors="replace")
             for m in re.finditer(r"^\s+([^\s]+)\s+(v[^\s]+)", text, re.MULTILINE):
@@ -453,6 +457,23 @@ def _version_gte(current: str, target: str) -> bool:
     return semver_tuple(current) >= semver_tuple(target)
 
 
+def _module_path_version(pkg: str, names: dict[str, str]) -> str | None:
+    """Version for *pkg* from a module-path key that shares its final element.
+
+    A Go module path is looked up whole first. The fallback exists for trees
+    whose lockfile/manifest key is a prefix of the PR's path, and it only ever
+    compares module paths with module paths: an entry named ``bar`` no longer
+    answers for ``github.com/foo/bar``.
+    """
+    if "/" not in pkg:
+        return None
+    tail = "/" + pkg.rsplit("/", 1)[-1].lower()
+    for name, version in names.items():
+        if "/" in name and name.lower().endswith(tail):
+            return version
+    return None
+
+
 def _resolve_package_version(
     pkg: str,
     lockfile_resolved: dict[str, str],
@@ -478,16 +499,13 @@ def _resolve_package_version(
     if pep503_pkg != pkg_lower and pep503_pkg in lockfile_resolved:
         return lockfile_resolved[pep503_pkg], True
 
-    # Also try short-name match for Go module paths
-    short_pkg = pkg.rsplit("/", 1)[-1].rsplit(".", 1)[-1].lower()
-    if short_pkg != pkg_lower and short_pkg in lockfile_resolved:
-        return lockfile_resolved[short_pkg], True
-
     # 2. Manifest versions (go.mod, Cargo.lock) — high confidence
     if pkg in manifest_versions:
         return manifest_versions[pkg], True
-    if short_pkg != pkg and short_pkg in manifest_versions:
-        return manifest_versions[short_pkg], True
+    for names in (manifest_versions, lockfile_resolved):
+        module_version = _module_path_version(pkg, names)
+        if module_version is not None:
+            return module_version, True
 
     # 3. Text-search lockfile_versions (low confidence)
     for entry in lockfile_versions:

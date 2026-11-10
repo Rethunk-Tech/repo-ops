@@ -263,6 +263,38 @@ def test_check_superseded_found_in_manifest() -> None:
     assert current == "0.17.0"
 
 
+def test_check_superseded_short_name_does_not_match_unrelated_package() -> None:
+    """``bar`` in a lockfile must not answer for ``github.com/foo/bar``.
+
+    A high-confidence match here makes ``--close`` close a live PR.
+    """
+    pr = _make_pr("Bump github.com/foo/bar from 1.0.0 to 1.1.0")
+
+    superseded, current = _check_superseded(
+        pr,
+        lockfile_versions=set(),
+        manifest_versions={},
+        lockfile_resolved={"bar": "9.0.0"},
+    )
+
+    assert superseded is None
+    assert current is None
+
+
+def test_check_superseded_module_path_tail_still_matches_a_module_path() -> None:
+    """The fallback stays for module-path keys that only differ by a prefix."""
+    pr = _make_pr("Bump golang.org/x/text from 0.13.0 to 0.14.0")
+
+    superseded, current = _check_superseded(
+        pr,
+        lockfile_versions=set(),
+        manifest_versions={"x/text": "0.14.0"},
+    )
+
+    assert superseded is True
+    assert current == "0.14.0"
+
+
 def test_check_superseded_unparseable_pr_returns_none() -> None:
     pr = DependabotPR(
         number=2,
@@ -391,6 +423,21 @@ def test_manifest_versions_go_mod(tmp_path: Path) -> None:
     )
     versions = _manifest_versions(str(tmp_path))
     assert versions.get("golang.org/x/net") == "0.17.0"
+
+
+def test_manifest_versions_ignores_vendored_go_mod(tmp_path: Path) -> None:
+    """A vendored dependency's go.mod requirements are not this repo's versions."""
+    (tmp_path / "go.mod").write_text("module example.com/app\n", encoding="utf-8")
+    vendor = tmp_path / "vendor" / "example.com" / "lib"
+    vendor.mkdir(parents=True)
+    (vendor / "go.mod").write_text(
+        "module example.com/lib\n\nrequire (\n\tgolang.org/x/text v9.9.9\n)\n",
+        encoding="utf-8",
+    )
+
+    versions = _manifest_versions(str(tmp_path))
+
+    assert "golang.org/x/text" not in versions
 
 
 def test_manifest_versions_cargo_lock(tmp_path: Path) -> None:
