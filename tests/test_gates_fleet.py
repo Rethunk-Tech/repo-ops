@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -54,6 +55,27 @@ def test_a_failing_gate_is_named(tmp_path: Path, monkeypatch, make_proc):
     assert result.status == "fail"
     assert result.failed == ["bun run lint"]
     assert result.logs == []
+
+
+def test_a_gate_over_the_run_ceiling_is_an_error_not_a_dropped_repo(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A hung gate raises TimeoutExpired, which must not fall out of the pool.
+
+    ``run_bounded_pool`` logs and drops an item whose worker raises, so a
+    swallowed timeout reported success with the repo missing from the results.
+    """
+    monkeypatch.setattr(
+        "repo_ops_gates.gates._gate_listing", lambda repo, *, e2e: (["test"], "", 0)
+    )
+
+    def time_out(*_a, **_k):
+        raise subprocess.TimeoutExpired(["gate", "run"], 1800)
+
+    monkeypatch.setattr("repo_ops_gates.gates.run", time_out)
+    result = _run_one(tmp_path, [str(tmp_path)])
+    assert result.status == "error"
+    assert "timed out" in result.detail.lower() or "1800" in result.detail
 
 
 _RECORD_CMD = ["gate", "--json", "record"]

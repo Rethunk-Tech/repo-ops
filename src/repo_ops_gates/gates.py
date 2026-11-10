@@ -265,7 +265,7 @@ def _run_one(
             else:
                 result.failed, result.logs = recorded
             result.detail = (proc.stderr or proc.stdout or "").strip()[-2000:]
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
         result.status = "error"
         result.detail = str(exc)
     finally:
