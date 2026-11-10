@@ -11,8 +11,6 @@ from ruamel.yaml.error import YAMLError
 
 from repo_ops_core.filesystem import read_json_file, read_toml_file
 
-_PNPM_LOCK_YAML = YAML(typ="safe")
-
 
 def split_name_version(entry: str) -> tuple[str, str]:
     """Split a ``name@version`` string into (name, version).
@@ -171,7 +169,9 @@ def versions_pnpm_lock(p: Path) -> set[str]:
     - v5/older path-notation: ``/lodash/4.17.21:`` / ``/@babel/core/7.22.0:``
     """
     try:
-        data = _PNPM_LOCK_YAML.load(p.read_text(encoding="utf-8", errors="replace"))
+        # Per-call: ruamel's YAML keeps one reader/scanner/parser and resets
+        # them on each load(), so a shared instance corrupts parallel parses.
+        data = YAML(typ="safe").load(p.read_text(encoding="utf-8", errors="replace"))
     except YAMLError:
         return _versions_pnpm_lock_regex_fallback(p)
     if not isinstance(data, dict):

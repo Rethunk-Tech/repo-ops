@@ -1,6 +1,7 @@
 """Lockfile parser unit tests."""
 
 import tempfile
+import threading
 from pathlib import Path
 
 from repo_ops_lockfiles.parsers import (
@@ -155,6 +156,36 @@ packages:
         result = versions_pnpm_lock(p)
         assert result == {"@babel/core@7.21.0", "foo@1.0.0"}
         assert not any("supports-color" in t for t in result)
+
+
+def test_versions_pnpm_lock_parses_concurrently(tmp_path: Path) -> None:
+    """Parallel parses must not share one YAML reader/scanner/parser.
+
+    ruamel's ``YAML`` keeps that state on the instance, so a module-level loader
+    interleaves under threads and raises or returns a short set.
+    """
+    content = "lockfileVersion: '6.0'\n\npackages:\n" + "".join(
+        f"  pkg{i}@1.{i}.0:\n    resolution: {{integrity: sha512-x{i}}}\n" for i in range(300)
+    )
+    p = tmp_path / "pnpm-lock.yaml"
+    p.write_text(content, encoding="utf-8")
+    expected = {f"pkg{i}@1.{i}.0" for i in range(300)}
+    failures: list[BaseException] = []
+
+    def parse_repeatedly() -> None:
+        try:
+            for _ in range(20):
+                assert versions_pnpm_lock(p) == expected
+        except BaseException as exc:  # noqa: BLE001 - the parse error type varies
+            failures.append(exc)
+
+    threads = [threading.Thread(target=parse_repeatedly) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert failures == []
 
 
 def test_versions_yarn_lock_skips_metadata_block():
