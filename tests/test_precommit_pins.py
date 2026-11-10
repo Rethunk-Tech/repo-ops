@@ -16,12 +16,14 @@ No real subprocesses or network calls are made.
 from __future__ import annotations
 
 import subprocess
+import threading
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from repo_ops_models import Workspace
+from repo_ops_upgrade import precommit
 from repo_ops_upgrade.precommit import (
     _clear_tag_cache,
     _fetch_tags_for_repo,
@@ -273,6 +275,38 @@ def test_fetch_tags_nonzero_exit() -> None:
     proc = subprocess.CompletedProcess([], 128, stdout="", stderr="")
     with patch("subprocess.run", return_value=proc):
         assert _fetch_tags_for_repo("https://github.com/org/repo") is None
+
+
+def test_tag_refs_fetch_releases_the_lock_before_the_network_call() -> None:
+    """A slow ls-remote for one repo must not block another repo's fetch."""
+    a_started = threading.Event()
+    release_a = threading.Event()
+    b_started = threading.Event()
+
+    def fake_fetch(url: str, *, timeout: int = 30):
+        if url.endswith("/a"):
+            a_started.set()
+            release_a.wait(5)
+        else:
+            b_started.set()
+        return [("a" * 40, "v1.0.0")]
+
+    with patch.object(precommit.tag_utils, "fetch_tag_refs", side_effect=fake_fetch):
+        first = threading.Thread(
+            target=precommit._fetch_tag_refs_for_repo, args=("https://github.com/o/a",)
+        )
+        second = threading.Thread(
+            target=precommit._fetch_tag_refs_for_repo, args=("https://github.com/o/b",)
+        )
+        first.start()
+        assert a_started.wait(2)
+        second.start()
+        try:
+            assert b_started.wait(2), "the second fetch waited on the first one's lock"
+        finally:
+            release_a.set()
+            first.join()
+            second.join()
 
 
 def test_fetch_tags_cached_second_call_no_subprocess() -> None:

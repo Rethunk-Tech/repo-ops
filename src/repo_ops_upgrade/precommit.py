@@ -209,15 +209,18 @@ def _fetch_tag_refs_for_repo(
 
     The tag names-only cache is sufficient for semver revs, but SHA refresh
     needs the commit associated with each tag to preserve the pin format.
+    The lock covers the cache, not the network: every distinct URL is one
+    ``git ls-remote``, and holding the lock across it serialises a whole sweep.
     """
     with _TAG_CACHE_LOCK:
         if repo_url in _TAG_REF_CACHE:
             return _TAG_REF_CACHE[repo_url]
 
-        refs = tag_utils.fetch_tag_refs(repo_url, timeout=timeout)
+    refs = tag_utils.fetch_tag_refs(repo_url, timeout=timeout)
+    with _TAG_CACHE_LOCK:
         _TAG_REF_CACHE[repo_url] = refs
         _TAG_CACHE[repo_url] = None if refs is None else [tag for _, tag in refs]
-        return refs
+    return refs
 
 
 def _clear_tag_cache() -> None:
