@@ -369,7 +369,7 @@ def test_fetch_tags_uses_cred_helper_for_private_registry(tmp_path: Path, make_p
         return tags_resp
 
     with (
-        patch("urllib.request.urlopen", side_effect=http_side_effect),
+        patch("urllib.request.OpenerDirector.open", side_effect=http_side_effect),
         patch("subprocess.run", return_value=helper_proc),
         patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}),
     ):

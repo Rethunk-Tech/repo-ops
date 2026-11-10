@@ -156,7 +156,7 @@ def test_fetch_token_docker_io_direct() -> None:
     """docker.io uses the known endpoint, no probe RTT."""
     token_resp = _make_http_response(json.dumps({"token": "mytoken123"}).encode())
 
-    with patch("urllib.request.urlopen", return_value=token_resp) as mock_open:
+    with patch("urllib.request.OpenerDirector.open", return_value=token_resp) as mock_open:
         result = _fetch_token_for_registry("registry-1.docker.io", "library/nginx", None)
 
     assert result == "mytoken123"
@@ -184,7 +184,7 @@ def test_fetch_token_generic_registry_challenge_flow() -> None:
             raise probe_error
         return token_resp
 
-    with patch("urllib.request.urlopen", side_effect=side_effect):
+    with patch("urllib.request.OpenerDirector.open", side_effect=side_effect):
         result = _fetch_token_for_registry("quay.io", "org/img", None)
 
     assert result == "quay_token"
@@ -217,7 +217,7 @@ def test_fetch_token_ignores_placeholder_scope_in_challenge() -> None:
             raise probe_error
         return token_resp
 
-    with patch("urllib.request.urlopen", side_effect=side_effect):
+    with patch("urllib.request.OpenerDirector.open", side_effect=side_effect):
         result = _fetch_token_for_registry("ghcr.io", "ggml-org/llama.cpp", None)
 
     assert result == "ghcr_token"
@@ -233,7 +233,7 @@ def test_fetch_token_generic_registry_200_probe_returns_none() -> None:
     """If /v2/ returns 200 (no auth needed), token is None."""
     probe_resp = _make_http_response(b"{}")
 
-    with patch("urllib.request.urlopen", return_value=probe_resp):
+    with patch("urllib.request.OpenerDirector.open", return_value=probe_resp):
         result = _fetch_token_for_registry("internal.registry.local", "app/img", None)
 
     assert result is None
@@ -256,7 +256,7 @@ def test_fetch_token_rejects_http_and_off_host_realm() -> None:
             },
         )
 
-    with patch("urllib.request.urlopen", side_effect=side_effect):
+    with patch("urllib.request.OpenerDirector.open", side_effect=side_effect):
         assert _fetch_token_for_registry("evil.example", "img", basic_auth) is None
 
     assert all("169.254.169.254" not in req.full_url for req in seen)
@@ -275,7 +275,7 @@ def test_fetch_token_rejects_http_and_off_host_realm() -> None:
             },
         )
 
-    with patch("urllib.request.urlopen", side_effect=off_host):
+    with patch("urllib.request.OpenerDirector.open", side_effect=off_host):
         assert _fetch_token_for_registry("evil.example", "img", basic_auth) is None
 
     assert all("exfil.example" not in req.full_url for req in seen)
@@ -289,7 +289,7 @@ def test_fetch_token_with_basic_auth_forwarded() -> None:
 
     token_resp = _make_http_response(json.dumps({"token": "authed_token"}).encode())
 
-    with patch("urllib.request.urlopen", return_value=token_resp) as mock_open:
+    with patch("urllib.request.OpenerDirector.open", return_value=token_resp) as mock_open:
         result = _fetch_token_for_registry("registry-1.docker.io", "library/nginx", basic_auth)
 
     assert result == "authed_token"
@@ -325,7 +325,7 @@ def test_fetch_tags_challenge_flow_quay(tmp_path: Path) -> None:
             return token_resp  # token fetch
         return tags_resp  # tags/list
 
-    with patch("urllib.request.urlopen", side_effect=side_effect):
+    with patch("urllib.request.OpenerDirector.open", side_effect=side_effect):
         tags = _fetch_tags("quay.io/org/myapp")
 
     assert tags == ["1.0", "1.1", "1.2"]
@@ -360,7 +360,7 @@ def test_fetch_tags_challenge_flow_gcr(tmp_path: Path) -> None:
             return token_resp
         return tags_resp
 
-    with patch("urllib.request.urlopen", side_effect=side_effect):
+    with patch("urllib.request.OpenerDirector.open", side_effect=side_effect):
         tags = _fetch_tags("gcr.io/project/img")
 
     assert tags == ["1.0", "1.1"]
@@ -389,7 +389,7 @@ def test_fetch_token_mcr_challenge_flow() -> None:
             raise probe_error
         return token_resp
 
-    with patch("urllib.request.urlopen", side_effect=side_effect):
+    with patch("urllib.request.OpenerDirector.open", side_effect=side_effect):
         result = _fetch_token_for_registry("mcr.microsoft.com", "dotnet/runtime", None)
 
     assert result == "mcr_token"
@@ -422,7 +422,7 @@ def test_fetch_tags_challenge_flow_mcr(tmp_path: Path) -> None:
             return token_resp
         return tags_resp
 
-    with patch("urllib.request.urlopen", side_effect=side_effect):
+    with patch("urllib.request.OpenerDirector.open", side_effect=side_effect):
         tags = _fetch_tags("mcr.microsoft.com/dotnet/runtime")
 
     assert tags == ["8.0", "8.0.1"]
@@ -457,7 +457,7 @@ def test_fetch_tags_with_basic_auth(tmp_path: Path) -> None:
         return tags_resp
 
     with (
-        patch("urllib.request.urlopen", side_effect=side_effect),
+        patch("urllib.request.OpenerDirector.open", side_effect=side_effect),
         patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}),
     ):
         tags = _fetch_tags("ghcr.io/org/img")
@@ -493,7 +493,7 @@ def test_fetch_tags_creds_store_only_still_works_anonymously(tmp_path: Path) -> 
         return tags_resp
 
     with (
-        patch("urllib.request.urlopen", side_effect=side_effect),
+        patch("urllib.request.OpenerDirector.open", side_effect=side_effect),
         patch.dict("os.environ", {"DOCKER_CONFIG": str(tmp_path)}),
     ):
         tags = _fetch_tags("ghcr.io/org/img")
