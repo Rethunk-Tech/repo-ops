@@ -40,6 +40,15 @@ def test_discover_action_files_finds_nested_action_yml(tmp_path: Path) -> None:
     assert found == [tmp_path / "setup-python" / "action.yml"]
 
 
+def test_discover_action_files_skips_installed_and_vendored_manifests(tmp_path: Path) -> None:
+    """A dependency's or vendored tree's action.yml is not ours to rewrite."""
+    real = _write_action(tmp_path / ".github" / "actions" / "local" / "action.yml", _V10_1_0)
+    for skipped in (("node_modules", "dep"), (".venv", "lib"), ("vendor", "x")):
+        _write_action(tmp_path.joinpath(*skipped) / "action.yml", _V10_1_0)
+
+    assert discover_action_files(tmp_path) == [real]
+
+
 def test_composite_action_yml_pin_bumps(tmp_path: Path) -> None:
     """A pinned third-party `uses:` inside a composite action.yml advances like a workflow pin."""
     action = _write_action(tmp_path / "setup-python" / "action.yml", _V10_1_0)

@@ -24,6 +24,7 @@ from repo_ops_core.git import github_owner_repo, github_remote
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
+from repo_ops_core.walk import iter_scanned_dirs
 from repo_ops_models import ActionBump
 from repo_ops_upgrade.workflow_uses import (
     PinReplacement,
@@ -432,20 +433,16 @@ def discover_action_files(repo: Path) -> list[Path]:
     the tree (a package's own root, ``.github/actions/*/``, …), unlike
     workflows which only live in ``.github/workflows/``, so this walks the
     whole repo rather than a fixed directory.
+
+    The walk prunes :data:`SKIP_DIRS`: an installed dependency's or a
+    ``vendor/`` tree's ``action.yml`` is not ours to rewrite.
     """
     found: list[Path] = []
-    for pattern in ("action.yml", "action.yaml"):
-        for p in repo.rglob(pattern):
-            if not p.is_file():
-                continue
-            try:
-                rel_parts = p.relative_to(repo).parts
-            except ValueError:
-                continue
-            if ".git" in rel_parts or not is_under_root(repo, p):
-                continue
-            found.append(p)
-    return sorted(found)
+    for directory, filenames in iter_scanned_dirs(repo):
+        for name in ("action.yml", "action.yaml"):
+            if name in filenames:
+                found.append(directory / name)
+    return [p for p in sorted(found) if p.is_file() and is_under_root(repo, p)]
 
 
 def _filter_excluded(paths: list[Path], repo: Path, patterns: list[str] | None) -> list[Path]:
