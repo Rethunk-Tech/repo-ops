@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+from repo_ops_js_pnpm import pnpm
 from repo_ops_js_pnpm.pnpm import (
     _catalog_spec_from_version,
     _catalog_specs,
@@ -152,6 +153,52 @@ packages:
 
     assert changes == []
     assert behind == [Change("react", "18.3.1", "19.0.0")]
+
+
+def test_catalog_parses_the_lockfile_once_for_every_package(
+    tmp_path: Path, make_workspace
+) -> None:
+    """One parse per check, not one per catalog package."""
+    (tmp_path / "pnpm-workspace.yaml").write_text(
+        """\
+catalog:
+  alpha: ^1.0.0
+  beta: ^2.0.0
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "pnpm-lock.yaml").write_text(
+        """\
+lockfileVersion: '6.0'
+packages:
+  alpha@1.0.0:
+    resolution: {integrity: sha512-alpha}
+  beta@2.0.0:
+    resolution: {integrity: sha512-beta}
+""",
+        encoding="utf-8",
+    )
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        return subprocess.CompletedProcess(cmd, 0, stdout="9.0.0\n", stderr="")
+
+    parses: list[str] = []
+    real_parse = pnpm.versions_pnpm_lock
+
+    def counting_parse(path):
+        parses.append(str(path))
+        return real_parse(path)
+
+    with (
+        patch("repo_ops_js_pnpm.pnpm.run", side_effect=fake_run),
+        patch("repo_ops_js_pnpm.pnpm.versions_pnpm_lock", counting_parse),
+    ):
+        _changes, behind = _pnpm_outdated(
+            make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
+        )
+
+    assert [c.name for c in behind] == ["alpha", "beta"]
+    assert len(parses) == 1
 
 
 def test_targeted_catalog_bump_updates_default_and_named_tables(

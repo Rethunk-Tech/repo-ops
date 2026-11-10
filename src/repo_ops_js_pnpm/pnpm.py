@@ -152,17 +152,25 @@ def _catalog_spec_from_version(spec: str) -> str:
     return normalize_version(spec)
 
 
-def _catalog_lock_from_ver(ws: Workspace, name: str, spec: str) -> str:
+def _lock_versions_by_name(ws: Workspace) -> dict[str, list[str]]:
+    """Every resolved version in the workspace lockfile, keyed by package name.
+
+    Parsing a pnpm lockfile is the expensive part of a catalog check, so one
+    call here answers every catalog package instead of re-parsing per package.
+    """
     try:
         resolved = versions_pnpm_lock(ws.path / "pnpm-lock.yaml")
     except OSError:
-        return _catalog_spec_from_version(spec)
-    matches = [
-        version
-        for token in resolved
-        for token_name, version in (split_name_version(token),)
-        if token_name == name
-    ]
+        return {}
+    by_name: dict[str, list[str]] = {}
+    for token in resolved:
+        token_name, version = split_name_version(token)
+        by_name.setdefault(token_name, []).append(version)
+    return by_name
+
+
+def _catalog_lock_from_ver(name: str, spec: str, by_name: dict[str, list[str]]) -> str:
+    matches = by_name.get(name) or []
     if not matches:
         return _catalog_spec_from_version(spec)
     return min(matches, key=_catalog_version_key)
@@ -304,6 +312,9 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
     if catalog_specs:
         catalog_names = set(catalog_specs)
         behind_latest[:] = [c for c in behind_latest if c.name not in catalog_names]
+        # Parsed once for the whole catalog: one parse per package re-reads the
+        # same lockfile dozens of times on every plan.
+        lock_versions = _lock_versions_by_name(ws)
         for name, specs in catalog_specs.items():
             meta = outdated.get(name)
             if meta is None:
@@ -316,7 +327,7 @@ def _pnpm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
                     behind_latest.append(
                         Change(
                             name,
-                            _catalog_lock_from_ver(ws, name, from_ver),
+                            _catalog_lock_from_ver(name, from_ver, lock_versions),
                             latest,
                         )
                     )
