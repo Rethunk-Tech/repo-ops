@@ -69,6 +69,16 @@ def _bundles(
             [ActionBump("ci.yml", "actions/checkout", "v4", "v4")],
             False,
         ),
+        (
+            {},
+            [ActionBump("ci.yml", "(actionlint)", "", "", status="warn", detail="SC2086")],
+            False,
+        ),
+        (
+            {},
+            [ActionBump("ci.yml", "actions/checkout", "v4", "v4", status="policy")],
+            False,
+        ),
     ],
     ids=(
         "clean-ok",
@@ -80,6 +90,8 @@ def _bundles(
         "action-report-only",
         "action-pin-behind",
         "action-current",
+        "actionlint-warn-only",
+        "action-policy-only",
     ),
 )
 def test_has_actionable_work(

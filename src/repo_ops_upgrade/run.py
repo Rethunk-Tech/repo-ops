@@ -57,7 +57,10 @@ def _has_actionable_work(bundles: dict[Path, RepoBundle]) -> bool:
             if wr.changes or wr.remediations or wr.status not in ("ok", "skip"):
                 return True
         for ab in bundle.actions:
-            if ab.status != "ok":
+            # A ``warn`` row is actionlint's shellcheck note and ``policy`` is an
+            # org-policy observation: neither is drift plan can act on, and
+            # counting them turns every plan into a permanent exit 1.
+            if ab.status not in ("ok", "warn", "policy"):
                 return True
             if "report only" in (ab.detail or "").lower():
                 continue
