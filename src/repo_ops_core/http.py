@@ -87,4 +87,4 @@ def open_url(
     # S310 asks for exactly the allowlist enforced above; this is where it lives.
     request = urllib.request.Request(url, headers=headers or {}, method=method)  # noqa: S310
     opener = urllib.request.build_opener(_GuardedRedirectHandler(allowed_host))
-    return opener.open(request, timeout=timeout)  # noqa: S310
+    return opener.open(request, timeout=timeout)

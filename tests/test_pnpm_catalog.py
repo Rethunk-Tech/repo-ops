@@ -155,9 +155,7 @@ packages:
     assert behind == [Change("react", "18.3.1", "19.0.0")]
 
 
-def test_catalog_parses_the_lockfile_once_for_every_package(
-    tmp_path: Path, make_workspace
-) -> None:
+def test_catalog_parses_the_lockfile_once_for_every_package(tmp_path: Path, make_workspace) -> None:
     """One parse per check, not one per catalog package."""
     (tmp_path / "pnpm-workspace.yaml").write_text(
         """\

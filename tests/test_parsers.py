@@ -176,7 +176,7 @@ def test_versions_pnpm_lock_parses_concurrently(tmp_path: Path) -> None:
         try:
             for _ in range(20):
                 assert versions_pnpm_lock(p) == expected
-        except BaseException as exc:  # noqa: BLE001 - the parse error type varies
+        except Exception as exc:
             failures.append(exc)
 
     threads = [threading.Thread(target=parse_repeatedly) for _ in range(8)]

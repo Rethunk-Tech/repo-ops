@@ -8,6 +8,7 @@ import urllib.parse
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -46,7 +47,7 @@ def server_url() -> Iterator[str]:
 class _RedirectHandler(BaseHTTPRequestHandler):
     """Answers ``?to=`` with a redirect to it; any other path echoes the auth seen."""
 
-    seen_auth: list[str | None] = []
+    seen_auth: ClassVar[list[str | None]] = []
 
     def do_GET(self) -> None:
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
