@@ -22,20 +22,12 @@ Dependency maintenance for local git checkouts
 
 ## Quick start
 
-Needs [uv](https://docs.astral.sh/uv/), Python 3.12 or newer, and git. Each ecosystem's own CLI (`bun`, `go`, `cargo`, `dotnet`, `uv`, …) is needed only for repos that use it; `gh` enables the Actions org-policy check and `dependabot`.
-
 ```bash
 uv tool install "git+https://github.com/Rethunk-Tech/repo-ops.git"
 repo-ops --version
 ```
 
-Agent skill, for Claude Code and Cursor:
-
-```bash
-bunx skills add Rethunk-Tech/repo-ops
-```
-
-Uninstall with `uv tool uninstall repo-ops`.
+Install, prerequisites, and uninstall: [HUMANS.md](HUMANS.md).
 
 ## Use
 
@@ -62,6 +54,7 @@ Then [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/testing.md](docs/testing.md). 
 
 | Document | Purpose |
 | --- | --- |
+| [HUMANS](HUMANS.md) | Install, run, uninstall |
 | [Usage](docs/usage.md) | What each command does, config, exit codes |
 | [Bulk maintenance](docs/bulk-maintenance.md) | Fleet sweeps and submodule umbrellas |
 | [Contributor guide](AGENTS.md) | Layout, gate, invariants, release |
