@@ -42,6 +42,7 @@ from repo_ops_upgrade import (
 from repo_ops_upgrade import discovery as workspace_discovery
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 from repo_ops_upgrade.post_apply import (
+    WorktreeState,
     capture_worktree_state,
     note_foreign_changes,
     note_retry_skipped,
@@ -84,7 +85,7 @@ def _resolve_exit_code(
 
 def _rollback_vetoed_repo(
     repo: Path,
-    repo_before: dict[str, bytes | None] | None,
+    repo_before: WorktreeState | None,
     results: list[WorkspaceResult],
 ) -> None:
     """Undo the passing siblings of a failed workspace, touching only their own edits."""
@@ -254,7 +255,7 @@ def _run_upgrade_body(
         # Siblings' own applied-but-uncommitted edits are expected, so after the
         # first workspace the tree is compared with its state after the last one.
         repo_before = capture_worktree_state(bundle.git_repo) if rollback_on_veto else None
-        expected: dict[str, bytes | None] | None = None
+        expected: WorktreeState | None = None
         started_dirty = is_git_dirty(bundle.git_repo) if apply and allow_dirty else None
         for wr in bundle.workspaces:
             dirty = started_dirty

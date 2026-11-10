@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import patch
@@ -9,10 +10,12 @@ from unittest.mock import patch
 import pytest
 
 from repo_ops_models import Workspace
+from repo_ops_upgrade import post_apply
 from repo_ops_upgrade.post_apply import (
     _workspace_git_pathspec,
     capture_worktree_state,
     collect_changes_after_apply,
+    record_owned_edits,
     tree_diff,
 )
 
@@ -197,6 +200,30 @@ def test_workspace_git_pathspec(tmp_path: Path, ws_rel: str, repo_rel: str, expe
         ws_path = tmp_path / "ws"
     ws_path.mkdir(parents=True, exist_ok=True)
     assert _workspace_git_pathspec(_ws(ws_path, git_repo)) == expected
+
+
+def test_capture_worktree_state_digests_files_past_its_budget(
+    tmp_path: Path, init_git_repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A large unignored tree must not be held in memory, and edits are still seen."""
+    init_git_repo(tmp_path, commit=True, filename="README.md", content="v1\n")
+    (tmp_path / "small.txt").write_text("kept\n", encoding="utf-8")
+    big = tmp_path / "big.bin"
+    big.write_bytes(b"x" * 4096)
+    monkeypatch.setattr(post_apply, "_STATE_BYTE_BUDGET", 1024)
+
+    before = capture_worktree_state(tmp_path)
+    assert before is not None
+    assert before["big.bin"] == post_apply.FileDigest(hashlib.sha256(b"x" * 4096).hexdigest())
+    assert before["small.txt"] == b"kept\n"
+    assert tree_diff(tmp_path, before) == []
+
+    big.write_bytes(b"x" * 4095 + b"y")
+
+    assert tree_diff(tmp_path, before) == ["big.bin"]
+    assert "big.bin" not in record_owned_edits(
+        _ws(tmp_path), {}, before, capture_worktree_state(tmp_path)
+    )
 
 
 @pytest.mark.parametrize(

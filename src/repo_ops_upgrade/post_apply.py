@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from pathlib import Path
@@ -48,7 +49,21 @@ _REINSTALL: dict[str, tuple[list[str], str]] = {
     "pip-tools": (["uv", "pip", "sync", "requirements.txt"], ".venv"),
 }
 
-WorktreeState = dict[str, bytes | None]
+
+class FileDigest(NamedTuple):
+    """Content digest of a snapshot file too large to keep in memory."""
+
+    sha256: str
+
+
+# A capture keeps bytes for what a rollback could restore; past this total, the
+# rest of the dirty tree is only digested. Capture runs once per workspace, in
+# parallel, and an unignored build tree would otherwise pin its whole size in
+# RSS until verify finishes.
+_STATE_BYTE_BUDGET = 8 * 1024 * 1024
+_DIGEST_CHUNK = 1024 * 1024
+
+WorktreeState = dict[str, bytes | FileDigest | None]
 
 _NODE_DEP_SECTIONS = frozenset(
     ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
@@ -228,30 +243,61 @@ def _dirty_paths(repo: Path) -> dict[str, str] | None:
     return out
 
 
+def _digest_file(path: Path) -> FileDigest:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(_DIGEST_CHUNK), b""):
+            digest.update(chunk)
+    return FileDigest(digest.hexdigest())
+
+
 def capture_worktree_state(repo: Path) -> WorktreeState | None:
-    """Bytes of every dirty file in *repo* (None for a deleted one).
+    """Snapshot of every dirty file in *repo* (None for a deleted one).
 
     Everything else in the worktree equals HEAD, so this plus HEAD is the full
-    pre-apply content of every tracked or untracked, non-ignored file.
+    pre-apply content of every tracked or untracked, non-ignored file. Files
+    are kept as bytes while the capture's budget lasts and digested after it,
+    so the snapshot of a large unignored tree stays bounded.
     """
     dirty = _dirty_paths(repo)
     if dirty is None:
         return None
     state: WorktreeState = {}
+    budget = _STATE_BYTE_BUDGET
     for rel in dirty:
         p = contained_path(repo, rel)
         if p is None or p.is_dir():
             continue  # nested repository or path that escapes the checkout
         try:
-            state[rel] = p.read_bytes() if p.is_file() else None
+            if not p.is_file():
+                state[rel] = None
+            elif p.stat().st_size > budget:
+                state[rel] = _digest_file(p)
+            else:
+                data = p.read_bytes()
+                state[rel] = data
+                budget -= len(data)
         except OSError as exc:
             logger.warning("could not snapshot %s: %s", p, exc)
     return state
 
 
-def _tree_state(tree: WorktreeState, rel: str) -> tuple[bool, bytes | None]:
-    """(dirty, bytes) of *rel* in a captured tree; a path absent from it equals HEAD."""
+def _tree_state(tree: WorktreeState, rel: str) -> tuple[bool, bytes | FileDigest | None]:
+    """(dirty, content) of *rel* in a captured tree; a path absent from it equals HEAD."""
     return (rel in tree, tree.get(rel))
+
+
+def _digest_of(value: bytes | FileDigest) -> str:
+    return value.sha256 if isinstance(value, FileDigest) else hashlib.sha256(value).hexdigest()
+
+
+def _same_content(left: bytes | FileDigest | None, right: bytes | FileDigest | None) -> bool:
+    """Equality that does not depend on which side was kept as bytes and which as a digest."""
+    if isinstance(left, bytes) and isinstance(right, bytes):
+        return left == right
+    if left is None or right is None:
+        return left is right
+    return _digest_of(left) == _digest_of(right)
 
 
 def tree_diff(repo: Path, expected: WorktreeState) -> list[str] | None:
@@ -262,7 +308,8 @@ def tree_diff(repo: Path, expected: WorktreeState) -> list[str] | None:
     return sorted(
         rel
         for rel in set(now) | set(expected)
-        if _tree_state(now, rel) != _tree_state(expected, rel)
+        if _tree_state(now, rel)[0] != _tree_state(expected, rel)[0]
+        or not _same_content(_tree_state(now, rel)[1], _tree_state(expected, rel)[1])
     )
 
 
@@ -284,8 +331,14 @@ def record_owned_edits(
     for rel in set(applied_tree) | set(before_tree):
         before = _tree_state(before_tree, rel)
         applied = _tree_state(applied_tree, rel)
-        if before != applied:
-            edits[rel] = OwnedEdit(before=before[1], from_head=not before[0], applied=applied[1])
+        if before == applied:
+            continue
+        if isinstance(before[1], FileDigest) or isinstance(applied[1], FileDigest):
+            # Past the capture budget only a digest is kept, so these bytes
+            # cannot be restored; such paths are never lockfiles or manifests.
+            logger.warning("not recording %s as an owned edit: snapshot is a digest", rel)
+            continue
+        edits[rel] = OwnedEdit(before=before[1], from_head=not before[0], applied=applied[1])
     repo = ws.git_repo.resolve()
     after_snap = snapshot_workspace_files(ws.path, ws.manager)
     for path in set(before_snap) | set(after_snap):
