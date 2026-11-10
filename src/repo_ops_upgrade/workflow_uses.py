@@ -242,7 +242,9 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
     if not replacements:
         return False
     try:
-        raw = path.read_text(encoding="utf-8")
+        # Bytes, not read_text: universal-newline translation would strip the
+        # ``\r`` before splitlines and the write-back would convert the file.
+        raw = path.read_bytes().decode("utf-8", "surrogateescape")
     except OSError as exc:
         raise WorkflowParseError(f"{path.name}: {exc}") from exc
 
@@ -271,7 +273,7 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
     if not changed:
         return False
     try:
-        path.write_text("".join(lines), encoding="utf-8")
+        path.write_bytes("".join(lines).encode("utf-8", "surrogateescape"))
     except OSError as exc:
         raise WorkflowParseError(f"{path.name}: {exc}") from exc
     return True

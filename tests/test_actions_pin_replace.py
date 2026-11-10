@@ -63,6 +63,33 @@ def test_update_pin_same_file_mixed_pins(tmp_path: Path) -> None:
     assert "v3.19.0.19.0" not in out
 
 
+def test_update_pin_keeps_crlf_line_endings(tmp_path: Path) -> None:
+    """read_text's newline translation would turn a CRLF file into an LF whole-file diff."""
+    wf = tmp_path / "wf.yml"
+    body = (
+        b"name: ci\r\njobs:\r\n  x:\r\n    steps:\r\n"
+        b"      - uses: actions/checkout@v3\r\n# keep\r\n"
+    )
+    wf.write_bytes(body)
+
+    assert update_workflow_pins(wf, [PinReplacement("actions/checkout", "v3", "v4", line=5)])
+
+    out = wf.read_bytes()
+    assert out == body.replace(b"checkout@v3", b"checkout@v4")
+    assert out.count(b"\r\n") == body.count(b"\r\n")
+
+
+def test_update_pin_preserves_non_utf8_bytes(tmp_path: Path) -> None:
+    """A workflow with invalid UTF-8 must not raise; only the pin line changes."""
+    wf = tmp_path / "wf.yml"
+    body = b"uses: actions/checkout@v3\n# caf\xe9\n"
+    wf.write_bytes(body)
+
+    assert update_workflow_pins(wf, [PinReplacement("actions/checkout", "v3", "v4", line=1)])
+
+    assert wf.read_bytes() == b"uses: actions/checkout@v4\n# caf\xe9\n"
+
+
 def test_update_workflow_pins_write_oserror_raises_parse_error(
     tmp_path: Path,
 ) -> None:
