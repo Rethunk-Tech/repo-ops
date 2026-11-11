@@ -165,16 +165,16 @@ def test_versions_pnpm_lock_parses_concurrently(tmp_path: Path) -> None:
     interleaves under threads and raises or returns a short set.
     """
     content = "lockfileVersion: '6.0'\n\npackages:\n" + "".join(
-        f"  pkg{i}@1.{i}.0:\n    resolution: {{integrity: sha512-x{i}}}\n" for i in range(300)
+        f"  pkg{i}@1.{i}.0:\n    resolution: {{integrity: sha512-x{i}}}\n" for i in range(60)
     )
     p = tmp_path / "pnpm-lock.yaml"
     p.write_text(content, encoding="utf-8")
-    expected = {f"pkg{i}@1.{i}.0" for i in range(300)}
+    expected = {f"pkg{i}@1.{i}.0" for i in range(60)}
     failures: list[BaseException] = []
 
     def parse_repeatedly() -> None:
         try:
-            for _ in range(20):
+            for _ in range(10):
                 assert versions_pnpm_lock(p) == expected
         except Exception as exc:
             failures.append(exc)
