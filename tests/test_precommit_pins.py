@@ -561,14 +561,28 @@ def test_apply_precommit_rev_collision_two_repos_get_own_target(tmp_path: Path) 
 def test_fetch_tags_cache_lock_deduplicates_concurrent() -> None:
     """Bug 2 fix: concurrent workers for the same repo URL invoke ls-remote exactly
     once — the threading.Lock prevents cache stampede and duplicate subprocess calls."""
+    import threading
     from concurrent.futures import ThreadPoolExecutor
 
     proc = _fake_ls_remote(["v1.0.0"])
-    with patch("subprocess.run", return_value=proc) as mock_run:
+    in_fetch = threading.Event()
+    release = threading.Event()
+
+    def blocking_run(*_a: object, **_k: object) -> subprocess.CompletedProcess[str]:
+        in_fetch.set()
+        release.wait(timeout=10)
+        return proc
+
+    with patch("subprocess.run", side_effect=blocking_run) as mock_run:
         with ThreadPoolExecutor(max_workers=4) as ex:
-            futures = [
-                ex.submit(_fetch_tags_for_repo, "https://github.com/org/repo") for _ in range(4)
+            first = ex.submit(_fetch_tags_for_repo, "https://github.com/org/repo")
+            # The first fetch is held open while the rest start, so any
+            # unguarded second ls-remote would be reached.
+            assert in_fetch.wait(timeout=10)
+            futures = [first] + [
+                ex.submit(_fetch_tags_for_repo, "https://github.com/org/repo") for _ in range(3)
             ]
+            release.set()
         results = [f.result() for f in futures]
 
     assert mock_run.call_count == 1, (

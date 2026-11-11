@@ -182,6 +182,7 @@ def _resolve_latest_precommit_rev(
 _TAG_CACHE: dict[str, list[str] | None] = {}
 _TAG_REF_CACHE: dict[str, list[tuple[str, str]] | None] = {}
 _TAG_CACHE_LOCK = threading.Lock()
+_TAG_FETCH_LOCKS: dict[str, threading.Lock] = {}
 
 
 def _fetch_tags_for_repo(repo_url: str, *, timeout: int = _LS_REMOTE_TIMEOUT) -> list[str] | None:
@@ -210,16 +211,23 @@ def _fetch_tag_refs_for_repo(
     The tag names-only cache is sufficient for semver revs, but SHA refresh
     needs the commit associated with each tag to preserve the pin format.
     The lock covers the cache, not the network: every distinct URL is one
-    ``git ls-remote``, and holding the lock across it serialises a whole sweep.
+    ``git ls-remote``, and holding the global lock across it serialises a whole
+    sweep, so a per-URL lock makes concurrent callers for one URL wait for the
+    first fetch instead of repeating it.
     """
     with _TAG_CACHE_LOCK:
         if repo_url in _TAG_REF_CACHE:
             return _TAG_REF_CACHE[repo_url]
+        fetch_lock = _TAG_FETCH_LOCKS.setdefault(repo_url, threading.Lock())
 
-    refs = tag_utils.fetch_tag_refs(repo_url, timeout=timeout)
-    with _TAG_CACHE_LOCK:
-        _TAG_REF_CACHE[repo_url] = refs
-        _TAG_CACHE[repo_url] = None if refs is None else [tag for _, tag in refs]
+    with fetch_lock:
+        with _TAG_CACHE_LOCK:
+            if repo_url in _TAG_REF_CACHE:
+                return _TAG_REF_CACHE[repo_url]
+        refs = tag_utils.fetch_tag_refs(repo_url, timeout=timeout)
+        with _TAG_CACHE_LOCK:
+            _TAG_REF_CACHE[repo_url] = refs
+            _TAG_CACHE[repo_url] = None if refs is None else [tag for _, tag in refs]
     return refs
 
 
