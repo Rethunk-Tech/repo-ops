@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import http.client
 import threading
 import urllib.parse
 from collections.abc import Iterator
@@ -51,7 +52,8 @@ class _RedirectHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-        target = query.get("to", [""])[0]
+        # Query values are attacker-controlled; CR/LF in Location splits the response.
+        target = query.get("to", [""])[0].replace("\n", "").replace("\r", "")
         if target:
             self.send_response(302)
             self.send_header("Location", target)
@@ -150,3 +152,20 @@ def test_open_url_refuses_redirect_that_leaves_the_allowed_scheme(
             timeout=5,
             headers={"Authorization": "Basic c2VjcmV0"},
         )
+
+
+def test_redirect_location_strips_crlf() -> None:
+    """A query-controlled Location must not inject a second header."""
+    with _serve(_RedirectHandler) as url:
+        parsed = urllib.parse.urlsplit(url)
+        conn = http.client.HTTPConnection(parsed.hostname or "127.0.0.1", parsed.port, timeout=5)
+        try:
+            payload = urllib.parse.quote("http://example.com/\r\nX-Injected: pwned", safe="")
+            conn.request("GET", f"/?to={payload}")
+            resp = conn.getresponse()
+            assert resp.getheader("X-Injected") is None
+            location = resp.getheader("Location") or ""
+            assert "\r" not in location
+            assert "\n" not in location
+        finally:
+            conn.close()
