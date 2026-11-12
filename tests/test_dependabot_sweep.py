@@ -73,6 +73,7 @@ _PARSE_BUMP_CASES = [
         "node",
         "25-slim",
     ),
+    ("chore(deps): Bump Mono.Cecil to 0.11.6", "Mono.Cecil", "0.11.6"),
 ]
 
 
@@ -90,6 +91,7 @@ _PARSE_BUMP_CASES = [
         "multi-package-takes-first",
         "security-prefix",
         "doubled-conventional-scope",
+        "no-from-version",
     ],
 )
 def test_parse_bump(title, expected_package, expected_to) -> None:
@@ -914,4 +916,19 @@ def test_single_update_group_body_is_parsed_from_its_sentence() -> None:
     assert rows is not None
     assert [(r.package, r.from_ver, r.to_ver) for r in rows] == [
         ("UnityEngine.Modules", "6000.5.11", "6000.6.2")
+    ]
+
+
+def test_multi_directory_group_title_and_updates_sentences() -> None:
+    from repo_ops_dependabot.dependabot import _GROUP_RE
+
+    assert _GROUP_RE.match("chore(deps): bump the all group across 2 directories with 2 updates")
+    rows = _parse_group_body(
+        "Updates `python` from 3.14.10-slim to 3.15.0-slim\n\n"
+        "Updates `ggml-org/whisper.cpp` from `a7ec221` to `0751e15`\n"
+    )
+    assert rows is not None
+    assert [(r.package, r.from_ver, r.to_ver) for r in rows] == [
+        ("python", "3.14.10-slim", "3.15.0-slim"),
+        ("ggml-org/whisper.cpp", "a7ec221", "0751e15"),
     ]

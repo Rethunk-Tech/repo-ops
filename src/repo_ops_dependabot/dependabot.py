@@ -19,7 +19,8 @@ Title patterns handled
 - ``chore(deps): bump X from A to B``  (conventional-commit prefix)
 - ``build(deps-dev): bump X from A to B``  (build-scope prefix)
 - ``[Security] Bump X from A to B``  (security advisory; ``is_security=True``)
-- ``Bump the <group-name> group with N updates``  (grouped PR; body parsed)
+- ``Bump the <group-name> group [across N directories] with N updates``  (grouped PR; body parsed)
+- ``Bump X to B``  (no from-version; ``from_ver`` is empty)
 
 Grouped PRs
 -----------
@@ -101,14 +102,16 @@ _BUMP_RE = re.compile(
     r"^"
     + _CC_PREFIX
     + _SEC_PREFIX
-    + r"[Bb]umps?\s+(.+?)\s+from\s+(\S+)\s+to\s+(\S+)"
+    + r"[Bb]umps?\s+(.+?)(?:\s+from\s+(\S+))?\s+to\s+(\S+)"
     + r"(?:\s+in\s+\S+)?",
     re.IGNORECASE,
 )
 
 # Grouped PR: "Bump the <group-name> group with N updates"
 _GROUP_RE = re.compile(
-    r"^" + _CC_PREFIX + r"[Bb]ump\s+the\s+(.+?)\s+group\s+with\s+(\d+)\s+update",
+    r"^"
+    + _CC_PREFIX
+    + r"[Bb]ump\s+the\s+(.+?)\s+group\s+(?:across\s+\d+\s+directories\s+)?with\s+(\d+)\s+update",
     re.IGNORECASE,
 )
 
@@ -577,7 +580,7 @@ def _parse_bump(title: str) -> BumpInfo | None:
     first_pkg = re.split(r"\s+and\s+", raw_pkg, maxsplit=1)[0].strip()
     return BumpInfo(
         package=first_pkg,
-        from_ver=m.group(2).strip(),
+        from_ver=(m.group(2) or "").strip(),
         to_ver=m.group(3).strip(),
     )
 
@@ -606,7 +609,7 @@ _TABLE_FROM_TO_RE = re.compile(
 # A group with a single update has no table, only a sentence:
 #   Updated UnityEngine.Modules from 6000.5.11 to 6000.6.2.
 _SENTENCE_RE = re.compile(
-    r"^(?:Updated|Bumps)\s+\[?`?([^\s`\]]+)`?\]?(?:\([^)]*\))?"
+    r"^(?:Updated|Updates|Bumps)\s+\[?`?([^\s`\]]+)`?\]?(?:\([^)]*\))?"
     r"\s+from\s+`?([^\s`]+?)`?\s+to\s+`?([^\s`]+?)`?\.?$",
     re.IGNORECASE,
 )
