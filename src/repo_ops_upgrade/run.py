@@ -132,12 +132,9 @@ def _drop_archived(
 
 
 def _drop_foreign(bundles: dict[Path, RepoBundle]) -> None:
-    """Remove repos whose origin org is not ours, however they were reached."""
-    repos = sorted({b.git_repo for b in bundles.values()})
-    foreign = owned.foreign_repos(repos)
-    for repo, org in sorted(foreign.items()):
-        print(f"skipped: not our org: {repo} ({org or 'unrecognised origin'})")
-    for path in [p for p, b in bundles.items() if b.git_repo in foreign]:
+    """Remove repos outside our orgs and forks, however they were reached."""
+    kept = set(owned.filter_owned(sorted({b.git_repo for b in bundles.values()})))
+    for path in [p for p, b in bundles.items() if b.git_repo not in kept]:
         del bundles[path]
 
 

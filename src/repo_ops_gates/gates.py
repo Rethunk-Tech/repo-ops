@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from repo_ops_core import owned
 from repo_ops_core.cli import add_scan_arguments, resolve_scan_roots, wire_verbose
 from repo_ops_core.config import load_global_config
 from repo_ops_core.constants import DEFAULT_ROOTS, TIMEOUT_GATE
@@ -362,6 +363,7 @@ def main_gates(argv: list[str] | None = None) -> int:
     with tee_stdout_stderr(log_path):
         repos = sorted({Path(p) for p in discover_repos(roots).values()})
         kept, excluded = filter_repo_paths(repos, patterns, label_fn=lambda p: repo_label(p, roots))
+        kept = owned.filter_owned(kept)
         print(f"repo-ops gates: {len(kept)} repo(s), {args.jobs} worker(s)")
         if excluded:
             print(f"excluded {excluded} repo(s) by exclude patterns")

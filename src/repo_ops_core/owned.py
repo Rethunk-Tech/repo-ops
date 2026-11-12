@@ -40,14 +40,27 @@ def origin_org(repo: Path) -> str | None:
 
 
 def foreign_repos(repos: list[Path]) -> dict[Path, str]:
-    """Repos whose origin org is not owned, mapped to that org ("" when unrecognised).
+    """Repos a sweep must leave alone, mapped to the reason.
 
-    A repo with no origin cannot be pushed, so it stays.
+    Not-our-org origins, and forks (an ``upstream`` remote). A repo with no
+    origin cannot be pushed, so it stays.
     """
     allowed = owned_orgs()
     out: dict[Path, str] = {}
     for repo in repos:
+        if not repo.is_dir():
+            continue
         org = origin_org(repo)
         if org is not None and org not in allowed:
-            out[repo] = org
+            out[repo] = f"not our org: {repo} ({org or 'unrecognised origin'})"
+        elif run_git(repo, "config", "--get", "remote.upstream.url").stdout.strip():
+            out[repo] = f"fork: {repo}"
     return out
+
+
+def filter_owned(repos: list[Path]) -> list[Path]:
+    """*repos* minus the ones :func:`foreign_repos` names; each skip is printed."""
+    skipped = foreign_repos(repos)
+    for reason in skipped.values():
+        print(f"skipped: {reason}")
+    return [r for r in repos if r not in skipped]

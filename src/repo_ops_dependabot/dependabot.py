@@ -63,6 +63,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from repo_ops_container.container import _parse_image_refs, find_container_files
+from repo_ops_core import owned
 from repo_ops_core.cli import add_scan_arguments, resolve_scan_roots, wire_verbose
 from repo_ops_core.config import load_global_config, load_repo_config
 from repo_ops_core.constants import SKIP_DIRS
@@ -966,6 +967,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         roots = resolve_scan_roots(list(args.roots), parser)
         repo_paths, excluded_count = _discover_repo_paths(roots, exclude_patterns=exclude_patterns)
+        repo_paths = [str(r) for r in owned.filter_owned([Path(p) for p in repo_paths])]
 
         results = scan_repos(
             roots,

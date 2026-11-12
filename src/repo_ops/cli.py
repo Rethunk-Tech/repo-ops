@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.metadata
+import json
 import os
 import sys
 from collections.abc import Callable
@@ -64,11 +65,17 @@ _SUBCOMMAND_HELP: dict[str, str] = {name: sc.help_text for name, sc in _SUBCOMMA
 
 
 def _resolve_version() -> str:
-    """Resolve the installed repo-ops version (the CLI dist carries it)."""
+    """Installed repo-ops version, plus the git commit when installed from a VCS URL."""
     try:
-        return importlib.metadata.version("repo-ops")
+        dist = importlib.metadata.distribution("repo-ops")
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
+    try:
+        commit = json.loads(dist.read_text("direct_url.json") or "{}").get("vcs_info", {})
+        sha = str(commit.get("commit_id", ""))[:7]
+    except ValueError:
+        sha = ""
+    return f"{dist.version} ({sha})" if sha else dist.version
 
 
 _TOP_LEVEL_DESCRIPTION = """\

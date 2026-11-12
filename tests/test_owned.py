@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
 
-from repo_ops_core.owned import foreign_repos
+from repo_ops_core.owned import filter_owned, foreign_repos
 from repo_ops_models import RepoBundle
 from repo_ops_upgrade.run import _drop_foreign
 
@@ -25,7 +25,8 @@ def test_foreign_repos_decided_by_origin_org_not_path(tmp_path: Path) -> None:
 
     got = foreign_repos([ours, nested, azure, lethal, local, other])
 
-    assert got == {nested: "lethalcompanymodding", azure: "rethunk", other: ""}
+    assert set(got) == {nested, azure, other}
+    assert got[nested].startswith("not our org")
 
 
 def test_owned_orgs_config_overrides_default(tmp_path: Path, monkeypatch) -> None:
@@ -35,7 +36,7 @@ def test_owned_orgs_config_overrides_default(tmp_path: Path, monkeypatch) -> Non
     ours = _repo(tmp_path / "a", "git@github.com:Rethunk-Tech/a.git")
     acme = _repo(tmp_path / "b", "git@github.com:acme/b.git")
 
-    assert foreign_repos([ours, acme]) == {ours: "rethunk-tech"}
+    assert list(foreign_repos([ours, acme])) == [ours]
 
 
 def test_drop_foreign_lists_skipped_not_our_org(tmp_path: Path, capsys) -> None:
@@ -52,3 +53,13 @@ def test_drop_foreign_lists_skipped_not_our_org(tmp_path: Path, capsys) -> None:
 
     assert list(bundles) == [ours]
     assert "skipped: not our org" in capsys.readouterr().out
+
+
+def test_fork_with_upstream_remote_is_skipped(tmp_path: Path, capsys) -> None:
+    fork = _repo(tmp_path / "f", "git@github.com:Rethunk-Tech/f.git")
+    subprocess.run(
+        ["git", "-C", str(fork), "remote", "add", "upstream", "https://github.com/x/f"], check=True
+    )
+
+    assert filter_owned([fork]) == []
+    assert "skipped: fork" in capsys.readouterr().out
