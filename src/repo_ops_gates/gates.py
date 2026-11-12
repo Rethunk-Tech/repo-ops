@@ -28,7 +28,7 @@ from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
 from repo_ops_core.filesystem import new_run_dir, write_json_atomic
 from repo_ops_core.git import repo_label
 from repo_ops_core.parallel import run_bounded_pool
-from repo_ops_core.process import run
+from repo_ops_core.process import isolate_user_config, run
 from repo_ops_core.tee import tee_stdout_stderr
 
 TIMEOUT_LIST = 60
@@ -357,6 +357,7 @@ def main_gates(argv: list[str] | None = None) -> int:
     patterns = merge_exclude_patterns(args.exclude_patterns, load_global_config().get("exclude"))
 
     run_dir = new_run_dir("gates")
+    isolate_user_config(run_dir / "env")
     log_path, report_path = run_dir / "log", run_dir / "report.json"
     with tee_stdout_stderr(log_path):
         repos = sorted({Path(p) for p in discover_repos(roots).values()})

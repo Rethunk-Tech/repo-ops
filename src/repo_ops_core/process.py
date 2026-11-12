@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -48,6 +49,49 @@ def configure_logging(level: str | None) -> None:
         set_verbose(True)
 
 
+# Config-write targets redirected for repo commands; package caches stay shared.
+_ISOLATED_ENV: dict[str, str] = {}
+
+
+def isolate_user_config(scratch: Path) -> None:
+    """Point user-global tool config writes of repo commands at *scratch*.
+
+    A repo's own build or verify command must not rewrite the operator's
+    ``go env -w``, ``npm config``, ``git config --global`` or ``cargo install``
+    targets. Seeded copies keep the operator's settings in effect. ``git``
+    invocations made by repo-ops itself are exempt in :func:`run`, because
+    signing and credentials come from the real config.
+    """
+    scratch.mkdir(parents=True, exist_ok=True)
+    env = {"CARGO_INSTALL_ROOT": str(scratch / "cargo")}
+    home = Path.home()
+    sources = {
+        "GIT_CONFIG_GLOBAL": (
+            Path(os.environ.get("GIT_CONFIG_GLOBAL") or home / ".gitconfig"),
+            "gitconfig",
+        ),
+        "NPM_CONFIG_USERCONFIG": (
+            Path(os.environ.get("NPM_CONFIG_USERCONFIG") or home / ".npmrc"),
+            "npmrc",
+        ),
+    }
+    if shutil.which("go"):
+        goenv = subprocess.run(
+            ["go", "env", "GOENV"], capture_output=True, text=True, timeout=30, check=False
+        ).stdout.strip()
+        if goenv:
+            sources["GOENV"] = (Path(goenv), "go.env")
+    for var, (src, name) in sources.items():
+        dest = scratch / name
+        if src.is_file():
+            shutil.copyfile(src, dest)
+        else:
+            dest.touch()
+        env[var] = str(dest)
+    _ISOLATED_ENV.clear()
+    _ISOLATED_ENV.update(env)
+
+
 def run(
     cmd: list[str],
     cwd: Path | str,
@@ -62,6 +106,8 @@ def run(
     if VERBOSE:
         print(f"  $ {' '.join(cmd)}", file=sys.stderr, flush=True)
     merged = os.environ.copy()
+    if cmd[:1] != ["git"]:
+        merged.update(_ISOLATED_ENV)
     if env:
         merged.update(env)
     proc = subprocess.run(

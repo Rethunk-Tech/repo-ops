@@ -30,6 +30,7 @@ from repo_ops_core.exclude import (
 from repo_ops_core.filesystem import new_run_dir, write_json_atomic
 from repo_ops_core.git import is_git_dirty
 from repo_ops_core.parallel import run_bounded_pool
+from repo_ops_core.process import isolate_user_config
 from repo_ops_core.tee import tee_stdout_stderr
 from repo_ops_models import ActionBump, RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import (
@@ -568,6 +569,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     )
 
     run_dir = new_run_dir("apply" if apply else "plan")
+    isolate_user_config(run_dir / "env")
     log_path, report_path = run_dir / "log", run_dir / "report.json"
     with tee_stdout_stderr(log_path):
         code = _run_upgrade_body(

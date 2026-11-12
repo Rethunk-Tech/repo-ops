@@ -69,6 +69,8 @@ Each changed workspace is verified before it is committed:
 
 Two managers skip that pair: a `container` workspace digest-checks only the `FROM` / compose `image:` refs the apply rewrote (HEAD/GET of each rewritten ref's manifest; anonymous token when the registry challenges; no pull and no build). A ref that does not resolve fails verify with the ref and the registry or network error named. A `precommit` workspace runs `pre-commit validate-config` only — not `gate`.
 
+Repo commands (lockfile checks, `gate`, remediations) run with user-global tool config redirected to `<run dir>/env/`, seeded from the operator's files: `GOENV`, `NPM_CONFIG_USERCONFIG`, `GIT_CONFIG_GLOBAL`, plus an empty `CARGO_INSTALL_ROOT`. A build's `go env -w`, `npm config set`, `git config --global` or `cargo install` therefore cannot change the operator's setup; package caches (`GOMODCACHE`, `CARGO_HOME`, npm cache) stay shared. repo-ops' own `git` calls keep the real config for signing and credentials.
+
 A failed verify on a fleet sweep restores only the files the workspace's apply wrote, and only while they still hold what apply wrote; anything else that changed in the checkout since (another agent's edits, new files) is left alone and named in the failure, which is then `FAILED_WITH_CHANGES`. The repo's commit is vetoed. Dirtiness is re-checked before each workspace and before the retry; a dirty checkout is skipped, and a failed repo whose checkout became dirty is not retried. Opt-in e2e gates that `gate` lists as skipped are not run by verify or by `gates`. `gates --e2e` runs them. `--no-verify` skips verification and therefore commits nothing.
 
 ## gates
