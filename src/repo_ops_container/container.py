@@ -257,12 +257,10 @@ def _parse_from_lines(text: str) -> list[dict[str, Any]]:
         tag = m.group("tag")
         sha = m.group("sha")
 
-        # Detect stage alias (AS <name>) and register it
+        is_stage_ref = image.lower() in _SCRATCH_NAMES or image.lower() in defined_stages
         alias_m = re.search(r"\bAS\s+(\S+)\s*$", line, re.IGNORECASE)
         if alias_m:
             defined_stages.add(alias_m.group(1).lower())
-
-        is_stage_ref = image.lower() in _SCRATCH_NAMES or image.lower() in defined_stages
         results.append(
             {
                 "line_no": i,

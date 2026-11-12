@@ -78,6 +78,7 @@ def test_is_container_workspace(files: dict[str, str], expected: bool, tmp_path:
         ),
         # AS <name> DEFINES a stage — it does not make the line a stage ref.
         ("FROM node:20-alpine AS builder\n", {"image": "node", "is_stage_ref": False}),
+        ("FROM python:3.12 AS python\n", {"image": "python", "tag": "3.12", "is_stage_ref": False}),
         # scratch is treated as a stage-ref equivalent (nothing to check upstream).
         ("FROM scratch\n", {"is_stage_ref": True}),
     ],
