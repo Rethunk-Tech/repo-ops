@@ -37,6 +37,7 @@ from repo_ops_core.process import run
 from repo_ops_js.workspaces import pm_ignore_scripts_env, pm_run_prefix, with_ignore_scripts
 from repo_ops_models import OwnedEdit, Workspace
 from repo_ops_py.requirements import parse_requirements_lines
+from repo_ops_py_pip_tools.pip_tools import uv_compile_command
 from repo_ops_upgrade.constants import YARN_PEER_WARN
 
 logger = logging.getLogger(__name__)
@@ -280,7 +281,7 @@ def _verify_pip_tools(ws: Workspace, *, timeout: int | None = None) -> str | Non
         timeout = TIMEOUT_VERIFY
     if shutil.which("uv"):
         proc = run(
-            ["uv", "pip", "compile", str(req_in), "-o", "-", "--quiet"],
+            [*uv_compile_command(req_txt, req_in, "-", upgrade=False), "--quiet"],
             ws.path,
             timeout=timeout,
         )

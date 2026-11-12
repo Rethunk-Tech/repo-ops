@@ -88,9 +88,10 @@ Two TOML files, read only:
 - Global: `$XDG_CONFIG_HOME/repo-ops/config.toml` (default `~/.config/repo-ops/config.toml`).
 - Per repo: `.repo-ops.toml` at the repo root. `[verify]` merges global, then this file, then a workspace `.repo-ops.toml` below the root (that nested file is read for `[verify]` only).
 
-Four keys:
+Five keys:
 
 ```toml
+owned_orgs = ["Rethunk-Tech"]   # global file only; default is the operator org list (repo_ops_core.owned); a checkout whose origin org is not listed is skipped
 exclude = ["archived-*", "vendor-fork"]   # repos to skip; unioned across files and --exclude
 # In a repo's own .repo-ops.toml, an entry also skips the workspace at that
 # repo-relative path or glob (e.g. "go/__patterns/*"); the root workspace never matches.

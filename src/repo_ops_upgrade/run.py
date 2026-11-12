@@ -11,7 +11,7 @@ import threading
 from itertools import groupby
 from pathlib import Path
 
-from repo_ops_core import archived
+from repo_ops_core import archived, owned
 from repo_ops_core.cli import (
     build_upgrade_parser,
     resolve_scan_roots,
@@ -131,6 +131,16 @@ def _drop_archived(
     return refused
 
 
+def _drop_foreign(bundles: dict[Path, RepoBundle]) -> None:
+    """Remove repos whose origin org is not ours, however they were reached."""
+    repos = sorted({b.git_repo for b in bundles.values()})
+    foreign = owned.foreign_repos(repos)
+    for repo, org in sorted(foreign.items()):
+        print(f"skipped: not our org: {repo} ({org or 'unrecognised origin'})")
+    for path in [p for p, b in bundles.items() if b.git_repo in foreign]:
+        del bundles[path]
+
+
 def _cli_flag(args: object, name: str) -> bool:
     """Return True only for an explicit True CLI flag.
 
@@ -173,6 +183,7 @@ def _run_upgrade_body(
     if args.eco_filter in (None, "actions"):
         bundles = workspace_discovery.merge_action_only_bundles(bundles, roots)
 
+    _drop_foreign(bundles)
     archive_refused = _drop_archived(
         bundles, named_roots={Path(r).resolve() for r in roots}, fleet=fleet
     )

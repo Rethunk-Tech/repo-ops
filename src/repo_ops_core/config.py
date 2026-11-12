@@ -1,9 +1,10 @@
-"""repo-ops config: two TOML files, three keys (read-only — never written).
+"""repo-ops config: two TOML files, four keys (read-only — never written).
 
   Global:   $XDG_CONFIG_HOME/repo-ops/config.toml (default ~/.config/repo-ops/config.toml)
   Per-repo: <repo_root>/.repo-ops.toml
 
 Keys:
+  owned_orgs  global only: orgs whose checkouts may be applied to (repo_ops_core.owned)
   exclude     list of repo patterns; unioned across both files and --exclude
   [[hold]]    package version ceilings (see repo_ops_core.holds)
   [verify]    per-repo verify profile (see repo_ops_upgrade.verify)
