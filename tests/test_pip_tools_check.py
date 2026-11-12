@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
 from repo_ops_core.holds import HoldRule
+from repo_ops_models import Workspace
 from repo_ops_py_pip_tools.pip_tools import (
     _compile_requirements,
     _pip_tools_bumped_requirement,
@@ -241,3 +243,31 @@ def test_apply_pip_tools_derives_txt_path_when_no_existing_txt(
 
     args = mock_compile.call_args[0]
     assert args[1] == tmp_path / "requirements.txt"
+
+
+def test_apply_targeted_bump_unresolvable_on_index_keeps_old_pin(tmp_path: Path) -> None:
+    """A bump the pinned index cannot resolve is reported behind-latest, not a workspace failure."""
+    ws = Workspace(
+        path=tmp_path, ecosystem="py", manager="pip-tools", git_repo=tmp_path, label="demo"
+    )
+    (tmp_path / "requirements.in").write_text("torch==2.14.1\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("torch==2.14.1\n", encoding="utf-8")
+    calls = iter([0, 1])
+
+    def fake_run(cmd, cwd, timeout=None):
+        rc = next(calls)
+        return SimpleNamespace(returncode=rc, stdout="", stderr="no version of torch==2.15.0")
+
+    with (
+        patch(
+            "repo_ops_py_pip_tools.pip_tools.shutil.which",
+            side_effect=lambda n: "/usr/bin/uv" if n == "uv" else None,
+        ),
+        patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_run),
+        patch("repo_ops_py_pip_tools.pip_tools._pypi_latest", return_value="2.15.0"),
+    ):
+        remaining = apply_pip_tools(ws)
+
+    assert [c.name for c in remaining] == ["torch"]
+    assert (tmp_path / "requirements.in").read_text() == "torch==2.14.1\n"
+    assert (tmp_path / "requirements.txt").read_text() == "torch==2.14.1\n"

@@ -379,10 +379,13 @@ def _apply_pip_tools_targeted_bumps(
                     constraints_path,
                     upgrade_package=f"{candidate.name}=={candidate.to}",
                 )
-        except Exception:
+        except RuntimeError:
+            # The latest release may not exist on the workspace's pinned index
+            # (e.g. torch on the ROCm index); keep the old pin, report it behind.
             restore_file(req_in, in_snapshot)
             restore_file(req_txt, txt_snapshot)
-            raise
+            remaining.append(candidate)
+            continue
         landed = parse_requirements_lines(out.read_text(encoding="utf-8", errors="replace")).get(
             candidate.name
         )
