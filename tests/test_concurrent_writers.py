@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from repo_ops._register import register_all
-from repo_ops_models import RepoBundle, Workspace, WorkspaceResult
+from repo_ops_models import Change, OwnedEdit, RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import discovery as disc_mod
 from repo_ops_upgrade import orchestration
 from repo_ops_upgrade import orchestration as orch_mod
@@ -230,3 +230,42 @@ def test_verify_runs_only_gates_a_default_gate_run_runs(tmp_path: Path, make_wor
         assert verify_node(ws) is None
 
     assert calls[-1] == ["gate", "--timeout", "0", "run", "build", "gate"]
+
+
+def test_named_checkout_never_commits_a_file_the_operator_had_edited(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo, upgrade_args, capsys
+) -> None:
+    ws = _repo(tmp_path, init_git_repo)
+    head = _git(tmp_path, "rev-parse", "HEAD")
+    (tmp_path / "package.json").write_text('{"scripts":{"wip":"x"}}\n')
+    bundles = {tmp_path: RepoBundle(git_repo=tmp_path, label=".", workspaces=[WorkspaceResult(ws)])}
+    monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws])
+    monkeypatch.setattr(orch_mod, "filter_workspaces", lambda found, *a, **kw: found)
+    monkeypatch.setattr(disc_mod, "group_by_repo", lambda *a, **kw: bundles)
+    monkeypatch.setattr(disc_mod, "merge_action_only_bundles", lambda b, *a, **kw: b)
+
+    def _process(wr: WorkspaceResult, **kw) -> WorkspaceResult:
+        before = (tmp_path / "package.json").read_bytes()
+        applied = b'{"scripts":{"wip":"x"},"dependencies":{"a":"2"}}\n'
+        (tmp_path / "package.json").write_bytes(applied)
+        (tmp_path / "package-lock.json").write_text('{"a":"2"}\n')
+        wr.changes = [Change("a", "1", "2")]
+        wr.owned_edits = {
+            "package.json": OwnedEdit(before=before, from_head=False, applied=applied),
+            "package-lock.json": OwnedEdit(before=b"{}\n", from_head=True, applied=b'{"a":"2"}\n'),
+        }
+        return wr
+
+    monkeypatch.setattr(orch_mod, "process_workspace", _process)
+    run_mod._run_upgrade_body(
+        apply=True,
+        args=upgrade_args(no_verify=False, no_commit=False, eco_filter="node"),
+        roots=[str(tmp_path)],
+        fleet=False,
+    )
+
+    assert _git(tmp_path, "rev-parse", "HEAD") == head
+    assert '"wip"' in (tmp_path / "package.json").read_text()
+    assert '"a":"2"' in (tmp_path / "package.json").read_text()
+    assert (tmp_path / "package-lock.json").read_text() == '{"a":"2"}\n'
+    assert "left uncommitted: your edits in package.json" in capsys.readouterr().out

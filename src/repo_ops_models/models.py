@@ -136,6 +136,9 @@ class RepoBundle:
     workspaces: list[WorkspaceResult] = field(default_factory=list)
     actions: list[ActionBump] = field(default_factory=list)
     actions_workflows_scanned: int = 0
+    # Paths that already had uncommitted changes before apply touched the
+    # checkout; a commit holding one would record the operator's edits too.
+    pre_dirty: frozenset[str] = frozenset()
 
     def any_fail(self) -> bool:
         return any(w.status == "fail" for w in self.workspaces)

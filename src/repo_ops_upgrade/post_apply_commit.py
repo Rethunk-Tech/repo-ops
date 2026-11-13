@@ -564,6 +564,16 @@ def plan_repo_commit(
             else "no upgrade-scoped changes to commit"
         )
         return CommitPlan(repo, bundle.label, "", skipped_reason=skip_reason)
+    yours = sorted(p for p in scoped if p.replace("\\", "/") in bundle.pre_dirty)
+    if yours:
+        # Committing the rest would split a manifest from its lockfile, so the
+        # whole update stays in the working tree beside the operator's edits.
+        return CommitPlan(
+            repo,
+            bundle.label,
+            "",
+            skipped_reason=f"left uncommitted: your edits in {', '.join(yours)}",
+        )
     files = scoped
     safe, blocked = filter_safe_paths(files)
     if blocked:

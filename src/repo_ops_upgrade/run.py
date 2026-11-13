@@ -435,6 +435,13 @@ def _run_upgrade_body(
                 if not workspace_matches_exclude(bundle.git_repo, w.workspace.path, repo_exclude)
             ]
 
+    if commit:
+        for bundle in bundles.values():
+            bundle.pre_dirty = frozenset(
+                p.replace("\\", "/")
+                for p in post_apply_commit.porcelain_changed_paths(bundle.git_repo)
+            )
+
     submodule_links = submodules.discover_submodules_under_roots(roots)
     submodules_json = submodules.submodules_to_json(submodule_links)
 
