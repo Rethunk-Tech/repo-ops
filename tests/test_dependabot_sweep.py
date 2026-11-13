@@ -675,6 +675,7 @@ def test_dependabot_close_calls_gh_pr_close(tmp_path: Path) -> None:
         ),
         patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
         patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
+        patch("repo_ops_dependabot.dependabot._close_blocker", return_value=""),
         patch("repo_ops_dependabot.dependabot._gh_close_pr", return_value="") as mock_close,
     ):
         main(["--close", fake_repo])
@@ -729,6 +730,7 @@ def test_deno_lock_resolves_npm_and_jsr_high_confidence(tmp_path: Path) -> None:
             return_value=(mock_pr_data, ""),
         ),
         patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
+        patch("repo_ops_dependabot.dependabot._close_blocker", return_value=""),
         patch("repo_ops_dependabot.dependabot._gh_close_pr", return_value="") as mock_close,
     ):
         results = scan_repos([fake_repo], do_close=True, repo_paths=[fake_repo])
@@ -779,6 +781,7 @@ def test_dependabot_close_comment_when_default_branch_unresolved(
         ),
         patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
         patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
+        patch("repo_ops_dependabot.dependabot._close_blocker", return_value=""),
         patch("repo_ops_dependabot.dependabot._gh_close_pr", return_value="") as mock_close,
     ):
         main(["--close", fake_repo])
@@ -825,6 +828,7 @@ def test_dependabot_low_confidence_never_closed(tmp_path: Path) -> None:
         ),
         patch("repo_ops_dependabot.dependabot._manifest_versions", return_value={}),
         patch("repo_ops_dependabot.dependabot.run_git", return_value=mock_git_result),
+        patch("repo_ops_dependabot.dependabot._close_blocker", return_value=""),
         patch("repo_ops_dependabot.dependabot._gh_close_pr", return_value="") as mock_close,
     ):
         main(["--close", fake_repo])
@@ -1008,3 +1012,50 @@ def test_go_major_suffix_does_not_match_another_module(tmp_path: Path) -> None:
     assert versions["github.com/jackc/pgx/v5"] == "5.7.0"
     pr = _make_pr("Bump github.com/go-chi/chi/v5 from 5.0.0 to 5.1.0")
     assert _check_superseded(pr, set(), {"github.com/jackc/pgx/v5": "5.7.0"}) == (None, None)
+
+
+def _git(cwd: Path, *args: str) -> None:
+    import subprocess
+
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+    )
+
+
+def _lock(version: str) -> str:
+    return json.dumps(
+        {"lockfileVersion": 3, "packages": {"": {}, "node_modules/lodash": {"version": version}}}
+    )
+
+
+@pytest.mark.parametrize("state", ["unpushed", "dirty"])
+def test_close_skipped_when_checkout_is_not_the_remote_branch(tmp_path: Path, state: str) -> None:
+    """A bump only in the local checkout has not superseded anything on GitHub."""
+    origin, repo = tmp_path / "origin.git", tmp_path / "repo"
+    _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    _git(tmp_path, "clone", "-q", str(origin), str(repo))
+    (repo / "package-lock.json").write_text(_lock("4.17.11"), encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "init")
+    _git(repo, "push", "-q", "origin", "HEAD:main")
+    _git(repo, "remote", "set-head", "origin", "main")
+    (repo / "package-lock.json").write_text(_lock("4.17.21"), encoding="utf-8")
+    if state == "unpushed":
+        _git(repo, "commit", "-qam", "bump")
+    prs = [{"number": 7, "title": "Bump lodash from 4.17.11 to 4.17.21", "headRefName": "x"}]
+    with (
+        patch(
+            "repo_ops_dependabot.dependabot._github_remote",
+            return_value="https://github.com/owner/repo",
+        ),
+        patch("repo_ops_dependabot.dependabot._gh_list_dependabot_prs", return_value=(prs, "")),
+        patch("repo_ops_dependabot.dependabot._gh_close_pr", return_value="") as mock_close,
+    ):
+        results = scan_repos([str(repo)], do_close=True, repo_paths=[str(repo)])
+
+    assert results[0].prs[0].superseded is True
+    mock_close.assert_not_called()
+    assert "not closed" in results[0].prs[0].close_error

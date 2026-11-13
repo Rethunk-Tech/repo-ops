@@ -748,6 +748,21 @@ def _discover_repo_paths(
     return sorted(str(repo) for repo in kept), excluded_count
 
 
+def _close_blocker(repo: str, default_branch: str | None) -> str:
+    """Why this checkout's files cannot speak for the remote branch ("" when they can).
+
+    Supersession is read from the working tree; a bump that is only local
+    (unpushed commit, uncommitted edit) has superseded nothing on GitHub.
+    """
+    ref = f"origin/{default_branch}" if default_branch else "@{upstream}"
+    if run_git(repo, "merge-base", "--is-ancestor", "HEAD", ref, timeout=10).returncode != 0:
+        return f"checkout has commits not on {ref}"
+    status = run_git(repo, "status", "--porcelain", "--ignore-submodules=dirty", timeout=30)
+    if status.returncode != 0 or status.stdout.strip():
+        return "checkout has uncommitted changes"
+    return ""
+
+
 def scan_repos(
     roots: list[str],
     *,
@@ -860,6 +875,7 @@ def scan_repos(
 
             rr.prs.append(pr)
 
+        blocker = _close_blocker(repo, default_branch) if do_close else ""
         if do_close:
             for pr in rr.prs:
                 # Safety: never close unparseable, low-confidence, or not-superseded
@@ -868,6 +884,9 @@ def scan_repos(
                 if not pr.superseded:
                     continue
                 if pr.low_confidence:
+                    continue
+                if blocker:
+                    pr.close_error = f"not closed: {blocker}"
                     continue
                 pkg_name = pr.bump.package if pr.bump else "dependency group"
                 current_ver = pr.current_ver or "unknown"
@@ -948,9 +967,12 @@ def print_dependabot_report(
             grouped_str = " [grouped]" if pr.is_grouped else ""
             close_str = ""
             if do_close and pr.superseded and not pr.low_confidence and not pr.is_unparseable:
-                close_str = (
-                    " → closed" if not pr.close_error else f" → close FAILED: {pr.close_error}"
-                )
+                if not pr.close_error:
+                    close_str = " → closed"
+                elif pr.close_error.startswith("not closed"):
+                    close_str = f" → {pr.close_error}"
+                else:
+                    close_str = f" → close FAILED: {pr.close_error}"
             print(
                 f"  #{pr.number:5d}  [{superseded_str}]{current_str}{security_str}"
                 f"{grouped_str}  {pr.title}{close_str}"
