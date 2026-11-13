@@ -171,3 +171,55 @@ def test_process_workspace_sets_elapsed_s(tmp_path: Path) -> None:
 
     assert out.elapsed_s is not None
     assert out.elapsed_s >= 0.0
+
+
+def test_grouped_progress_collapses_identical_workspace_lines(tmp_path: Path, capsys) -> None:
+    from repo_ops_models import Change
+    from repo_ops_upgrade.orchestration import _emit_progress_grouped
+
+    results = [
+        WorkspaceResult(
+            workspace=Workspace(
+                path=tmp_path / f"mod{i}",
+                ecosystem="dotnet",
+                manager="nuget",
+                git_repo=tmp_path,
+                label="mortar-mods",
+            ),
+            status="ok",
+            changes=[Change("Pkg", "1", "2")],
+            elapsed_s=44.21,
+        )
+        for i in range(7)
+    ]
+    _emit_progress_grouped(results)
+    lines = [ln for ln in capsys.readouterr().err.splitlines() if ln.startswith("[done]")]
+    assert lines == ["[done] mortar-mods (nuget) — 1 change(s) in 44.2s x7 workspaces"]
+
+
+def test_grouped_progress_keeps_distinct_workspace_lines(tmp_path: Path, capsys) -> None:
+    from repo_ops_models import Change
+    from repo_ops_upgrade.orchestration import _emit_progress_grouped
+
+    def _wr(name: str, manager: str, elapsed_s: float) -> WorkspaceResult:
+        return WorkspaceResult(
+            workspace=Workspace(
+                path=tmp_path / name,
+                ecosystem="dotnet",
+                manager=manager,
+                git_repo=tmp_path,
+                label="mortar-mods",
+            ),
+            status="ok",
+            changes=[Change("Pkg", "1", "2")],
+            elapsed_s=elapsed_s,
+        )
+
+    _emit_progress_grouped(
+        [_wr("a", "nuget", 44.21), _wr("b", "nuget", 44.21), _wr("c", "go", 1.0)]
+    )
+    lines = [ln for ln in capsys.readouterr().err.splitlines() if ln.startswith("[done]")]
+    assert lines == [
+        "[done] mortar-mods (nuget) — 1 change(s) in 44.2s x2 workspaces",
+        "[done] mortar-mods (go) — 1 change(s) in 1.0s",
+    ]

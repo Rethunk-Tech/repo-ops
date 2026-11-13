@@ -245,7 +245,10 @@ def _run_upgrade_body(
         )
 
     def _process_one(
-        wr: WorkspaceResult, *, repo_started_dirty: bool | None = None
+        wr: WorkspaceResult,
+        *,
+        repo_started_dirty: bool | None = None,
+        emit_progress: bool = True,
     ) -> WorkspaceResult:
         # Guard the worker body: a raising worker must surface as a FAILED
         # workspace, not get silently dropped from results and reported clean
@@ -259,6 +262,7 @@ def _run_upgrade_body(
                 allow_dirty=allow_dirty,
                 on_verify_fail=on_verify_fail,
                 repo_started_dirty=repo_started_dirty,
+                emit_progress=emit_progress,
             )
         except Exception as exc:
             wr.status = "fail"
@@ -287,10 +291,11 @@ def _run_upgrade_body(
                     dirty = is_git_dirty(bundle.git_repo)
                 else:
                     dirty = capture_worktree_state(bundle.git_repo) != expected
-            updated = _process_one(wr, repo_started_dirty=dirty)
+            updated = _process_one(wr, repo_started_dirty=dirty, emit_progress=False)
             results.append(updated)
             if apply and not allow_dirty:
                 expected = capture_worktree_state(bundle.git_repo)
+        orchestration._emit_progress_grouped(results)
         if rollback_on_veto and any(r.status == "fail" for r in results):
             _rollback_vetoed_repo(bundle.git_repo, repo_before, results)
         return results

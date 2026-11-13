@@ -9,6 +9,7 @@ import threading
 import time
 from dataclasses import replace
 from datetime import date
+from itertools import groupby
 from pathlib import Path
 from typing import Literal
 
@@ -61,11 +62,7 @@ def _format_elapsed(elapsed_s: float) -> str:
     return f"{minutes}m {seconds:.0f}s"
 
 
-def _emit_progress(result: WorkspaceResult, *, elapsed_s: float) -> None:
-    """Emit one [done] line to stderr if progress is enabled.
-
-    The lock prevents torn lines under parallel execution.
-    """
+def _progress_line(result: WorkspaceResult, *, elapsed_s: float) -> str:
     ws = result.workspace
     label = ws.label or str(ws.path)
     n = len(result.changes)
@@ -74,8 +71,30 @@ def _emit_progress(result: WorkspaceResult, *, elapsed_s: float) -> None:
     if result.status == "fail":
         first_err = (result.verify_error or result.error or "failed").splitlines()[0]
         line = f"{line}, FAIL: {first_err}"
+    return line
+
+
+def _emit_progress(result: WorkspaceResult, *, elapsed_s: float) -> None:
+    """Emit one [done] line to stderr if progress is enabled.
+
+    The lock prevents torn lines under parallel execution.
+    """
     with _PROGRESS_LOCK:
-        print(line, file=sys.stderr)
+        print(_progress_line(result, elapsed_s=elapsed_s), file=sys.stderr)
+
+
+def _emit_progress_grouped(results: list[WorkspaceResult]) -> None:
+    """Collapse consecutive identical [done] lines into one ``xN workspaces`` line."""
+
+    def _line(result: WorkspaceResult) -> str:
+        elapsed = result.elapsed_s if result.elapsed_s is not None else 0.0
+        return _progress_line(result, elapsed_s=elapsed)
+
+    with _PROGRESS_LOCK:
+        for line, group in groupby(results, key=_line):
+            count = sum(1 for _ in group)
+            suffix = f" x{count} workspaces" if count > 1 else ""
+            print(f"{line}{suffix}", file=sys.stderr)
 
 
 def process_workspace(
@@ -86,6 +105,7 @@ def process_workspace(
     allow_dirty: bool,
     on_verify_fail: OnVerifyFail = "keep",
     repo_started_dirty: bool | None = None,
+    emit_progress: bool = True,
 ) -> WorkspaceResult:
     _t0 = time.monotonic()
     out = _process_workspace_body(
@@ -123,7 +143,8 @@ def process_workspace(
             unheld_behind,
             date.today(),
         )
-    _emit_progress(out, elapsed_s=elapsed)
+    if emit_progress:
+        _emit_progress(out, elapsed_s=elapsed)
     return out
 
 
