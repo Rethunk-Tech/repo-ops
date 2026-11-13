@@ -341,14 +341,17 @@ def _replace_cargo_requirement(
     lines = manifest.read_text(encoding="utf-8").splitlines(keepends=True)
     section = ""
     changed = False
-    for index, line in enumerate(lines):
+    for index, raw in enumerate(lines):
+        # Matched without its line ending, which every rewrite puts back.
+        line = raw.rstrip("\r\n")
+        eol = raw[len(line) :]
         header = re.match(r"^\s*(\[[^\]]+\])\s*$", line)
         if header:
             section = header.group(1)
             continue
         direct_section = _cargo_dependency_section(section)
         table_section = direct_section and re.search(
-            rf"\.(?:dependencies|dev-dependencies|build-dependencies)\."
+            rf"(?:^|\.)(?:dependencies|dev-dependencies|build-dependencies)\."
             rf"(?:\"?{re.escape(crate_name)}\"?)$",
             section.strip().strip("[]"),
         )
@@ -357,7 +360,7 @@ def _replace_cargo_requirement(
             if match and match.group(4) == old_requirement:
                 lines[index] = (
                     f"{match.group(1)}version{match.group(2)}{match.group(3)}"
-                    f"{new_requirement}{match.group(5)}{match.group(6)}"
+                    f"{new_requirement}{match.group(5)}{match.group(6)}{eol}"
                 )
                 changed = True
             continue
@@ -378,7 +381,7 @@ def _replace_cargo_requirement(
             if quoted and quoted.group(2) == old_requirement:
                 lines[index] = (
                     f"{match.group(1)}{match.group(2)}{match.group(3)}"
-                    f"{quoted.group(1)}{new_requirement}{quoted.group(3)}{quoted.group(4)}"
+                    f"{quoted.group(1)}{new_requirement}{quoted.group(3)}{quoted.group(4)}{eol}"
                 )
                 changed = True
         elif value.lstrip().startswith("{"):
@@ -395,6 +398,7 @@ def _replace_cargo_requirement(
                     + value[: version.start()]
                     + replacement
                     + value[version.end() :]
+                    + eol
                 )
                 changed = True
     if changed:

@@ -7,6 +7,7 @@ from unittest.mock import patch
 from repo_ops_core.holds import HoldRule
 from repo_ops_rust.rust import (
     _cargo_latest_direct_changes,
+    _replace_cargo_requirement,
     apply_rust,
     check_rust,
 )
@@ -370,3 +371,19 @@ def test_latest_below_the_requirement_is_never_a_target(tmp_path: Path, make_wor
             make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
         )
     assert changes == []
+
+
+def test_requirement_rewrite_keeps_every_line_ending(tmp_path: Path) -> None:
+    manifest = tmp_path / "Cargo.toml"
+    manifest.write_text(
+        '[dependencies]\nitoa = "0.4"\nmemchr = { version = "2.4", default-features = false }\n'
+        '\n[dependencies.serde]\nversion = "1.0"\nfeatures = ["derive"]\n',
+        encoding="utf-8",
+    )
+    for crate, old, new in (("itoa", "0.4", "1.0.19"), ("memchr", "2.4", "3.0.0")):
+        assert _replace_cargo_requirement(manifest, crate, old, new)
+    assert _replace_cargo_requirement(manifest, "serde", "1.0", "2.0.0")
+    assert manifest.read_text(encoding="utf-8") == (
+        '[dependencies]\nitoa = "1.0.19"\nmemchr = { version = "3.0.0", default-features = false }\n'
+        '\n[dependencies.serde]\nversion = "2.0.0"\nfeatures = ["derive"]\n'
+    )
