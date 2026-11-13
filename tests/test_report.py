@@ -8,7 +8,12 @@ from typing import Any
 from unittest.mock import patch
 
 from repo_ops_models import DIRTY_SKIP_MARKER
-from repo_ops_upgrade.run import _digest_lines_from_payload, main_apply, main_report
+from repo_ops_upgrade.run import (
+    _digest_lines_from_payload,
+    _retry_paths_from_payload,
+    main_apply,
+    main_report,
+)
 
 
 def _payload(*workspaces: dict[str, Any]) -> dict[str, Any]:
@@ -145,3 +150,62 @@ def test_apply_prints_digest_as_final_lines(
     assert digest in out
     assert "second" not in out
     assert out.rstrip().endswith(digest)
+
+
+def test_retry_paths_are_failed_and_skipped_not_held(tmp_path: Path, init_git_repo: Any) -> None:
+    failed = tmp_path / "failed"
+    skipped = tmp_path / "skipped"
+    held_ws = tmp_path / "held"
+    init_git_repo(failed, commit=True)
+    init_git_repo(skipped, commit=True)
+    init_git_repo(held_ws, commit=True)
+    payload = _payload(
+        _ws_json(str(failed), status="fail", error="boom"),
+        _ws_json(str(skipped), status="skip", error=DIRTY_SKIP_MARKER),
+        _ws_json(
+            str(held_ws),
+            behind_latest=[{"name": "lodash", "from": "4", "to": "5", "held": "4"}],
+        ),
+    )
+    assert _retry_paths_from_payload(payload) == [str(failed), str(skipped)]
+
+
+def test_apply_retry_failed_reruns_only_failed_and_skipped_paths(
+    tmp_path: Path, init_git_repo: Any, monkeypatch: Any
+) -> None:
+    failed = tmp_path / "failed"
+    skipped = tmp_path / "skipped"
+    held_ws = tmp_path / "held"
+    init_git_repo(failed, commit=True)
+    init_git_repo(skipped, commit=True)
+    init_git_repo(held_ws, commit=True)
+    state = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state))
+    _write_run_report(
+        state,
+        "20260101T000000.000000Z-apply",
+        _payload(
+            _ws_json(str(failed), status="fail", error="boom"),
+            _ws_json(str(skipped), status="skip", error=DIRTY_SKIP_MARKER),
+            _ws_json(
+                str(held_ws),
+                behind_latest=[{"name": "lodash", "from": "4", "to": "5", "held": "4"}],
+            ),
+        ),
+    )
+    captured: dict[str, Any] = {}
+
+    def _fake_body(*, roots: list[str], fleet: bool, args: Any, report_path: Path, **_: Any) -> int:
+        captured["roots"] = roots
+        captured["fleet"] = fleet
+        captured["retry_paths"] = list(args.retry_paths)
+        report_path.write_text("{}", encoding="utf-8")
+        return 0
+
+    with patch("repo_ops_upgrade.run._run_upgrade_body", _fake_body):
+        assert main_apply(["--retry-failed"]) == 0
+
+    got = {Path(p).resolve() for p in captured["roots"]}
+    assert got == {failed.resolve(), skipped.resolve()}
+    assert captured["fleet"] is False
+    assert {Path(p).resolve() for p in captured["retry_paths"]} == got

@@ -54,6 +54,7 @@ from repo_ops_upgrade.post_apply import (
 )
 
 _DIGEST_STATUSES = frozenset({"fail", "skip", "held"})
+_RETRY_STATUSES = frozenset({"fail", "skip"})
 
 
 def _has_actionable_work(bundles: dict[Path, RepoBundle]) -> bool:
@@ -251,6 +252,21 @@ def _digest_lines_from_payload(payload: object) -> list[str]:
     return lines
 
 
+def _retry_paths_from_payload(payload: object) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for ws in _workspace_dicts(payload):
+        status = str(ws.get("status", ""))
+        if status not in _RETRY_STATUSES:
+            continue
+        path = str(ws.get("path") or "")
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        out.append(path)
+    return out
+
+
 def _print_report_digest(report_path: Path) -> None:
     payload = json.loads(report_path.read_text())
     for line in _digest_lines_from_payload(payload):
@@ -278,6 +294,10 @@ def _run_upgrade_body(
     on_verify_fail = "revert" if fleet else "keep"
     diagnostics = DiscoveryDiagnostics()
     found: list[Workspace] = workspace_discovery.discover_all(roots, diagnostics=diagnostics)
+    retry_paths = getattr(args, "retry_paths", None)
+    if retry_paths:
+        want = {Path(p).resolve() for p in retry_paths}
+        found = [w for w in found if w.path.resolve() in want]
     manager_filter = getattr(args, "manager_filter", None)
     found = orchestration.filter_workspaces(
         found,
@@ -682,6 +702,21 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     wire_verbose(args)
     roots = resolve_scan_roots(list(args.roots or DEFAULT_ROOTS), parser)
     fleet = args.roots == DEFAULT_ROOTS
+    retry_ref = getattr(args, "retry_failed", None)
+    args.retry_paths = None
+    if apply and retry_ref is not None:
+        try:
+            prior_report = _resolve_report_path(retry_ref or None)
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        retry_paths = _retry_paths_from_payload(json.loads(prior_report.read_text()))
+        if not retry_paths:
+            print("no failed or skipped packages to retry")
+            return 0
+        args.retry_paths = retry_paths
+        roots = resolve_scan_roots(retry_paths, parser)
+        fleet = False
     if args.jobs is None:
         args.jobs = _default_jobs()
     _cap_child_cpu(args.jobs)

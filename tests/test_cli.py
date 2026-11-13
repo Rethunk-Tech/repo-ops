@@ -127,6 +127,8 @@ def test_apply_help_matches_wired_flags_and_defaults() -> None:
     assert "label or path" in apply_help
     assert "Skip verification (implies --no-commit)." in apply_help
     assert "--no-commit" in apply_help
+    assert "--retry-failed" in apply_help
+    assert "--retry-failed" not in plan_help
     assert "--filter" in apply_help
     assert "--manager" in apply_help
     assert "--manager" in plan_help

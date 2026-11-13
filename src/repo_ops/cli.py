@@ -94,6 +94,7 @@ _TOP_LEVEL_EPILOG = """\
 examples:
   repo-ops apply
   repo-ops apply /path/to/checkout
+  repo-ops apply --retry-failed
   repo-ops plan /path/to/checkout
   repo-ops report
   repo-ops dependabot --close

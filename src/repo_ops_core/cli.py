@@ -200,4 +200,13 @@ def build_upgrade_parser(*, apply: bool) -> argparse.ArgumentParser:
             action="store_true",
             help="Skip verification (implies --no-commit).",
         )
+        parser.add_argument(
+            "--retry-failed",
+            nargs="?",
+            const="",
+            default=None,
+            metavar="RUN",
+            help="Re-run only failed and skipped paths from RUN's report.json "
+            "(newest run if RUN is omitted).",
+        )
     return parser
