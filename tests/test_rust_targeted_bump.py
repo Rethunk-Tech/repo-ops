@@ -357,3 +357,16 @@ def test_apply_rust_falls_back_when_old_major_is_still_required(
 
     assert remaining == []
     assert 'serde = "2.0.0"' in manifest.read_text(encoding="utf-8")
+
+
+def test_latest_below_the_requirement_is_never_a_target(tmp_path: Path, make_workspace) -> None:
+    # Every release at or above the floor yanked: the newest left is lower.
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\n\n[dependencies]\nserde = "1.0.200"\n',
+        encoding="utf-8",
+    )
+    with patch("repo_ops_rust.rust._cargo_registry_versions", return_value=("1.0.150",)):
+        changes = _cargo_latest_direct_changes(
+            make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
+        )
+    assert changes == []

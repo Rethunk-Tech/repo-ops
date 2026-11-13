@@ -21,7 +21,7 @@ from repo_ops_core.filesystem import restore_file, snapshot_file
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
-from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
+from repo_ops_core.version_utils import semver_tuple, version_parts, version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
 
 
@@ -283,6 +283,9 @@ def _cargo_latest_direct_changes_cached(
         if latest is None or all(
             _cargo_requirement_satisfied(latest, requirement) for _, requirement in entries
         ):
+            continue
+        # Yanked releases can leave the newest published version below the floor.
+        if any(version_parts(latest) < version_parts(req) for _, req in entries):
             continue
         changes.append(Change(crate_name, entries[0][1], latest))
     return tuple(changes)
