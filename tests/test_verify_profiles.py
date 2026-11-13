@@ -10,6 +10,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from subprocess import CompletedProcess
@@ -279,9 +280,20 @@ class TestVerifyTimeout:
         )
 
 
-def test_verify_timeout_names_repo_ops_toml_source(tmp_path: Path, make_workspace) -> None:
+def test_verify_timeout_names_repo_ops_toml_source(
+    tmp_path: Path, make_workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A hung gate names [verify] timeout and how to raise it, not only the seconds."""
-    (tmp_path / ".gate.toml").write_text('[gates.hang]\nrun = "sleep 30"\n', encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "gate"
+    fake.write_text(
+        '#!/bin/sh\nif [ "$1" = "--json" ]; then echo \'{"gates":[{"name":"hang"}]}\'; exit 0; fi\n'
+        "exec sleep 30\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     (tmp_path / ".repo-ops.toml").write_text("[verify]\ntimeout = 1\n", encoding="utf-8")
     ws = make_workspace(tmp_path, manager="rust", ecosystem="rust", label="demo")
     err = verify_workspace(ws)
