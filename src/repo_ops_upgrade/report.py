@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from repo_ops_core.holds import HoldRule
 from repo_ops_core.state import cache_get_dirty_skip, cache_get_staleness
@@ -13,6 +13,9 @@ from repo_ops_core.table import column_width, format_cell
 from repo_ops_js.holds import resolve_package_hold
 from repo_ops_models import DIRTY_SKIP_MARKER, Change, RepoBundle, WorkspaceResult
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
+
+if TYPE_CHECKING:
+    from repo_ops_upgrade.post_apply_commit import CommitOutcome
 
 UpgradeMode = Literal["plan", "apply"]
 
@@ -310,6 +313,7 @@ def build_json_payload(
     submodule_pointer_hints: list[dict[str, str]] | None = None,
     exit_code: int | None = None,
     excluded_count: int = 0,
+    commits: list[CommitOutcome] | None = None,
 ) -> dict[str, Any]:
     sorted_bundles = sorted(bundles.values(), key=lambda x: x.label)
     repos_json = [
@@ -332,6 +336,11 @@ def build_json_payload(
     }
     if exit_code is not None:
         payload["exit_code"] = exit_code
+    if commits is not None:
+        payload["commits"] = [
+            {"repo": str(c.git_repo), "label": c.label, "status": c.status, "detail": c.detail}
+            for c in commits
+        ]
     if submodules is not None:
         payload["submodules"] = submodules
     if submodule_pointer_hints is not None:

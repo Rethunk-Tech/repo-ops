@@ -233,3 +233,28 @@ def test_dirty_skip_table_path_count_and_rerun(
     assert "2" in out
     assert f"repo-ops apply {repo}" in out
     assert "dirty-skipped repos:" in out
+
+
+def test_commit_failure_is_recorded_digested_and_retried(
+    tmp_path: Path, init_git_repo: Any
+) -> None:
+    from repo_ops_models import RepoBundle
+    from repo_ops_upgrade.post_apply_commit import CommitOutcome
+    from repo_ops_upgrade.report import build_json_payload
+
+    repo = tmp_path / "r"
+    init_git_repo(repo, commit=True)
+    bundles = {repo: RepoBundle(git_repo=repo, label="r", workspaces=[])}
+    outcomes = [
+        CommitOutcome(git_repo=repo, label="r", status="failed", detail="signing failed"),
+        CommitOutcome(git_repo=tmp_path / "ok", label="ok", status="committed"),
+    ]
+
+    payload = build_json_payload(bundles, roots=[], mode="apply", commits=outcomes)
+
+    assert payload["commits"] == [
+        {"repo": str(repo), "label": "r", "status": "failed", "detail": "signing failed"},
+        {"repo": str(tmp_path / "ok"), "label": "ok", "status": "committed", "detail": None},
+    ]
+    assert _digest_lines_from_payload(payload) == [f"commit-fail {repo}  signing failed"]
+    assert _retry_paths_from_payload(payload) == [str(repo)]

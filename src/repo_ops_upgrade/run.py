@@ -246,8 +246,16 @@ def _package_digest_rows(payload: object) -> list[tuple[str, str, str]]:
     return rows
 
 
+def _failed_commits(payload: object) -> list[dict]:
+    commits = payload.get("commits") if isinstance(payload, dict) else None
+    return [c for c in commits or [] if isinstance(c, dict) and c.get("status") == "failed"]
+
+
 def _digest_lines_from_payload(payload: object) -> list[str]:
     lines = []
+    for c in _failed_commits(payload):
+        err = _first_error_line(c.get("detail"))
+        lines.append(f"commit-fail {c.get('repo')}  {err}".rstrip())
     for status, path, err in _package_digest_rows(payload):
         lines.append(f"{status} {path}  {err}".rstrip())
     return lines
@@ -265,6 +273,11 @@ def _retry_paths_from_payload(payload: object) -> list[str]:
             continue
         seen.add(path)
         out.append(path)
+    for c in _failed_commits(payload):
+        path = str(c.get("repo") or "")
+        if path and path not in seen:
+            seen.add(path)
+            out.append(path)
     return out
 
 
@@ -649,12 +662,14 @@ def _run_upgrade_body(
     if submodules_json:
         report.print_submodule_section(submodules_json, pointer_hints=pointer_hints)
 
+    commit_outcomes: list[post_apply_commit.CommitOutcome] | None = None
     if commit:
         child_outcomes, commit_exit = post_apply_commit.run_post_apply_commits(
             bundles,
             max_workers=args.jobs,
             submodule_gitlink_map=submodule_gitlink_map if submodule_gitlink_map else None,
         )
+        commit_outcomes = child_outcomes
         if commit_exit != 0:
             exit_code = 1 if exit_code == 0 else exit_code
         # Umbrella pointer-bump commits: after all child commits complete,
@@ -696,6 +711,7 @@ def _run_upgrade_body(
                 submodule_pointer_hints=pointer_hints,
                 exit_code=exit_code,
                 excluded_count=excluded_count,
+                commits=commit_outcomes,
             ),
         )
     return exit_code
