@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: Rethunk-Tech/gh-actions/setup-python@48cc92115e037b2ee57da2264f318265c8a78ec7 # v1.26
+      - uses: Rethunk-Tech/gh-actions/setup-python@4c3240b9077c81a6f03f499dafaec6494220aad5 # v1.27
         with:
           python-version: ${{ inputs.python-version }}
           install-args: --locked --group dev
