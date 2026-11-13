@@ -213,6 +213,36 @@ def test_apply_retry_failed_reruns_only_failed_and_skipped_paths(
     assert {Path(p).resolve() for p in captured["retry_paths"]} == got
 
 
+def test_apply_retry_failed_does_not_treat_checkout_as_run(
+    tmp_path: Path, init_git_repo: Any, monkeypatch: Any
+) -> None:
+    checkout = tmp_path / "checkout"
+    failed = tmp_path / "failed"
+    init_git_repo(checkout, commit=True)
+    init_git_repo(failed, commit=True)
+    state = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state))
+    _write_run_report(
+        state,
+        "20260101T000000.000000Z-apply",
+        _payload(_ws_json(str(failed), status="fail", error="boom")),
+    )
+    captured: dict[str, Any] = {}
+
+    def _fake_body(*, roots: list[str], fleet: bool, args: Any, report_path: Path, **_: Any) -> int:
+        captured["roots"] = roots
+        captured["retry_paths"] = list(args.retry_paths)
+        report_path.write_text("{}", encoding="utf-8")
+        return 0
+
+    with patch("repo_ops_upgrade.run._run_upgrade_body", _fake_body):
+        assert main_apply(["--retry-failed", str(checkout)]) == 0
+
+    got = {Path(p).resolve() for p in captured["roots"]}
+    assert got == {failed.resolve()}
+    assert {Path(p).resolve() for p in captured["retry_paths"]} == got
+
+
 def test_dirty_skip_table_path_count_and_rerun(
     tmp_path: Path, init_git_repo: Any, capsys: Any
 ) -> None:

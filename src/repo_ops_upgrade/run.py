@@ -224,6 +224,25 @@ def _runs_root() -> Path:
     return state / "repo-ops" / "runs"
 
 
+def _retry_failed_run(value: str) -> str:
+    """Return RUN, or '' (newest run) when argparse stole a checkout as RUN.
+
+    ``--retry-failed`` is ``nargs='?'``, so ``apply --retry-failed /checkout``
+    binds the path as RUN instead of as a root.
+    """
+    if not value:
+        return value
+    p = Path(value).expanduser()
+    if p.is_file() or (p.is_dir() and (p / "report.json").is_file()):
+        return value
+    named = _runs_root() / value
+    if named.is_file() or (named.is_dir() and (named / "report.json").is_file()):
+        return value
+    if p.is_dir():
+        return ""
+    return value
+
+
 def _resolve_report_path(run: str | None) -> Path:
     if run:
         p = Path(run).expanduser()
@@ -881,6 +900,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     args.retry_paths = None
     args.retry_commits = {}
     if apply and retry_ref is not None:
+        retry_ref = _retry_failed_run(retry_ref)
         try:
             prior_report = _resolve_report_path(retry_ref or None)
         except FileNotFoundError as exc:
