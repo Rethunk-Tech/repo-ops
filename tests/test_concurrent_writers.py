@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import subprocess
 from pathlib import Path
@@ -269,3 +270,30 @@ def test_named_checkout_never_commits_a_file_the_operator_had_edited(
     assert '"a":"2"' in (tmp_path / "package.json").read_text()
     assert (tmp_path / "package-lock.json").read_text() == '{"a":"2"}\n'
     assert "left uncommitted: your edits in package.json" in capsys.readouterr().out
+
+
+def test_a_repo_another_apply_holds_is_left_to_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, init_git_repo, upgrade_args, capsys
+) -> None:
+    ws = _repo(tmp_path, init_git_repo)
+    bundles = {tmp_path: RepoBundle(git_repo=tmp_path, label=".", workspaces=[WorkspaceResult(ws)])}
+    monkeypatch.setattr(disc_mod, "discover_all", lambda *a, **kw: [ws])
+    monkeypatch.setattr(orch_mod, "filter_workspaces", lambda found, *a, **kw: found)
+    monkeypatch.setattr(disc_mod, "group_by_repo", lambda *a, **kw: bundles)
+    monkeypatch.setattr(disc_mod, "merge_action_only_bundles", lambda b, *a, **kw: b)
+    processed: list[WorkspaceResult] = []
+    monkeypatch.setattr(orch_mod, "process_workspace", lambda wr, **kw: processed.append(wr) or wr)
+    git_dir = Path(_git(tmp_path, "rev-parse", "--absolute-git-dir").strip())
+
+    with (git_dir / "repo-ops.lock").open("a") as other_run:
+        fcntl.flock(other_run, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        code = run_mod._run_upgrade_body(
+            apply=True,
+            args=upgrade_args(no_verify=False, no_commit=False, eco_filter="node"),
+            roots=[str(tmp_path)],
+            fleet=False,
+        )
+
+    assert processed == []
+    assert code == 1
+    assert "another repo-ops apply" in capsys.readouterr().err

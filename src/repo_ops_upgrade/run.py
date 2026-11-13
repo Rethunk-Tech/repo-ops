@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import contextlib
+import fcntl
 import json
 import os
 import re
@@ -13,6 +14,7 @@ import sys
 import threading
 from itertools import groupby
 from pathlib import Path
+from typing import IO
 
 from repo_ops_core import archived, owned
 from repo_ops_core.cli import (
@@ -149,6 +151,38 @@ def _drop_archived(
             print(archived.archived_message(repo, scan.archived[repo]), file=sys.stderr)
             refused = True
     return refused
+
+
+def _drop_locked(
+    bundles: dict[Path, RepoBundle], *, named_roots: set[Path], fleet: bool
+) -> tuple[list[IO[str]], bool]:
+    """Take each repo's apply lock, dropping repos another apply holds.
+
+    Returns the open lock files, which hold the locks until closed, and True when
+    a named path was refused. Two applies in one checkout would install, roll back
+    and commit over each other's edits.
+    """
+    held: dict[Path, IO[str]] = {}
+    refused = False
+    for path in list(bundles):
+        repo = bundles[path].git_repo
+        if repo in held:
+            continue
+        git_dir = run_git(repo, "rev-parse", "--absolute-git-dir").stdout.strip()
+        if not git_dir:
+            continue
+        handle = (Path(git_dir) / "repo-ops.lock").open("a")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            handle.close()
+            for key in [k for k, b in bundles.items() if b.git_repo == repo]:
+                del bundles[key]
+            print(f"[skip] {repo}: another repo-ops apply is working in it", file=sys.stderr)
+            refused = refused or (not fleet and repo.resolve() in named_roots)
+            continue
+        held[repo] = handle
+    return list(held.values()), refused
 
 
 def _drop_foreign(bundles: dict[Path, RepoBundle]) -> None:
@@ -453,6 +487,12 @@ def _run_upgrade_body(
                 if not workspace_matches_exclude(bundle.git_repo, w.workspace.path, repo_exclude)
             ]
 
+    repo_locks, lock_refused = (
+        _drop_locked(bundles, named_roots={Path(r).resolve() for r in roots}, fleet=fleet)
+        if apply
+        else ([], False)
+    )
+
     if commit:
         for bundle in bundles.values():
             bundle.pre_dirty = frozenset(
@@ -733,7 +773,7 @@ def _run_upgrade_body(
     exit_code = _resolve_exit_code(
         bundles, apply=apply, has_actionable_work=_has_actionable_work(bundles)
     )
-    if archive_refused:
+    if archive_refused or lock_refused:
         exit_code = 1
 
     report.print_human_report(bundles, dry_run=not apply)
@@ -799,6 +839,8 @@ def _run_upgrade_body(
                 commits=commit_outcomes,
             ),
         )
+    for handle in repo_locks:
+        handle.close()
     return exit_code
 
 

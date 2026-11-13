@@ -4,7 +4,7 @@ What `plan`, `apply` and `dependabot` do, how they are configured, and what they
 
 ## Roots
 
-With no `root`, every command scans [`DEFAULT_ROOTS`](../src/repo_ops_core/constants.py) for git checkouts. That is a fleet sweep: repos with uncommitted changes or a rebase, merge, cherry-pick, revert or bisect in progress are skipped, and a repo whose verify fails is reverted and retried once on its own after the sweep. A named root is a checkout the operator is working in: it is processed even when dirty (only files apply touched are committed; if apply touched a file you had edited, nothing is committed and the report says `left uncommitted: your edits in <files>`), and a failed verify keeps the changes for inspection.
+With no `root`, every command scans [`DEFAULT_ROOTS`](../src/repo_ops_core/constants.py) for git checkouts. That is a fleet sweep: repos with uncommitted changes or a rebase, merge, cherry-pick, revert or bisect in progress are skipped, and a repo whose verify fails is reverted and retried once on its own after the sweep. A named root is a checkout the operator is working in: it is processed even when dirty (only files apply touched are committed; if apply touched a file you had edited, nothing is committed and the report says `left uncommitted: your edits in <files>`), and a failed verify keeps the changes for inspection. Each apply holds a lock in the checkout's git dir until it has committed; a repo another apply holds is skipped, and refusing a named root exits 1.
 
 `--exclude PAT` (substring or glob, matched against a repo's label and path) is unioned with the config `exclude` lists, so a flag can never pull a permanently excluded repo back in. A named root is never excluded. Scan roots must be existing directories. A named root is canonicalized (``Path.resolve``), so a symlink root is followed to its target; the inner ``find`` walk does not follow nested directory symlinks.
 
@@ -136,7 +136,7 @@ Lists open Dependabot PRs in repos with a GitHub remote (via `gh`) and marks eac
 | Command | 0 | 1 |
 | --- | --- | --- |
 | `plan` | nothing to do | drift, remediations or Actions changes exist |
-| `apply` | no workspace failed (dirty skips are fine) | any workspace failed |
+| `apply` | no workspace failed (dirty skips are fine) | any workspace failed, or a named root was refused (archived, or held by another apply) |
 | `report` | report.json read | no matching run or report.json |
 | `dependabot` | success | `gh` unavailable or another error |
 | `gates` | no repo failed | a repo's gate failed or errored |
