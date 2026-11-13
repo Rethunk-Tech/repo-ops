@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 import sys
 import threading
@@ -20,15 +21,16 @@ from repo_ops_core.state import (
     cache_record_behind_latest,
     cache_record_dirty_skip,
 )
-from repo_ops_js.holds import resolve_package_hold
+from repo_ops_js.holds import hold_for_run, release_run_hold, resolve_package_hold
 from repo_ops_js.overrides import overrides_audit
 from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
     snapshot_workspace_files,
 )
-from repo_ops_models import DIRTY_SKIP_MARKER, Workspace, WorkspaceResult
+from repo_ops_models import DIRTY_SKIP_MARKER, Change, Workspace, WorkspaceResult
 from repo_ops_upgrade import registry as ecosystems
 from repo_ops_upgrade import verify as verify_mod
+from repo_ops_upgrade.constants import BIOME_PKG
 from repo_ops_upgrade.post_apply import (
     capture_worktree_state,
     classify_verify_fail_disposition,
@@ -148,6 +150,44 @@ def process_workspace(
     return out
 
 
+def _retry_with_biome_held(
+    failed: WorkspaceResult,
+    biome: Change,
+    verify_error: str,
+    *,
+    do_verify: bool,
+    allow_dirty: bool,
+    on_verify_fail: OnVerifyFail,
+) -> WorkspaceResult:
+    """Re-apply a reverted workspace with Biome capped at its current version.
+
+    A Biome bump that still fails verify after its safe fixes must not cost the
+    workspace its other bumps; the hold is scoped to this call.
+    """
+    ws = failed.workspace
+    first_line = verify_error.splitlines()[0] if verify_error else "verify failed"
+    reason = (
+        f"{BIOME_PKG} {biome.from_ver} → {biome.to} failed verify after safe fixes: {first_line}"
+    )
+    hold_for_run(ws, BIOME_PKG, biome.from_ver, reason)
+    try:
+        retry = _process_workspace_body(
+            WorkspaceResult(workspace=ws),
+            do_apply=True,
+            do_verify=do_verify,
+            allow_dirty=allow_dirty,
+            on_verify_fail=on_verify_fail,
+            repo_started_dirty=failed.started_dirty,
+            biome_held=True,
+        )
+    finally:
+        release_run_hold(ws, BIOME_PKG)
+    retry.remediations.append(
+        {"id": "biome_hold", "status": "held", "detail": f"held at {biome.from_ver}: {reason}"}
+    )
+    return retry
+
+
 def _process_workspace_body(
     result: WorkspaceResult,
     *,
@@ -156,6 +196,7 @@ def _process_workspace_body(
     allow_dirty: bool,
     on_verify_fail: OnVerifyFail,
     repo_started_dirty: bool | None = None,
+    biome_held: bool = False,
 ) -> WorkspaceResult:
     ws = result.workspace
     if should_exclude(str(ws.path)):
@@ -269,6 +310,21 @@ def _process_workspace_body(
                 result.verify_fail_disposition = classify_verify_fail_disposition(
                     ws, before_snap, reverted_ok=reverted_ok
                 )
+                biome = next((c for c in result.changes if c.name == BIOME_PKG), None)
+                if (
+                    reverted_ok
+                    and not biome_held
+                    and biome is not None
+                    and re.fullmatch(r"\d+(\.\d+){0,2}", biome.from_ver)
+                ):
+                    return _retry_with_biome_held(
+                        result,
+                        biome,
+                        verr,
+                        do_verify=do_verify,
+                        allow_dirty=allow_dirty,
+                        on_verify_fail=on_verify_fail,
+                    )
 
     return result
 

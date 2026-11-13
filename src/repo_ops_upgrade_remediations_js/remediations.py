@@ -111,17 +111,22 @@ def apply_biome(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     prefix = pm_exec_prefix(ws.manager)
     ok = True
     last_err = ""
+    leftover = False
     for cfg in _find_biome_configs(ws.path):
         cfg_dir = cfg.parent
-        cmd = [*prefix, "biome", "migrate", "--write"]
-        if cfg_dir != ws.path:
-            cmd.append(f"--config-path={cfg_dir}")
-        proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
+        scope = [] if cfg_dir == ws.path else [f"--config-path={cfg_dir}"]
+        proc = run([*prefix, "biome", "migrate", "--write", *scope], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             ok = False
             last_err = stderr_tail(proc.stderr or proc.stdout or "")
+            continue
+        # Safe fixes only, never --unsafe. Exit 1 means diagnostics remain, which
+        # verify judges; the edits are owned like any other this run wrote.
+        check = run([*prefix, "biome", "check", "--write", *scope], ws.path, timeout=TIMEOUT_APPLY)
+        leftover = leftover or check.returncode != 0
     if ok:
-        return True, "biome migrate --write (ok)"
+        suffix = "; diagnostics remain after safe fixes" if leftover else ""
+        return True, f"biome migrate --write, biome check --write (ok{suffix})"
     return False, f"biome migrate --write (failed: {last_err})"
 
 

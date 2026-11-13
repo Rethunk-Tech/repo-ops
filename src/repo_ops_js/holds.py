@@ -53,14 +53,42 @@ def vscode_types_hold(ws: Workspace, package: str) -> HoldRule | None:
     )
 
 
+_run_holds: dict[tuple[str, str], HoldRule] = {}
+
+
+def hold_for_run(ws: Workspace, package: str, version: str, reason: str) -> None:
+    """Cap *package* at *version* for *ws* (and its members) until :func:`release_run_hold`."""
+    _run_holds[(str(ws.path), package)] = HoldRule(
+        package=package,
+        max_version=version,
+        workspace=workspace_rel(ws),
+        reason=reason,
+        source="run",
+    )
+
+
+def release_run_hold(ws: Workspace, package: str) -> None:
+    _run_holds.pop((str(ws.path), package), None)
+
+
+def _run_hold(ws: Workspace, package: str) -> HoldRule | None:
+    for (root, name), rule in list(_run_holds.items()):
+        if name == package and ws.path.is_relative_to(root):
+            return rule
+    return None
+
+
 def resolve_package_hold(ws: Workspace, package: str) -> HoldRule | None:
     """A derived ceiling (Expo SDK, ``engines.vscode``) when one governs *package*, else ``[[hold]]``.
+
+    A hold this run placed itself (a bump that failed verify) comes first.
 
     A derived ceiling wins over a configured hold: the build accepts nothing past it,
     and ``expo.install.exclude`` is Expo's documented opt-out.
     """
     return (
-        expo_hold(ws, package)
+        _run_hold(ws, package)
+        or expo_hold(ws, package)
         or vscode_types_hold(ws, package)
         or core_holds.resolve_package_hold(ws, package)
     )

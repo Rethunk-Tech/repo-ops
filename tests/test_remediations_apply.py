@@ -182,9 +182,11 @@ def test_apply_biome_success(tmp_path: Path, make_proc) -> None:
         ok, detail = remediations.apply_biome(ws, {})
     assert ok is True
     assert "(ok)" in detail
-    cmd = mock_run.call_args[0][0]
+    cmd = mock_run.call_args_list[0][0][0]
     assert cmd[0] == "bunx"
     assert "biome" in cmd and "migrate" in cmd and "--write" in cmd
+    check = mock_run.call_args_list[1][0][0]
+    assert "check" in check and "--write" in check and "--unsafe" not in check
 
 
 def test_apply_playwright_success(tmp_path: Path, make_proc) -> None:
