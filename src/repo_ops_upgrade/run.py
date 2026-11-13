@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import contextlib
+import json
 import os
 import sys
 import threading
@@ -51,6 +52,8 @@ from repo_ops_upgrade.post_apply import (
     rollback_owned_edits,
     tree_diff,
 )
+
+_DIGEST_STATUSES = frozenset({"fail", "skip", "held"})
 
 
 def _has_actionable_work(bundles: dict[Path, RepoBundle]) -> bool:
@@ -160,6 +163,98 @@ def _cli_flag(args: object, name: str) -> bool:
     ``store_true`` and rejects mocks.
     """
     return getattr(args, name, False) is True
+
+
+def _first_error_line(text: str | None) -> str:
+    if not text:
+        return ""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return ""
+
+
+def _runs_root() -> Path:
+    # Same layout as new_run_dir: $XDG_STATE_HOME/repo-ops/runs/<utc>-<cmd>/.
+    state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
+    return state / "repo-ops" / "runs"
+
+
+def _resolve_report_path(run: str | None) -> Path:
+    if run:
+        p = Path(run).expanduser()
+        if p.is_file():
+            return p
+        if p.is_dir() and (p / "report.json").is_file():
+            return p / "report.json"
+        named = _runs_root() / run
+        if named.is_dir() and (named / "report.json").is_file():
+            return named / "report.json"
+        if named.is_file():
+            return named
+        raise FileNotFoundError(f"no report.json for run {run!r}")
+    root = _runs_root()
+    if not root.is_dir():
+        raise FileNotFoundError(f"no runs directory at {root}")
+    candidates = sorted(
+        (p for p in root.iterdir() if p.is_dir() and (p / "report.json").is_file()),
+        key=lambda p: p.name,
+        reverse=True,
+    )
+    if not candidates:
+        raise FileNotFoundError(f"no runs with report.json under {root}")
+    return candidates[0] / "report.json"
+
+
+def _workspace_dicts(payload: object) -> list[dict]:
+    if not isinstance(payload, dict):
+        return []
+    found: list[dict] = []
+    for repo in payload.get("repos") or []:
+        if not isinstance(repo, dict):
+            continue
+        for ws in repo.get("workspaces") or []:
+            if isinstance(ws, dict):
+                found.append(ws)
+    return found
+
+
+def _package_digest_rows(payload: object) -> list[tuple[str, str, str]]:
+    rows: list[tuple[str, str, str]] = []
+    for ws in _workspace_dicts(payload):
+        path = str(ws.get("path") or "")
+        status = str(ws.get("status") or "")
+        if status in _DIGEST_STATUSES and path:
+            err = _first_error_line(ws.get("error") or ws.get("verify_error"))
+            rows.append((status, path, err))
+        if not path:
+            continue
+        for entry in ws.get("behind_latest") or []:
+            if not isinstance(entry, dict) or "held" not in entry:
+                continue
+            name = str(entry.get("name") or "")
+            if not name:
+                continue
+            err = f"{name} held <= {entry['held']}"
+            reason = entry.get("hold_reason")
+            if reason:
+                err = f"{err}, {reason}"
+            rows.append(("held", path, err))
+    return rows
+
+
+def _digest_lines_from_payload(payload: object) -> list[str]:
+    lines = []
+    for status, path, err in _package_digest_rows(payload):
+        lines.append(f"{status} {path}  {err}".rstrip())
+    return lines
+
+
+def _print_report_digest(report_path: Path) -> None:
+    payload = json.loads(report_path.read_text())
+    for line in _digest_lines_from_payload(payload):
+        print(line)
 
 
 def _run_upgrade_body(
@@ -586,6 +681,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
 
     wire_verbose(args)
     roots = resolve_scan_roots(list(args.roots or DEFAULT_ROOTS), parser)
+    fleet = args.roots == DEFAULT_ROOTS
     if args.jobs is None:
         args.jobs = _default_jobs()
     _cap_child_cpu(args.jobs)
@@ -603,11 +699,41 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
             apply=apply,
             args=args,
             roots=roots,
-            fleet=args.roots == DEFAULT_ROOTS,
+            fleet=fleet,
             report_path=report_path,
         )
     print(f"repo-ops: log {log_path}  report {report_path}")
+    if apply:
+        _print_report_digest(report_path)
     return code
+
+
+def build_report_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="repo-ops report",
+        description="Print one line per failed, skipped or held package from a run's report.json.",
+    )
+    parser.add_argument(
+        "run",
+        nargs="?",
+        default=None,
+        help="Run directory, report.json path, or run id (default: newest run)",
+    )
+    return parser
+
+
+def main_report(argv: list[str] | None = None) -> int:
+    parser = build_report_parser()
+    args = parser.parse_args(argv)
+    try:
+        report_path = _resolve_report_path(args.run)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    payload = json.loads(report_path.read_text())
+    for line in _digest_lines_from_payload(payload):
+        print(line)
+    return 0
 
 
 def main_plan(argv: list[str] | None = None) -> int:

@@ -20,6 +20,7 @@ from repo_ops_core.cli import (
 _MAIN_HELP_TARGETS: list[tuple[str, str, list[str]]] = [
     ("repo_ops_upgrade.run", "main_plan", []),
     ("repo_ops_upgrade.run", "main_apply", []),
+    ("repo_ops_upgrade.run", "main_report", []),
     ("repo_ops_dependabot.dependabot", "main", []),
 ]
 
@@ -58,7 +59,7 @@ def test_repo_ops_dispatcher_subcommands_help(capsys) -> None:
     """Dispatcher delegates --help to full subcommand parsers (return 0, no exit)."""
     from repo_ops import cli
 
-    for sub in ("plan", "apply", "dependabot"):
+    for sub in ("plan", "apply", "dependabot", "report"):
         assert cli.main([sub, "--help"]) == 0
         out = capsys.readouterr().out
         assert "usage: repo-ops" in out

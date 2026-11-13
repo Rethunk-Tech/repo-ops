@@ -14,7 +14,7 @@ With no `root`, every command scans [`DEFAULT_ROOTS`](../src/repo_ops_core/const
 
 Shared flags: `root ...`, `--exclude PAT`, `--jobs N` (default `max(4, min(8, cpus/4))`), `-v` / `--verbose`, `--filter ECO` (`node|go|rust|py|deno|dotnet|container|precommit|actions|submodules`), `--manager MANAGER`. `apply` also takes `--no-commit` and `--no-verify` (which implies `--no-commit`).
 
-Every run writes `$XDG_STATE_HOME/repo-ops/runs/<utc>-<cmd>/log` and `report.json` (the newest 50 runs are kept) and prints both paths last. The human report lists only repos with something to show; `report.json` has every row plus a `summary` block.
+Every run writes `$XDG_STATE_HOME/repo-ops/runs/<utc>-<cmd>/log` and `report.json` (the newest 50 runs are kept) and prints both paths last. `apply` then prints one line per failed, skipped or held package (first error line only). The human report lists only repos with something to show; `report.json` has every row plus a `summary` block.
 
 ### What moves
 
@@ -121,6 +121,10 @@ Matching is by package name, module path (Go), crate (Rust), package id (NuGet),
 
 A workspace that depends on `expo` gets holds from the installed `expo/bundledNativeModules.json` with no config: each listed package is held at its bundled spec, `expo` itself at its installed major, and names in `expo.install.exclude` are skipped. The Expo hold wins over a `[[hold]]` for the same package.
 
+## report
+
+`repo-ops report [RUN]` prints one line per failed, skipped or held package from that run's `report.json`, with only the first error line. RUN is a run directory, a `report.json` path, or a run id; the newest run is used when omitted. Read-only: it does not plan or apply.
+
 ## dependabot
 
 Lists open Dependabot PRs in repos with a GitHub remote (via `gh`) and marks each one superseded when the local lockfile or manifest already has that version. `--close` closes superseded PRs with a comment. Only lockfile-parser matches count; text-search matches, unparseable titles, and grouped PRs with any unconfirmed row are reported and never closed.
@@ -131,5 +135,6 @@ Lists open Dependabot PRs in repos with a GitHub remote (via `gh`) and marks eac
 | --- | --- | --- |
 | `plan` | nothing to do | drift, remediations or Actions changes exist |
 | `apply` | no workspace failed (dirty skips are fine) | any workspace failed |
+| `report` | report.json read | no matching run or report.json |
 | `dependabot` | success | `gh` unavailable or another error |
 | `gates` | no repo failed | a repo's gate failed or errored |

@@ -15,7 +15,7 @@ from repo_ops_core.cli import build_upgrade_parser
 from repo_ops_dependabot.dependabot import build_dependabot_parser
 from repo_ops_dependabot.dependabot import main as dependabot_main
 from repo_ops_gates.gates import build_gates_parser, main_gates
-from repo_ops_upgrade.run import main_apply, main_plan
+from repo_ops_upgrade.run import build_report_parser, main_apply, main_plan, main_report
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,11 @@ _SUBCOMMANDS: dict[str, _Subcommand] = {
         dependabot_main,
         build_dependabot_parser,
         "List superseded Dependabot PRs; --close closes them",
+    ),
+    "report": _Subcommand(
+        main_report,
+        build_report_parser,
+        "Print failed, skipped and held packages from a run (read-only)",
     ),
 }
 
@@ -90,6 +95,7 @@ examples:
   repo-ops apply
   repo-ops apply /path/to/checkout
   repo-ops plan /path/to/checkout
+  repo-ops report
   repo-ops dependabot --close
 
 Use repo-ops <subcommand> --help for all flags on that subcommand.
