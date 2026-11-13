@@ -992,3 +992,19 @@ def test_newer_line_bump_closes_despite_older_major_copy(tmp_path: Path) -> None
     )
     assert superseded is True
     assert current == "0.23.10"
+
+
+def test_go_major_suffix_does_not_match_another_module(tmp_path: Path) -> None:
+    """``/v5`` is not a module name: pgx/v5 must not answer for chi/v5."""
+    (tmp_path / "go.mod").write_text(
+        "module example.com/app\n\ngo 1.23\n\n"
+        "require github.com/go-chi/chi/v5 v5.0.0\n\n"
+        "require (\n\tgithub.com/jackc/pgx/v5 v5.7.0\n)\n\n"
+        "exclude (\n\tgithub.com/jackc/pgx/v5 v5.9.0\n)\n",
+        encoding="utf-8",
+    )
+    versions = _manifest_versions(str(tmp_path))
+    assert versions["github.com/go-chi/chi/v5"] == "5.0.0"
+    assert versions["github.com/jackc/pgx/v5"] == "5.7.0"
+    pr = _make_pr("Bump github.com/go-chi/chi/v5 from 5.0.0 to 5.1.0")
+    assert _check_superseded(pr, set(), {"github.com/jackc/pgx/v5": "5.7.0"}) == (None, None)

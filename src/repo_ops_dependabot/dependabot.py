@@ -409,8 +409,7 @@ def _manifest_versions(repo: str) -> dict[str, str]:
             continue
         with contextlib.suppress(Exception):
             text = go_mod.read_text(encoding="utf-8", errors="replace")
-            for m in re.finditer(r"^\s+([^\s]+)\s+(v[^\s]+)", text, re.MULTILINE):
-                result[m.group(1)] = _strip_v(m.group(2))
+            result.update(_go_mod_requires(text))
 
     # Rust: Cargo.lock may hold one crate at several versions; keep the highest.
     for name, ver in _cargo_lock_entries(root):
@@ -463,6 +462,36 @@ def _manifest_versions(repo: str) -> dict[str, str]:
     return result
 
 
+def _go_mod_requires(text: str) -> dict[str, str]:
+    """Module -> version from go.mod ``require`` directives only.
+
+    exclude, replace and retract directives name versions too; none of them is
+    what the module builds with.
+    """
+    requires: dict[str, str] = {}
+    directive = ""
+    for raw in text.splitlines():
+        line = raw.split("//", 1)[0].strip()
+        if directive:
+            if line == ")":
+                directive = ""
+                continue
+            fields = line.split()
+        else:
+            fields = line.split()
+            if not fields:
+                continue
+            if fields[-1] == "(":
+                directive = fields[0]
+                continue
+            if fields[0] != "require":
+                continue
+            fields = fields[1:]
+        if directive in ("", "require") and len(fields) == 2 and fields[1].startswith("v"):
+            requires[fields[0]] = _strip_v(fields[1])
+    return requires
+
+
 def _version_gte(current: str, target: str) -> bool:
     """Return True when *current* >= *target* using tuple comparison."""
     return semver_tuple(current) >= semver_tuple(target)
@@ -478,7 +507,10 @@ def _module_path_version(pkg: str, names: dict[str, str]) -> str | None:
     """
     if "/" not in pkg:
         return None
-    tail = "/" + pkg.rsplit("/", 1)[-1].lower()
+    parts = pkg.lower().split("/")
+    # A /vN major suffix is shared by unrelated modules; keep the name before it.
+    keep = 2 if re.fullmatch(r"v\d+", parts[-1]) and len(parts) > 2 else 1
+    tail = "/" + "/".join(parts[-keep:])
     for name, version in names.items():
         if "/" in name and name.lower().endswith(tail):
             return version
