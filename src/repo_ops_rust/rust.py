@@ -406,6 +406,24 @@ def _replace_cargo_requirement(
     return changed
 
 
+def _locked_spec(lock: bytes | None, crate_name: str, requirements: list[str]) -> str:
+    """``name@version`` for the one locked copy *requirements* resolve to, else ``name``.
+
+    A bare name is ambiguous to ``cargo update -p`` once two majors are locked.
+    """
+    try:
+        packages = tomllib.loads((lock or b"").decode("utf-8")).get("package", [])
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return crate_name
+    locked = {
+        p.get("version")
+        for p in packages
+        if isinstance(p, dict) and p.get("name") == crate_name and isinstance(p.get("version"), str)
+    }
+    matching = [v for v in locked if any(_cargo_requirement_satisfied(v, r) for r in requirements)]
+    return f"{crate_name}@{matching[0]}" if len(matching) == 1 else crate_name
+
+
 def _apply_cargo_targeted_bumps(
     ws: Workspace,
     candidates: list[Change],
@@ -420,24 +438,27 @@ def _apply_cargo_targeted_bumps(
             continue
         manifest_snapshot = snapshot_file(manifest)
         lock_snapshot = snapshot_file(lockfile)
-        requirement = candidate.from_ver
-        if not _replace_cargo_requirement(
-            manifest,
-            candidate.name,
-            requirement,
-            _cargo_bumped_requirement(requirement, candidate.to),
-        ):
+        # Every requirement the new version breaks moves together: one left on
+        # the old major (dev-dependencies, say) keeps the old major resolved.
+        stale = sorted(
+            {
+                req
+                for _, req in _cargo_manifest_dependencies(manifest).get(candidate.name, [])
+                if not _cargo_requirement_satisfied(candidate.to, req)
+            }
+        )
+        rewritten = [
+            _replace_cargo_requirement(
+                manifest, candidate.name, req, _cargo_bumped_requirement(req, candidate.to)
+            )
+            for req in stale
+        ]
+        if not any(rewritten):
             remaining.append(candidate)
             continue
+        spec = _locked_spec(lock_snapshot, candidate.name, stale)
         proc = run(
-            [
-                "cargo",
-                "update",
-                "-p",
-                candidate.name,
-                "--precise",
-                candidate.to,
-            ],
+            ["cargo", "update", "-p", spec, "--precise", candidate.to],
             ws.path,
             timeout=TIMEOUT_APPLY,
         )
@@ -445,7 +466,7 @@ def _apply_cargo_targeted_bumps(
             # --precise moves every locked copy of the crate, so it fails when a
             # dependency still needs the old major; a plain -p re-resolve adds the
             # new major beside it instead.
-            proc = run(["cargo", "update", "-p", candidate.name], ws.path, timeout=TIMEOUT_APPLY)
+            proc = run(["cargo", "update", "-p", spec], ws.path, timeout=TIMEOUT_APPLY)
         lock_advanced = snapshot_file(lockfile) != lock_snapshot
         if proc.returncode == 0 and lock_advanced:
             continue
