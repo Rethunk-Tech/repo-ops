@@ -242,3 +242,30 @@ def test_apply_snapshots_repo_dirty_state_once_per_bundle(tmp_path: Path, init_g
     assert mock_dirty.call_count == 1
     # Both sibling workspaces receive the same snapshotted value.
     assert all(c["repo_started_dirty"] is False for c in calls)
+
+
+def test_apply_crash_still_records_owned_edits_for_rollback(tmp_path: Path, init_git_repo) -> None:
+    """An apply that dies with a non-listed exception after writing the lockfile
+    must still leave its edits recorded, or a fleet rollback cannot undo them."""
+    from repo_ops_models import Workspace
+    from repo_ops_upgrade.orchestration import process_workspace
+
+    _npm_workspace(tmp_path, init_git_repo=init_git_repo)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+    ws = Workspace(path=tmp_path, ecosystem="node", manager="npm", git_repo=tmp_path, label="t")
+
+    def _write_then_crash(w: Workspace) -> None:
+        (w.path / "package-lock.json").write_text('{"half":1}', encoding="utf-8")
+        raise KeyError("packages")
+
+    with patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", _write_then_crash):
+        out = process_workspace(
+            WorkspaceResult(workspace=ws),
+            do_apply=True,
+            do_verify=False,
+            allow_dirty=True,
+            emit_progress=False,
+        )
+    assert out.status == "fail"
+    assert "package-lock.json" in out.owned_edits

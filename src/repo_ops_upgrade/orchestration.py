@@ -200,7 +200,7 @@ def _process_workspace_body(
             sync_soup_versions(ws.git_repo, result.changes, [ws.path, ws.git_repo])
             if ws.ecosystem == "node":
                 result.overrides_audit = overrides_audit(ws.path, ws.manager)
-        except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as exc:
+        except Exception as exc:  # any parse crash must still reach the rollback record
             result.status = "fail"
             result.error = str(exc)
             result.owned_edits = record_owned_edits(
@@ -232,7 +232,7 @@ def _process_workspace_body(
     if do_apply and do_verify and result.status != "fail" and not wrote_nothing:
         try:
             verr = verify_mod.verify_workspace(ws, owned_edits=result.owned_edits)
-        except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as exc:
+        except Exception as exc:
             # A verify that cannot finish (e.g. a gate timeout) is a failed
             # verify, and must reach the revert below like any other.
             verr = str(exc)
