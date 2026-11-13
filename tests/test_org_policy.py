@@ -244,6 +244,16 @@ def test_policy_selected_pattern_match() -> None:
     assert _action_policy_violation("actions/checkout", p) is None
 
 
+def test_policy_selected_matches_githubs_owner_repo_at_ref_patterns() -> None:
+    p = _policy(
+        allowed_actions="selected",
+        patterns_allowed=["Docker/build-push-action@*", "softprops/action-gh-release@v2"],
+    )
+    assert _action_policy_violation("docker/build-push-action", p, ref="v6") is None
+    assert _action_policy_violation("softprops/action-gh-release", p, ref="v2") is None
+    assert _action_policy_violation("softprops/action-gh-release", p, ref="v1") is not None
+
+
 def test_policy_selected_pattern_no_match() -> None:
     p = _policy(
         allowed_actions="selected",

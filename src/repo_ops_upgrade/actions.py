@@ -192,7 +192,9 @@ def _derive_owner(repo: Path) -> str | None:
     return owner_repo.split("/")[0] if owner_repo else None
 
 
-def _action_policy_violation(action: str, policy: dict, org_owner: str | None = None) -> str | None:
+def _action_policy_violation(
+    action: str, policy: dict, org_owner: str | None = None, *, ref: str | None = None
+) -> str | None:
     """Return a human-readable reason string when *action* is blocked by *policy*.
 
     Returns ``None`` when the action is allowed.
@@ -204,7 +206,9 @@ def _action_policy_violation(action: str, policy: dict, org_owner: str | None = 
         - ``github_owned_allowed`` and the action owner is ``actions`` or
           ``github``, OR
         - the action matches any glob in ``patterns_allowed`` (fnmatch semantics
-          per GitHub docs: ``owner/*`` matches ``owner/any-repo``).
+          per GitHub docs: ``owner/*`` matches ``owner/any-repo``), checked
+          case-insensitively against both ``owner/repo`` and ``owner/repo@ref``
+          since GitHub's own patterns carry a ref (``owner/repo@*``).
     - ``allowed_actions=local_only`` → allowed when the action's owner matches
       *org_owner* (case-insensitive); same-owner refs pass, cross-org refs are
       blocked. Needs *org_owner* to tell those apart, so callers evaluating a
@@ -229,8 +233,9 @@ def _action_policy_violation(action: str, policy: dict, org_owner: str | None = 
         if github_owned and policy.get("github_owned_allowed", False):
             return None
         patterns: list[str] = policy.get("patterns_allowed", [])
+        names = [action.lower()] + ([f"{action}@{ref}".lower()] if ref else [])
         for pat in patterns:
-            if fnmatch.fnmatch(action, pat):
+            if any(fnmatch.fnmatchcase(name, pat.lower()) for name in names):
                 return None
         return (
             f"org policy (selected): {action} not in allowlist"
@@ -1041,10 +1046,10 @@ def scan_actions(
         if _org_owner is not None:
             _org_policy = _fetch_org_policy_cached(_org_owner, _policy_store)
 
-    def _policy_violation_for(action: str) -> str | None:
+    def _policy_violation_for(action: str, ref: str) -> str | None:
         if _org_policy is None or _org_owner is None or action.startswith("./"):
             return None
-        return _action_policy_violation(action, _org_policy, _org_owner)
+        return _action_policy_violation(action, _org_policy, _org_owner, ref=ref)
 
     # Load the actionlint result cache once per run (skipped in "off" mode).
     _lint_cache_path = _actionlint_cache_path()
@@ -1387,7 +1392,7 @@ def scan_actions(
         if _org_policy is not None and _org_owner is not None:
             for uses in pins:
                 action = uses.action
-                violation = _policy_violation_for(action)
+                violation = _policy_violation_for(action, uses.pin)
                 if violation:
                     status = "policy"
                     bumps.append(
