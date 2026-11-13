@@ -16,7 +16,7 @@ Shared flags: `root ...`, `--exclude PAT`, `--jobs N` (default `max(4, min(8, cp
 
 Every run writes `$XDG_STATE_HOME/repo-ops/runs/<utc>-<cmd>/log` and `report.json` (the newest 50 runs are kept) and prints both paths last. `apply` then prints one line per failed, skipped or held package (first error line only). The human report lists only repos with something to show; `report.json` has every row plus a `summary` block.
 
-`--retry-failed [RUN]` re-applies only the failed and skipped workspace paths recorded in that run's `report.json` (newest run if omitted).
+`--retry-failed [RUN]` re-applies only the failed and skipped workspace paths recorded in that run's `report.json` (newest run if omitted). A fleet sweep ends with a table of dirty-skipped repos: path, dirty-file count, and `repo-ops apply <path>` to name the checkout and update it anyway.
 
 ### What moves
 

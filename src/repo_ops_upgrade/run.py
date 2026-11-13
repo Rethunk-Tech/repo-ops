@@ -7,6 +7,7 @@ import concurrent.futures
 import contextlib
 import json
 import os
+import subprocess
 import sys
 import threading
 from itertools import groupby
@@ -29,7 +30,7 @@ from repo_ops_core.exclude import (
     workspace_matches_exclude,
 )
 from repo_ops_core.filesystem import new_run_dir, write_json_atomic
-from repo_ops_core.git import is_git_dirty
+from repo_ops_core.git import is_git_dirty, run_git
 from repo_ops_core.parallel import run_bounded_pool
 from repo_ops_core.process import isolate_user_config
 from repo_ops_core.tee import tee_stdout_stderr
@@ -271,6 +272,36 @@ def _print_report_digest(report_path: Path) -> None:
     payload = json.loads(report_path.read_text())
     for line in _digest_lines_from_payload(payload):
         print(line)
+
+
+def _dirty_file_count(repo: Path) -> int:
+    try:
+        proc = run_git(repo, "status", "--porcelain", "--ignore-submodules=dirty", timeout=30)
+    except subprocess.TimeoutExpired:
+        return 0
+    if proc.returncode != 0:
+        return 0
+    return sum(1 for line in proc.stdout.splitlines() if line.strip())
+
+
+def _print_dirty_skip_table(bundles: dict[Path, RepoBundle]) -> None:
+    rows: list[tuple[str, int, str]] = []
+    seen: set[Path] = set()
+    for bundle in bundles.values():
+        repo = bundle.git_repo
+        if repo in seen or not bundle.any_dirty_skip():
+            continue
+        seen.add(repo)
+        count = _dirty_file_count(repo)
+        rows.append((str(repo), count, f"repo-ops apply {repo}"))
+    if not rows:
+        return
+    path_w = max(len("path"), max(len(r[0]) for r in rows))
+    count_w = max(len("dirty"), max(len(str(r[1])) for r in rows))
+    print("dirty-skipped repos:")
+    print(f"{'path':<{path_w}}  {'dirty':>{count_w}}  re-run")
+    for path, count, cmd in rows:
+        print(f"{path:<{path_w}}  {count:>{count_w}}  {cmd}")
 
 
 def _run_upgrade_body(
@@ -649,6 +680,7 @@ def _run_upgrade_body(
         submodule_pointer_hints=pointer_hints,
         discovery_skips=diagnostics.skipped,
     )
+    _print_dirty_skip_table(bundles)
     for bundle in bundles.values():
         for wr in bundle.workspaces:
             wr.owned_edits = {}

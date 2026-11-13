@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from repo_ops_models import DIRTY_SKIP_MARKER
+from repo_ops_models import DIRTY_SKIP_MARKER, RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade.run import (
     _digest_lines_from_payload,
+    _print_dirty_skip_table,
     _retry_paths_from_payload,
     main_apply,
     main_report,
@@ -209,3 +210,26 @@ def test_apply_retry_failed_reruns_only_failed_and_skipped_paths(
     assert got == {failed.resolve(), skipped.resolve()}
     assert captured["fleet"] is False
     assert {Path(p).resolve() for p in captured["retry_paths"]} == got
+
+
+def test_dirty_skip_table_path_count_and_rerun(
+    tmp_path: Path, init_git_repo: Any, capsys: Any
+) -> None:
+    repo = tmp_path / "dirty"
+    init_git_repo(repo, commit=True)
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    (repo / "b.txt").write_text("b\n", encoding="utf-8")
+    wr = WorkspaceResult(
+        workspace=Workspace(
+            path=repo, ecosystem="node", manager="npm", git_repo=repo, label="dirty"
+        ),
+        status="skip",
+        error=f"{DIRTY_SKIP_MARKER} (name the checkout as a root to update it anyway)",
+    )
+    bundle = RepoBundle(git_repo=repo, label="dirty", workspaces=[wr])
+    _print_dirty_skip_table({repo: bundle})
+    out = capsys.readouterr().out
+    assert str(repo) in out
+    assert "2" in out
+    assert f"repo-ops apply {repo}" in out
+    assert "dirty-skipped repos:" in out
