@@ -16,6 +16,7 @@ from repo_ops_dependabot.dependabot import (
     _check_superseded,
     _is_security_title,
     _lockfile_resolved,
+    _lockfile_versions,
     _manifest_versions,
     _parse_bump,
     _parse_group_body,
@@ -932,3 +933,62 @@ def test_multi_directory_group_title_and_updates_sentences() -> None:
         ("python", "3.14.10-slim", "3.15.0-slim"),
         ("ggml-org/whisper.cpp", "a7ec221", "0751e15"),
     ]
+
+
+def test_nested_old_copy_keeps_pr_open(tmp_path: Path) -> None:
+    """A newer hoisted copy elsewhere must not hide the copy the PR bumps."""
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "lockfileVersion": 3,
+                "packages": {
+                    "": {},
+                    "node_modules/semver": {"version": "6.3.0"},
+                    "node_modules/other/node_modules/semver": {"version": "7.6.0"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    pr = _make_pr("Bump semver from 6.3.0 to 6.3.1")
+    superseded, current = _check_superseded(
+        pr,
+        _lockfile_versions(str(tmp_path)),
+        _manifest_versions(str(tmp_path)),
+        _lockfile_resolved(str(tmp_path)),
+    )
+    assert superseded is False
+    assert current == "6.3.0"
+
+
+def test_cargo_duplicate_old_copy_keeps_pr_open(tmp_path: Path) -> None:
+    (tmp_path / "Cargo.lock").write_text(
+        '[[package]]\nname = "rustls"\nversion = "0.21.0"\n\n'
+        '[[package]]\nname = "rustls"\nversion = "0.23.10"\n',
+        encoding="utf-8",
+    )
+    pr = _make_pr("Bump rustls from 0.21.0 to 0.21.12")
+    superseded, _current = _check_superseded(
+        pr,
+        _lockfile_versions(str(tmp_path)),
+        _manifest_versions(str(tmp_path)),
+        _lockfile_resolved(str(tmp_path)),
+    )
+    assert superseded is False
+
+
+def test_newer_line_bump_closes_despite_older_major_copy(tmp_path: Path) -> None:
+    (tmp_path / "Cargo.lock").write_text(
+        '[[package]]\nname = "rustls"\nversion = "0.21.0"\n\n'
+        '[[package]]\nname = "rustls"\nversion = "0.23.10"\n',
+        encoding="utf-8",
+    )
+    pr = _make_pr("Bump rustls from 0.23.0 to 0.23.5")
+    superseded, current = _check_superseded(
+        pr,
+        _lockfile_versions(str(tmp_path)),
+        _manifest_versions(str(tmp_path)),
+        _lockfile_resolved(str(tmp_path)),
+    )
+    assert superseded is True
+    assert current == "0.23.10"

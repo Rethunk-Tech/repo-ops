@@ -376,7 +376,20 @@ def _lockfile_versions(repo: str) -> set[str]:
     versions: set[str] = set()
     for filename, parser in _lockfile_entry_parsers():
         versions.update(_iter_lockfile_entries(root, filename, parser))
+    versions.update(f"{name}@{ver}" for name, ver in _cargo_lock_entries(root))
     return versions
+
+
+def _cargo_lock_entries(root: Path):
+    """Yield (name, version) for every ``[[package]]`` in every Cargo.lock under *root*."""
+    for cargo_lock in root.rglob("Cargo.lock"):
+        with contextlib.suppress(Exception):
+            text = cargo_lock.read_text(encoding="utf-8", errors="replace")
+            for block in re.split(r"\[\[package\]\]", text)[1:]:
+                name_m = re.search(r'name\s*=\s*"([^"]+)"', block)
+                ver_m = re.search(r'version\s*=\s*"([^"]+)"', block)
+                if name_m and ver_m:
+                    yield name_m.group(1), ver_m.group(1)
 
 
 def _manifest_versions(repo: str) -> dict[str, str]:
@@ -399,16 +412,10 @@ def _manifest_versions(repo: str) -> dict[str, str]:
             for m in re.finditer(r"^\s+([^\s]+)\s+(v[^\s]+)", text, re.MULTILINE):
                 result[m.group(1)] = _strip_v(m.group(2))
 
-    # Rust: parse Cargo.lock [[package]] blocks
-    for cargo_lock in root.rglob("Cargo.lock"):
-        with contextlib.suppress(Exception):
-            text = cargo_lock.read_text(encoding="utf-8", errors="replace")
-            pkg_blocks = re.split(r"\[\[package\]\]", text)
-            for block in pkg_blocks[1:]:
-                name_m = re.search(r'name\s*=\s*"([^"]+)"', block)
-                ver_m = re.search(r'version\s*=\s*"([^"]+)"', block)
-                if name_m and ver_m:
-                    result[name_m.group(1)] = ver_m.group(1)
+    # Rust: Cargo.lock may hold one crate at several versions; keep the highest.
+    for name, ver in _cargo_lock_entries(root):
+        if name not in result or _version_gte(ver, result[name]):
+            result[name] = ver
 
     # Containers: image pins in FROM lines.  Dependabot names these by image
     # ("node", "oven/bun"), and the tag carries the version; a suffixed tag
@@ -552,9 +559,26 @@ def _check_superseded(
         return None, None
 
     pr.low_confidence = not high_conf
-    if _version_gte(current_ver, target):
-        return True, current_ver
-    return False, current_ver
+    if not _version_gte(current_ver, target):
+        return False, current_ver
+    # The highest copy reaching the target says nothing about the copy the PR
+    # bumps: a nested or duplicate copy still in [from, target) keeps it live.
+    if pr.bump.from_ver:
+        from_ver = _strip_v(pr.bump.from_ver)
+        key = _pep503(pkg)
+        for entry in lockfile_versions:
+            name, ver = _split_name_ver(entry)
+            if (
+                _pep503(name) == key
+                and _version_gte(ver, from_ver)
+                and not _version_gte(ver, target)
+            ):
+                return False, ver
+    return True, current_ver
+
+
+def _pep503(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name.lower())
 
 
 # ---------------------------------------------------------------------------
