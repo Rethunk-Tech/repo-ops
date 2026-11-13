@@ -166,12 +166,12 @@ def _tool_cache_dirs() -> list[str]:
         # uvx stages its temp files in the tool dir.
         add(os.environ.get("UV_TOOL_DIR") or tool_out(["uv", "tool", "dir"]))
     if shutil.which("cargo"):
-        # Registry and git checkouts only: ~/.cargo/bin stays read-only.
+        # Registry, git checkouts and cargo-deny's advisory DBs only: ~/.cargo/bin stays read-only.
         cargo_home = Path(
             os.environ.get("CARGO_HOME") or Path(os.environ.get("HOME") or Path.home()) / ".cargo"
         )
-        add(str(cargo_home / "registry"))
-        add(str(cargo_home / "git"))
+        for sub in ("registry", "git", "advisory-dbs"):
+            add(str(cargo_home / sub))
     return found
 
 
