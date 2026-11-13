@@ -6,7 +6,7 @@ import io
 from pathlib import Path
 from unittest.mock import patch
 
-from repo_ops_models import ActionBump, RepoBundle, Workspace, WorkspaceResult
+from repo_ops_models import ActionBump, Change, RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
 from repo_ops_upgrade.report import (
     build_json_payload,
@@ -226,3 +226,19 @@ def test_first_error_line_skips_gate_header() -> None:
     assert _first_error_line(text) == "src/a.ts:3:1 lint/style error boom"
     assert _first_error_line("gate: FAIL exit 1  x  1s\nplain") == "gate: FAIL exit 1  x  1s"
     assert _first_error_line("only one") == "only one"
+
+
+def test_packages_upgraded_counts_only_workspaces_that_kept_their_changes(tmp_path: Path) -> None:
+    def _ws(name: str) -> Workspace:
+        return Workspace(
+            path=tmp_path / name, ecosystem="node", manager="npm", git_repo=tmp_path, label=name
+        )
+
+    bump = [Change("a", "1", "2"), Change("b", "1", "2")]
+    results = [
+        WorkspaceResult(_ws("kept"), status="ok", changes=bump[:1]),
+        WorkspaceResult(_ws("failed"), status="fail", changes=bump, verify_error="gate failed"),
+        WorkspaceResult(_ws("rolled-back"), status="skip", changes=bump, error="reverted"),
+    ]
+    summary = build_run_summary({tmp_path: _bundle(tmp_path, workspaces=results)})
+    assert summary["packages_upgraded"] == 1

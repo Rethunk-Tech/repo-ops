@@ -150,8 +150,9 @@ def build_run_summary(
 
     for bundle in bundles.values():
         for wr in bundle.workspaces:
-            packages_upgraded += len(wr.changes)
             if wr.status == "ok":
+                # A failed or rolled-back workspace's changes did not land.
+                packages_upgraded += len(wr.changes)
                 workspaces_ok += 1
             elif wr.status == "fail":
                 workspaces_fail += 1
