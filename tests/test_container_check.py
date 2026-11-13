@@ -79,6 +79,7 @@ def test_is_container_workspace(files: dict[str, str], expected: bool, tmp_path:
         # AS <name> DEFINES a stage — it does not make the line a stage ref.
         ("FROM node:20-alpine AS builder\n", {"image": "node", "is_stage_ref": False}),
         ("FROM python:3.12 AS python\n", {"image": "python", "tag": "3.12", "is_stage_ref": False}),
+        ("FROM nginx:1.25  # base\n", {"image": "nginx", "tag": "1.25"}),
         # scratch is treated as a stage-ref equivalent (nothing to check upstream).
         ("FROM scratch\n", {"is_stage_ref": True}),
     ],
@@ -170,6 +171,7 @@ _ANY_SHA = object()
             "    image: nginx:1.25@sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n",
             [{"tag": "1.25", "sha": _ANY_SHA}],
         ),
+        ("    image: nginx:1.25  # prod\n", [{"image": "nginx", "tag": "1.25"}]),
     ],
 )
 def test_parse_compose_images(text: str, expected: list[dict[str, Any]]) -> None:

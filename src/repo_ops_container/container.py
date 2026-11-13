@@ -225,6 +225,7 @@ _FROM_RE = re.compile(
     r"(?::(?P<tag>[^\s@]+))?"  # optional :tag
     r"(?:@(?P<sha>sha256:[0-9a-fA-F]+))?"  # optional @sha256:...
     r"(?:\s+AS\s+\S+)?"  # optional AS <stage>
+    r"(?:\s*#.*)?"  # optional trailing comment
     r"\s*$",
     re.IGNORECASE,
 )
@@ -284,7 +285,9 @@ _COMPOSE_IMAGE_RE = re.compile(
     r'(?P<image>[^\s:"\']+)'
     r'(?::(?P<tag>[^\s@"\']+))?'
     r"(?:@(?P<sha>sha256:[0-9a-fA-F]+))?"
-    r'["\']?\s*$'
+    r'["\']?'
+    r"(?:\s*#.*)?"
+    r"\s*$"
 )
 
 
