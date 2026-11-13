@@ -62,6 +62,13 @@ def semver_precedence(
     return nums, not pre, ids
 
 
+def pep440_precedence(version: str) -> tuple:
+    """:func:`semver_precedence` that also reads a PEP 440 ``a``/``b``/``rc``/``dev`` suffix as a prerelease."""
+    # shortcut: a/b/rc/dev map to SemVer prerelease ids, so dev orders above a/b/rc
+    # of the same release; take a real PEP 440 parser if that ordering ever matters.
+    return semver_precedence(re.sub(r"^([\d.]*\d)\.?((?:a|b|rc|dev)\d*)", r"\1-\2", version))
+
+
 def hold_ceiling_spec(max_version: str) -> str:
     """Return a PEP 440 upper-bound constraint for a hold ceiling."""
     parts = [p for p in max_version.strip().split(".") if p]

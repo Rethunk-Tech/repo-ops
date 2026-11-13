@@ -73,7 +73,7 @@ from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
 from repo_ops_core.git import github_owner_repo as _owner_repo
 from repo_ops_core.git import github_remote as _github_remote
 from repo_ops_core.git import repo_label, run_git
-from repo_ops_core.version_utils import semver_tuple
+from repo_ops_core.version_utils import pep440_precedence, semver_tuple
 from repo_ops_lockfiles.parsers import (
     split_name_version,
     versions_bun_lock,
@@ -495,8 +495,8 @@ def _go_mod_requires(text: str) -> dict[str, str]:
 
 
 def _version_gte(current: str, target: str) -> bool:
-    """Return True when *current* >= *target* using tuple comparison."""
-    return semver_tuple(current) >= semver_tuple(target)
+    """Return True when *current* >= *target*; a prerelease sorts below its release."""
+    return pep440_precedence(current) >= pep440_precedence(target)
 
 
 def _module_path_version(pkg: str, names: dict[str, str]) -> str | None:

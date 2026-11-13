@@ -49,9 +49,10 @@ def test_version_gte_handles_v_prefix() -> None:
     assert _version_gte("v2.1.0", "v2.0.0") is True
 
 
-def test_version_gte_pre_release_segment_ignored() -> None:
-    # Pre-release suffix stripped after first non-numeric
-    assert _version_gte("2.0.0-beta1", "2.0.0") is True
+def test_version_gte_orders_a_prerelease_below_its_release() -> None:
+    assert _version_gte("2.0.0-beta1", "2.0.0") is False
+    assert _version_gte("2.0.0rc1", "2.0.0") is False
+    assert _version_gte("2.0.0", "2.0.0-beta1") is True
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +221,16 @@ def test_check_superseded_high_confidence_from_resolved() -> None:
     assert superseded is True
     assert current == "4.17.21"
     assert pr.low_confidence is False
+
+
+@pytest.mark.parametrize("locked", ["2.0.0-rc.1", "2.0.0rc1"])
+def test_a_lock_on_the_targets_prerelease_keeps_the_pr_open(locked: str) -> None:
+    pr = _make_pr(f"Bump foo from {locked} to 2.0.0")
+    superseded, current = _check_superseded(
+        pr, lockfile_versions=set(), manifest_versions={}, lockfile_resolved={"foo": locked}
+    )
+    assert superseded is False
+    assert current == locked
 
 
 def test_check_superseded_low_confidence_from_text_search() -> None:
