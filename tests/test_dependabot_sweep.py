@@ -1059,3 +1059,11 @@ def test_close_skipped_when_checkout_is_not_the_remote_branch(tmp_path: Path, st
     assert results[0].prs[0].superseded is True
     mock_close.assert_not_called()
     assert "not closed" in results[0].prs[0].close_error
+
+
+def test_multi_package_title_needs_every_package_superseded() -> None:
+    pr = _make_pr("Bump foo and bar from 1.0.0 to 2.0.0")
+    superseded, _current = _check_superseded(
+        pr, set(), {}, lockfile_resolved={"foo": "2.0.0", "bar": "1.0.0"}
+    )
+    assert superseded is False

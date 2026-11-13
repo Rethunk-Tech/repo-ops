@@ -139,6 +139,8 @@ class BumpInfo:
     package: str
     from_ver: str
     to_ver: str
+    # The rest of an "X and Y from A to B" title; each must be superseded too.
+    also: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -580,6 +582,14 @@ def _check_superseded(
     if pr.bump is None:
         return None, None
 
+    for other in pr.bump.also:
+        sub = DependabotPR(pr.number, pr.title, pr.head_ref, pr.repo_path, pr.repo_label_str)
+        sub.bump = BumpInfo(other, pr.bump.from_ver, pr.bump.to_ver)
+        sup, cur = _check_superseded(sub, lockfile_versions, manifest_versions, lockfile_resolved)
+        if sup is not True or sub.low_confidence:
+            pr.low_confidence = sub.low_confidence
+            return sup, cur
+
     pkg = pr.bump.package
     target = _strip_v(pr.bump.to_ver)
     resolved = lockfile_resolved or {}
@@ -633,11 +643,12 @@ def _parse_bump(title: str) -> BumpInfo | None:
         return None
     raw_pkg = m.group(1).strip()
     # Multi-package titles: "X and Y" — take first package name
-    first_pkg = re.split(r"\s+and\s+", raw_pkg, maxsplit=1)[0].strip()
+    first_pkg, *others = (p.strip() for p in re.split(r"\s+and\s+|,\s*", raw_pkg))
     return BumpInfo(
         package=first_pkg,
         from_ver=(m.group(2) or "").strip(),
         to_ver=m.group(3).strip(),
+        also=others,
     )
 
 
