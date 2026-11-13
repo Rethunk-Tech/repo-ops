@@ -501,6 +501,14 @@ def _run_upgrade_body(
             _rollback_vetoed_repo(bundle.git_repo, repo_before, results)
         return results
 
+    # A repo with no workspace never reaches _process_repo's dirty check, and
+    # children committed below move its gitlinks, so judge it before they run.
+    dirty_actions_only = {
+        b.git_repo
+        for b in bundles.values()
+        if apply and not allow_dirty and not b.workspaces and is_git_dirty(b.git_repo)
+    }
+
     all_results: list[WorkspaceResult] = []
     if apply:
         ordered_bundles = [
@@ -607,7 +615,7 @@ def _run_upgrade_body(
             # Fleet dirty-skip leaves the checkout untouched; do not apply
             # workflow pins on top of someone else's tree. A workspace fail
             # (including named-root keep-on-verify-fail) still scans Actions.
-            if apply and bundle.any_dirty_skip():
+            if apply and (bundle.any_dirty_skip() or bundle.git_repo in dirty_actions_only):
                 return
             local_cache: dict[str, dict | None] = {}
             with _tag_cache_lock:

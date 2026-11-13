@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 import sys
@@ -269,3 +270,44 @@ def test_apply_crash_still_records_owned_edits_for_rollback(tmp_path: Path, init
         )
     assert out.status == "fail"
     assert "package-lock.json" in out.owned_edits
+
+
+def _workflow(repo: Path) -> None:
+    (repo / ".github" / "workflows").mkdir(parents=True)
+    (repo / ".github" / "workflows" / "ci.yml").write_text(
+        "jobs:\n  x:\n    steps:\n      - uses: actions/checkout@v3\n",
+        encoding="utf-8",
+    )
+
+
+def _fleet_scan_calls(repo: Path, **patches) -> list[tuple[Path, bool]]:
+    register_all()
+    scan_calls: list[tuple[Path, bool]] = []
+
+    def track_scan(repo: Path, *, apply: bool = False, **_kwargs):
+        scan_calls.append((repo, apply))
+        return [], 0
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(
+            patch("repo_ops_upgrade.run.actions.scan_actions", side_effect=track_scan)
+        )
+        stack.enter_context(patch("repo_ops_core.cli.DEFAULT_ROOTS", [str(repo)]))
+        stack.enter_context(patch("repo_ops_upgrade.run.DEFAULT_ROOTS", [str(repo)]))
+        for target, kw in patches.items():
+            stack.enter_context(patch(target, **kw))
+        main_apply([])
+    return scan_calls
+
+
+def test_fleet_sweep_leaves_a_dirty_actions_only_repo_alone(tmp_path: Path, init_git_repo) -> None:
+    """No manifest means no workspace dirty check; the workflows still must not be rewritten."""
+    init_git_repo(tmp_path)
+    _workflow(tmp_path)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-qm", "init"], cwd=tmp_path, check=True
+    )
+    (tmp_path / "notes.txt").write_text("colleague's work\n", encoding="utf-8")
+
+    assert all(not applied for _, applied in _fleet_scan_calls(tmp_path))
