@@ -129,7 +129,7 @@ A workspace that depends on `expo` gets holds from the installed `expo/bundledNa
 
 ## dependabot
 
-Lists open Dependabot PRs in repos with a GitHub remote (via `gh`) and marks each one superseded when the local lockfile or manifest already has that version. `--close` closes superseded PRs with a comment. Only lockfile-parser matches count; text-search matches, unparseable titles, and grouped PRs with any unconfirmed row are reported and never closed.
+Lists open Dependabot PRs in repos with a GitHub remote (via `gh`) and marks each one superseded when the local lockfile or manifest already has that version. `--close` closes superseded PRs with a comment. Only lockfile-parser matches count; text-search matches, unparseable titles, and grouped PRs with any unconfirmed row are reported and never closed. A PR stays open while any locked copy of the package is still between its from and to versions, and `--close` closes nothing in a checkout that has uncommitted changes or commits not on its remote default branch.
 
 ## Exit codes
 
