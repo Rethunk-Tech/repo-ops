@@ -221,6 +221,27 @@ def test_actions_only_repo_commits(tmp_path: Path, init_git_repo) -> None:
     assert "chore(ci)" in plan.message
 
 
+def test_commit_timeout_is_a_failed_outcome_not_a_crash(
+    tmp_path: Path, init_git_repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
+    (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
+    hook = tmp_path / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nsleep 5\n", encoding="utf-8")
+    hook.chmod(0o755)
+    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
+    plan = post_apply_commit.plan_repo_commit(bundle)
+    real = post_apply_commit.run_git
+    monkeypatch.setattr(
+        post_apply_commit,
+        "run_git",
+        lambda repo, *a, **kw: real(repo, *a, **{**kw, "timeout": 1}),
+    )
+    outcome = post_apply_commit.execute_commit_plan(plan)
+    assert outcome.status == "failed"
+    assert "timed out" in (outcome.detail or "")
+
+
 def test_conventional_commit_writes(tmp_path: Path, init_git_repo) -> None:
     bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
     lock = tmp_path / "package-lock.json"

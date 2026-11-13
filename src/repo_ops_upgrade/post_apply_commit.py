@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -590,6 +591,15 @@ def _resync_index_to_head(repo: Path) -> None:
 
 
 def execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
+    # A commit hook that outlasts the git timeout must fail this repo only; an
+    # escaping exception aborts every other repo's commit and the report.
+    try:
+        return _execute_commit_plan(plan)
+    except (subprocess.SubprocessError, OSError) as exc:
+        return CommitOutcome(plan.git_repo, plan.label, "failed", detail=str(exc))
+
+
+def _execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
     if plan.skipped_reason:
         return CommitOutcome(
             plan.git_repo,
