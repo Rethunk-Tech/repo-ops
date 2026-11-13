@@ -61,8 +61,11 @@ def is_git_dirty(repo: Path | str) -> bool:
     own dirty check); counting it here would skip an umbrella parent whenever a
     child had just been upgraded in the same run. Moved gitlinks still count.
     """
-    proc = run_git(repo, "status", "--porcelain", "--ignore-submodules=dirty", timeout=30)
-    return proc.returncode == 0 and bool(proc.stdout.strip())
+    try:
+        proc = run_git(repo, "status", "--porcelain", "--ignore-submodules=dirty", timeout=30)
+    except subprocess.TimeoutExpired:
+        return True
+    return proc.returncode != 0 or bool(proc.stdout.strip())
 
 
 def repo_label(repo: Path | str, roots: list[str]) -> str:

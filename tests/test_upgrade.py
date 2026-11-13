@@ -95,6 +95,34 @@ def test_is_git_dirty_clean_repo(tmp_path):
     assert is_git_dirty(tmp_path) is False
 
 
+def test_is_git_dirty_status_failure_skips_apply(tmp_path):
+    from unittest.mock import patch
+
+    from repo_ops_core.git import is_git_dirty
+    from repo_ops_models import Workspace, WorkspaceResult
+    from repo_ops_upgrade.orchestration import process_workspace
+
+    failed = subprocess.CompletedProcess(["git", "status"], 128, stdout="", stderr="index.lock")
+    with patch("repo_ops_core.git.run_git", return_value=failed):
+        assert is_git_dirty(tmp_path) is not False
+        ws = Workspace(
+            path=tmp_path,
+            ecosystem="node",
+            manager="npm",
+            git_repo=tmp_path,
+            label="demo",
+        )
+        with patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace") as apply_ws:
+            out = process_workspace(
+                WorkspaceResult(workspace=ws),
+                do_apply=True,
+                do_verify=False,
+                allow_dirty=False,
+            )
+        assert out.status == "skip"
+        apply_ws.assert_not_called()
+
+
 def test_is_git_dirty_ignores_dirty_submodule_content(tmp_path):
     from repo_ops_core.git import is_git_dirty
 
