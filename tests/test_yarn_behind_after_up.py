@@ -58,6 +58,15 @@ def test_behind_after_up_reports_packages_left_behind(tmp_path: Path, monkeypatc
     assert behind == [Change("@sentry/nextjs", "10.55.0", "10.56.0")]
 
 
+def test_behind_after_up_reports_a_prerelease_behind_its_release(tmp_path: Path) -> None:
+    _seed(tmp_path)
+    lock = _YARN_LOCK.replace("version: 16.2.7", "version: 16.2.7-canary.3")
+    (tmp_path / "yarn.lock").write_text(lock, encoding="utf-8")
+    with patch("repo_ops_js_yarn.yarn.run", side_effect=_info_run):
+        behind = behind_after_up(tmp_path)
+    assert Change("next", "16.2.7-canary.3", "16.2.7") in behind
+
+
 def test_behind_after_up_resilient_to_info_failure(tmp_path: Path, monkeypatch) -> None:
     _seed(tmp_path)
     fail = MagicMock(returncode=1, stdout="", stderr="ENOTFOUND")

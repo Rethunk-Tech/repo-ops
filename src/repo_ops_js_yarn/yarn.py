@@ -18,7 +18,7 @@ from repo_ops_core.constants import TIMEOUT_APPLY
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.holds import target_within_hold
 from repo_ops_core.process import run as _process_run
-from repo_ops_core.version_utils import semver_tuple
+from repo_ops_core.version_utils import semver_precedence
 from repo_ops_js.guards import (
     fold_blocked_into_behind,
     unresolved_targets,
@@ -342,7 +342,7 @@ def _resolved_versions(lock_path: Path) -> dict[str, str]:
             continue
         prev = resolved.get(name)
         try:
-            if prev is None or semver_tuple(ver) > semver_tuple(prev):
+            if prev is None or semver_precedence(ver) > semver_precedence(prev):
                 resolved[name] = ver
         except (TypeError, ValueError):
             resolved.setdefault(name, ver)
@@ -393,7 +393,7 @@ def behind_after_up(mdir: Path, *, ws: Workspace | None = None) -> list[Change]:
         if not latest or latest == cur:
             continue
         try:
-            if semver_tuple(latest) > semver_tuple(cur):
+            if semver_precedence(latest) > semver_precedence(cur):
                 behind.append(Change(name, cur, latest))
         except (TypeError, ValueError):
             continue
@@ -564,7 +564,7 @@ def _plan_without_resolutions(ws: Workspace) -> list[Change]:
         if not after_ver or not before_ver or after_ver == before_ver:
             continue
         try:
-            moved_up = semver_tuple(after_ver) > semver_tuple(before_ver)
+            moved_up = semver_precedence(after_ver) > semver_precedence(before_ver)
         except (TypeError, ValueError):
             moved_up = True
         if moved_up:
