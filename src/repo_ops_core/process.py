@@ -105,7 +105,7 @@ def isolate_user_config(scratch: Path) -> None:
 
 
 def _tool_cache_dirs() -> list[str]:
-    """Host paths of Go, bun, npm and uv caches that builds need to write."""
+    """Host paths that builds need to write: Go, bun, npm and uv caches, and gate's own dirs."""
     found: list[str] = []
     seen: set[str] = set()
 
@@ -147,6 +147,16 @@ def _tool_cache_dirs() -> list[str]:
             add(bun_out)
         else:
             add(str(Path(os.environ.get("HOME") or Path.home()) / ".bun" / "install" / "cache"))
+    if shutil.which("gate"):
+        # gate's child TMPDIR and logs default to /var/tmp; results and locks live in its XDG dirs.
+        home = Path(os.environ.get("HOME") or Path.home())
+        add(os.environ.get("GATE_TMPDIR") or "/var/tmp")
+        if os.environ.get("TMPDIR"):
+            add(str(Path(os.environ["TMPDIR"]) / "gate"))
+        state = os.environ.get("XDG_STATE_HOME", "")
+        add(str((Path(state) if Path(state).is_absolute() else home / ".local" / "state") / "gate"))
+        cache = os.environ.get("XDG_CACHE_HOME", "")
+        add(str((Path(cache) if Path(cache).is_absolute() else home / ".cache") / "gate"))
     uv_cache = os.environ.get("UV_CACHE_DIR")
     if uv_cache:
         add(uv_cache)
@@ -155,7 +165,19 @@ def _tool_cache_dirs() -> list[str]:
     return found
 
 
-def _sandboxed_argv(cmd: list[str], cwd: Path) -> list[str]:
+def _host_tmp_reads(cwd: str, path_env: str) -> list[str]:
+    """Host ``/tmp`` paths the command still reads under the tmpfs: PATH tools, and the tree above *cwd*."""
+    tmp = Path("/tmp")  # noqa: S108
+    reads = [
+        p for p in path_env.split(os.pathsep) if p and tmp in Path(p).parents and Path(p).is_dir()
+    ]
+    cwd_path = Path(cwd)
+    if tmp in cwd_path.parents:
+        reads.append(str(tmp / cwd_path.relative_to(tmp).parts[0]))
+    return list(dict.fromkeys(reads))
+
+
+def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
     """Wrap *cmd* in bubblewrap: repo writable, ``/`` and ``$HOME`` read-only.
 
     Tool caches are writable binds. ``/tmp`` is a tmpfs. Network stays shared.
@@ -185,13 +207,15 @@ def _sandboxed_argv(cmd: list[str], cwd: Path) -> list[str]:
         "--die-with-parent",
     ]
     # tmpfs hides host /tmp; recreate dest parents so later binds succeed.
-    argv.extend(_tmp_parent_dirs([home, cwd_s, *caches, *isolated]))
-    argv.extend(["--ro-bind", home, home])
-    for cache in caches:
-        argv.extend(["--bind", cache, cache])
-    argv.extend(["--bind", cwd_s, cwd_s])
-    for path in isolated:
-        argv.extend(["--bind", path, path])
+    tmp_reads = _host_tmp_reads(cwd_s, path_env)
+    argv.extend(_tmp_parent_dirs([home, cwd_s, *tmp_reads, *caches, *isolated]))
+    # Overlay, not a bind, for host /tmp reads: files show through, writes still land in the tmpfs.
+    mounts = [(p, ["--overlay-src", p, "--tmp-overlay", p]) for p in tmp_reads]
+    mounts.append((home, ["--ro-bind", home, home]))
+    mounts += [(p, ["--bind", p, p]) for p in [*caches, cwd_s, *isolated]]
+    # Parents first, so the more specific mount wins wherever one path holds another.
+    for _, flags in sorted(mounts, key=lambda m: len(Path(m[0]).parts)):
+        argv.extend(flags)
     argv.append("--")
     argv.extend(cmd)
     return argv
@@ -240,7 +264,7 @@ def run(
     else:
         # Isolation wins over a verify/apply env that names the operator's files.
         merged.update(_ISOLATED_ENV)
-        argv = _sandboxed_argv(cmd, cwd_path)
+        argv = _sandboxed_argv(cmd, cwd_path, merged.get("PATH", ""))
     proc = subprocess.run(
         argv,
         cwd=str(cwd_path),

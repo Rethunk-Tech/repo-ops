@@ -309,3 +309,9 @@ def _offline_go_vulndb(monkeypatch: pytest.MonkeyPatch) -> None:
 def _offline_toolchains(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep toolchain pin lookups off the network."""
     monkeypatch.setattr("repo_ops_upgrade.toolchains._fetch", lambda url: None)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_isolated_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Start each test without the seeded tool config an earlier test in this worker isolated."""
+    monkeypatch.setattr("repo_ops_core.process._ISOLATED_ENV", {})
