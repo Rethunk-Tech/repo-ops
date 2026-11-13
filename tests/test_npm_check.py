@@ -22,3 +22,12 @@ def test_check_npm_passes_timeout_check(tmp_path: Path, make_workspace) -> None:
 
     assert len(captured) == 1
     assert captured[0]["timeout"] == TIMEOUT_CHECK
+
+
+def test_latest_below_an_installed_prerelease_is_not_behind(tmp_path: Path, make_workspace) -> None:
+    # ms publishes 3.0.0-beta.2 under `beta` while `latest` is 2.1.3.
+    out = '{"ms": {"current": "3.0.0-beta.2", "wanted": "3.0.0-beta.2", "latest": "2.1.3"}}'
+    proc = type("Proc", (), {"returncode": 1, "stdout": out, "stderr": ""})()
+    with patch("repo_ops_js_npm.npm.run", return_value=proc):
+        result = check_npm(make_workspace(tmp_path, ecosystem="node", manager="npm", label="d"))
+    assert result == ([], [])

@@ -10,6 +10,7 @@ from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.holds import target_within_hold
 from repo_ops_core.process import run as _process_run
+from repo_ops_core.version_utils import semver_precedence
 from repo_ops_js.guards import (
     assert_targets_resolved,
     fold_blocked_into_behind,
@@ -185,7 +186,7 @@ def _npm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
             if cur != wanted and wanted not in ("?", ""):
                 # In-range upgrade available.
                 merge_changes(changes, [Change(name, cur, wanted)])
-            elif latest not in ("?", "") and cur != latest:
+            elif latest not in ("?", "") and semver_precedence(latest) > semver_precedence(cur):
                 # latest exceeds current but wanted == current (out-of-range).
                 merge_changes(behind_latest, [Change(name, cur, latest)])
     return changes, behind_latest
