@@ -617,6 +617,9 @@ def _run_upgrade_body(
             # (including named-root keep-on-verify-fail) still scans Actions.
             if apply and (bundle.any_dirty_skip() or bundle.git_repo in dirty_actions_only):
                 return
+            # A vetoed sweep repo was rolled back and will not commit, so new
+            # pins would be left behind as uncommitted edits: report them only.
+            apply_pins = apply and not (rollback_on_veto and bundle.any_fail())
             local_cache: dict[str, dict | None] = {}
             with _tag_cache_lock:
                 local_cache.update(run_tag_cache)
@@ -626,7 +629,7 @@ def _run_upgrade_body(
             try:
                 bumps, count = actions.scan_actions(
                     bundle.git_repo,
-                    apply=apply,
+                    apply=apply_pins,
                     tag_cache=local_cache,
                     exclude_patterns=repo_exclude or None,
                 )

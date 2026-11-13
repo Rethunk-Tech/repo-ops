@@ -311,3 +311,19 @@ def test_fleet_sweep_leaves_a_dirty_actions_only_repo_alone(tmp_path: Path, init
     (tmp_path / "notes.txt").write_text("colleague's work\n", encoding="utf-8")
 
     assert all(not applied for _, applied in _fleet_scan_calls(tmp_path))
+
+
+def test_fleet_sweep_does_not_pin_actions_in_a_vetoed_repo(tmp_path: Path, init_git_repo) -> None:
+    """The repo's commit is vetoed and its workspaces rolled back; new pins would be left dirty."""
+    _npm_workspace(tmp_path, init_git_repo=init_git_repo)
+    _workflow(tmp_path)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-qm", "init"], cwd=tmp_path, check=True
+    )
+    calls = _fleet_scan_calls(
+        tmp_path,
+        **{"repo_ops_upgrade.run.orchestration.process_workspace": {"side_effect": _fail_verify}},
+    )
+    assert calls
+    assert all(not applied for _, applied in calls)
