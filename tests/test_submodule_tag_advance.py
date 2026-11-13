@@ -28,7 +28,12 @@ from repo_ops_upgrade.submodules import (
     check_submodule_tag_advances,
     discover_submodules_under_roots,
 )
-from repo_ops_upgrade.tags import has_v_prefix, is_semver_tag, resolve_latest_tag
+from repo_ops_upgrade.tags import (
+    has_v_prefix,
+    is_semver_tag,
+    resolve_latest_tag,
+    resolve_sha_refresh,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -37,6 +42,21 @@ from repo_ops_upgrade.tags import has_v_prefix, is_semver_tag, resolve_latest_ta
 
 def test_resolve_latest_tag_does_not_upgrade_v1_0_to_v1_0_0() -> None:
     assert resolve_latest_tag("v1.0", ["v1.0", "v1.0.0"]) is None
+
+
+def test_resolve_latest_tag_never_moves_a_release_to_a_prerelease() -> None:
+    assert resolve_latest_tag("v1.9.0", ["v1.9.0", "v2.0.0-rc.1"]) is None
+
+
+def test_resolve_latest_tag_moves_a_prerelease_to_its_release() -> None:
+    assert resolve_latest_tag("v2.0.0-rc.1", ["v2.0.0-rc.1", "v2.0.0"]) == "v2.0.0"
+
+
+@pytest.mark.parametrize("prerelease", ["v2.0.0-rc.1", "v2.1.0-rc.1"])
+def test_sha_refresh_never_moves_a_release_pin_to_a_prerelease(prerelease: str) -> None:
+    release, pre = "a" * 40, "b" * 40
+    refs = [(release, "v2.0.0"), (pre, prerelease)]
+    assert resolve_sha_refresh(release, refs, context="test") is None
 
 
 @pytest.fixture(autouse=True)

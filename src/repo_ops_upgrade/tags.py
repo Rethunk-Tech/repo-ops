@@ -12,7 +12,7 @@ import os
 import re
 import subprocess
 
-from repo_ops_core.version_utils import semver_tuple
+from repo_ops_core.version_utils import semver_precedence, semver_tuple
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,24 @@ def has_v_prefix(tag: str) -> bool:
 def _padded_semver(tag: str) -> tuple[int, ...]:
     parts = semver_tuple(tag.lstrip("v"))
     return parts + (0,) * (3 - len(parts))
+
+
+def _is_release(tag: str) -> bool:
+    return re.fullmatch(r"v?\d+(?:\.\d+)*", tag) is not None
+
+
+def _rank(tag: str) -> tuple:
+    """Order by every numeric part, then SemVer precedence: a prerelease sorts below its release."""
+    return (_padded_semver(tag), *semver_precedence(tag)[1:])
+
+
+def _candidate(tag: str, current: str) -> bool:
+    """Same ``v`` style as *current*; a prerelease only when *current* is one too."""
+    return (
+        is_semver_tag(tag)
+        and has_v_prefix(tag) == has_v_prefix(current)
+        and (_is_release(tag) or not _is_release(current))
+    )
 
 
 def fetch_tag_refs(url: str, *, timeout: int) -> list[tuple[str, str]] | None:
@@ -70,28 +88,24 @@ def resolve_latest_tag(current: str, candidates: list[str]) -> str | None:
 
     Matching rules:
     - *current* must be semver-like; returns None otherwise.
-    - Candidates must share the same ``v``-prefix style as *current*.
+    - Candidates must share the same ``v``-prefix style as *current*, and are
+      prereleases only when *current* is one.
     - The best across all majors wins.
     - Returns None when already at latest, or no suitable candidate exists.
     """
     if not is_semver_tag(current):
         return None
 
-    want_v = has_v_prefix(current)
-    current_tup = _padded_semver(current)
+    current_rank = _rank(current)
 
-    scored: list[tuple[tuple[int, ...], str]] = []
-    for tag in candidates:
-        if not is_semver_tag(tag) or has_v_prefix(tag) != want_v:
-            continue
-        scored.append((_padded_semver(tag), tag))
+    scored = [(_rank(tag), tag) for tag in candidates if _candidate(tag, current)]
 
     if not scored:
         return None
     scored.sort(key=lambda item: item[0], reverse=True)
 
-    best_tup, best_tag = scored[0]
-    if best_tup <= current_tup:
+    best_rank, best_tag = scored[0]
+    if best_rank <= current_rank:
         return None  # already at latest
     return best_tag
 
@@ -126,12 +140,11 @@ def resolve_sha_refresh(
 
     if not matching:
         return None
-    _, current_tag, _ = max(matching, key=lambda item: (item[0], item[1]))
+    _, current_tag, _ = max(matching, key=lambda item: _rank(item[1]))
     current_version = _padded_semver(current_tag)
-    want_v = has_v_prefix(current_tag)
     candidates: list[tuple[tuple[int, ...], str, str]] = []
     for tag_sha, tag in refs:
-        if not is_semver_tag(tag) or has_v_prefix(tag) != want_v:
+        if not _candidate(tag, current_tag):
             continue
         try:
             tag_version = _padded_semver(tag)
@@ -142,7 +155,7 @@ def resolve_sha_refresh(
             candidates.append((tag_version, tag, tag_sha))
     if not candidates:
         return None
-    _, latest_tag, latest_sha = max(candidates, key=lambda item: (item[0], item[1]))
+    _, latest_tag, latest_sha = max(candidates, key=lambda item: _rank(item[1]))
     latest_sha_lower = latest_sha.lower()
     if latest_sha_lower == normalized or (
         len(normalized) < 40 and latest_sha_lower.startswith(normalized)
