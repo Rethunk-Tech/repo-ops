@@ -355,6 +355,7 @@ def test_apply_calls_fetch_checkout_add_for_actionable(tmp_path: Path, make_proc
             return_value=["v1.0.0", "v1.1.0"],
         ),
         patch("repo_ops_upgrade.submodules.run_git", return_value=make_proc()) as mock_git,
+        patch("repo_ops_upgrade.submodules.is_git_dirty", return_value=False),
     ):
         bumps = apply_submodule_tag_advances([link])
 
@@ -422,6 +423,7 @@ def test_apply_continues_on_fetch_failure(tmp_path: Path, make_proc, capsys) -> 
         ),
         patch("repo_ops_upgrade.submodules._fetch_remote_tags", side_effect=_fake_fetch),
         patch("repo_ops_upgrade.submodules.run_git", side_effect=call_seq),
+        patch("repo_ops_upgrade.submodules.is_git_dirty", return_value=False),
     ):
         bumps = apply_submodule_tag_advances([link_a, link_b])
 

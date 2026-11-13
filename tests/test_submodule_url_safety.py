@@ -93,6 +93,7 @@ def test_apply_fetch_isolates_malicious_url(tmp_path: Path, malicious_url: str, 
             return_value=["v1.0.0", "v1.1.0"],
         ),
         patch("repo_ops_upgrade.submodules.run_git", return_value=make_proc()) as mock_git,
+        patch("repo_ops_upgrade.submodules.is_git_dirty", return_value=False),
     ):
         bumps = apply_submodule_tag_advances([link])
 
