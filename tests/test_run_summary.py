@@ -212,3 +212,17 @@ def test_actions_summary_dedupes_bumps_by_action_pin(tmp_path: Path) -> None:
     )
 
     assert bundle.actions_summary()["bumps"] == 1
+
+
+def test_first_error_line_skips_gate_header() -> None:
+    from repo_ops_upgrade.run import _first_error_line
+
+    text = (
+        "gate: FAIL exit 1  bun run lint  279ms\n"
+        "--- last 40 line(s) ---\n"
+        "    24 24 │     let current = p\n"
+        "src/a.ts:3:1 lint/style error boom\n"
+    )
+    assert _first_error_line(text) == "src/a.ts:3:1 lint/style error boom"
+    assert _first_error_line("gate: FAIL exit 1  x  1s\nplain") == "gate: FAIL exit 1  x  1s"
+    assert _first_error_line("only one") == "only one"

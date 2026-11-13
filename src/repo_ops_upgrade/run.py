@@ -7,6 +7,7 @@ import concurrent.futures
 import contextlib
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -167,14 +168,20 @@ def _cli_flag(args: object, name: str) -> bool:
     return getattr(args, name, False) is True
 
 
+_ERROR_LINE = re.compile(r"\S+:\d+(?::\d+)?\b|\b(?:error|FAIL|panic|failed)\b|[×✗]", re.I)
+
+
 def _first_error_line(text: str | None) -> str:
     if not text:
         return ""
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped:
-            return stripped
-    return ""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return ""
+    # gate's header names the step; the cause is the first file:line or error line below it.
+    for line in lines[1:]:
+        if _ERROR_LINE.search(line):
+            return line
+    return lines[0]
 
 
 def _runs_root() -> Path:

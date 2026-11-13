@@ -85,10 +85,26 @@ def test_workspace_result_to_json_truncates_verify_error(tmp_path: Path, make_wo
         verify_error="x" * (models_mod.VERIFY_ERROR_MAX + 40),
     )
     payload = wr.to_json()
-    assert payload["verify_error"].endswith("...")
-    assert len(payload["verify_error"]) == models_mod.VERIFY_ERROR_MAX
+    assert "..." in payload["verify_error"]
+    assert len(payload["verify_error"]) <= models_mod.VERIFY_ERROR_MAX
     wr.verify_error = "Authorization: secret-token-value"
     assert "secret-token-value" not in wr.to_json()["verify_error"]
+
+
+def test_workspace_result_to_json_keeps_header_and_error_tail(
+    tmp_path: Path, make_workspace
+) -> None:
+    header = "gate: FAIL exit 1  bun run lint  279ms"
+    body = "\n".join(f"noise line {i}" for i in range(400))
+    wr = WorkspaceResult(
+        workspace=make_workspace(tmp_path, ecosystem="py", manager="uv", label=""),
+        status="fail",
+        verify_error=f"{header}\n{body}\nsrc/a.ts:3:1 error boom",
+    )
+    out = wr.to_json()["verify_error"]
+    assert out.startswith(header)
+    assert out.endswith("src/a.ts:3:1 error boom")
+    assert len(out) <= models_mod.VERIFY_ERROR_MAX
 
 
 def test_action_bump_to_json_optional_detail() -> None:

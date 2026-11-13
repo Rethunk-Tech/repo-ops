@@ -8,7 +8,7 @@ from typing import Any
 
 from repo_ops_core.tee import redact_secrets
 
-VERIFY_ERROR_MAX = 256
+VERIFY_ERROR_MAX = 2048
 
 # Shared marker substring for the dirty-worktree skip error message. Producers
 # that set WorkspaceResult.error for a dirty-skip (e.g. repo_ops_upgrade's
@@ -92,7 +92,9 @@ class WorkspaceResult:
         if self.verify_error is not None:
             err = redact_secrets(self.verify_error)
             if len(err) > VERIFY_ERROR_MAX:
-                err = err[: VERIFY_ERROR_MAX - 3] + "..."
+                # Keep the header line (names the step) and the tail (holds the error).
+                head = err.splitlines()[0][:200]
+                err = f"{head}\n...\n{err[-(VERIFY_ERROR_MAX - len(head) - 5) :]}"
             out["verify_error"] = err
         if self.verify_fail_disposition is not None:
             out["verify_fail_disposition"] = self.verify_fail_disposition
