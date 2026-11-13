@@ -221,8 +221,7 @@ def _compose_build_dockerfiles(compose_path: Path) -> list[Path]:
 _FROM_RE = re.compile(
     r"^FROM\s+"
     r"(?:--platform=\S+\s+)?"  # optional --platform=...
-    r"(?P<image>[^\s:@]+)"  # image name (no tag/digest/space)
-    r"(?::(?P<tag>[^\s@]+))?"  # optional :tag
+    r"(?P<image>[^\s@#]+)"  # image[:tag], including host:port/repo
     r"(?:@(?P<sha>sha256:[0-9a-fA-F]+))?"  # optional @sha256:...
     r"(?:\s+AS\s+\S+)?"  # optional AS <stage>
     r"(?:\s*#.*)?"  # optional trailing comment
@@ -232,6 +231,15 @@ _FROM_RE = re.compile(
 
 # Reserved identifiers that are not real image names
 _SCRATCH_NAMES = frozenset({"scratch"})
+
+
+def _split_image_tag(ref: str) -> tuple[str, str | None]:
+    """Split ``host:port/repo:tag`` on the tag colon, not a registry port."""
+    slash = ref.rfind("/")
+    colon = ref.rfind(":")
+    if colon > slash:
+        return ref[:colon], ref[colon + 1 :]
+    return ref, None
 
 
 def _parse_from_lines(text: str) -> list[dict[str, Any]]:
@@ -254,8 +262,7 @@ def _parse_from_lines(text: str) -> list[dict[str, Any]]:
         m = _FROM_RE.match(line)
         if not m:
             continue
-        image = m.group("image")
-        tag = m.group("tag")
+        image, tag = _split_image_tag(m.group("image"))
         sha = m.group("sha")
 
         is_stage_ref = image.lower() in _SCRATCH_NAMES or image.lower() in defined_stages
@@ -282,8 +289,7 @@ def _parse_from_lines(text: str) -> list[dict[str, Any]]:
 # Matches «image: nginx:1.25-alpine» or «image: "nginx:1.25"»
 _COMPOSE_IMAGE_RE = re.compile(
     r'^(?P<indent>[ \t]*)image:\s*["\']?'
-    r'(?P<image>[^\s:"\']+)'
-    r'(?::(?P<tag>[^\s@"\']+))?'
+    r'(?P<image>[^\s@"\'#]+)'
     r"(?:@(?P<sha>sha256:[0-9a-fA-F]+))?"
     r'["\']?'
     r"(?:\s*#.*)?"
@@ -302,8 +308,7 @@ def _parse_compose_images(text: str) -> list[dict[str, Any]]:
         m = _COMPOSE_IMAGE_RE.match(line)
         if not m:
             continue
-        image = m.group("image")
-        tag = m.group("tag")
+        image, tag = _split_image_tag(m.group("image"))
         sha = m.group("sha")
         results.append(
             {
