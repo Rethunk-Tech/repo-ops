@@ -105,7 +105,7 @@ def isolate_user_config(scratch: Path) -> None:
 
 
 def _tool_cache_dirs() -> list[str]:
-    """Host paths that builds need to write: Go, bun, npm and uv caches, and gate's own dirs."""
+    """Host paths that builds need to write: Go, bun, npm, uv and cargo caches, and gate's own dirs."""
     found: list[str] = []
     seen: set[str] = set()
 
@@ -162,6 +162,16 @@ def _tool_cache_dirs() -> list[str]:
         add(uv_cache)
     elif shutil.which("uv"):
         add(tool_out(["uv", "cache", "dir"]))
+    if shutil.which("uv"):
+        # uvx stages its temp files in the tool dir.
+        add(os.environ.get("UV_TOOL_DIR") or tool_out(["uv", "tool", "dir"]))
+    if shutil.which("cargo"):
+        # Registry and git checkouts only: ~/.cargo/bin stays read-only.
+        cargo_home = Path(
+            os.environ.get("CARGO_HOME") or Path(os.environ.get("HOME") or Path.home()) / ".cargo"
+        )
+        add(str(cargo_home / "registry"))
+        add(str(cargo_home / "git"))
     return found
 
 
