@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -62,6 +63,9 @@ class CommitPlan:
     message: str
     files: list[str] = field(default_factory=list)
     skipped_reason: str | None = None
+    # Content of each file when planned, so a retried commit can refuse a file
+    # someone has changed since.
+    hashes: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -72,6 +76,7 @@ class CommitOutcome:
     message: str | None = None
     files: list[str] = field(default_factory=list)
     detail: str | None = None
+    hashes: dict[str, str] = field(default_factory=dict)
 
 
 def is_forbidden_commit_path(path: str) -> bool:
@@ -343,6 +348,17 @@ def porcelain_changed_paths(repo: Path) -> list[str]:
     return _parse_porcelain(proc.stdout)
 
 
+def content_hash(repo: Path, rel: str) -> str:
+    """What a commit of *rel* would record: file bytes, a gitlink's HEAD, or absence."""
+    p = repo / rel
+    if p.is_dir():
+        return "gitlink:" + run_git(p, "rev-parse", "HEAD", timeout=30).stdout.strip()
+    if not p.is_file():
+        return "absent"
+    with p.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
+
+
 def filter_safe_paths(paths: list[str]) -> tuple[list[str], list[str]]:
     safe: list[str] = []
     blocked: list[str] = []
@@ -586,7 +602,13 @@ def plan_repo_commit(
         )
     if not safe:
         return CommitPlan(repo, bundle.label, "", skipped_reason="no safe paths to stage")
-    return CommitPlan(repo, bundle.label, build_conventional_message(bundle, safe), files=safe)
+    return CommitPlan(
+        repo,
+        bundle.label,
+        build_conventional_message(bundle, safe),
+        files=safe,
+        hashes={rel: content_hash(repo, rel) for rel in safe},
+    )
 
 
 def _resync_index_to_head(repo: Path) -> None:
@@ -628,6 +650,7 @@ def _execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
                 message=plan.message,
                 files=plan.files,
                 detail=f"git add {path!r}: {err}",
+                hashes=plan.hashes,
             )
     # Pathspec-limited: anything someone else already staged stays staged and
     # out of repo-ops' commit.
@@ -651,6 +674,7 @@ def _execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
             message=plan.message,
             files=plan.files,
             detail=err,
+            hashes=plan.hashes,
         )
     _resync_index_to_head(plan.git_repo)
     return CommitOutcome(

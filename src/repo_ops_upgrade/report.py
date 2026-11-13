@@ -344,7 +344,11 @@ def build_json_payload(
                 "status": c.status,
                 "detail": c.detail,
                 # A failed commit keeps its plan so --retry-failed can re-attempt it.
-                **({"message": c.message, "files": c.files} if c.status == "failed" else {}),
+                **(
+                    {"message": c.message, "files": c.files, "hashes": c.hashes}
+                    if c.status == "failed"
+                    else {}
+                ),
             }
             for c in commits
         ]

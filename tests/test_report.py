@@ -8,6 +8,7 @@ from typing import Any
 from unittest.mock import patch
 
 from repo_ops_models import DIRTY_SKIP_MARKER, RepoBundle, Workspace, WorkspaceResult
+from repo_ops_upgrade.post_apply_commit import content_hash
 from repo_ops_upgrade.run import (
     _digest_lines_from_payload,
     _print_dirty_skip_table,
@@ -260,6 +261,7 @@ def test_commit_failure_is_recorded_digested_and_retried(
             "detail": "signing failed",
             "message": None,
             "files": [],
+            "hashes": {},
         },
         {"repo": str(tmp_path / "ok"), "label": "ok", "status": "committed", "detail": None},
     ]
@@ -277,6 +279,7 @@ def _commit_failed_report(state: Path, repo: Path, files: list[str]) -> None:
             "detail": "signing failed",
             "message": "chore(deps): bump",
             "files": files,
+            "hashes": {f: content_hash(repo, f) for f in files},
         }
     ]
     _write_run_report(state, "20260101T000000.000000Z-apply", payload)

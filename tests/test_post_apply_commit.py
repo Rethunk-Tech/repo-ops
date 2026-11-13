@@ -14,8 +14,10 @@ from repo_ops_upgrade import post_apply_commit
 from repo_ops_upgrade.post_apply import collect_changes_after_apply
 
 
-def _bundle(tmp_path: Path, init_git_repo, *, started_dirty: bool = False) -> RepoBundle:
-    init_git_repo(tmp_path)
+def _bundle(
+    tmp_path: Path, init_git_repo, *, started_dirty: bool = False, commit: bool = False
+) -> RepoBundle:
+    init_git_repo(tmp_path, commit=commit)
     ws = Workspace(
         path=tmp_path,
         ecosystem="node",
@@ -1192,3 +1194,23 @@ def test_a_hook_that_rewrites_files_leaves_nothing_staged(tmp_path: Path, init_g
     assert (
         subprocess.run([*git, "status", "--porcelain"], capture_output=True, text=True).stdout == ""
     )
+
+
+def test_commit_retry_refuses_a_file_edited_since_apply(tmp_path: Path, init_git_repo) -> None:
+    from repo_ops_upgrade import report, run
+
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo, commit=True)
+    lock = tmp_path / "package-lock.json"
+    lock.write_text('{"v":2}', encoding="utf-8")
+    hook = tmp_path / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
+    outcome = post_apply_commit.execute_commit_plan(post_apply_commit.plan_repo_commit(bundle))
+    assert outcome.status == "failed"
+    hook.unlink()
+    payload = report.build_json_payload({}, roots=[], mode="apply", commits=[outcome])
+
+    assert len(run._commit_only_plans(run._retry_commit_plans(payload))) == 1
+    lock.write_text('{"v":2,"someone":"else"}', encoding="utf-8")
+    assert run._commit_only_plans(run._retry_commit_plans(payload)) == []

@@ -294,8 +294,13 @@ def _retry_commit_plans(payload: object) -> dict[Path, post_apply_commit.CommitP
         files, message = c.get("files"), c.get("message")
         if files and message and c.get("repo"):
             repo = Path(str(c["repo"]))
+            hashes = c.get("hashes")
             plans[repo.resolve()] = post_apply_commit.CommitPlan(
-                repo, str(c.get("label") or repo.name), str(message), list(files)
+                repo,
+                str(c.get("label") or repo.name),
+                str(message),
+                list(files),
+                hashes=dict(hashes) if isinstance(hashes, dict) else {},
             )
     return plans
 
@@ -311,7 +316,20 @@ def _commit_only_plans(
     retry_commits: dict[Path, post_apply_commit.CommitPlan],
 ) -> list[post_apply_commit.CommitPlan]:
     """Failed commits whose checkout holds exactly the edits that commit was to record."""
-    return [plan for repo, plan in retry_commits.items() if _dirty_paths(repo) == set(plan.files)]
+    plans = []
+    for repo, plan in retry_commits.items():
+        if _dirty_paths(repo) != set(plan.files):
+            continue
+        changed = [
+            f
+            for f in plan.files
+            if plan.hashes.get(f) != post_apply_commit.content_hash(plan.git_repo, f)
+        ]
+        if changed:
+            print(f"[commit skip] {plan.label}: changed since apply: {', '.join(changed)}")
+            continue
+        plans.append(plan)
+    return plans
 
 
 def _print_report_digest(report_path: Path) -> None:
