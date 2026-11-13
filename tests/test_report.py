@@ -208,7 +208,7 @@ def test_apply_retry_failed_reruns_only_failed_and_skipped_paths(
 
     got = {Path(p).resolve() for p in captured["roots"]}
     assert got == {failed.resolve(), skipped.resolve()}
-    assert captured["fleet"] is False
+    assert captured["fleet"] is True
     assert {Path(p).resolve() for p in captured["retry_paths"]} == got
 
 

@@ -748,7 +748,9 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
             return 0
         args.retry_paths = retry_paths
         roots = resolve_scan_roots(retry_paths, parser)
-        fleet = False
+        # A retry is still a sweep: it must skip dirty checkouts, honor excludes
+        # and archived repos, and revert a failed verify, as the run it retries did.
+        fleet = True
     if args.jobs is None:
         args.jobs = _default_jobs()
     _cap_child_cpu(args.jobs)
