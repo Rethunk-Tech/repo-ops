@@ -338,7 +338,14 @@ def build_json_payload(
         payload["exit_code"] = exit_code
     if commits is not None:
         payload["commits"] = [
-            {"repo": str(c.git_repo), "label": c.label, "status": c.status, "detail": c.detail}
+            {
+                "repo": str(c.git_repo),
+                "label": c.label,
+                "status": c.status,
+                "detail": c.detail,
+                # A failed commit keeps its plan so --retry-failed can re-attempt it.
+                **({"message": c.message, "files": c.files} if c.status == "failed" else {}),
+            }
             for c in commits
         ]
     if submodules is not None:

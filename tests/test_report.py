@@ -253,8 +253,73 @@ def test_commit_failure_is_recorded_digested_and_retried(
     payload = build_json_payload(bundles, roots=[], mode="apply", commits=outcomes)
 
     assert payload["commits"] == [
-        {"repo": str(repo), "label": "r", "status": "failed", "detail": "signing failed"},
+        {
+            "repo": str(repo),
+            "label": "r",
+            "status": "failed",
+            "detail": "signing failed",
+            "message": None,
+            "files": [],
+        },
         {"repo": str(tmp_path / "ok"), "label": "ok", "status": "committed", "detail": None},
     ]
     assert _digest_lines_from_payload(payload) == [f"commit-fail {repo}  signing failed"]
     assert _retry_paths_from_payload(payload) == [str(repo)]
+
+
+def _commit_failed_report(state: Path, repo: Path, files: list[str]) -> None:
+    payload = _payload()
+    payload["commits"] = [
+        {
+            "repo": str(repo),
+            "label": "r",
+            "status": "failed",
+            "detail": "signing failed",
+            "message": "chore(deps): bump",
+            "files": files,
+        }
+    ]
+    _write_run_report(state, "20260101T000000.000000Z-apply", payload)
+
+
+def _retry_commit_only(tmp_path: Path, init_git_repo: Any, monkeypatch: Any, extra_dirt: bool):
+    from repo_ops_upgrade import post_apply_commit as pac
+
+    repo = tmp_path / "r"
+    init_git_repo(repo, commit=True)
+    (repo / "package.json").write_text('{"name": "r"}\n', encoding="utf-8")
+    run_git_add = __import__("subprocess").run
+    run_git_add(["git", "-C", str(repo), "add", "package.json"], check=True)
+    run_git_add(["git", "-C", str(repo), "commit", "-qm", "init"], check=True)
+    (repo / "package.json").write_text('{"name": "r", "version": "2"}\n', encoding="utf-8")
+    if extra_dirt:
+        (repo / "notes.txt").write_text("mine\n", encoding="utf-8")
+    state = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state))
+    _commit_failed_report(state, repo, ["package.json"])
+    plans: list[Any] = []
+
+    def _execute(plan: Any) -> Any:
+        plans.append(plan)
+        return pac.CommitOutcome(plan.git_repo, plan.label, "committed", files=plan.files)
+
+    def _no_reapply(*_: Any, **__: Any) -> None:
+        raise AssertionError("a commit retry must not re-apply")
+
+    monkeypatch.setattr(pac, "execute_commit_plan", _execute)
+    monkeypatch.setattr("repo_ops_upgrade.registry.apply_workspace", _no_reapply)
+    main_apply(["--retry-failed"])
+    return plans
+
+
+def test_retry_recommits_a_commit_failed_repo_whose_only_dirt_is_its_own_edits(
+    tmp_path: Path, init_git_repo: Any, monkeypatch: Any
+) -> None:
+    plans = _retry_commit_only(tmp_path, init_git_repo, monkeypatch, extra_dirt=False)
+    assert [(p.message, p.files) for p in plans] == [("chore(deps): bump", ["package.json"])]
+
+
+def test_retry_still_skips_a_commit_failed_repo_with_foreign_dirt(
+    tmp_path: Path, init_git_repo: Any, monkeypatch: Any
+) -> None:
+    assert _retry_commit_only(tmp_path, init_git_repo, monkeypatch, extra_dirt=True) == []

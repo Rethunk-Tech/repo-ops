@@ -281,6 +281,32 @@ def _retry_paths_from_payload(payload: object) -> list[str]:
     return out
 
 
+def _retry_commit_plans(payload: object) -> dict[Path, post_apply_commit.CommitPlan]:
+    plans = {}
+    for c in _failed_commits(payload):
+        files, message = c.get("files"), c.get("message")
+        if files and message and c.get("repo"):
+            repo = Path(str(c["repo"]))
+            plans[repo.resolve()] = post_apply_commit.CommitPlan(
+                repo, str(c.get("label") or repo.name), str(message), list(files)
+            )
+    return plans
+
+
+def _dirty_paths(repo: Path) -> set[str] | None:
+    proc = run_git(repo, "status", "--porcelain", "-z", "--ignore-submodules=dirty", timeout=30)
+    if proc.returncode != 0:
+        return None
+    return {e[3:] for e in proc.stdout.split("\0") if e}
+
+
+def _commit_only_plans(
+    retry_commits: dict[Path, post_apply_commit.CommitPlan],
+) -> list[post_apply_commit.CommitPlan]:
+    """Failed commits whose checkout holds exactly the edits that commit was to record."""
+    return [plan for repo, plan in retry_commits.items() if _dirty_paths(repo) == set(plan.files)]
+
+
 def _print_report_digest(report_path: Path) -> None:
     payload = json.loads(report_path.read_text())
     for line in _digest_lines_from_payload(payload):
@@ -342,6 +368,15 @@ def _run_upgrade_body(
     if retry_paths:
         want = {Path(p).resolve() for p in retry_paths}
         found = [w for w in found if w.path.resolve() in want]
+    # A commit-failed repo still holding exactly its own applied edits needs only
+    # its commit again; re-applying would sit on top of them and the dirty-skip
+    # would refuse it.
+    commit_only = (
+        _commit_only_plans(getattr(args, "retry_commits", None) or {}) if commit and fleet else []
+    )
+    if commit_only:
+        done = {p.git_repo.resolve() for p in commit_only}
+        found = [w for w in found if w.git_repo.resolve() not in done]
     manager_filter = getattr(args, "manager_filter", None)
     found = orchestration.filter_workspaces(
         found,
@@ -664,12 +699,19 @@ def _run_upgrade_body(
 
     commit_outcomes: list[post_apply_commit.CommitOutcome] | None = None
     if commit:
+        retried = []
+        for plan in commit_only:
+            outcome = post_apply_commit.execute_commit_plan(plan)
+            post_apply_commit._print_outcome(outcome)
+            retried.append(outcome)
+            if outcome.status == "failed":
+                exit_code = 1
         child_outcomes, commit_exit = post_apply_commit.run_post_apply_commits(
             bundles,
             max_workers=args.jobs,
             submodule_gitlink_map=submodule_gitlink_map if submodule_gitlink_map else None,
         )
-        commit_outcomes = child_outcomes
+        commit_outcomes = retried + child_outcomes
         if commit_exit != 0:
             exit_code = 1 if exit_code == 0 else exit_code
         # Umbrella pointer-bump commits: after all child commits complete,
@@ -752,6 +794,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     fleet = args.roots == DEFAULT_ROOTS
     retry_ref = getattr(args, "retry_failed", None)
     args.retry_paths = None
+    args.retry_commits = {}
     if apply and retry_ref is not None:
         try:
             prior_report = _resolve_report_path(retry_ref or None)
@@ -763,6 +806,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
             print("no failed or skipped packages to retry")
             return 0
         args.retry_paths = retry_paths
+        args.retry_commits = _retry_commit_plans(json.loads(prior_report.read_text()))
         roots = resolve_scan_roots(retry_paths, parser)
         # A retry is still a sweep: it must skip dirty checkouts, honor excludes
         # and archived repos, and revert a failed verify, as the run it retries did.

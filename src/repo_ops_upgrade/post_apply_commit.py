@@ -615,6 +615,8 @@ def _execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
                 plan.git_repo,
                 plan.label,
                 "failed",
+                message=plan.message,
+                files=plan.files,
                 detail=f"git add {path!r}: {err}",
             )
     # Pathspec-limited: anything someone else already staged stays staged and
@@ -636,6 +638,8 @@ def _execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
             plan.git_repo,
             plan.label,
             "failed",
+            message=plan.message,
+            files=plan.files,
             detail=err,
         )
     _resync_index_to_head(plan.git_repo)
