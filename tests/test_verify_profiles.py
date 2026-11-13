@@ -277,3 +277,35 @@ class TestVerifyTimeout:
         assert all(c["timeout"] == 77 for c in captured), (
             f"expected all timeouts=77, got {captured}"
         )
+
+
+def test_verify_timeout_names_repo_ops_toml_source(tmp_path: Path, make_workspace) -> None:
+    """A hung gate names [verify] timeout and how to raise it, not only the seconds."""
+    (tmp_path / ".gate.toml").write_text('[gates.hang]\nrun = "sleep 30"\n', encoding="utf-8")
+    (tmp_path / ".repo-ops.toml").write_text("[verify]\ntimeout = 1\n", encoding="utf-8")
+    ws = make_workspace(tmp_path, manager="rust", ecosystem="rust", label="demo")
+    err = verify_workspace(ws)
+    assert err is not None
+    assert "timed out after 1s" in err
+    assert "[verify] timeout in .repo-ops.toml" in err
+    assert "increase [verify] timeout in .repo-ops.toml" in err
+
+
+def test_verify_timeout_names_default_source(tmp_path: Path) -> None:
+    from repo_ops_upgrade.verify import _timed_run
+
+    proc = _timed_run(["sleep", "30"], tmp_path, timeout=1, source="default")
+    assert proc.returncode == 1
+    assert proc.stderr.strip() == (
+        "timed out after 1s (default; set [verify] timeout in .repo-ops.toml)"
+    )
+
+
+def test_verify_timeout_names_gate_toml_source(tmp_path: Path) -> None:
+    from repo_ops_upgrade.verify import _timed_run
+
+    proc = _timed_run(["sleep", "30"], tmp_path, timeout=1, source=".gate.toml")
+    assert proc.returncode == 1
+    assert proc.stderr.strip() == (
+        "timed out after 1s (.gate.toml; increase timeout in .gate.toml)"
+    )
