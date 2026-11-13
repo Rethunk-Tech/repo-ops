@@ -180,3 +180,42 @@ def test_rollback_vetoed_repo(
     assert passing.error == "reverted: another workspace in this repo failed"
     assert lock.read_bytes() == original
     assert other.status == other_status
+
+
+def test_rollback_vetoed_repo_prints_failing_workspace_and_foreign_list_once(
+    tmp_path: Path, init_git_repo, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Sibling skip rows share one failing-workspace line and one foreign-file list."""
+    init_git_repo(tmp_path, commit=True, filename="package-lock.json", content="{}\n")
+    lock = tmp_path / "package-lock.json"
+    original = lock.read_bytes()
+    before = capture_worktree_state(tmp_path)
+    mutated = b'{"mutated":true}\n'
+    lock.write_bytes(mutated)
+    (tmp_path / "foreign.txt").write_text("other writer\n", encoding="utf-8")
+
+    def _result(rel: str, status: str, *, edits: dict | None = None) -> WorkspaceResult:
+        path = tmp_path / rel
+        path.mkdir()
+        return WorkspaceResult(
+            workspace=Workspace(
+                path=path, ecosystem="node", manager="npm", git_repo=tmp_path, label=rel
+            ),
+            status=status,
+            owned_edits=edits or {},
+        )
+
+    edits = {
+        "package-lock.json": OwnedEdit(before=original, from_head=True, applied=mutated),
+    }
+    passing = [_result(name, "ok", edits=edits) for name in ("a", "b", "c")]
+    failed = _result("bad", "fail")
+    _rollback_vetoed_repo(tmp_path, before, [*passing, failed])
+
+    out = capsys.readouterr().out
+    assert out.count("bad failed") == 1
+    assert out.count("left in place, changed by another writer:") == 1
+    assert out.count("foreign.txt") == 1
+    for wr in passing:
+        assert wr.status == "skip"
+        assert wr.error == "reverted: another workspace in this repo failed"

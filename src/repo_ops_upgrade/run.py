@@ -99,6 +99,22 @@ def _rollback_vetoed_repo(
     foreign = tree_diff(repo, repo_before) if repo_before is not None else None
     if foreign is None:
         tree_ok = False
+    failed = [wr for wr in results if wr.status == "fail"]
+    if failed:
+        labels = []
+        for wr in failed:
+            path = wr.workspace.path
+            rel = path.relative_to(repo) if path.is_relative_to(repo) else path
+            labels.append("." if str(rel) == "." else str(rel))
+        print(
+            "skip reverted: "
+            + ", ".join(labels)
+            + " failed; other workspaces in this repo rolled back"
+        )
+    if foreign:
+        # One list for the repo; attaching it to every sibling skip row
+        # reprinted the same files once per workspace.
+        print(note_foreign_changes("", foreign).lstrip(" :"))
     for wr in results:
         if wr.status == "skip" or wr.verify_fail_disposition is not None:
             continue
@@ -106,8 +122,6 @@ def _rollback_vetoed_repo(
         if wr.status == "ok":
             wr.status = "skip"
             wr.error = "reverted: another workspace in this repo failed"
-        if foreign:
-            wr.error = note_foreign_changes(wr.error, foreign)
         wr.reverted_ok = wr.reverted_ok and tree_ok and installed_ok and not foreign
 
 
