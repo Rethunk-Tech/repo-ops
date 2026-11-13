@@ -63,3 +63,22 @@ def test_fork_with_upstream_remote_is_skipped(tmp_path: Path, capsys) -> None:
 
     assert filter_owned([fork]) == []
     assert "skipped: fork" in capsys.readouterr().out
+
+
+def test_origin_org_matches_host_exactly(tmp_path: Path) -> None:
+    from repo_ops_core.owned import origin_org
+
+    cases = {
+        "git@github.com:Rethunk-Tech/x.git": "rethunk-tech",
+        "ssh://git@github.com/Rethunk-Tech/x": "rethunk-tech",
+        "https://github.com/Rethunk-Tech/x": "rethunk-tech",
+        "https://tok@github.com/Rethunk-Tech/x": "rethunk-tech",
+        "https://evil.example/github.com/Rethunk-Tech/x": "",
+        "git@github.com.evil:Rethunk-Tech/x": "",
+        "https://github.com.evil/Rethunk-Tech/x": "",
+        "https://evil.example/dev.azure.com/Rethunk/p/_git/r": "",
+        "https://dev.azure.com/Rethunk/p/_git/r": "rethunk",
+        "git@ssh.dev.azure.com:v3/Rethunk/p/r": "rethunk",
+    }
+    for i, (url, want) in enumerate(cases.items()):
+        assert origin_org(_repo(tmp_path / f"r{i}", url)) == want, url

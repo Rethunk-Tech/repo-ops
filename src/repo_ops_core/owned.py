@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from repo_ops_core.config import load_global_config
 from repo_ops_core.git import run_git
@@ -19,7 +20,7 @@ DEFAULT_OWNED_ORGS = (
     "Totative",
 )
 
-_AZURE_RE = re.compile(r"dev\.azure\.com[:/](?:v3/)?([^/\s]+)")
+_SCP_RE = re.compile(r"^(?:[^@/\s]+@)?([^:/\s]+):(?!//)(.+)$")
 
 
 def owned_orgs() -> set[str]:
@@ -35,8 +36,19 @@ def origin_org(repo: Path) -> str | None:
     url = proc.stdout.strip() if proc.returncode == 0 else ""
     if not url:
         return None
-    m = _AZURE_RE.search(url) or re.search(r"github\.com[:/]([^/\s]+)", url)
-    return m.group(1).lower() if m else ""
+    if m := _SCP_RE.match(url):
+        host, path = m.group(1), m.group(2)
+    else:
+        parsed = urlsplit(url)
+        host, path = parsed.hostname or "", parsed.path
+    host = host.lower()
+    parts = [p for p in path.split("/") if p]
+    if host in ("dev.azure.com", "ssh.dev.azure.com"):
+        if parts[:1] == ["v3"]:
+            parts = parts[1:]
+    elif host != "github.com":
+        return ""
+    return parts[0].lower() if parts else ""
 
 
 def foreign_repos(repos: list[Path]) -> dict[Path, str]:
