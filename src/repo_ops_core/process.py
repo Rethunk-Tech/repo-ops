@@ -177,6 +177,11 @@ def _host_tmp_reads(cwd: str, path_env: str) -> list[str]:
     return list(dict.fromkeys(reads))
 
 
+def _checkout_root(cwd: Path) -> Path:
+    """The checkout holding *cwd*: an install in a workspace member writes the root lockfile."""
+    return next((d for d in (cwd, *cwd.parents) if (d / ".git").exists()), cwd)
+
+
 def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
     """Wrap *cmd* in bubblewrap: repo writable, ``/`` and ``$HOME`` read-only.
 
@@ -190,7 +195,7 @@ def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
         )
         raise FileNotFoundError(msg)
     home = os.environ.get("HOME") or str(Path.home())
-    cwd_s = str(cwd.resolve())
+    cwd_s = str(_checkout_root(cwd.resolve()))
     caches = _tool_cache_dirs()
     isolated = list(
         dict.fromkeys(str(Path(p).parent) for p in _ISOLATED_ENV.values() if Path(p).exists())
