@@ -239,6 +239,38 @@ def _cargo_dependency_tables(
     return tables
 
 
+def cargo_manifests(root: Path) -> list[Path]:
+    """Root ``Cargo.toml`` plus every ``workspace.members`` manifest not in ``workspace.exclude``."""
+    manifest = root / "Cargo.toml"
+    manifests = [manifest]
+    try:
+        workspace = tomllib.loads(manifest.read_text(encoding="utf-8")).get("workspace")
+    except (OSError, tomllib.TOMLDecodeError):
+        return manifests
+    if not isinstance(workspace, dict):
+        return manifests
+
+    def expand(key: str) -> set[Path]:
+        patterns = workspace.get(key)
+        return {
+            match.resolve()
+            for pattern in (patterns if isinstance(patterns, list) else [])
+            if isinstance(pattern, str)
+            for match in root.glob(pattern)
+        }
+
+    excluded = expand("exclude")
+    for directory in sorted(expand("members")):
+        member = directory / "Cargo.toml"
+        if (
+            member.is_file()
+            and directory not in excluded
+            and member.resolve() != manifest.resolve()
+        ):
+            manifests.append(member)
+    return manifests
+
+
 def _cargo_manifest_dependencies(
     manifest: Path,
 ) -> dict[str, list[tuple[str, str]]]:
@@ -268,8 +300,10 @@ def _cargo_latest_direct_changes_cached(
     manifest_size: int,
     manifest_digest: str,
 ) -> tuple[Change, ...]:
-    manifest = Path(workspace_path) / "Cargo.toml"
-    dependencies = _cargo_manifest_dependencies(manifest)
+    dependencies: dict[str, list[tuple[str, str]]] = {}
+    for manifest in cargo_manifests(Path(workspace_path)):
+        for name, entries in _cargo_manifest_dependencies(manifest).items():
+            dependencies.setdefault(name, []).extend(entries)
     changes: list[Change] = []
     for crate_name, entries in sorted(dependencies.items()):
         # A prerelease is only a target for a requirement that already opts into
@@ -292,16 +326,17 @@ def _cargo_latest_direct_changes_cached(
 
 
 def _cargo_latest_direct_changes(ws: Workspace) -> list[Change]:
-    manifest = (ws.path / "Cargo.toml").resolve()
-    manifest_bytes = manifest.read_bytes()
-    manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
-    stat = manifest.stat()
+    manifests = cargo_manifests(ws.path)
+    digest = hashlib.sha256()
+    for manifest in manifests:
+        digest.update(str(manifest).encode() + b"\0" + manifest.read_bytes() + b"\0")
+    stats = [manifest.stat() for manifest in manifests]
     return list(
         _cargo_latest_direct_changes_cached(
             str(ws.path.resolve()),
-            stat.st_mtime_ns,
-            stat.st_size,
-            manifest_digest,
+            max(stat.st_mtime_ns for stat in stats),
+            sum(stat.st_size for stat in stats),
+            digest.hexdigest(),
         )
     )
 
@@ -428,7 +463,7 @@ def _apply_cargo_targeted_bumps(
     ws: Workspace,
     candidates: list[Change],
 ) -> list[Change]:
-    manifest = ws.path / "Cargo.toml"
+    manifests = cargo_manifests(ws.path)
     lockfile = ws.path / "Cargo.lock"
     remaining: list[Change] = []
     for candidate in candidates:
@@ -436,22 +471,30 @@ def _apply_cargo_targeted_bumps(
         if not target_within_hold(candidate.to, rule):
             remaining.append(candidate)
             continue
-        manifest_snapshot = snapshot_file(manifest)
+        manifest_snapshots = [(manifest, snapshot_file(manifest)) for manifest in manifests]
         lock_snapshot = snapshot_file(lockfile)
         # Every requirement the new version breaks moves together: one left on
         # the old major (dev-dependencies, say) keeps the old major resolved.
-        stale = sorted(
-            {
-                req
-                for _, req in _cargo_manifest_dependencies(manifest).get(candidate.name, [])
-                if not _cargo_requirement_satisfied(candidate.to, req)
-            }
-        )
+        stale_by_manifest = [
+            (
+                manifest,
+                sorted(
+                    {
+                        req
+                        for _, req in _cargo_manifest_dependencies(manifest).get(candidate.name, [])
+                        if not _cargo_requirement_satisfied(candidate.to, req)
+                    }
+                ),
+            )
+            for manifest in manifests
+        ]
+        stale = sorted({req for _, reqs in stale_by_manifest for req in reqs})
         rewritten = [
             _replace_cargo_requirement(
                 manifest, candidate.name, req, _cargo_bumped_requirement(req, candidate.to)
             )
-            for req in stale
+            for manifest, reqs in stale_by_manifest
+            for req in reqs
         ]
         if not any(rewritten):
             remaining.append(candidate)
@@ -470,7 +513,8 @@ def _apply_cargo_targeted_bumps(
         lock_advanced = snapshot_file(lockfile) != lock_snapshot
         if proc.returncode == 0 and lock_advanced:
             continue
-        restore_file(manifest, manifest_snapshot)
+        for manifest, snapshot in manifest_snapshots:
+            restore_file(manifest, snapshot)
         restore_file(lockfile, lock_snapshot)
         remaining.append(candidate)
     return remaining

@@ -387,3 +387,47 @@ def test_requirement_rewrite_keeps_every_line_ending(tmp_path: Path) -> None:
         '[dependencies]\nitoa = "1.0.19"\nmemchr = { version = "3.0.0", default-features = false }\n'
         '\n[dependencies.serde]\nversion = "2.0.0"\nfeatures = ["derive"]\n'
     )
+
+
+def _member_workspace(tmp_path: Path) -> None:
+    (tmp_path / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["crates/*"]\nexclude = ["crates/skip"]\nresolver = "2"\n',
+        encoding="utf-8",
+    )
+    for name, dep in (
+        ("a", 'serde = "1.0"'),
+        ("b", 'regex = { version = "1.0" }'),
+        ("skip", 'rand = "0.8"'),
+    ):
+        member = tmp_path / "crates" / name
+        member.mkdir(parents=True)
+        (member / "Cargo.toml").write_text(
+            f'[package]\nname = "{name}"\nversion = "0.1.0"\n\n[dependencies]\n{dep}\n',
+            encoding="utf-8",
+        )
+
+
+def test_workspace_members_are_scanned_and_bumped(
+    tmp_path: Path, make_workspace, make_proc
+) -> None:
+    _member_workspace(tmp_path)
+    lockfile = tmp_path / "Cargo.lock"
+    lockfile.write_text("old\n", encoding="utf-8")
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
+
+    def fake_run(cmd, cwd, timeout=0):
+        if cmd[:3] == ["cargo", "update", "-p"] and "--precise" in cmd:
+            lockfile.write_text(f"{lockfile.read_text()}{cmd[3]}\n", encoding="utf-8")
+        return make_proc()
+
+    with (
+        patch("repo_ops_rust.rust.run", side_effect=fake_run),
+        patch("repo_ops_rust.rust._cargo_registry_versions", return_value=("2.0.0",)),
+    ):
+        _, behind = check_rust(ws)
+        assert sorted(change.name for change in behind) == ["regex", "serde"]
+        assert apply_rust(ws) == []
+
+    assert 'serde = "2.0.0"' in (tmp_path / "crates/a/Cargo.toml").read_text(encoding="utf-8")
+    assert 'version = "2.0.0"' in (tmp_path / "crates/b/Cargo.toml").read_text(encoding="utf-8")
+    assert 'rand = "0.8"' in (tmp_path / "crates/skip/Cargo.toml").read_text(encoding="utf-8")
