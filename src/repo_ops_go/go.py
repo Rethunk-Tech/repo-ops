@@ -539,6 +539,12 @@ def _apply_go_work_directive(ws: Workspace) -> None:
         _raise_classified(proc.stderr, "go work use failed", ws.path)
 
 
+def tidy_go_module(ws: Workspace) -> None:
+    proc = _go(["mod", "tidy"], ws.path, timeout=TIMEOUT_APPLY)
+    if proc.returncode != 0:
+        _raise_classified(proc.stderr, "go mod tidy failed", ws.path)
+
+
 def apply_go(ws: Workspace) -> None:
     # 1. Sync go.work directive first (prevents downstream go list failures).
     _apply_go_work_directive(ws)
@@ -550,8 +556,6 @@ def apply_go(ws: Workspace) -> None:
         proc = _go(["get", "--", *batch], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             _raise_classified(proc.stderr, "go get failed", ws.path)
-    proc = _go(["mod", "tidy"], ws.path, timeout=TIMEOUT_APPLY)
-    if proc.returncode != 0:
-        _raise_classified(proc.stderr, "go mod tidy failed", ws.path)
+    tidy_go_module(ws)
     _raise_on_downgrade(before, _gomod_requires(ws))
     _enforce_version_ceilings(ws)

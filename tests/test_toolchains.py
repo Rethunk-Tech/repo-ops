@@ -37,6 +37,8 @@ def _feeds(monkeypatch: pytest.MonkeyPatch) -> None:
         "https://endoflife.date/api/python.json": PY_JSON,
     }
     monkeypatch.setattr(toolchains, "_fetch", feeds.get)
+    # The pin rewrite is under test here; tests/integration covers the real tidy.
+    monkeypatch.setattr(toolchains, "tidy_go_module", lambda _ws: None)
     clear_hold_caches()
 
 

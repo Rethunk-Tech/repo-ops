@@ -22,7 +22,7 @@ from repo_ops_core.constants import TIMEOUT_CHECK
 from repo_ops_core.holds import resolve_package_hold, target_within_hold
 from repo_ops_core.http import open_url
 from repo_ops_core.version_utils import semver_tuple
-from repo_ops_go.go import go_work_dir_for
+from repo_ops_go.go import go_work_dir_for, tidy_go_module
 from repo_ops_models import Change, Workspace
 
 logger = logging.getLogger(__name__)
@@ -210,6 +210,10 @@ def apply_toolchains(ws: Workspace) -> tuple[list[Change], list[Change]]:
             pin.regex.sub(lambda m, new=new: m.group("pre") + new, text, count=1),
             encoding="utf-8",
         )
+    if any(pin.path.name == "go.mod" for pin, _, _ in moves):
+        # Past go 1.17 go.mod must list every module the build needs, so a
+        # raised directive is only valid once tidy has filled them in.
+        tidy_go_module(ws)
     return [Change(pin.label, cur, new) for pin, cur, new in moves], behind
 
 
