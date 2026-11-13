@@ -23,3 +23,13 @@ def test_explicit_caret_is_independent_of_default() -> None:
 def test_wildcard_and_empty_requirements_match() -> None:
     assert requirement_satisfied("1.0.0", "*", default_operator="^") is True
     assert requirement_satisfied("1.0.0", "", default_operator="==") is True
+
+
+def test_pep440_compatible_release_uses_all_but_last_digit() -> None:
+    assert requirement_satisfied("2.32.0", "~=2.31", default_operator="==") is True
+    assert requirement_satisfied("3.0.0", "~=2.31", default_operator="==") is False
+
+
+def test_poetry_tilde_one_component_allows_minor() -> None:
+    assert requirement_satisfied("1.9.0", "~1", default_operator="^") is True
+    assert requirement_satisfied("2.0.0", "~1", default_operator="^") is False

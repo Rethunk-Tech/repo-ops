@@ -13,6 +13,7 @@ from repo_ops_models import Workspace
 from repo_ops_py_pip_tools.pip_tools import (
     _compile_requirements,
     _pip_tools_bumped_requirement,
+    _pip_tools_latest_direct_changes,
     apply_pip_tools,
     check_pip_tools,
 )
@@ -211,6 +212,16 @@ def test_exclusive_bound_includes_latest_and_hold_skips_the_lift(
         apply_pip_tools(ws)
 
     assert req_in.read_text() == "setuptools<82\n"
+
+
+def test_pip_tools_compatible_release_is_not_a_direct_change(
+    tmp_path: Path, make_workspace
+) -> None:
+    (tmp_path / "requirements.in").write_text("requests~=2.31\n")
+    (tmp_path / "requirements.txt").write_text("requests==2.31.0\n")
+    ws = make_workspace(tmp_path, ecosystem="py", manager="pip-tools", label="demo")
+    with patch("repo_ops_py_pip_tools.pip_tools._pypi_latest", return_value="2.32.0"):
+        assert _pip_tools_latest_direct_changes(ws) == []
 
 
 def test_apply_pip_tools_missing_requirements_in_raises(tmp_path: Path, make_workspace) -> None:

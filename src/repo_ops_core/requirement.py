@@ -64,12 +64,21 @@ def requirement_satisfied(
             if raw_version == "*":
                 continue
             parts = version_parts(raw_version)
+            n = raw_version.count(".") + 1
             if operator == "^":
                 if not (candidate >= parts and candidate < _caret_upper_bound(parts)):
                     satisfied = False
                     break
-            elif operator in ("~", "~="):
-                if not (candidate >= parts and candidate < (parts[0], parts[1] + 1, 0)):
+            elif operator == "~=":
+                # PEP 440 compatible release: >= V, == V.* on all but the last digit.
+                upper = (parts[0] + 1, 0, 0) if n <= 2 else (parts[0], parts[1] + 1, 0)
+                if not (candidate >= parts and candidate < upper):
+                    satisfied = False
+                    break
+            elif operator == "~":
+                # Cargo/Poetry tilde: ~1 → <2.0.0; ~1.2 / ~1.2.3 → next minor.
+                upper = (parts[0] + 1, 0, 0) if n <= 1 else (parts[0], parts[1] + 1, 0)
+                if not (candidate >= parts and candidate < upper):
                     satisfied = False
                     break
             elif operator in ("=", "=="):
