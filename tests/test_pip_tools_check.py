@@ -282,3 +282,61 @@ def test_apply_targeted_bump_unresolvable_on_index_keeps_old_pin(tmp_path: Path)
     assert [c.name for c in remaining] == ["torch"]
     assert (tmp_path / "requirements.in").read_text() == "torch==2.14.1\n"
     assert (tmp_path / "requirements.txt").read_text() == "torch==2.14.1\n"
+
+
+_NO_SOLUTION = (
+    "  x No solution found when resolving dependencies:\n"
+    "  `-> Because there is no version of torch==2.15.0 and you require torch==2.15.0,\n"
+    "      we can conclude that your requirements are unsatisfiable.\n"
+)
+
+
+def _proc(returncode: int, stdout: str = "", stderr: str = "") -> SimpleNamespace:
+    return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+
+
+def test_check_pip_tools_holds_unsolvable_pin_and_retries(tmp_path: Path, make_workspace) -> None:
+    (tmp_path / "requirements.in").write_text("torch==2.15.0\nrequests\n")
+    (tmp_path / "requirements.txt").write_text("torch==2.14.0\nrequests==2.31.0\n")
+    seen_constraints: list[str | None] = []
+
+    def fake_run(cmd, cwd, timeout=None):
+        if "-c" not in cmd:
+            seen_constraints.append(None)
+            return _proc(1, stderr=_NO_SOLUTION)
+        seen_constraints.append(Path(cmd[cmd.index("-c") + 1]).read_text())
+        return _proc(0, stdout="torch==2.14.0\nrequests==2.32.0\n")
+
+    with (
+        patch("repo_ops_py_pip_tools.pip_tools.shutil.which", return_value="/usr/bin/uv"),
+        patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_run),
+        patch("repo_ops_py_pip_tools.pip_tools._pypi_latest", return_value=None),
+    ):
+        result = check_pip_tools(
+            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
+        )
+
+    changes = result[0] if isinstance(result, tuple) else result
+    assert [(c.name, c.to) for c in changes] == [("requests", "2.32.0")]
+    assert seen_constraints[0] is None
+    assert "torch==2.14.0" in (seen_constraints[1] or "")
+    assert not (tmp_path / ".repo-ops-holds.txt").exists()
+
+
+def test_compile_requirements_error_carries_uv_stderr(tmp_path: Path, make_workspace) -> None:
+    req_in = tmp_path / "requirements.in"
+    req_in.write_text("torch==2.15.0\n")
+    ws = make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
+
+    def fake_which(name: str) -> str | None:
+        return "/usr/bin/uv" if name == "uv" else None
+
+    with (
+        patch("repo_ops_py_pip_tools.pip_tools.shutil.which", side_effect=fake_which),
+        patch(
+            "repo_ops_py_pip_tools.pip_tools.run",
+            return_value=_proc(1, stderr=_NO_SOLUTION),
+        ),
+        pytest.raises(RuntimeError, match=r"no version of torch==2\.15\.0"),
+    ):
+        _compile_requirements(ws, tmp_path / "requirements.txt", req_in)

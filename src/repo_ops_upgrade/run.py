@@ -168,7 +168,7 @@ def _cli_flag(args: object, name: str) -> bool:
     return getattr(args, name, False) is True
 
 
-_ERROR_LINE = re.compile(r"\S+:\d+(?::\d+)?\b|\b(?:error|FAIL|panic|failed)\b|[×✗]", re.I)
+_ERROR_LINE = re.compile(r"\S+:\d+(?::\d+)?\b|\b(?:error|FAIL|panic|failed)\b|[\u00d7\u2717]", re.I)
 
 
 def _first_error_line(text: str | None) -> str:

@@ -182,6 +182,50 @@ def _with_constraints(cmd: list[str], constraints_path: Path | None) -> list[str
     return [*cmd, "-c", str(constraints_path)]
 
 
+_UNSOLVABLE_PIN_RE = re.compile(r"no version of ([A-Za-z0-9_.-]+)==")
+
+
+def _stderr_tail(text: str, limit: int = 1500) -> str:
+    text = text.strip()
+    return text if len(text) <= limit else "..." + text[-limit:]
+
+
+def _run_uv_compile(
+    ws: Workspace,
+    cmd: list[str],
+    constraints_path: Path | None,
+    *,
+    timeout: int,
+    current: dict[str, str],
+):
+    """Run a uv compile; on "No solution found" naming a pin, hold it at *current* and retry once.
+
+    A pin like ``torch==2.15.0`` that the configured index lacks makes the whole
+    resolve fail; holding just that package keeps the rest of the upgrade.
+    """
+    proc = run(_with_constraints(cmd, constraints_path), ws.path, timeout=timeout)
+    if proc.returncode == 0 or "No solution found" not in proc.stderr:
+        return proc
+    match = _UNSOLVABLE_PIN_RE.search(proc.stderr)
+    if match is None:
+        return proc
+    name = match.group(1)
+    held = current.get(name.lower().replace("_", "-"))
+    if held is None:
+        return proc
+    print(f"WARN uv could not resolve {name}; holding it at {held}", file=sys.stderr)
+    path = ws.path / ".repo-ops-holds.txt"
+    original = path.read_text(encoding="utf-8") if constraints_path is not None else ""
+    try:
+        path.write_text(f"{original}{name}=={held}\n", encoding="utf-8")
+        return run(_with_constraints(cmd, path), ws.path, timeout=timeout)
+    finally:
+        if constraints_path is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_text(original, encoding="utf-8")
+
+
 def check_pip_tools(
     ws: Workspace,
 ) -> list[Change] | tuple[list[Change], list[Change]]:
@@ -194,15 +238,15 @@ def check_pip_tools(
         current = parse_requirements_lines(req_txt.read_text(encoding="utf-8", errors="replace"))
     proposed: dict[str, str] = {}
     uv_failed = False
+    uv_stderr = ""
     with _hold_constraints_file(ws, req_in) as constraints_path:
         if shutil.which("uv"):
-            proc = run(
-                _with_constraints(
-                    [*uv_compile_command(req_txt, req_in, "-", upgrade=True), "--quiet"],
-                    constraints_path,
-                ),
-                ws.path,
+            proc = _run_uv_compile(
+                ws,
+                [*uv_compile_command(req_txt, req_in, "-", upgrade=True), "--quiet"],
+                constraints_path,
                 timeout=TIMEOUT_CHECK,
+                current=current,
             )
             # uv writes `-o -` to stdout and also to a file named `-` in cwd.
             (ws.path / "-").unlink(missing_ok=True)
@@ -210,6 +254,7 @@ def check_pip_tools(
                 proposed = parse_requirements_lines(proc.stdout)
             elif proc.returncode != 0:
                 uv_failed = True
+                uv_stderr = proc.stderr
                 print(
                     f"WARN uv pip compile failed: {proc.stderr.strip()}",
                     file=sys.stderr,
@@ -246,7 +291,9 @@ def check_pip_tools(
                 raise RuntimeError(proc.stderr.strip() or "pip-compile failed")
     if not proposed:
         if uv_failed and not shutil.which("pip-compile"):
-            raise RuntimeError("pip-compile not on PATH and uv pip compile failed")
+            raise RuntimeError(
+                f"pip-compile not on PATH and uv pip compile failed: {_stderr_tail(uv_stderr)}"
+            )
         return [], _pip_tools_latest_direct_changes(ws)
     changes: list[Change] = []
     for pkg in sorted(set(current) | set(proposed)):
@@ -264,27 +311,30 @@ def _compile_requirements(
     constraints_path: Path | None = None,
     upgrade_package: str | None = None,
 ) -> None:
+    uv_stderr = ""
     if shutil.which("uv"):
-        proc = run(
-            _with_constraints(
-                [
-                    *uv_compile_command(out, req_in, str(out), upgrade=True),
-                    *(
-                        ["--upgrade-package", upgrade_package]
-                        if upgrade_package is not None
-                        else []
-                    ),
-                ],
-                constraints_path,
-            ),
-            ws.path,
+        proc = _run_uv_compile(
+            ws,
+            [
+                *uv_compile_command(out, req_in, str(out), upgrade=True),
+                *(["--upgrade-package", upgrade_package] if upgrade_package is not None else []),
+            ],
+            constraints_path,
             timeout=TIMEOUT_APPLY,
+            current=(
+                parse_requirements_lines(out.read_text(encoding="utf-8", errors="replace"))
+                if out.exists()
+                else {}
+            ),
         )
         if proc.returncode == 0:
             return
+        uv_stderr = proc.stderr
         print(f"WARN uv pip compile failed: {proc.stderr.strip()}", file=sys.stderr)
     if not shutil.which("pip-compile"):
-        raise RuntimeError("pip-compile not on PATH and uv pip compile failed")
+        raise RuntimeError(
+            f"pip-compile not on PATH and uv pip compile failed: {_stderr_tail(uv_stderr)}"
+        )
     proc = run(
         _with_constraints(
             [
