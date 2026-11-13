@@ -37,6 +37,7 @@ def _feeds(monkeypatch: pytest.MonkeyPatch) -> None:
         "https://endoflife.date/api/python.json": PY_JSON,
     }
     monkeypatch.setattr(toolchains, "_fetch", feeds.get)
+    monkeypatch.setattr(toolchains, "_local_go_version", lambda: "1.27.3")
     # The pin rewrite is under test here; tests/integration covers the real tidy.
     monkeypatch.setattr(toolchains, "tidy_go_module", lambda _ws: None)
     clear_hold_caches()
@@ -55,6 +56,23 @@ def test_go_raises_directive_and_toolchain_keeping_precision(tmp_path: Path) -> 
     ]
     assert behind == []
     assert (tmp_path / "go.mod").read_text() == "module m\n\ngo 1.27.3\n\ntoolchain go1.27.3\n"
+
+
+def test_go_directive_caps_at_local_toolchain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A published Go newer than ``go env GOVERSION`` must not raise the directive past local."""
+    monkeypatch.setattr(
+        toolchains,
+        "_fetch",
+        lambda url: (
+            json.dumps([{"version": "go1.99.0", "stable": True}]) if "go.dev/dl" in url else None
+        ),
+    )
+    (tmp_path / "go.mod").write_text("module m\n\ngo 1.27.2\n")
+    changes, behind = toolchains.plan_toolchains(_ws(tmp_path, "go"))
+    assert [(c.name, c.from_ver, c.to) for c in changes] == [("go", "1.27.2", "1.27.3")]
+    assert behind == []
 
 
 def test_go_never_lowers_and_two_part_waits_for_a_new_minor(tmp_path: Path) -> None:

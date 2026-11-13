@@ -14,6 +14,7 @@ import functools
 import json
 import logging
 import re
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,12 +50,38 @@ def _json_list(url: str) -> list[dict]:
     return [e for e in doc if isinstance(e, dict)] if isinstance(doc, list) else []
 
 
+@functools.cache
+def _local_go_version() -> str | None:
+    """Installed toolchain from ``go env GOVERSION``, or None if go is missing."""
+    try:
+        proc = subprocess.run(
+            ["go", "env", "GOVERSION"],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_CHECK,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    ver = proc.stdout.strip().removeprefix("go")
+    return ver or None
+
+
 def _latest_go(_current: str) -> str | None:
+    latest = None
     for rel in _json_list("https://go.dev/dl/?mode=json"):
         version = str(rel.get("version", ""))
         if rel.get("stable") is True and version.startswith("go"):
-            return version.removeprefix("go")
-    return None
+            latest = version.removeprefix("go")
+            break
+    if latest is None:
+        return None
+    local = _local_go_version()
+    if local is None:
+        return latest
+    return local if semver_tuple(local) < semver_tuple(latest) else latest
 
 
 def _latest_rust(_current: str) -> str | None:
