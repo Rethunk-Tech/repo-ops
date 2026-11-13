@@ -30,7 +30,7 @@ jobs:
           run-ruff-format: "true"
       - run: uv run pyrefly check . --project-excludes 'tests/**' 'scripts/**'
       - name: Run tests
-        run: uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=78
+        run: uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=84
       - name: Build installable wheel and sdist
         run: uv build
       - name: List artifacts
