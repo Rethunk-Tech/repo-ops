@@ -13,6 +13,7 @@ run = "uv run deptry src"
 [gates.format]
 run = "uv run ruff format --check ."
 
-# Same invocation and coverage floor as the CI test step.
+# Coverage (and its floor) runs in CI's verify.yml only: instrumenting every line
+# roughly quadruples the wall of the local gate.
 [gates.test]
-run = 'uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=82'
+run = 'uv run pytest -q -m "not integration"'

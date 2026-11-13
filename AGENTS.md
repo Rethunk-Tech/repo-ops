@@ -24,4 +24,4 @@ Tag `v*` on `main`; [release.yml](.github/workflows/release.yml) builds and atta
 
 ## Gate budget
 
-Budget: 10 s warm, 30 s cold. pytest runs under xdist with `--maxprocesses=8` in `addopts`: `-n auto` alone spawns a worker per core and costs several times the CPU for barely less wall time, so keep the cap. pytest with coverage is the slowest step; no step is duplicated between `.gate.toml` and the project.
+Budget: 10 s warm, 30 s cold. pytest runs under xdist with `--maxprocesses=8` in `addopts`: `-n auto` alone spawns a worker per core and costs several times the CPU for barely less wall time, so keep the cap. Coverage runs in CI only (`verify.yml`), not in the local gate; no step is duplicated between `.gate.toml` and the project.
