@@ -28,6 +28,11 @@ def has_v_prefix(tag: str) -> bool:
     return tag.startswith("v")
 
 
+def _padded_semver(tag: str) -> tuple[int, ...]:
+    parts = semver_tuple(tag.lstrip("v"))
+    return parts + (0,) * (3 - len(parts))
+
+
 def fetch_tag_refs(url: str, *, timeout: int) -> list[tuple[str, str]] | None:
     """Return ``(commit_sha, tag)`` pairs for *url* via ``git ls-remote --tags --refs``.
 
@@ -73,13 +78,13 @@ def resolve_latest_tag(current: str, candidates: list[str]) -> str | None:
         return None
 
     want_v = has_v_prefix(current)
-    current_tup = semver_tuple(current.lstrip("v"))
+    current_tup = _padded_semver(current)
 
     scored: list[tuple[tuple[int, ...], str]] = []
     for tag in candidates:
         if not is_semver_tag(tag) or has_v_prefix(tag) != want_v:
             continue
-        scored.append((semver_tuple(tag.lstrip("v")), tag))
+        scored.append((_padded_semver(tag), tag))
 
     if not scored:
         return None
@@ -113,7 +118,7 @@ def resolve_sha_refresh(
         if not is_semver_tag(tag):
             continue
         try:
-            tag_version = semver_tuple(tag.lstrip("v"))
+            tag_version = _padded_semver(tag)
         except Exception:
             logger.warning("ignoring invalid semver tag %r during %s SHA refresh", tag, context)
             continue
@@ -122,14 +127,14 @@ def resolve_sha_refresh(
     if not matching:
         return None
     _, current_tag, _ = max(matching, key=lambda item: (item[0], item[1]))
-    current_version = semver_tuple(current_tag.lstrip("v"))
+    current_version = _padded_semver(current_tag)
     want_v = has_v_prefix(current_tag)
     candidates: list[tuple[tuple[int, ...], str, str]] = []
     for tag_sha, tag in refs:
         if not is_semver_tag(tag) or has_v_prefix(tag) != want_v:
             continue
         try:
-            tag_version = semver_tuple(tag.lstrip("v"))
+            tag_version = _padded_semver(tag)
         except Exception:
             logger.warning("ignoring invalid semver tag %r during %s SHA refresh", tag, context)
             continue

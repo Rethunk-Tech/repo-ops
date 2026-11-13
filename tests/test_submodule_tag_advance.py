@@ -28,11 +28,15 @@ from repo_ops_upgrade.submodules import (
     check_submodule_tag_advances,
     discover_submodules_under_roots,
 )
-from repo_ops_upgrade.tags import has_v_prefix, is_semver_tag
+from repo_ops_upgrade.tags import has_v_prefix, is_semver_tag, resolve_latest_tag
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def test_resolve_latest_tag_does_not_upgrade_v1_0_to_v1_0_0() -> None:
+    assert resolve_latest_tag("v1.0", ["v1.0", "v1.0.0"]) is None
 
 
 @pytest.fixture(autouse=True)
