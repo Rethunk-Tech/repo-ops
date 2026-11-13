@@ -142,10 +142,10 @@ def test_run_git_forwards_env_and_separator(tmp_path: Path, make_proc) -> None:
     assert env.get("GIT_ALLOW_PROTOCOL") == "https:ssh"
 
 
-def test_run_git_default_env_is_none(tmp_path: Path, make_proc) -> None:
-    """Existing call sites that don't pass env keep prior subprocess.run behavior."""
+def test_run_git_default_env_is_literal_pathspecs(tmp_path: Path, make_proc) -> None:
+    """Call sites that pass no env still get literal pathspecs."""
     with patch("repo_ops_core.git.subprocess.run", return_value=make_proc()) as mock_run:
         run_git(tmp_path, "status", "--porcelain", timeout=5)
 
     kwargs = mock_run.call_args[1]
-    assert kwargs.get("env") is None
+    assert kwargs["env"]["GIT_LITERAL_PATHSPECS"] == "1"

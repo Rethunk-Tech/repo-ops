@@ -22,7 +22,8 @@ def run_git(
         msg = f"git -C target is not a directory: {repo_path}"
         raise FileNotFoundError(msg)
     effective_timeout = timeout if timeout is not None else GIT_TIMEOUT
-    effective_env = {**os.environ, **env} if env is not None else None
+    # Paths come from the filesystem, so a directory named like `:(top)` must not read as pathspec magic.
+    effective_env = {**os.environ, **(env or {}), "GIT_LITERAL_PATHSPECS": "1"}
     return subprocess.run(
         ["git", "-C", str(repo_path), *args],
         capture_output=True,

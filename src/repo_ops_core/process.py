@@ -108,7 +108,9 @@ def run(
     if VERBOSE:
         print(f"  $ {' '.join(cmd)}", file=sys.stderr, flush=True)
     merged = os.environ.copy()
-    if cmd[:1] != ["git"]:
+    if cmd[:1] == ["git"]:
+        merged["GIT_LITERAL_PATHSPECS"] = "1"
+    else:
         merged.update(_ISOLATED_ENV)
     if env:
         merged.update(env)
