@@ -685,7 +685,7 @@ def _exact_tag_major(tag: str) -> int | None:
 
 
 def _highest_exact_digest_in_major(info: dict, major: int) -> tuple[str, str] | None:
-    """Return ``(commit_sha, tag)`` for the highest exact release tag within ``major``.
+    """Return ``(commit_sha, tag)`` for the highest exact release tag within ``major``, prereleases excluded.
 
     Used by SHA-pin digest refresh: keeps an action digest-pinned but
     advances the SHA to the newest release within its current major, matching how
@@ -696,7 +696,8 @@ def _highest_exact_digest_in_major(info: dict, major: int) -> tuple[str, str] | 
     best_tup: tuple[int, ...] = ()
     for sha, tags in info.get("sha_to_tags", {}).items():
         for t in tags:
-            if _exact_tag_major(t) != major:
+            # A prerelease is not a release to pin, even when it is the newest tag.
+            if _exact_tag_major(t) != major or "-" in t:
                 continue
             tup = _tag_version(t)
             if tup > best_tup:

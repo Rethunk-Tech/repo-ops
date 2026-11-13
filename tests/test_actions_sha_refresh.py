@@ -331,3 +331,27 @@ def test_refresh_never_moves_a_pin_back_to_an_older_release(tmp_path: Path) -> N
 
     assert pinned in wf.read_text(encoding="utf-8")
     assert not [b for b in bumps if b.action == "actions/checkout" and b.latest == _NEW], bumps
+
+
+def test_refresh_never_repins_a_release_to_a_prerelease(tmp_path: Path) -> None:
+    """A newer rc in the pin's major, or an rc-only next major, is not a release to pin."""
+    wf = _wf(
+        tmp_path,
+        f"jobs:\n  ci:\n    steps:\n      - uses: actions/checkout@{_OLD}  # v6.0.2\n",
+    )
+    tags_proc = _make_tags_proc(
+        f"v7.0.0-beta.1 {_V7}",
+        f"v6.1.0-rc.1 {_NEW}",
+        f"v6.0.2 {_OLD}",
+        f"v6 {_OLD}",
+    )
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
+    ):
+        bumps, _ = scan_actions(tmp_path, apply=True)
+
+    text = wf.read_text(encoding="utf-8")
+    assert _OLD in text, bumps
+    assert _NEW not in text and _V7 not in text
