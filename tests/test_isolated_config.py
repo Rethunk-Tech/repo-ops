@@ -64,3 +64,14 @@ def test_go_env_write_leaves_operator_goenv(operator_home: Path, tmp_path: Path)
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == "example.com/private"
     assert goenv.read_text() == "GOPRIVATE=example.com/private\n"
+
+
+def test_seeded_config_copies_are_private(operator_home: Path, tmp_path: Path) -> None:
+    npmrc = operator_home / ".npmrc"
+    npmrc.write_text("//registry.npmjs.org/:_authToken=secret\n")
+    npmrc.chmod(0o600)
+    scratch = tmp_path / "scratch"
+    isolate_user_config(scratch)
+
+    assert (scratch / "npmrc").stat().st_mode & 0o077 == 0
+    assert scratch.stat().st_mode & 0o077 == 0

@@ -62,7 +62,9 @@ def isolate_user_config(scratch: Path) -> None:
     invocations made by repo-ops itself are exempt in :func:`run`, because
     signing and credentials come from the real config.
     """
+    # The seeded copies carry the operator's registry tokens and credential helpers.
     scratch.mkdir(parents=True, exist_ok=True)
+    scratch.chmod(0o700)
     env = {"CARGO_INSTALL_ROOT": str(scratch / "cargo")}
     home = Path.home()
     sources = {
@@ -83,10 +85,10 @@ def isolate_user_config(scratch: Path) -> None:
             sources["GOENV"] = (Path(goenv), "go.env")
     for var, (src, name) in sources.items():
         dest = scratch / name
+        dest.unlink(missing_ok=True)
+        dest.touch(mode=0o600)
         if src.is_file():
             shutil.copyfile(src, dest)
-        else:
-            dest.touch()
         env[var] = str(dest)
     _ISOLATED_ENV.clear()
     _ISOLATED_ENV.update(env)
