@@ -431,3 +431,27 @@ def test_workspace_members_are_scanned_and_bumped(
     assert 'serde = "2.0.0"' in (tmp_path / "crates/a/Cargo.toml").read_text(encoding="utf-8")
     assert 'version = "2.0.0"' in (tmp_path / "crates/b/Cargo.toml").read_text(encoding="utf-8")
     assert 'rand = "0.8"' in (tmp_path / "crates/skip/Cargo.toml").read_text(encoding="utf-8")
+
+
+def test_applied_cargo_bumps_are_reported_per_crate(tmp_path: Path) -> None:
+    from repo_ops_lockfiles.snapshots import diff_workspace_snapshots, snapshot_workspace_files
+
+    _member_workspace(tmp_path)
+    lockfile = tmp_path / "Cargo.lock"
+    lockfile.write_text(
+        '[[package]]\nname = "serde"\nversion = "1.0.0"\n\n'
+        '[[package]]\nname = "regex"\nversion = "1.0.0"\n',
+        encoding="utf-8",
+    )
+    before = snapshot_workspace_files(tmp_path, "rust")
+    assert tmp_path / "crates/a/Cargo.toml" in before
+    lockfile.write_text(
+        '[[package]]\nname = "serde"\nversion = "2.0.0"\n\n'
+        '[[package]]\nname = "regex"\nversion = "1.0.0"\n',
+        encoding="utf-8",
+    )
+    after = snapshot_workspace_files(tmp_path, "rust")
+
+    changes = diff_workspace_snapshots(before, after, "rust")
+
+    assert [(c.name, c.from_ver, c.to) for c in changes] == [("serde", "1.0.0", "2.0.0")]

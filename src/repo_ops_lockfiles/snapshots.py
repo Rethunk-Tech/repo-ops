@@ -168,12 +168,39 @@ def snapshot_workspace_files(mdir: Path, manager: str) -> dict[Path, bytes]:
         p = mdir / name
         if p.exists():
             out[p] = p.read_bytes()
+    if manager == "rust":
+        from repo_ops_rust.rust import cargo_manifests
+
+        for p in cargo_manifests(mdir):
+            if p.is_file():
+                out[p] = p.read_bytes()
     if manager in ("yarn", "npm", "pnpm", "bun"):
         # Workspace-member manifests: a monorepo apply edits them, and a revert
         # that skipped them would leave a bumped range beside a restored lockfile.
         for p in package_json_paths(mdir)[1:]:
             out[p] = p.read_bytes()
     return out
+
+
+def _cargo_lock_changes(before: bytes, after: bytes) -> list[Change] | None:
+    """Per-crate moves between two ``Cargo.lock`` texts; None when either fails to parse."""
+    import tomllib
+
+    def versions(data: bytes) -> dict[str, set[str]]:
+        out: dict[str, set[str]] = {}
+        for pkg in tomllib.loads(data.decode("utf-8")).get("package", []):
+            out.setdefault(str(pkg.get("name")), set()).add(str(pkg.get("version")))
+        return out
+
+    try:
+        b_map, a_map = versions(before), versions(after)
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return None
+    return [
+        Change(name, ", ".join(sorted(b_map.get(name, ()))) or "?", ", ".join(sorted(a_map[name])))
+        for name in sorted(a_map)
+        if a_map[name] != b_map.get(name)
+    ]
 
 
 def _pkg_json_dep_changes(before: bytes, after: bytes) -> list[Change]:
@@ -249,6 +276,11 @@ def diff_workspace_snapshots(
             # the post-apply fallback, which reports the workspace's lockfiles.
             seen.add(path.name)
             changes.append(Change(path.name, "changed", "changed"))
+        elif path.name == "Cargo.lock" and (moves := _cargo_lock_changes(b, a)) is not None:
+            for c in moves:
+                if c.name not in seen:
+                    seen.add(c.name)
+                    changes.append(c)
         elif path.name in _COARSE_DIFF_LOCKFILES and path.name not in seen:
             seen.add(path.name)
             changes.append(Change(path.name, "changed", "changed"))
