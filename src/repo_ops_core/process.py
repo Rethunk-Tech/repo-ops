@@ -57,8 +57,9 @@ def isolate_user_config(scratch: Path) -> None:
     """Point user-global tool config writes of repo commands at *scratch*.
 
     A repo's own build or verify command must not rewrite the operator's
-    ``go env -w``, ``npm config``, ``git config --global`` or ``cargo install``
-    targets. Seeded copies keep the operator's settings in effect. ``git``
+    ``go env -w``, ``npm config``, ``pip config``, ``uv`` user config,
+    ``git config --global`` or ``cargo install`` targets. Seeded copies keep
+    the operator's settings in effect. ``git``
     invocations made by repo-ops itself are exempt in :func:`run`, because
     signing and credentials come from the real config.
     """
@@ -67,6 +68,7 @@ def isolate_user_config(scratch: Path) -> None:
     scratch.chmod(0o700)
     env = {"CARGO_INSTALL_ROOT": str(scratch / "cargo")}
     home = Path.home()
+    xdg = Path(os.environ.get("XDG_CONFIG_HOME") or home / ".config")
     sources = {
         "GIT_CONFIG_GLOBAL": (
             Path(os.environ.get("GIT_CONFIG_GLOBAL") or home / ".gitconfig"),
@@ -75,6 +77,14 @@ def isolate_user_config(scratch: Path) -> None:
         "NPM_CONFIG_USERCONFIG": (
             Path(os.environ.get("NPM_CONFIG_USERCONFIG") or home / ".npmrc"),
             "npmrc",
+        ),
+        "PIP_CONFIG_FILE": (
+            Path(os.environ.get("PIP_CONFIG_FILE") or xdg / "pip" / "pip.conf"),
+            "pip.conf",
+        ),
+        "UV_CONFIG_FILE": (
+            Path(os.environ.get("UV_CONFIG_FILE") or xdg / "uv" / "uv.toml"),
+            "uv.toml",
         ),
     }
     if shutil.which("go"):
@@ -108,12 +118,13 @@ def run(
     if VERBOSE:
         print(f"  $ {' '.join(cmd)}", file=sys.stderr, flush=True)
     merged = os.environ.copy()
+    if env:
+        merged.update(env)
     if cmd[:1] == ["git"]:
         merged["GIT_LITERAL_PATHSPECS"] = "1"
     else:
+        # Isolation wins over a verify/apply env that names the operator's files.
         merged.update(_ISOLATED_ENV)
-    if env:
-        merged.update(env)
     proc = subprocess.run(
         cmd,
         cwd=str(cwd_path),
