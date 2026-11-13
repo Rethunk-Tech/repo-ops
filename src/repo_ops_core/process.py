@@ -104,6 +104,120 @@ def isolate_user_config(scratch: Path) -> None:
     _ISOLATED_ENV.update(env)
 
 
+def _tool_cache_dirs() -> list[str]:
+    """Host paths of Go, bun, npm and uv caches that builds need to write."""
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: str) -> None:
+        path = raw.strip()
+        if not path or path == "undefined" or path in seen:
+            return
+        p = Path(path)
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return
+        resolved = str(p.resolve())
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        found.append(resolved)
+
+    def tool_out(cmd: list[str]) -> str:
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
+        except OSError:
+            return ""
+        if proc.returncode != 0:
+            return ""
+        return proc.stdout
+
+    if shutil.which("go"):
+        for line in tool_out(["go", "env", "GOCACHE", "GOMODCACHE"]).splitlines():
+            add(line)
+    if shutil.which("npm"):
+        add(tool_out(["npm", "config", "get", "cache"]))
+    bun_cache = os.environ.get("BUN_INSTALL_CACHE_DIR")
+    if bun_cache:
+        add(bun_cache)
+    elif shutil.which("bun"):
+        bun_out = tool_out(["bun", "pm", "cache"]).strip()
+        if bun_out:
+            add(bun_out)
+        else:
+            add(str(Path(os.environ.get("HOME") or Path.home()) / ".bun" / "install" / "cache"))
+    uv_cache = os.environ.get("UV_CACHE_DIR")
+    if uv_cache:
+        add(uv_cache)
+    elif shutil.which("uv"):
+        add(tool_out(["uv", "cache", "dir"]))
+    return found
+
+
+def _sandboxed_argv(cmd: list[str], cwd: Path) -> list[str]:
+    """Wrap *cmd* in bubblewrap: repo writable, ``/`` and ``$HOME`` read-only.
+
+    Tool caches are writable binds. ``/tmp`` is a tmpfs. Network stays shared.
+    """
+    bwrap = shutil.which("bwrap")
+    if bwrap is None:
+        msg = (
+            "bwrap not found; install bubblewrap to run repo verify and builds "
+            "(refusing to run unsandboxed)"
+        )
+        raise FileNotFoundError(msg)
+    home = os.environ.get("HOME") or str(Path.home())
+    cwd_s = str(cwd.resolve())
+    caches = _tool_cache_dirs()
+    isolated = list(
+        dict.fromkeys(str(Path(p).parent) for p in _ISOLATED_ENV.values() if Path(p).exists())
+    )
+    argv = [
+        bwrap,
+        "--ro-bind",
+        "/",
+        "/",
+        "--dev",
+        "/dev",
+        "--tmpfs",
+        "/tmp",  # noqa: S108
+        "--die-with-parent",
+    ]
+    # tmpfs hides host /tmp; recreate dest parents so later binds succeed.
+    argv.extend(_tmp_parent_dirs([home, cwd_s, *caches, *isolated]))
+    argv.extend(["--ro-bind", home, home])
+    for cache in caches:
+        argv.extend(["--bind", cache, cache])
+    argv.extend(["--bind", cwd_s, cwd_s])
+    for path in isolated:
+        argv.extend(["--bind", path, path])
+    argv.append("--")
+    argv.extend(cmd)
+    return argv
+
+
+def _tmp_parent_dirs(paths: list[str]) -> list[str]:
+    flags: list[str] = []
+    seen: set[str] = set()
+    tmp = Path("/tmp")  # noqa: S108
+    for raw in paths:
+        path = Path(raw)
+        if tmp not in path.parents:
+            continue
+        for parent in reversed(path.parents):
+            if parent in {tmp, Path("/")}:
+                continue
+            if tmp not in parent.parents:
+                continue
+            key = str(parent)
+            if key in seen:
+                continue
+            seen.add(key)
+            flags.extend(["--dir", key])
+    return flags
+
+
 def run(
     cmd: list[str],
     cwd: Path | str,
@@ -122,11 +236,13 @@ def run(
         merged.update(env)
     if cmd[:1] == ["git"]:
         merged["GIT_LITERAL_PATHSPECS"] = "1"
+        argv = cmd
     else:
         # Isolation wins over a verify/apply env that names the operator's files.
         merged.update(_ISOLATED_ENV)
+        argv = _sandboxed_argv(cmd, cwd_path)
     proc = subprocess.run(
-        cmd,
+        argv,
         cwd=str(cwd_path),
         capture_output=True,
         text=True,
