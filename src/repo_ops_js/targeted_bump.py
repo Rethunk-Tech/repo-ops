@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from repo_ops_core.version_utils import semver_tuple
+from repo_ops_core.version_utils import semver_precedence
 from repo_ops_js.holds import hold_version_spec, resolve_package_hold
 from repo_ops_lockfiles.snapshots import (
     restore_workspace_snapshot,
@@ -60,7 +60,7 @@ def run_targeted_bump(
     advanced = False
     if landed:
         try:
-            advanced = semver_tuple(landed) > semver_tuple(change.from_ver)
+            advanced = semver_precedence(landed) > semver_precedence(change.from_ver)
         except (TypeError, ValueError):
             advanced = landed != change.from_ver
     if landed and advanced:
