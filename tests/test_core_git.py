@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
-from repo_ops_core.git import git_repo_for, run_git
+import pytest
+
+from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
 
 
 def test_git_repo_for_finds_repo_root(tmp_path: Path) -> None:
@@ -52,3 +55,22 @@ def test_process_run_git_treats_pathspec_magic_names_literally(tmp_path: Path) -
     run(["git", "add", "--", ":(top)f"], tmp_path)
 
     assert run(["git", "diff", "--cached", "--name-only"], tmp_path).stdout.split() == [":(top)f"]
+
+
+@pytest.mark.parametrize("operation", ["bisect", "rebase"])
+def test_is_git_dirty_counts_an_operation_in_progress(
+    tmp_path: Path, init_git_repo, operation: str
+) -> None:
+    """A clean tree mid-rebase or mid-bisect is not a branch to commit onto."""
+    init_git_repo(tmp_path, commit=True)
+    (tmp_path / "README.md").write_text("two\n")
+    subprocess.run(["git", "commit", "-qam", "two"], cwd=tmp_path, check=True)
+    assert not is_git_dirty(tmp_path)
+    if operation == "bisect":
+        cmd = ["git", "bisect", "start", "HEAD", "HEAD~1"]
+    else:
+        cmd = ["git", "rebase", "-q", "-i", "HEAD~1"]
+    env = {**os.environ, "GIT_SEQUENCE_EDITOR": "sed -i s/^pick/edit/"}
+    subprocess.run(cmd, cwd=tmp_path, check=True, capture_output=True, env=env)
+    assert run_git(tmp_path, "status", "--porcelain").stdout == ""
+    assert is_git_dirty(tmp_path)

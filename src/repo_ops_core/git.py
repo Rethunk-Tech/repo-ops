@@ -64,9 +64,31 @@ def is_git_dirty(repo: Path | str) -> bool:
     """
     try:
         proc = run_git(repo, "status", "--porcelain", "--ignore-submodules=dirty", timeout=30)
+        if proc.returncode != 0 or proc.stdout.strip():
+            return True
+        # A rebase, merge, cherry-pick, revert or bisect can stop on a clean
+        # tree; a commit made then lands inside the operator's operation.
+        markers = run_git(
+            repo,
+            "rev-parse",
+            *(a for m in _OPERATION_MARKERS for a in ("--git-path", m)),
+            timeout=30,
+        )
     except subprocess.TimeoutExpired:
         return True
-    return proc.returncode != 0 or bool(proc.stdout.strip())
+    if markers.returncode != 0:
+        return True
+    return any((Path(repo) / p).exists() for p in markers.stdout.splitlines())
+
+
+_OPERATION_MARKERS = (
+    "rebase-merge",
+    "rebase-apply",
+    "MERGE_HEAD",
+    "CHERRY_PICK_HEAD",
+    "REVERT_HEAD",
+    "BISECT_LOG",
+)
 
 
 def repo_label(repo: Path | str, roots: list[str]) -> str:
