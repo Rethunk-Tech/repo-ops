@@ -6,6 +6,7 @@ import re
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.process import run
+from repo_ops_core.version_utils import semver_precedence
 from repo_ops_lockfiles.parsers import toml_lock_versions
 from repo_ops_models import Change, Workspace
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
@@ -68,11 +69,33 @@ def check_uv_lock(ws: Workspace) -> list[Change]:
     return _filter_held_changes(ws, changes)
 
 
+def _pep440_precedence(version: str) -> tuple:
+    # shortcut: a/b/rc/dev map to SemVer prerelease ids, so dev orders above a/b/rc
+    # of the same release; take a real PEP 440 parser if that ordering ever matters.
+    return semver_precedence(re.sub(r"^([\d.]*\d)\.?((?:a|b|rc|dev)\d*)", r"\1-\2", version))
+
+
+def _raise_on_downgrade(before: dict[str, str], after: dict[str, str]) -> None:
+    """Fail when a package still locked landed below its pre-apply version.
+
+    ``uv lock --upgrade`` resolves lower when the locked release left the index.
+    """
+    lowered = [
+        f"{name} {old} -> {new}"
+        for name, new in sorted(after.items())
+        if (old := before.get(name)) and _pep440_precedence(new) < _pep440_precedence(old)
+    ]
+    if lowered:
+        raise RuntimeError("uv lock --upgrade downgraded " + ", ".join(lowered))
+
+
 def apply_uv_lock(ws: Workspace) -> None:
     """Run ``uv lock --upgrade`` then ``uv sync``."""
+    before = _uv_lock_versions(ws)
     proc = run(["uv", "lock", "--upgrade"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "uv lock --upgrade failed")
+    _raise_on_downgrade(before, _uv_lock_versions(ws))
     proc2 = run(["uv", "sync"], ws.path, timeout=TIMEOUT_APPLY)
     if proc2.returncode != 0:
         raise RuntimeError(proc2.stderr.strip() or "uv sync failed")
