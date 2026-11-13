@@ -279,6 +279,11 @@ def run(
     else:
         # Isolation wins over a verify/apply env that names the operator's files.
         merged.update(_ISOLATED_ENV)
+        # The user namespace shows root-owned /etc/ssh as nobody's, which ssh refuses; -F skips it.
+        ssh_config = Path(merged.get("HOME") or Path.home()) / ".ssh" / "config"
+        merged.setdefault(
+            "GIT_SSH_COMMAND", f"ssh -F {ssh_config if ssh_config.is_file() else os.devnull}"
+        )
         argv = _sandboxed_argv(cmd, cwd_path, merged.get("PATH", ""))
     proc = subprocess.run(
         argv,

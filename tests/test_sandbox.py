@@ -26,3 +26,10 @@ def test_run_in_workspace_member_writes_checkout_root(tmp_path: Path) -> None:
     proc = run(["sh", "-c", "echo lock > ../../bun.lock"], cwd=member)
     assert proc.returncode == 0, proc.stderr
     assert (repo / "bun.lock").read_text() == "lock\n"
+
+
+def test_run_points_git_ssh_past_system_config(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    proc = run(["sh", "-c", 'printf %s "$GIT_SSH_COMMAND"'], cwd=tmp_path)
+    assert proc.stdout == "ssh -F /dev/null"
