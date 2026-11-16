@@ -226,7 +226,7 @@ def _checkout_root(cwd: Path) -> Path:
 
 
 def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
-    """Wrap *cmd* in bubblewrap: repo writable, ``/`` and ``$HOME`` read-only.
+    """Wrap *cmd* in bubblewrap: repo writable, ``/`` read-only, ``$HOME`` a throwaway overlay.
 
     Tool caches are writable binds. ``/tmp`` is a tmpfs. Network stays shared.
     """
@@ -262,7 +262,8 @@ def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
     argv.extend(_tmp_parent_dirs([home, cwd_s, *tmp_reads, *caches, *isolated]))
     # Overlay, not a bind, for host /tmp reads: files show through, writes still land in the tmpfs.
     mounts = [(p, ["--overlay-src", p, "--tmp-overlay", p]) for p in tmp_reads]
-    mounts.append((home, ["--ro-bind", home, home]))
+    # Throwaway overlay: tests may write under $HOME; the writes vanish with the run.
+    mounts.append((home, ["--overlay-src", home, "--tmp-overlay", home]))
     mounts += [(p, ["--bind", p, p]) for p in [*caches, cwd_s, *isolated]]
     runtime = _runtime_dir_mount()
     if runtime:

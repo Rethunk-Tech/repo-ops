@@ -10,15 +10,20 @@ from pathlib import Path
 from repo_ops_core.process import _runtime_dir_mount, _tool_cache_dirs, run
 
 
-def test_run_blocks_write_to_home_outside(tmp_path: Path, monkeypatch) -> None:
+def test_run_home_writes_are_throwaway(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
     home.mkdir()
+    (home / "seen").write_text("x")
     monkeypatch.setenv("HOME", str(home))
     repo = tmp_path / "repo"
     repo.mkdir()
-    proc = run(["sh", "-c", 'echo pwned > "$HOME/outside"'], cwd=repo)
-    assert proc.returncode != 0
+    proc = run(
+        ["sh", "-c", 'echo ok > "$HOME/outside" && mkdir "$HOME/d" && cat "$HOME/seen"'], cwd=repo
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout == "x"
     assert not (home / "outside").exists()
+    assert not (home / "d").exists()
 
 
 def test_run_in_workspace_member_writes_checkout_root(tmp_path: Path) -> None:
