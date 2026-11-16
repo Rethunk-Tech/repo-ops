@@ -17,7 +17,7 @@ import re
 from repo_ops_core.version_utils import version_parts
 
 _CONSTRAINT = re.compile(
-    r"^(~=|<=|>=|==|!=|<|>|=|~|\^)?\s*(\d+(?:\.\d+){0,2}|\*)",
+    r"^(~=|<=|>=|==|!=|<|>|=|~|\^)?\s*(\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.]+)?|\*)",
 )
 
 

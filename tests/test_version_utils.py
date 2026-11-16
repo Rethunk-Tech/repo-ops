@@ -1,9 +1,11 @@
 """Tests for pure version utilities."""
 
+from repo_ops_core.requirement import requirement_satisfied
 from repo_ops_core.version_utils import (
     hold_ceiling_spec,
     normalize_version,
     semver_tuple,
+    version_parts,
 )
 
 
@@ -49,3 +51,9 @@ def test_normalize_version_space_after_operator_and_build_metadata():
     assert semver_tuple(">= 1.2.3") == (1, 2, 3)
     # "1.2.3+build.1": build metadata must be stripped    assert normalize_version("1.2.3+build.1") == "1.2.3"
     assert semver_tuple("1.2.3+build.1") == (1, 2, 3)
+
+
+def test_version_parts_orders_prerelease_below_release() -> None:
+    assert not (version_parts("1.2.3") <= version_parts("1.2.3-rc.1"))
+    assert version_parts("1.2.3-rc.1") < version_parts("1.2.3")
+    assert requirement_satisfied("1.2.3", "==1.2.3-rc.1", default_operator="==") is False

@@ -20,20 +20,70 @@ def semver_tuple(v: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
+class _VersionParts(tuple):
+    """(major, minor, patch) that sorts a prerelease below its release."""
+
+    __slots__ = ("_is_release",)
+
+    def __new__(cls, major: int, minor: int, patch: int, is_release: int) -> _VersionParts:
+        obj = super().__new__(cls, (major, minor, patch))
+        obj._is_release = is_release
+        return obj
+
+    def _sort_key(self) -> tuple[int, int, int, int]:
+        return (*self, self._is_release)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, _VersionParts):
+            return self._sort_key() == other._sort_key()
+        return tuple.__eq__(self, other)
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+    def __lt__(self, other: object) -> bool:
+        if isinstance(other, _VersionParts):
+            return self._sort_key() < other._sort_key()
+        return tuple.__lt__(self, other)
+
+    def __le__(self, other: object) -> bool:
+        if isinstance(other, _VersionParts):
+            return self._sort_key() <= other._sort_key()
+        return tuple.__le__(self, other)
+
+    def __gt__(self, other: object) -> bool:
+        if isinstance(other, _VersionParts):
+            return self._sort_key() > other._sort_key()
+        return tuple.__gt__(self, other)
+
+    def __ge__(self, other: object) -> bool:
+        if isinstance(other, _VersionParts):
+            return self._sort_key() >= other._sort_key()
+        return tuple.__ge__(self, other)
+
+    def __hash__(self) -> int:
+        return hash(self._sort_key())
+
+
 def version_parts(version: str) -> tuple[int, int, int]:
     """Extract a padded (major, minor, patch) triple from anywhere in *version*.
+
+    A prerelease sorts below its release so an rc lock moves to the release.
 
     Unlike :func:`semver_tuple` (which normalizes a version string that
     starts with the number), this searches for the first digit run — needed
     for a manager's freeform ``latest`` string that may carry a leading
     ``v``/prefix or trailing metadata.
     """
-    match = re.search(r"\d+(?:\.\d+){0,2}", version.strip().lstrip("vV"))
+    stripped = version.strip().lstrip("vV")
+    match = re.search(r"\d+(?:\.\d+){0,2}", stripped)
     if match is None:
-        return (0, 0, 0)
+        return _VersionParts(0, 0, 0, 1)
     parts = [int(part) for part in match.group(0).split(".")]
     padded = [*parts, 0, 0, 0][:3]
-    return padded[0], padded[1], padded[2]
+    rest = stripped[match.end() :]
+    is_release = 0 if rest.startswith("-") else 1
+    return _VersionParts(padded[0], padded[1], padded[2], is_release)
 
 
 # Mirrors golang.org/x/mod/module.IsPseudoVersion, with the leading "v" optional.
