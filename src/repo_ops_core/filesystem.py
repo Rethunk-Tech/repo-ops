@@ -96,7 +96,13 @@ def is_workspace_member(mdir: Path, root: Path, patterns: set[str]) -> bool:
         rel = mdir.relative_to(root).as_posix()
     except ValueError:
         return False
-    return any(_workspace_glob_match(rel, pattern) for pattern in patterns)
+    for pattern in patterns:
+        if "*" in pattern:
+            if _workspace_glob_match(rel, pattern):
+                return True
+        elif _under(rel, pattern):
+            return True
+    return False
 
 
 def _workspace_glob_match(rel: str, pattern: str) -> bool:
