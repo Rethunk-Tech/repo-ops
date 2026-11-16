@@ -15,7 +15,7 @@ _SECRET_RES = (
     re.compile(r"(?i)\b(bearer\s+)\S+"),
     re.compile(r"(?i)\b(basic\s+)[A-Za-z0-9+/=]+"),
     re.compile(r"\bnpm_[A-Za-z0-9]{10,}"),
-    re.compile(r"\bghp_[A-Za-z0-9]{20,}"),
+    re.compile(r"\b(?:gh[oprsu]_|github_pat_)[A-Za-z0-9_]{20,}"),
     re.compile(r"\bAKIA[0-9A-Z]{16}"),
     re.compile(r"(?i)((?:password|secret|token|api[_-]?key)[=:]\s*)\S+"),
 )

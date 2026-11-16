@@ -40,3 +40,12 @@ def test_tee_redacts_secrets_in_log(tmp_path: Path) -> None:
     assert "abc123" not in text
     assert "***" in text
     assert redact_secrets("npm_abcdefghijklmnopqrstuvwxyz") == "***"
+
+
+def test_redact_secrets_github_token_prefixes() -> None:
+    pat = "github_pat_" + "A" * 20
+    gho = "gho_" + "B" * 20
+    assert redact_secrets(f"token {pat}") == "token ***"
+    assert redact_secrets(f"auth {gho}") == "auth ***"
+    for prefix in ("ghu_", "ghs_", "ghr_"):
+        assert redact_secrets(prefix + "C" * 20) == "***"
