@@ -45,11 +45,15 @@ def test_run_in_workspace_member_writes_checkout_root(tmp_path: Path) -> None:
     assert (repo / "bun.lock").read_text() == "lock\n"
 
 
-def test_run_points_git_ssh_past_system_config(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.skipif(shutil.which("ssh") is None, reason="needs ssh")
+def test_run_lets_ssh_read_its_config_and_a_tests_own_options(tmp_path: Path, monkeypatch) -> None:
+    # A GIT_SSH_COMMAND would override a test's own core.sshCommand, so none is set.
     monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
-    monkeypatch.setenv("HOME", str(tmp_path))
-    proc = run(["sh", "-c", 'printf %s "$GIT_SSH_COMMAND"'], cwd=tmp_path)
-    assert proc.stdout == "ssh -F /dev/null"
+    proc = run(
+        ["sh", "-c", 'ssh -G localhost >/dev/null && printf %s "$GIT_SSH_COMMAND"'], cwd=tmp_path
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout == ""
 
 
 def test_run_allows_nested_bwrap(tmp_path: Path) -> None:
