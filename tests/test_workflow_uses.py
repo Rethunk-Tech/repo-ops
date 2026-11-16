@@ -208,6 +208,18 @@ jobs:
 """
 
 
+def test_apply_pin_respects_action_name_boundary() -> None:
+    """A longer action path ending in the action name is not this action's pin."""
+    from repo_ops_upgrade.workflow_uses import _apply_pin_to_line
+
+    line = "      - uses: my/actions/checkout@v4\n"
+    assert _apply_pin_to_line(line, "actions/checkout", "v4", "v5") == line
+    assert (
+        _apply_pin_to_line("      - uses: actions/checkout@v4\n", "actions/checkout", "v4", "v5")
+        == "      - uses: actions/checkout@v5\n"
+    )
+
+
 def test_pin_bump_produces_exactly_one_line_diff(tmp_path: Path) -> None:
     """Bumping one pin must produce a single-line diff.
 

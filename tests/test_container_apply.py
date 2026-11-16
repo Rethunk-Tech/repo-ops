@@ -221,6 +221,55 @@ def test_apply_compose_file(tmp_path: Path) -> None:
     assert "  db:\n" in result
 
 
+def test_apply_rewrites_only_pin_positions(tmp_path: Path) -> None:
+    """Image:tag text that is not a pin (comments, echo, labels, build args, longer names) stays put."""
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text(
+        "# documented pin nginx:1.25\n"
+        "FROM nginx:1.25 AS base\n"
+        'RUN echo "nginx:1.25"\n'
+        "FROM my-nginx:1.25\n",
+        encoding="utf-8",
+    )
+    compose = tmp_path / "compose.yml"
+    compose.write_text(
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.25\n"
+        "    labels:\n"
+        "      note: nginx:1.25\n"
+        "    build:\n"
+        "      args:\n"
+        "        base: nginx:1.25\n",
+        encoding="utf-8",
+    )
+
+    def fake_fetch(image: str) -> list[str] | None:
+        if image == "nginx":
+            return ["1.25", "1.27"]
+        return None
+
+    with patch("repo_ops_container.container._fetch_tags", side_effect=fake_fetch):
+        apply_container(_make_ws(tmp_path))
+
+    assert dockerfile.read_text(encoding="utf-8") == (
+        "# documented pin nginx:1.25\n"
+        "FROM nginx:1.27 AS base\n"
+        'RUN echo "nginx:1.25"\n'
+        "FROM my-nginx:1.25\n"
+    )
+    assert compose.read_text(encoding="utf-8") == (
+        "services:\n"
+        "  web:\n"
+        "    image: nginx:1.27\n"
+        "    labels:\n"
+        "      note: nginx:1.25\n"
+        "    build:\n"
+        "      args:\n"
+        "        base: nginx:1.25\n"
+    )
+
+
 def test_apply_no_container_files_noop(tmp_path: Path) -> None:
     """Directory with no container files: apply is a no-op."""
     (tmp_path / "main.go").write_text("package main\n")

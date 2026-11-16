@@ -1168,29 +1168,41 @@ def check_container(ws: Workspace) -> list[Change]:
 # ---------------------------------------------------------------------------
 
 
+_IMAGE_NAME_CHARS = "._-/"
+
+
+def _ref_match_index(line: str, ref: str) -> int:
+    """Return the index of *ref* in *line* at an image-name boundary, or -1.
+
+    Both edges must be boundaries: the character before must not continue an
+    image name (so ``nginx`` never matches inside ``my-nginx`` or
+    ``docker.io/library/nginx``) and the character after must not continue a
+    tag (so ``image:1`` never matches ``image:1.5``).
+    """
+    start = 0
+    while True:
+        idx = line.find(ref, start)
+        if idx == -1:
+            return -1
+        end = idx + len(ref)
+        left_ok = idx == 0 or not (line[idx - 1].isalnum() or line[idx - 1] in _IMAGE_NAME_CHARS)
+        right_ok = end == len(line) or not (line[end].isalnum() or line[end] in "._-")
+        if left_ok and right_ok:
+            return idx
+        start = idx + 1
+
+
 def _replace_tag_in_line(line: str, image: str, old_tag: str, new_tag: str) -> str:
     """Byte-preserving single-line tag replacement.
 
-    Replaces only the first occurrence of ``<image>:<old_tag>`` with
-    ``<image>:<new_tag>`` in *line*.  Never reflows or reformats the line.
-
-    A match is only accepted at a tag boundary: the character immediately
-    following ``old_tag`` must not continue the tag (digit/letter/``.``/``_``/
-    ``-``), so bumping ``image:1`` never fires on a line containing
-    ``image:1.5``.
+    Replaces only the first boundary-correct occurrence of ``<image>:<old_tag>``
+    with ``<image>:<new_tag>`` in *line*.  Never reflows or reformats the line.
     """
     old = f"{image}:{old_tag}"
-    new = f"{image}:{new_tag}"
-    start = 0
-    while True:
-        idx = line.find(old, start)
-        if idx == -1:
-            return line
-        end = idx + len(old)
-        if end < len(line) and (line[end].isalnum() or line[end] in "._-"):
-            start = idx + 1
-            continue
-        return line[:idx] + new + line[end:]
+    idx = _ref_match_index(line, old)
+    if idx == -1:
+        return line
+    return line[:idx] + f"{image}:{new_tag}" + line[idx + len(old) :]
 
 
 def _replace_image_ref_in_line(
@@ -1203,10 +1215,10 @@ def _replace_image_ref_in_line(
 ) -> str:
     """Replace a held ``<image>:<tag>@<sha>`` reference in one line."""
     old = f"{image}:{old_tag}@{old_sha}"
-    new = f"{image}:{new_tag}@{new_sha}"
-    if old in line:
-        return line.replace(old, new, 1)
-    return line
+    idx = _ref_match_index(line, old)
+    if idx == -1:
+        return line
+    return line[:idx] + f"{image}:{new_tag}@{new_sha}" + line[idx + len(old) :]
 
 
 def _enforce_version_ceilings(
@@ -1296,7 +1308,17 @@ def apply_container(ws: Workspace) -> None:
             original = fh.read()
         lines = original.splitlines(keepends=True)
         changed = False
-        hold_bumps = _enforce_version_ceilings(ws, _parse_image_refs(cf))
+        refs = _parse_image_refs(cf)
+        # Only the pin positions this parse reported are rewritten: a bare
+        # image:tag substring elsewhere in the file (labels, echo, comments)
+        # is not a pin.
+        pin_lines: dict[tuple[str, str | None, str | None], set[int]] = {}
+        for ref in refs:
+            if ref["is_stage_ref"]:
+                continue
+            key = (str(ref["image"]), ref["tag"], ref["sha"])
+            pin_lines.setdefault(key, set()).add(int(ref["line_no"]))
+        hold_bumps = _enforce_version_ceilings(ws, refs)
 
         for line_no, (image, old_tag, old_sha, new_tag, new_sha) in hold_bumps.items():
             i = line_no - 1
@@ -1318,25 +1340,34 @@ def apply_container(ws: Workspace) -> None:
         # multi-stage files legitimately pin the same base image at more
         # than one FROM line, and each occurrence must be updated.
         for image, old_tag, new_tag in tag_bumps:
-            for i, line in enumerate(lines):
-                updated = _replace_tag_in_line(line, image, old_tag, new_tag)
-                if updated != line:
+            for i in sorted(pin_lines.get((image, old_tag, None), ())):
+                i -= 1
+                if not 0 <= i < len(lines):
+                    continue
+                updated = _replace_tag_in_line(lines[i], image, old_tag, new_tag)
+                if updated != lines[i]:
                     lines[i] = updated
                     changed = True
 
         for image, old_tag, old_sha, new_tag, new_sha in ref_bumps:
-            for i, line in enumerate(lines):
+            for i in sorted(pin_lines.get((image, old_tag, old_sha), ())):
+                i -= 1
+                if not 0 <= i < len(lines):
+                    continue
                 updated = _replace_image_ref_in_line(
-                    line, image, old_tag, old_sha, new_tag, new_sha
+                    lines[i], image, old_tag, old_sha, new_tag, new_sha
                 )
-                if updated != line:
+                if updated != lines[i]:
                     lines[i] = updated
                     changed = True
 
         for image, tag, old_sha, new_sha in sha_bumps:
-            for i, line in enumerate(lines):
-                updated = _replace_image_ref_in_line(line, image, tag, old_sha, tag, new_sha)
-                if updated != line:
+            for i in sorted(pin_lines.get((image, tag, old_sha), ())):
+                i -= 1
+                if not 0 <= i < len(lines):
+                    continue
+                updated = _replace_image_ref_in_line(lines[i], image, tag, old_sha, tag, new_sha)
+                if updated != lines[i]:
                     lines[i] = updated
                     changed = True
 

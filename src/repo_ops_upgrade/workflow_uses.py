@@ -188,8 +188,10 @@ def _apply_pin_to_line(line: str, action: str, old_pin: str, new_pin: str) -> st
     escaped_pin = re.escape(old_pin)
     # After the pin must come a non-word / non-dot character (whitespace, #,
     # newline) or end-of-string — prevents partial match of "v3" inside "v3.19.0".
-    pattern = re.compile(r"(?<=" + escaped_action + r"@)" + escaped_pin + r"(?=[^\w.]|\Z)")
-    new_line, count = pattern.subn(new_pin, line)
+    # Before the action must come a non-name character, so "actions/checkout"
+    # never matches inside "my/actions/checkout".
+    pattern = re.compile(r"((?<![\w./-])" + escaped_action + r"@)" + escaped_pin + r"(?=[^\w.]|\Z)")
+    new_line, count = pattern.subn(lambda m: m.group(1) + new_pin, line)
     if count:
         return new_line
     return line
