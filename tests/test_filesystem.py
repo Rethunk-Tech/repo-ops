@@ -10,6 +10,7 @@ import pytest
 from repo_ops_core.filesystem import (
     contained_path,
     is_under_root,
+    is_workspace_member,
     read_json_file,
     read_toml_file,
     should_exclude,
@@ -90,3 +91,15 @@ def test_contained_path_rejects_escape(tmp_path: Path) -> None:
     outsider.write_text("x", encoding="utf-8")
     assert not is_under_root(root, outsider)
     assert is_under_root(root, root / "lock.json")
+
+
+def test_is_workspace_member_npm_glob_semantics(tmp_path: Path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    nested = tmp_path / "packages" / "foo" / "inner"
+    nested.mkdir(parents=True)
+    direct = tmp_path / "packages" / "foo"
+    assert is_workspace_member(app, tmp_path, {"*"}) is True
+    assert is_workspace_member(direct, tmp_path, {"packages/*"}) is True
+    assert is_workspace_member(nested, tmp_path, {"packages/*"}) is False
+    assert is_workspace_member(nested, tmp_path, {"**"}) is True

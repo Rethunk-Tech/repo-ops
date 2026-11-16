@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tempfile
 import tomllib
@@ -95,14 +96,33 @@ def is_workspace_member(mdir: Path, root: Path, patterns: set[str]) -> bool:
         rel = mdir.relative_to(root).as_posix()
     except ValueError:
         return False
-    for pattern in patterns:
-        if rel == pattern.removesuffix("/*").removesuffix("/") or _under(
-            rel, pattern.replace("*", "")
-        ):
-            return True
-        if pattern.endswith("/*") and _under(rel, pattern[:-2]):
-            return True
-    return False
+    return any(_workspace_glob_match(rel, pattern) for pattern in patterns)
+
+
+def _workspace_glob_match(rel: str, pattern: str) -> bool:
+    """npm/yarn workspace glob: ``*`` is one path segment, ``**`` is any depth."""
+    i = 0
+    parts: list[str] = []
+    while i < len(pattern):
+        if pattern.startswith("**", i):
+            rest_idx = i + 2
+            if rest_idx < len(pattern) and pattern[rest_idx] == "/":
+                parts.append("(?:.*/)?")
+                i = rest_idx + 1
+            else:
+                parts.append(".*")
+                i = rest_idx
+            continue
+        if pattern[i] == "*":
+            parts.append("[^/]*")
+            i += 1
+            continue
+        j = i + 1
+        while j < len(pattern) and pattern[j] != "*":
+            j += 1
+        parts.append(re.escape(pattern[i:j]))
+        i = j
+    return re.fullmatch("".join(parts), rel) is not None
 
 
 def _under(rel: str, prefix: str) -> bool:
