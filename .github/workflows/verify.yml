@@ -31,9 +31,13 @@ jobs:
       - run: uv run pyrefly check . --project-excludes 'tests/**' 'scripts/**'
       - name: Allow nested user namespaces for the sandbox tests
         # test_run_allows_nested_bwrap runs bwrap inside the sandbox's bwrap. Ubuntu's
-        # bwrap-userns-restrict AppArmor profile confines a bwrap child so it cannot create a
-        # user namespace, whatever the apparmor_restrict_unprivileged_userns sysctl says.
+        # bwrap-userns-restrict profile stops a bwrap child creating a user namespace, and that
+        # profile is also what lets bwrap itself unshare while the sysctl restricts userns, so
+        # lift the sysctl first or unloading the profile breaks every bwrap call.
         run: |
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
           if [ -e /etc/apparmor.d/bwrap-userns-restrict ]; then
             sudo ln -sf /etc/apparmor.d/bwrap-userns-restrict /etc/apparmor.d/disable/
             sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
