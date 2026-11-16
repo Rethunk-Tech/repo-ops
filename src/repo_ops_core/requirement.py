@@ -66,7 +66,7 @@ def requirement_satisfied(
             parts = version_parts(raw_version)
             n = raw_version.count(".") + 1
             if operator == "^":
-                if not (candidate >= parts and candidate < _caret_upper_bound(parts)):
+                if not (candidate >= parts and candidate < _caret_upper_bound(parts[:3])):
                     satisfied = False
                     break
             elif operator == "~=":
