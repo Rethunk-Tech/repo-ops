@@ -428,7 +428,39 @@ def _released_go_versions(ws: Workspace, module_path: str) -> list[str]:
 
 def _screened_target(ws: Workspace, path: str, current: str, proposed: str) -> str | None:
     """*proposed*, or the newest release below it that the Go vulnerability database clears."""
-    return safe_go_target(path, current, proposed, lambda: _released_go_versions(ws, path))
+    target = safe_go_target(path, current, proposed, lambda: _released_go_versions(ws, path))
+    if target is not None and _requires_held_module_over_ceiling(ws, path, target):
+        return None
+    return target
+
+
+def _requires_held_module_over_ceiling(ws: Workspace, path: str, version: str) -> bool:
+    """Whether ``path@version``'s go.mod requires a held module above its ceiling.
+
+    Applying such an upgrade raises the held module, and the post-apply ceiling clamp
+    then downgrades the upgrade again, so it is never a real change.
+    """
+    proc = _go(["list", "-m", "-json", f"{path}@{version}"], ws.path, timeout=TIMEOUT_CHECK)
+    if proc.returncode != 0:
+        return False
+    try:
+        gomod = json.loads(proc.stdout).get("GoMod")
+    except (json.JSONDecodeError, AttributeError):
+        return False
+    if not gomod:
+        return False
+    proc = _go(["mod", "edit", "-json", gomod], ws.path, timeout=TIMEOUT_CHECK)
+    if proc.returncode != 0:
+        return False
+    try:
+        requires = json.loads(proc.stdout).get("Require") or []
+    except (json.JSONDecodeError, AttributeError):
+        return False
+    return any(
+        not target_within_hold(str(r.get("Version") or ""), _resolve_module_hold(ws, r["Path"]))
+        for r in requires
+        if isinstance(r, dict) and isinstance(r.get("Path"), str)
+    )
 
 
 def _go_list_updates(ws: Workspace) -> Iterator[dict]:

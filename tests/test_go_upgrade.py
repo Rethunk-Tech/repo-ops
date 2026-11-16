@@ -224,3 +224,35 @@ def test_raise_on_downgrade_flags_lowered_require_only() -> None:
             before,
             {"example.com/a": "v1.2.0", "example.com/b": "v0.0.0-20260901000000-aaaaaaaaaaaa"},
         )
+
+
+def test_changes_skip_upgrade_that_pulls_held_module_over_ceiling(tmp_path) -> None:
+    from repo_ops_core.holds import HoldRule
+
+    ws = Workspace(path=tmp_path, ecosystem="go", manager="go", git_repo=tmp_path, label="mod")
+    listing = json.dumps(
+        {
+            "Path": "example.com/dep",
+            "Version": "v1.0.0",
+            "Update": {"Path": "example.com/dep", "Version": "v1.1.0"},
+        }
+    )
+
+    def fake_run(cmd, cwd, timeout=0, env=None):
+        if cmd[:4] == ["go", "list", "-m", "-json"]:
+            out = json.dumps({"GoMod": "/cache/dep.mod"})
+        elif cmd[:4] == ["go", "mod", "edit", "-json"] and len(cmd) == 5:
+            out = json.dumps({"Require": [{"Path": "example.com/glob", "Version": "v1.0.0"}]})
+        elif cmd[:3] == ["go", "mod", "edit"]:
+            out = json.dumps({"Require": [{"Path": "example.com/dep", "Version": "v1.0.0"}]})
+        else:
+            out = listing
+        return type("Proc", (), {"returncode": 0, "stdout": out, "stderr": ""})()
+
+    hold = HoldRule(package="example.com/glob", max_version="0.2")
+    with (
+        patch("repo_ops_core.holds._global_holds_cached", return_value=(hold,)),
+        patch("repo_ops_go.go.run", side_effect=fake_run),
+    ):
+        assert _changes_from_go_list_json(ws) == []
+        assert _explicit_go_get_targets(ws) == []
