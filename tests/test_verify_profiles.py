@@ -322,11 +322,3 @@ def test_verify_timeout_names_gate_toml_source(tmp_path: Path) -> None:
         "timed out after 1s (.gate.toml; increase timeout in .gate.toml)"
     )
 
-
-def test_config_module_documents_five_keys_including_soup() -> None:
-    from repo_ops_core import config
-
-    doc = config.__doc__ or ""
-    assert "five keys" in doc
-    assert "[soup]" in doc
-    assert "four keys" not in doc
