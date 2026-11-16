@@ -321,4 +321,3 @@ def test_verify_timeout_names_gate_toml_source(tmp_path: Path) -> None:
     assert proc.stderr.strip() == (
         "timed out after 1s (.gate.toml; increase timeout in .gate.toml)"
     )
-
