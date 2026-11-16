@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 import shutil
@@ -183,16 +184,27 @@ def _tool_cache_dirs() -> list[str]:
     return found
 
 
+def _sweep_stale_runtime_dirs(root: Path) -> None:
+    """Remove ``repo-ops-<pid>`` dirs left by runs that no longer exist."""
+    for d in root.glob("repo-ops-*"):
+        pid = d.name.removeprefix("repo-ops-")
+        if pid.isdigit() and not Path("/proc", pid).exists():
+            shutil.rmtree(d, ignore_errors=True)
+
+
 def _runtime_dir_mount() -> list[str]:
     """Bind a per-run subdir over ``$XDG_RUNTIME_DIR`` so `go test -race` sockets work without exposing the real one."""
     raw = os.environ.get("XDG_RUNTIME_DIR")
     if not raw or not Path(raw).is_dir():
         return []
     sub = Path(raw) / f"repo-ops-{os.getpid()}"
-    try:
-        sub.mkdir(mode=0o700, exist_ok=True)
-    except OSError:
-        return []
+    if not sub.is_dir():
+        _sweep_stale_runtime_dirs(Path(raw))
+        try:
+            sub.mkdir(mode=0o700, exist_ok=True)
+        except OSError:
+            return []
+        atexit.register(shutil.rmtree, sub, ignore_errors=True)
     return ["--bind", str(sub), raw]
 
 

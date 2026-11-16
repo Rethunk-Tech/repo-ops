@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 from pathlib import Path
 
-from repo_ops_core.process import _tool_cache_dirs, run
+from repo_ops_core.process import _runtime_dir_mount, _tool_cache_dirs, run
 
 
 def test_run_blocks_write_to_home_outside(tmp_path: Path, monkeypatch) -> None:
@@ -69,3 +70,16 @@ def test_tool_cache_dirs_cover_sumdb_playwright_ccache(tmp_path: Path, monkeypat
         tmp_path / ".cache" / "ccache",
     ):
         assert str(want.resolve()) in dirs
+
+
+def test_runtime_dir_sweeps_dead_pid_dirs(monkeypatch, request) -> None:
+    runtime = Path(tempfile.mkdtemp(dir="/var/tmp"))
+    request.addfinalizer(lambda: shutil.rmtree(runtime, ignore_errors=True))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    stale, live = runtime / "repo-ops-4194999", runtime / f"repo-ops-{os.getppid()}"
+    stale.mkdir()
+    live.mkdir()
+    mount = _runtime_dir_mount()
+    assert not stale.exists()
+    assert live.exists()
+    shutil.rmtree(mount[1])
