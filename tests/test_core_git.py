@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from repo_ops_core.git import git_repo_for, is_git_dirty, run_git
+from repo_ops_core.git import git_repo_for, github_owner_repo, is_git_dirty, run_git
 
 
 def test_git_repo_for_finds_repo_root(tmp_path: Path) -> None:
@@ -74,3 +74,8 @@ def test_is_git_dirty_counts_an_operation_in_progress(
     subprocess.run(cmd, cwd=tmp_path, check=True, capture_output=True, env=env)
     assert run_git(tmp_path, "status", "--porcelain").stdout == ""
     assert is_git_dirty(tmp_path)
+
+
+def test_github_owner_repo_accepts_ssh_url_with_port() -> None:
+    assert github_owner_repo("ssh://git@github.com:22/owner/repo.git") == "owner/repo"
+    assert github_owner_repo("ssh://git@github.com/owner/repo.git") == "owner/repo"

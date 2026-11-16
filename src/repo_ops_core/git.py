@@ -130,5 +130,5 @@ def github_remote(repo: Path | str) -> str | None:
 
 def github_owner_repo(remote_url: str) -> str | None:
     """Parse ``owner/repo`` from a github.com remote URL (HTTPS, SSH, or ssh://)."""
-    m = re.search(r"github\.com[:/]([^/]+/[^/\s]+?)(?:\.git)?/?$", remote_url)
+    m = re.search(r"github\.com(?::\d+)?[:/]([^/]+/[^/\s]+?)(?:\.git)?/?$", remote_url)
     return m.group(1) if m else None
