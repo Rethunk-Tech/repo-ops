@@ -259,6 +259,10 @@ def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
         "/proc",
         "--tmpfs",
         "/tmp",  # noqa: S108
+        # The user namespace shows root-owned includes as nobody's and ssh refuses them, even for
+        # an ssh a test runs with its own -i/-o and no -F.
+        "--tmpfs",
+        "/etc/ssh/ssh_config.d",
         "--die-with-parent",
     ]
     # tmpfs hides host /tmp; recreate dest parents so later binds succeed.
