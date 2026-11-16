@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
 
-from repo_ops_core.process import run
+from repo_ops_core.process import _tool_cache_dirs, run
 
 
 def test_run_blocks_write_to_home_outside(tmp_path: Path, monkeypatch) -> None:
@@ -33,3 +35,37 @@ def test_run_points_git_ssh_past_system_config(tmp_path: Path, monkeypatch) -> N
     monkeypatch.setenv("HOME", str(tmp_path))
     proc = run(["sh", "-c", 'printf %s "$GIT_SSH_COMMAND"'], cwd=tmp_path)
     assert proc.stdout == "ssh -F /dev/null"
+
+
+def test_run_allows_nested_bwrap(tmp_path: Path) -> None:
+    proc = run(
+        ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--unshare-user", "true"], cwd=tmp_path
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_run_runtime_dir_is_writable_and_private(tmp_path: Path, monkeypatch, request) -> None:
+    # Outside /tmp: the sandbox binds the checkout root writable over anything beneath it.
+    runtime = Path(tempfile.mkdtemp(dir="/var/tmp"))
+    request.addfinalizer(lambda: shutil.rmtree(runtime, ignore_errors=True))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    proc = run(
+        ["sh", "-c", 'mkdir "$XDG_RUNTIME_DIR/bus-x" && ls "$XDG_RUNTIME_DIR"'], cwd=tmp_path
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert not (runtime / "bus-x").exists()
+
+
+def test_tool_cache_dirs_cover_sumdb_playwright_ccache(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
+    monkeypatch.delenv("CCACHE_DIR", raising=False)
+    gopath = tmp_path / "gopath"
+    monkeypatch.setenv("GOPATH", str(gopath))
+    dirs = _tool_cache_dirs()
+    for want in (
+        gopath / "pkg" / "sumdb",
+        tmp_path / ".cache" / "ms-playwright",
+        tmp_path / ".cache" / "ccache",
+    ):
+        assert str(want.resolve()) in dirs

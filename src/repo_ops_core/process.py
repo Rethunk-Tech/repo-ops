@@ -134,8 +134,12 @@ def _tool_cache_dirs() -> list[str]:
         return proc.stdout
 
     if shutil.which("go"):
-        for line in tool_out(["go", "env", "GOCACHE", "GOMODCACHE"]).splitlines():
+        lines = tool_out(["go", "env", "GOCACHE", "GOMODCACHE", "GOPATH"]).splitlines()
+        for line in lines[:2]:
             add(line)
+        if len(lines) > 2 and lines[2].strip():
+            # The checksum DB cache that `go get` and `go mod tidy` write.
+            add(str(Path(lines[2].split(os.pathsep)[0].strip()) / "pkg" / "sumdb"))
     if shutil.which("npm"):
         add(tool_out(["npm", "config", "get", "cache"]))
     bun_cache = os.environ.get("BUN_INSTALL_CACHE_DIR")
@@ -172,7 +176,24 @@ def _tool_cache_dirs() -> list[str]:
         )
         for sub in ("registry", "git", "advisory-dbs"):
             add(str(cargo_home / sub))
+    home = Path(os.environ.get("HOME") or Path.home())
+    # Browser downloads (playwright_browsers remediation) and cgo compiler cache.
+    add(os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or str(home / ".cache" / "ms-playwright"))
+    add(os.environ.get("CCACHE_DIR") or str(home / ".cache" / "ccache"))
     return found
+
+
+def _runtime_dir_mount() -> list[str]:
+    """Bind a per-run subdir over ``$XDG_RUNTIME_DIR`` so `go test -race` sockets work without exposing the real one."""
+    raw = os.environ.get("XDG_RUNTIME_DIR")
+    if not raw or not Path(raw).is_dir():
+        return []
+    sub = Path(raw) / f"repo-ops-{os.getpid()}"
+    try:
+        sub.mkdir(mode=0o700, exist_ok=True)
+    except OSError:
+        return []
+    return ["--bind", str(sub), raw]
 
 
 def _host_tmp_reads(cwd: str, path_env: str) -> list[str]:
@@ -217,6 +238,9 @@ def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
         "/",
         "--dev",
         "/dev",
+        # A fresh procfs lets a test's own bwrap write its uid map; the host /proc is read-only.
+        "--proc",
+        "/proc",
         "--tmpfs",
         "/tmp",  # noqa: S108
         "--die-with-parent",
@@ -228,6 +252,9 @@ def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
     mounts = [(p, ["--overlay-src", p, "--tmp-overlay", p]) for p in tmp_reads]
     mounts.append((home, ["--ro-bind", home, home]))
     mounts += [(p, ["--bind", p, p]) for p in [*caches, cwd_s, *isolated]]
+    runtime = _runtime_dir_mount()
+    if runtime:
+        mounts.append((runtime[2], runtime))
     # Parents first, so the more specific mount wins wherever one path holds another.
     for _, flags in sorted(mounts, key=lambda m: len(Path(m[0]).parts)):
         argv.extend(flags)
