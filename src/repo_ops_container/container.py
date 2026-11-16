@@ -266,7 +266,8 @@ def _parse_from_lines(text: str) -> list[dict[str, Any]]:
         sha = m.group("sha")
 
         is_stage_ref = image.lower() in _SCRATCH_NAMES or image.lower() in defined_stages
-        alias_m = re.search(r"\bAS\s+(\S+)\s*$", line, re.IGNORECASE)
+        # Trailing comments must not drop the stage; the next FROM <stage> is a ref.
+        alias_m = re.search(r"\bAS\s+(\S+)\s*$", line.split("#", 1)[0].rstrip(), re.IGNORECASE)
         if alias_m:
             defined_stages.add(alias_m.group(1).lower())
         results.append(
@@ -910,7 +911,24 @@ def _resolve_latest_tag(
 
 def _resolve_container_hold(ws: Workspace, package: str) -> HoldRule | None:
     """Return the active container hold for *package*, if any."""
-    return resolve_package_hold(ws, _canonical_hold_package(package))
+    target = _canonical_hold_package(package)
+    rule = resolve_package_hold(ws, target)
+    if rule is not None:
+        return rule
+    # [[hold]] package may be the short name, canonical name, or registry-qualified name.
+    host, repo = _normalize_docker_image(package)
+    if host != _DOCKER_REGISTRY_HOST:
+        return None
+    seen = {target}
+    short = repo.removeprefix("library/")
+    for alt in (repo, short, f"docker.io/{short}"):
+        if alt in seen:
+            continue
+        seen.add(alt)
+        rule = resolve_package_hold(ws, alt)
+        if rule is not None:
+            return rule
+    return None
 
 
 def _canonical_hold_package(package: str) -> str:

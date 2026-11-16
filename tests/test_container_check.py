@@ -123,6 +123,14 @@ def test_parse_from_stage_ref_multi_stage() -> None:
     assert refs[1]["image"] == "builder"
 
 
+def test_parse_from_stage_alias_allows_trailing_comment() -> None:
+    text = "FROM node:20-alpine AS builder # compile\nFROM builder AS final\n"
+    refs = _parse_from_lines(text)
+    assert refs[0]["is_stage_ref"] is False
+    assert refs[1]["is_stage_ref"] is True
+    assert refs[1]["image"] == "builder"
+
+
 def test_parse_from_multi_stage_full() -> None:
     """Multi-stage Dockerfile with comments — only real image refs returned."""
     text = (

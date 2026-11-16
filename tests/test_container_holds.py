@@ -66,6 +66,16 @@ def test_check_container_surfaces_clamp_when_upstream_latest_exceeds_ceiling(
     assert changes[0].to == "1.4.0"
 
 
+def test_resolve_container_hold_short_name_matches_canonical_image(
+    tmp_path, make_workspace
+) -> None:
+    _write_global_hold(tmp_path, package="nginx")
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
+    rule = container._resolve_container_hold(ws, "docker.io/library/nginx")
+    assert rule is not None
+    assert rule.package == "nginx"
+
+
 def test_check_container_matches_fully_qualified_hold_for_short_image(
     tmp_path,
     make_workspace,
