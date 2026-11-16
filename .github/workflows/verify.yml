@@ -37,6 +37,17 @@ jobs:
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
+      - name: dbg
+        continue-on-error: true
+        run: |
+          sysctl -a 2>/dev/null | grep -Ei 'userns|max_user_namespaces'
+          ls -l /dev/net/tun; which bwrap; dpkg -l bubblewrap | tail -1
+          echo A; bwrap --ro-bind / / --dev /dev --unshare-user true; echo rc=$?
+          echo B; bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp bwrap --ro-bind / / --dev /dev --unshare-user true; echo rc=$?
+          echo C; bwrap --ro-bind / / --dev /dev --dev-bind-try /dev/net/tun /dev/net/tun --proc /proc --tmpfs /tmp bwrap --ro-bind / / --dev /dev --unshare-user true; echo rc=$?
+          echo D; bwrap --ro-bind / / --dev /dev --proc /proc bwrap --ro-bind / / --dev /dev --unshare-user true; echo rc=$?
+          echo E; bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp bwrap --ro-bind / / --unshare-user true; echo rc=$?
+          sudo aa-status 2>&1 | head -20; sudo dmesg | grep -i apparmor | tail -5
       - name: Run tests
         run: uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=83
       - name: Build installable wheel and sdist
