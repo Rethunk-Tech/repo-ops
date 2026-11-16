@@ -29,6 +29,14 @@ jobs:
           run-ruff: "true"
           run-ruff-format: "true"
       - run: uv run pyrefly check . --project-excludes 'tests/**' 'scripts/**'
+      - name: Allow nested user namespaces for the sandbox tests
+        # Ubuntu refuses unprivileged user namespaces inside a bwrap child by default, which is
+        # what test_run_allows_nested_bwrap exercises. The key is absent on kernels that never
+        # restricted them, so this is a no-op there.
+        run: |
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
       - name: Run tests
         run: uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=83
       - name: Build installable wheel and sdist
