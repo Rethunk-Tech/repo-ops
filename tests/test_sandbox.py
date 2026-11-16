@@ -7,6 +7,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from repo_ops_core.process import _runtime_dir_mount, _tool_cache_dirs, run
 
 
@@ -24,6 +26,13 @@ def test_run_home_writes_are_throwaway(tmp_path: Path, monkeypatch) -> None:
     assert proc.stdout == "x"
     assert not (home / "outside").exists()
     assert not (home / "d").exists()
+
+
+def test_run_exposes_tun_for_nested_pasta(tmp_path: Path) -> None:
+    if not Path("/dev/net/tun").exists():
+        pytest.skip("host has no /dev/net/tun")
+    proc = run(["test", "-c", "/dev/net/tun"], cwd=tmp_path)
+    assert proc.returncode == 0, proc.stderr
 
 
 def test_run_in_workspace_member_writes_checkout_root(tmp_path: Path) -> None:

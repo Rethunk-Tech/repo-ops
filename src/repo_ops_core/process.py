@@ -250,6 +250,10 @@ def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
         "/",
         "--dev",
         "/dev",
+        # pasta (nested network namespaces) opens the tap device; a fresh /dev lacks it.
+        "--dev-bind-try",
+        "/dev/net/tun",
+        "/dev/net/tun",
         # A fresh procfs lets a test's own bwrap write its uid map; the host /proc is read-only.
         "--proc",
         "/proc",
