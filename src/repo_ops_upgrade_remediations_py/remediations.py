@@ -86,7 +86,7 @@ def ruff_files(ws: Workspace) -> list[str]:
 def apply_ruff(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     """Run ``ruff check --fix`` then ``ruff format`` in the workspace root."""
     if not guard_tree_writes(ws.git_repo, "ruff", ws.path):
-        return True, "ruff (skipped: tracked link resolves outside the repo)"
+        return True, "ruff (skipped: a link resolves outside the repo)"
     fix_proc = run(["ruff", "check", "--fix", "."], ws.path, timeout=120)
     fmt_proc = run(["ruff", "format", "."], ws.path, timeout=120)
     if fix_proc.returncode == 0 and fmt_proc.returncode == 0:

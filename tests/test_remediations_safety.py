@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import pytest
 
+from repo_ops_core.filesystem import guard_tree_writes
 from repo_ops_models import WorkspaceResult
 from repo_ops_upgrade_remediations_core import remediations as core
 from repo_ops_upgrade_remediations_deno import remediations as deno_rem
@@ -404,3 +405,46 @@ def test_ruff_still_runs_with_an_in_repo_tracked_link(
 
     assert ok is True
     assert mock_run.call_count == 2
+
+
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-c", "protocol.file.allow=always", *args],
+        cwd=str(cwd),
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_guard_refuses_untracked_link_leaving_repo(tmp_path: Path, init_git_repo: Any) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+    outside = tmp_path / "outside.py"
+    outside.write_text("x = 1\n", encoding="utf-8")
+    (repo / "inside.py").write_text("y = 1\n", encoding="utf-8")
+    (repo / "local.py").symlink_to(repo / "inside.py")
+    assert guard_tree_writes(repo, "ruff") is True
+
+    (repo / "ignored.py").symlink_to(outside)
+    (repo / ".gitignore").write_text("ignored.py\n", encoding="utf-8")
+    assert guard_tree_writes(repo, "ruff") is True
+
+    (repo / "evil.py").symlink_to(outside)
+    assert guard_tree_writes(repo, "ruff") is False
+
+
+def test_guard_refuses_link_tracked_in_submodule(tmp_path: Path, init_git_repo: Any) -> None:
+    outside = tmp_path / "outside.py"
+    outside.write_text("x = 1\n", encoding="utf-8")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    init_git_repo(sub)
+    (sub / "evil.py").symlink_to(outside)
+    _git(sub, "add", "evil.py")
+    _git(sub, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "link")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+    _git(repo, "submodule", "add", "-q", str(sub), "sm")
+    assert guard_tree_writes(repo, "ruff") is False

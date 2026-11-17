@@ -102,26 +102,32 @@ def guard_tool_writes(root: Path, applier: str, *paths: Path) -> bool:
 
 
 def guard_tree_writes(root: Path, applier: str, tree: Path | None = None) -> bool:
-    """True when no tracked symlink under *tree* resolves outside *root*.
+    """True when no symlink under *tree* (tracked, in a submodule, or untracked and not ignored) resolves outside *root*.
 
     A formatter or codegen step walks a tree and writes every file it meets,
     following any link it finds, while the snapshot step skips links: a rollback
     could not put an outside file back. *tree* defaults to *root* and only
-    narrows which tracked links are inspected, not which ones count as inside.
+    narrows which links are inspected, not which ones count as inside.
     Prints the workspace-skip line and returns False for the first escape.
     """
     scope = (tree or root).resolve()
-    proc = run_git(scope, "ls-files", "-s", "-z")
+    # Submodules keep their own index, and a tool walks untracked files too.
+    proc = run_git(scope, "ls-files", "-s", "-z", "--recurse-submodules")
     if proc.returncode != 0:
         return True
+    links = []
     for record in proc.stdout.split("\0"):
         meta, _, rel = record.partition("\t")
         fields = meta.split()
-        if not rel or len(fields) < 2 or fields[0] != "120000":
-            continue
+        if rel and len(fields) >= 2 and fields[0] == "120000":
+            links.append(rel)
+    others = run_git(scope, "ls-files", "-o", "--exclude-standard", "-z")
+    if others.returncode == 0:
+        links += [rel for rel in others.stdout.split("\0") if rel and (scope / rel).is_symlink()]
+    for rel in links:
         if is_under_root(root, scope / rel):
             continue
-        warn_skip(applier, f"tracked link {rel} resolves outside the repo")
+        warn_skip(applier, f"link {rel} resolves outside the repo")
         return False
     return True
 

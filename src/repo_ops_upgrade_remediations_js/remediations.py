@@ -113,7 +113,7 @@ def apply_biome(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     last_err = ""
     leftover = False
     if not guard_tree_writes(ws.git_repo, "biome", ws.path):
-        return True, "biome (skipped: tracked link resolves outside the repo)"
+        return True, "biome (skipped: a link resolves outside the repo)"
     for cfg in _find_biome_configs(ws.path):
         cfg_dir = cfg.parent
         scope = [] if cfg_dir == ws.path else [f"--config-path={cfg_dir}"]
@@ -242,7 +242,7 @@ def apply_codegen(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     ok = True
     last_err = ""
     if not guard_tree_writes(ws.git_repo, "codegen", ws.path):
-        return True, "codegen (skipped: tracked link resolves outside the repo)"
+        return True, "codegen (skipped: a link resolves outside the repo)"
     pkg = read_json_file(ws.path / "package.json") or {}
     for script in ("generate:proto", "generate:openapi"):
         if script in (pkg.get("scripts") or {}):
