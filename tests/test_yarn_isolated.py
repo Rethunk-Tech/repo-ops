@@ -63,6 +63,22 @@ def test_file_protocol_targets_reject_escape_above_workspace_parent(
     assert _file_protocol_targets(ws) == []
 
 
+def test_file_protocol_targets_keeps_nested_workspace_sibling(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    ws = repo / "packages" / "apps" / "web"
+    ws.mkdir(parents=True)
+    sibling = repo / "packages" / "shared"
+    sibling.mkdir()
+    (sibling / "package.json").write_text("{}", encoding="utf-8")
+    (ws / "package.json").write_text(
+        json.dumps({"dependencies": {"shared": "file:../../shared"}}),
+        encoding="utf-8",
+    )
+
+    assert _file_protocol_targets(ws) == [sibling.resolve()]
+
+
 def test_layout_root_common_parent(tmp_path: Path) -> None:
     mono = tmp_path / "mono"
     source = mono / "rechat"

@@ -56,6 +56,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core.filesystem import is_under_root
+from repo_ops_core.git import git_repo_for
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.http import open_url
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
@@ -120,10 +121,11 @@ def find_container_files(directory: Path) -> list[Path]:
                     found.append(entry)
 
     # For each compose file found, also collect referenced build Dockerfiles.
+    root = git_repo_for(directory) or directory
     for cf in list(found):
         if _is_compose_name(cf.name) or "compose" in cf.name.lower():
             for extra in _compose_build_dockerfiles(cf):
-                if not is_under_root(directory, extra):
+                if not is_under_root(root, extra):
                     continue
                 rp = extra.resolve()
                 if rp not in resolved_paths:
@@ -155,6 +157,10 @@ def _compose_build_dockerfiles(compose_path: Path) -> list[Path]:
     - Mapping form: ``build: { context: ..., dockerfile: ... }``
     """
     base_dir = compose_path.parent
+    # Compose resolves ``context`` against the compose file's directory, so
+    # ``context: ..`` legitimately reaches a parent — confine to the repository
+    # root rather than to the compose file's own directory.
+    root = git_repo_for(compose_path) or base_dir
     try:
         text = compose_path.read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -171,7 +177,7 @@ def _compose_build_dockerfiles(compose_path: Path) -> list[Path]:
             ctx_path = str_m.group("path").strip("\"'")
             ctx_dir = (base_dir / ctx_path).resolve()
             candidate = ctx_dir / "Dockerfile"
-            if candidate.is_file() and is_under_root(base_dir, candidate):
+            if candidate.is_file() and is_under_root(root, candidate):
                 results.append(candidate)
             i += 1
             continue
@@ -206,7 +212,7 @@ def _compose_build_dockerfiles(compose_path: Path) -> list[Path]:
             else:
                 candidate = ctx_dir / "Dockerfile"
 
-            if candidate.is_file() and is_under_root(base_dir, candidate):
+            if candidate.is_file() and is_under_root(root, candidate):
                 results.append(candidate)
             i = j
             continue

@@ -861,6 +861,22 @@ def test_compose_build_parent_escape_is_ignored(tmp_path: Path) -> None:
     assert _compose_build_dockerfiles(repo / "docker-compose.yml") == []
 
 
+def test_compose_build_context_parent_inside_repo_is_kept(tmp_path: Path) -> None:
+    """``context: ..`` from a compose file in a repo subdirectory stays in the repo."""
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "Dockerfile").write_text("FROM alpine:3.18\n", encoding="utf-8")
+    deploy = repo / "deploy"
+    deploy.mkdir()
+    (deploy / "docker-compose.yml").write_text(
+        "services:\n  app:\n    build:\n      context: ..\n",
+        encoding="utf-8",
+    )
+
+    result = _compose_build_dockerfiles(deploy / "docker-compose.yml")
+    assert result == [repo / "Dockerfile"]
+
+
 def test_compose_build_dedup_in_find_container_files(tmp_path: Path) -> None:
     """A Dockerfile already discovered as a sibling is not duplicated."""
     dockerfile = tmp_path / "Dockerfile"

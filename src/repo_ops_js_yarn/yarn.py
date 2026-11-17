@@ -16,6 +16,7 @@ from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY
 from repo_ops_core.filesystem import is_under_root, read_json_file
+from repo_ops_core.git import git_repo_for
 from repo_ops_core.holds import target_within_hold
 from repo_ops_core.process import run as _process_run
 from repo_ops_core.version_utils import semver_precedence
@@ -235,7 +236,9 @@ def _isolated_yarn_ignore(src: str, names: list[str]) -> set[str]:
 def _file_protocol_targets(ws_path: Path) -> list[Path]:
     targets: list[Path] = []
     seen: set[Path] = set()
-    bound = ws_path.resolve().parent
+    # ``file:../sibling`` is how a nested workspace reaches a sibling package in
+    # the same repo, so the bound is the repository root, not the parent dir.
+    bound = git_repo_for(ws_path) or ws_path.parent
     for pkg_json in package_json_paths(ws_path):
         try:
             data = json.loads(pkg_json.read_text(encoding="utf-8"))
