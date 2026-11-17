@@ -417,8 +417,8 @@ def _apply_pip_tools_targeted_bumps(
         if not is_under_root(ws.git_repo, req_in):
             remaining.append(candidate)
             continue
-        in_snapshot = snapshot_file(req_in)
-        txt_snapshot = snapshot_file(req_txt)
+        in_snapshot = snapshot_file(req_in, ws.git_repo)
+        txt_snapshot = snapshot_file(req_txt, ws.git_repo)
         if not _rewrite_requirements_in(req_in, candidate.name, candidate.to):
             remaining.append(candidate)
             continue
@@ -435,8 +435,8 @@ def _apply_pip_tools_targeted_bumps(
         except RuntimeError:
             # The latest release may not exist on the workspace's pinned index
             # (e.g. torch on the ROCm index); keep the old pin, report it behind.
-            restore_file(req_in, in_snapshot)
-            restore_file(req_txt, txt_snapshot)
+            restore_file(req_in, in_snapshot, ws.git_repo)
+            restore_file(req_txt, txt_snapshot, ws.git_repo)
             remaining.append(candidate)
             continue
         landed = parse_requirements_lines(out.read_text(encoding="utf-8", errors="replace")).get(
@@ -444,8 +444,8 @@ def _apply_pip_tools_targeted_bumps(
         )
         if landed == candidate.to:
             continue
-        restore_file(req_in, in_snapshot)
-        restore_file(req_txt, txt_snapshot)
+        restore_file(req_in, in_snapshot, ws.git_repo)
+        restore_file(req_txt, txt_snapshot, ws.git_repo)
         remaining.append(candidate)
     return remaining
 

@@ -478,8 +478,10 @@ def _apply_cargo_targeted_bumps(
         if not target_within_hold(candidate.to, rule):
             remaining.append(candidate)
             continue
-        manifest_snapshots = [(manifest, snapshot_file(manifest)) for manifest in manifests]
-        lock_snapshot = snapshot_file(lockfile)
+        manifest_snapshots = [
+            (manifest, snapshot_file(manifest, ws.git_repo)) for manifest in manifests
+        ]
+        lock_snapshot = snapshot_file(lockfile, ws.git_repo)
         # Every requirement the new version breaks moves together: one left on
         # the old major (dev-dependencies, say) keeps the old major resolved.
         stale_by_manifest = [
@@ -517,12 +519,12 @@ def _apply_cargo_targeted_bumps(
             # dependency still needs the old major; a plain -p re-resolve adds the
             # new major beside it instead.
             proc = run(["cargo", "update", "-p", spec], ws.path, timeout=TIMEOUT_APPLY)
-        lock_advanced = snapshot_file(lockfile) != lock_snapshot
+        lock_advanced = snapshot_file(lockfile, ws.git_repo) != lock_snapshot
         if proc.returncode == 0 and lock_advanced:
             continue
         for manifest, snapshot in manifest_snapshots:
-            restore_file(manifest, snapshot)
-        restore_file(lockfile, lock_snapshot)
+            restore_file(manifest, snapshot, ws.git_repo)
+        restore_file(lockfile, lock_snapshot, ws.git_repo)
         remaining.append(candidate)
     return remaining
 

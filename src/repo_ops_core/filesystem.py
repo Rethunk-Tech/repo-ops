@@ -162,17 +162,28 @@ def read_toml_file(path: Path) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def snapshot_file(path: Path) -> bytes | None:
-    """Capture a file's bytes for a later :func:`restore_file`, or ``None`` if absent."""
-    if path.is_symlink() or not path.is_file():
+def snapshot_file(path: Path, root: Path) -> bytes | None:
+    """Capture *path* for a later :func:`restore_file`, or ``None`` if absent.
+
+    A symlink resolving inside *root* is captured through to its target, so the
+    rollback writes the bytes back and leaves the link in place. One resolving
+    outside *root* yields ``None``: writing through it would touch a file the
+    run does not own.
+    """
+    if path.is_symlink() and not is_under_root(root, path):
+        return None
+    if not path.is_file():
         return None
     return path.read_bytes()
 
 
-def restore_file(path: Path, snapshot: bytes | None) -> None:
+def restore_file(path: Path, snapshot: bytes | None, root: Path) -> None:
     """Undo a targeted-bump/clamp attempt: restore *path* to its pre-attempt state."""
     if path.is_symlink():
-        path.unlink()
+        if is_under_root(root, path):
+            path = path.resolve()
+        else:
+            path.unlink()
     if snapshot is None:
         path.unlink(missing_ok=True)
     else:

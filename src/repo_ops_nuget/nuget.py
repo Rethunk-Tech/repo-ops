@@ -316,7 +316,7 @@ def apply_nuget(ws: Workspace) -> list[Change]:
     remaining = list(held)
     for change in allowed:
         files = find_nuget_files(ws.path)
-        snapshots = {path: snapshot_file(path) for path in files}
+        snapshots = {path: snapshot_file(path, ws.git_repo) for path in files}
         touched = [
             path
             for path in files
@@ -327,7 +327,7 @@ def apply_nuget(ws: Workspace) -> list[Change]:
         if touched and _restore(ws) is None:
             continue
         for path, snapshot in snapshots.items():
-            restore_file(path, snapshot)
+            restore_file(path, snapshot, ws.git_repo)
         remaining.append(change)
     return remaining
 

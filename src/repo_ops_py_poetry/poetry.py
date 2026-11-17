@@ -130,8 +130,8 @@ def _apply_poetry_targeted_bumps(
         if not target_within_hold(candidate.to, rule):
             remaining.append(candidate)
             continue
-        manifest_snapshot = snapshot_file(manifest)
-        lock_snapshot = snapshot_file(lockfile)
+        manifest_snapshot = snapshot_file(manifest, ws.git_repo)
+        lock_snapshot = snapshot_file(lockfile, ws.git_repo)
         bumped = _poetry_bumped_requirement(requirement, candidate.to)
         try:
             proc = run(
@@ -140,14 +140,14 @@ def _apply_poetry_targeted_bumps(
                 timeout=TIMEOUT_APPLY,
             )
         except Exception:
-            restore_file(manifest, manifest_snapshot)
-            restore_file(lockfile, lock_snapshot)
+            restore_file(manifest, manifest_snapshot, ws.git_repo)
+            restore_file(lockfile, lock_snapshot, ws.git_repo)
             raise
         landed = _poetry_lock_versions(ws).get(candidate.name)
         if proc.returncode == 0 and landed == candidate.to:
             continue
-        restore_file(manifest, manifest_snapshot)
-        restore_file(lockfile, lock_snapshot)
+        restore_file(manifest, manifest_snapshot, ws.git_repo)
+        restore_file(lockfile, lock_snapshot, ws.git_repo)
         remaining.append(candidate)
     return remaining
 

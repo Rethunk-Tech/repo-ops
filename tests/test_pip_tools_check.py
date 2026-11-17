@@ -284,6 +284,42 @@ def test_apply_targeted_bump_unresolvable_on_index_keeps_old_pin(tmp_path: Path)
     assert (tmp_path / "requirements.txt").read_text() == "torch==2.14.1\n"
 
 
+def test_apply_targeted_bump_symlinked_requirements_in_survives_failed_bump(
+    tmp_path: Path,
+) -> None:
+    """A failed bump restores an in-repo symlink's target and leaves the link in place."""
+    repo = tmp_path / "repo"
+    (repo / "requirements").mkdir(parents=True)
+    target = repo / "requirements" / "base.in"
+    target.write_text("torch==2.14.1\n", encoding="utf-8")
+    link = repo / "requirements.in"
+    link.symlink_to(Path("requirements") / "base.in")
+    (repo / "requirements.txt").write_text("torch==2.14.1\n", encoding="utf-8")
+    ws = Workspace(path=repo, ecosystem="py", manager="pip-tools", git_repo=repo, label="demo")
+
+    calls = iter([0, 1])
+
+    def fake_run(cmd, cwd, timeout=None):
+        return SimpleNamespace(
+            returncode=next(calls), stdout="", stderr="no version of torch==2.15.0"
+        )
+
+    with (
+        patch(
+            "repo_ops_py_pip_tools.pip_tools.shutil.which",
+            side_effect=lambda n: "/usr/bin/uv" if n == "uv" else None,
+        ),
+        patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_run),
+        patch("repo_ops_py_pip_tools.pip_tools._pypi_latest", return_value="2.15.0"),
+    ):
+        remaining = apply_pip_tools(ws)
+
+    assert [c.name for c in remaining] == ["torch"]
+    assert link.is_symlink()
+    assert target.read_text(encoding="utf-8") == "torch==2.14.1\n"
+    assert (repo / "requirements.txt").read_text(encoding="utf-8") == "torch==2.14.1\n"
+
+
 _NO_SOLUTION = (
     "  x No solution found when resolving dependencies:\n"
     "  `-> Because there is no version of torch==2.15.0 and you require torch==2.15.0,\n"

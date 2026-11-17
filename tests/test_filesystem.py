@@ -95,17 +95,36 @@ def test_write_json_atomic_does_not_follow_symlink(tmp_path: Path) -> None:
 
 
 def test_restore_file_does_not_follow_symlink(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
     target = tmp_path / "outside.lock"
     target.write_bytes(b"secret\n")
-    link = tmp_path / "package-lock.json"
+    link = root / "package-lock.json"
     link.symlink_to(target)
 
-    assert snapshot_file(link) is None
-    restore_file(link, b"restored\n")
+    assert snapshot_file(link, root) is None
+    restore_file(link, b"restored\n", root)
 
     assert target.read_bytes() == b"secret\n"
     assert not link.is_symlink()
     assert link.read_bytes() == b"restored\n"
+
+
+def test_snapshot_restore_in_repo_symlink_keeps_link_and_restores_target(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    target = root / "requirements" / "base.in"
+    target.parent.mkdir(parents=True)
+    target.write_text("requests==2.31.0\n", encoding="utf-8")
+    link = root / "requirements.in"
+    link.symlink_to(Path("requirements") / "base.in")
+
+    snapshot = snapshot_file(link, root)
+    target.write_text("requests==2.32.0\n", encoding="utf-8")
+    restore_file(link, snapshot, root)
+
+    assert link.is_symlink()
+    assert link.resolve() == target.resolve()
+    assert target.read_text(encoding="utf-8") == "requests==2.31.0\n"
 
 
 def test_contained_path_rejects_escape(tmp_path: Path) -> None:
