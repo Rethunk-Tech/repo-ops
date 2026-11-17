@@ -145,3 +145,96 @@ def test_expired_hold_is_lifted(tmp_path: Path) -> None:
         f'[[hold]]\npackage = "go"\nmax_version = "1.27.2"\nuntil = "{until}"\n'
     )
     assert len(toolchains.plan_toolchains(_ws(tmp_path, "go"))[0]) == 1
+
+
+def test_fetch_returns_body_or_none_on_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.undo()
+
+    class _Body:
+        def __enter__(self) -> _Body:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b"ok"
+
+    monkeypatch.setattr(toolchains, "open_url", lambda *_a, **_k: _Body())
+    toolchains._fetch.cache_clear()
+    try:
+        assert toolchains._fetch("https://example.invalid/ok") == "ok"
+    finally:
+        toolchains._fetch.cache_clear()
+
+    def _raise(*_a: object, **_k: object) -> None:
+        raise OSError("offline")
+
+    monkeypatch.setattr(toolchains, "open_url", _raise)
+    caplog.set_level("WARNING", logger="repo_ops_upgrade.toolchains")
+    try:
+        assert toolchains._fetch("https://example.invalid/err") is None
+    finally:
+        toolchains._fetch.cache_clear()
+    assert "toolchain lookup failed" in caplog.text
+
+
+def test_invalid_feed_json_leaves_pins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(toolchains, "_fetch", lambda _url: "{not json")
+    (tmp_path / "go.mod").write_text("go 1.27.2\n")
+    assert toolchains.plan_toolchains(_ws(tmp_path, "go")) == ([], [])
+
+
+def test_local_go_version_reads_go_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.undo()
+    go = tmp_path / "go"
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    def _version() -> str | None:
+        toolchains._local_go_version.cache_clear()
+        try:
+            return toolchains._local_go_version()
+        finally:
+            toolchains._local_go_version.cache_clear()
+
+    go.write_text("#!/bin/sh\necho go1.27.3\n")
+    go.chmod(0o755)
+    assert _version() == "1.27.3"
+
+    go.write_text("#!/bin/sh\nexit 1\n")
+    assert _version() is None
+
+    go.write_text("#!/bin/sh\nexit 0\n")
+    assert _version() is None
+
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    (tmp_path / "empty").mkdir()
+    assert _version() is None
+
+
+def test_go_uses_feed_when_local_toolchain_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(toolchains, "_local_go_version", lambda: None)
+    (tmp_path / "go.mod").write_text("go 1.27.2\n")
+    changes, behind = toolchains.plan_toolchains(_ws(tmp_path, "go"))
+    assert [(c.name, c.to) for c in changes] == [("go", "1.27.3")]
+    assert behind == []
+
+
+def test_go_work_outside_repo_refuses_writes(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "go.mod").write_text("go 1.27.2\n")
+    (repo / ".git").mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "go.work").write_text("go 1.27.2\n")
+    register_go_work_dir(repo, outside)
+    ws = Workspace(path=repo, ecosystem="go", manager="go", git_repo=repo, label="x")
+    changes, _behind = toolchains.apply_toolchains(ws)
+    assert changes == []
+    assert (repo / "go.mod").read_text() == "go 1.27.2\n"
+    assert (outside / "go.work").read_text() == "go 1.27.2\n"
