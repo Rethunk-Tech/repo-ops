@@ -31,17 +31,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: Rethunk-Tech/gh-actions/setup-python@71da648f666fb49a8e72d0576a4d8db97894ccaf # v1.29.1
+      - uses: Rethunk-Tech/gh-actions/setup-python@d7c92df451d210ac9db9aa3d1fea9e8a1692e448 # v1.30
         with:
           python-version: "3.14"
           install-args: --locked --group dev
-      - uses: Rethunk-Tech/gh-actions/setup-bun@71da648f666fb49a8e72d0576a4d8db97894ccaf # v1.29.1
+      - uses: Rethunk-Tech/gh-actions/setup-bun@d7c92df451d210ac9db9aa3d1fea9e8a1692e448 # v1.30
         with:
           node-version: "24"
           skip-install: "true"
       - name: Enable Corepack (yarn)
         run: corepack enable
-      - uses: Rethunk-Tech/gh-actions/setup-go@71da648f666fb49a8e72d0576a4d8db97894ccaf # v1.29.1
+      - uses: Rethunk-Tech/gh-actions/setup-go@d7c92df451d210ac9db9aa3d1fea9e8a1692e448 # v1.30
         with:
           go-version: "stable"
       - name: Integration tests (advisory)
@@ -57,7 +57,7 @@ jobs:
       # Audits uv.lock rather than the installed environment, so pinned-but-uninstalled
       # extras are covered and a lock full of advisories cannot pass. No sync: the audit
       # reads the lockfile, not the environment.
-      - uses: Rethunk-Tech/gh-actions/setup-python@71da648f666fb49a8e72d0576a4d8db97894ccaf # v1.29.1
+      - uses: Rethunk-Tech/gh-actions/setup-python@d7c92df451d210ac9db9aa3d1fea9e8a1692e448 # v1.30
         with:
           python-version: "3.14"
           skip-install: "true"
