@@ -48,6 +48,21 @@ def test_file_protocol_targets_resolve_sibling(tmp_path: Path) -> None:
     assert targets == [sibling.resolve()]
 
 
+def test_file_protocol_targets_reject_escape_above_workspace_parent(
+    tmp_path: Path,
+) -> None:
+    ws = tmp_path / "mono" / "app"
+    ws.mkdir(parents=True)
+    secret = tmp_path / "secret-dir"
+    secret.mkdir()
+    (secret / "package.json").write_text("{}", encoding="utf-8")
+    (ws / "package.json").write_text(
+        json.dumps({"dependencies": {"evil": "file:../../secret-dir"}}),
+        encoding="utf-8",
+    )
+    assert _file_protocol_targets(ws) == []
+
+
 def test_layout_root_common_parent(tmp_path: Path) -> None:
     mono = tmp_path / "mono"
     source = mono / "rechat"
