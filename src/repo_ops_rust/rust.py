@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.filesystem import restore_file, snapshot_file
+from repo_ops_core.filesystem import is_under_root, restore_file, snapshot_file
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
@@ -266,6 +266,7 @@ def cargo_manifests(root: Path) -> list[Path]:
             member.is_file()
             and directory not in excluded
             and member.resolve() != manifest.resolve()
+            and is_under_root(root, member)
         ):
             manifests.append(member)
     return manifests
