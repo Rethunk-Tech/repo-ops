@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.filesystem import read_json_file
+from repo_ops_core.filesystem import is_under_root, read_json_file
 from repo_ops_core.http import open_url
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version, semver_tuple
@@ -314,6 +314,8 @@ def report_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
 
 def apply_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     pkg_path = ws.path / "package.json"
+    if not is_under_root(ws.git_repo, pkg_path):
+        return False, "packageManager pin (failed: package.json outside the repo)"
     pkg = read_json_file(pkg_path)
     if not pkg:
         return False, "packageManager pin (failed: missing package.json)"

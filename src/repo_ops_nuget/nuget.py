@@ -18,7 +18,7 @@ from functools import cache
 from pathlib import Path
 
 from repo_ops_core.constants import SKIP_DIRS, TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.filesystem import restore_file, snapshot_file
+from repo_ops_core.filesystem import is_under_root, restore_file, snapshot_file
 from repo_ops_core.holds import resolve_package_hold, target_within_hold
 from repo_ops_core.http import open_url
 from repo_ops_core.process import run
@@ -320,7 +320,9 @@ def apply_nuget(ws: Workspace) -> list[Change]:
         touched = [
             path
             for path in files
-            if path.name != _LOCKFILE and _rewrite(path, change.name, change.from_ver, change.to)
+            if path.name != _LOCKFILE
+            and is_under_root(ws.git_repo, path)
+            and _rewrite(path, change.name, change.from_ver, change.to)
         ]
         if touched and _restore(ws) is None:
             continue

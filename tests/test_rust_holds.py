@@ -13,6 +13,17 @@ _REGISTRY_CONNECTION = "repo_ops_rust.rust.HTTPSConnection"
 _CRATE = "serde"
 
 
+def test_cargo_manifests_ignore_root_manifest_symlink_escape(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    victim = tmp_path / "outside" / "Cargo.toml"
+    victim.parent.mkdir(parents=True)
+    victim.write_text('[package]\nname = "evil"\nversion = "0.1.0"\n', encoding="utf-8")
+    (repo / "Cargo.toml").symlink_to(victim)
+
+    assert cargo_manifests(repo) == []
+
+
 def test_cargo_registry_versions_follows_seek_pagination() -> None:
     responses = [
         {

@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.filesystem import restore_file, snapshot_file
+from repo_ops_core.filesystem import is_under_root, restore_file, snapshot_file
 from repo_ops_core.holds import resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
@@ -412,6 +412,9 @@ def _apply_pip_tools_targeted_bumps(
     remaining: list[Change] = []
     for candidate in candidates:
         if not target_within_hold(candidate.to, resolve_package_hold(ws, candidate.name)):
+            remaining.append(candidate)
+            continue
+        if not is_under_root(ws.git_repo, req_in):
             remaining.append(candidate)
             continue
         in_snapshot = snapshot_file(req_in)

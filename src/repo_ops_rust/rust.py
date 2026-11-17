@@ -242,6 +242,10 @@ def _cargo_dependency_tables(
 def cargo_manifests(root: Path) -> list[Path]:
     """Root ``Cargo.toml`` plus every ``workspace.members`` manifest not in ``workspace.exclude``."""
     manifest = root / "Cargo.toml"
+    # The root manifest needs the same confinement as the members below: a
+    # ``Cargo.toml`` symlinked out of the repo would otherwise be rewritten.
+    if not is_under_root(root, manifest):
+        return []
     manifests = [manifest]
     try:
         workspace = tomllib.loads(manifest.read_text(encoding="utf-8")).get("workspace")
@@ -328,6 +332,8 @@ def _cargo_latest_direct_changes_cached(
 
 def _cargo_latest_direct_changes(ws: Workspace) -> list[Change]:
     manifests = cargo_manifests(ws.path)
+    if not manifests:
+        return []
     digest = hashlib.sha256()
     for manifest in manifests:
         digest.update(str(manifest).encode() + b"\0" + manifest.read_bytes() + b"\0")
