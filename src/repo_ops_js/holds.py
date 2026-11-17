@@ -102,7 +102,7 @@ def hold_version_spec(rule: HoldRule) -> str:
 def direct_dependency_names(pkg_data: dict[str, object]) -> set[str]:
     """All direct dependency names from a parsed ``package.json``.
 
-    Used to build :func:`enforce_holds`' candidate set beyond just this
+    Builds :func:`enforce_holds`' candidate set beyond just this
     run's ``changes``/``behind`` — a package already sitting above a
     *newly added* hold ceiling (installed before the operator configured
     the hold) won't appear in either list (``npm``/``pnpm``/``yarn``/``bun``

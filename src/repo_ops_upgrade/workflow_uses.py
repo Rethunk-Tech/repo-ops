@@ -16,7 +16,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.error import YAMLError
 
-# Validate parsed action@pin shape only — not used to discover pins in file text.
+# Validate parsed action@pin shape only; does not discover pins in file text.
 _PIN_TAG_RE = re.compile(r"^v[\d.]+$")
 _PIN_SHA_RE = re.compile(r"^(?:sha[0-9a-f]+|[0-9a-f]{7,40})$", re.IGNORECASE)
 

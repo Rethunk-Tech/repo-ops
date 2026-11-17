@@ -4,7 +4,15 @@ What `plan`, `apply` and `dependabot` do, how they are configured, and what they
 
 ## Roots
 
-With no `root`, every command scans [`DEFAULT_ROOTS`](../src/repo_ops_core/constants.py) for git checkouts. That is a fleet sweep: repos with uncommitted changes or a rebase, merge, cherry-pick, revert or bisect in progress are skipped, and a repo whose verify fails is reverted and retried once on its own after the sweep. A named root is a checkout the operator is working in: it is processed even when dirty (only files apply touched are committed; if apply touched a file you had edited, nothing is committed and the report says `left uncommitted: your edits in <files>`), and a failed verify keeps the changes for inspection. Each apply holds a lock in the checkout's git dir until it has committed; a repo another apply holds is skipped, and refusing a named root exits 1.
+With no `root`, every command scans [`DEFAULT_ROOTS`](../src/repo_ops_core/constants.py) for git checkouts (a fleet sweep). A named root is a checkout the operator is working in.
+
+| | Fleet sweep | Named root |
+| --- | --- | --- |
+| Uncommitted changes, or a rebase, merge, cherry-pick, revert or bisect in progress | skipped | processed |
+| Files committed | — | only files apply touched; if apply touched a file you had edited, nothing is committed and the report says `left uncommitted: your edits in <files>` |
+| Verify fails | reverted and retried once on its own after the sweep | changes kept for inspection |
+
+Each apply holds a lock in the checkout's git dir until it has committed; a repo another apply holds is skipped, and refusing a named root exits 1.
 
 `--exclude PAT` (substring or glob, matched against a repo's label and path) is unioned with the config `exclude` lists, so a flag can never pull a permanently excluded repo back in. A named root is never excluded. Scan roots must be existing directories. A named root is canonicalized (``Path.resolve``), so a symlink root is followed to its target; the inner ``find`` walk does not follow nested directory symlinks.
 
@@ -77,7 +85,18 @@ A failed verify on a fleet sweep restores only the files the workspace's apply w
 
 ## gates
 
-`gates` runs each repo's own gate and reports the failures together. `gates --e2e` includes the e2e gates a default run leaves out. `gates --skip-fresh` asks `gate --json record` for each repo's verdict; a missing `gate` or an unparseable answer counts as stale. It skips a repo whose schema-2 result matches the current HEAD and working-tree hash, exited 0, and is not partial; the summary and `report.json` count those repos as skipped. A skipped row includes `skip_reason: "fresh"` and omits `gate_record_reason`. A partial record still runs `gate run`, even when it exited 0: that record is a named run, not the whole gate, and that row includes `record_partial: true`. The `report.json` summary counts those rows as `record_partial`. A dirty tree, or a failed, stale, or missing record, still runs. When `--skip-fresh` is on and the repo still runs, the row includes `gate_record_reason` (`missing`, `stale`, `partial`, or `failed`), the same `reason` `gate --json record` reports and in the same order: a tree or schema mismatch is stale even when the run failed, a non-zero exit is failed even when partial, and partial is what remains. `skip_reason` is omitted unless the row was skipped as fresh. `gate_record_reason` is omitted when `--skip-fresh` is off. The two flags combine: a fresh non-partial pass skips the run, and a run that happens still follows `--e2e`. Apply and verify are unchanged.
+`gates` runs each repo's own gate and reports the failures together. `gates --e2e` includes the e2e gates a default run leaves out. Apply and verify are unchanged. The two flags combine: a fresh non-partial pass skips the run, and a run that happens still follows `--e2e`.
+
+`gates --skip-fresh` asks `gate --json record` for each repo's verdict.
+
+| Record | What runs |
+| --- | --- |
+| schema-2 result matches current HEAD and working-tree hash, exited 0, not partial | skipped (`skip_reason: "fresh"`; `gate_record_reason` omitted). Summary and `report.json` count the repo as skipped |
+| partial (a named run, not the whole gate), even if it exited 0 | `gate run`; row includes `record_partial: true`; `report.json` summary counts `record_partial` |
+| missing `gate`, or unparseable answer | treated as stale; still runs |
+| dirty tree, failed, stale, or missing record | still runs |
+
+When `--skip-fresh` is on and the repo still runs, the row includes `gate_record_reason` (`missing`, `stale`, `partial`, or `failed`), the same `reason` `gate --json record` reports and in the same order: a tree or schema mismatch is stale even when the run failed, a non-zero exit is failed even when partial, and partial is what remains. `skip_reason` is omitted unless the row was skipped as fresh. `gate_record_reason` is omitted when `--skip-fresh` is off.
 
 ### Commits
 
