@@ -16,8 +16,8 @@ __all__ = [
     "YARN_PEER_WARN",
 ]
 
-# Yarn isolated snapshots: walk exclusions plus upgrade temp venv (keep `.yarn`).
-YARN_ISOLATED_COPY_SKIP = (SKIP_DIRS - {".yarn"}) | {".dep_refresh_venv"}
+# Yarn isolated snapshots: walk exclusions, but keep `.yarn`.
+YARN_ISOLATED_COPY_SKIP = SKIP_DIRS - {".yarn"}
 YARN_ISOLATED_YARN_SKIP = {
     "cache",
     "unplugged",

@@ -20,6 +20,10 @@ def test_yarn_not_in_isolated_copy_skip() -> None:
     assert ".yarn" not in YARN_ISOLATED_COPY_SKIP
 
 
+def test_isolated_copy_skip_omits_retired_venv_name() -> None:
+    assert ".dep_refresh_venv" not in YARN_ISOLATED_COPY_SKIP
+
+
 def test_isolated_yarn_ignore_keeps_releases() -> None:
     ignored = _isolated_yarn_ignore("/proj/.yarn", ["releases", "cache", "unplugged"])
     assert "releases" not in ignored
