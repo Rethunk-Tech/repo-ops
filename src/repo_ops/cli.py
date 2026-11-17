@@ -6,9 +6,12 @@ import argparse
 import importlib.metadata
 import json
 import os
+import shutil
+import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from repo_ops._register import register_all
 from repo_ops_core.cli import build_upgrade_parser
@@ -107,7 +110,53 @@ def _wants_subcommand_help(remainder: list[str]) -> bool:
     return remainder in (["--help"], ["-h"])
 
 
+# Sweeps that run every checkout's package managers, linters and tests: their memory, page cache and
+# socket buffers otherwise land in the caller's cgroup (an agent session's cap), so they get their own.
+_SCOPED_COMMANDS = frozenset({"plan", "apply"})
+_SCOPE_MEMORY = "24G"
+
+
+def _in_own_scope() -> bool:
+    try:
+        cgroup = Path("/proc/self/cgroup").read_text()
+    except OSError:
+        return True
+    return "/repo-ops-" in cgroup
+
+
+def _scope_argv(argv: list[str]) -> list[str] | None:
+    """The argv that re-runs this command in its own memory-capped user scope, or None to run in place."""
+    if not argv or argv[0] not in _SCOPED_COMMANDS or _in_own_scope():
+        return None
+    if (
+        shutil.which("systemd-run") is None
+        or not os.environ.get("DBUS_SESSION_BUS_ADDRESS", "").strip()
+    ):
+        return None
+    return [
+        "systemd-run",
+        "--user",
+        "--scope",
+        "-q",
+        "--collect",
+        f"--unit=repo-ops-{os.getpid()}",
+        "-p",
+        f"MemoryMax={_SCOPE_MEMORY}",
+        "-p",
+        "MemorySwapMax=0",
+        "--",
+        sys.executable,
+        "-m",
+        "repo_ops.cli",
+        *argv,
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
+    # Only the console entry (argv None) re-execs; a caller passing argv runs in its own process.
+    scoped = _scope_argv(sys.argv[1:]) if argv is None else None
+    if scoped is not None:
+        return subprocess.run(scoped, check=False).returncode
     # Parallel workers run `git status` in umbrella repos while sibling workers
     # `git add` in their submodules; status's opportunistic index refresh
     # recurses into submodules and takes their index.lock, failing the add
