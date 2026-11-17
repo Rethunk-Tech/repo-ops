@@ -6,10 +6,12 @@ import json
 import logging
 import re
 import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
 from repo_ops_core.constants import GO_MODULE_MODE_ENV, TIMEOUT_APPLY, TIMEOUT_CHECK
+from repo_ops_core.filesystem import is_under_root
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import (
@@ -578,6 +580,15 @@ def tidy_go_module(ws: Workspace) -> None:
 
 
 def apply_go(ws: Workspace) -> None:
+    for guarded in (ws.path / "go.mod", ws.path / "go.sum"):
+        if not is_under_root(ws.git_repo, guarded):
+            # go get/tidy write through the link, and no rollback could restore
+            # an outside file.
+            print(
+                f"WARN {ws.path}: {guarded.name} resolves outside the repo; skipping",
+                file=sys.stderr,
+            )
+            return
     # 1. Sync go.work directive first (prevents downstream go list failures).
     _apply_go_work_directive(ws)
 

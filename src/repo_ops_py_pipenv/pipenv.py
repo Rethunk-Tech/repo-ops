@@ -202,13 +202,14 @@ def apply_pipenv(ws: Workspace) -> list[Change] | None:
     """Run ``pipenv update`` to upgrade all packages and regenerate Pipfile.lock."""
     if not shutil.which("pipenv"):
         raise RuntimeError(f"pipenv not on PATH for {ws.path}")
-    lockfile = ws.path / "Pipfile.lock"
-    if not is_under_root(ws.git_repo, lockfile):
-        # pipenv writes through the link, and rollback cannot restore an outside file.
-        print(
-            f"WARN {ws.path}: {lockfile.name} resolves outside the repo; skipping", file=sys.stderr
-        )
-        return None
+    for guarded in (ws.path / "Pipfile.lock", ws.path / "Pipfile"):
+        if not is_under_root(ws.git_repo, guarded):
+            # pipenv writes through the link, and rollback cannot restore an outside file.
+            print(
+                f"WARN {ws.path}: {guarded.name} resolves outside the repo; skipping",
+                file=sys.stderr,
+            )
+            return None
     proc = run(["pipenv", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pipenv update failed")

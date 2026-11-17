@@ -204,13 +204,14 @@ def apply_pdm(ws: Workspace) -> list[Change] | None:
     """Run ``pdm update`` to upgrade all dependencies in the lockfile."""
     if not shutil.which("pdm"):
         raise RuntimeError(f"pdm not on PATH for {ws.path}")
-    lockfile = ws.path / "pdm.lock"
-    if not is_under_root(ws.git_repo, lockfile):
-        # pdm writes through the link, and rollback cannot restore an outside file.
-        print(
-            f"WARN {ws.path}: {lockfile.name} resolves outside the repo; skipping", file=sys.stderr
-        )
-        return None
+    for guarded in (ws.path / "pdm.lock", ws.path / "pyproject.toml"):
+        if not is_under_root(ws.git_repo, guarded):
+            # pdm writes through the link, and rollback cannot restore an outside file.
+            print(
+                f"WARN {ws.path}: {guarded.name} resolves outside the repo; skipping",
+                file=sys.stderr,
+            )
+            return None
     proc = run(["pdm", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pdm update failed")

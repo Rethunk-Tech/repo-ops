@@ -601,6 +601,15 @@ def apply_yarn(ws: Workspace) -> list[Change]:
     note is written to stderr in that case.
     """
     # --- ghost-bump guard: plan what *should* move without resolutions --------
+    manifest = ws.path / "package.json"
+    if not is_under_root(ws.git_repo, manifest):
+        # yarn up writes through the link, and the snapshot skips symlinks, so a
+        # rollback could not put an outside file back.
+        print(
+            f"WARN {ws.path}: {manifest.name} resolves outside the repo; skipping",
+            file=sys.stderr,
+        )
+        return []
     # Check whether check_yarn_snapshot already ran the probe in this process
     # and cached the result.  If so, reuse it (avoids a second isolated copy).
     # Fall back to a fresh probe when apply is called without a prior check

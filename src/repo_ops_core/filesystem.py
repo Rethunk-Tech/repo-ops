@@ -182,6 +182,9 @@ def restore_file(path: Path, snapshot: bytes | None, root: Path) -> None:
     if path.is_symlink():
         if is_under_root(root, path):
             path = path.resolve()
+        elif snapshot is None:
+            # An escaping link is never snapshotted, so it is not ours to remove.
+            return
         else:
             path.unlink()
     if snapshot is None:

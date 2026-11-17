@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from subprocess import CompletedProcess
 from unittest.mock import patch
 
 from repo_ops_js_pnpm import pnpm
 from repo_ops_models import Change, Workspace
 from repo_ops_nuget import nuget
 from repo_ops_py_pip_tools import pip_tools
+from repo_ops_py_pipenv import pipenv
 from repo_ops_py_poetry import poetry
 from repo_ops_upgrade_remediations_js import remediations
 
@@ -161,3 +163,87 @@ def test_poetry_apply_skips_symlinked_lockfile(tmp_path: Path) -> None:
 
     run_mock.assert_not_called()
     assert outside.read_text(encoding="utf-8") == ""
+
+
+def test_poetry_apply_skips_symlinked_manifest(tmp_path: Path) -> None:
+    """poetry add rewrites pyproject.toml through the link, so an escaping one is skipped."""
+    ws = _repo_workspace(tmp_path)
+    ws = replace(ws, ecosystem="python", manager="poetry")
+    outside = tmp_path / "outside" / "pyproject.toml"
+    outside.parent.mkdir()
+    body = '[tool.poetry.dependencies]\nflask = "^2.0"\n'
+    outside.write_text(body, encoding="utf-8")
+    (ws.path / "pyproject.toml").symlink_to(outside)
+
+    with (
+        patch.object(poetry.shutil, "which", return_value="/usr/bin/poetry"),
+        patch.object(poetry, "run") as run_mock,
+    ):
+        assert poetry.apply_poetry(ws) is None
+
+    run_mock.assert_not_called()
+    assert outside.read_text(encoding="utf-8") == body
+    assert (ws.path / "pyproject.toml").is_symlink()
+
+
+def test_poetry_apply_follows_in_repo_manifest_symlink(tmp_path: Path) -> None:
+    """A manifest link resolving inside the repo is ours to write: the apply proceeds."""
+    ws = _repo_workspace(tmp_path)
+    ws = replace(ws, ecosystem="python", manager="poetry")
+    target = ws.path / "pyproject.base.toml"
+    target.write_text('[tool.poetry.dependencies]\nflask = "^2.0"\n', encoding="utf-8")
+    (ws.path / "pyproject.toml").symlink_to(target)
+
+    with (
+        patch.object(poetry.shutil, "which", return_value="/usr/bin/poetry"),
+        patch.object(poetry, "run", return_value=CompletedProcess([], 0)),
+        patch.object(poetry, "_enforce_version_ceilings"),
+        patch.object(poetry, "_apply_poetry_targeted_bumps", return_value=[]),
+    ):
+        assert poetry.apply_poetry(ws) == []
+
+    assert (ws.path / "pyproject.toml").is_symlink()
+
+
+def test_pipenv_apply_skips_symlinked_manifest(tmp_path: Path) -> None:
+    """pipenv install rewrites Pipfile through the link, so an escaping one is skipped."""
+    ws = _repo_workspace(tmp_path)
+    ws = replace(ws, ecosystem="python", manager="pipenv")
+    outside = tmp_path / "outside" / "Pipfile"
+    outside.parent.mkdir()
+    body = '[packages]\nflask = "==2.0.0"\n'
+    outside.write_text(body, encoding="utf-8")
+    (ws.path / "Pipfile").symlink_to(outside)
+
+    with (
+        patch.object(pipenv.shutil, "which", return_value="/usr/bin/pipenv"),
+        patch.object(pipenv, "run") as run_mock,
+    ):
+        assert pipenv.apply_pipenv(ws) is None
+
+    run_mock.assert_not_called()
+    assert outside.read_text(encoding="utf-8") == body
+    assert (ws.path / "Pipfile").is_symlink()
+
+
+def test_nuget_apply_leaves_symlinked_project_link_alone(tmp_path: Path) -> None:
+    """A project link leaving the repo is skipped, not unlinked by the failed-bump rollback."""
+    ws = _repo_workspace(tmp_path)
+    ws = replace(ws, ecosystem="nuget", manager="nuget")
+    outside = tmp_path / "outside" / "app.csproj"
+    outside.parent.mkdir()
+    body = (
+        '<Project><ItemGroup><PackageReference Include="Serilog" Version="1.0.0" /></ItemGroup>'
+        "</Project>"
+    )
+    outside.write_text(body, encoding="utf-8")
+    (ws.path / "app.csproj").symlink_to(outside)
+
+    with patch.object(
+        nuget, "_candidates", return_value=([Change("Serilog", "1.0.0", "2.0.0")], [])
+    ):
+        remaining = nuget.apply_nuget(ws)
+
+    assert remaining == [Change("Serilog", "1.0.0", "2.0.0")]
+    assert outside.read_text(encoding="utf-8") == body
+    assert (ws.path / "app.csproj").is_symlink()

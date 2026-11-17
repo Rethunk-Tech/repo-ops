@@ -173,13 +173,14 @@ def check_poetry(
 def apply_poetry(ws: Workspace) -> list[Change] | None:
     if not shutil.which("poetry"):
         raise RuntimeError(f"poetry not on PATH for {ws.path}")
-    lockfile = ws.path / "poetry.lock"
-    if not is_under_root(ws.git_repo, lockfile):
-        # poetry writes through the link, and rollback cannot restore an outside file.
-        print(
-            f"WARN {ws.path}: {lockfile.name} resolves outside the repo; skipping", file=sys.stderr
-        )
-        return None
+    for guarded in (ws.path / "poetry.lock", ws.path / "pyproject.toml"):
+        if not is_under_root(ws.git_repo, guarded):
+            # poetry writes through the link, and rollback cannot restore an outside file.
+            print(
+                f"WARN {ws.path}: {guarded.name} resolves outside the repo; skipping",
+                file=sys.stderr,
+            )
+            return None
     proc = run(["poetry", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "poetry update failed")

@@ -11,7 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY
-from repo_ops_core.filesystem import read_json_file
+from repo_ops_core.filesystem import is_under_root, read_json_file
 from repo_ops_core.holds import target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
@@ -288,8 +288,19 @@ def apply_with_members(
     ws: Workspace, apply_dir: Callable[[Workspace, Path], list[Change]]
 ) -> list[Change]:
     """Run a one-directory apply at *ws* and at each member; *apply_dir* gets the lockfile root."""
+    members = [ws, *member_workspaces(ws)]
+    for target in members:
+        manifest = target.path / "package.json"
+        if not is_under_root(ws.git_repo, manifest):
+            # The manager writes through the link, and the snapshot step skips
+            # symlinks, so a rollback could not put an outside file back.
+            print(
+                f"WARN {target.path}: {manifest.name} resolves outside the repo; skipping",
+                file=sys.stderr,
+            )
+            return []
     behind = apply_dir(ws, ws.path)
-    for member in member_workspaces(ws):
+    for member in members[1:]:
         merge_changes(behind, _in_member(apply_dir(member, ws.path), ws, member))
     if peer_lockstep(ws, [], write=True):
         # bun.lock mirrors member peer ranges and --frozen-lockfile passes a stale copy.

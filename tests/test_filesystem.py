@@ -110,6 +110,21 @@ def test_restore_file_does_not_follow_symlink(tmp_path: Path) -> None:
     assert link.read_bytes() == b"restored\n"
 
 
+def test_restore_file_keeps_symlink_it_never_snapshotted(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    target = tmp_path / "outside.toml"
+    target.write_bytes(b"mine\n")
+    link = root / "pyproject.toml"
+    link.symlink_to(target)
+
+    assert snapshot_file(link, root) is None
+    restore_file(link, None, root)
+
+    assert target.read_bytes() == b"mine\n"
+    assert link.is_symlink()
+
+
 def test_snapshot_restore_in_repo_symlink_keeps_link_and_restores_target(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     target = root / "requirements" / "base.in"

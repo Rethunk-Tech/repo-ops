@@ -314,13 +314,10 @@ def check_nuget(ws: Workspace) -> tuple[list[Change], list[Change]]:
 def apply_nuget(ws: Workspace) -> list[Change]:
     """Bump each pin and restore; return the bumps that did not land plus the held ones."""
     allowed, held = _candidates(ws)
-    escaping = [
-        path
-        for path in find_nuget_files(ws.path)
-        if path.name == _LOCKFILE and not is_under_root(ws.git_repo, path)
-    ]
+    escaping = [path for path in find_nuget_files(ws.path) if not is_under_root(ws.git_repo, path)]
     if escaping:
-        # dotnet restore writes through the link, and rollback cannot restore an outside file.
+        # The bump and dotnet restore write through the link, and rollback cannot
+        # restore an outside file.
         print(
             f"WARN {ws.path}: {escaping[0].name} resolves outside the repo; skipping",
             file=sys.stderr,
