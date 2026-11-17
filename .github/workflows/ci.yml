@@ -62,3 +62,20 @@ jobs:
           python-version: "3.14"
           skip-install: "true"
           run-audit: "true"
+
+  # One required check for branch protection; a matrix leg that never ran otherwise reads as not failing.
+  all-checks:
+    if: always()
+    needs: [ci, integration, audit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any check did not succeed
+        run: |
+          if [ "${{ needs.ci.result }}" != "success" ] \
+            || [ "${{ needs.integration.result }}" != "success" ] \
+            || [ "${{ needs.audit.result }}" != "success" ]; then
+            echo "ci=${{ needs.ci.result }} integration=${{ needs.integration.result }} audit=${{ needs.audit.result }}"
+            exit 1
+          fi
+          echo "all checks passed"
