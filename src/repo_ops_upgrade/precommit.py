@@ -26,6 +26,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from repo_ops_core.filesystem import guarded_write, is_under_root
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.version_utils import version_satisfies_ceiling
 from repo_ops_models import Change, Workspace
@@ -424,10 +425,13 @@ def apply_precommit(ws: Workspace) -> None:
     cfg_path = _find_precommit_config(ws.path)
     if cfg_path is None:
         return
+    if not is_under_root(ws.git_repo, cfg_path):
+        # The config is rewritten directly, and a link out of the repo is not
+        # ours to write through.
+        return
 
     # Discover regular bumps first; this also warms the tag caches.
     check_precommit(ws)
-
     # Bug 3 fix: read as bytes, decode via latin-1 (lossless — byte N decodes to
     # U+00NN and re-encodes back to byte N, so non-UTF-8 content is never
     # replaced with U+FFFD or otherwise corrupted on writeback).
@@ -503,4 +507,9 @@ def apply_precommit(ws: Workspace) -> None:
 
     if changed:
         # Bug 3 fix: encode as latin-1 to exactly reverse the decode.
-        cfg_path.write_bytes("".join(lines).encode("latin-1"))
+        guarded_write(
+            cfg_path,
+            "".join(lines).encode("latin-1"),
+            ws.git_repo,
+            appender="precommit",
+        )

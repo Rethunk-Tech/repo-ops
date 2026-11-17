@@ -15,7 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from repo_ops_core.config import load_repo_config
-from repo_ops_core.filesystem import contained_path
+from repo_ops_core.filesystem import contained_path, guarded_write
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_lockfiles.parsers import (
     split_name_version,
@@ -118,5 +118,5 @@ def sync_soup_versions(
     updated = "".join(rewrite(line) for line in text.splitlines(keepends=True))
     if updated == text:
         return False
-    path.write_text(updated, encoding="utf-8")
+    guarded_write(path, updated.encode("utf-8"), repo_root, appender="soup")
     return True

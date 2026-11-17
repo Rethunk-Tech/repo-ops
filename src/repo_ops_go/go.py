@@ -6,12 +6,11 @@ import json
 import logging
 import re
 import subprocess
-import sys
 from collections.abc import Iterator
 from pathlib import Path
 
 from repo_ops_core.constants import GO_MODULE_MODE_ENV, TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.filesystem import is_under_root
+from repo_ops_core.filesystem import guard_tool_writes
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import (
@@ -568,6 +567,10 @@ def _apply_go_work_directive(ws: Workspace) -> None:
     work_changes = _plan_go_work_directive_changes(go_work_dir)
     if not work_changes:
         return
+    # go.work may sit above the workspace but never above the repo; go work use
+    # rewrites it and go.mod files it lists.
+    if not guard_tool_writes(ws.git_repo, "go", go_work_dir / "go.work"):
+        return
     proc = run(["go", "work", "use"], go_work_dir, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go work use failed", ws.path)
@@ -580,15 +583,8 @@ def tidy_go_module(ws: Workspace) -> None:
 
 
 def apply_go(ws: Workspace) -> None:
-    for guarded in (ws.path / "go.mod", ws.path / "go.sum"):
-        if not is_under_root(ws.git_repo, guarded):
-            # go get/tidy write through the link, and no rollback could restore
-            # an outside file.
-            print(
-                f"WARN {ws.path}: {guarded.name} resolves outside the repo; skipping",
-                file=sys.stderr,
-            )
-            return
+    if not guard_tool_writes(ws.git_repo, "go", ws.path / "go.mod", ws.path / "go.sum"):
+        return
     # 1. Sync go.work directive first (prevents downstream go list failures).
     _apply_go_work_directive(ws)
 

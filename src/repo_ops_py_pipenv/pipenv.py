@@ -9,7 +9,7 @@ from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import (
-    is_under_root,
+    guard_tool_writes,
     read_json_file,
     read_toml_file,
     restore_file,
@@ -202,14 +202,10 @@ def apply_pipenv(ws: Workspace) -> list[Change] | None:
     """Run ``pipenv update`` to upgrade all packages and regenerate Pipfile.lock."""
     if not shutil.which("pipenv"):
         raise RuntimeError(f"pipenv not on PATH for {ws.path}")
-    for guarded in (ws.path / "Pipfile.lock", ws.path / "Pipfile"):
-        if not is_under_root(ws.git_repo, guarded):
-            # pipenv writes through the link, and rollback cannot restore an outside file.
-            print(
-                f"WARN {ws.path}: {guarded.name} resolves outside the repo; skipping",
-                file=sys.stderr,
-            )
-            return None
+    # pipenv writes through a symlinked manifest/lockfile; the snapshot skips
+    # links, so a rollback could not restore an outside file.
+    if not guard_tool_writes(ws.git_repo, "pipenv", ws.path / "Pipfile.lock", ws.path / "Pipfile"):
+        return None
     proc = run(["pipenv", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pipenv update failed")

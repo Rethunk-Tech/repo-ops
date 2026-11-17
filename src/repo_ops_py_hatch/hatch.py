@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.filesystem import read_toml_file
+from repo_ops_core.filesystem import guard_tool_writes, read_toml_file
 from repo_ops_core.process import run
 from repo_ops_models import Change, Workspace
 from repo_ops_py.uv_lock import apply_uv_lock, check_uv_lock
@@ -78,6 +78,8 @@ def check_hatch(ws: Workspace) -> list[Change]:
 def apply_hatch(ws: Workspace) -> None:
     if not shutil.which("uv"):
         print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
+        return
+    if not guard_tool_writes(ws.git_repo, "hatch", ws.path / "uv.lock", ws.path / "pyproject.toml"):
         return
     if not (ws.path / "uv.lock").exists():
         proc = run(["uv", "lock"], ws.path, timeout=TIMEOUT_APPLY)

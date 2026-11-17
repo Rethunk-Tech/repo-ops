@@ -8,7 +8,12 @@ import sys
 from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.filesystem import is_under_root, read_toml_file, restore_file, snapshot_file
+from repo_ops_core.filesystem import (
+    guard_tool_writes,
+    read_toml_file,
+    restore_file,
+    snapshot_file,
+)
 from repo_ops_core.holds import resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
@@ -173,14 +178,12 @@ def check_poetry(
 def apply_poetry(ws: Workspace) -> list[Change] | None:
     if not shutil.which("poetry"):
         raise RuntimeError(f"poetry not on PATH for {ws.path}")
-    for guarded in (ws.path / "poetry.lock", ws.path / "pyproject.toml"):
-        if not is_under_root(ws.git_repo, guarded):
-            # poetry writes through the link, and rollback cannot restore an outside file.
-            print(
-                f"WARN {ws.path}: {guarded.name} resolves outside the repo; skipping",
-                file=sys.stderr,
-            )
-            return None
+    # poetry add/update write through a symlinked manifest/lockfile, and the
+    # snapshot skips links, so a rollback could not restore an outside file.
+    if not guard_tool_writes(
+        ws.git_repo, "poetry", ws.path / "poetry.lock", ws.path / "pyproject.toml"
+    ):
+        return None
     proc = run(["poetry", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "poetry update failed")

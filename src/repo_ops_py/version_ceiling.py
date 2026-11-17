@@ -11,6 +11,7 @@ import subprocess
 from collections.abc import Callable
 
 from repo_ops_core.constants import TIMEOUT_APPLY
+from repo_ops_core.filesystem import guarded_write, is_under_root
 from repo_ops_core.holds import resolve_package_hold
 from repo_ops_core.version_utils import hold_ceiling_spec, version_satisfies_ceiling
 from repo_ops_models import Workspace
@@ -36,6 +37,10 @@ def enforce_version_ceilings(
     if not versions:
         return
     manifest = ws.path / manifest_name
+    if not is_under_root(ws.git_repo, manifest):
+        # The clamp rewrites the manifest through the tool, and the restore
+        # below writes it directly; neither is safe outside the repo.
+        return
     for name, resolved in versions.items():
         rule = resolve_package_hold(ws, name)
         if rule is None or version_satisfies_ceiling(resolved, rule.max_version):
@@ -50,7 +55,7 @@ def enforce_version_ceilings(
             )
         finally:
             if original is not None:
-                manifest.write_bytes(original)
+                guarded_write(manifest, original, ws.git_repo, appender=tool)
         if proc.returncode != 0:
             raise RuntimeError(
                 f"hold: failed to clamp {name} back to <={rule.max_version} "

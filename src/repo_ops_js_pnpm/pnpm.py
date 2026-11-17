@@ -13,7 +13,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.filesystem import is_under_root, read_json_file
+from repo_ops_core.filesystem import guarded_write, is_under_root, read_json_file
 from repo_ops_core.holds import target_within_hold
 from repo_ops_core.process import run as _process_run
 from repo_ops_core.version_utils import normalize_version, semver_tuple
@@ -216,7 +216,12 @@ def _rewrite_catalog_package(ws: Workspace, package: str, target: str) -> bool:
     output = StringIO()
     yaml.dump(data, output)
     try:
-        path.write_text(output.getvalue(), encoding="utf-8")
+        guarded_write(
+            path,
+            output.getvalue().encode("utf-8"),
+            ws.git_repo,
+            appender="pnpm",
+        )
     except OSError:
         return False
     return True

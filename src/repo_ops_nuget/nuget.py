@@ -13,13 +13,18 @@ import gzip
 import json
 import os
 import re
-import sys
 import urllib.error
 from functools import cache
 from pathlib import Path
 
 from repo_ops_core.constants import SKIP_DIRS, TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.filesystem import is_under_root, restore_file, snapshot_file
+from repo_ops_core.filesystem import (
+    guard_tool_writes,
+    guarded_write,
+    is_under_root,
+    restore_file,
+    snapshot_file,
+)
 from repo_ops_core.holds import resolve_package_hold, target_within_hold
 from repo_ops_core.http import open_url
 from repo_ops_core.process import run
@@ -261,7 +266,7 @@ def _candidates(ws: Workspace) -> tuple[list[Change], list[Change]]:
     return allowed, held
 
 
-def _rewrite(path: Path, package: str, old: str, new: str) -> bool:
+def _rewrite(path: Path, package: str, old: str, new: str, root: Path) -> bool:
     text = path.read_text(encoding="utf-8")
     if path.name == "global.json":
         updated = re.sub(
@@ -284,7 +289,7 @@ def _rewrite(path: Path, package: str, old: str, new: str) -> bool:
         updated = _REF_TAG_RE.sub(bump, text)
     if updated == text:
         return False
-    path.write_text(updated, encoding="utf-8")
+    guarded_write(path, updated.encode("utf-8"), root, appender="nuget")
     return True
 
 
@@ -314,14 +319,7 @@ def check_nuget(ws: Workspace) -> tuple[list[Change], list[Change]]:
 def apply_nuget(ws: Workspace) -> list[Change]:
     """Bump each pin and restore; return the bumps that did not land plus the held ones."""
     allowed, held = _candidates(ws)
-    escaping = [path for path in find_nuget_files(ws.path) if not is_under_root(ws.git_repo, path)]
-    if escaping:
-        # The bump and dotnet restore write through the link, and rollback cannot
-        # restore an outside file.
-        print(
-            f"WARN {ws.path}: {escaping[0].name} resolves outside the repo; skipping",
-            file=sys.stderr,
-        )
+    if not guard_tool_writes(ws.git_repo, "nuget", *find_nuget_files(ws.path)):
         return [*allowed, *held]
     remaining = list(held)
     for change in allowed:
@@ -332,7 +330,7 @@ def apply_nuget(ws: Workspace) -> list[Change]:
             for path in files
             if path.name != _LOCKFILE
             and is_under_root(ws.git_repo, path)
-            and _rewrite(path, change.name, change.from_ver, change.to)
+            and _rewrite(path, change.name, change.from_ver, change.to, ws.git_repo)
         ]
         if touched and _restore(ws) is None:
             continue

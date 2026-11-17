@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY
-from repo_ops_core.filesystem import is_under_root, read_json_file
+from repo_ops_core.filesystem import guard_tool_writes, is_under_root, read_json_file
 from repo_ops_core.git import git_repo_for
 from repo_ops_core.holds import target_within_hold
 from repo_ops_core.process import run as _process_run
@@ -554,6 +554,9 @@ def _plan_without_resolutions(ws: Workspace) -> list[Change]:
                 continue
             if "resolutions" in data:
                 del data["resolutions"]
+                # This is the throwaway copy above, not the workspace; a link
+                # resolving back out of it was already dropped by
+                # package_json_paths.
                 pkg_path.write_text(json.dumps(data), encoding="utf-8")
         corepack_prepare("yarn", mdir)
         proc = run(_yarn_up_cmd(), mdir, timeout=TIMEOUT_APPLY)
@@ -602,13 +605,9 @@ def apply_yarn(ws: Workspace) -> list[Change]:
     """
     # --- ghost-bump guard: plan what *should* move without resolutions --------
     manifest = ws.path / "package.json"
-    if not is_under_root(ws.git_repo, manifest):
+    if not guard_tool_writes(ws.git_repo, "yarn", manifest, ws.path / "yarn.lock"):
         # yarn up writes through the link, and the snapshot skips symlinks, so a
         # rollback could not put an outside file back.
-        print(
-            f"WARN {ws.path}: {manifest.name} resolves outside the repo; skipping",
-            file=sys.stderr,
-        )
         return []
     # Check whether check_yarn_snapshot already ran the probe in this process
     # and cached the result.  If so, reuse it (avoids a second isolated copy).

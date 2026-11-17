@@ -9,6 +9,11 @@ import sys
 from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
+from repo_ops_core.filesystem import (
+    guard_tool_writes,
+    guarded_write,
+    is_under_root,
+)
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
@@ -107,6 +112,20 @@ def _deno_snapshot_paths(ws: Workspace) -> set[Path]:
     return paths
 
 
+def _deno_guarded_paths(ws: Workspace) -> list[Path]:
+    """Every file a deno update rewrites: config files, import maps, and the lockfile."""
+    workspace_root = Path(ws.path).resolve()
+    return [
+        *(workspace_root / name for name in _DENO_CONFIG_FILENAMES),
+        *sorted(_deno_import_map_paths(ws), key=lambda item: item.as_posix()),
+        workspace_root / "deno.lock",
+    ]
+
+
+def _deno_writes_confined(ws: Workspace) -> bool:
+    return guard_tool_writes(ws.git_repo, "deno", *_deno_guarded_paths(ws))
+
+
 def _snapshot_deno_workspace(ws: Workspace) -> dict[Path, bytes]:
     snapshot = dict(snapshot_workspace_files(ws.path, "deno"))
     for path in _deno_snapshot_paths(ws):
@@ -202,7 +221,7 @@ def _release_unheld_deno_pin(ws: Workspace, package: str) -> bool:
     paths.update(
         workspace_root / name
         for name in _DENO_CONFIG_FILENAMES
-        if (workspace_root / name).is_file()
+        if (workspace_root / name).is_file() and is_under_root(ws.git_repo, workspace_root / name)
     )
     changed = False
     for path in sorted(paths, key=lambda item: item.as_posix()):
@@ -215,7 +234,12 @@ def _release_unheld_deno_pin(ws: Workspace, package: str) -> bool:
             for key in ("imports", "scopes"):
                 file_changed |= _release_deno_import_pins(payload.get(key), package)
         if file_changed:
-            path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+            guarded_write(
+                path,
+                (json.dumps(payload, indent=2) + "\n").encode("utf-8"),
+                ws.git_repo,
+                appender="deno",
+            )
             changed = True
     return changed
 
@@ -223,9 +247,10 @@ def _release_unheld_deno_pin(ws: Workspace, package: str) -> bool:
 def _restore_deno_workspace(ws: Workspace, before: dict[Path, bytes]) -> None:
     after = _snapshot_deno_workspace(ws)
     for path in set(before) | set(after):
+        if not is_under_root(ws.git_repo, path):
+            continue
         if path in before:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(before[path])
+            guarded_write(path, before[path], ws.git_repo, appender="deno")
         elif path.exists():
             path.unlink()
 
@@ -432,6 +457,8 @@ def targeted_bump_behind(ws: Workspace, behind: list[Change]) -> tuple[list[Chan
     """Run a reversible per-package ``deno update`` for behind-latest deps."""
     if not behind:
         return [], behind
+    if not _deno_writes_confined(ws):
+        return [], behind
     applied: list[Change] = []
     still_behind: list[Change] = []
     for change in behind:
@@ -495,6 +522,8 @@ def _enforce_deno_version_ceilings(ws: Workspace, candidate_names: list[str] | N
     """Clamp held packages that remain above their ceiling after an update."""
     candidates = set(candidate_names or ())
     candidates.update(_deno_lock_package_names(ws))
+    if not _deno_writes_confined(ws):
+        return
     for name in sorted(candidates):
         rule = _resolve_deno_hold(ws, name)
         if rule is None:
@@ -553,6 +582,8 @@ def apply_deno(ws: Workspace) -> list[Change]:
     """
     if not shutil.which("deno"):
         raise RuntimeError(f"deno not on PATH for {ws.path}")
+    if not _deno_writes_confined(ws):
+        return []
     planned, behind = check_deno(ws)
     proc = run(
         ["deno", "outdated", "--update", "--latest"],

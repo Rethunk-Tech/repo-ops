@@ -381,8 +381,8 @@ def test_requirement_rewrite_keeps_every_line_ending(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     for crate, old, new in (("itoa", "0.4", "1.0.19"), ("memchr", "2.4", "3.0.0")):
-        assert _replace_cargo_requirement(manifest, crate, old, new)
-    assert _replace_cargo_requirement(manifest, "serde", "1.0", "2.0.0")
+        assert _replace_cargo_requirement(manifest, crate, old, new, tmp_path)
+    assert _replace_cargo_requirement(manifest, "serde", "1.0", "2.0.0", tmp_path)
     assert manifest.read_text(encoding="utf-8") == (
         '[dependencies]\nitoa = "1.0.19"\nmemchr = { version = "3.0.0", default-features = false }\n'
         '\n[dependencies.serde]\nversion = "2.0.0"\nfeatures = ["derive"]\n'

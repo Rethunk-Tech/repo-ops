@@ -16,6 +16,9 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.error import YAMLError
 
+from repo_ops_core.filesystem import guarded_write
+from repo_ops_core.git import git_repo_for
+
 # Validate parsed action@pin shape only; does not discover pins in file text.
 _PIN_TAG_RE = re.compile(r"^v[\d.]+$")
 _PIN_SHA_RE = re.compile(r"^(?:sha[0-9a-f]+|[0-9a-f]{7,40})$", re.IGNORECASE)
@@ -274,8 +277,15 @@ def update_workflow_pins(path: Path, replacements: list[PinReplacement]) -> bool
 
     if not changed:
         return False
+    # Confined to the enclosing repo (or, outside one, the file's own directory):
+    # a workflow symlinked out of the tree is not ours to rewrite.
     try:
-        path.write_bytes("".join(lines).encode("utf-8", "surrogateescape"))
+        guarded_write(
+            path,
+            "".join(lines).encode("utf-8", "surrogateescape"),
+            git_repo_for(path) or path.parent,
+            appender="actions",
+        )
     except OSError as exc:
         raise WorkflowParseError(f"{path.name}: {exc}") from exc
     return True

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_CHECK
+from repo_ops_core.filesystem import guard_tool_writes, guarded_write
 from repo_ops_core.holds import resolve_package_hold, target_within_hold
 from repo_ops_core.http import open_url
 from repo_ops_core.version_utils import semver_tuple
@@ -229,13 +230,20 @@ def plan_toolchains(ws: Workspace) -> tuple[list[Change], list[Change]]:
 def apply_toolchains(ws: Workspace) -> tuple[list[Change], list[Change]]:
     """Rewrite the pins :func:`plan_toolchains` reports; same return shape."""
     moves, behind = _plan(ws)
+    # go.work may sit above the workspace (a repo-root work file for a module
+    # below it) but never above the repo, which is what confines every write
+    # and the rollback.
+    if not guard_tool_writes(ws.git_repo, "toolchains", *(pin.path for pin, _, _ in moves)):
+        return [], behind
     for pin, _, new in moves:
         text = _read(pin.path)
         if text is None:
             continue
-        pin.path.write_text(
-            pin.regex.sub(lambda m, new=new: m.group("pre") + new, text, count=1),
-            encoding="utf-8",
+        guarded_write(
+            pin.path,
+            pin.regex.sub(lambda m, new=new: m.group("pre") + new, text, count=1).encode("utf-8"),
+            ws.git_repo,
+            appender="toolchains",
         )
     if any(pin.path.name == "go.mod" for pin, _, _ in moves):
         # Past go 1.17 go.mod must list every module the build needs, so a

@@ -8,7 +8,7 @@ from pathlib import Path
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
-from repo_ops_core.filesystem import is_under_root, read_json_file
+from repo_ops_core.filesystem import guarded_write, is_under_root, read_json_file
 from repo_ops_core.version_utils import normalize_version
 from repo_ops_lockfiles.constants import (
     DENO_LOCKFILES,
@@ -239,9 +239,12 @@ def restore_workspace_snapshot(
     """Restore lockfile/manifest bytes captured before apply."""
     after = snapshot_workspace_files(mdir, manager)
     for path in set(before) | set(after):
+        # The path was a regular file at capture and may be a link now: writing
+        # through one planted since would land outside the workspace.
+        if not is_under_root(mdir, path):
+            continue
         if path in before:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(before[path])
+            guarded_write(path, before[path], mdir, appender="snapshot")
         elif path.exists():
             path.unlink()
 

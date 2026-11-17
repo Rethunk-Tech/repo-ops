@@ -87,8 +87,12 @@ def test_go_work_moves_with_its_module(tmp_path: Path) -> None:
     mod.mkdir()
     (mod / "go.mod").write_text("go 1.27.2\n")
     (tmp_path / "go.work").write_text("go 1.27.2\n\nuse ./svc\n")
+    (tmp_path / ".git").mkdir()
     register_go_work_dir(mod, tmp_path)
-    changes, _ = toolchains.apply_toolchains(_ws(mod, "go"))
+    # go.work sits above the module but inside the repo, which is the layout it
+    # is allowed to write; only a work file outside git_repo is refused.
+    ws = Workspace(path=mod, ecosystem="go", manager="go", git_repo=tmp_path, label="x")
+    changes, _ = toolchains.apply_toolchains(ws)
     assert {c.name for c in changes} == {"go", "go.work go directive"}
     assert (tmp_path / "go.work").read_text().startswith("go 1.27.3\n")
 

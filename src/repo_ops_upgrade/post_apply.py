@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from repo_ops_core.constants import TIMEOUT_APPLY
-from repo_ops_core.filesystem import contained_path
+from repo_ops_core.filesystem import contained_path, guarded_write
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version
 from repo_ops_lockfiles.constants import (
@@ -377,8 +377,7 @@ def rollback_owned_edits(repo: Path, edits: dict[str, OwnedEdit]) -> bool:
         elif edit.before is None:
             p.unlink(missing_ok=True)
         else:
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_bytes(edit.before)
+            guarded_write(p, edit.before, repo, appender="rollback")
     if not head_restore:
         return True
     tracked = run(

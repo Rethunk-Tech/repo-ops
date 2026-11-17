@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import re
-import sys
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.filesystem import is_under_root
+from repo_ops_core.filesystem import guard_tool_writes
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import pep440_precedence
 from repo_ops_lockfiles.parsers import toml_lock_versions
@@ -89,14 +88,10 @@ def apply_uv_lock(ws: Workspace) -> None:
     """Run ``uv lock --upgrade`` then ``uv sync``."""
     lockfile = ws.path / "uv.lock"
     manifest = ws.path / "pyproject.toml"
-    for guarded in (lockfile, manifest):
-        if not is_under_root(ws.git_repo, guarded):
-            # uv writes through the link, and rollback cannot restore an outside file.
-            print(
-                f"WARN {ws.path}: {guarded.name} resolves outside the repo; skipping",
-                file=sys.stderr,
-            )
-            return
+    # uv writes through a symlinked manifest/lockfile, and rollback cannot
+    # restore an outside file.
+    if not guard_tool_writes(ws.git_repo, "uv", lockfile, manifest):
+        return
     before = _uv_lock_versions(ws)
     proc = run(["uv", "lock", "--upgrade"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:

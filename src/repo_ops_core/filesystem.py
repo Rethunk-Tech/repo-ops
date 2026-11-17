@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import tomllib
 from datetime import UTC, datetime
@@ -41,6 +42,61 @@ def is_under_root(root: Path, path: Path) -> bool:
         path.resolve().relative_to(root.resolve())
     except (OSError, ValueError):
         return False
+    return True
+
+
+class OutsideRepoError(RuntimeError):
+    """A write would resolve outside the repo root it is confined to."""
+
+
+def guarded_write(
+    path: Path,
+    data: bytes,
+    root: Path,
+    *,
+    appender: str | None = None,
+) -> None:
+    """Write *data* to *path*, refusing a target that resolves outside *root*.
+
+    *appender* names the calling applier so the message says which one skipped;
+    a refused write raises :class:`OutsideRepoError` (a ``RuntimeError``, so
+    ``apply_workspace`` records it as a workspace failure).
+    """
+    if not is_under_root(root, path):
+        raise OutsideRepoError(
+            f"{appender + ': ' if appender else ''}{path} resolves outside the repo {root}"
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+
+def guarded_text(path: Path, root: Path, *, appender: str | None = None) -> str:
+    """Read *path* as UTF-8 text, refusing a link that resolves outside *root*."""
+    if not is_under_root(root, path):
+        raise OutsideRepoError(
+            f"{appender + ': ' if appender else ''}{path} resolves outside the repo {root}"
+        )
+    return path.read_text(encoding="utf-8")
+
+
+def warn_skip(appender: str, reason: str) -> None:
+    """Log the workspace-skip line appliers print when a guard refuses a write."""
+    print(f"WARN {appender}: {reason}; skipping", file=sys.stderr)
+
+
+def guard_tool_writes(root: Path, applier: str, *paths: Path) -> bool:
+    """True when every manifest/lockfile a tool run rewrites resolves inside *root*.
+
+    Package managers and formatters write through a symlinked manifest, and the
+    snapshot step skips links, so a rollback could not put an outside file back.
+    A path that does not exist yet resolves through its parent, which is what a
+    missing lockfile needs: the guard covers the directory the tool will write in.
+    Prints the workspace-skip line and returns False for the first escape.
+    """
+    for path in paths:
+        if not is_under_root(root, path):
+            warn_skip(applier, f"{path.name} resolves outside the repo")
+            return False
     return True
 
 

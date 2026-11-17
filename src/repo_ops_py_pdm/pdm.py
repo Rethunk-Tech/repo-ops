@@ -8,7 +8,7 @@ import sys
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import (
-    is_under_root,
+    guard_tool_writes,
     read_toml_file,
     restore_file,
     snapshot_file,
@@ -204,14 +204,10 @@ def apply_pdm(ws: Workspace) -> list[Change] | None:
     """Run ``pdm update`` to upgrade all dependencies in the lockfile."""
     if not shutil.which("pdm"):
         raise RuntimeError(f"pdm not on PATH for {ws.path}")
-    for guarded in (ws.path / "pdm.lock", ws.path / "pyproject.toml"):
-        if not is_under_root(ws.git_repo, guarded):
-            # pdm writes through the link, and rollback cannot restore an outside file.
-            print(
-                f"WARN {ws.path}: {guarded.name} resolves outside the repo; skipping",
-                file=sys.stderr,
-            )
-            return None
+    # pdm writes through a symlinked manifest/lockfile; the snapshot skips
+    # links, so a rollback could not restore an outside file.
+    if not guard_tool_writes(ws.git_repo, "pdm", ws.path / "pdm.lock", ws.path / "pyproject.toml"):
+        return None
     proc = run(["pdm", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "pdm update failed")

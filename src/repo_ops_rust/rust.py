@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import sys
 import tomllib
 from functools import cache
 from http.client import HTTPSConnection
@@ -18,7 +17,13 @@ from pathlib import Path
 from urllib.parse import quote
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.filesystem import is_under_root, restore_file, snapshot_file
+from repo_ops_core.filesystem import (
+    guard_tool_writes,
+    guarded_write,
+    is_under_root,
+    restore_file,
+    snapshot_file,
+)
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
@@ -380,6 +385,7 @@ def _replace_cargo_requirement(
     crate_name: str,
     old_requirement: str,
     new_requirement: str,
+    root: Path,
 ) -> bool:
     lines = manifest.read_text(encoding="utf-8").splitlines(keepends=True)
     section = ""
@@ -445,7 +451,7 @@ def _replace_cargo_requirement(
                 )
                 changed = True
     if changed:
-        manifest.write_text("".join(lines), encoding="utf-8")
+        guarded_write(manifest, "".join(lines).encode("utf-8"), root, appender="rust")
     return changed
 
 
@@ -501,7 +507,11 @@ def _apply_cargo_targeted_bumps(
         stale = sorted({req for _, reqs in stale_by_manifest for req in reqs})
         rewritten = [
             _replace_cargo_requirement(
-                manifest, candidate.name, req, _cargo_bumped_requirement(req, candidate.to)
+                manifest,
+                candidate.name,
+                req,
+                _cargo_bumped_requirement(req, candidate.to),
+                ws.git_repo,
             )
             for manifest, reqs in stale_by_manifest
             for req in reqs
@@ -548,11 +558,13 @@ def check_rust(
 
 def apply_rust(ws: Workspace) -> list[Change] | None:
     lockfile = ws.path / "Cargo.lock"
-    if not is_under_root(ws.git_repo, lockfile):
-        # cargo writes through the link, and rollback cannot restore an outside file.
-        print(
-            f"WARN {ws.path}: {lockfile.name} resolves outside the repo; skipping", file=sys.stderr
-        )
+    if not guard_tool_writes(
+        ws.git_repo,
+        "rust",
+        lockfile,
+        ws.path / "Cargo.toml",
+        *cargo_manifests(ws.path),
+    ):
         return None
     proc = run(["cargo", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:

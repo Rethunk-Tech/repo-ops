@@ -11,7 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY
-from repo_ops_core.filesystem import is_under_root, read_json_file
+from repo_ops_core.filesystem import guard_tool_writes, guarded_write, read_json_file
 from repo_ops_core.holds import target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
@@ -128,6 +128,23 @@ def lockfile_manager(mdir: Path) -> str | None:
     if (mdir / "yarn.lock").exists():
         return "yarn"
     return None
+
+
+_MANAGER_LOCKFILE = {
+    "npm": "package-lock.json",
+    "pnpm": "pnpm-lock.yaml",
+    "bun": "bun.lock",
+    "yarn": "yarn.lock",
+}
+
+
+def lockfile_for(mdir: Path, manager: str) -> Path:
+    """The lockfile *manager* writes in *mdir*; a missing one resolves through its parent."""
+    candidates = [m for m in (_MANAGER_LOCKFILE.get(manager),) if m]
+    if manager == "bun":
+        candidates.append("bun.lockb")
+    existing = next((mdir / name for name in candidates if (mdir / name).exists()), None)
+    return existing if existing is not None else mdir / candidates[0]
 
 
 def detect_node_manager(mdir: Path) -> tuple[str | None, str | None]:
@@ -264,8 +281,11 @@ def peer_lockstep(ws: Workspace, planned: list[Change], *, write: bool) -> list[
         if write and member_moved:
             for change in member_moved:
                 peers[change.name] = change.to
-            pkg_path.write_text(
-                json.dumps(pkg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            guarded_write(
+                pkg_path,
+                (json.dumps(pkg, indent=2, ensure_ascii=False) + "\n").encode("utf-8"),
+                ws.git_repo,
+                appender="peer-lockstep",
             )
         moved.extend(member_moved)
     return moved
@@ -291,13 +311,10 @@ def apply_with_members(
     members = [ws, *member_workspaces(ws)]
     for target in members:
         manifest = target.path / "package.json"
-        if not is_under_root(ws.git_repo, manifest):
+        lockfile = lockfile_for(target.path, ws.manager)
+        if not guard_tool_writes(ws.git_repo, ws.manager, manifest, lockfile):
             # The manager writes through the link, and the snapshot step skips
             # symlinks, so a rollback could not put an outside file back.
-            print(
-                f"WARN {target.path}: {manifest.name} resolves outside the repo; skipping",
-                file=sys.stderr,
-            )
             return []
     behind = apply_dir(ws, ws.path)
     for member in members[1:]:

@@ -55,7 +55,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from repo_ops_core.filesystem import is_under_root
+from repo_ops_core.filesystem import guarded_write, is_under_root
 from repo_ops_core.git import git_repo_for
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.http import open_url
@@ -1312,9 +1312,8 @@ def apply_container(ws: Workspace) -> None:
             tag_bumps.append((image, ch.from_ver, ch.to))
 
     for cf in find_container_files(ws.path):
-        # Apply bumps in-place (byte-preserving, CRLF-safe).
-        # Use newline="" so Python does not translate \r\n → \n on read or
-        # \n → OS newline on write; the file's own line endings are preserved.
+        # Apply bumps in-place (byte-preserving, CRLF-safe). newline="" keeps the
+        # file's own line endings on read; the write puts the same bytes back.
         with cf.open("r", encoding="utf-8", errors="replace", newline="") as fh:
             original = fh.read()
         lines = original.splitlines(keepends=True)
@@ -1383,8 +1382,12 @@ def apply_container(ws: Workspace) -> None:
                     changed = True
 
         if changed:
-            with cf.open("w", encoding="utf-8", newline="") as fh:
-                fh.write("".join(lines))
+            guarded_write(
+                cf,
+                "".join(lines).encode("utf-8"),
+                ws.git_repo,
+                appender="container",
+            )
 
 
 def _format_image_ref(image: str, tag: str | None, sha: str | None) -> str:
