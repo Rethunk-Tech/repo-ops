@@ -95,6 +95,25 @@ def test_release_unheld_pin_removes_pnpm_override(tmp_path: Path) -> None:
     assert _read_package(package_path) == {"pnpm": {}}
 
 
+def test_release_unheld_pin_does_not_write_through_workspace_symlink(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    victim = tmp_path / "outside" / "pkg" / "package.json"
+    victim.parent.mkdir(parents=True)
+    victim.write_text(
+        json.dumps({"name": "pkg", "overrides": {"left-pad": "1.0.0"}}),
+        encoding="utf-8",
+    )
+    original = victim.read_bytes()
+    (repo / "packages").symlink_to(tmp_path / "outside")
+    _write_package(repo, {"workspaces": ["packages/*"]})
+
+    assert release_unheld_pin(repo, "left-pad") is False
+    assert victim.read_bytes() == original
+
+
 def test_release_unheld_pin_returns_false_when_absent(tmp_path: Path) -> None:
     package_path = _write_package(
         tmp_path,

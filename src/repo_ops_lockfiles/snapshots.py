@@ -8,7 +8,7 @@ from pathlib import Path
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
-from repo_ops_core.filesystem import read_json_file
+from repo_ops_core.filesystem import is_under_root, read_json_file
 from repo_ops_core.version_utils import normalize_version
 from repo_ops_lockfiles.constants import (
     DENO_LOCKFILES,
@@ -55,7 +55,7 @@ def package_json_paths(ws_path: Path) -> list[Path]:
     are visible to :func:`overrides_audit`.
     """
     root_pkg = ws_path / "package.json"
-    if not root_pkg.is_file():
+    if not root_pkg.is_file() or not is_under_root(ws_path, root_pkg):
         return []
     paths = [root_pkg]
     try:
@@ -86,6 +86,7 @@ def package_json_paths(ws_path: Path) -> list[Path]:
             if (
                 pkg.is_file()
                 and pkg not in paths
+                and is_under_root(ws_path, pkg)
                 and "node_modules" not in pkg.relative_to(ws_path).parts
             ):
                 paths.append(pkg)
@@ -141,7 +142,11 @@ def snapshot_workspace_files(mdir: Path, manager: str) -> dict[Path, bytes]:
         # so ask the container module rather than duplicating the rules here.
         from repo_ops_container.container import find_container_files
 
-        return {p: p.read_bytes() for p in find_container_files(mdir) if p.is_file()}
+        return {
+            p: p.read_bytes()
+            for p in find_container_files(mdir)
+            if p.is_file() and not p.is_symlink()
+        }
     if manager == "nuget":
         from repo_ops_nuget.nuget import find_nuget_files
 
@@ -166,7 +171,7 @@ def snapshot_workspace_files(mdir: Path, manager: str) -> dict[Path, bytes]:
     out: dict[Path, bytes] = {}
     for name in names:
         p = mdir / name
-        if p.exists():
+        if p.exists() and not p.is_symlink():
             out[p] = p.read_bytes()
     if manager == "rust":
         from repo_ops_rust.rust import cargo_manifests

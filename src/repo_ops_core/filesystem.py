@@ -45,24 +45,30 @@ def is_under_root(root: Path, path: Path) -> bool:
 
 
 def write_json_atomic(path: Path, payload: Any) -> Path:
-    """Serialise ``payload`` to ``path`` via temp file + atomic rename; returns the path."""
-    path = Path(path).expanduser().resolve()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    """Serialise ``payload`` to ``path`` via temp file + atomic rename; returns the path.
+
+    Only the parent is resolved, so a symlink at *path* is replaced rather than
+    followed.
+    """
+    path = Path(path).expanduser()
+    parent = path.parent.resolve()
+    dest = parent / path.name
+    parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(payload, indent=2) + "\n"
     fd, tmp_name = tempfile.mkstemp(
-        dir=path.parent,
-        prefix=f".{path.name}.",
+        dir=parent,
+        prefix=f".{dest.name}.",
         suffix=".tmp",
     )
     tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
             handle.write(text)
-        os.replace(tmp_path, path)
+        os.replace(tmp_path, dest)
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
-    return path
+    return dest.resolve()
 
 
 # ponytail: keep-last-N pruning; age-based expiry if runs ever need keeping longer.
@@ -158,11 +164,15 @@ def read_toml_file(path: Path) -> dict[str, Any] | None:
 
 def snapshot_file(path: Path) -> bytes | None:
     """Capture a file's bytes for a later :func:`restore_file`, or ``None`` if absent."""
-    return path.read_bytes() if path.is_file() else None
+    if path.is_symlink() or not path.is_file():
+        return None
+    return path.read_bytes()
 
 
 def restore_file(path: Path, snapshot: bytes | None) -> None:
     """Undo a targeted-bump/clamp attempt: restore *path* to its pre-attempt state."""
+    if path.is_symlink():
+        path.unlink()
     if snapshot is None:
         path.unlink(missing_ok=True)
     else:

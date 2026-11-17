@@ -13,7 +13,9 @@ from repo_ops_core.filesystem import (
     is_workspace_member,
     read_json_file,
     read_toml_file,
+    restore_file,
     should_exclude,
+    snapshot_file,
     write_json_atomic,
 )
 
@@ -77,6 +79,33 @@ def test_read_toml_file_happy_and_invalid(tmp_path: Path) -> None:
     bad = tmp_path / "bad.toml"
     bad.write_text("[[[broken", encoding="utf-8")
     assert read_toml_file(bad) is None
+
+
+def test_write_json_atomic_does_not_follow_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "outside.json"
+    target.write_text('{"keep": true}\n', encoding="utf-8")
+    link = tmp_path / "report.json"
+    link.symlink_to(target)
+
+    write_json_atomic(link, {"a": 1})
+
+    assert json.loads(target.read_text(encoding="utf-8")) == {"keep": True}
+    assert not link.is_symlink()
+    assert json.loads(link.read_text(encoding="utf-8")) == {"a": 1}
+
+
+def test_restore_file_does_not_follow_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "outside.lock"
+    target.write_bytes(b"secret\n")
+    link = tmp_path / "package-lock.json"
+    link.symlink_to(target)
+
+    assert snapshot_file(link) is None
+    restore_file(link, b"restored\n")
+
+    assert target.read_bytes() == b"secret\n"
+    assert not link.is_symlink()
+    assert link.read_bytes() == b"restored\n"
 
 
 def test_contained_path_rejects_escape(tmp_path: Path) -> None:
