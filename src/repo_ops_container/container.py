@@ -55,6 +55,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
+from repo_ops_core.filesystem import is_under_root
 from repo_ops_core.holds import HoldRule, resolve_package_hold
 from repo_ops_core.http import open_url
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
@@ -111,6 +112,8 @@ def find_container_files(directory: Path) -> list[Path]:
             if not entry.is_file():
                 continue
             if _DOCKERFILE_RE.match(entry.name) or _is_compose_name(entry.name):
+                if not is_under_root(directory, entry):
+                    continue
                 rp = entry.resolve()
                 if rp not in resolved_paths:
                     resolved_paths.add(rp)
@@ -120,6 +123,8 @@ def find_container_files(directory: Path) -> list[Path]:
     for cf in list(found):
         if _is_compose_name(cf.name) or "compose" in cf.name.lower():
             for extra in _compose_build_dockerfiles(cf):
+                if not is_under_root(directory, extra):
+                    continue
                 rp = extra.resolve()
                 if rp not in resolved_paths:
                     resolved_paths.add(rp)
@@ -166,7 +171,7 @@ def _compose_build_dockerfiles(compose_path: Path) -> list[Path]:
             ctx_path = str_m.group("path").strip("\"'")
             ctx_dir = (base_dir / ctx_path).resolve()
             candidate = ctx_dir / "Dockerfile"
-            if candidate.is_file():
+            if candidate.is_file() and is_under_root(base_dir, candidate):
                 results.append(candidate)
             i += 1
             continue
@@ -201,7 +206,7 @@ def _compose_build_dockerfiles(compose_path: Path) -> list[Path]:
             else:
                 candidate = ctx_dir / "Dockerfile"
 
-            if candidate.is_file():
+            if candidate.is_file() and is_under_root(base_dir, candidate):
                 results.append(candidate)
             i = j
             continue

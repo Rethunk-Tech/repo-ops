@@ -845,6 +845,22 @@ def test_compose_build_nonexistent_dockerfile_excluded(tmp_path: Path) -> None:
     assert result == []
 
 
+def test_compose_build_parent_escape_is_ignored(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    victim = tmp_path / "victim" / "Dockerfile"
+    victim.parent.mkdir()
+    victim.write_text("FROM alpine:3.18\n", encoding="utf-8")
+    (repo / "docker-compose.yml").write_text(
+        "services:\n  app:\n    build: ../victim\n",
+        encoding="utf-8",
+    )
+
+    files = find_container_files(repo)
+    assert victim.resolve() not in {path.resolve() for path in files}
+    assert _compose_build_dockerfiles(repo / "docker-compose.yml") == []
+
+
 def test_compose_build_dedup_in_find_container_files(tmp_path: Path) -> None:
     """A Dockerfile already discovered as a sibling is not duplicated."""
     dockerfile = tmp_path / "Dockerfile"
