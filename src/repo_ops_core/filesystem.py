@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core.constants import EXCLUDE_PATH_FRAGMENTS
+from repo_ops_core.git import run_git
 
 
 def contained_path(root: Path, rel: str) -> Path | None:
@@ -97,6 +98,31 @@ def guard_tool_writes(root: Path, applier: str, *paths: Path) -> bool:
         if not is_under_root(root, path):
             warn_skip(applier, f"{path.name} resolves outside the repo")
             return False
+    return True
+
+
+def guard_tree_writes(root: Path, applier: str, tree: Path | None = None) -> bool:
+    """True when no tracked symlink under *tree* resolves outside *root*.
+
+    A formatter or codegen step walks a tree and writes every file it meets,
+    following any link it finds, while the snapshot step skips links: a rollback
+    could not put an outside file back. *tree* defaults to *root* and only
+    narrows which tracked links are inspected, not which ones count as inside.
+    Prints the workspace-skip line and returns False for the first escape.
+    """
+    scope = (tree or root).resolve()
+    proc = run_git(scope, "ls-files", "-s", "-z")
+    if proc.returncode != 0:
+        return True
+    for record in proc.stdout.split("\0"):
+        meta, _, rel = record.partition("\t")
+        fields = meta.split()
+        if not rel or len(fields) < 2 or fields[0] != "120000":
+            continue
+        if is_under_root(root, scope / rel):
+            continue
+        warn_skip(applier, f"tracked link {rel} resolves outside the repo")
+        return False
     return True
 
 

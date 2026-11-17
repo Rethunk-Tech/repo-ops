@@ -37,6 +37,6 @@ def test_without_header_falls_back_to_plain_compile(tmp_path: Path) -> None:
         "compile",
         str(req_in),
         "-o",
-        "-",
+        "/dev/stdout",
         "--upgrade",
     ]

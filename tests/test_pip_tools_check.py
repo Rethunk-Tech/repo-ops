@@ -376,3 +376,32 @@ def test_compile_requirements_error_carries_uv_stderr(tmp_path: Path, make_works
         pytest.raises(RuntimeError, match=r"no version of torch==2\.15\.0"),
     ):
         _compile_requirements(ws, tmp_path / "requirements.txt", req_in)
+
+
+def test_check_pip_tools_never_opens_a_path_named_dash(tmp_path: Path, make_workspace) -> None:
+    """uv treats ``-o -`` as stdout *and* a ``-`` file, so a planted link would be written."""
+    (tmp_path / "requirements.in").write_text("requests\n")
+    outside = tmp_path.parent / "outside-dash.txt"
+    outside.write_text("untouched\n")
+    (tmp_path / "-").symlink_to(outside)
+
+    def fake_uv(cmd, cwd, timeout=None):
+        out = Path(cmd[cmd.index("-o") + 1])
+        target = out if out.is_absolute() else Path(cwd) / out
+        if target.name == "-":
+            target.write_text("requests==2.31.0\n")
+        return type(
+            "Proc",
+            (),
+            {"returncode": 0, "stdout": "requests==2.31.0\n", "stderr": ""},
+        )()
+
+    with (
+        patch("repo_ops_py_pip_tools.pip_tools.shutil.which", return_value="/usr/bin/uv"),
+        patch("repo_ops_py_pip_tools.pip_tools.run", side_effect=fake_uv),
+    ):
+        check_pip_tools(
+            make_workspace(tmp_path, ecosystem="python", manager="pip-tools", label="demo")
+        )
+
+    assert outside.read_text() == "untouched\n"

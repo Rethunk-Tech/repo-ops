@@ -21,6 +21,7 @@ from repo_ops_models import WorkspaceResult
 from repo_ops_upgrade_remediations_core import remediations as core
 from repo_ops_upgrade_remediations_deno import remediations as deno_rem
 from repo_ops_upgrade_remediations_go import remediations as go_rem
+from repo_ops_upgrade_remediations_js import remediations as js_rem
 from repo_ops_upgrade_remediations_py import remediations as py_rem
 from repo_ops_upgrade_remediations_rust import remediations as rust_rem
 
@@ -328,3 +329,78 @@ class TestToolMissingYieldsSkip:
         assert result.status == "ok", "result.status must not become 'fail' when a tool is missing"
         assert result.remediations[0]["status"] == "skip"
         assert "tool not found" in result.remediations[0]["detail"]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Tree-wide rewriters refuse a tracked link leaving the repo
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _tracked_escape(tmp_path: Path, outside: Path) -> None:
+    outside.parent.mkdir(parents=True, exist_ok=True)
+    outside.write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "mod.py").symlink_to(outside)
+    subprocess.run(
+        ["git", "add", "mod.py"],
+        cwd=str(tmp_path),
+        check=True,
+        capture_output=True,
+        env={"GIT_LITERAL_PATHSPECS": "1", "PATH": "/usr/bin:/bin"},
+    )
+
+
+@pytest.mark.parametrize(
+    ("apply_fn", "target", "ecosystem", "manager"),
+    [
+        (py_rem.apply_ruff, "repo_ops_upgrade_remediations_py.remediations.run", "py", "uv"),
+        (js_rem.apply_biome, "repo_ops_upgrade_remediations_js.remediations.run", "node", "npm"),
+    ],
+    ids=["ruff", "biome"],
+)
+def test_tree_rewriter_skips_repo_with_escaping_tracked_link(
+    tmp_path: Path,
+    make_workspace: Any,
+    init_git_repo: Any,
+    apply_fn: Any,
+    target: str,
+    ecosystem: str,
+    manager: str,
+) -> None:
+    init_git_repo(tmp_path)
+    outside = tmp_path.parent / "outside-mod.py"
+    _tracked_escape(tmp_path, outside)
+    if ecosystem == "node":
+        (tmp_path / "biome.json").write_text("{}")
+    ws = make_workspace(tmp_path, ecosystem=ecosystem, manager=manager, label="test")
+
+    with patch(target) as mock_run:
+        ok, detail = apply_fn(ws, {"changes": []})
+
+    assert ok is True
+    assert "outside the repo" in detail
+    mock_run.assert_not_called()
+    assert outside.read_text() == "x = 1\n"
+
+
+def test_ruff_still_runs_with_an_in_repo_tracked_link(
+    tmp_path: Path, make_workspace: Any, init_git_repo: Any, make_proc: Any
+) -> None:
+    init_git_repo(tmp_path)
+    (tmp_path / "shared").mkdir()
+    (tmp_path / "shared" / "mod.py").write_text("x = 1\n")
+    (tmp_path / "mod.py").symlink_to(tmp_path / "shared" / "mod.py")
+    subprocess.run(
+        ["git", "add", "mod.py"],
+        cwd=str(tmp_path),
+        check=True,
+        capture_output=True,
+        env={"GIT_LITERAL_PATHSPECS": "1", "PATH": "/usr/bin:/bin"},
+    )
+    ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
+
+    with patch("repo_ops_upgrade_remediations_py.remediations.run") as mock_run:
+        mock_run.side_effect = [make_proc(0), make_proc(0)]
+        ok, _detail = py_rem.apply_ruff(ws, {"changes": []})
+
+    assert ok is True
+    assert mock_run.call_count == 2

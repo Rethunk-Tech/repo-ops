@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.filesystem import guarded_write, is_under_root, read_json_file
+from repo_ops_core.filesystem import guard_tree_writes, guarded_write, is_under_root, read_json_file
 from repo_ops_core.http import open_url
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version, semver_tuple
@@ -112,6 +112,8 @@ def apply_biome(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     ok = True
     last_err = ""
     leftover = False
+    if not guard_tree_writes(ws.git_repo, "biome", ws.path):
+        return True, "biome (skipped: tracked link resolves outside the repo)"
     for cfg in _find_biome_configs(ws.path):
         cfg_dir = cfg.parent
         scope = [] if cfg_dir == ws.path else [f"--config-path={cfg_dir}"]
@@ -239,6 +241,8 @@ def apply_codegen(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     prefix = pm_run_prefix(ws.manager)
     ok = True
     last_err = ""
+    if not guard_tree_writes(ws.git_repo, "codegen", ws.path):
+        return True, "codegen (skipped: tracked link resolves outside the repo)"
     pkg = read_json_file(ws.path / "package.json") or {}
     for script in ("generate:proto", "generate:openapi"):
         if script in (pkg.get("scripts") or {}):

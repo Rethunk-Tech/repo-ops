@@ -18,6 +18,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from repo_ops_core.filesystem import guard_tree_writes
 from repo_ops_core.process import run
 from repo_ops_models import Workspace
 from repo_ops_upgrade_remediations_core.remediations import (
@@ -84,6 +85,8 @@ def ruff_files(ws: Workspace) -> list[str]:
 
 def apply_ruff(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     """Run ``ruff check --fix`` then ``ruff format`` in the workspace root."""
+    if not guard_tree_writes(ws.git_repo, "ruff", ws.path):
+        return True, "ruff (skipped: tracked link resolves outside the repo)"
     fix_proc = run(["ruff", "check", "--fix", "."], ws.path, timeout=120)
     fmt_proc = run(["ruff", "format", "."], ws.path, timeout=120)
     if fix_proc.returncode == 0 and fmt_proc.returncode == 0:

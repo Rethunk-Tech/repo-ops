@@ -337,8 +337,6 @@ def _verify_pip_tools(
             timeout=timeout,
             source=source,
         )
-        # uv writes `-o -` to stdout and also to a file named `-` in cwd.
-        (ws.path / "-").unlink(missing_ok=True)
         if proc.returncode != 0:
             return proc.stderr.strip() or "uv pip compile failed"
         compiled = proc.stdout

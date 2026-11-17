@@ -188,13 +188,19 @@ def recorded_uv_compile(req_txt: Path) -> tuple[list[str], str] | None:
 
 
 def uv_compile_command(req_txt: Path, req_in: Path, output: str, *, upgrade: bool) -> list[str]:
-    """``uv pip compile`` command for *req_in*, repeating *req_txt*'s recorded flags when present."""
+    """``uv pip compile`` command for *req_in*, repeating *req_txt*'s recorded flags when present.
+
+    ``output`` ``-`` means stdout. uv treats that as stdout *and* as a file named
+    ``-`` in the cwd, so it is spelled ``/dev/stdout``: a repo tracking a link by
+    that name would otherwise be rewritten through it.
+    """
     recorded = recorded_uv_compile(req_txt)
     args, text = recorded if recorded else ([str(req_in)], _DEFAULT_COMMAND)
-    cmd = ["uv", "pip", "compile", *args, "-o", output]
+    stdout = output == "-"
+    cmd = ["uv", "pip", "compile", *args, "-o", "/dev/stdout" if stdout else output]
     if upgrade:
         cmd.append("--upgrade")
-    if output != "-" and "--custom-compile-command" not in args:
+    if not stdout and "--custom-compile-command" not in args:
         cmd += ["--custom-compile-command", text]
     return cmd
 
@@ -286,8 +292,6 @@ def check_pip_tools(
                 timeout=TIMEOUT_CHECK,
                 current=current,
             )
-            # uv writes `-o -` to stdout and also to a file named `-` in cwd.
-            (ws.path / "-").unlink(missing_ok=True)
             if proc.returncode == 0 and proc.stdout.strip():
                 proposed = parse_requirements_lines(proc.stdout)
             elif proc.returncode != 0:

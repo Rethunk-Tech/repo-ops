@@ -126,3 +126,29 @@ def test_restore_snapshot_covers_workspace_member_manifest(tmp_path: Path) -> No
     member.write_text('{"dependencies": {"next": "16.3.5"}}')
     restore_workspace_snapshot(tmp_path, snap, "bun")
     assert "16.3.0" in member.read_text()
+
+
+def test_snapshot_captures_a_link_that_stays_inside_the_repo(tmp_path: Path) -> None:
+    """The repo, not the workspace, bounds a snapshot: an in-repo link is ours to restore."""
+    repo = tmp_path / "repo"
+    ws = repo / "pkg"
+    ws.mkdir(parents=True)
+    (repo / ".git").mkdir()
+    shared = repo / "shared.txt"
+    shared.write_text("foo==1.0\n", encoding="utf-8")
+    (ws / "requirements.txt").symlink_to(shared)
+
+    snap = snapshot_workspace_files(ws, "pip-tools")
+
+    assert snap[ws / "requirements.txt"] == b"foo==1.0\n"
+
+
+def test_snapshot_skips_a_link_leaving_the_repo(tmp_path: Path) -> None:
+    ws = tmp_path / "repo"
+    ws.mkdir()
+    (ws / ".git").mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("foo==1.0\n", encoding="utf-8")
+    (ws / "requirements.txt").symlink_to(outside)
+
+    assert snapshot_workspace_files(ws, "pip-tools") == {}

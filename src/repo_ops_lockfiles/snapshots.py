@@ -9,6 +9,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
 from repo_ops_core.filesystem import guarded_write, is_under_root, read_json_file
+from repo_ops_core.git import git_repo_for
 from repo_ops_core.version_utils import normalize_version
 from repo_ops_lockfiles.constants import (
     DENO_LOCKFILES,
@@ -48,6 +49,14 @@ def resolved_version_from_node_modules(mdir: Path, name: str) -> str | None:
     return None
 
 
+def _snapshot_root(mdir: Path) -> Path:
+    """The repo *mdir* belongs to: a link that stays inside it is ours to restore.
+
+    Falls back to *mdir* outside git, where there is no wider tree to own.
+    """
+    return git_repo_for(mdir) or mdir
+
+
 def package_json_paths(ws_path: Path) -> list[Path]:
     """Return root plus workspace-member ``package.json`` paths.
 
@@ -55,7 +64,8 @@ def package_json_paths(ws_path: Path) -> list[Path]:
     are visible to :func:`overrides_audit`.
     """
     root_pkg = ws_path / "package.json"
-    if not root_pkg.is_file() or not is_under_root(ws_path, root_pkg):
+    root = _snapshot_root(ws_path)
+    if not root_pkg.is_file() or not is_under_root(root, root_pkg):
         return []
     paths = [root_pkg]
     try:
@@ -86,7 +96,7 @@ def package_json_paths(ws_path: Path) -> list[Path]:
             if (
                 pkg.is_file()
                 and pkg not in paths
-                and is_under_root(ws_path, pkg)
+                and is_under_root(root, pkg)
                 and "node_modules" not in pkg.relative_to(ws_path).parts
             ):
                 paths.append(pkg)
@@ -169,9 +179,12 @@ def snapshot_workspace_files(mdir: Path, manager: str) -> dict[Path, bytes]:
     if manager == "pip-tools":
         names = (*names, "requirements.in")
     out: dict[Path, bytes] = {}
+    root = _snapshot_root(mdir)
     for name in names:
         p = mdir / name
-        if p.exists() and not p.is_symlink():
+        # A link staying inside the repo is captured through to its target, so a
+        # rollback rewrites bytes an apply reached; one leaving it is not ours.
+        if p.exists() and (not p.is_symlink() or is_under_root(root, p)):
             out[p] = p.read_bytes()
     if manager == "rust":
         from repo_ops_rust.rust import cargo_manifests
@@ -238,13 +251,14 @@ def restore_workspace_snapshot(
 ) -> None:
     """Restore lockfile/manifest bytes captured before apply."""
     after = snapshot_workspace_files(mdir, manager)
+    root = _snapshot_root(mdir)
     for path in set(before) | set(after):
         # The path was a regular file at capture and may be a link now: writing
-        # through one planted since would land outside the workspace.
-        if not is_under_root(mdir, path):
+        # through one planted since would land outside the repo.
+        if not is_under_root(root, path):
             continue
         if path in before:
-            guarded_write(path, before[path], mdir, appender="snapshot")
+            guarded_write(path, before[path], root, appender="snapshot")
         elif path.exists():
             path.unlink()
 
