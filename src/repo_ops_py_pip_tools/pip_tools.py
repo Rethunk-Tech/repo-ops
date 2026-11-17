@@ -409,6 +409,12 @@ def _apply_pip_tools_targeted_bumps(
 ) -> list[Change]:
     req_in = ws.path / "requirements.in"
     req_txt = ws.path / "requirements.txt"
+    out = req_txt if req_txt.exists() else req_in.with_suffix(".txt")
+    if not is_under_root(ws.git_repo, out):
+        # The compile writes through *out*, and restore_file cannot put back a
+        # file outside the repo, so the attempt would corrupt it on failure.
+        print(f"WARN {out} resolves outside the repo; skipping", file=sys.stderr)
+        return list(candidates)
     remaining: list[Change] = []
     for candidate in candidates:
         if not target_within_hold(candidate.to, resolve_package_hold(ws, candidate.name)):
@@ -422,7 +428,6 @@ def _apply_pip_tools_targeted_bumps(
         if not _rewrite_requirements_in(req_in, candidate.name, candidate.to):
             remaining.append(candidate)
             continue
-        out = req_txt if req_txt.exists() else req_in.with_suffix(".txt")
         try:
             with _hold_constraints_file(ws, req_in) as constraints_path:
                 _compile_requirements(
@@ -456,6 +461,9 @@ def apply_pip_tools(ws: Workspace) -> list[Change] | None:
     out = req_txt if req_txt.exists() else req_in.with_suffix(".txt")
     if not req_in.exists():
         raise RuntimeError("requirements.in not found")
+    if not is_under_root(ws.git_repo, out):
+        print(f"WARN {out} resolves outside the repo; skipping", file=sys.stderr)
+        return None
     with _hold_constraints_file(ws, req_in) as constraints_path:
         _compile_requirements(ws, out, req_in, constraints_path)
     return _apply_pip_tools_targeted_bumps(

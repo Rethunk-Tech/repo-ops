@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 import tomllib
 from functools import cache
 from http.client import HTTPSConnection
@@ -546,6 +547,13 @@ def check_rust(
 
 
 def apply_rust(ws: Workspace) -> list[Change] | None:
+    lockfile = ws.path / "Cargo.lock"
+    if not is_under_root(ws.git_repo, lockfile):
+        # cargo writes through the link, and rollback cannot restore an outside file.
+        print(
+            f"WARN {ws.path}: {lockfile.name} resolves outside the repo; skipping", file=sys.stderr
+        )
+        return None
     proc = run(["cargo", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "cargo update failed")
