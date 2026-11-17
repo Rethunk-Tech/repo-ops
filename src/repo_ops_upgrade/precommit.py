@@ -21,7 +21,6 @@ Design notes
 from __future__ import annotations
 
 import contextlib
-import logging
 import re
 import threading
 from pathlib import Path
@@ -49,8 +48,6 @@ _REPORT_ONLY_PREFIX = "[report-only] "
 
 # Timeout for git ls-remote (seconds); kept modest since it's per unique repo.
 _LS_REMOTE_TIMEOUT = 30
-
-logger = logging.getLogger(__name__)
 
 # A rev: value that is a hex commit SHA (7-40 hex chars).
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)

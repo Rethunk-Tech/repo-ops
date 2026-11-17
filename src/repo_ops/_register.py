@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
-logger = logging.getLogger(__name__)
-
 
 def register_precommit() -> None:
     """Register the pre-commit rev-pin checker and applier with the upgrade registry."""
