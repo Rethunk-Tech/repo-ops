@@ -61,13 +61,14 @@ Pinned toolchain versions move too, only upward, keeping the pin's precision (`1
 | rust | a version `channel` in `rust-toolchain.toml` or `rust-toolchain` (`stable`/`beta`/`nightly` stay; Cargo `rust-version` is never touched) | newest stable |
 | python | a version in `.python-version` (`requires-python` is never touched) | newest stable CPython |
 | node | a version in `.nvmrc` / `.node-version` (`lts/*` and aliases stay) | newest release of the same major |
-| pnpm, bun, npm | `packageManager` | registry latest (a remediation); Yarn follows the local runtime |
+| pnpm, bun, npm | `packageManager` | registry latest (a remediation; bun also runs `bun upgrade` and repins every nested `package.json` in the repo); Yarn follows the local runtime |
+| bun | `bun-version:` in a workflow (a literal version; `latest` and `${{ … }}` are left alone) | registry latest, same version as the pin |
 
 Hold one with `[[hold]]` named `go`, `rust`, `python` or `node`. A failed lookup warns and leaves the pin alone.
 
 ### Remediations
 
-After an update, `apply` runs the fixes the new versions need: Biome schema migration, Playwright browsers, a declared codegen script, the `packageManager` pin and Biome formatting of rewritten manifests for Node; `gofmt` for Go; `ruff check --fix` and `ruff format` for Python; `cargo fmt` for Rust; `deno fmt` for Deno. `plan` lists them.
+After an update, `apply` runs the fixes the new versions need: Biome schema migration, Playwright browsers, a declared codegen script, the `packageManager` pin (bun: every `package.json` in the repo that pins `bun@…`, plus `bun upgrade` once per sweep when the local bun trails), literal `bun-version:` workflow inputs, and Biome formatting of rewritten manifests for Node; `gofmt` for Go; `ruff check --fix` and `ruff format` for Python; `cargo fmt` for Rust; `deno fmt` for Deno. `plan` lists them.
 
 ### Verify
 

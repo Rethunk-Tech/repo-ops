@@ -243,6 +243,11 @@ _FROM_RE = re.compile(
 # Reserved identifiers that are not real image names
 _SCRATCH_NAMES = frozenset({"scratch"})
 
+# ``COPY --from=<stage|image|index>`` pulls either an earlier build stage or an
+# image the Dockerfile never names in a FROM, so a bun binary copied straight
+# out of ``oven/bun`` is invisible to a FROM-only parser.
+_COPY_FROM_RE = re.compile(r"^\s*COPY\s+(?:--\S+\s+)*--from=(?P<ref>[^\s]+)", re.IGNORECASE)
+
 
 def _split_image_tag(ref: str) -> tuple[str, str | None]:
     """Split ``host:port/repo:tag`` on the tag colon, not a registry port."""
@@ -253,21 +258,50 @@ def _split_image_tag(ref: str) -> tuple[str, str | None]:
     return ref, None
 
 
+def _split_ref(ref: str) -> tuple[str, str | None, str | None]:
+    """Split ``image[:tag][@sha256:...]`` into its three parts."""
+    image_tag, _, sha = ref.partition("@")
+    image, tag = _split_image_tag(image_tag)
+    return image, tag, sha or None
+
+
 def _parse_from_lines(text: str) -> list[dict[str, Any]]:
-    """Parse all FROM lines in a Dockerfile text.
+    """Parse the image refs a Dockerfile pins, FROM lines and ``COPY --from``.
 
     Returns a list of dicts with keys:
       line_no (int), image (str), tag (str|None), sha (str|None),
       is_stage_ref (bool)
 
-    Stage references (FROM <previously-defined-stage>) are flagged
-    ``is_stage_ref=True`` and should be skipped.
+    Stage references (``FROM <previously-defined-stage>``, ``COPY --from=<stage>``
+    and the numeric ``--from=0`` form) are flagged ``is_stage_ref=True`` and
+    should be skipped.
     """
     results: list[dict[str, Any]] = []
     defined_stages: set[str] = set()
 
     for i, raw_line in enumerate(text.splitlines(), 1):
         line = raw_line.strip()
+        copy_m = _COPY_FROM_RE.match(line)
+        if copy_m:
+            image, tag, sha = _split_ref(copy_m.group("ref"))
+            is_stage = (
+                image.isdigit()
+                or image.lower() in _SCRATCH_NAMES
+                or image.lower() in defined_stages
+            )
+            # A bare ``--from=name`` with no tag is far more likely a stage than
+            # a library image, and no tag means nothing to bump anyway.
+            if not is_stage and (tag or sha):
+                results.append(
+                    {
+                        "line_no": i,
+                        "image": image,
+                        "tag": tag,
+                        "sha": sha,
+                        "is_stage_ref": False,
+                    }
+                )
+            continue
         if not line.upper().startswith("FROM"):
             continue
         m = _FROM_RE.match(line)

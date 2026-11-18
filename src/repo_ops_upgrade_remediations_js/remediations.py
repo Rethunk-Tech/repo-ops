@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import functools
 import json
+import os
 import re
+import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,7 @@ from repo_ops_core.filesystem import guard_tree_writes, guarded_write, is_under_
 from repo_ops_core.http import open_url
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version, semver_tuple
+from repo_ops_core.walk import iter_scanned_dirs
 from repo_ops_js.workspaces import (
     parse_package_manager,
     pm_exec_prefix,
@@ -25,6 +28,7 @@ from repo_ops_lockfiles.snapshots import (
     resolved_version_from_node_modules,
 )
 from repo_ops_models import Workspace
+from repo_ops_upgrade.actions import discover_workflow_files
 from repo_ops_upgrade.constants import BIOME_PKG, CODEGEN_TRIGGERS, PLAYWRIGHT_PKG
 from repo_ops_upgrade_remediations_core.remediations import (
     ApplyResult,
@@ -291,53 +295,250 @@ def _pm_target_version(name: str, ws: Workspace) -> str | None:
     return max(found, key=semver_tuple, default=None)
 
 
+_BUN_UPGRADE_LOCK = threading.Lock()
+_BUN_UPGRADE_DONE = False
+
+
+def _bun_upgrade(ws: Workspace, target: str) -> None:
+    """Move the host's bun to *target* once per sweep, logging both versions.
+
+    The pin is the version the fleet resolves against, so a host still on an
+    older bun would otherwise install with a runtime nobody else runs. The
+    once-per-sweep state is module-wide because a sweep visits every workspace
+    from this one process.
+    """
+    global _BUN_UPGRADE_DONE
+    with _BUN_UPGRADE_LOCK:
+        if _BUN_UPGRADE_DONE:
+            return
+        _BUN_UPGRADE_DONE = True
+    before = _pm_runtime_version("bun", ws)
+    if before is None or semver_tuple(before) >= semver_tuple(target):
+        return
+    proc = run(["bun", "upgrade"], ws.path, timeout=TIMEOUT_APPLY)
+    after = _pm_runtime_version("bun", ws) or "?"
+    print(f"bun upgrade: {before} → {after}", file=sys.stderr, flush=True)
+    if proc.returncode != 0:
+        print(
+            f"WARN bun upgrade failed: {stderr_tail(proc.stderr or proc.stdout or '')}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
+@functools.cache
+def _bun_manifest_paths(root: Path) -> tuple[Path, ...]:
+    """Every ``package.json`` path under *root* outside the pruned dirs.
+
+    Cached because detect, report, apply and the hook's own ``files`` callback
+    each ask. Paths only: the pins are re-read, so a manifest an earlier
+    workspace repinned is never seen at its stale version.
+    """
+    return tuple(
+        directory / "package.json"
+        for directory, names in iter_scanned_dirs(root)
+        if "package.json" in names
+    )
+
+
+def _bun_manifests(root: Path) -> list[tuple[Path, dict[str, Any], str]]:
+    """Every ``package.json`` under *root* declaring a bun ``packageManager``.
+
+    Nested manifests (fixtures, app dirs outside the declared workspaces) are
+    not workspaces of their own, so nothing else in a sweep reaches their pin.
+    """
+    found: list[tuple[Path, dict[str, Any], str]] = []
+    for path in _bun_manifest_paths(root):
+        pkg = read_json_file(path)
+        if not pkg:
+            continue
+        parsed = parse_package_manager(pkg)
+        if parsed and parsed[0] == "bun":
+            found.append((path, pkg, parsed[1]))
+    return found
+
+
+def _bun_pin_targets(ws: Workspace) -> list[tuple[Path, dict[str, Any], str, str]]:
+    """``(manifest, pkg, pinned, latest)`` for every bun pin that trails the registry.
+
+    Repo-wide rather than workspace-scoped: a fixture or app dir outside the
+    declared workspaces still ships a pin the fleet resolves bun from.
+    """
+    manifests = _bun_manifests(ws.git_repo)
+    if not manifests:
+        return []
+    target = _pm_target_version("bun", ws)
+    if target is None:
+        return []
+    return [
+        (path, pkg, pinned, target)
+        for path, pkg, pinned in manifests
+        if semver_tuple(pinned) < semver_tuple(target)
+    ]
+
+
+def _write_pm_pin(path: Path, pkg: dict[str, Any], name: str, version: str, root: Path) -> None:
+    pkg["packageManager"] = f"{name}@{version}"
+    guarded_write(
+        path,
+        (json.dumps(pkg, indent=2) + "\n").encode("utf-8"),
+        root,
+        appender="packageManager pin",
+    )
+
+
+def _detected_pm_targets(ws: Workspace) -> list[tuple[Path, str, str, str]]:
+    """``(manifest, manager, pinned, target)`` for every pin this hook would move."""
+    moves: list[tuple[Path, str, str, str]] = []
+    pkg_path = ws.path / "package.json"
+    pkg = read_json_file(pkg_path) or {}
+    pm_field = parse_package_manager(pkg)
+    if pm_field:
+        name, pinned = pm_field
+        target = _pm_target_version(name, ws)
+        if target is not None and semver_tuple(target) > semver_tuple(pinned):
+            moves.append((pkg_path, name, pinned, target))
+    own = pkg_path.resolve()
+    for path, _pkg, pinned, target in _bun_pin_targets(ws):
+        if path.resolve() != own:
+            moves.append((path, "bun", pinned, target))
+    return moves
+
+
 def detect_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> bool:
     if ws.ecosystem != "node":
         return False
-    pkg = read_json_file(ws.path / "package.json") or {}
-    pm_field = parse_package_manager(pkg)
-    if not pm_field:
-        return False
-    name, pinned = pm_field
-    target = _pm_target_version(name, ws)
-    if target is None:
-        return False
-    return semver_tuple(target) > semver_tuple(pinned)
+    return bool(_detected_pm_targets(ws))
 
 
 def report_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
-    pkg = read_json_file(ws.path / "package.json") or {}
-    pm_field = parse_package_manager(pkg)
-    if not pm_field:
-        return []
-    name, _pinned = pm_field
-    pm = (pkg.get("packageManager") or "").strip()
-    target = _pm_target_version(name, ws) or "?"
-    return [f"REMEDIATE package_manager_pin: {pm} → {name}@{target}"]
+    return [
+        f"REMEDIATE package_manager_pin: {path.relative_to(ws.git_repo).as_posix()} "
+        f"{name}@{pinned} → {name}@{target}"
+        for path, name, pinned, target in _detected_pm_targets(ws)
+    ]
 
 
 def apply_pm_pin(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     pkg_path = ws.path / "package.json"
     if not is_under_root(ws.git_repo, pkg_path):
         return False, "packageManager pin (failed: package.json outside the repo)"
-    pkg = read_json_file(pkg_path)
-    if not pkg:
-        return False, "packageManager pin (failed: missing package.json)"
+    pkg = read_json_file(pkg_path) or {}
     pm_field = parse_package_manager(pkg)
-    if not pm_field:
+    name = pm_field[0] if pm_field else ("bun" if ws.ecosystem == "node" else None)
+    if name is None:
         return False, "packageManager pin (failed: no packageManager field)"
-    name, _ = pm_field
     actual = _pm_target_version(name, ws)
     if actual is None:
         return False, f"packageManager pin (failed: {name} --version)"
-    pkg["packageManager"] = f"{name}@{actual}"
-    guarded_write(
-        pkg_path,
-        (json.dumps(pkg, indent=2) + "\n").encode("utf-8"),
-        ws.git_repo,
-        appender="packageManager pin",
+    if name == "bun":
+        _bun_upgrade(ws, actual)
+    moved = 0
+    if pm_field and semver_tuple(actual) > semver_tuple(pm_field[1]):
+        _write_pm_pin(pkg_path, pkg, name, actual, ws.git_repo)
+        moved += 1
+    if name == "bun":
+        own = pkg_path.resolve()
+        for path, nested, _pinned, target in _bun_pin_targets(ws):
+            if path.resolve() == own:
+                continue
+            _write_pm_pin(path, nested, name, target, ws.git_repo)
+            moved += 1
+    if not moved:
+        # Only reachable past detect for a second workspace in the same repo,
+        # whose sibling already repinned: nothing left to do, not a failure.
+        return True, f"packageManager → {name}@{actual} (already current)"
+    return True, f"packageManager → {name}@{actual} ({moved} manifest(s), ok)"
+
+
+def _pm_pin_files(ws: Workspace) -> list[str]:
+    """Manifests this pin owns, relative to the workspace (may reach the repo root).
+
+    Every bun-pinned manifest, not just the ones trailing the latest: this runs
+    after apply, when the pins it moved no longer trail anything. Commit staging
+    intersects the list with the dirty set, so an untouched one is never staged.
+    """
+    paths = dict.fromkeys(
+        [
+            (ws.path / "package.json").resolve(),
+            *(path.resolve() for path, _pkg, _pin in _bun_manifests(ws.git_repo)),
+        ]
     )
-    return True, f"packageManager → {name}@{actual} (ok)"
+    rel = (os.path.relpath(p, ws.path) for p in paths)
+    return [r for r in rel if (ws.path / r).exists()]
+
+
+# ``bun-version:`` takes one literal version; ``latest`` and ``${{ … }}``
+# expressions are resolved by the workflow itself and never match this shape.
+_BUN_VERSION_LINE_RE = re.compile(
+    r"^(?P<head>[ \t]*(?:- )?bun-version:[ \t]*)"
+    r"(?P<quote>[\"']?)(?P<version>\d+(?:\.\d+)*)(?P=quote)"
+    r"(?P<tail>[ \t]*(?:#.*)?)$",
+    re.MULTILINE,
+)
+
+
+def _bun_version_bumps(ws: Workspace) -> list[tuple[Path, str]]:
+    """Workflow files with a literal ``bun-version:`` trailing the bun latest."""
+    target = _pm_target_version("bun", ws)
+    if target is None:
+        return []
+    bumps: list[tuple[Path, str]] = []
+    for wf in discover_workflow_files(ws.git_repo):
+        text = wf.read_text(encoding="utf-8", errors="replace")
+        if any(
+            semver_tuple(m.group("version")) < semver_tuple(target)
+            for m in _BUN_VERSION_LINE_RE.finditer(text)
+        ):
+            bumps.append((wf, target))
+    return bumps
+
+
+def detect_bun_workflow(ws: Workspace, ctx: dict[str, Any]) -> bool:
+    if ws.ecosystem != "node":
+        return False
+    return bool(_bun_version_bumps(ws))
+
+
+def report_bun_workflow(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
+    return [
+        f"REMEDIATE bun_workflow_version: {wf.relative_to(ws.git_repo).as_posix()} "
+        f"bun-version → {target}"
+        for wf, target in _bun_version_bumps(ws)
+    ]
+
+
+def apply_bun_workflow(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
+    changed: list[str] = []
+    for wf, target in _bun_version_bumps(ws):
+        text = wf.read_text(encoding="utf-8", errors="replace")
+
+        def _sub(m: re.Match[str], target: str = target) -> str:
+            if semver_tuple(m.group("version")) >= semver_tuple(target):
+                return m.group(0)
+            return f"{m.group('head')}{m.group('quote')}{target}{m.group('quote')}{m.group('tail')}"
+
+        updated = _BUN_VERSION_LINE_RE.sub(_sub, text)
+        if updated != text:
+            guarded_write(
+                wf,
+                updated.encode("utf-8"),
+                ws.git_repo,
+                appender="bun workflow version",
+            )
+            changed.append(wf.relative_to(ws.git_repo).as_posix())
+    if not changed:
+        return True, "bun-version workflow inputs (ok: nothing to bump)"
+    return True, f"bun-version → {', '.join(changed)} (ok)"
+
+
+def _bun_workflow_files(ws: Workspace) -> list[str]:
+    """Workflows holding a literal ``bun-version:``, trailing or not (see _pm_pin_files)."""
+    return [
+        wf.relative_to(ws.git_repo).as_posix()
+        for wf in discover_workflow_files(ws.git_repo)
+        if _BUN_VERSION_LINE_RE.search(wf.read_text(encoding="utf-8", errors="replace"))
+    ]
 
 
 def _governed_by_biome(ws: Workspace) -> bool:
@@ -409,7 +610,14 @@ REMEDIATIONS: list[RemediationHook] = [
         detect_pm_pin,
         report_pm_pin,
         apply_pm_pin,
-        files=lambda ws: ["package.json"],
+        files=_pm_pin_files,
+    ),
+    RemediationHook(
+        "bun_workflow_version",
+        detect_bun_workflow,
+        report_bun_workflow,
+        apply_bun_workflow,
+        files=_bun_workflow_files,
     ),
     # Last, so it also formats a manifest package_manager_pin just rewrote.
     RemediationHook(
