@@ -19,10 +19,10 @@ GO_JSON = json.dumps(
 RUST_TOML = '[pkg.cargo]\nversion = "1.0"\n[pkg.rust]\nversion = "1.98.1 (abc 2026-10-01)"\n'
 NODE_JSON = json.dumps(
     [
-        {"version": "v25.0.0"},
-        {"version": "v22.9.1"},
-        {"version": "v22.10.0"},
-        {"version": "v20.1.0"},
+        {"version": "v27.1.0"},
+        {"version": "v26.4.0", "lts": "Krypton"},
+        {"version": "v24.11.1", "lts": "Jod"},
+        {"version": "v22.10.0", "lts": False},
     ]
 )
 PY_JSON = json.dumps([{"latest": "3.15.0b1"}, {"latest": "3.14.2"}, {"latest": "3.13.9"}])
@@ -118,12 +118,32 @@ def test_rust_pin_moves_but_named_channel_and_msrv_do_not(tmp_path: Path) -> Non
     assert toolchains.plan_toolchains(_ws(tmp_path, "rust")) == ([], [])
 
 
-def test_node_stays_within_its_major_and_keeps_v_prefix(tmp_path: Path) -> None:
+def test_node_pin_moves_to_the_newest_lts_major(tmp_path: Path) -> None:
+    """A pin on an older LTS crosses to the new LTS; the odd Current major never wins."""
     (tmp_path / ".nvmrc").write_text("v22.9.0\n")
     toolchains.apply_toolchains(_ws(tmp_path, "node"))
-    assert (tmp_path / ".nvmrc").read_text() == "v22.10.0\n"
-    (tmp_path / ".node-version").write_text("lts/*\n")
+    assert (tmp_path / ".nvmrc").read_text() == "v26.4.0\n"
+    (tmp_path / ".node-version").write_text("24.11\n")
+    toolchains.apply_toolchains(_ws(tmp_path, "node"))
+    assert (tmp_path / ".node-version").read_text() == "26.4\n"
+    (tmp_path / ".nvmrc").write_text("lts/*\n")
     assert [c.name for c in toolchains.plan_toolchains(_ws(tmp_path, "node"))[0]] == []
+
+
+def test_exact_engines_node_crosses_to_the_newest_lts(tmp_path: Path) -> None:
+    (tmp_path / "package.json").write_text(
+        '{\n  "engines": {"node": "22.10.0"},\n  "name": "x"\n}\n'
+    )
+    changes, _behind = toolchains.apply_toolchains(_ws(tmp_path, "node"))
+    assert [(c.name, c.from_ver, c.to) for c in changes] == [("engines.node", "22.10.0", "26.4.0")]
+    assert '"node": "26.4.0"' in (tmp_path / "package.json").read_text()
+
+
+def test_engines_node_floor_is_left_alone(tmp_path: Path) -> None:
+    body = '{\n  "engines": {"node": ">=22"},\n  "name": "x"\n}\n'
+    (tmp_path / "package.json").write_text(body)
+    assert toolchains.plan_toolchains(_ws(tmp_path, "node")) == ([], [])
+    assert (tmp_path / "package.json").read_text() == body
 
 
 def test_python_pin_takes_latest_stable_release(tmp_path: Path) -> None:

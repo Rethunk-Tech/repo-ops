@@ -897,16 +897,36 @@ def _is_semver_tag(tag: str) -> bool:
     return bool(_SEMVER_SUFFIX_RE.match(tag)) and tag not in _NON_SEMVER_TAGS
 
 
+def _is_node_image(image: str) -> bool:
+    return _normalize_docker_image(image)[1] == "library/node"
+
+
+def _node_lts_major() -> int | None:
+    """Newest Node LTS major, or None to leave tags unrestricted.
+
+    Node publishes image tags for every release line, Current majors included,
+    so without this cap a node image jumps to a major the runtime cannot use yet.
+    The release index is read through ``toolchains``' seam so there is one Node
+    lookup path; an unreachable index leaves node pins as they were.
+    """
+    from repo_ops_upgrade import toolchains
+
+    latest = toolchains._latest_node("")
+    return semver_tuple(latest)[0] if latest else None
+
+
 def _resolve_latest_tag(
     current_tag: str,
     available_tags: list[str],
+    major: int | None = None,
 ) -> str | None:
     """Return the best candidate tag for *current_tag* from *available_tags*.
 
     Matching strategy:
     - Candidates must share the same suffix (e.g. ``-alpine``, ``-slim``, or
       bare numeric) as *current_tag*.
-    - The best across all majors wins.
+    - The best across all majors wins, unless *major* pins the search to that
+      major.
     - Returns None if no suitable candidate is found or *current_tag* is
       non-semver (report-only caller).
     """
@@ -929,6 +949,8 @@ def _resolve_latest_tag(
             ver_part = t[: len(t) - len(suffix)] if suffix else t
             tup = semver_tuple(ver_part)
         except (ValueError, IndexError):
+            continue
+        if major is not None and tup[0] != major:
             continue
         candidates.append((tup, t))
 
@@ -1063,7 +1085,9 @@ def _resolve_tag_target(ws: Workspace, image: str, tag: str) -> tuple[str | None
         if clamp_target is not None:
             return clamp_target, None
 
-    latest = _resolve_latest_tag(tag, available)
+    latest = _resolve_latest_tag(
+        tag, available, _node_lts_major() if _is_node_image(image) else None
+    )
     if latest is None or not _target_within_hold(ws, image, latest):
         return None, None
     return latest, None

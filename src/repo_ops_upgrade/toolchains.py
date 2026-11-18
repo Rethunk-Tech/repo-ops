@@ -108,15 +108,17 @@ def _latest_python(_current: str) -> str | None:
     return max(found, key=semver_tuple, default=None)
 
 
-def _latest_node(current: str) -> str | None:
-    # Same major only: a new major is a runtime migration, not a pin refresh.
-    major = semver_tuple(current)[0]
-    found = [
-        v
-        for e in _json_list("https://nodejs.org/dist/index.json")
-        if (v := str(e.get("version", "")).removeprefix("v")) and semver_tuple(v)[0] == major
-    ]
-    return max(found, key=semver_tuple, default=None)
+def _latest_node(_current: str) -> str | None:
+    # Node pins follow the newest LTS, not the pin's own major: the index is
+    # newest-first and only an LTS release carries the codename, so the first
+    # truthy ``lts`` is the newest LTS and an odd Current major never wins.
+    for entry in _json_list("https://nodejs.org/dist/index.json"):
+        if not entry.get("lts"):
+            continue
+        version = str(entry.get("version", "")).removeprefix("v")
+        if re.fullmatch(r"\d+\.\d+\.\d+", version):
+            return version
+    return None
 
 
 def _latest_in_minor(current: str, versions: list[str]) -> str | None:
@@ -261,7 +263,6 @@ def _input_target(tool: str, current: str) -> str | None:
     if tool == "python":
         return _latest_python_patch(current)
     if tool == "node":
-        # Same major only, like the .nvmrc pin: a new major is a migration.
         return _latest_node(current)
     return _latest_uv(current)
 
@@ -318,6 +319,11 @@ _RUST_RE = re.compile(r'^(?P<pre>\s*channel\s*=\s*")' + _VER + r'(?=")', re.MULT
 _RUST_PLAIN_RE = re.compile(rf"\A(?P<pre>\s*){_VER}(?=\s*\Z)")
 _PY_RE = re.compile(rf"\A(?P<pre>\s*){_VER}(?=\s*\Z)")
 _NODE_RE = re.compile(rf"\A(?P<pre>\s*v?){_VER}(?=\s*\Z)")
+# ``engines.node`` is a pin only when it is exact; a ``>=``/``^``/``x`` spec is a
+# floor for consumers and must keep working for older runtimes.
+_NODE_ENGINES_RE = re.compile(
+    r'(?P<pre>"engines"\s*:\s*\{[^{}]*?"node"\s*:\s*")(?P<v>\d+(?:\.\d+)*)(?=")'
+)
 
 
 def _read(path: Path) -> str | None:
@@ -351,7 +357,7 @@ def _pins(ws: Workspace) -> list[_Pin]:
         return [
             _Pin("node", "node", p / name, _NODE_RE, _latest_node)
             for name in (".nvmrc", ".node-version")
-        ]
+        ] + [_Pin("node", "engines.node", p / "package.json", _NODE_ENGINES_RE, _latest_node)]
     return []
 
 
@@ -408,13 +414,21 @@ def _plan(ws: Workspace) -> tuple[list[tuple[_Pin, str, str]], list[Change]]:
     return moves, behind
 
 
+def _log_major_moves(rows: list[tuple[str, str, str]]) -> None:
+    """Announce each pin crossing a major on its own line."""
+    for label, cur, new in rows:
+        if semver_tuple(new)[0] != semver_tuple(cur)[0]:
+            logger.info("major move %s: %s → %s", label, cur, new)
+
+
 def plan_toolchains(ws: Workspace) -> tuple[list[Change], list[Change]]:
     """``(changes, behind_latest)`` for the toolchain pins in *ws*; writes nothing."""
     moves, behind = _plan(ws)
     input_moves, input_behind = _workflow_moves(ws)
+    rows = moves + input_moves
+    _log_major_moves([(pin.label, cur, new) for pin, cur, new in rows])
     return (
-        [Change(pin.label, cur, new) for pin, cur, new in moves]
-        + [Change(pin.label, cur, new) for pin, cur, new in input_moves],
+        [Change(pin.label, cur, new) for pin, cur, new in rows],
         behind + input_behind,
     )
 
@@ -449,9 +463,10 @@ def apply_toolchains(ws: Workspace) -> tuple[list[Change], list[Change]]:
         # Past go 1.17 go.mod must list every module the build needs, so a
         # raised directive is only valid once tidy has filled them in.
         tidy_go_module(ws)
+    rows = moves + input_moves
+    _log_major_moves([(pin.label, cur, new) for pin, cur, new in rows])
     return (
-        [Change(pin.label, cur, new) for pin, cur, new in moves]
-        + [Change(pin.label, cur, new) for pin, cur, new in input_moves],
+        [Change(pin.label, cur, new) for pin, cur, new in rows],
         behind + input_behind,
     )
 

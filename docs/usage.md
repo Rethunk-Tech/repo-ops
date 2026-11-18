@@ -53,18 +53,18 @@ Node monorepos cover every workspace member, each bumped from its own directory.
 
 ### Toolchains
 
-Pinned toolchain versions move too, only upward, keeping the pin's precision (`1.27` waits for a new minor; `1.27.2` becomes `1.27.3`). They are reported like packages, and `plan` lists them.
+Pinned toolchain versions move too, only upward, keeping the pin's precision (`1.27` waits for a new minor; `1.27.2` becomes `1.27.3`). Node is the exception: its pins move to the newest LTS major, so a sweep's report shows a major move once Node promotes one. They are reported like packages, and `plan` lists them.
 
 | Tool | Pin | Moves to |
 | --- | --- | --- |
 | go | `go` and `toolchain` lines in `go.mod`, and the `go` line of an enclosing `go.work` (kept level with the module it lists) | newest stable on go.dev |
 | rust | a version `channel` in `rust-toolchain.toml` or `rust-toolchain` (`stable`/`beta`/`nightly` stay; Cargo `rust-version` is never touched) | newest stable |
 | python | a version in `.python-version` (`requires-python` is never touched) | newest stable CPython |
-| node | a version in `.nvmrc` / `.node-version` (`lts/*` and aliases stay) | newest release of the same major |
+| node | a version in `.nvmrc` / `.node-version` (`lts/*` and aliases stay), or an exact `engines.node` (`>=` floors stay) | newest LTS release |
 | pnpm, bun, npm | `packageManager` | registry latest (a remediation; bun also runs `bun upgrade` and repins every nested `package.json` in the repo); Yarn follows the local runtime |
 | bun | `bun-version:` in a workflow (a literal version; `latest` and `${{ … }}` are left alone) | registry latest, same version as the pin |
 | uv | `uv-version:`, or `version:` on an `astral-sh/setup-uv` step, in a workflow (a literal version) | PyPI latest |
-| go, python, node | `go-version:`, `python-version:`, `node-version:` in a workflow input (a literal version; `latest`, `stable`-style aliases and `${{ … }}` are left alone) | newest patch of the pinned minor (go), newest patch of the pinned minor (python), newest minor and patch of the pinned major (node) |
+| go, python, node | `go-version:`, `python-version:`, `node-version:` in a workflow input (a literal version; `latest`, `stable`-style aliases and `${{ … }}` are left alone) | newest patch of the pinned minor (go), newest patch of the pinned minor (python), newest LTS (node) |
 
 Hold one with `[[hold]]` named `go`, `rust`, `python`, `node` or `dotnet`. A failed lookup warns and leaves the pin alone.
 

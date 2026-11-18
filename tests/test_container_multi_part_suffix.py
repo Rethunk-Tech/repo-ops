@@ -29,6 +29,27 @@ def test_latest_tag_keeps_the_whole_multi_part_suffix() -> None:
     assert _resolve_latest_tag("3.14.10-slim-bookworm", ["3.15.0-bookworm"]) is None
 
 
+def test_node_image_does_not_cross_to_a_current_major(tmp_path: Path) -> None:
+    """Node image tags follow the newest LTS, not a newer Current major."""
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM node:22-bookworm-slim\n")
+
+    def _tags(image: str) -> list[str] | None:
+        assert image == "node"
+        return ["22-bookworm-slim", "26-bookworm-slim", "27-bookworm-slim"]
+
+    ws = _ws(tmp_path)
+    with (
+        patch("repo_ops_container.container._fetch_tags", side_effect=_tags),
+        patch("repo_ops_container.container._node_lts_major", return_value=26),
+    ):
+        changes = check_container(ws)
+        apply_container(ws)
+
+    assert [(c.name, c.to) for c in changes] == [("node:22-bookworm-slim", "26-bookworm-slim")]
+    assert dockerfile.read_text() == "FROM node:26-bookworm-slim\n"
+
+
 def test_check_and_apply_move_multi_part_suffix_tags(tmp_path: Path) -> None:
     dockerfile = tmp_path / "Dockerfile"
     dockerfile.write_text(

@@ -21,7 +21,13 @@ GO_JSON = json.dumps(
     ]
 )
 PY_JSON = json.dumps([{"latest": "3.14.2"}, {"latest": "3.14.11"}, {"latest": "3.15.0"}])
-NODE_JSON = json.dumps([{"version": "v24.9.0"}, {"version": "v24.11.1"}, {"version": "v25.1.0"}])
+NODE_JSON = json.dumps(
+    [
+        {"version": "v26.4.0", "lts": "Krypton"},
+        {"version": "v24.11.1", "lts": "Jod"},
+        {"version": "v25.1.0"},
+    ]
+)
 UV_VERSION = "0.13.9"
 
 
@@ -111,20 +117,28 @@ def test_python_input_stays_in_its_minor(tmp_path: Path) -> None:
     assert 'python-version: "3.14.11"' in wf.read_text()
 
 
-def test_node_input_moves_minor_and_patch_within_its_major(tmp_path: Path) -> None:
-    """``24.9`` keeps two-part precision, so it moves to 24.11 and not to 25.1."""
+def test_node_input_moves_to_the_newest_lts_major(tmp_path: Path) -> None:
+    """A workflow literal follows the newest LTS, full or bare major, never a Current odd major."""
     wf = _workflow(
         tmp_path,
         "steps:\n"
         "  - uses: Rethunk-Tech/gh-actions/setup-bun@abc123\n"
         "    with:\n"
-        '      node-version: "24.9"\n',
+        '      node-version: "24"\n'
+        "  - uses: Rethunk-Tech/gh-actions/setup-node@abc123\n"
+        "    with:\n"
+        '      node-version: "22.9.0"\n',
     )
 
     changes, _behind = toolchains.apply_toolchains(_ws(tmp_path, "node", "bun"))
 
-    assert [(c.name, c.to) for c in changes] == [("node-version", "24.11")]
-    assert 'node-version: "24.11"' in wf.read_text()
+    assert [(c.name, c.from_ver, c.to) for c in changes] == [
+        ("node-version", "24", "26"),
+        ("node-version", "22.9.0", "26.4.0"),
+    ]
+    text = wf.read_text()
+    assert 'node-version: "26.4.0"' in text
+    assert 'node-version: "26"' in text
 
 
 def test_expression_matrix_and_latest_inputs_are_left_alone(tmp_path: Path) -> None:
