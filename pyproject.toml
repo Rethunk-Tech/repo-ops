@@ -41,7 +41,7 @@ dev = [
   # The suite is wait-bound (subprocess tool probes, temp git repos), so it parallelises well.
   "pytest-xdist>=3.8.0",
   "pyrefly>=1.4.0",
-  "deptry>=0.25.1",
+  "deptry",
 ]
 
 # One distribution, many top-level modules. The module split is a code-layout
