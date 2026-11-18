@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from repo_ops_upgrade.actions import action_tag_info, scan_actions
+import pytest
+
+from repo_ops_upgrade.actions import (
+    action_tag_info,
+    load_tag_cache_into,
+    save_tag_cache_from,
+    scan_actions,
+)
 
 
 def _make_tags_proc(*tags: str) -> MagicMock:
@@ -81,3 +90,62 @@ def test_shared_tag_cache_resolves_action_once_across_repos(tmp_path: Path) -> N
 
     # The gh API should have been called exactly once — cache hit on the second repo.
     assert gh_call_count == 1
+
+
+def test_tag_cache_keeps_fresh_hits_and_drops_stale_or_malformed_disk_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_home = tmp_path / "xdg-cache"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache_home))
+    path = cache_home / "repo-ops" / "action-tags.json"
+
+    store: dict[str, dict | None] = {}
+    load_tag_cache_into(store)
+    assert store == {}
+
+    path.parent.mkdir(parents=True)
+    path.write_text("[]", encoding="utf-8")
+    load_tag_cache_into(store)
+    assert store == {}
+    save_tag_cache_from({"only/repo": None})
+    assert json.loads(path.read_text(encoding="utf-8"))["only/repo"]["miss"] is True
+
+    now = time.time()
+    path.write_text(
+        json.dumps(
+            {
+                "fresh/repo": {
+                    "bare_majors": ["4"],
+                    "max_major": 4,
+                    "all_tags": ["v4.0.0"],
+                    "sha_to_tags": {"aaa": ["v4.0.0"]},
+                    "truncated": True,
+                    "ts": now,
+                },
+                "miss/repo": {"miss": True, "ts": now},
+                "stale/repo": {"miss": True, "ts": now - 7 * 3600},
+                "junk": "not-a-dict",
+            }
+        ),
+        encoding="utf-8",
+    )
+    load_tag_cache_into(store)
+    assert store["fresh/repo"] == {
+        "bare_majors": {"4"},
+        "max_major": 4,
+        "all_tags": {"v4.0.0"},
+        "sha_to_tags": {"aaa": ["v4.0.0"]},
+        "truncated": True,
+    }
+    assert store["miss/repo"] is None
+    assert "stale/repo" not in store
+    assert "junk" not in store
+
+    store["new/repo"] = None
+    save_tag_cache_from(store)
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["fresh/repo"]["bare_majors"] == ["4"]
+    assert saved["miss/repo"]["miss"] is True
+    assert saved["new/repo"]["miss"] is True
+    assert "stale/repo" not in saved
+    assert "junk" not in saved

@@ -12,6 +12,7 @@ import pytest
 from repo_ops_upgrade.actions import (
     _LINT_CACHE_MAX_AGE_S,
     _actionlint_cache_path,
+    _classify_actionlint_severity,
     _lint_cache_key,
     _load_lint_cache,
     _run_actionlint,
@@ -283,3 +284,25 @@ def test_scan_actions_saves_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert len(data) == 1
     entry = next(iter(data.values()))
     assert entry["result"] is None  # lint passed
+
+
+def test_actionlint_native_findings_are_fatal_shellcheck_warnings_are_not() -> None:
+    native = '.github/workflows/ci.yml:1:1: unexpected key "foo"\n'
+    warning = (
+        ".github/workflows/ci.yml:10:5: shellcheck reported issue in this script: "
+        "SC2086:warning: Double quote to prevent globbing\n"
+    )
+    sc_error = (
+        ".github/workflows/ci.yml:10:5: shellcheck reported issue in this script: "
+        "SC2086:error: Double quote to prevent globbing\n"
+    )
+    unparseable = (
+        ".github/workflows/ci.yml:10:5: shellcheck reported issue in this script: "
+        "something went wrong\n"
+    )
+    assert _classify_actionlint_severity(native) == "error"
+    assert _classify_actionlint_severity(warning) == "warning"
+    assert _classify_actionlint_severity(sc_error) == "error"
+    assert _classify_actionlint_severity(unparseable) == "error"
+    assert _classify_actionlint_severity("") == "error"
+    assert _classify_actionlint_severity("actionlint timed out") == "error"
