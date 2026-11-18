@@ -878,7 +878,9 @@ def _fetch_manifest_digest(image: str, tag: str) -> str | None:
 # Semver + suffix-aware latest resolution
 # ---------------------------------------------------------------------------
 
-_SEMVER_SUFFIX_RE = re.compile(r"^(?P<version>\d+(?:\.\d+)*)(?P<suffix>-[\w.]+)?$")
+# Any number of ``-part`` suffixes: ``24-bookworm-slim`` is a versioned tag whose
+# suffix is the whole ``-bookworm-slim`` tail, not a tag with no version at all.
+_SEMVER_SUFFIX_RE = re.compile(r"^(?P<version>\d+(?:\.\d+)*)(?P<suffix>(?:-[\w.]+)+)?$")
 
 _NON_SEMVER_TAGS = frozenset({"latest", "stable", "edge", "nightly", "main", "master"})
 

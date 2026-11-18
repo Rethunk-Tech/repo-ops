@@ -38,7 +38,7 @@ Every dependency moves to its newest release, across semver ranges and majors. E
 | bun | `bun update` plus out-of-range packages from `bun outdated`, then `bun add <pkg>@<version>` |
 | go | every `go list -m -u` update via batched `go get path@version`, then `go mod tidy` |
 | rust | `cargo update`, plus Cargo.toml requirement bumps (including `[workspace.dependencies]`) |
-| nuget | literal `PackageReference`/`PackageVersion` pins in project, `.props` and `.targets` files and `global.json` `msbuild-sdks`, checked against nuget.org plus the feeds the projects and `NuGet.config` add; each bump is kept only when `dotnet restore` succeeds |
+| nuget | literal `PackageReference`/`PackageVersion` pins in project, `.props` and `.targets` files and `global.json` `msbuild-sdks`, checked against nuget.org plus the feeds the projects and `NuGet.config` add; each bump is kept only when `dotnet restore` succeeds. `global.json` `sdk.version` moves to the newest SDK in the same feature band and major unless `rollForward` pins it |
 | uv, hatch | `uv lock --upgrade`; a hatch project without `uv.lock` gets one |
 | poetry, pdm | `update`, then `add pkg@^X` when the range blocks the newest release |
 | pipenv | `pipenv update`, then `pipenv install` per gap when a venv exists |
@@ -46,7 +46,7 @@ Every dependency moves to its newest release, across semver ranges and majors. E
 | deno | `deno outdated --update --latest`, then `deno update <pkg>` per gap |
 | pre-commit | hook `rev` to the newest tag; SHA pins advance to the newest release's commit |
 | submodules | pointer to the newest semver tag; SHA-only heads advance within their tagged major |
-| containers | `FROM` and `image:` tags to the newest; digest pins refresh for the same tag |
+| containers | `FROM`, `COPY --from=` and `image:` tags to the newest, any `-suffix` parts (`24-bookworm-slim`) included; digest pins refresh for the same tag |
 | GitHub Actions | newest major; digest pins advance (comment updated), floating tags become SHA pins. A new `Rethunk-Tech/gh-actions` tag is applied to one repo until that repo's default-branch CI is green on a commit pinning it; later sweeps bump the rest |
 
 Node monorepos cover every workspace member, each bumped from its own directory. A private member's `peerDependencies` follow the version the same manifest depends on. When `gh` is authenticated, Actions rewrites are checked against the org's allowed-actions policy and violations are reported. Actions scanning covers both `.github/workflows/*.yml` and every composite-action `action.yml`/`action.yaml` in the repo; a `uses:` pin under an excluded workspace glob is left untouched.
@@ -63,8 +63,10 @@ Pinned toolchain versions move too, only upward, keeping the pin's precision (`1
 | node | a version in `.nvmrc` / `.node-version` (`lts/*` and aliases stay) | newest release of the same major |
 | pnpm, bun, npm | `packageManager` | registry latest (a remediation; bun also runs `bun upgrade` and repins every nested `package.json` in the repo); Yarn follows the local runtime |
 | bun | `bun-version:` in a workflow (a literal version; `latest` and `${{ … }}` are left alone) | registry latest, same version as the pin |
+| uv | `uv-version:`, or `version:` on an `astral-sh/setup-uv` step, in a workflow (a literal version) | PyPI latest |
+| go, python, node | `go-version:`, `python-version:`, `node-version:` in a workflow input (a literal version; `latest`, `stable`-style aliases and `${{ … }}` are left alone) | newest patch of the pinned minor (go), newest patch of the pinned minor (python), newest minor and patch of the pinned major (node) |
 
-Hold one with `[[hold]]` named `go`, `rust`, `python` or `node`. A failed lookup warns and leaves the pin alone.
+Hold one with `[[hold]]` named `go`, `rust`, `python`, `node` or `dotnet`. A failed lookup warns and leaves the pin alone.
 
 ### Remediations
 
