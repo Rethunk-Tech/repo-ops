@@ -284,7 +284,7 @@ requires-dist = [{ name = "ruamel-yaml", specifier = ">=0.19.1" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "deptry", specifier = ">=0.25.1" },
+    { name = "deptry" },
     { name = "pyrefly", specifier = ">=1.4.0" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
