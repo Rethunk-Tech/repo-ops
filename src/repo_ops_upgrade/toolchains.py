@@ -1,11 +1,15 @@
-"""Toolchain pins (Go, Rust, Python, Node) moved to the latest stable release.
+"""Toolchain pins (Go, Rust, Python, Node, uv) moved to the latest stable release.
 
 Packages are the ecosystem plugins' job; this covers the version a repo pins for
 the toolchain itself. A pin only ever rises, keeps its own precision (``1.27``
 stays two-part and only moves when the minor does), and obeys ``[[hold]]``
-rules named after the tool: ``go``, ``rust``, ``python``, ``node``. MSRV and
-``requires-python`` floors are never touched. A failed fetch is a warning and
+rules named after the tool: ``go``, ``rust``, ``python``, ``node``, ``uv``. MSRV
+and ``requires-python`` floors are never touched. A failed fetch is a warning and
 leaves the pin alone.
+
+Version inputs in a workflow (``go-version:``, ``python-version:``,
+``node-version:``, ``uv-version:``, and ``version:`` on a setup-uv step) are
+toolchain pins a repo states in YAML instead of a manifest, so they move too.
 """
 
 from __future__ import annotations
@@ -26,6 +30,8 @@ from repo_ops_core.http import open_url
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_go.go import go_work_dir_for, tidy_go_module
 from repo_ops_models import Change, Workspace
+from repo_ops_py.pypi import pypi_latest
+from repo_ops_upgrade.actions import discover_workflow_files
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +117,187 @@ def _latest_node(current: str) -> str | None:
         if (v := str(e.get("version", "")).removeprefix("v")) and semver_tuple(v)[0] == major
     ]
     return max(found, key=semver_tuple, default=None)
+
+
+def _latest_in_minor(current: str, versions: list[str]) -> str | None:
+    """Highest of *versions* sharing the pin's major.minor."""
+    minor = semver_tuple(current)[:2]
+    return max(
+        (v for v in versions if semver_tuple(v)[:2] == minor),
+        key=semver_tuple,
+        default=None,
+    )
+
+
+def _go_stable_versions() -> list[str]:
+    return [
+        version.removeprefix("go")
+        for rel in _json_list("https://go.dev/dl/?mode=json")
+        if rel.get("stable") is True
+        and (version := str(rel.get("version", ""))).startswith("go")
+        and re.fullmatch(r"\d+\.\d+(?:\.\d+)?", version.removeprefix("go"))
+    ]
+
+
+def _latest_go_patch(current: str) -> str | None:
+    """Newest go release in the pin's own minor; a bare major names no minor."""
+    if len(semver_tuple(current)) < 2:
+        return None
+    return _latest_in_minor(current, _go_stable_versions())
+
+
+def _latest_python_patch(current: str) -> str | None:
+    """Newest CPython release in the pin's own minor."""
+    if len(semver_tuple(current)) < 2:
+        return None
+    found = [
+        str(e["latest"])
+        for e in _json_list("https://endoflife.date/api/python.json")
+        if re.fullmatch(r"\d+\.\d+\.\d+", str(e.get("latest", "")))
+    ]
+    return _latest_in_minor(current, found)
+
+
+def _latest_uv(_current: str) -> str | None:
+    return pypi_latest("uv")
+
+
+# --- Workflow version inputs ------------------------------------------------
+#
+# A toolchain pinned in a workflow is the same pin as one in a manifest, so it
+# moves under the same tool name: ``go``, ``python``, ``node``, ``uv``.
+
+_INPUT_TOOLS = {
+    "go-version": "go",
+    "python-version": "python",
+    "node-version": "node",
+    "uv-version": "uv",
+}
+_INPUT_TOOLS_BY_ECOSYSTEM = {"go": ("go",), "py": ("python", "uv"), "node": ("node",)}
+_SETUP_UV = "astral-sh/setup-uv"
+
+_WS_KEY_RE = re.compile(
+    r"^(?P<pre>[ \t]*(?:- )?)(?P<key>[A-Za-z0-9_-]+):[ \t]*"
+    r"(?P<quote>[\"']?)(?P<value>[^\s\"'#]*)(?P=quote)[ \t]*(?:#.*)?$"
+)
+_LITERAL_INPUT_RE = re.compile(r"\d+(?:\.\d+)*")
+
+
+@dataclass(frozen=True)
+class _Input:
+    """One literal version input on one workflow line."""
+
+    tool: str
+    label: str
+    path: Path
+    line_no: int
+    version: str
+
+
+def _is_setup_uv(ref: str) -> bool:
+    return ref.split("@", 1)[0].strip().lower() == _SETUP_UV
+
+
+def _inputs_in(path: Path, lines: list[str], tools: tuple[str, ...]) -> list[_Input]:
+    found: list[_Input] = []
+    # Indents of the ``with:`` blocks still open at the current line; a step
+    # input is only a pin inside one (a ``matrix:`` key of the same name is not).
+    with_blocks: list[int] = []
+    uses: str | None = None
+    for index, line in enumerate(lines, 1):
+        body = line.strip()
+        if not body or body.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        if body.startswith("- "):
+            # A new step: the previous step's ``uses:`` must not carry over to
+            # a ``with:`` block of its own.
+            uses = None
+        while with_blocks and indent <= with_blocks[-1]:
+            with_blocks.pop()
+        m = _WS_KEY_RE.match(line)
+        if m is None:
+            continue
+        key = m.group("key")
+        value = m.group("value")
+        if key == "uses":
+            uses = value
+            continue
+        if key == "with":
+            with_blocks.append(indent)
+            continue
+        if not with_blocks or indent <= with_blocks[-1]:
+            continue
+        tool = _INPUT_TOOLS.get(key)
+        if tool is None and key == "version" and uses is not None and _is_setup_uv(uses):
+            tool = "uv"
+        if tool not in tools:
+            continue
+        if not (_LITERAL_INPUT_RE.fullmatch(value) or (tool == "go" and value == "stable")):
+            continue
+        found.append(_Input(tool, "uv-version" if key == "version" else key, path, index, value))
+    return found
+
+
+def _workflow_inputs(ws: Workspace) -> list[_Input]:
+    tools = _INPUT_TOOLS_BY_ECOSYSTEM.get(ws.ecosystem, ())
+    if not tools:
+        return []
+    found: list[_Input] = []
+    for wf in discover_workflow_files(ws.git_repo):
+        try:
+            lines = wf.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        found.extend(_inputs_in(wf, lines, tools))
+    return found
+
+
+def _input_target(tool: str, current: str) -> str | None:
+    if tool == "go":
+        if current == "stable":
+            return max(_go_stable_versions(), key=semver_tuple, default=None)
+        return _latest_go_patch(current)
+    if tool == "python":
+        return _latest_python_patch(current)
+    if tool == "node":
+        # Same major only, like the .nvmrc pin: a new major is a migration.
+        return _latest_node(current)
+    return _latest_uv(current)
+
+
+def _workflow_moves(ws: Workspace) -> tuple[list[tuple[_Input, str, str]], list[Change]]:
+    moves: list[tuple[_Input, str, str]] = []
+    behind: list[Change] = []
+    for pin in _workflow_inputs(ws):
+        target = _input_target(pin.tool, pin.version)
+        if target is None:
+            continue
+        if _LITERAL_INPUT_RE.fullmatch(pin.version):
+            if not _newer(target, pin.version):
+                continue
+            new = _written(target, pin.version)
+        else:
+            new = target
+        if not target_within_hold(new, resolve_package_hold(ws, pin.tool)):
+            behind.append(Change(pin.label, pin.version, new))
+            continue
+        moves.append((pin, pin.version, new))
+    return moves, behind
+
+
+def _apply_workflow_input(pin: _Input, new: str, root: Path) -> bool:
+    text = _read(pin.path)
+    lines = text.splitlines(keepends=True) if text is not None else []
+    index = pin.line_no - 1
+    if not 0 <= index < len(lines):
+        return False
+    m = _WS_KEY_RE.match(lines[index].rstrip("\r\n"))
+    if m is None or m.group("value") != pin.version:
+        return False
+    lines[index] = lines[index][: m.start("value")] + new + lines[index][m.end("value") :]
+    guarded_write(pin.path, "".join(lines).encode("utf-8"), root, appender="toolchains")
+    return True
 
 
 @dataclass(frozen=True)
@@ -224,17 +411,28 @@ def _plan(ws: Workspace) -> tuple[list[tuple[_Pin, str, str]], list[Change]]:
 def plan_toolchains(ws: Workspace) -> tuple[list[Change], list[Change]]:
     """``(changes, behind_latest)`` for the toolchain pins in *ws*; writes nothing."""
     moves, behind = _plan(ws)
-    return [Change(pin.label, cur, new) for pin, cur, new in moves], behind
+    input_moves, input_behind = _workflow_moves(ws)
+    return (
+        [Change(pin.label, cur, new) for pin, cur, new in moves]
+        + [Change(pin.label, cur, new) for pin, cur, new in input_moves],
+        behind + input_behind,
+    )
 
 
 def apply_toolchains(ws: Workspace) -> tuple[list[Change], list[Change]]:
     """Rewrite the pins :func:`plan_toolchains` reports; same return shape."""
     moves, behind = _plan(ws)
+    input_moves, input_behind = _workflow_moves(ws)
     # go.work may sit above the workspace (a repo-root work file for a module
     # below it) but never above the repo, which is what confines every write
     # and the rollback.
-    if not guard_tool_writes(ws.git_repo, "toolchains", *(pin.path for pin, _, _ in moves)):
-        return [], behind
+    if not guard_tool_writes(
+        ws.git_repo,
+        "toolchains",
+        *(pin.path for pin, _, _ in moves),
+        *(pin.path for pin, _, _ in input_moves),
+    ):
+        return [], behind + input_behind
     for pin, _, new in moves:
         text = _read(pin.path)
         if text is None:
@@ -245,11 +443,17 @@ def apply_toolchains(ws: Workspace) -> tuple[list[Change], list[Change]]:
             ws.git_repo,
             appender="toolchains",
         )
+    for pin, _, new in input_moves:
+        _apply_workflow_input(pin, new, ws.git_repo)
     if any(pin.path.name == "go.mod" for pin, _, _ in moves):
         # Past go 1.17 go.mod must list every module the build needs, so a
         # raised directive is only valid once tidy has filled them in.
         tidy_go_module(ws)
-    return [Change(pin.label, cur, new) for pin, cur, new in moves], behind
+    return (
+        [Change(pin.label, cur, new) for pin, cur, new in moves]
+        + [Change(pin.label, cur, new) for pin, cur, new in input_moves],
+        behind + input_behind,
+    )
 
 
 def merge_toolchains(
