@@ -811,3 +811,34 @@ class TestDenoVerify:
         assert result is not None
         assert "gate not on PATH" in result
         assert calls == [["deno", "install", "--frozen"]]
+
+
+class TestVerifyDesktopIsolation:
+    def test_verify_subprocess_env_drops_session_bus_and_display(
+        self, tmp_path: Path, make_workspace, monkeypatch: pytest.MonkeyPatch, gate_on_path: None
+    ) -> None:
+        """Verify must not inherit the desktop session (notifications, editor, bus)."""
+        monkeypatch.setenv("DISPLAY", ":0")
+        monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+        monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus")
+        monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+        captured: list[dict[str, str] | None] = []
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+        ) -> CompletedProcess[str]:
+            captured.append(env)
+            return _ok(stdout=_GATE_LIST if cmd[:2] == ["gate", "--json"] else "")
+
+        ws = make_workspace(tmp_path, manager="rust", ecosystem="go", label="demo")
+        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
+            result = verify_workspace(ws)
+
+        assert result is None
+        assert captured
+        for env in captured:
+            assert env is not None
+            assert "DISPLAY" not in env
+            assert "WAYLAND_DISPLAY" not in env
+            assert "DBUS_SESSION_BUS_ADDRESS" not in env
+            assert env["XDG_RUNTIME_DIR"] != "/run/user/1000"

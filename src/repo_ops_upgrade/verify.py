@@ -25,8 +25,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +75,17 @@ def _timeout_failure(timeout: int, source: str) -> str:
     return f"timed out after {timeout}s ({source}; {how})"
 
 
+def _verify_env(env: dict[str, str] | None) -> dict[str, str]:
+    """Env for a verify subprocess: no session bus or display, private runtime dir."""
+    merged = dict(os.environ)
+    if env is not None:
+        merged.update(env)
+    for key in ("DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS"):
+        merged.pop(key, None)
+    merged["XDG_RUNTIME_DIR"] = tempfile.mkdtemp()
+    return merged
+
+
 def _timed_run(
     cmd: list[str],
     cwd: Path,
@@ -82,7 +95,7 @@ def _timed_run(
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     try:
-        return run(cmd, cwd, timeout=timeout, env=env)
+        return run(cmd, cwd, timeout=timeout, env=_verify_env(env))
     except subprocess.TimeoutExpired as exc:
         n = int(exc.timeout) if exc.timeout is not None else timeout
         return subprocess.CompletedProcess(cmd, 1, stdout="", stderr=_timeout_failure(n, source))
