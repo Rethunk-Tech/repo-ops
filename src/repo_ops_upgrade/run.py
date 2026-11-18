@@ -693,6 +693,7 @@ def _run_upgrade_body(
     run_tag_cache: dict[str, dict | None] = {}
     if args.eco_filter in (None, "actions"):
         actions.load_tag_cache_into(run_tag_cache)
+        actions._reset_canary_sweep()
         _tag_cache_lock = threading.Lock()
 
         def _scan_one_bundle_actions(bundle: RepoBundle) -> None:
@@ -744,14 +745,23 @@ def _run_upgrade_body(
         # workflows are skimmed rather than parsed; scan_actions parses them
         # properly a moment later and a name this misses just takes the REST path.
         _all_uses: list[str] = []
+        _gh_actions_repos: list[Path] = []
         for _bundle in bundles.values():
+            _repo_uses_gh = False
             for _wf in actions.discover_workflow_files(
                 _bundle.git_repo
             ) + actions.discover_action_files(_bundle.git_repo):
                 with contextlib.suppress(OSError):
-                    _all_uses.extend(actions.skim_workflow_uses(_wf))
+                    _names = actions.skim_workflow_uses(_wf)
+                    _all_uses.extend(_names)
+                    if any(actions._is_gh_actions(n) for n in _names):
+                        _repo_uses_gh = True
+            if _repo_uses_gh:
+                actions._note_gh_actions_user(_bundle.git_repo)
+                _gh_actions_repos.append(_bundle.git_repo)
         if _all_uses:
             actions.prefetch_tag_info(_all_uses, run_tag_cache)
+        actions._prove_latest_gh_actions_tag(_gh_actions_repos, run_tag_cache)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as _actions_pool:
             list(_actions_pool.map(_scan_one_bundle_actions, list(bundles.values())))

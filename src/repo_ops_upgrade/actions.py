@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -112,6 +113,225 @@ def save_tag_cache_from(store: dict[str, dict | None]) -> None:
     with contextlib.suppress(OSError):
         path.parent.mkdir(parents=True, exist_ok=True)
         write_json_atomic(path, merged)
+
+
+# A new Rethunk-Tech/gh-actions tag has shipped broken defaults (v1.30's
+# Windows compile). Until some repo's default-branch CI is green on that
+# tag, only one fleet repo per sweep may move to it.
+_GH_ACTIONS_REPO = "Rethunk-Tech/gh-actions"
+
+
+def _state_dir() -> Path:
+    base = os.environ.get("XDG_STATE_HOME")
+    return (Path(base) if base else Path.home() / ".local" / "state") / "repo-ops"
+
+
+def _proven_tags_path() -> Path:
+    return _state_dir() / "gh-actions-proven.json"
+
+
+def _new_canary_sweep() -> dict[str, Any]:
+    return {"canary_slug": None, "ci_checked": False, "proven": None}
+
+
+_CANARY_SWEEP: dict[str, Any] = _new_canary_sweep()
+_CANARY_LOCK = threading.Lock()
+
+
+def _reset_canary_sweep() -> None:
+    with _CANARY_LOCK:
+        _CANARY_SWEEP.clear()
+        _CANARY_SWEEP.update(_new_canary_sweep())
+
+
+def _is_gh_actions(action: str) -> bool:
+    return "/".join(action.split("/")[:2]) == _GH_ACTIONS_REPO
+
+
+def _repo_slug(repo: Path) -> str:
+    url = github_remote(repo)
+    owner_repo = github_owner_repo(url) if url else None
+    return owner_repo or repo.name
+
+
+def _default_branch(repo: Path) -> str:
+    try:
+        proc = run(
+            ["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
+            repo,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "main"
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return "main"
+    return proc.stdout.strip().rsplit("/", 1)[-1]
+
+
+def _proven_tags() -> set[str]:
+    cached = _CANARY_SWEEP.get("proven")
+    if cached is not None:
+        return cached
+    try:
+        data = json.loads(_proven_tags_path().read_text(encoding="utf-8"))
+        proven = set(data.get("proven") or []) if isinstance(data, dict) else set()
+    except (OSError, ValueError):
+        proven = set()
+    _CANARY_SWEEP["proven"] = proven
+    return proven
+
+
+def _save_proven_tags(proven: set[str]) -> None:
+    _CANARY_SWEEP["proven"] = proven
+    path = _proven_tags_path()
+    with contextlib.suppress(OSError):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_json_atomic(path, {"proven": sorted(proven)})
+
+
+def _commit_pins_gh_actions_tag(repo: Path, sha: str, tag: str) -> bool:
+    try:
+        proc = run(
+            ["git", "grep", "-F", _GH_ACTIONS_REPO, sha, "--", ".github"],
+            repo,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if proc.returncode != 0:
+        return False
+    pin_re = re.compile(rf"(?:@|#\s*){re.escape(tag)}\b")
+    return any(pin_re.search(line) for line in proc.stdout.splitlines())
+
+
+def _ci_green_on_gh_actions_tag(repo: Path, tag: str) -> bool:
+    """True when default-branch CI has a success run whose HEAD pins *tag*."""
+    if not shutil.which("gh"):
+        return False
+    slug = _repo_slug(repo)
+    if "/" not in slug:
+        return False
+    try:
+        proc = run(
+            [
+                "gh",
+                "run",
+                "list",
+                "-R",
+                slug,
+                "-b",
+                _default_branch(repo),
+                "-L",
+                "5",
+                "--json",
+                "conclusion,headSha",
+            ],
+            repo,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return False
+    try:
+        runs = json.loads(proc.stdout)
+    except ValueError:
+        return False
+    if not isinstance(runs, list):
+        return False
+    for item in runs:
+        if not isinstance(item, dict) or item.get("conclusion") != "success":
+            continue
+        sha = item.get("headSha")
+        if isinstance(sha, str) and _commit_pins_gh_actions_tag(repo, sha, tag):
+            return True
+    return False
+
+
+def _note_gh_actions_user(repo: Path) -> None:
+    with _CANARY_LOCK:
+        if _CANARY_SWEEP.get("canary_slug") is None:
+            _CANARY_SWEEP["canary_slug"] = _repo_slug(repo)
+
+
+def _maybe_prove_gh_actions_tag(repo: Path, tag: str) -> None:
+    if not _EXACT_TAG_RE.fullmatch(tag):
+        return
+    with _CANARY_LOCK:
+        proven = _proven_tags()
+        if tag in proven or _CANARY_SWEEP.get("ci_checked"):
+            return
+        # One gh run list per sweep: a miss still consumes the slot so a red
+        # canary cannot fan out into per-repo polling.
+        _CANARY_SWEEP["ci_checked"] = True
+    if _ci_green_on_gh_actions_tag(repo, tag):
+        with _CANARY_LOCK:
+            proven = _proven_tags()
+            proven.add(tag)
+            _save_proven_tags(proven)
+
+
+def _tree_pins_gh_actions_tag(repo: Path, tag: str) -> bool:
+    pin_re = re.compile(rf"(?:@|#\s*){re.escape(tag)}\b")
+    for wf in discover_workflow_files(repo) + discover_action_files(repo):
+        try:
+            text = wf.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if any(_GH_ACTIONS_REPO in line and pin_re.search(line) for line in text.splitlines()):
+            return True
+    return False
+
+
+def _prove_latest_gh_actions_tag(repos: list[Path], tag_cache: dict[str, dict | None]) -> None:
+    """Prove the newest gh-actions tag from one repo that already pins it."""
+    info = tag_cache.get(_GH_ACTIONS_REPO)
+    if not info:
+        return
+    max_major = info.get("max_major")
+    if max_major is None:
+        return
+    digest = _highest_exact_digest_in_major(info, max_major)
+    if digest is None:
+        return
+    tag = digest[1]
+    if tag in _proven_tags():
+        return
+    for repo in repos:
+        if _tree_pins_gh_actions_tag(repo, tag):
+            _maybe_prove_gh_actions_tag(repo, tag)
+            return
+
+
+def _ref_names_tag(pin: str, comment: str | None, tag: str) -> bool:
+    return pin == tag or comment == tag
+
+
+def _allow_gh_actions_bump(
+    repo: Path,
+    action: str,
+    tag: str,
+    *,
+    pin: str,
+    comment: str | None = None,
+) -> bool:
+    """Whether this repo may move *action* to *tag* this sweep."""
+    if not _is_gh_actions(action) or not _EXACT_TAG_RE.fullmatch(tag):
+        return True
+    if _ref_names_tag(pin, comment, tag):
+        _maybe_prove_gh_actions_tag(repo, tag)
+        return True
+    if tag in _proven_tags():
+        return True
+    _note_gh_actions_user(repo)
+    canary = _CANARY_SWEEP.get("canary_slug") or _repo_slug(repo)
+    if _repo_slug(repo) == canary:
+        return True
+    print(
+        f"actions: Rethunk-Tech/gh-actions {tag} held for canary ({canary})",
+        file=sys.stderr,
+    )
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -1031,6 +1251,8 @@ def scan_actions(
     targets: list[tuple[Path, bool]] = [(w, True) for w in workflows] + [
         (a, False) for a in action_files
     ]
+    if any(_is_gh_actions(name) for wf, _ in targets for name in skim_workflow_uses(wf)):
+        _note_gh_actions_user(repo)
     bumps: list[ActionBump] = []
     _cache: dict[str, dict | None] = tag_cache if tag_cache is not None else {}
 
@@ -1140,7 +1362,13 @@ def scan_actions(
                     carried = _pin_version(pin, uses.comment, info) if info is not None else None
                     if carried is not None and carried >= _tag_version(tag):
                         already_current = True
-                    if not already_current and _target_within_hold(repo, action, tag):
+                    if already_current:
+                        _maybe_prove_gh_actions_tag(repo, tag)
+                    if (
+                        not already_current
+                        and _target_within_hold(repo, action, tag)
+                        and _allow_gh_actions_bump(repo, action, tag, pin=pin, comment=uses.comment)
+                    ):
                         cross_major = (
                             target_major is not None and major is not None and target_major != major
                         )
@@ -1234,6 +1462,10 @@ def scan_actions(
             if digest is not None:
                 new_sha, tag_label = digest
                 if _target_within_hold(repo, action, tag_label):
+                    if not _allow_gh_actions_bump(
+                        repo, action, tag_label, pin=pin, comment=uses.comment
+                    ):
+                        continue
                     bumps.append(
                         ActionBump(
                             workflow=rel,
@@ -1295,6 +1527,10 @@ def scan_actions(
                 latest_target = None
 
             if latest_target and latest_target != pin:
+                if not _allow_gh_actions_bump(
+                    repo, action, latest_target, pin=pin, comment=uses.comment
+                ):
+                    continue
                 bumps.append(
                     ActionBump(
                         workflow=rel,
