@@ -107,6 +107,120 @@ def _sdk_pins(global_json: Path) -> dict[str, str]:
     }
 
 
+# Name the .NET SDK pin reports and holds under; a hold named ``dotnet`` caps it.
+SDK_NAME = "dotnet sdk"
+
+_SDK_INDEX = "https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json"
+_SDK_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+def sdk_pin(global_json: Path) -> tuple[str, str | None] | None:
+    """``(version, rollForward)`` from *global_json*'s ``sdk`` block, if it pins a literal SDK."""
+    try:
+        document = json.loads(global_json.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    sdk = document.get("sdk") if isinstance(document, dict) else None
+    if not isinstance(sdk, dict):
+        return None
+    version = sdk.get("version")
+    if not isinstance(version, str) or not _SDK_VERSION_RE.match(version):
+        return None
+    roll = sdk.get("rollForward")
+    return version, roll if isinstance(roll, str) else None
+
+
+@cache
+def sdk_versions() -> tuple[str, ...]:
+    """Every SDK version the Microsoft releases index lists, across its channels."""
+    try:
+        index = _get_json(_SDK_INDEX)
+    except (OSError, ValueError):
+        # Offline is not a nuget failure: the package pins still resolve.
+        return ()
+    channels = index.get("releases-index") if isinstance(index, dict) else None
+    found: list[str] = []
+    for channel in channels if isinstance(channels, list) else []:
+        url = channel.get("releases.json") if isinstance(channel, dict) else None
+        if not isinstance(url, str):
+            continue
+        try:
+            document = _get_json(url)
+        except (OSError, ValueError):
+            # One unreachable channel must not hide the others' SDKs.
+            continue
+        releases = document.get("releases") if isinstance(document, dict) else None
+        for release in releases if isinstance(releases, list) else []:
+            sdk = release.get("sdk") if isinstance(release, dict) else None
+            version = sdk.get("version") if isinstance(sdk, dict) else None
+            if isinstance(version, str) and _SDK_VERSION_RE.match(version):
+                found.append(version)
+    return tuple(dict.fromkeys(found))
+
+
+def _sdk_band(version: str) -> tuple[int, int, int]:
+    """The (major, minor, feature band) a patch belongs to: ``10.0.200`` is band ``200``."""
+    major, minor, patch = (int(p) for p in version.split("."))
+    return major, minor, patch // 100 * 100
+
+
+def _sdk_target(current: str) -> str | None:
+    """Newest SDK in *current*'s feature band and major, or None when already newest."""
+    band = _sdk_band(current)
+    candidates = [v for v in sdk_versions() if _sdk_band(v) == band]
+    best = max(candidates, key=nuget_version_key, default=None)
+    if best is None or nuget_version_key(best) <= nuget_version_key(current):
+        return None
+    return best
+
+
+def _sdk_candidates(
+    ws: Workspace,
+) -> tuple[list[Change], list[Change], list[tuple[Path, str, str]]]:
+    """(SDK bumps a hold allows, SDK bumps a hold blocks, rewrites) for the workspace's global.json."""
+    allowed: list[Change] = []
+    held: list[Change] = []
+    rewrites: list[tuple[Path, str, str]] = []
+    seen: set[str] = set()
+    for path in find_nuget_files(ws.path):
+        if path.name != "global.json":
+            continue
+        pin = sdk_pin(path)
+        if pin is None:
+            continue
+        current, roll = pin
+        # ``rollForward`` can hold the SDK below the band's newest, so a band
+        # that opts out of patching (or stays on the latest patch it has) is
+        # left where its own policy put it.
+        if roll is not None and roll.lower() == "disable":
+            continue
+        target = _sdk_target(current)
+        if target is None or target in seen:
+            continue
+        change = Change(SDK_NAME, current, target)
+        if not target_within_hold(target, resolve_package_hold(ws, "dotnet")):
+            held.append(change)
+            continue
+        seen.add(target)
+        allowed.append(change)
+        rewrites.append((path, current, target))
+    return allowed, held, rewrites
+
+
+def _rewrite_sdk(path: Path, old: str, new: str, root: Path) -> bool:
+    text = path.read_text(encoding="utf-8")
+    updated = re.sub(
+        r'("version"\s*:\s*")' + re.escape(old) + '(")',
+        lambda m: f"{m.group(1)}{new}{m.group(2)}",
+        text,
+        count=1,
+    )
+    if updated == text:
+        return False
+    guarded_write(path, updated.encode("utf-8"), root, appender="nuget")
+    return True
+
+
 def _pins(mdir: Path) -> list[tuple[str, str]]:
     pins: set[tuple[str, str]] = set()
     for path in find_nuget_files(mdir):
@@ -263,7 +377,8 @@ def _candidates(ws: Workspace) -> tuple[list[Change], list[Change]]:
         if best is not None and nuget_version_key(best) > nuget_version_key(current):
             allowed.append(Change(package, current, best))
         held.append(change)
-    return allowed, held
+    sdk_allowed, sdk_held, _rewrites = _sdk_candidates(ws)
+    return allowed + sdk_allowed, held + sdk_held
 
 
 def _rewrite(path: Path, package: str, old: str, new: str, root: Path) -> bool:
@@ -322,7 +437,14 @@ def apply_nuget(ws: Workspace) -> list[Change]:
     if not guard_tool_writes(ws.git_repo, "nuget", *find_nuget_files(ws.path)):
         return [*allowed, *held]
     remaining = list(held)
+    _sdk_allowed, _sdk_held, sdk_rewrites = _sdk_candidates(ws)
+    for path, old, new in sdk_rewrites:
+        # No restore: the SDK is chosen by the installer that reads global.json,
+        # not by the package restore this workspace validates.
+        _rewrite_sdk(path, old, new, ws.git_repo)
     for change in allowed:
+        if change.name == SDK_NAME:
+            continue
         files = find_nuget_files(ws.path)
         snapshots = {path: snapshot_file(path, ws.git_repo) for path in files}
         touched = [
@@ -351,10 +473,15 @@ def nuget_snapshot_changes(before: dict[Path, bytes], after: dict[Path, bytes]) 
                 out.update(_references(text))
             elif path.name == "global.json":
                 try:
-                    sdks = json.loads(text).get("msbuild-sdks") or {}
-                except (ValueError, AttributeError):
-                    sdks = {}
-                out.update({k: v for k, v in sdks.items() if isinstance(v, str)})
+                    document = json.loads(text)
+                except ValueError:
+                    document = None
+                sdks = document.get("msbuild-sdks") if isinstance(document, dict) else None
+                out.update({k: v for k, v in (sdks or {}).items() if isinstance(v, str)})
+                sdk = document.get("sdk") if isinstance(document, dict) else None
+                version = sdk.get("version") if isinstance(sdk, dict) else None
+                if isinstance(version, str) and _SDK_VERSION_RE.match(version):
+                    out[SDK_NAME] = version
         return out
 
     b, a = pins(before), pins(after)
