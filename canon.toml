@@ -1,2 +1,1 @@
 [deviations]
-patterns-repo-settings-00001 = "this repository holds Python and Actions, not Go; CodeQL scans those languages with python extracted without a build"
