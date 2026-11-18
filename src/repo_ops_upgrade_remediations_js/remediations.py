@@ -510,6 +510,7 @@ def report_bun_workflow(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
 
 def apply_bun_workflow(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     changed: list[str] = []
+    target = ""
     for wf, target in _bun_version_bumps(ws):
         text = wf.read_text(encoding="utf-8", errors="replace")
 
@@ -529,7 +530,7 @@ def apply_bun_workflow(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
             changed.append(wf.relative_to(ws.git_repo).as_posix())
     if not changed:
         return True, "bun-version workflow inputs (ok: nothing to bump)"
-    return True, f"bun-version → {', '.join(changed)} (ok)"
+    return True, f"bun-version → {target} in {', '.join(changed)} (ok)"
 
 
 def _bun_workflow_files(ws: Workspace) -> list[str]:

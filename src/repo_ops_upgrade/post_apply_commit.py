@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -425,6 +426,9 @@ def _has_actionable_repo_changes(bundle: RepoBundle) -> bool:
     return bool(porcelain_changed_paths(bundle.git_repo))
 
 
+_ACTIONS_SUBJECT = "chore(ci): bump GitHub Actions pins"
+
+
 def _is_container_basename(name: str) -> bool:
     """True when *name* is a Dockerfile/Containerfile/compose basename."""
     if name in {
@@ -516,7 +520,7 @@ def classify_commit_subject(files: list[str]) -> str:
         return "chore(hooks): bump pre-commit hook pins"
     if has_ci and not has_deps and not has_hooks:
         # Actions-only: keep the original single-ecosystem subject.
-        return "chore(ci): bump GitHub Actions pins"
+        return _ACTIONS_SUBJECT
     if has_ci and has_hooks and not has_deps:
         return "chore(hooks,ci): bump pre-commit hook pins and CI pins"
     if has_deps and not has_ci and not has_hooks:
@@ -553,8 +557,40 @@ def classify_commit_subject(files: list[str]) -> str:
     return f"chore({','.join(scopes)}): update {parts_str}{extra_str}"
 
 
+def _workflow_runtime_bumps(bundle: RepoBundle) -> list[tuple[str, str | None]]:
+    """Runtime workflow inputs this apply moved, as ``(runtime, new version)``.
+
+    The paths alone cannot tell a ``bun-version:`` bump from a ``uses:`` bump:
+    both touch one workflow file, so only the recorded change rows name the
+    runtime.
+    """
+    found: dict[str, str | None] = {}
+    for wr in bundle.workspaces:
+        for change in wr.changes:
+            if change.name.endswith("-version") and change.name != "bun-version":
+                found[change.name[: -len("-version")]] = change.to
+        for entry in wr.remediations:
+            if entry.get("id") != "bun_workflow_version" or entry.get("status") != "applied":
+                continue
+            match = re.search(r"bun-version → (\S+)", str(entry.get("detail") or ""))
+            found["bun"] = match.group(1) if match else None
+    return sorted(found.items())
+
+
+def _runtime_subject(runtimes: list[tuple[str, str | None]], *, also_actions: bool) -> str:
+    parts = [f"{name} to {version}" if version else name for name, version in runtimes]
+    joined = ", ".join(parts[:-1]) + " and " + parts[-1] if len(parts) > 1 else parts[0]
+    if also_actions:
+        return f"chore(ci): bump GitHub Actions pins and {joined} in workflows"
+    return f"chore(ci): bump {joined} in workflows"
+
+
 def build_conventional_message(bundle: RepoBundle, files: list[str]) -> str:
     subject = classify_commit_subject(files)
+    runtimes = _workflow_runtime_bumps(bundle)
+    if runtimes and subject == _ACTIONS_SUBJECT:
+        actions_moved = any(ab.status == "ok" and ab.pin != ab.latest for ab in bundle.actions)
+        subject = _runtime_subject(runtimes, also_actions=actions_moved)
     body_lines = [f"Automated post-apply commit for {bundle.git_repo.name}."]
     if bundle.workspaces:
         changed_ws = [wr for wr in bundle.workspaces if wr.changes]

@@ -827,6 +827,57 @@ def test_upgrade_scoped_paths_includes_nested_remediation_file(
 # ---------------------------------------------------------------------------
 
 
+def test_bun_version_only_commit_names_bun_not_actions() -> None:
+    """A runtime input bump touches one workflow file, same as a ``uses:`` bump."""
+    ws = Workspace(
+        path=Path("/nonexistent"),
+        ecosystem="node",
+        manager="bun",
+        git_repo=Path("/nonexistent"),
+        label="bun-only",
+    )
+    bundle = RepoBundle(
+        git_repo=Path("/nonexistent"),
+        label="bun-only",
+        workspaces=[
+            WorkspaceResult(
+                workspace=ws,
+                remediations=[
+                    {
+                        "id": "bun_workflow_version",
+                        "status": "applied",
+                        "detail": "bun-version → 1.4.4 in .github/workflows/ci.yml (ok)",
+                    }
+                ],
+            )
+        ],
+    )
+
+    message = post_apply_commit.build_conventional_message(bundle, [".github/workflows/ci.yml"])
+
+    assert message.splitlines()[0] == "chore(ci): bump bun to 1.4.4 in workflows"
+
+
+def test_actions_only_commit_keeps_the_actions_subject() -> None:
+    bundle = RepoBundle(
+        git_repo=Path("/nonexistent"),
+        label="actions-only",
+        workspaces=[],
+        actions=[
+            ActionBump(
+                workflow=".github/workflows/ci.yml",
+                action="actions/checkout",
+                pin="v4",
+                latest="v6",
+            )
+        ],
+    )
+
+    message = post_apply_commit.build_conventional_message(bundle, [".github/workflows/ci.yml"])
+
+    assert message.splitlines()[0] == "chore(ci): bump GitHub Actions pins"
+
+
 def test_classify_cargo_lock_as_rust() -> None:
     assert post_apply_commit.classify_commit_subject(["Cargo.lock"]) == (
         "chore(deps): update Rust lockfiles"
