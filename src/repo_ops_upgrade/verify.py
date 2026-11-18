@@ -82,7 +82,10 @@ def _verify_env(env: dict[str, str] | None) -> dict[str, str]:
         merged.update(env)
     for key in ("DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS"):
         merged.pop(key, None)
-    merged["XDG_RUNTIME_DIR"] = tempfile.mkdtemp()
+    # Not under /tmp: gate may give each step a private /tmp, where a host path would not exist.
+    base = Path.home() / ".cache" / "repo-ops" / "runtime"
+    base.mkdir(parents=True, exist_ok=True)
+    merged["XDG_RUNTIME_DIR"] = tempfile.mkdtemp(dir=base)
     return merged
 
 
