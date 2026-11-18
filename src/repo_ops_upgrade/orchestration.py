@@ -14,8 +14,8 @@ from itertools import groupby
 from pathlib import Path
 from typing import Literal
 
-from repo_ops_core.filesystem import should_exclude
-from repo_ops_core.git import is_git_dirty
+from repo_ops_core.filesystem import is_workspace_member, should_exclude
+from repo_ops_core.git import is_git_dirty, run_git
 from repo_ops_core.state import (
     cache_clear_dirty_skip,
     cache_record_behind_latest,
@@ -150,6 +150,88 @@ def process_workspace(
     return out
 
 
+def _is_managed_dirty_path(ws: Workspace, repo: Path, norm: str) -> bool:
+    """True when *norm* is a manifest/lockfile this workspace's upgrade owns.
+
+    The same basename set the lockfile snapshot and the commit scope use, so a
+    file one of them would upgrade and commit is never foreign dirt here.
+    """
+    from repo_ops_upgrade.post_apply_commit import (
+        _lockfile_names_for_manager,
+        _manifest_names_for_manager,
+    )
+
+    names = _lockfile_names_for_manager(ws.manager) | _manifest_names_for_manager(ws.manager)
+    if not names:
+        return False
+    path = repo / norm
+    try:
+        rel = path.resolve().relative_to(ws.path.resolve())
+    except ValueError:
+        return False
+    if rel.parent == Path("."):
+        return rel.name in names
+    if ws.manager not in ("yarn", "npm", "pnpm", "bun") or rel.name not in names:
+        return False
+    # A root-scanned node monorepo's install rewrites member manifests too, and
+    # the commit scope stages them, so a leftover there is still this upgrade's.
+    from repo_ops_js.workspaces import yarn_workspace_members
+
+    members = yarn_workspace_members(ws.path)
+    return bool(members) and is_workspace_member(path.resolve().parent, ws.path.resolve(), members)
+
+
+def _adopted_dirty_paths(ws: Workspace) -> frozenset[str] | None:
+    """Dirty paths that are only this upgrade's own files, or None to skip.
+
+    A run killed mid-apply leaves its manifest/lockfile writes behind; treating
+    them as the operator's work would skip the repo on every later sweep and
+    freeze its dependencies. Anything else dirty, or a git that cannot answer,
+    keeps today's skip.
+    """
+    from repo_ops_upgrade.post_apply_commit import _parse_porcelain
+
+    repo = ws.git_repo
+    proc = run_git(
+        repo,
+        "status",
+        "--porcelain",
+        "-z",
+        "--untracked-files=all",
+        "--ignore-submodules=dirty",
+        timeout=60,
+    )
+    if proc.returncode != 0:
+        return None
+    dirty = frozenset(p.replace("\\", "/") for p in _parse_porcelain(proc.stdout))
+    if not all(_is_managed_dirty_path(ws, repo, p) for p in dirty):
+        return None
+    return dirty
+
+
+def _restore_paths_to_head(repo: Path, paths: frozenset[str]) -> bool:
+    """Put *paths* back to HEAD, deleting the ones HEAD never had."""
+    tracked = run_git(
+        repo, "ls-tree", "-r", "--name-only", "HEAD", "--", *sorted(paths), timeout=60
+    )
+    if tracked.returncode != 0:
+        return False
+    in_head = set(tracked.stdout.splitlines())
+    for rel in paths - in_head:
+        (repo / rel).unlink(missing_ok=True)
+    if not in_head:
+        return True
+    proc = run_git(repo, "checkout", "HEAD", "--", *sorted(in_head), timeout=120)
+    if proc.returncode != 0:
+        logger.warning(
+            "HEAD restore failed for %s (rc=%d): %s",
+            repo,
+            proc.returncode,
+            (proc.stderr or proc.stdout).strip(),
+        )
+    return proc.returncode == 0
+
+
 def _retry_with_biome_held(
     failed: WorkspaceResult,
     biome: Change,
@@ -218,10 +300,16 @@ def _process_workspace_body(
             is_git_dirty(ws.git_repo) if repo_started_dirty is None else repo_started_dirty
         )
         if result.started_dirty and not allow_dirty:
-            result.status = "skip"
-            result.error = f"{DIRTY_SKIP_MARKER} (name the checkout as a root to update it anyway)"
-            cache_record_dirty_skip(ws.git_repo, date.today())
-            return result
+            adopted = _adopted_dirty_paths(ws)
+            if adopted is None:
+                result.status = "skip"
+                result.error = (
+                    f"{DIRTY_SKIP_MARKER} (name the checkout as a root to update it anyway)"
+                )
+                cache_record_dirty_skip(ws.git_repo, date.today())
+                return result
+            result.adopted_dirty = adopted
+
         # Repo processed cleanly — clear any stale dirty-skip entry.
         cache_clear_dirty_skip(ws.git_repo)
         before_tree = capture_worktree_state(ws.git_repo)
@@ -307,12 +395,25 @@ def _process_workspace_body(
                             else f"revert failed: {exc}"
                         )
                     result.reverted_ok = reverted_ok
+                if result.adopted_dirty and reverted_ok and on_verify_fail == "revert":
+                    # The leftovers were a killed run's own writes, never committed
+                    # work: a failed verify leaves the repo at HEAD, not dirty again.
+                    if _restore_paths_to_head(ws.git_repo, result.adopted_dirty):
+                        note = (
+                            "adopted dirty manifests/lockfiles left by an earlier run "
+                            "were reverted to HEAD"
+                        )
+                        result.error = f"{result.error}; {note}" if result.error else note
+                    else:
+                        result.reverted_ok = False
+                        note = "could not revert adopted dirty files to HEAD"
+                        result.error = f"{result.error}; {note}" if result.error else note
                 result.verify_fail_disposition = classify_verify_fail_disposition(
-                    ws, before_snap, reverted_ok=reverted_ok
+                    ws, before_snap, reverted_ok=result.reverted_ok
                 )
                 biome = next((c for c in result.changes if c.name == BIOME_PKG), None)
                 if (
-                    reverted_ok
+                    result.reverted_ok
                     and not biome_held
                     and biome is not None
                     and re.fullmatch(r"\d+(\.\d+){0,2}", biome.from_ver)

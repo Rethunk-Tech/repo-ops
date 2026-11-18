@@ -65,6 +65,10 @@ class WorkspaceResult:
     verify_error: str | None = None
     verify_fail_disposition: str | None = None
     started_dirty: bool = False
+    # Paths already dirty at run-start that are only this workspace's own
+    # manifests/lockfiles (a killed run's leftovers): they are upgraded over and
+    # committed, so they must not read as the operator's uncommitted edits.
+    adopted_dirty: frozenset[str] = frozenset()
     reverted_ok: bool = True
     elapsed_s: float | None = None
     # Pre-apply file bytes, so remediation hooks act only on what the apply

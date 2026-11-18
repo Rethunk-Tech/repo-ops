@@ -209,6 +209,11 @@ def upgrade_scoped_paths(
     soup_paths: set[str] = set()
     # owned_paths: exact repo-relative paths record_owned_edits captured.
     owned_paths: set[str] = set()
+    # adopted_paths: paths already dirty at run-start that are only this
+    # workspace's manifests/lockfiles (a killed run's leftovers). They are
+    # upgraded over and committed, so they are neither skipped nor treated as
+    # the operator's edits.
+    adopted_paths = _bundle_adopted_paths(bundle)
 
     for wr in bundle.workspaces:
         owned_paths.update(p.replace("\\", "/") for p in wr.owned_edits)
@@ -275,6 +280,11 @@ def upgrade_scoped_paths(
         norm = path.replace("\\", "/")
         base = Path(norm).name
         if norm in owned_paths:
+            scoped.append(path)
+            continue
+        # A dirty manifest/lockfile left by an earlier killed run of this same
+        # upgrade: already the operator's-free dirt, so it commits with the bump.
+        if norm in adopted_paths:
             scoped.append(path)
             continue
         # Root-workspace lockfile/manifest: no directory component expected.
@@ -372,6 +382,11 @@ def filter_safe_paths(paths: list[str]) -> tuple[list[str], list[str]]:
 
 def _bundle_started_dirty(bundle: RepoBundle) -> bool:
     return any(wr.started_dirty for wr in bundle.workspaces)
+
+
+def _bundle_adopted_paths(bundle: RepoBundle) -> set[str]:
+    """Dirty-at-run-start paths that are only this run's manifests/lockfiles."""
+    return {p.replace("\\", "/") for wr in bundle.workspaces for p in wr.adopted_dirty}
 
 
 def _bundle_apply_ok(bundle: RepoBundle) -> tuple[bool, str | None]:
@@ -580,7 +595,11 @@ def plan_repo_commit(
             else "no upgrade-scoped changes to commit"
         )
         return CommitPlan(repo, bundle.label, "", skipped_reason=skip_reason)
-    yours = sorted(p for p in scoped if p.replace("\\", "/") in bundle.pre_dirty)
+    yours = sorted(
+        p
+        for p in scoped
+        if p.replace("\\", "/") in bundle.pre_dirty - _bundle_adopted_paths(bundle)
+    )
     if yours:
         # Committing the rest would split a manifest from its lockfile, so the
         # whole update stays in the working tree beside the operator's edits.

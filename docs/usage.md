@@ -8,7 +8,7 @@ With no `root`, every command scans [`DEFAULT_ROOTS`](../src/repo_ops_core/const
 
 | | Fleet sweep | Named root |
 | --- | --- | --- |
-| Uncommitted changes, or a rebase, merge, cherry-pick, revert or bisect in progress | skipped | processed |
+| Uncommitted changes, or a rebase, merge, cherry-pick, revert or bisect in progress | skipped, unless the only dirty files are the repo's own dependency manifests/lockfiles (left by a killed run): those are upgraded over and committed with the new bumps, and a failed verify puts them back at HEAD | processed |
 | Files committed | — | only files apply touched; if apply touched a file you had edited, nothing is committed and the report says `left uncommitted: your edits in <files>` |
 | Verify fails | reverted and retried once on its own after the sweep | changes kept for inspection |
 
@@ -81,7 +81,7 @@ Two managers skip that pair: a `container` workspace digest-checks only the `FRO
 
 Repo commands (lockfile checks, `gate`, remediations) run with user-global tool config redirected to `<run dir>/env/`, seeded from the operator's files: `GOENV`, `NPM_CONFIG_USERCONFIG`, `GIT_CONFIG_GLOBAL`, plus an empty `CARGO_INSTALL_ROOT`. A build's `go env -w`, `npm config set`, `git config --global` or `cargo install` therefore cannot change the operator's setup; package caches (`GOMODCACHE`, `CARGO_HOME`, npm cache) stay shared. repo-ops' own `git` calls keep the real config for signing and credentials.
 
-A failed verify on a fleet sweep restores only the files the workspace's apply wrote, and only while they still hold what apply wrote; anything else that changed in the checkout since (another agent's edits, new files) is left alone and named in the failure, which is then `FAILED_WITH_CHANGES`. The repo's commit is vetoed. Dirtiness is re-checked before each workspace and before the retry; a dirty checkout is skipped, and a failed repo whose checkout became dirty is not retried. Opt-in e2e gates that `gate` lists as skipped are not run by verify or by `gates`. `gates --e2e` runs them. `--no-verify` skips verification and therefore commits nothing.
+A failed verify on a fleet sweep restores only the files the workspace's apply wrote, and only while they still hold what apply wrote; anything else that changed in the checkout since (another agent's edits, new files) is left alone and named in the failure, which is then `FAILED_WITH_CHANGES`. The repo's commit is vetoed. Dirtiness is re-checked before each workspace and before the retry; a dirty checkout is skipped, and a failed repo whose checkout became dirty is not retried. A checkout dirty only in its own dependency manifests/lockfiles counts as clean, so a killed run's leftovers cannot freeze a repo's upgrades; those files are committed with the new bumps, and a failed verify reverts them to HEAD and says so. Opt-in e2e gates that `gate` lists as skipped are not run by verify or by `gates`. `gates --e2e` runs them. `--no-verify` skips verification and therefore commits nothing.
 
 ## gates
 
