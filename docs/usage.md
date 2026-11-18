@@ -84,7 +84,13 @@ Two managers skip that pair: a `container` workspace digest-checks only the `FRO
 
 Repo commands (lockfile checks, `gate`, remediations) run with user-global tool config redirected to `<run dir>/env/`, seeded from the operator's files: `GOENV`, `NPM_CONFIG_USERCONFIG`, `GIT_CONFIG_GLOBAL`, plus an empty `CARGO_INSTALL_ROOT`. A build's `go env -w`, `npm config set`, `git config --global` or `cargo install` therefore cannot change the operator's setup; package caches (`GOMODCACHE`, `CARGO_HOME`, npm cache) stay shared. repo-ops' own `git` calls keep the real config for signing and credentials.
 
-A failed verify on a fleet sweep restores only the files the workspace's apply wrote, and only while they still hold what apply wrote; anything else that changed in the checkout since (another agent's edits, new files) is left alone and named in the failure, which is then `FAILED_WITH_CHANGES`. The repo's commit is vetoed. Dirtiness is re-checked before each workspace and before the retry; a dirty checkout is skipped, and a failed repo whose checkout became dirty is not retried. A checkout dirty only in its own dependency manifests/lockfiles counts as clean, so a killed run's leftovers cannot freeze a repo's upgrades; those files are committed with the new bumps, and a failed verify reverts them to HEAD and says so. Opt-in e2e gates that `gate` lists as skipped are not run by verify or by `gates`. `gates --e2e` runs them. `--no-verify` skips verification and therefore commits nothing.
+| Situation | What happens |
+| --- | --- |
+| Failed verify on a fleet sweep | Restores only the files that workspace's apply wrote, and only while they still hold what apply wrote. Anything else that changed in the checkout since (another agent's edits, new files) is left alone and named. The failure is `FAILED_WITH_CHANGES`. The repo's commit is vetoed. |
+| Dirtiness | Re-checked before each workspace and before the retry. A dirty checkout is skipped. A failed repo whose checkout became dirty is not retried. |
+| Dirty only in own dependency manifests/lockfiles | Counts as clean, so a killed run's leftovers cannot freeze a repo's upgrades. Those files are committed with the new bumps. A failed verify reverts them to HEAD and says so. |
+| Opt-in e2e gates that `gate` lists as skipped | Not run by verify or by `gates`. `gates --e2e` runs them. |
+| `--no-verify` | Skips verification and therefore commits nothing. |
 
 ## gates
 

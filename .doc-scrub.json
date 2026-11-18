@@ -1,0 +1,6 @@
+{
+  "skip_paths": [
+    "src/repo_ops_upgrade/soup.py",
+    "tests/test_container_check.py"
+  ]
+}
