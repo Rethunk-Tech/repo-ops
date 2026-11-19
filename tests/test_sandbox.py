@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -61,6 +62,24 @@ def test_run_allows_nested_bwrap(tmp_path: Path) -> None:
         ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--unshare-user", "true"], cwd=tmp_path
     )
     assert proc.returncode == 0, proc.stderr
+
+
+def test_run_nested_tmp_overlay_on_home(tmp_path: Path, monkeypatch) -> None:
+    """apply already overlays $HOME; inner run() must not nest --tmp-overlay."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    inner = (
+        "from pathlib import Path\n"
+        "from repo_ops_core.process import run\n"
+        "r = run(['true'], Path('.'))\n"
+        "print(r.stderr, end='')\n"
+        "raise SystemExit(r.returncode)"
+    )
+    proc = run([sys.executable, "-c", inner], repo)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
 def test_run_runtime_dir_is_writable_and_private(tmp_path: Path, monkeypatch, request) -> None:

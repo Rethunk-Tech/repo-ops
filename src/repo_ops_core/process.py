@@ -225,6 +225,47 @@ def _checkout_root(cwd: Path) -> Path:
     return next((d for d in (cwd, *cwd.parents) if (d / ".git").exists()), cwd)
 
 
+def _unescape_mount(raw: str) -> str:
+    return (
+        raw.replace("\\040", " ")
+        .replace("\\011", "\t")
+        .replace("\\012", "\n")
+        .replace("\\134", "\\")
+    )
+
+
+def _on_overlay(path: str) -> bool:
+    """True when *path* already sits on overlayfs (nested ``--tmp-overlay`` then fails)."""
+    try:
+        resolved = Path(path).resolve()
+    except OSError:
+        return False
+    best = -1
+    found = False
+    try:
+        lines = Path("/proc/self/mounts").read_text().splitlines()
+    except OSError:
+        return False
+    for line in lines:
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        mountpoint = Path(_unescape_mount(parts[1]))
+        if resolved != mountpoint and mountpoint not in resolved.parents:
+            continue
+        n = len(mountpoint.parts)
+        if n > best:
+            best = n
+            found = parts[2] == "overlay"
+    return found
+
+
+def _throwaway_mount(path: str) -> list[str]:
+    if _on_overlay(path):
+        return ["--bind", path, path]
+    return ["--overlay-src", path, "--tmp-overlay", path]
+
+
 def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
     """Wrap *cmd* in bubblewrap: repo writable, ``/`` read-only, ``$HOME`` a throwaway overlay.
 
@@ -269,9 +310,10 @@ def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
     tmp_reads = _host_tmp_reads(cwd_s, path_env)
     argv.extend(_tmp_parent_dirs([home, cwd_s, *tmp_reads, *caches, *isolated]))
     # Overlay, not a bind, for host /tmp reads: files show through, writes still land in the tmpfs.
-    mounts = [(p, ["--overlay-src", p, "--tmp-overlay", p]) for p in tmp_reads]
+    # A nested run (apply wrapping gate wrapping run) cannot overlay an overlay: bind instead.
+    mounts = [(p, _throwaway_mount(p)) for p in tmp_reads]
     # Throwaway overlay: tests may write under $HOME; the writes vanish with the run.
-    mounts.append((home, ["--overlay-src", home, "--tmp-overlay", home]))
+    mounts.append((home, _throwaway_mount(home)))
     mounts += [(p, ["--bind", p, p]) for p in [*caches, cwd_s, *isolated]]
     runtime = _runtime_dir_mount()
     if runtime:
