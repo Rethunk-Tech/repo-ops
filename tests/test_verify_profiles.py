@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from repo_ops_core.config import load_repo_config
+from repo_ops_core.config import ConfigError, load_repo_config
 from repo_ops_upgrade.verify import verify_node, verify_workspace
 
 # ---------------------------------------------------------------------------
@@ -66,10 +66,10 @@ class TestDotRepoOpsToml:
         assert verify.get("timeout") == 60
         assert verify.get("skip") is False
 
-    def test_invalid_toml_returns_empty(self, tmp_path: Path) -> None:
+    def test_invalid_toml_raises(self, tmp_path: Path) -> None:
         (tmp_path / ".repo-ops.toml").write_text("not valid toml ][[\n", encoding="utf-8")
-        cfg = load_repo_config(tmp_path)
-        assert cfg == {}
+        with pytest.raises(ConfigError):
+            load_repo_config(tmp_path)
 
 
 # ---------------------------------------------------------------------------

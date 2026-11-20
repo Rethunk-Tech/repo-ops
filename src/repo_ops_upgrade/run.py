@@ -23,6 +23,7 @@ from repo_ops_core.cli import (
     wire_verbose,
 )
 from repo_ops_core.config import (
+    ConfigError,
     load_global_config,
     load_repo_config,
 )
@@ -182,6 +183,24 @@ def _drop_locked(
             continue
         held[repo] = handle
     return list(held.values()), refused
+
+
+def _load_repo_configs(bundles: dict[Path, RepoBundle]) -> tuple[dict[Path, dict], bool]:
+    """Load each repo's ``.repo-ops.toml``; drop (and report) repos whose file does not parse."""
+    configs: dict[Path, dict] = {}
+    bad: set[Path] = set()
+    for bundle in bundles.values():
+        repo = bundle.git_repo
+        if repo in configs or repo in bad:
+            continue
+        try:
+            configs[repo] = load_repo_config(repo)
+        except ConfigError as exc:
+            bad.add(repo)
+            print(f"[fail] {repo}: unreadable .repo-ops.toml: {exc.detail}", file=sys.stderr)
+    for path in [p for p, b in bundles.items() if b.git_repo in bad]:
+        del bundles[path]
+    return configs, bool(bad)
 
 
 def _drop_foreign(bundles: dict[Path, RepoBundle]) -> None:
@@ -476,7 +495,7 @@ def _run_upgrade_body(
         bundles, named_roots={Path(r).resolve() for r in roots}, fleet=fleet
     )
 
-    _repo_cfgs = {bundle.git_repo: load_repo_config(bundle.git_repo) for bundle in bundles.values()}
+    _repo_cfgs, config_failed = _load_repo_configs(bundles)
     exclude_patterns: list[str] = getattr(args, "exclude_patterns", None) or []
     kept_paths: list[Path] = []
     excluded_count = 0
@@ -813,7 +832,7 @@ def _run_upgrade_body(
     exit_code = _resolve_exit_code(
         bundles, apply=apply, has_actionable_work=_has_actionable_work(bundles)
     )
-    if archive_refused or lock_refused:
+    if archive_refused or lock_refused or config_failed:
         exit_code = 1
 
     report.print_human_report(bundles, dry_run=not apply)
@@ -915,6 +934,11 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     wire_verbose(args)
+    try:
+        load_global_config()
+    except ConfigError as exc:
+        print(f"repo-ops: {exc}", file=sys.stderr)
+        return 2
     retry_ref = getattr(args, "retry_failed", None)
     roots = resolve_scan_roots(args.roots or None, parser) if retry_ref is None else []
     fleet = not args.roots

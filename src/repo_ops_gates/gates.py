@@ -22,7 +22,7 @@ from pathlib import Path
 
 from repo_ops_core import owned
 from repo_ops_core.cli import add_scan_arguments, resolve_scan_roots, wire_verbose
-from repo_ops_core.config import load_global_config
+from repo_ops_core.config import ConfigError, load_global_config
 from repo_ops_core.constants import TIMEOUT_GATE
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
@@ -355,7 +355,12 @@ def main_gates(argv: list[str] | None = None) -> int:
     if args.jobs is None:
         # Each worker runs a whole project gate, same sizing as apply.
         args.jobs = max(4, min(8, (os.cpu_count() or 4) // 4))
-    patterns = merge_exclude_patterns(args.exclude_patterns, load_global_config().get("exclude"))
+    try:
+        global_config = load_global_config()
+    except ConfigError as exc:
+        print(f"repo-ops gates: {exc}", file=sys.stderr)
+        return 2
+    patterns = merge_exclude_patterns(args.exclude_patterns, global_config.get("exclude"))
 
     run_dir = new_run_dir("gates")
     isolate_user_config(run_dir / "env")
