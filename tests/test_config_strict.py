@@ -6,6 +6,9 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from repo_ops_core.config import ConfigError
 from repo_ops_upgrade import orchestration
 from repo_ops_upgrade.run import main_apply, main_plan
 
@@ -74,3 +77,24 @@ def test_bad_repo_config_is_a_failed_entry_in_report_json(
     (ws,) = [w for r in report["repos"] for w in r["workspaces"]]
     assert ws["status"] == "fail" and "unreadable .repo-ops.toml" in ws["error"]
     assert report["summary"]["failure_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "toml",
+    [
+        '[hold]\npackage = "react"\nmax_version = "18"\n',
+        '[[hold]]\npackage = "react"\nmax-version = "18"\n',
+        '[verify]\ntimeout = "120"\n',
+        "verify = 3\n",
+    ],
+)
+def test_malformed_hold_and_verify_values_raise_config_error(tmp_path: Path, toml: str) -> None:
+    from repo_ops_core.holds import load_repo_holds
+    from repo_ops_models import Workspace
+    from repo_ops_upgrade.verify import _load_verify_profile
+
+    (tmp_path / ".repo-ops.toml").write_text(toml)
+    ws = Workspace(path=tmp_path, ecosystem="node", manager="npm", git_repo=tmp_path, label=".")
+    checked = load_repo_holds if "hold" in toml else lambda p: _load_verify_profile(ws)
+    with pytest.raises(ConfigError):
+        checked(tmp_path)

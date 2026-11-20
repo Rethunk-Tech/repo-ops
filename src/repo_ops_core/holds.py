@@ -31,7 +31,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
-from repo_ops_core.config import load_global_config, load_repo_config
+from repo_ops_core.config import ConfigError, load_global_config, load_repo_config
 from repo_ops_core.version_utils import version_satisfies_ceiling
 
 
@@ -48,23 +48,22 @@ class HoldRule:
     spec: str | None = None
 
 
-def _parse_hold_table(raw: Any, *, source: str) -> list[HoldRule]:
-    """Parse a ``hold`` config value into rules, dropping malformed entries.
+def _parse_hold_table(raw: Any, *, source: str, where: Path) -> list[HoldRule]:
+    """Parse a ``hold`` config value into rules.
 
-    Tolerant by design: an entry missing ``package`` or
-    ``max_version``, or that isn't a table at all, is silently skipped
-    rather than failing the whole run over one bad TOML entry.
+    A shape error raises :class:`ConfigError`: dropping a mistyped hold would
+    let the upgrade it guards go through.
     """
-    if not isinstance(raw, list):
+    if raw is None:
         return []
+    if not isinstance(raw, list):
+        raise ConfigError(where, "hold must be an array of tables ([[hold]])")
     rules: list[HoldRule] = []
     for entry in raw:
-        if not isinstance(entry, dict):
-            continue
-        package = str(entry.get("package") or "").strip()
-        max_version = str(entry.get("max_version") or "").strip()
+        package = str(entry.get("package") or "").strip() if isinstance(entry, dict) else ""
+        max_version = str(entry.get("max_version") or "").strip() if isinstance(entry, dict) else ""
         if not package or not max_version:
-            continue
+            raise ConfigError(where, f"hold entry needs package and max_version: {entry!r}")
         until = entry.get("until")
         ecosystem = entry.get("ecosystem")
         workspace = entry.get("workspace")
@@ -85,12 +84,18 @@ def _parse_hold_table(raw: Any, *, source: str) -> list[HoldRule]:
 
 def load_global_holds() -> list[HoldRule]:
     """Load ``[[hold]]`` rules from the global config file."""
-    return _parse_hold_table(load_global_config().get("hold"), source="global")
+    return _parse_hold_table(
+        load_global_config().get("hold"), source="global", where=Path("global config")
+    )
 
 
 def load_repo_holds(repo_root: Path) -> list[HoldRule]:
     """Load ``[[hold]]`` rules from the per-repo config (pyproject/.repo-ops.toml)."""
-    return _parse_hold_table(load_repo_config(repo_root).get("hold"), source="repo")
+    return _parse_hold_table(
+        load_repo_config(repo_root).get("hold"),
+        source="repo",
+        where=repo_root / ".repo-ops.toml",
+    )
 
 
 _warned_expired: set[tuple[str, str, str | None]] = set()

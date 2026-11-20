@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from repo_ops_core.config import ConfigError
 from repo_ops_core.holds import (
     HoldRule,
     load_global_holds,
@@ -74,7 +75,7 @@ def test_load_global_holds_parses_array_of_tables(
     assert rules[0].source == "global"
 
 
-def test_load_global_holds_skips_malformed_entries(
+def test_load_global_holds_rejects_malformed_entries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg_dir = tmp_path / "repo-ops"
@@ -85,9 +86,8 @@ def test_load_global_holds_skips_malformed_entries(
         encoding="utf-8",
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    rules = load_global_holds()
-    assert len(rules) == 1
-    assert rules[0].package == "typescript"
+    with pytest.raises(ConfigError, match="max_version"):
+        load_global_holds()
 
 
 def test_load_global_holds_absent_config_returns_empty(

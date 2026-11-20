@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core.config import (
+    ConfigError,
     load_global_config,
     load_repo_config,
 )
@@ -186,13 +187,24 @@ def _load_verify_profile(ws: Workspace) -> dict[str, Any]:
     purpose) without skipping verify for its siblings.
     Keys: ``script`` (str), ``skip`` (bool), ``timeout`` (int seconds).
     """
-    layers = [load_global_config(), load_repo_config(ws.git_repo)]
+    layers = [
+        (Path("global config"), load_global_config()),
+        (ws.git_repo / ".repo-ops.toml", load_repo_config(ws.git_repo)),
+    ]
     if ws.path != ws.git_repo:
-        layers.append(load_repo_config(ws.path))
+        layers.append((ws.path / ".repo-ops.toml", load_repo_config(ws.path)))
     profile: dict[str, Any] = {}
-    for cfg in layers:
-        if cfg:
-            profile.update(cfg.get("verify", {}))
+    for where, cfg in layers:
+        table = cfg.get("verify", {})
+        if not isinstance(table, dict):
+            raise ConfigError(where, "verify must be a table ([verify])")
+        for key, kind in (("script", str), ("skip", bool), ("timeout", int)):
+            value = table.get(key)
+            if value is not None and (
+                not isinstance(value, kind) or (kind is int and isinstance(value, bool))
+            ):
+                raise ConfigError(where, f"verify.{key} must be {kind.__name__}, got {value!r}")
+        profile.update(table)
     return profile
 
 
