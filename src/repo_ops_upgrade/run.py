@@ -472,7 +472,10 @@ def _run_upgrade_body(
     retry_paths = getattr(args, "retry_paths", None)
     if retry_paths:
         want = {Path(p).resolve() for p in retry_paths}
-        found = [w for w in found if w.path.resolve() in want]
+        commit_repos = set(getattr(args, "retry_commits", None) or {})
+        found = [
+            w for w in found if w.path.resolve() in want or w.git_repo.resolve() in commit_repos
+        ]
     # A commit-failed repo still holding exactly its own applied edits needs only
     # its commit again; re-applying would sit on top of them and the dirty-skip
     # would refuse it.

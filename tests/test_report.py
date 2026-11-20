@@ -467,5 +467,12 @@ def test_retry_failed_survives_a_deleted_commit_repo_and_keeps_subdir_workspaces
         for r in (mono, tmp_path / "gone")
     ]
     _write_run_report(state, "20260101T000000.000000Z-apply", payload)
-    monkeypatch.setattr(orchestration, "process_workspace", lambda wr, **_: wr)
+    seen: list[Path] = []
+
+    def _process(wr: Any, **_: Any) -> Any:
+        seen.append(wr.workspace.path)
+        return wr
+
+    monkeypatch.setattr(orchestration, "process_workspace", _process)
     assert main_apply(["--retry-failed"]) == 0
+    assert seen == [mono / "svc"]
