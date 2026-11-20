@@ -212,11 +212,11 @@ def _adopted_dirty_paths(ws: Workspace) -> frozenset[str] | None:
 def _restore_paths_to_head(repo: Path, paths: frozenset[str]) -> bool:
     """Put *paths* back to HEAD, deleting the ones HEAD never had."""
     tracked = run_git(
-        repo, "ls-tree", "-r", "--name-only", "HEAD", "--", *sorted(paths), timeout=60
+        repo, "ls-tree", "-r", "-z", "--name-only", "HEAD", "--", *sorted(paths), timeout=60
     )
     if tracked.returncode != 0:
         return False
-    in_head = set(tracked.stdout.splitlines())
+    in_head = set(tracked.stdout.split("\0")) - {""}
     for rel in paths - in_head:
         (repo / rel).unlink(missing_ok=True)
     if not in_head:

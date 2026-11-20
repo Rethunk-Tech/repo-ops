@@ -61,14 +61,16 @@ def changed_files_since_head(
     "source" reformat).
     """
     try:
-        proc = run_git(ws.git_repo, "diff", "--name-only", "HEAD", timeout=30)
+        proc = run_git(ws.git_repo, "diff", "-z", "--name-only", "HEAD", timeout=30)
     except (FileNotFoundError, OSError):
         return None
     if proc.returncode != 0:
         return None
     exclude = set(exclude_names)
     changed: list[str] = []
-    for rel in proc.stdout.splitlines():
+    for rel in proc.stdout.split("\0"):
+        if not rel:
+            continue
         if not rel.endswith(extensions):
             continue
         if Path(rel).name in exclude:

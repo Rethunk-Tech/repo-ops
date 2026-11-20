@@ -381,13 +381,13 @@ def rollback_owned_edits(repo: Path, edits: dict[str, OwnedEdit]) -> bool:
     if not head_restore:
         return True
     tracked = run(
-        ["git", "ls-tree", "-r", "--name-only", "HEAD", "--", *head_restore],
+        ["git", "ls-tree", "-r", "-z", "--name-only", "HEAD", "--", *head_restore],
         repo,
         timeout=60,
     )
     if tracked.returncode != 0:
         return False
-    in_head = set(tracked.stdout.splitlines())
+    in_head = set(tracked.stdout.split("\0")) - {""}
     for rel in head_restore:
         if rel not in in_head:
             p = contained_path(repo, rel)
