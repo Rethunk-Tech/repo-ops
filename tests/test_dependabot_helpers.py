@@ -214,3 +214,4 @@ def test_module_path_fallback_is_go_only_and_prefix_bound() -> None:
     assert f("github.com/foo/bar", {"github.com/other/bar": "1.5.0"}) is None
     assert f("github.com/foo/bar/v2", {"foo/bar/v2": "2.1.0"}) == "2.1.0"
     assert f("github.com/foo/bar/sub", {"bar/sub": "1.0.0"}) == "1.0.0"
+    assert f("bar/sub", {"github.com/foo/bar/sub": "1.0.0"}) is None

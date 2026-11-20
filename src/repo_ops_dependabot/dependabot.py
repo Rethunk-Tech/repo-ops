@@ -500,12 +500,13 @@ def _version_gte(current: str, target: str) -> bool:
 
 
 def _module_path_version(pkg: str, names: dict[str, str]) -> str | None:
-    """Version for *pkg* from a module-path key that shares its final element.
+    """Version for *pkg* from a module-path key that lacks its leading host segments.
 
     A Go module path is looked up whole first. The fallback exists for trees
-    whose lockfile/manifest key is a prefix of the PR's path, and it only ever
-    compares module paths with module paths: an entry named ``bar`` no longer
-    answers for ``github.com/foo/bar``.
+    whose lockfile/manifest key is a trailing part of the PR's path (``x/text``
+    for ``golang.org/x/text``), and it only ever compares module paths with
+    module paths: an entry named ``bar`` no longer answers for
+    ``github.com/foo/bar``.
     """
     parts = pkg.split("/")
     # Only Go-style module paths (dotted host, no npm scope) have this shape.
@@ -514,9 +515,7 @@ def _module_path_version(pkg: str, names: dict[str, str]) -> str | None:
     lowered_pkg = pkg.lower()
     for name, version in names.items():
         lowered = name.lower()
-        if "/" in lowered and (
-            lowered_pkg.endswith("/" + lowered) or lowered.endswith("/" + lowered_pkg)
-        ):
+        if "/" in lowered and lowered_pkg.endswith("/" + lowered):
             return version
     return None
 
