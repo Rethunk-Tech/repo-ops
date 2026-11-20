@@ -444,3 +444,28 @@ def test_retry_phase_timeout_fails_that_repo_and_others_still_finish(
     errors = {ws["path"]: ws.get("error", "") for r in report["repos"] for ws in r["workspaces"]}
     assert "timed out" in errors[str(repos[0])]
     assert "timed out" not in errors[str(repos[1])]
+
+
+def test_retry_failed_survives_a_deleted_commit_repo_and_keeps_subdir_workspaces(
+    tmp_path: Path, init_git_repo: Any, monkeypatch: Any
+) -> None:
+    import subprocess
+
+    from repo_ops_upgrade import orchestration
+
+    mono = tmp_path / "mono"
+    init_git_repo(mono, commit=True)
+    (mono / "svc").mkdir()
+    (mono / "svc" / "go.mod").write_text("module svc\n\ngo 1.22\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(mono), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(mono), "commit", "-qm", "svc"], check=True)
+    state = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state))
+    payload = _payload()
+    payload["commits"] = [
+        {"repo": str(r), "status": "failed", "files": ["go.mod"], "message": "m", "label": "x"}
+        for r in (mono, tmp_path / "gone")
+    ]
+    _write_run_report(state, "20260101T000000.000000Z-apply", payload)
+    monkeypatch.setattr(orchestration, "process_workspace", lambda wr, **_: wr)
+    assert main_apply(["--retry-failed"]) == 0

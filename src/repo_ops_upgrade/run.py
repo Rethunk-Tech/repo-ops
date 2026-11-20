@@ -395,6 +395,9 @@ def _commit_only_plans(
     """Failed commits whose checkout holds exactly the edits that commit was to record."""
     plans = []
     for repo, plan in retry_commits.items():
+        if not repo.is_dir():
+            print(f"[commit skip] {plan.label}: {repo} no longer exists", file=sys.stderr)
+            continue
         if _dirty_paths(repo) != set(plan.files):
             continue
         changed = [
