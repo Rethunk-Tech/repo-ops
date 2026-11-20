@@ -573,10 +573,10 @@ def test_dependabot_exclude_unions_cli_and_config(
         "config": config_excluded,
         "kept": kept,
     }
-    (tmp_path / ".repo-ops.toml").write_text(
-        'exclude = ["config-excluded"]\n',
-        encoding="utf-8",
-    )
+    for repo in discovered.values():
+        Path(repo).mkdir()
+    (Path(config_excluded) / ".repo-ops.toml").write_text('exclude = ["*"]\n', encoding="utf-8")
+    (tmp_path / ".repo-ops.toml").write_text('exclude = ["*"]\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     with (
         patch(
@@ -615,11 +615,8 @@ def test_dependabot_exclude_filters_repositories_from_config(
     drop.mkdir()
     seen: list[str] = []
 
-    (tmp_path / ".repo-ops.toml").write_text(
-        'exclude = ["drop"]\n',
-        encoding="utf-8",
-    )
-    monkeypatch.chdir(tmp_path)
+    (drop / ".repo-ops.toml").write_text('exclude = ["*"]\n', encoding="utf-8")
+    monkeypatch.chdir(keep)
     monkeypatch.setattr(
         "repo_ops_dependabot.dependabot.discover_repos",
         lambda *args, **kwargs: {

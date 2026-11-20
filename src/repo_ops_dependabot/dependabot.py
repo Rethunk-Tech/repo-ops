@@ -748,15 +748,17 @@ def _discover_repo_paths(
     exclude_patterns: list[str] | None = None,
 ) -> tuple[list[str], int]:
     common_to_repo = discover_repos(roots)
-    repo_paths = [Path(repo) for repo in common_to_repo.values()]
-    if not exclude_patterns:
-        return sorted(str(repo) for repo in repo_paths), 0
-
-    kept, excluded_count = filter_repo_paths(
-        repo_paths,
-        exclude_patterns,
-        label_fn=lambda path: repo_label(str(path), roots),
-    )
+    kept: list[Path] = []
+    excluded_count = 0
+    for repo in (Path(r) for r in common_to_repo.values()):
+        patterns = merge_exclude_patterns(exclude_patterns, load_repo_config(repo).get("exclude"))
+        _, excluded = filter_repo_paths(
+            [repo], patterns, label_fn=lambda path: repo_label(str(path), roots)
+        )
+        if excluded:
+            excluded_count += 1
+        else:
+            kept.append(repo)
     return sorted(str(repo) for repo in kept), excluded_count
 
 
@@ -946,7 +948,7 @@ def print_dependabot_report(
     )
 
     print(f"Dependabot PR sweep across {len(results)} github.com repo(s); {total_prs} open PR(s)")
-    if exclude_patterns:
+    if exclude_patterns or excluded_count:
         print(f"  excluded: {excluded_count} repo(s)")
     print(
         f"  superseded: {superseded}, not yet: {not_superseded}, "
@@ -1054,9 +1056,8 @@ def main(argv: list[str] | None = None) -> int:
     excluded_count = 0
     try:
         global_config = load_global_config()
-        repo_config = load_repo_config(Path.cwd())
         exclude_patterns = merge_exclude_patterns(
-            args.exclude_patterns, repo_config.get("exclude"), global_config.get("exclude")
+            args.exclude_patterns, global_config.get("exclude")
         )
         roots = resolve_scan_roots(args.roots or None, parser)
         repo_paths, excluded_count = _discover_repo_paths(roots, exclude_patterns=exclude_patterns)
