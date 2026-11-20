@@ -9,7 +9,12 @@ import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 
-from repo_ops_core.constants import GO_MODULE_MODE_ENV, TIMEOUT_APPLY, TIMEOUT_CHECK
+from repo_ops_core.constants import (
+    GO_MODULE_MODE_ENV,
+    TIMEOUT_APPLY,
+    TIMEOUT_CHECK,
+    TIMEOUT_LIST_UPDATES,
+)
 from repo_ops_core.filesystem import guard_tool_writes
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
@@ -470,7 +475,7 @@ def _go_list_updates(ws: Workspace) -> Iterator[dict]:
     Without ``-e`` a single unfetchable release (an upstream tag the module proxy cannot
     serve) fails the listing for every other module in the repo.
     """
-    proc = _go(["list", "-m", "-u", "-e", "-json", "all"], ws.path, timeout=TIMEOUT_CHECK)
+    proc = _go(["list", "-m", "-u", "-e", "-json", "all"], ws.path, timeout=TIMEOUT_LIST_UPDATES)
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go list failed", ws.path)
     for mod in _iter_go_list_modules(proc.stdout):

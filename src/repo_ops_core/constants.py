@@ -73,6 +73,8 @@ DEFAULT_ROOTS = default_roots()
 
 # Subprocess timeouts, in seconds.
 TIMEOUT_CHECK = 60
+# Asking the proxy for every module's newest version takes over a minute on a large module graph.
+TIMEOUT_LIST_UPDATES = 300
 TIMEOUT_APPLY = 600
 # A gate that runs a real test suite is slow; this is a ceiling for a hang, not
 # a budget. Verify runs the same full gate, so it shares the ceiling.
