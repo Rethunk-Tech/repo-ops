@@ -57,14 +57,18 @@ def test_should_exclude_matches_known_fragments() -> None:
     assert should_exclude("/usr/local/src/com.github/Rethunk-Tech/repo-ops") is False
 
 
-def test_read_json_file_happy_and_invalid(tmp_path: Path) -> None:
+def test_read_json_file_happy_and_invalid(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     good = tmp_path / "ok.json"
     good.write_text('{"x": 1}\n', encoding="utf-8")
     assert read_json_file(good) == {"x": 1}
 
+    assert read_json_file(tmp_path / "missing.json") is None
+    assert not caplog.records
+
     bad = tmp_path / "bad.json"
     bad.write_text("not-json", encoding="utf-8")
     assert read_json_file(bad) is None
+    assert "unreadable JSON" in caplog.text
 
     arr = tmp_path / "arr.json"
     arr.write_text("[1, 2]\n", encoding="utf-8")

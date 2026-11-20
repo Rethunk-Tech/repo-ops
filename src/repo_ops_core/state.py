@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import atexit
 import json
+import logging
 import os
 import threading
 from datetime import date
@@ -37,6 +38,8 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core.filesystem import write_json_atomic
+
+logger = logging.getLogger(__name__)
 
 # Module-level lazy state cache.  None = not yet loaded.
 _CACHE: dict[str, Any] | None = None
@@ -75,7 +78,7 @@ def _ensure_loaded() -> dict[str, Any]:
 
 
 def _read_from_disk() -> dict[str, Any]:
-    """Read state.json from disk.  Returns empty dict on any error."""
+    """Read state.json from disk; empty when it is missing or unreadable."""
     path = _state_path()
     try:
         text = path.read_text(encoding="utf-8")
@@ -83,7 +86,10 @@ def _read_from_disk() -> dict[str, Any]:
         if isinstance(data, dict):
             return data
         return {}
-    except Exception:
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        logger.warning("ignoring unreadable state cache %s: %s", path, exc)
         return {}
 
 
@@ -97,11 +103,11 @@ atexit.register(_flush_cache)
 
 
 def _write_to_disk(state: dict[str, Any]) -> None:
-    """Atomic tmp+rename write.  Silently swallows all errors."""
+    """Atomic tmp+rename write; a disk failure is logged, not raised, so the run finishes."""
     try:
         write_json_atomic(_state_path(), _stamp_version(state))
-    except Exception:
-        return  # best-effort; disk write failure must not crash the run
+    except OSError as exc:
+        logger.warning("could not write state cache: %s", exc)
 
 
 # ---------------------------------------------------------------------------

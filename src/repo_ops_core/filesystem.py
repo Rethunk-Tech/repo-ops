@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -15,6 +16,8 @@ from typing import Any
 
 from repo_ops_core.constants import EXCLUDE_PATH_FRAGMENTS
 from repo_ops_core.git import run_git
+
+logger = logging.getLogger(__name__)
 
 
 def contained_path(root: Path, rel: str) -> Path | None:
@@ -228,7 +231,10 @@ def should_exclude(path: str) -> bool:
 def read_json_file(path: Path) -> dict[str, Any] | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        logger.warning("unreadable JSON %s: %s", path, exc)
         return None
     return data if isinstance(data, dict) else None
 
@@ -236,7 +242,10 @@ def read_json_file(path: Path) -> dict[str, Any] | None:
 def read_toml_file(path: Path) -> dict[str, Any] | None:
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        logger.warning("unreadable TOML %s: %s", path, exc)
         return None
     return data if isinstance(data, dict) else None
 
