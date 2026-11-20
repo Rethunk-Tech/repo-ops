@@ -126,3 +126,19 @@ def test_uv_config_write_leaves_operator_uv_toml(operator_home: Path, tmp_path: 
     proc = run(["sh", "-c", "printf 'native-tls = true\\n' > \"$UV_CONFIG_FILE\""], tmp_path)
     assert proc.returncode == 0, proc.stderr
     assert uvtoml.read_text() == original
+
+
+@pytest.mark.skipif(shutil.which("uv") is None, reason="uv not installed")
+def test_uv_reads_the_repo_uv_toml(operator_home: Path, tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "uv.toml").write_text("[pip]\npython-version = \"3.11\"\n")
+    (repo / "requirements.in").write_text("")
+    isolate_user_config(tmp_path / "scratch")
+
+    proc = run(["uv", "pip", "compile", "requirements.in", "-o", "/dev/stdout"], repo)
+    assert proc.returncode == 0, proc.stderr
+    assert "--python-version 3.11" not in proc.stdout
+    assert "Resolved" in proc.stderr or proc.stdout is not None
+    proc = run(["uv", "pip", "compile", "requirements.in", "-o", "/dev/stdout", "-v"], repo)
+    assert "python-version" in proc.stderr.lower() or "3.11" in proc.stderr

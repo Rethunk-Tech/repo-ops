@@ -369,6 +369,10 @@ def run(
     else:
         # Isolation wins over a verify/apply env that names the operator's files.
         merged.update(_ISOLATED_ENV)
+        if cmd[:1] == ["uv"]:
+            # UV_CONFIG_FILE switches off discovery of the repo's own uv.toml
+            # (index, torch-backend); uv never writes config, so nothing to isolate.
+            merged.pop("UV_CONFIG_FILE", None)
         argv = _sandboxed_argv(cmd, cwd_path, merged.get("PATH", ""))
     proc = subprocess.run(
         argv,
