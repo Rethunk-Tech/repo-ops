@@ -538,6 +538,7 @@ def print_run_footer(
     exit_code: int,
     submodule_pointer_hints: list[dict[str, str]] | None = None,
     discovery_skips: list[dict[str, str]] | None = None,
+    dry_run: bool = False,
 ) -> None:
     """End-of-run roll-up and automation lines (human stdout)."""
     if submodule_pointer_hints:
@@ -552,7 +553,10 @@ def print_run_footer(
     print("---")
     print("Summary")
     rows = [
-        ("packages upgraded", summary.get("packages_upgraded", 0)),
+        (
+            "packages would upgrade" if dry_run else "packages upgraded",
+            summary.get("packages_upgraded", 0),
+        ),
         ("workspaces ok", summary["workspaces_ok"]),
         ("workspaces fail", summary["workspaces_fail"]),
         ("workspaces skip", summary["workspaces_skip"]),
@@ -574,7 +578,8 @@ def print_run_footer(
     workspaces_total = (
         summary["workspaces_ok"] + summary["workspaces_fail"] + summary["workspaces_skip"]
     )
-    print(f"  {pkgs} package(s) upgraded across {workspaces_total} workspace(s)")
+    verb = "would upgrade" if dry_run else "upgraded"
+    print(f"  {pkgs} package(s) {verb} across {workspaces_total} workspace(s)")
 
     packages_behind = summary.get("packages_behind_latest", 0)
     actions_behind = summary.get("actions_behind_latest", 0)

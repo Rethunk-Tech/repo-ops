@@ -895,6 +895,7 @@ def _run_upgrade_body(
         exit_code=exit_code,
         submodule_pointer_hints=pointer_hints,
         discovery_skips=diagnostics.skipped,
+        dry_run=not apply,
     )
     _print_dirty_skip_table(bundles)
     for bundle in bundles.values():

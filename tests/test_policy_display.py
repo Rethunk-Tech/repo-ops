@@ -245,3 +245,22 @@ def test_print_run_footer_policy_violations_zero() -> None:
     # Should still render the row with 0
     assert "actions policy violations" in out
     assert "0" in out
+
+
+def test_print_run_footer_dry_run_says_would_upgrade(capsys: pytest.CaptureFixture[str]) -> None:
+    summary = {
+        "workspaces_ok": 1,
+        "workspaces_fail": 0,
+        "workspaces_skip": 0,
+        "dirty_skips": 0,
+        "verify_failures": 0,
+        "actions_bumps": 0,
+        "actions_failures": 0,
+        "discovery_skipped": 0,
+        "failure_count": 0,
+        "packages_upgraded": 1,
+    }
+    print_run_footer(summary=summary, failures=[], exit_code=0, dry_run=True)
+    out = capsys.readouterr().out
+    assert "1 package(s) would upgrade across 1 workspace(s)" in out
+    assert "packages upgraded" not in out
