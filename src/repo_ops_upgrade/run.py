@@ -185,10 +185,16 @@ def _drop_locked(
     return list(held.values()), refused
 
 
-def _load_repo_configs(bundles: dict[Path, RepoBundle]) -> tuple[dict[Path, dict], bool]:
-    """Load each repo's ``.repo-ops.toml``; drop (and report) repos whose file does not parse."""
+def _load_repo_configs(
+    bundles: dict[Path, RepoBundle],
+) -> tuple[dict[Path, dict], dict[Path, RepoBundle]]:
+    """Load each repo's ``.repo-ops.toml``.
+
+    Repos whose file does not parse leave *bundles* and come back with every
+    workspace failed, unprocessed, for the report to list.
+    """
     configs: dict[Path, dict] = {}
-    bad: set[Path] = set()
+    bad: dict[Path, str] = {}
     for bundle in bundles.values():
         repo = bundle.git_repo
         if repo in configs or repo in bad:
@@ -196,11 +202,15 @@ def _load_repo_configs(bundles: dict[Path, RepoBundle]) -> tuple[dict[Path, dict
         try:
             configs[repo] = load_repo_config(repo)
         except ConfigError as exc:
-            bad.add(repo)
-            print(f"[fail] {repo}: unreadable .repo-ops.toml: {exc.detail}", file=sys.stderr)
+            bad[repo] = f"unreadable .repo-ops.toml: {exc.detail}"
+            print(f"[fail] {repo}: {bad[repo]}", file=sys.stderr)
+    failed: dict[Path, RepoBundle] = {}
     for path in [p for p, b in bundles.items() if b.git_repo in bad]:
-        del bundles[path]
-    return configs, bool(bad)
+        bundle = bundles.pop(path)
+        for wr in bundle.workspaces:
+            wr.status, wr.error = "fail", bad[bundle.git_repo]
+        failed[path] = bundle
+    return configs, failed
 
 
 def _drop_foreign(bundles: dict[Path, RepoBundle]) -> None:
@@ -835,6 +845,7 @@ def _run_upgrade_body(
 
     pointer_hints = submodules.parent_repos_needing_pointer_commit(submodule_links) or None
 
+    bundles.update(config_failed)
     exit_code = _resolve_exit_code(
         bundles, apply=apply, has_actionable_work=_has_actionable_work(bundles)
     )

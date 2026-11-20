@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_upgrade import orchestration
-from repo_ops_upgrade.run import main_apply
+from repo_ops_upgrade.run import main_apply, main_plan
 
 BAD_TOML = '[[hold]]\npackage = "react"\nmax_version = "18"\n\n[verify]\nskip = yes\n'
 
@@ -51,3 +51,26 @@ def test_bad_global_config_exits_2_before_any_work(
     assert main_apply([str(tmp_path)]) == 2
     err = capsys.readouterr().err
     assert "config.toml" in err and "unreadable" in err
+
+
+def test_bad_repo_config_is_a_failed_entry_in_report_json(
+    tmp_path: Path, init_git_repo: Any, monkeypatch: Any
+) -> None:
+    import json
+
+    repo = tmp_path / "bad"
+    init_git_repo(repo, commit=True)
+    (repo / "package.json").write_text('{"name": "x", "packageManager": "npm@10.0.0"}\n')
+    (repo / "package-lock.json").write_text("{}\n")
+    (repo / ".repo-ops.toml").write_text(BAD_TOML)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "pkg"], check=True)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    assert main_plan([str(repo)]) == 1
+
+    (report_file,) = (tmp_path / "state" / "repo-ops" / "runs").glob("*-plan/report.json")
+    report = json.loads(report_file.read_text())
+    (ws,) = [w for r in report["repos"] for w in r["workspaces"]]
+    assert ws["status"] == "fail" and "unreadable .repo-ops.toml" in ws["error"]
+    assert report["summary"]["failure_count"] == 1
