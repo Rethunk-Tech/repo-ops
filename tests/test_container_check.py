@@ -386,3 +386,28 @@ def test_check_container_crosses_majors(tmp_path: Path, monkeypatch: pytest.Monk
 
     assert len(changes) == 1
     assert changes[0].to == "2.0"
+
+
+_OLD = "sha256:" + "a" * 64
+_NEW = "sha256:" + "b" * 64
+
+
+@pytest.mark.parametrize(
+    "registry_digest, expected_changes",
+    [(_NEW, 1), (_OLD, 0)],
+)
+def test_check_container_rolling_tag_digest_refresh(
+    registry_digest: str, expected_changes: int, tmp_path: Path
+) -> None:
+    (tmp_path / "Dockerfile").write_text(f"FROM gcr.io/o/img:v1@{_OLD}\n")
+
+    with patch(
+        "repo_ops_container.container._fetch_manifest_digest",
+        return_value=registry_digest,
+    ):
+        changes = check_container(_make_ws(tmp_path))
+
+    assert len(changes) == expected_changes
+    if expected_changes:
+        assert changes[0].from_ver == _OLD
+        assert changes[0].to == _NEW

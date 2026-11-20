@@ -132,7 +132,7 @@ def test_uv_config_write_leaves_operator_uv_toml(operator_home: Path, tmp_path: 
 def test_uv_reads_the_repo_uv_toml(operator_home: Path, tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    (repo / "uv.toml").write_text("[pip]\npython-version = \"3.11\"\n")
+    (repo / "uv.toml").write_text('[pip]\npython-version = "3.11"\n')
     (repo / "requirements.in").write_text("")
     isolate_user_config(tmp_path / "scratch")
 

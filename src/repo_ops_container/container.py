@@ -1147,7 +1147,12 @@ def check_container(ws: Workspace) -> list[Change]:
                 # digest refresh of the tag already pinned.  Rewriting the tag
                 # without its matching digest would leave a pin that resolves
                 # to the old image, so both move together as one change.
-                target_tag, reason = _resolve_tag_target(ws, image, tag)
+                # Rolling tags (v1, ubuntu-24-04) have no newer tag to move to;
+                # only their digest is refreshed below.
+                rolling = not _is_semver_tag(tag) and tag not in _NON_SEMVER_TAGS
+                target_tag, reason = (
+                    (None, None) if rolling else _resolve_tag_target(ws, image, tag)
+                )
                 if reason is not None:
                     changes.append(
                         Change(
