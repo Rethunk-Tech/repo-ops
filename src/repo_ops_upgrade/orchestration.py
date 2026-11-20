@@ -38,6 +38,7 @@ from repo_ops_upgrade.post_apply import (
     note_foreign_changes,
     record_owned_edits,
     revert_workspace_after_verify_fail,
+    tree_diff,
 )
 from repo_ops_upgrade.soup import sync_soup_versions
 from repo_ops_upgrade.toolchains import apply_toolchains, merge_toolchains
@@ -368,6 +369,9 @@ def _process_workspace_body(
         if verr:
             result.verify_error = verr
             result.status = "fail"
+            foreign_now = tree_diff(ws.git_repo, applied_tree) if applied_tree else None
+            if foreign_now:
+                result.error = f"verify ran while another writer changed: {', '.join(foreign_now)}"
             if before_snap is not None:
                 reverted_ok = True
                 if on_verify_fail == "revert":

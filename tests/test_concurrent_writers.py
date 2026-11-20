@@ -297,3 +297,13 @@ def test_a_repo_another_apply_holds_is_left_to_it(
     assert processed == []
     assert code == 1
     assert "another repo-ops apply" in capsys.readouterr().err
+
+
+def test_a_verify_failure_with_a_foreign_writer_is_not_blamed_on_the_bump(
+    tmp_path: Path, init_git_repo
+) -> None:
+    ws = _repo(tmp_path, init_git_repo)
+
+    out = _apply_and_fail_verify(ws, lambda root: (root / "README.md").write_text("agent\n"))
+
+    assert (out.error or "").startswith("verify ran while another writer changed: README.md")
