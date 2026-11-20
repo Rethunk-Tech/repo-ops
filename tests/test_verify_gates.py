@@ -615,6 +615,42 @@ class TestGateDelegation:
         assert "gate: install:" not in result
         assert "/var/tmp/gate/soup.log" in result
 
+    def test_failure_keeps_error_lines_of_the_full_log(
+        self, tmp_path: Path, make_workspace
+    ) -> None:
+        """The tail can miss the error under interleaved tasks; the full log's error lines are kept."""
+        self._write_pkg(tmp_path)
+        log = tmp_path / "turbo.log"
+        log.write_text(
+            "web:gen: \x1b[31mError: config is invalid: Cannot destructure\x1b[0m\n"
+            + "".join(f"mail:test: ok {i}\n" for i in range(60))
+        )
+        out = (
+            "gate: FAIL exit 1  turbo run test  2s\n"
+            "--- last 40 line(s) ---\nmail:test: ok 59\n"
+            f"gate: full log  {log}\n"
+        )
+
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+        ) -> CompletedProcess[str]:
+            if cmd[:2] == ["gate", "--json"]:
+                return _ok(stdout=_GATE_LIST)
+            if cmd[0] == "gate":
+                return _fail(stdout=out)
+            return _ok()
+
+        ws = make_workspace(tmp_path, manager="bun", ecosystem="node", label="demo")
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/gate"),
+            patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
+        ):
+            result = verify_node(ws)
+
+        assert result is not None
+        assert "web:gen: Error: config is invalid: Cannot destructure" in result
+        assert "mail:test: ok 3" not in result
+
     def test_gate_failure_is_the_verify_error(self, tmp_path: Path, make_workspace) -> None:
         """A failing gate run must surface gate's own output as the verify failure."""
         self._write_pkg(tmp_path)

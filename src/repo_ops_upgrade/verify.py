@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -47,6 +48,31 @@ from repo_ops_upgrade.constants import YARN_PEER_WARN
 logger = logging.getLogger(__name__)
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_ERROR_LINE = re.compile(r"\b(error|failed|fail|cannot|unexpected)\b", re.IGNORECASE)
+_FULL_LOG = re.compile(r"^gate: full log\s+(\S+)", re.MULTILINE)
+_ERROR_LINES_MAX = 20
+
+
+def _log_error_lines(detail: str) -> str:
+    """Lines of the failed step's full log that name the failure.
+
+    gate's tail is the last N lines, and parallel tasks (turbo) interleave their
+    output, so the real error can sit above it. Empty when no log is readable.
+    """
+    m = _FULL_LOG.search(detail)
+    if not m:
+        return ""
+    try:
+        text = Path(m.group(1)).read_text(errors="replace")
+    except OSError:
+        return ""
+    hits = dict.fromkeys(
+        ln.strip() for ln in _ANSI.sub("", text).splitlines() if _ERROR_LINE.search(ln)
+    )
+    return "\n".join(list(hits)[:_ERROR_LINES_MAX])
+
+
 def _gate_failure_detail(proc: Any, names: list[str]) -> str:
     """Failure text starting at the first ``gate: FAIL`` line.
 
@@ -58,7 +84,11 @@ def _gate_failure_detail(proc: Any, names: list[str]) -> str:
     start = next((i for i, ln in enumerate(lines) if ln.startswith("gate: FAIL")), None)
     if start is not None:
         tail = [ln for ln in lines[start:] if not ln.startswith("gate: install:")]
-        return "\n".join(tail).strip()
+        detail = "\n".join(tail).strip()
+        errors = _log_error_lines(detail)
+        if errors:
+            detail = f"{detail}\n--- error lines from the full log ---\n{errors}"
+        return detail
     return (proc.stderr or proc.stdout).strip() or f"gate run {' '.join(names)} failed"
 
 
