@@ -318,20 +318,38 @@ def record_owned_edits(
     before_snap: dict[Path, bytes],
     before_tree: WorktreeState | None,
     applied_tree: WorktreeState | None,
+    written: set[str] | None = None,
+    foreign: list[str] | None = None,
 ) -> dict[str, OwnedEdit]:
     """The paths *ws*'s apply (and remediations) wrote, with their bytes on both sides.
 
     Taken once the writes are done, so a rollback can tell what repo-ops wrote
     from what another process wrote afterwards. Lockfiles the repo gitignores
     are absent from git's view and come from the manifest/lockfile snapshots.
+    With *written* (the repo-relative paths apply and its remediations declared
+    or wrote), a changed path outside it was written by someone else: it is
+    appended to *foreign* and never owned.
     """
     if before_tree is None or applied_tree is None:
         return {}
+    repo = ws.git_repo.resolve()
+    after_snap = snapshot_workspace_files(ws.path, ws.manager)
+    snap_changed: set[str] = set()
+    for path in set(before_snap) | set(after_snap):
+        if before_snap.get(path) != after_snap.get(path):
+            try:
+                snap_changed.add(str(path.resolve().relative_to(repo)))
+            except ValueError:
+                continue
     edits: dict[str, OwnedEdit] = {}
-    for rel in set(applied_tree) | set(before_tree):
+    for rel in sorted(set(applied_tree) | set(before_tree)):
         before = _tree_state(before_tree, rel)
         applied = _tree_state(applied_tree, rel)
         if before == applied:
+            continue
+        if written is not None and rel not in written and rel not in snap_changed:
+            if foreign is not None:
+                foreign.append(rel)
             continue
         if isinstance(before[1], FileDigest) or isinstance(applied[1], FileDigest):
             # Past the capture budget only a digest is kept, so these bytes
@@ -339,8 +357,6 @@ def record_owned_edits(
             logger.warning("not recording %s as an owned edit: snapshot is a digest", rel)
             continue
         edits[rel] = OwnedEdit(before=before[1], from_head=not before[0], applied=applied[1])
-    repo = ws.git_repo.resolve()
-    after_snap = snapshot_workspace_files(ws.path, ws.manager)
     for path in set(before_snap) | set(after_snap):
         if before_snap.get(path) == after_snap.get(path):
             continue

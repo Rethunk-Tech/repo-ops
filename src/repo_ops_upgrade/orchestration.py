@@ -14,7 +14,12 @@ from itertools import groupby
 from pathlib import Path
 from typing import Literal
 
-from repo_ops_core.filesystem import is_workspace_member, should_exclude
+from repo_ops_core.filesystem import (
+    begin_write_log,
+    end_write_log,
+    is_workspace_member,
+    should_exclude,
+)
 from repo_ops_core.git import is_git_dirty, run_git
 from repo_ops_core.state import (
     cache_clear_dirty_skip,
@@ -315,6 +320,7 @@ def _process_workspace_body(
         cache_clear_dirty_skip(ws.git_repo)
         before_tree = capture_worktree_state(ws.git_repo)
         before_snap = snapshot_workspace_files(ws.path, ws.manager)
+        begin_write_log()
         try:
             behind_after = ecosystems.apply_workspace(ws)
             if behind_after:
@@ -334,7 +340,12 @@ def _process_workspace_body(
             result.status = "fail"
             result.error = str(exc)
             result.owned_edits = record_owned_edits(
-                ws, before_snap, before_tree, capture_worktree_state(ws.git_repo)
+                ws,
+                before_snap,
+                before_tree,
+                capture_worktree_state(ws.git_repo),
+                _written_rel(ws, result, end_write_log()),
+                result.foreign,
             )
             return result
     else:
@@ -350,7 +361,14 @@ def _process_workspace_body(
     # never touched, which is CI's job and costs a full gate per repo.
     applied_tree = capture_worktree_state(ws.git_repo) if do_apply else None
     if before_snap is not None:
-        result.owned_edits = record_owned_edits(ws, before_snap, before_tree, applied_tree)
+        result.owned_edits = record_owned_edits(
+            ws,
+            before_snap,
+            before_tree,
+            applied_tree,
+            _written_rel(ws, result, end_write_log()),
+            result.foreign,
+        )
     wrote_nothing = (
         do_apply
         and before_tree is not None
@@ -372,6 +390,7 @@ def _process_workspace_body(
             foreign_now = tree_diff(ws.git_repo, applied_tree) if applied_tree else None
             if foreign_now:
                 result.error = f"verify ran while another writer changed: {', '.join(foreign_now)}"
+                result.foreign = sorted({*result.foreign, *foreign_now})
             if before_snap is not None:
                 reverted_ok = True
                 if on_verify_fail == "revert":
@@ -381,6 +400,7 @@ def _process_workspace_body(
                         )
                         reverted_ok = outcome.ok
                         if outcome.foreign:
+                            result.foreign = sorted({*result.foreign, *outcome.foreign})
                             result.error = note_foreign_changes(result.error, outcome.foreign)
                     except (
                         RuntimeError,
@@ -432,6 +452,22 @@ def _process_workspace_body(
                     )
 
     return result
+
+
+def _written_rel(ws: Workspace, result: WorkspaceResult, logged: set[Path]) -> set[str]:
+    """Repo-relative paths apply wrote: its logged writes plus files remediations declared."""
+    repo = ws.git_repo.resolve()
+    paths = set(logged)
+    for entry in result.remediations:
+        if entry.get("status") == "applied":
+            paths.update((ws.path / f).resolve() for f in entry.get("files") or [])
+    out: set[str] = set()
+    for p in paths:
+        try:
+            out.add(str(p.relative_to(repo)))
+        except ValueError:
+            continue
+    return out
 
 
 def filter_workspaces(

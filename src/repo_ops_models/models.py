@@ -78,6 +78,8 @@ class WorkspaceResult:
     # Repo-relative paths this workspace's apply wrote; the only paths a rollback
     # may touch, and the paths post-apply commit scopes to. Dropped after commit.
     owned_edits: dict[str, OwnedEdit] = field(default_factory=dict, repr=False, compare=False)
+    # Repo-relative paths another writer changed during the run: never committed or reverted.
+    foreign: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -104,6 +106,8 @@ class WorkspaceResult:
             out["verify_fail_disposition"] = self.verify_fail_disposition
         if self.started_dirty:
             out["started_dirty"] = True
+        if self.foreign:
+            out["foreign"] = self.foreign
         if not self.reverted_ok:
             out["reverted_ok"] = False
         if self.elapsed_s is not None:

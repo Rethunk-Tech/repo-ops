@@ -9,6 +9,7 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
 import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
@@ -49,6 +50,21 @@ def is_under_root(root: Path, path: Path) -> bool:
     return True
 
 
+_write_log = threading.local()
+
+
+def begin_write_log() -> None:
+    """Start recording the paths :func:`guarded_write` writes on this thread."""
+    _write_log.paths = set()
+
+
+def end_write_log() -> set[Path]:
+    """Stop recording; the resolved paths written since :func:`begin_write_log`."""
+    paths = getattr(_write_log, "paths", None) or set()
+    _write_log.paths = None
+    return paths
+
+
 class OutsideRepoError(RuntimeError):
     """A write would resolve outside the repo root it is confined to."""
 
@@ -72,6 +88,9 @@ def guarded_write(
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
+    log = getattr(_write_log, "paths", None)
+    if log is not None:
+        log.add(path.resolve())
 
 
 def warn_skip(appender: str, reason: str) -> None:

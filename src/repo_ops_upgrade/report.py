@@ -429,6 +429,10 @@ def print_human_report(
                 print(f"    error: {error_line}")
             if wr.verify_error:
                 print(f"    verify: {wr.verify_error}")
+            if wr.foreign:
+                print(
+                    f"    foreign (changed by another writer, left alone): {', '.join(wr.foreign)}"
+                )
             if wr.verify_fail_disposition:
                 print(f"    disposition: {wr.verify_fail_disposition}")
             shown_changes = wr.changes[:top_n]

@@ -65,6 +65,7 @@ def test_failed_verify_holds_biome_and_lands_the_rest(tmp_path: Path, init_git_r
     def remediate(result: WorkspaceResult, *, apply: bool) -> None:
         if seen[-1] is None:  # first pass: the safe fix edits a source file
             (tmp_path / "a.ts").write_text("const a = 1;\n")
+            result.remediations.append({"status": "applied", "files": ["a.ts"]})
 
     def diff(_before, _after, _manager):
         if seen[-1] is None:

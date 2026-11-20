@@ -307,3 +307,32 @@ def test_a_verify_failure_with_a_foreign_writer_is_not_blamed_on_the_bump(
     out = _apply_and_fail_verify(ws, lambda root: (root / "README.md").write_text("agent\n"))
 
     assert (out.error or "").startswith("verify ran while another writer changed: README.md")
+
+
+def test_concurrent_edit_during_apply_is_foreign_not_owned(tmp_path: Path, init_git_repo) -> None:
+    ws = _repo(tmp_path, init_git_repo)
+    root = ws.path
+
+    def _apply(_ws: Workspace) -> None:
+        (root / "package.json").write_text('{"dependencies":{"a":"2"}}\n')
+        (root / "package-lock.json").write_text('{"a":"2"}\n')
+        (root / "README.md").write_text("agent edit\n")
+
+    register_all()
+    with (
+        patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", side_effect=_apply),
+        patch("repo_ops_upgrade.orchestration.dispatch_remediations"),
+        patch("repo_ops_upgrade.orchestration.verify_mod.verify_workspace", return_value=None),
+    ):
+        out = orchestration.process_workspace(
+            WorkspaceResult(workspace=ws),
+            do_apply=True,
+            do_verify=True,
+            allow_dirty=False,
+            on_verify_fail="revert",
+        )
+
+    assert sorted(out.owned_edits) == ["package-lock.json", "package.json"]
+    assert out.foreign == ["README.md"]
+    assert out.to_json()["foreign"] == ["README.md"]
+    assert (root / "README.md").read_text() == "agent edit\n"
