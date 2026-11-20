@@ -1,4 +1,4 @@
-"""DEFAULT_ROOTS follows `bosun roots` when bosun is installed."""
+"""default_roots() follows `bosun roots` when bosun is installed."""
 
 from __future__ import annotations
 

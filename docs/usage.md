@@ -4,7 +4,7 @@ What `plan`, `apply` and `dependabot` do, how they are configured, and what they
 
 ## Roots
 
-With no `root`, every command scans [`DEFAULT_ROOTS`](../src/repo_ops_core/constants.py) for git checkouts (a fleet sweep). A named root is a checkout the operator is working in.
+With no `root`, every command scans the default roots (the lines of `bosun roots`, else the built-in list in [constants.py](../src/repo_ops_core/constants.py)) for git checkouts (a fleet sweep). A named root is a checkout the operator is working in.
 
 | | Fleet sweep | Named root |
 | --- | --- | --- |

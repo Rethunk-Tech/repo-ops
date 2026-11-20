@@ -23,7 +23,7 @@ from pathlib import Path
 from repo_ops_core import owned
 from repo_ops_core.cli import add_scan_arguments, resolve_scan_roots, wire_verbose
 from repo_ops_core.config import load_global_config
-from repo_ops_core.constants import DEFAULT_ROOTS, TIMEOUT_GATE
+from repo_ops_core.constants import TIMEOUT_GATE
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
 from repo_ops_core.filesystem import new_run_dir, write_json_atomic
@@ -351,7 +351,7 @@ def main_gates(argv: list[str] | None = None) -> int:
     if not shutil.which("gate"):
         print("repo-ops gates: gate is not on PATH", file=sys.stderr)
         return 2
-    roots = resolve_scan_roots(list(args.roots or DEFAULT_ROOTS), parser)
+    roots = resolve_scan_roots(args.roots or None, parser)
     if args.jobs is None:
         # Each worker runs a whole project gate, same sizing as apply.
         args.jobs = max(4, min(8, (os.cpu_count() or 4) // 4))

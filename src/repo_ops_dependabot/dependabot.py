@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """List or close Dependabot PRs that are already superseded by local manifests/lockfiles.
 
-For each repo discovered under DEFAULT_ROOTS that has a github.com remote, list
+For each repo discovered under the default roots that has a github.com remote, list
 open Dependabot PRs via ``gh pr list``.  For each PR, parse the bump (package,
 old version, new version) from the title and check whether the repo's current
 lockfiles/manifests already satisfy >= the target version.  If so, the PR is a
@@ -1057,7 +1057,7 @@ def main(argv: list[str] | None = None) -> int:
         exclude_patterns = merge_exclude_patterns(
             args.exclude_patterns, repo_config.get("exclude"), global_config.get("exclude")
         )
-        roots = resolve_scan_roots(list(args.roots), parser)
+        roots = resolve_scan_roots(args.roots or None, parser)
         repo_paths, excluded_count = _discover_repo_paths(roots, exclude_patterns=exclude_patterns)
         repo_paths = [str(r) for r in owned.filter_owned([Path(p) for p in repo_paths])]
 

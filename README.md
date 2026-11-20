@@ -32,7 +32,7 @@ Install, prerequisites, and uninstall: [HUMANS.md](HUMANS.md).
 ## Use
 
 ```bash
-repo-ops apply                    # sweep DEFAULT_ROOTS, commit each verified repo
+repo-ops apply                    # sweep the default roots, commit each verified repo
 repo-ops apply /path/to/checkout  # one checkout, even if dirty
 repo-ops plan /path/to/checkout   # read-only preview, exit 1 on drift
 repo-ops dependabot --close       # close Dependabot PRs the sweep superseded

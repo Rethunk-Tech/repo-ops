@@ -26,7 +26,6 @@ from repo_ops_core.config import (
     load_global_config,
     load_repo_config,
 )
-from repo_ops_core.constants import DEFAULT_ROOTS
 from repo_ops_core.exclude import (
     filter_repo_paths,
     merge_exclude_patterns,
@@ -904,8 +903,8 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     wire_verbose(args)
-    roots = resolve_scan_roots(list(args.roots or DEFAULT_ROOTS), parser)
-    fleet = args.roots == DEFAULT_ROOTS
+    roots = resolve_scan_roots(args.roots or None, parser)
+    fleet = not args.roots
     retry_ref = getattr(args, "retry_failed", None)
     args.retry_paths = None
     args.retry_commits = {}

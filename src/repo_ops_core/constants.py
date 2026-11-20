@@ -69,8 +69,6 @@ def default_roots() -> list[str]:
     return list(_FALLBACK_ROOTS)
 
 
-DEFAULT_ROOTS = default_roots()
-
 # Subprocess timeouts, in seconds.
 TIMEOUT_CHECK = 60
 # Asking the proxy for every module's newest version takes over a minute on a large module graph.

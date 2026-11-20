@@ -43,10 +43,10 @@ def test_resolve_scan_roots_partial_defaults_returns_only_existing(
     existing.mkdir()
     missing = tmp_path / "nope"
     fake_defaults = [str(existing), str(missing)]
-    monkeypatch.setattr("repo_ops_core.cli.DEFAULT_ROOTS", fake_defaults)
+    monkeypatch.setattr("repo_ops_core.cli.default_roots", lambda: fake_defaults)
 
     parser = argparse.ArgumentParser()
-    resolved = resolve_scan_roots(fake_defaults, parser)
+    resolved = resolve_scan_roots(None, parser)
 
     assert resolved == [str(existing.resolve())]
 
@@ -55,11 +55,11 @@ def test_resolve_scan_roots_all_defaults_missing_exits_with_guidance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_defaults = [str(tmp_path / "a"), str(tmp_path / "b")]
-    monkeypatch.setattr("repo_ops_core.cli.DEFAULT_ROOTS", fake_defaults)
+    monkeypatch.setattr("repo_ops_core.cli.default_roots", lambda: fake_defaults)
 
     parser = argparse.ArgumentParser()
     with pytest.raises(SystemExit):
-        resolve_scan_roots(fake_defaults, parser)
+        resolve_scan_roots(None, parser)
 
     err = capsys.readouterr().err
     assert "none of the default roots exist on this machine" in err
@@ -73,7 +73,7 @@ def test_resolve_scan_roots_explicit_missing_path_still_fatal(
     missing built-in default — even when some default roots do exist."""
     existing = tmp_path / "exists"
     existing.mkdir()
-    monkeypatch.setattr("repo_ops_core.cli.DEFAULT_ROOTS", [str(existing)])
+    monkeypatch.setattr("repo_ops_core.cli.default_roots", lambda: [str(existing)])
 
     parser = argparse.ArgumentParser()
     with pytest.raises(SystemExit):

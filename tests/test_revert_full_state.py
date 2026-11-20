@@ -195,8 +195,7 @@ def test_vetoed_commit_rolls_back_passing_siblings(tmp_path: Path, init_git_repo
         patch("repo_ops_upgrade.orchestration.dispatch_remediations"),
         patch("repo_ops_upgrade.orchestration.verify_mod.verify_workspace", side_effect=_verify),
         # A fleet sweep (no roots named) is what reverts a vetoed repo.
-        patch("repo_ops_core.cli.DEFAULT_ROOTS", [str(repo)]),
-        patch("repo_ops_upgrade.run.DEFAULT_ROOTS", [str(repo)]),
+        patch("repo_ops_core.cli.default_roots", return_value=[str(repo)]),
     ):
         rc = main_apply([])
 

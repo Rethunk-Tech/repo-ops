@@ -17,6 +17,7 @@ One wheel; every `src/repo_ops_*` package ships in it (`module-name` in `pyproje
 - SHA-pinned Actions and images stay pinned: digests advance, never revert to floating tags.
 - Repo build/verify commands go through `repo_ops_core.process.run`, which redirects user-global tool config writes to the run dir (`isolate_user_config`); repo-ops' own `git` calls are exempt. A new spawn path for repo commands uses `run`.
 - Config is two files and five keys ([docs/usage.md § Config](docs/usage.md#config)). No env vars; a new knob needs a measured case first.
+- With no named root, commands scan the lines of `bosun roots` (bosun on `PATH`), else the built-in list in `repo_ops_core/constants.py`; it is looked up only when a scan needs it, never at import.
 
 ## Release
 

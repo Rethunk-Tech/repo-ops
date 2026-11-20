@@ -89,7 +89,7 @@ def _resolve_version() -> str:
 _TOP_LEVEL_DESCRIPTION = """\
 Dependency maintenance for local checkouts (plan, apply, dependabot).
 
-When no root is passed, subcommands scan DEFAULT_ROOTS
+When no root is passed, subcommands scan the default roots
 (see repo-ops plan --help).
 """
 
@@ -203,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     # None` would pass None for a bare subcommand (e.g. `repo-ops plan`), and the
     # handler's argparse then falls back to sys.argv[1:] — re-consuming the
     # subcommand token "plan" as a positional root. Passing [] lets defaults
-    # (DEFAULT_ROOTS) apply correctly.
+    # (the default roots) apply correctly.
     code = handler(remainder)
     return 0 if code is None else code
 

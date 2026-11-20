@@ -292,8 +292,7 @@ def _fleet_scan_calls(repo: Path, **patches) -> list[tuple[Path, bool]]:
         stack.enter_context(
             patch("repo_ops_upgrade.run.actions.scan_actions", side_effect=track_scan)
         )
-        stack.enter_context(patch("repo_ops_core.cli.DEFAULT_ROOTS", [str(repo)]))
-        stack.enter_context(patch("repo_ops_upgrade.run.DEFAULT_ROOTS", [str(repo)]))
+        stack.enter_context(patch("repo_ops_core.cli.default_roots", return_value=[str(repo)]))
         for target, kw in patches.items():
             stack.enter_context(patch(target, **kw))
         main_apply([])

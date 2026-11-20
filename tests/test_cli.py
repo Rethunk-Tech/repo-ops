@@ -70,7 +70,7 @@ def test_dispatcher_forwards_empty_list_for_bare_subcommand() -> None:
     """Regression: a bare subcommand (e.g. ``repo-ops plan``) must forward an
     empty list to the handler, not ``None``. ``None`` makes the handler's
     argparse fall back to ``sys.argv[1:]`` and re-consume the subcommand token
-    ("plan") as a positional root, defeating the DEFAULT_ROOTS default.
+    ("plan") as a positional root, defeating the default roots.
     """
     from repo_ops import cli
 

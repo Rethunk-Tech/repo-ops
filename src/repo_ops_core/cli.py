@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from repo_ops_core.constants import DEFAULT_ROOTS
+from repo_ops_core.constants import default_roots
 from repo_ops_core.process import configure_logging
 
 _FIND_PREDICATE_TOKENS = frozenset(
@@ -58,7 +58,7 @@ are the last line printed. Reference: docs/usage.md.
 
 APPLY_EPILOG = """\
 roots:
-  omitted  sweep DEFAULT_ROOTS: dirty repos skipped, failed verify reverted
+  omitted  sweep the default roots: dirty repos skipped, failed verify reverted
   named    that checkout, even if dirty (only files apply touched are
            committed, and nothing if one of them held your uncommitted
            edits); failed verify keeps the changes
@@ -92,7 +92,7 @@ def looks_like_find_predicate(value: str) -> bool:
 
 
 def resolve_scan_roots(
-    roots: list[str],
+    roots: list[str] | None,
     parser: argparse.ArgumentParser,
 ) -> list[str]:
     """Resolve roots to absolute paths; reject missing dirs and find-like tokens.
@@ -102,7 +102,9 @@ def resolve_scan_roots(
     describe a layout this machine may simply not use, so a missing one is
     skipped rather than fatal, and only an empty result is an error.
     """
-    using_defaults = roots == DEFAULT_ROOTS
+    using_defaults = roots is None
+    if roots is None:
+        roots = default_roots()
     resolved: list[str] = []
     for raw in roots:
         text = raw.strip()
@@ -124,7 +126,7 @@ def resolve_scan_roots(
     if not resolved and using_defaults:
         parser.error(
             "none of the default roots exist on this machine ("
-            + ", ".join(DEFAULT_ROOTS)
+            + ", ".join(roots)
             + "); pass a directory to scan, e.g. `.` for the current checkout"
         )
     return resolved
@@ -135,9 +137,8 @@ def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "roots",
         nargs="*",
-        default=DEFAULT_ROOTS,
         metavar="root",
-        help="Checkouts to process (default: " + ", ".join(DEFAULT_ROOTS) + ").",
+        help="Checkouts to process (default: the lines of `bosun roots`, else the built-in list).",
     )
     parser.add_argument(
         "--exclude",
