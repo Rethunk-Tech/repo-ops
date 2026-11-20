@@ -406,7 +406,7 @@ def test_retry_phase_timeout_fails_that_repo_and_others_still_finish(
         repo = tmp_path / name
         init_git_repo(repo, commit=True)
         (repo / "package.json").write_text(
-            '{"name": "%s", "packageManager": "npm@10.0.0"}\n' % name, encoding="utf-8"
+            json.dumps({"name": name, "packageManager": "npm@10.0.0"}), encoding="utf-8"
         )
         (repo / "package-lock.json").write_text("{}\n", encoding="utf-8")
         subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
