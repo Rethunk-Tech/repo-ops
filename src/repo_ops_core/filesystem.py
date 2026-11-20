@@ -71,15 +71,6 @@ def guarded_write(
     path.write_bytes(data)
 
 
-def guarded_text(path: Path, root: Path, *, appender: str | None = None) -> str:
-    """Read *path* as UTF-8 text, refusing a link that resolves outside *root*."""
-    if not is_under_root(root, path):
-        raise OutsideRepoError(
-            f"{appender + ': ' if appender else ''}{path} resolves outside the repo {root}"
-        )
-    return path.read_text(encoding="utf-8")
-
-
 def warn_skip(appender: str, reason: str) -> None:
     """Log the workspace-skip line appliers print when a guard refuses a write."""
     print(f"WARN {appender}: {reason}; skipping", file=sys.stderr)
