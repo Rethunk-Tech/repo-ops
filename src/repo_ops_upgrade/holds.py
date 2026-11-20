@@ -19,6 +19,15 @@ from repo_ops_upgrade.tags import is_semver_tag as _is_semver_tag
 logger = logging.getLogger(__name__)
 
 
+def _semver_or_none(tag: str, context: str, kind: str = "tag") -> tuple[int, ...] | None:
+    """*tag* as a semver tuple, or None (logged) when it does not parse."""
+    try:
+        return semver_tuple(tag.lstrip("v"))
+    except Exception:
+        logger.warning("ignoring invalid semver %s %r while enforcing %s hold", kind, tag, context)
+        return None
+
+
 def resolve_hold_tag_target(
     current_rev: str, tags: list[str], rule: HoldRule, *, context: str
 ) -> str | None:
@@ -30,14 +39,8 @@ def resolve_hold_tag_target(
     """
     if not _is_semver_tag(current_rev):
         return None
-    try:
-        current_version = semver_tuple(current_rev.lstrip("v"))
-    except Exception:
-        logger.warning(
-            "ignoring invalid semver rev %r while enforcing %s hold",
-            current_rev,
-            context,
-        )
+    current_version = _semver_or_none(current_rev, context, "rev")
+    if current_version is None:
         return None
     if version_satisfies_ceiling(current_rev.lstrip("v"), rule.max_version):
         return None
@@ -47,14 +50,8 @@ def resolve_hold_tag_target(
     for tag in tags:
         if not _is_semver_tag(tag) or _has_v_prefix(tag) != want_v:
             continue
-        try:
-            tag_version = semver_tuple(tag.lstrip("v"))
-        except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r while enforcing %s hold",
-                tag,
-                context,
-            )
+        tag_version = _semver_or_none(tag, context)
+        if tag_version is None:
             continue
         if version_satisfies_ceiling(tag.lstrip("v"), rule.max_version):
             candidates.append((tag_version, tag))
@@ -82,14 +79,8 @@ def matching_sha_tags(
             continue
         if not _is_semver_tag(tag):
             continue
-        try:
-            tag_version = semver_tuple(tag.lstrip("v"))
-        except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r while enforcing %s hold",
-                tag,
-                context,
-            )
+        tag_version = _semver_or_none(tag, context)
+        if tag_version is None:
             continue
         matching.append((tag_version, tag, tag_sha))
     return matching
@@ -111,14 +102,8 @@ def resolve_hold_sha_target(
     for tag_sha, tag in refs:
         if not _is_semver_tag(tag) or _has_v_prefix(tag) != want_v:
             continue
-        try:
-            tag_version = semver_tuple(tag.lstrip("v"))
-        except Exception:
-            logger.warning(
-                "ignoring invalid semver tag %r while enforcing %s hold",
-                tag,
-                context,
-            )
+        tag_version = _semver_or_none(tag, context)
+        if tag_version is None:
             continue
         if version_satisfies_ceiling(tag.lstrip("v"), rule.max_version):
             candidates.append((tag_version, tag, tag_sha))
