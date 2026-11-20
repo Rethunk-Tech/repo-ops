@@ -98,6 +98,27 @@ def test_module_with_unloadable_metadata_is_skipped(tmp_path) -> None:
         assert _explicit_go_get_targets(ws) == ["example.com/ok@v1.1.0"]
 
 
+def test_local_path_replace_is_not_an_upgrade(tmp_path) -> None:
+    ws = Workspace(path=tmp_path, ecosystem="go", manager="go", git_repo=tmp_path, label="mod")
+    gomod = tmp_path / "go.mod"
+    gomod.write_text("module example.com/local\n")
+    line = json.dumps(
+        {
+            "Path": "example.com/local",
+            "Version": "v0.0.0-20260101000000-abcdef123456",
+            "Replace": {"Path": "../local", "Dir": str(tmp_path), "GoMod": str(gomod)},
+            "Update": {
+                "Path": "example.com/local",
+                "Version": "v0.0.0-20260202000000-fedcba654321",
+            },
+        }
+    )
+    fake_run = _fake_run_with_gomod(line, ["example.com/local"])
+    with patch("repo_ops_go.go.run", side_effect=fake_run):
+        assert _changes_from_go_list_json(ws) == []
+        assert _explicit_go_get_targets(ws) == []
+
+
 def test_graph_only_modules_excluded(tmp_path) -> None:
     """Modules outside go.mod's Require list are ghost upgrades:
     go get bumps them in the graph, go mod tidy drops them, net diff zero.

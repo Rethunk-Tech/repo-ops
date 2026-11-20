@@ -181,6 +181,15 @@ _ANY_SHA = object()
             [{"tag": "1.25", "sha": _ANY_SHA}],
         ),
         ("    image: nginx:1.25  # prod\n", [{"image": "nginx", "tag": "1.25"}]),
+        # An alias is reported at its anchor's definition, once.
+        (
+            "x-images:\n  db: &db nginx:1.25\n  unused: &u redis:7\nsvc:\n  a:\n    image: *db\n"
+            "  b:\n    image: *db\n",
+            [{"image": "nginx", "tag": "1.25", "line_no": 2}],
+        ),
+        ("    image: &db nginx:1.25\n    image: *db\n", [{"image": "nginx", "tag": "1.25"}]),
+        # A deploy-time env default is not a pin.
+        ("    image: ${APP_IMAGE:-ghcr.io/org/app:latest}\n", []),
     ],
 )
 def test_parse_compose_images(text: str, expected: list[dict[str, Any]]) -> None:
@@ -248,6 +257,8 @@ def test_normalize_docker_image(image: str, host: str, repo: str) -> None:
         # Crosses majors.
         ("1.25", ["1.26", "2.0", "2.1"], "2.1"),
         ("1.25", ["1.25", "1.24"], None),
+        # A v prefix is semver and is kept; unprefixed tags are not candidates.
+        ("v2.189.0", ["v2.189.0", "v2.190.1", "2.200.0"], "v2.190.1"),
         # Non-semver current tag → always None.
         ("latest", ["1.25", "1.26"], None),
         # No candidates with same suffix → None.

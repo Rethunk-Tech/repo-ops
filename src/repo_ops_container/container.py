@@ -334,8 +334,8 @@ def _parse_from_lines(text: str) -> list[dict[str, Any]]:
 
 # Matches «image: nginx:1.25-alpine» or «image: "nginx:1.25"»
 _COMPOSE_IMAGE_RE = re.compile(
-    r'^(?P<indent>[ \t]*)image:\s*["\']?'
-    r'(?P<image>[^\s@"\'#]+)'
+    r'^(?P<indent>[ \t]*)image:\s*(?:&(?P<anchor>\S+)\s+)?["\']?'
+    r'(?P<image>[^\s@"\'#*]+)'
     r"(?:@(?P<sha>sha256:[0-9a-fA-F]+))?"
     r'["\']?'
     r"(?:\s*#.*)?"
@@ -343,16 +343,37 @@ _COMPOSE_IMAGE_RE = re.compile(
 )
 
 
+# ``key: &anchor image:tag@sha`` — an anchored image string defined outside an
+# ``image:`` key (an ``x-images`` block) and reused as ``image: *anchor``.
+_COMPOSE_ANCHOR_RE = re.compile(
+    r'^(?P<indent>[ \t]*)[\w.-]+:\s*&(?P<anchor>\S+)\s+["\']?'
+    r'(?P<image>[^\s@"\'#*]+)'
+    r"(?:@(?P<sha>sha256:[0-9a-fA-F]+))?"
+    r'["\']?'
+    r"(?:\s*#.*)?"
+    r"\s*$"
+)
+_COMPOSE_ALIAS_RE = re.compile(r"^[ \t]*image:\s*\*(?P<anchor>[^\s#]+)")
+
+
 def _parse_compose_images(text: str) -> list[dict[str, Any]]:
     """Parse ``image:`` lines in a compose file.
 
     Returns dicts with: line_no, image, tag, sha (same shape as _parse_from_lines).
-    is_stage_ref is always False for compose images.
+    is_stage_ref is always False for compose images.  An ``image: *alias`` is
+    reported once, at its anchor's definition line.  A ``${VAR:-image}`` value
+    is chosen at deploy time, so it is not a pin and is skipped.
     """
+    lines = text.splitlines()
+    aliased = {m.group("anchor") for line in lines if (m := _COMPOSE_ALIAS_RE.match(line))}
     results: list[dict[str, Any]] = []
-    for i, line in enumerate(text.splitlines(), 1):
+    for i, line in enumerate(lines, 1):
         m = _COMPOSE_IMAGE_RE.match(line)
         if not m:
+            m = _COMPOSE_ANCHOR_RE.match(line)
+            if not m or m.group("anchor") not in aliased:
+                continue
+        if "${" in m.group("image"):
             continue
         image, tag = _split_image_tag(m.group("image"))
         sha = m.group("sha")
@@ -366,6 +387,9 @@ def _parse_compose_images(text: str) -> list[dict[str, Any]]:
             }
         )
     return results
+
+
+# ---------------------------------------------------------------------------
 
 
 def _parse_image_refs(path: Path) -> list[dict[str, Any]]:
@@ -880,7 +904,10 @@ def _fetch_manifest_digest(image: str, tag: str) -> str | None:
 
 # Any number of ``-part`` suffixes: ``24-bookworm-slim`` is a versioned tag whose
 # suffix is the whole ``-bookworm-slim`` tail, not a tag with no version at all.
-_SEMVER_SUFFIX_RE = re.compile(r"^(?P<version>\d+(?:\.\d+)*)(?P<suffix>(?:-[\w.]+)+)?$")
+# A v prefix counts only with a dotted version: bare ``v1`` is a rolling major tag.
+_SEMVER_SUFFIX_RE = re.compile(
+    r"^(?:v(?=\d+\.\d))?(?P<version>\d+(?:\.\d+)*)(?P<suffix>(?:-[\w.]+)+)?$"
+)
 
 _NON_SEMVER_TAGS = frozenset({"latest", "stable", "edge", "nightly", "main", "master"})
 
@@ -943,7 +970,7 @@ def _resolve_latest_tag(
         if not _is_semver_tag(t):
             continue
         t_suffix = _extract_suffix(t)
-        if t_suffix != suffix:
+        if t_suffix != suffix or t.startswith("v") != current_tag.startswith("v"):
             continue
         try:
             ver_part = t[: len(t) - len(suffix)] if suffix else t
@@ -1041,7 +1068,11 @@ def _resolve_hold_tag_target(current_tag: str, tags: list[str], rule: HoldRule) 
         return None
     candidates: list[tuple[tuple[int, ...], str]] = []
     for tag in tags:
-        if not _is_semver_tag(tag) or _extract_suffix(tag) != suffix:
+        if (
+            not _is_semver_tag(tag)
+            or _extract_suffix(tag) != suffix
+            or tag.startswith("v") != current_tag.startswith("v")
+        ):
             continue
         tag_version = _tag_version_for_hold(tag)
         if tag_version is None:

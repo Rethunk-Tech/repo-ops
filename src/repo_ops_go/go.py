@@ -485,6 +485,10 @@ def _go_list_updates(ws: Workspace) -> Iterator[dict]:
                 "go list failed",
                 ws.path,
             )
+        # A path replace (or go.work member under GOWORK=off) is never fetched, so
+        # the version in require is not an upgrade candidate.
+        if replace.get("Path") and not replace.get("Version"):
+            continue
         err = mod.get("Error")
         if err:
             logger.warning("%s: skipping %s: %s", ws.path, mod.get("Path"), err.get("Err", err))
