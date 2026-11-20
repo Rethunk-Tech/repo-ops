@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 SKIP_DIRS = {
@@ -43,12 +45,31 @@ EXCLUDE_PATH_FRAGMENTS = (
     "/vendor/",
 )
 
-DEFAULT_ROOTS = [
+_FALLBACK_ROOTS = [
     "/usr/local/src",
     str(Path.home() / "Projects"),
     str(Path.home() / "Documents"),
     str(Path.home() / "Apps"),
 ]
+
+
+def default_roots() -> list[str]:
+    """The lines of `bosun roots` when bosun is installed and prints any, else the built-in list."""
+    exe = shutil.which("bosun")
+    if exe:
+        try:
+            out = subprocess.run(
+                [exe, "roots"], capture_output=True, text=True, timeout=10, check=True
+            ).stdout
+        except (OSError, subprocess.SubprocessError):
+            return list(_FALLBACK_ROOTS)
+        roots = [line.strip() for line in out.splitlines() if line.strip()]
+        if roots:
+            return roots
+    return list(_FALLBACK_ROOTS)
+
+
+DEFAULT_ROOTS = default_roots()
 
 # Subprocess timeouts, in seconds.
 TIMEOUT_CHECK = 60
