@@ -90,7 +90,7 @@ def _gate_listing(repo: Path, *, e2e: bool) -> tuple[list[str], str, int]:
     """
     proc = run(["gate", "--json"], repo, timeout=TIMEOUT_LIST)
     if proc.returncode != 0:
-        return [], "", 0
+        raise ValueError(proc.stderr.strip() or f"gate --json exited {proc.returncode}")
     try:
         payload = json.loads(proc.stdout)
         names: list[str] = []

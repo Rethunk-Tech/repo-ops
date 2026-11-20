@@ -572,3 +572,17 @@ def test_skip_fresh_reruns_a_partial_pass_and_skips_a_full_one(
         exit_code=0,
     )
     assert report["record_partial"] == 1
+
+
+def test_broken_gate_toml_is_an_error_with_the_parse_message(tmp_path: Path):
+    import shutil
+
+    import pytest
+
+    if not shutil.which("gate"):
+        pytest.skip("gate not on PATH")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".gate.toml").write_text("name = \n")
+    result = _run_one(tmp_path, [str(tmp_path)])
+    assert result.status == "error"
+    assert "toml" in result.detail

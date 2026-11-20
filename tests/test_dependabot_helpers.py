@@ -206,3 +206,11 @@ def test_lockfile_resolved_parses_pipfile_lock(tmp_path: Path) -> None:
     ver, high_conf = dependabot._resolve_package_version("requests", resolved, set(), {})
     assert ver == "2.32.4"
     assert high_conf is True
+
+
+def test_module_path_fallback_is_go_only_and_prefix_bound() -> None:
+    f = dependabot._module_path_version
+    assert f("@types/node", {"@acme/node": "30.0.0"}) is None
+    assert f("github.com/foo/bar", {"github.com/other/bar": "1.5.0"}) is None
+    assert f("github.com/foo/bar/v2", {"foo/bar/v2": "2.1.0"}) == "2.1.0"
+    assert f("github.com/foo/bar/sub", {"bar/sub": "1.0.0"}) == "1.0.0"

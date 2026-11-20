@@ -159,7 +159,12 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
     except (ValueError, AttributeError, TypeError, KeyError):
         names = []
     if listing.returncode != 0 or not names:
-        return f"gate detects no gate for {ws.path}"
+        detail = (
+            f": {listing.stderr.strip()}"
+            if listing.returncode != 0 and listing.stderr.strip()
+            else ""
+        )
+        return f"gate detects no gate for {ws.path}{detail}"
     # gate's own per-gate timeout would race this process's; 0 disables it and
     # leaves the caller's verify timeout the single authority.
     proc = _timed_run(

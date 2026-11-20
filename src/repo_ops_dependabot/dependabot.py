@@ -507,14 +507,16 @@ def _module_path_version(pkg: str, names: dict[str, str]) -> str | None:
     compares module paths with module paths: an entry named ``bar`` no longer
     answers for ``github.com/foo/bar``.
     """
-    if "/" not in pkg:
+    parts = pkg.split("/")
+    # Only Go-style module paths (dotted host, no npm scope) have this shape.
+    if len(parts) < 2 or "." not in parts[0] or pkg.startswith("@"):
         return None
-    parts = pkg.lower().split("/")
-    # A /vN major suffix is shared by unrelated modules; keep the name before it.
-    keep = 2 if re.fullmatch(r"v\d+", parts[-1]) and len(parts) > 2 else 1
-    tail = "/" + "/".join(parts[-keep:])
+    lowered_pkg = pkg.lower()
     for name, version in names.items():
-        if "/" in name and name.lower().endswith(tail):
+        lowered = name.lower()
+        if "/" in lowered and (
+            lowered_pkg.endswith("/" + lowered) or lowered.endswith("/" + lowered_pkg)
+        ):
             return version
     return None
 

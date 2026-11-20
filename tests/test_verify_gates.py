@@ -151,6 +151,22 @@ class TestGoVerifyGates:
         assert "gate detects no gate" in result
         assert not any(c[:2] in (["go", "build"], ["go", "test"]) for c in calls)
 
+    def test_gate_listing_failure_reports_its_stderr(
+        self, tmp_path: Path, make_workspace, gate_on_path: None
+    ) -> None:
+        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
+
+        def fake_run(cmd: list[str], cwd: Path, **kw: Any) -> CompletedProcess[str]:
+            if cmd[:2] == ["gate", "--json"]:
+                return CompletedProcess(cmd, 129, stdout="", stderr="toml: bad value\n")
+            return _ok()
+
+        with patch("repo_ops_upgrade.verify.run", side_effect=fake_run):
+            result = verify_workspace(ws)
+
+        assert result is not None
+        assert result.endswith(": toml: bad value")
+
 
 class TestRustVerifyGates:
     def test_declared_gates_run(

@@ -87,7 +87,6 @@ def _install_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cfg: dict) ->
             (["unit", "e2e"], "r", 0),
         ),
         ({"listing": {"gates": [], "root": "r"}}, False, ([], "r", 0)),
-        ({"listing_code": 1}, False, ([], "", 0)),
         ({"listing_raw": "not-json"}, False, ([], "", 0)),
         ({"listing": {"gates": [{"skipped": True}], "root": "r"}}, False, ([], "r", 1)),
         ({"listing": {"gates": [{}], "root": "r"}}, False, ([], "", 0)),
@@ -390,3 +389,9 @@ def test_report_helpers(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> N
     assert doc["e2e_left_out"] == 1
     assert doc["excluded"] == 2
     assert doc["exit_code"] == 1
+
+
+def test_gate_listing_nonzero_exit_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = _install_gate(tmp_path, monkeypatch, {"listing_code": 1})
+    with pytest.raises(ValueError, match="gate --json exited 1"):
+        _gate_listing(repo, e2e=False)
