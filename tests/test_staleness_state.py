@@ -176,3 +176,27 @@ def test_process_workspace_records_plan_behind_latest(tmp_path, monkeypatch, mak
     assert info["total_behind"] == 1
     assert info["by_manager"] == {"npm": 1}
     _reset_module_cache()
+
+
+def test_state_cache_survives_corrupt_non_dict_and_unwritable_files(tmp_path, monkeypatch, caplog):
+    cache = tmp_path / "xdg-cache" / "repo-ops"
+    cache.mkdir(parents=True)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+    state_file = cache / "state.json"
+
+    state_file.write_text("{not json")
+    assert state_mod._read_from_disk() == {}
+    assert "ignoring unreadable state cache" in caplog.text
+
+    caplog.clear()
+    state_file.write_text("[1, 2]")
+    assert state_mod._read_from_disk() == {}
+    assert caplog.text == ""
+
+    state_file.unlink()
+    cache.chmod(0o500)
+    try:
+        state_mod._write_to_disk({"a": 1})
+    finally:
+        cache.chmod(0o700)
+    assert "could not write state cache" in caplog.text

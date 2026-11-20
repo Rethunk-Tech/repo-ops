@@ -17,6 +17,7 @@ from repo_ops_core.http import open_url
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import normalize_version, semver_tuple
 from repo_ops_core.walk import iter_scanned_dirs
+from repo_ops_js.deno import _strip_deno_jsonc_comments
 from repo_ops_js.workspaces import (
     parse_package_manager,
     pm_exec_prefix,
@@ -74,7 +75,13 @@ def _biome_installed_version(mdir: Path) -> str | None:
 
 
 def _schema_version_from_config(p: Path) -> str | None:
-    d = read_json_file(p)
+    if p.suffix == ".jsonc":
+        try:
+            d = json.loads(_strip_deno_jsonc_comments(p.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            return None
+    else:
+        d = read_json_file(p)
     if not d:
         return None
     schema = d.get("$schema", "")

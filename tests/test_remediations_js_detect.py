@@ -196,3 +196,16 @@ def test_playwright_version_changed_variants(tmp_path: Path, make_workspace) -> 
     # No matching change at all -> False.
     ctx_none = {"changes": [Change("react", "18.0.0", "18.2.0")]}
     assert remediations._playwright_version_changed(ws, ctx_none) is False
+
+
+def test_detect_biome_reads_jsonc_config_with_comments(
+    tmp_path: Path, make_workspace, caplog
+) -> None:
+    _write_pkg(tmp_path, {"devDependencies": {"@biomejs/biome": "2.3.0"}})
+    (tmp_path / "biome.jsonc").write_text(
+        '// pinned\n{"$schema": "https://biomejs.dev/schemas/1.9.4/schema.json"}\n',
+        encoding="utf-8",
+    )
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
+    assert remediations.detect_biome(ws, {"changes": []}) is True
+    assert "unreadable" not in caplog.text

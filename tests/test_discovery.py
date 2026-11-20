@@ -1,5 +1,6 @@
 """Lightweight tests for discovery module."""
 
+import shutil
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -463,3 +464,18 @@ def test_drop_under_forgets_events_inside_excluded_repos(tmp_path: Path) -> None
     diags.drop_under([tmp_path / "biome"])
     assert [e["path"] for e in diags.skipped] == [str(tmp_path / "biome-repro")]
     assert diags.warnings == []
+
+
+def test_cargo_metadata_does_not_install_a_pinned_toolchain(tmp_path: Path):
+    """A rust-toolchain.toml pin must not make rustup install on the host."""
+    if shutil.which("cargo") is None:
+        pytest.skip("cargo not on PATH")
+    (tmp_path / "Cargo.toml").write_text('[workspace]\nmembers = ["crates/*"]\n')
+    (tmp_path / "rust-toolchain.toml").write_text('[toolchain]\nchannel = "1.60.0"\n')
+
+    assert cargo_workspace_members(tmp_path) == {"crates/*"}
+    if shutil.which("rustup"):
+        installed = subprocess.run(
+            ["rustup", "toolchain", "list"], capture_output=True, text=True, check=True
+        ).stdout
+        assert "1.60.0" not in installed

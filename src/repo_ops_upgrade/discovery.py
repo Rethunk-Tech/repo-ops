@@ -51,6 +51,8 @@ def _cargo_metadata_workspace_members(mdir: Path) -> set[str] | None:
             capture_output=True,
             text=True,
             timeout=60,
+            # A rust-toolchain.toml pin must not make rustup install a toolchain here.
+            env={**os.environ, "RUSTUP_AUTO_INSTALL": "0"},
         )
         metadata = json.loads(result.stdout)
     except subprocess.TimeoutExpired:
