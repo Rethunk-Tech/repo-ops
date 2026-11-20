@@ -242,7 +242,7 @@ def _retry_failed_run(value: str) -> str:
     return value
 
 
-def _resolve_report_path(run: str | None) -> Path:
+def _resolve_report_path(run: str | None, *, apply_only: bool = False) -> Path:
     if run:
         p = Path(run).expanduser()
         if p.is_file():
@@ -259,7 +259,13 @@ def _resolve_report_path(run: str | None) -> Path:
     if not root.is_dir():
         raise FileNotFoundError(f"no runs directory at {root}")
     candidates = sorted(
-        (p for p in root.iterdir() if p.is_dir() and (p / "report.json").is_file()),
+        (
+            p
+            for p in root.iterdir()
+            if p.is_dir()
+            and (p / "report.json").is_file()
+            and (not apply_only or p.name.endswith("-apply"))
+        ),
         key=lambda p: p.name,
         reverse=True,
     )
@@ -664,7 +670,13 @@ def _run_upgrade_body(
                 bundle.workspaces = [
                     WorkspaceResult(workspace=wr.workspace) for wr in bundle.workspaces
                 ]
-                all_results.extend(_process_repo(bundle))
+                try:
+                    all_results.extend(_process_repo(bundle))
+                except Exception as exc:
+                    for wr in bundle.workspaces:
+                        wr.status = "fail"
+                        wr.error = str(exc)
+                    all_results.extend(bundle.workspaces)
 
     # Key by (path, manager): a single directory can host multiple ecosystems
     # (e.g. npm + container). Path-only keys let the last worker overwrite the
@@ -903,15 +915,15 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     wire_verbose(args)
-    roots = resolve_scan_roots(args.roots or None, parser)
-    fleet = not args.roots
     retry_ref = getattr(args, "retry_failed", None)
+    roots = resolve_scan_roots(args.roots or None, parser) if retry_ref is None else []
+    fleet = not args.roots
     args.retry_paths = None
     args.retry_commits = {}
     if apply and retry_ref is not None:
         retry_ref = _retry_failed_run(retry_ref)
         try:
-            prior_report = _resolve_report_path(retry_ref or None)
+            prior_report = _resolve_report_path(retry_ref or None, apply_only=True)
         except FileNotFoundError as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -919,9 +931,18 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
         if not retry_paths:
             print("no failed or skipped packages to retry")
             return 0
-        args.retry_paths = retry_paths
+        live_paths = []
+        for path in retry_paths:
+            if Path(path).is_dir():
+                live_paths.append(path)
+            else:
+                print(f"skipping {path}: no longer exists", file=sys.stderr)
+        if not live_paths:
+            print("no failed or skipped packages to retry")
+            return 0
+        args.retry_paths = live_paths
         args.retry_commits = _retry_commit_plans(json.loads(prior_report.read_text()))
-        roots = resolve_scan_roots(retry_paths, parser)
+        roots = resolve_scan_roots(live_paths, parser)
         # A retry is still a sweep: it must skip dirty checkouts, honor excludes
         # and archived repos, and revert a failed verify, as the run it retries did.
         fleet = True

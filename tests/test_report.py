@@ -356,3 +356,91 @@ def test_retry_still_skips_a_commit_failed_repo_with_foreign_dirt(
     tmp_path: Path, init_git_repo: Any, monkeypatch: Any
 ) -> None:
     assert _retry_commit_only(tmp_path, init_git_repo, monkeypatch, extra_dirt=True) == []
+
+
+def test_retry_failed_uses_newest_apply_run_and_skips_deleted_paths(
+    tmp_path: Path, init_git_repo: Any, monkeypatch: Any, capsys: Any
+) -> None:
+    failed = tmp_path / "failed"
+    gone = tmp_path / "gone"
+    init_git_repo(failed, commit=True)
+    state = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state))
+    monkeypatch.setattr("repo_ops_core.cli.default_roots", lambda: [str(tmp_path / "missing")])
+    _write_run_report(
+        state,
+        "20260101T000000.000000Z-apply",
+        _payload(
+            _ws_json(str(failed), status="fail", error="boom"),
+            _ws_json(str(gone), status="fail", error="boom"),
+        ),
+    )
+    _write_run_report(state, "20260102T000000.000000Z-gates", _payload(_ws_json(str(failed))))
+    captured: dict[str, Any] = {}
+
+    def _fake_body(*, roots: list[str], report_path: Path, **_: Any) -> int:
+        captured["roots"] = roots
+        report_path.write_text("{}", encoding="utf-8")
+        return 0
+
+    with patch("repo_ops_upgrade.run._run_upgrade_body", _fake_body):
+        assert main_apply(["--retry-failed"]) == 0
+    assert [Path(p).resolve() for p in captured["roots"]] == [failed.resolve()]
+    assert f"skipping {gone}: no longer exists" in capsys.readouterr().err
+
+    failed.rename(tmp_path / "moved")
+    assert main_apply(["--retry-failed"]) == 0
+    assert "no failed or skipped packages to retry" in capsys.readouterr().out
+
+
+def test_retry_phase_timeout_fails_that_repo_and_others_still_finish(
+    tmp_path: Path, init_git_repo: Any, monkeypatch: Any
+) -> None:
+    import subprocess
+
+    from repo_ops_upgrade import orchestration
+    from repo_ops_upgrade import run as run_mod
+
+    repos = []
+    for name in ("a", "b"):
+        repo = tmp_path / name
+        init_git_repo(repo, commit=True)
+        (repo / "package.json").write_text(
+            '{"name": "%s", "packageManager": "npm@10.0.0"}\n' % name, encoding="utf-8"
+        )
+        (repo / "package-lock.json").write_text("{}\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "pkg"], check=True)
+        repos.append(repo)
+    state = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state))
+    _write_run_report(
+        state,
+        "20260101T000000.000000Z-apply",
+        _payload(*(_ws_json(str(r), status="fail", error="boom") for r in repos)),
+    )
+    dirty_calls: dict[Path, int] = {}
+    real_dirty = run_mod.is_git_dirty
+
+    def _dirty(repo: Path) -> bool:
+        dirty_calls[repo] = dirty_calls.get(repo, 0) + 1
+        if repo == repos[0] and dirty_calls[repo] > 2:
+            raise subprocess.TimeoutExpired("git", 1)
+        return real_dirty(repo)
+
+    def _process(wr: Any, **_: Any) -> Any:
+        wr.status = "fail"
+        wr.error = "boom"
+        return wr
+
+    monkeypatch.setattr(run_mod, "is_git_dirty", _dirty)
+    monkeypatch.setattr(orchestration, "process_workspace", _process)
+    main_apply(["--retry-failed", "--jobs", "1"])
+    report = json.loads(
+        max((state / "repo-ops" / "runs").glob("*-apply"), key=lambda p: p.name)
+        .joinpath("report.json")
+        .read_text()
+    )
+    errors = {ws["path"]: ws.get("error", "") for r in report["repos"] for ws in r["workspaces"]}
+    assert "timed out" in errors[str(repos[0])]
+    assert "timed out" not in errors[str(repos[1])]
