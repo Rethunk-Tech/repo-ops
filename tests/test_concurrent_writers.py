@@ -230,7 +230,7 @@ def test_verify_runs_only_gates_a_default_gate_run_runs(tmp_path: Path, make_wor
     ):
         assert verify_node(ws) is None
 
-    assert calls[-1] == ["gate", "--timeout", "0", "run", "build", "gate"]
+    assert calls[-1] == ["gate", "--timeout", "0", "--force"]
 
 
 def test_named_checkout_never_commits_a_file_the_operator_had_edited(

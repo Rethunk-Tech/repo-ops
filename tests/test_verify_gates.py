@@ -24,7 +24,7 @@ from repo_ops_upgrade.verify import verify_node, verify_workspace
 # Helpers
 # ---------------------------------------------------------------------------
 
-_GATE_RUN_TEST = ["gate", "--timeout", "0", "run", "test"]
+_GATE_RUN_TEST = ["gate", "--timeout", "0", "--force"]
 
 
 def _ok(stdout: str = "", stderr: str = "") -> CompletedProcess[str]:
@@ -587,12 +587,7 @@ class TestGateDelegation:
             "gate",
             "--timeout",
             "0",
-            "run",
-            "build",
-            "typecheck",
-            "lint",
-            "workflows",
-            "test",
+            "--force",
         ]
         assert ["bun", "run", "build"] not in calls
 
@@ -736,7 +731,7 @@ class TestGateDelegation:
             result = verify_node(ws)
 
         assert result is None
-        assert calls[-1] == ["gate", "--timeout", "0", "run", "build", "sqlfluff"]
+        assert calls[-1] == ["gate", "--timeout", "0", "--force"]
 
 
 _PYTHON_GATE_LIST = _gate_json("typecheck", "lint", "workflows", "test", "vuln")
@@ -775,12 +770,7 @@ class TestPythonGateDelegation:
             "gate",
             "--timeout",
             "0",
-            "run",
-            "typecheck",
-            "lint",
-            "workflows",
-            "test",
-            "vuln",
+            "--force",
         ]
         assert ["uv", "run", "check"] not in calls
 

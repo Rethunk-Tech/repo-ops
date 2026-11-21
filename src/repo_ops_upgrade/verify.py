@@ -167,9 +167,10 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
         )
         return f"gate detects no gate for {ws.path}{detail}"
     # gate's own per-gate timeout would race this process's; 0 disables it and
-    # leaves the caller's verify timeout the single authority.
+    # leaves the caller's verify timeout the single authority. A bare run, not
+    # ``run NAME...``, so the record gate writes is a full one.
     proc = _timed_run(
-        ["gate", "--timeout", "0", "run", *names], ws.path, timeout=timeout, source=source
+        ["gate", "--timeout", "0", "--force"], ws.path, timeout=timeout, source=source
     )
     if proc.returncode != 0:
         if "timed out after" in proc.stderr:

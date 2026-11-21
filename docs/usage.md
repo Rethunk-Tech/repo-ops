@@ -100,8 +100,8 @@ Repo commands (lockfile checks, `gate`, remediations) run with user-global tool 
 
 | Record | What runs |
 | --- | --- |
-| schema-2 result matches current HEAD and working-tree hash, exited 0, not partial | skipped (`skip_reason: "fresh"`; `gate_record_reason` omitted). Summary and `report.json` count the repo as skipped |
-| partial (a named run, not the whole gate), even if it exited 0 | `gate run`; row includes `record_partial: true`; `report.json` summary counts `record_partial` |
+| result matches current HEAD and working-tree hash, exited 0, not partial | skipped (`skip_reason: "fresh"`; `gate_record_reason` omitted). Summary and `report.json` count the repo as skipped |
+| partial (a named run, not the whole gate), even if it exited 0 | a bare `gate` run; row includes `record_partial: true`; `report.json` summary counts `record_partial` |
 | missing `gate`, or unparseable answer | treated as stale; still runs |
 | dirty tree, failed, stale, or missing record | still runs |
 

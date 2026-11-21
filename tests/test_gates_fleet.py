@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 from repo_ops_gates.gates import (
     GateResult,
@@ -174,7 +177,7 @@ def test_a_matching_record_names_timeout_and_interrupted_with_logs(
     )
     _serve(monkeypatch, make_proc, state, fake_run)
     result = _run_one(tmp_path, [str(tmp_path)])
-    assert seen["cmd"] == ["gate", "--timeout", "0", "run", "lint", "test"]
+    assert seen["cmd"] == ["gate", "--timeout", "0", "--force"]
     assert seen["timeout"] == 1800
     assert result.status == "fail"
     assert result.failed == ["bun run test", "cargo test", "uv run ruff check .", "vuln", "gone"]
@@ -369,13 +372,13 @@ def test_e2e_gates_are_left_out_unless_requested(tmp_path: Path, monkeypatch, ma
 
     monkeypatch.setattr("repo_ops_gates.gates.run", fake_run)
     skipped = _run_one(tmp_path, [str(tmp_path)])
-    assert calls[-1] == ["gate", "--timeout", "0", "run", "lint"]
+    assert calls[-1] == ["gate", "--timeout", "0", "--force"]
     assert skipped.status == "ok"
     assert skipped.e2e_left_out == 1
     assert skipped.gates == ["lint"]
 
     ran = _run_one(tmp_path, [str(tmp_path)], e2e=True)
-    assert calls[-1] == ["gate", "--timeout", "0", "run", "lint", "e2e"]
+    assert calls[-1] == ["gate", "--timeout", "0", "--force", "--e2e"]
     assert ran.e2e_left_out == 0
     assert ran.gates == ["lint", "e2e"]
 
@@ -461,7 +464,7 @@ def test_skip_fresh_does_not_run_a_passing_tree_and_reruns_a_dirty_one(
     assert with_e2e.to_json()["skip_reason"] == "fresh"
 
     without_flag = _run_one(tmp_path, [str(tmp_path)])
-    assert calls == [["gate", "--timeout", "0", "run", "lint"]]
+    assert calls == [["gate", "--timeout", "0", "--force"]]
     assert without_flag.status == "ok"
     assert "skip_reason" not in without_flag.to_json()
     assert "gate_record_reason" not in without_flag.to_json()
@@ -475,7 +478,7 @@ def test_skip_fresh_does_not_run_a_passing_tree_and_reruns_a_dirty_one(
         stale=True,
     )
     dirty = _run_one(tmp_path, [str(tmp_path)], e2e=True, skip_fresh=True)
-    assert calls == [["gate", "--timeout", "0", "run", "lint", "e2e"]]
+    assert calls == [["gate", "--timeout", "0", "--force", "--e2e"]]
     assert dirty.status == "ok"
     assert "skip_reason" not in dirty.to_json()
     assert dirty.to_json()["gate_record_reason"] == "stale"
@@ -500,7 +503,7 @@ def test_skip_fresh_still_runs_a_failed_or_missing_record(
     _serve(monkeypatch, make_proc, state, fake_run)
 
     missing = _run_one(tmp_path, [str(tmp_path)], skip_fresh=True)
-    assert calls == [["gate", "--timeout", "0", "run", "lint"]]
+    assert calls == [["gate", "--timeout", "0", "--force"]]
     assert missing.status == "fail"
     assert missing.to_json()["gate_record_reason"] == "missing"
     calls.clear()
@@ -512,7 +515,7 @@ def test_skip_fresh_still_runs_a_failed_or_missing_record(
         exit_code=1,
     )
     failed = _run_one(tmp_path, [str(tmp_path)], skip_fresh=True)
-    assert calls == [["gate", "--timeout", "0", "run", "lint"]]
+    assert calls == [["gate", "--timeout", "0", "--force"]]
     assert failed.status == "fail"
     assert failed.to_json()["gate_record_reason"] == "failed"
 
@@ -543,7 +546,7 @@ def test_skip_fresh_reruns_a_partial_pass_and_skips_a_full_one(
         partial=True,
     )
     partial = _run_one(tmp_path, [str(tmp_path)], skip_fresh=True)
-    assert calls == [["gate", "--timeout", "0", "run", "lint"]]
+    assert calls == [["gate", "--timeout", "0", "--force"]]
     assert partial.status == "ok"
     assert partial.status != "skipped"
     assert partial.to_json()["record_partial"] is True
@@ -586,3 +589,24 @@ def test_broken_gate_toml_is_an_error_with_the_parse_message(tmp_path: Path):
     result = _run_one(tmp_path, [str(tmp_path)])
     assert result.status == "error"
     assert "toml" in result.detail
+
+
+@pytest.mark.skipif(shutil.which("gate") is None, reason="needs the gate CLI")
+def test_a_repo_gated_by_repo_ops_is_skipped_as_fresh_next_time(
+    tmp_path: Path, init_git_repo
+) -> None:
+    # tmp_path also holds the conftest's xdg dirs, which would dirty the tree.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".gate.toml").write_text('[gates.hello]\nrun = "true"\n')
+    init_git_repo(repo, commit=True)
+    subprocess.run(["git", "-C", str(repo), "add", ".gate.toml"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "gate"], check=True)
+    roots = [str(repo)]
+
+    first = _run_one(repo, roots, skip_fresh=True)
+    second = _run_one(repo, roots, skip_fresh=True)
+
+    assert first.status == "ok"
+    assert second.status == "skipped"
+    assert second.skip_reason == "fresh"

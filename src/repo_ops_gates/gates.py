@@ -120,7 +120,7 @@ def _gate_label(gate: dict[str, object]) -> str:
 
 
 def _matching_record(root: str) -> tuple[dict[str, object] | None, str | None]:
-    """Schema-2 record for this tree, and why it is not a fresh pass.
+    """Result record for this tree, and why it is not a fresh pass.
 
     Asks ``gate --json record`` at *root*. The second value is its ``reason``:
     ``missing``, ``stale``, ``partial``, ``failed``, or None when the record is a
@@ -150,7 +150,7 @@ def _matching_record(root: str) -> tuple[dict[str, object] | None, str | None]:
 
 
 def _current_record(root: str) -> dict[str, object] | None:
-    """Schema-2 result for this HEAD and this working tree, or None.
+    """Result record for this HEAD and this working tree, or None.
 
     A dirty edit, another commit, or a missing file is not this
     record. A matching record is returned whether or not the run passed.
@@ -250,10 +250,12 @@ def _run_one(
             result.gate_record_reason = reason
             if reason == "partial":
                 result.record_partial = True
-        # gate's own per-gate timeout would race this one; 0 disables it.
+        # A bare run writes a full record (a named ``gate run`` writes a partial
+        # one, which defeats --skip-fresh). gate's own per-gate timeout would race
+        # this one; 0 disables it. --force: the freshness check above is ours.
         started_at = datetime.now().astimezone()
         proc = run(
-            ["gate", "--timeout", "0", "run", *names],
+            ["gate", "--timeout", "0", "--force", *(["--e2e"] if e2e else [])],
             repo,
             timeout=TIMEOUT_GATE,
         )
@@ -317,7 +319,7 @@ def build_gates_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--skip-fresh",
         action="store_true",
-        help="Skip a repo whose schema-2 result matches this tree, exited 0, and is not partial.",
+        help="Skip a repo whose result record matches this tree, exited 0, and is not partial.",
     )
     return parser
 

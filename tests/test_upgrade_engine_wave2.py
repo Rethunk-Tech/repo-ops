@@ -38,7 +38,7 @@ class TestVerifyExtraManagers:
         assert fake_run.calls == [
             ["pdm", "sync", "--clean"],
             ["gate", "--json"],
-            ["gate", "--timeout", "0", "run", "test"],
+            ["gate", "--timeout", "0", "--force"],
         ]
 
     def test_pipenv_runs_verify(self, tmp_path: Path, make_workspace, fake_run: Any) -> None:
@@ -52,7 +52,7 @@ class TestVerifyExtraManagers:
         assert fake_run.calls == [
             ["pipenv", "verify"],
             ["gate", "--json"],
-            ["gate", "--timeout", "0", "run", "test"],
+            ["gate", "--timeout", "0", "--force"],
         ]
 
     def test_hatch_without_uv_lock_skips_sync_locked(
@@ -94,7 +94,7 @@ class TestVerifyExtraManagers:
         ):
             assert verify_workspace(ws) is None
         assert fake_run.calls[0] == ["deno", "install", "--frozen"]
-        assert fake_run.calls[-1] == ["gate", "--timeout", "0", "run", "test"]
+        assert fake_run.calls[-1] == ["gate", "--timeout", "0", "--force"]
 
     def test_precommit_validate_config(self, tmp_path: Path, make_workspace, fake_run: Any) -> None:
 
