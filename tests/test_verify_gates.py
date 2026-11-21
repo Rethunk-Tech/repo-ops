@@ -895,6 +895,7 @@ class TestVerifyDesktopIsolation:
             assert "WAYLAND_DISPLAY" not in env
             assert "DBUS_SESSION_BUS_ADDRESS" not in env
             assert env["XDG_RUNTIME_DIR"] != "/run/user/1000"
+        assert not any((tmp_path / "xdg-cache" / "repo-ops" / "runtime").iterdir())
 
 
 class TestGateVerdictCompleteness:

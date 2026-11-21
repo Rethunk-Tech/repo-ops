@@ -106,17 +106,14 @@ def _timeout_failure(timeout: int, source: str) -> str:
     return f"timed out after {timeout}s ({source}; {how})"
 
 
-def _verify_env(env: dict[str, str] | None) -> dict[str, str]:
+def _verify_env(env: dict[str, str] | None, runtime_dir: str) -> dict[str, str]:
     """Env for a verify subprocess: no session bus or display, private runtime dir."""
     merged = dict(os.environ)
     if env is not None:
         merged.update(env)
     for key in ("DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS"):
         merged.pop(key, None)
-    # Not under /tmp: gate may give each step a private /tmp, where a host path would not exist.
-    base = Path.home() / ".cache" / "repo-ops" / "runtime"
-    base.mkdir(parents=True, exist_ok=True)
-    merged["XDG_RUNTIME_DIR"] = tempfile.mkdtemp(dir=base)
+    merged["XDG_RUNTIME_DIR"] = runtime_dir
     return merged
 
 
@@ -128,11 +125,18 @@ def _timed_run(
     source: str,
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    try:
-        return run(cmd, cwd, timeout=timeout, env=_verify_env(env))
-    except subprocess.TimeoutExpired as exc:
-        n = int(exc.timeout) if exc.timeout is not None else timeout
-        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr=_timeout_failure(n, source))
+    # Not under /tmp: gate may give each step a private /tmp, where a host path would not exist.
+    cache = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    base = Path(cache) / "repo-ops" / "runtime"
+    base.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=base) as runtime_dir:
+        try:
+            return run(cmd, cwd, timeout=timeout, env=_verify_env(env, runtime_dir))
+        except subprocess.TimeoutExpired as exc:
+            n = int(exc.timeout) if exc.timeout is not None else timeout
+            return subprocess.CompletedProcess(
+                cmd, 1, stdout="", stderr=_timeout_failure(n, source)
+            )
 
 
 def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str | None:
