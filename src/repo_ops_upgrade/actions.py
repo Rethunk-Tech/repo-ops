@@ -216,6 +216,9 @@ def _commit_pins_gh_actions_tag(repo: Path, sha: str, tag: str) -> bool:
     return any(pin_re.search(line) for line in proc.stdout.splitlines())
 
 
+_SECURITY_WORKFLOWS = frozenset({"codeql", "scorecard", "scorecard supply-chain security"})
+
+
 def _ci_green_on_gh_actions_tag(repo: Path, tag: str) -> bool:
     """True when default-branch CI has a success run whose HEAD pins *tag*."""
     if not shutil.which("gh"):
@@ -234,9 +237,9 @@ def _ci_green_on_gh_actions_tag(repo: Path, tag: str) -> bool:
                 "-b",
                 _default_branch(repo),
                 "-L",
-                "5",
+                "30",
                 "--json",
-                "conclusion,headSha",
+                "conclusion,headSha,workflowName",
             ],
             repo,
             timeout=30,
@@ -251,13 +254,22 @@ def _ci_green_on_gh_actions_tag(repo: Path, tag: str) -> bool:
         return False
     if not isinstance(runs, list):
         return False
+    # A SHA is green only when a non-security workflow succeeded on it and no
+    # run on it failed or was cancelled: CodeQL and Scorecard pass on red CI.
+    ok: set[str] = set()
+    bad: set[str] = set()
     for item in runs:
-        if not isinstance(item, dict) or item.get("conclusion") != "success":
+        if not isinstance(item, dict) or not isinstance(item.get("headSha"), str):
             continue
-        sha = item.get("headSha")
-        if isinstance(sha, str) and _commit_pins_gh_actions_tag(repo, sha, tag):
-            return True
-    return False
+        sha = item["headSha"]
+        conclusion = item.get("conclusion")
+        if conclusion in ("failure", "cancelled", "timed_out"):
+            bad.add(sha)
+        elif conclusion == "success" and str(item.get("workflowName", "")).lower() not in (
+            _SECURITY_WORKFLOWS
+        ):
+            ok.add(sha)
+    return any(sha not in bad and _commit_pins_gh_actions_tag(repo, sha, tag) for sha in ok)
 
 
 def _note_gh_actions_user(repo: Path) -> None:

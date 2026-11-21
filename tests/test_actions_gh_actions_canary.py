@@ -108,3 +108,45 @@ def test_proven_gh_actions_tag_bumps_every_repo(tmp_path: Path) -> None:
 
     assert _NEW in alpha_wf.read_text(encoding="utf-8")
     assert _NEW in beta_wf.read_text(encoding="utf-8")
+
+
+def _gh_run_list(runs: list[dict[str, str]]) -> MagicMock:
+    return MagicMock(returncode=0, stdout=json.dumps(runs), stderr="")
+
+
+@pytest.mark.parametrize(
+    ("runs", "green"),
+    [
+        # CodeQL and Scorecard passed while CI failed on the same SHA.
+        (
+            [
+                {"conclusion": "success", "headSha": _NEW, "workflowName": "CodeQL"},
+                {"conclusion": "success", "headSha": _NEW, "workflowName": "Scorecard"},
+                {"conclusion": "failure", "headSha": _NEW, "workflowName": "CI"},
+            ],
+            False,
+        ),
+        # Only security workflows ran.
+        ([{"conclusion": "success", "headSha": _NEW, "workflowName": "CodeQL"}], False),
+        # CI passed but another run on the SHA was cancelled.
+        (
+            [
+                {"conclusion": "success", "headSha": _NEW, "workflowName": "CI"},
+                {"conclusion": "cancelled", "headSha": _NEW, "workflowName": "Release"},
+            ],
+            False,
+        ),
+        ([{"conclusion": "success", "headSha": _NEW, "workflowName": "CI"}], True),
+    ],
+)
+def test_ci_green_needs_a_non_security_success_and_no_failure(
+    tmp_path: Path, runs: list[dict[str, str]], green: bool
+) -> None:
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", side_effect=_which),
+        patch("repo_ops_upgrade.actions.run", return_value=_gh_run_list(runs)),
+        patch("repo_ops_upgrade.actions._repo_slug", return_value="Rethunk-Tech/x"),
+        patch("repo_ops_upgrade.actions._default_branch", return_value="main"),
+        patch("repo_ops_upgrade.actions._commit_pins_gh_actions_tag", return_value=True),
+    ):
+        assert actions_mod._ci_green_on_gh_actions_tag(tmp_path, _TAG) is green

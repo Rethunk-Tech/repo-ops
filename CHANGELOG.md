@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The gh-actions canary no longer counts a commit as green when only CodeQL or Scorecard passed. A commit is green when a normal workflow succeeded on it and no run on it failed or was cancelled.
+
 ## [0.26.1] - 2026-11-21
 
 ### Fixed
