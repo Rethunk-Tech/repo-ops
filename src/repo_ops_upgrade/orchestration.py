@@ -20,7 +20,7 @@ from repo_ops_core.filesystem import (
     is_workspace_member,
     should_exclude,
 )
-from repo_ops_core.git import is_git_dirty, run_git
+from repo_ops_core.git import head_detached, is_git_dirty, is_submodule_checkout, run_git
 from repo_ops_core.state import (
     cache_clear_dirty_skip,
     cache_record_behind_latest,
@@ -321,6 +321,20 @@ def _process_workspace_body(
         result.started_dirty = (
             is_git_dirty(ws.git_repo) if repo_started_dirty is None else repo_started_dirty
         )
+        if head_detached(ws.git_repo):
+            # A commit on a detached HEAD belongs to no branch. A submodule child
+            # is detached by design, so it only warns.
+            if is_submodule_checkout(ws.git_repo):
+                logger.warning("%s: detached HEAD in a submodule checkout", ws.git_repo)
+            elif allow_dirty:
+                result.status = "fail"
+                result.error = "detached HEAD: check out a branch before applying"
+                return result
+            else:
+                result.status = "skip"
+                result.error = f"{DIRTY_SKIP_MARKER}: detached HEAD (check out a branch)"
+                cache_record_dirty_skip(ws.git_repo, date.today())
+                return result
         if result.started_dirty and not allow_dirty:
             adopted = _adopted_dirty_paths(ws)
             if adopted is None:

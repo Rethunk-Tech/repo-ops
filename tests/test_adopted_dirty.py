@@ -192,3 +192,29 @@ def test_commit_is_refused_when_a_path_changed_after_apply(repo: Path) -> None:
     plan = plan_repo_commit(bundle)
     assert plan.files == []
     assert plan.skipped_reason is not None and "changed since apply" in plan.skipped_reason
+
+
+def _detach(repo: Path) -> None:
+    _git(repo, "checkout", "-q", "--detach")
+
+
+def test_detached_head_is_a_dirty_skip_in_a_sweep_and_a_refusal_when_named(repo: Path) -> None:
+    _detach(repo)
+    ws = Workspace(path=repo, ecosystem="node", manager="bun", git_repo=repo, label="r")
+
+    def run(*, allow_dirty: bool) -> WorkspaceResult:
+        with patch.object(orchestration, "should_exclude", return_value=False):
+            return orchestration.process_workspace(
+                WorkspaceResult(workspace=ws),
+                do_apply=True,
+                do_verify=False,
+                allow_dirty=allow_dirty,
+                on_verify_fail="revert",
+                emit_progress=False,
+            )
+
+    swept = run(allow_dirty=False)
+    assert swept.status == "skip" and swept.error and DIRTY_SKIP_MARKER in swept.error
+    named = run(allow_dirty=True)
+    assert named.status == "fail" and named.error and "detached HEAD" in named.error
+    assert (repo / "package.json").read_text() == '{"dependencies":{"turbo":"1.0.0"}}\n'

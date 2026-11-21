@@ -55,6 +55,17 @@ def git_common_dir(repo: Path | str) -> str | None:
     return os.path.realpath(str(common))
 
 
+def head_detached(repo: Path | str) -> bool:
+    """True when *repo* has no branch checked out."""
+    return run_git(repo, "symbolic-ref", "-q", "HEAD", timeout=30).returncode == 1
+
+
+def is_submodule_checkout(repo: Path | str) -> bool:
+    """True when *repo* is a submodule's working tree (its superproject names it)."""
+    proc = run_git(repo, "rev-parse", "--show-superproject-working-tree", timeout=30)
+    return proc.returncode == 0 and bool(proc.stdout.strip())
+
+
 def is_git_dirty(repo: Path | str) -> bool:
     """True when the worktree has any unstaged or uncommitted changes.
 
