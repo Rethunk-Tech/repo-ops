@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-11-21
+
+### Fixed
+
+- The release workflow starts again: it failed at startup since 0.26.0's workflow change because the verify job was granted no permissions. Releases attach the built wheel and sdist again, with build provenance.
+
 ## [0.26.0] - 2026-11-21
 
 ### Added
@@ -1100,7 +1106,9 @@ Note: `v0.20.1` was tagged but its release build failed the `ruff format --check
 
 - N/A (initial release).
 
-[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.6...HEAD
+[Unreleased]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.26.1...HEAD
+[0.26.1]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.26.0...v0.26.1
+[0.26.0]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.6...v0.26.0
 [0.25.6]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.5...v0.25.6
 [0.25.3]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.2...v0.25.3
 [0.25.2]: https://github.com/Rethunk-Tech/repo-ops/compare/v0.25.1...v0.25.2
