@@ -242,9 +242,17 @@ def test_print_run_footer_policy_violations_zero() -> None:
     with patch("sys.stdout", buf):
         print_run_footer(summary=summary, failures=[], exit_code=0)
     out = buf.getvalue()
-    # Should still render the row with 0
-    assert "actions policy violations" in out
-    assert "0" in out
+    # A clean run prints no zero-count rows; a non-zero one still does.
+    assert "actions policy violations" not in out
+    assert "workspaces ok  1" in out
+    assert "actions failures" not in out
+
+    buf = io.StringIO()
+    with patch("sys.stdout", buf):
+        print_run_footer(
+            summary={**summary, "actions_policy_violations": 2}, failures=[], exit_code=0
+        )
+    assert "actions policy violations  2" in buf.getvalue()
 
 
 def test_print_run_footer_dry_run_says_would_upgrade(capsys: pytest.CaptureFixture[str]) -> None:

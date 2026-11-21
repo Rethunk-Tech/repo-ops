@@ -73,6 +73,8 @@ def archived_message(repo: Path, unpushed: int) -> str:
 
 
 def print_archive_report(scan: ArchiveScan, *, checked: int) -> None:
+    if not (scan.archived or scan.unchecked_orgs):
+        return
     print(
         f"archive check: {checked} repo(s) scanned, {len(scan.archived)} archived, "
         f"{len(scan.unchecked_orgs)} org(s) unchecked"

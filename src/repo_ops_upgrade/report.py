@@ -575,12 +575,12 @@ def print_run_footer(
         ("actions policy violations", summary.get("actions_policy_violations", 0)),
         ("discovery skipped", summary["discovery_skipped"]),
     ]
-    if summary.get("excluded", 0):
-        rows.append(("excluded", summary["excluded"]))
+    rows.append(("excluded", summary.get("excluded", 0)))
+    rows.append(("actions lookups failed", summary.get("actions_lookups_failed", 0)))
     foreign = summary.get("foreign_skipped") or []
-    if foreign:
-        rows.append(("foreign skipped", len(foreign)))
-    width = max(len(label) for label, _ in rows)
+    rows.append(("foreign skipped", len(foreign)))
+    rows = [(label, count) for label, count in rows if count]
+    width = max((len(label) for label, _ in rows), default=0)
     for label, count in rows:
         print(f"  {label:<{width}}  {count}")
     for path in foreign:
