@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 
@@ -82,3 +83,34 @@ def test_origin_org_matches_host_exactly(tmp_path: Path) -> None:
     }
     for i, (url, want) in enumerate(cases.items()):
         assert origin_org(_repo(tmp_path / f"r{i}", url)) == want, url
+
+
+def test_adopted_fork_is_swept_and_other_foreign_repos_reach_the_summary(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    (tmp_path / "cfg" / "repo-ops").mkdir(parents=True)
+    (tmp_path / "cfg" / "repo-ops" / "config.toml").write_text(
+        'adopted = ["Rethunk-AI/toml-patch"]\n'
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    adopted = _repo(tmp_path / "tp", "git@github.com:Rethunk-AI/toml-patch.git")
+    other = _repo(tmp_path / "w", "git@github.com:Rethunk-AI/wails.git")
+    for fork in (adopted, other):
+        subprocess.run(
+            ["git", "-C", str(fork), "remote", "add", "upstream", "https://github.com/x/y"],
+            check=True,
+        )
+    bundles = {r: RepoBundle(git_repo=r, label=r.name, workspaces=[]) for r in (adopted, other)}
+
+    skipped = _drop_foreign(bundles)
+
+    assert list(bundles) == [adopted]
+    assert skipped == [str(other)]
+
+    from repo_ops_upgrade.report import build_run_summary, print_run_footer
+
+    summary = build_run_summary(bundles, foreign_skipped=skipped)
+    print_run_footer(summary=summary, failures=[], exit_code=0)
+    out = capsys.readouterr().out
+    assert re.search(r"foreign skipped\s+1\n", out)
+    assert str(other) in out

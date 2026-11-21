@@ -30,8 +30,14 @@ def owned_orgs() -> set[str]:
     return {str(o).lower() for o in orgs}
 
 
-def origin_org(repo: Path) -> str | None:
-    """Org (or Azure DevOps namespace) of *repo*'s ``remote.origin.url``, lowercase."""
+def adopted_repos() -> set[str]:
+    """Lowercase ``org/repo`` slugs from global config ``adopted``: forks swept like our own."""
+    configured = load_global_config().get("adopted")
+    return {str(s).lower() for s in configured} if isinstance(configured, list) else set()
+
+
+def _origin_parts(repo: Path) -> list[str] | None:
+    """Path segments of *repo*'s origin URL (lowercase), or None with no origin."""
     proc = run_git(repo, "config", "--get", "remote.origin.url")
     url = proc.stdout.strip() if proc.returncode == 0 else ""
     if not url:
@@ -47,17 +53,32 @@ def origin_org(repo: Path) -> str | None:
         if parts[:1] == ["v3"]:
             parts = parts[1:]
     elif host != "github.com":
-        return ""
-    return parts[0].lower() if parts else ""
+        return []
+    return [p.lower() for p in parts]
+
+
+def origin_org(repo: Path) -> str | None:
+    """Org (or Azure DevOps namespace) of *repo*'s ``remote.origin.url``, lowercase."""
+    parts = _origin_parts(repo)
+    if parts is None:
+        return None
+    return parts[0] if parts else ""
+
+
+def origin_slug(repo: Path) -> str:
+    """``org/repo`` of *repo*'s origin, lowercase, without ``.git``; empty when unknown."""
+    parts = _origin_parts(repo) or []
+    return "/".join(parts[:2]).removesuffix(".git") if len(parts) >= 2 else ""
 
 
 def foreign_repos(repos: list[Path]) -> dict[Path, str]:
     """Repos a sweep must leave alone, mapped to the reason.
 
-    Not-our-org origins, and forks (an ``upstream`` remote). A repo with no
-    origin cannot be pushed, so it stays.
+    Not-our-org origins, and forks (an ``upstream`` remote) unless the global
+    ``adopted`` list names them. A repo with no origin cannot be pushed, so it stays.
     """
     allowed = owned_orgs()
+    adopted = adopted_repos()
     out: dict[Path, str] = {}
     for repo in repos:
         if not repo.is_dir():
@@ -65,6 +86,8 @@ def foreign_repos(repos: list[Path]) -> dict[Path, str]:
         org = origin_org(repo)
         if org is not None and org not in allowed:
             out[repo] = f"not our org: {repo} ({org or 'unrecognised origin'})"
+        elif origin_slug(repo) in adopted:
+            continue
         elif run_git(repo, "config", "--get", "remote.upstream.url").stdout.strip():
             out[repo] = f"fork: {repo}"
     return out

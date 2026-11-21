@@ -213,11 +213,13 @@ def _load_repo_configs(
     return configs, failed
 
 
-def _drop_foreign(bundles: dict[Path, RepoBundle]) -> None:
-    """Remove repos outside our orgs and forks, however they were reached."""
+def _drop_foreign(bundles: dict[Path, RepoBundle]) -> list[str]:
+    """Remove repos outside our orgs and forks, however they were reached; return their paths."""
     kept = set(owned.filter_owned(sorted({b.git_repo for b in bundles.values()})))
-    for path in [p for p, b in bundles.items() if b.git_repo not in kept]:
+    dropped = [p for p, b in bundles.items() if b.git_repo not in kept]
+    for path in dropped:
         del bundles[path]
+    return sorted({str(p) for p in dropped})
 
 
 def _cli_flag(args: object, name: str) -> bool:
@@ -506,7 +508,7 @@ def _run_upgrade_body(
     if args.eco_filter in (None, "actions"):
         bundles = workspace_discovery.merge_action_only_bundles(bundles, roots)
 
-    _drop_foreign(bundles)
+    foreign_skipped = _drop_foreign(bundles)
     archive_refused = _drop_archived(
         bundles, named_roots={Path(r).resolve() for r in roots}, fleet=fleet
     )
@@ -893,6 +895,7 @@ def _run_upgrade_body(
         bundles, diagnostics=diagnostics, excluded_count=excluded_count
     )
     summary["actions_lookups_failed"] = lookups_failed
+    summary["foreign_skipped"] = foreign_skipped
     report.print_run_footer(
         summary=summary,
         failures=report.collect_run_failures(bundles),
@@ -917,6 +920,7 @@ def _run_upgrade_body(
                 submodule_pointer_hints=pointer_hints,
                 exit_code=exit_code,
                 excluded_count=excluded_count,
+                foreign_skipped=foreign_skipped,
                 commits=commit_outcomes,
             ),
         )

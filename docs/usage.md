@@ -118,11 +118,12 @@ Two TOML files, read only:
 - Global: `$XDG_CONFIG_HOME/repo-ops/config.toml` (default `~/.config/repo-ops/config.toml`).
 - Per repo: `.repo-ops.toml` at the repo root. `[verify]` merges global, then this file, then a workspace `.repo-ops.toml` below the root (that nested file is read for `[verify]` only).
 
-Five keys:
+Six keys:
 
 ```toml
 owned_orgs = ["Rethunk-Tech"]   # global file only; default is the operator org list (repo_ops_core.owned); a checkout whose origin org is not listed is skipped
-exclude = ["archived-*", "vendor-fork"]   # repos to skip; unioned across files and --exclude
+adopted = ["Rethunk-AI/toml-patch"]   # global file only; forks swept like our own repos (see below)
+exclude = ["Rethunk-Tech/gh-actions"]   # repos to skip; unioned across files and --exclude
 # In a repo's own .repo-ops.toml, an entry also skips the workspace at that
 # repo-relative path or glob (e.g. "go/__patterns/*"); the root workspace never matches.
 
@@ -142,6 +143,10 @@ ecosystem = "node"      # optional: ecosystem or manager name
 workspace = "packages/legacy"  # optional glob relative to the repo root
 reason = "TS7 migration pending"
 ```
+
+### Forks and archived repos
+
+A checkout with an `upstream` remote is a fork and is skipped, as is an archived repo and any checkout whose origin org is outside `owned_orgs`; do not list them in `exclude`. The summary shows a `foreign skipped` row naming what the fork and org rules skipped. To sweep a fork anyway, list its `org/repo` in `adopted`.
 
 ### Holds
 

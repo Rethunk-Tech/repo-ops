@@ -129,6 +129,7 @@ def build_run_summary(
     *,
     diagnostics: DiscoveryDiagnostics | None = None,
     excluded_count: int = 0,
+    foreign_skipped: list[str] | None = None,
 ) -> dict[str, Any]:
     """Aggregate end-of-run counters for human footer and JSON ``summary``."""
     workspaces_ok = 0
@@ -214,6 +215,7 @@ def build_run_summary(
         "actions_behind_latest": actions_behind_latest,
         "failure_count": count_failures(bundles),
         "excluded": excluded_count,
+        "foreign_skipped": foreign_skipped or [],
     }
     # Top-3 staleness scores (behind-count x days-behind, from the state
     # store).  Only attached when at least one repo scores above zero, so an
@@ -314,6 +316,7 @@ def build_json_payload(
     submodule_pointer_hints: list[dict[str, str]] | None = None,
     exit_code: int | None = None,
     excluded_count: int = 0,
+    foreign_skipped: list[str] | None = None,
     commits: list[CommitOutcome] | None = None,
 ) -> dict[str, Any]:
     sorted_bundles = sorted(bundles.values(), key=lambda x: x.label)
@@ -330,6 +333,7 @@ def build_json_payload(
             bundles,
             diagnostics=diagnostics,
             excluded_count=excluded_count,
+            foreign_skipped=foreign_skipped,
         ),
         "warnings": list(diagnostics.warnings) if diagnostics else [],
         "skipped": list(diagnostics.skipped) if diagnostics else [],
@@ -573,9 +577,14 @@ def print_run_footer(
     ]
     if summary.get("excluded", 0):
         rows.append(("excluded", summary["excluded"]))
+    foreign = summary.get("foreign_skipped") or []
+    if foreign:
+        rows.append(("foreign skipped", len(foreign)))
     width = max(len(label) for label, _ in rows)
     for label, count in rows:
         print(f"  {label:<{width}}  {count}")
+    for path in foreign:
+        print(f"    {path}")
 
     # Sentence-form total package-upgrade count across all workspaces.
     pkgs = summary.get("packages_upgraded", 0)
