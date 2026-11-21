@@ -10,7 +10,7 @@ import pytest
 
 from repo_ops_core import state as state_mod
 from repo_ops_models import DIRTY_SKIP_MARKER, RepoBundle, Workspace, WorkspaceResult
-from repo_ops_upgrade import orchestration
+from repo_ops_upgrade import inflight, orchestration
 from repo_ops_upgrade.post_apply_commit import plan_repo_commit
 
 
@@ -44,6 +44,14 @@ def _bump(ws: Workspace) -> list:
     return []
 
 
+def _leave_behind(repo: Path, **files: str) -> None:
+    """What a run killed after apply leaves: the files and its in-flight record."""
+    for name, text in files.items():
+        (repo / name.replace("_", ".")).write_text(text)
+    rels = [name.replace("_", ".") for name in files]
+    inflight.record(repo, {rel: orchestration._hash(repo, rel) for rel in rels})
+
+
 def _process(repo: Path, *, verify_error: str = "") -> WorkspaceResult:
     ws = Workspace(path=repo, ecosystem="node", manager="bun", git_repo=repo, label="r")
     with (
@@ -66,8 +74,9 @@ def _process(repo: Path, *, verify_error: str = "") -> WorkspaceResult:
 
 
 def test_manifest_and_lockfile_only_dirt_is_upgraded_and_committed(repo: Path) -> None:
-    (repo / "package.json").write_text('{"dependencies":{"turbo":"1.5.0"}}\n')
-    (repo / "bun.lock").write_text("turbo 1.5.0\n")
+    _leave_behind(
+        repo, package_json='{"dependencies":{"turbo":"1.5.0"}}\n', bun_lock="turbo 1.5.0\n"
+    )
 
     out = _process(repo)
 
@@ -91,8 +100,9 @@ def test_source_file_dirt_still_skips_with_marker(repo: Path) -> None:
 
 
 def test_verify_failure_on_adopted_repo_leaves_tree_at_head(repo: Path) -> None:
-    (repo / "package.json").write_text('{"dependencies":{"turbo":"1.5.0"}}\n')
-    (repo / "bun.lock").write_text("turbo 1.5.0\n")
+    _leave_behind(
+        repo, package_json='{"dependencies":{"turbo":"1.5.0"}}\n', bun_lock="turbo 1.5.0\n"
+    )
 
     out = _process(repo, verify_error="gate failed")
 
@@ -101,3 +111,84 @@ def test_verify_failure_on_adopted_repo_leaves_tree_at_head(repo: Path) -> None:
     assert _git(repo, "status", "--porcelain") == ""
     assert (repo / "package.json").read_text() == '{"dependencies":{"turbo":"1.0.0"}}\n'
     assert (repo / "bun.lock").read_text() == "turbo 1.0.0\n"
+
+
+def test_operator_edit_of_a_manifest_is_not_adopted_or_reverted(repo: Path) -> None:
+    (repo / "package.json").write_text('{"dependencies":{"turbo":"1.5.0"}}\n')
+
+    out = _process(repo, verify_error="gate failed")
+
+    assert out.status == "skip"
+    assert (repo / "package.json").read_text() == '{"dependencies":{"turbo":"1.5.0"}}\n'
+
+
+def test_hand_edit_after_the_kill_is_not_adopted(repo: Path) -> None:
+    _leave_behind(repo, package_json='{"dependencies":{"turbo":"1.5.0"}}\n')
+    (repo / "package.json").write_text('{"dependencies":{"turbo":"1.6.0"}}\n')
+
+    assert _process(repo).status == "skip"
+    assert (repo / "package.json").read_text() == '{"dependencies":{"turbo":"1.6.0"}}\n'
+
+
+def test_untracked_go_sum_the_operator_made_survives_a_failed_verify(
+    tmp_path: Path, init_git_repo
+) -> None:
+    work = tmp_path / "gorepo"
+    init_git_repo(work, commit=True, filename="go.mod", content="module x\n\ngo 1.21\n")
+    (work / "go.sum").write_text("operator-owned\n")
+    ws = Workspace(path=work, ecosystem="go", manager="go", git_repo=work, label="g")
+
+    with patch.object(orchestration, "should_exclude", return_value=False):
+        out = orchestration.process_workspace(
+            WorkspaceResult(workspace=ws),
+            do_apply=True,
+            do_verify=True,
+            allow_dirty=False,
+            on_verify_fail="revert",
+            emit_progress=False,
+        )
+
+    assert out.status == "skip"
+    assert (work / "go.sum").read_text() == "operator-owned\n"
+
+
+def test_adopted_leftovers_with_nothing_written_are_not_committed(repo: Path) -> None:
+    leftover = '{"dependencies":{"turbo":"2.0.0"}}\n'
+    _leave_behind(repo, package_json=leftover, bun_lock="turbo 2.0.0\n")
+    ws = Workspace(path=repo, ecosystem="node", manager="bun", git_repo=repo, label="r")
+    with (
+        patch.object(orchestration, "should_exclude", return_value=False),
+        patch.object(orchestration.ecosystems, "apply_workspace", return_value=[]),
+        patch.object(orchestration, "merge_toolchains", side_effect=lambda c, b, *a: (c, b)),
+        patch.object(orchestration, "sync_soup_versions"),
+        patch.object(orchestration, "overrides_audit", return_value=[]),
+        patch.object(orchestration, "dispatch_remediations"),
+        patch.object(orchestration, "collect_changes_after_apply", return_value=[]),
+    ):
+        out = orchestration.process_workspace(
+            WorkspaceResult(workspace=ws),
+            do_apply=True,
+            do_verify=True,
+            allow_dirty=False,
+            on_verify_fail="revert",
+            emit_progress=False,
+        )
+
+    assert out.verify_skipped
+    bundle = RepoBundle(git_repo=repo, label="r", workspaces=[out])
+    bundle.pre_dirty = frozenset({"package.json", "bun.lock"})
+    assert plan_repo_commit(bundle).files == []
+
+
+def test_commit_is_refused_when_a_path_changed_after_apply(repo: Path) -> None:
+    out = _process(repo)
+    assert out.status == "ok", out.error
+    assert out.owned_edits
+    bundle = RepoBundle(git_repo=repo, label="r", workspaces=[out])
+    assert plan_repo_commit(bundle).files
+
+    (repo / "package.json").write_text('{"dependencies":{"turbo":"2.0.0"}}\n// edit\n')
+
+    plan = plan_repo_commit(bundle)
+    assert plan.files == []
+    assert plan.skipped_reason is not None and "changed since apply" in plan.skipped_reason

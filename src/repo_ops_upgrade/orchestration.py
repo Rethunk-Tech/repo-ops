@@ -33,6 +33,7 @@ from repo_ops_lockfiles.snapshots import (
     snapshot_workspace_files,
 )
 from repo_ops_models import DIRTY_SKIP_MARKER, Change, Workspace, WorkspaceResult
+from repo_ops_upgrade import inflight
 from repo_ops_upgrade import registry as ecosystems
 from repo_ops_upgrade import verify as verify_mod
 from repo_ops_upgrade.constants import BIOME_PKG
@@ -187,13 +188,20 @@ def _is_managed_dirty_path(ws: Workspace, repo: Path, norm: str) -> bool:
     return bool(members) and is_workspace_member(path.resolve().parent, ws.path.resolve(), members)
 
 
-def _adopted_dirty_paths(ws: Workspace) -> frozenset[str] | None:
-    """Dirty paths that are only this upgrade's own files, or None to skip.
+def _hash(repo: Path, rel: str) -> str:
+    from repo_ops_upgrade.post_apply_commit import content_hash
 
-    A run killed mid-apply leaves its manifest/lockfile writes behind; treating
+    return content_hash(repo, rel)
+
+
+def _adopted_dirty_paths(ws: Workspace) -> dict[str, str] | None:
+    """Dirty paths that are only this upgrade's own files (path to hash), or None to skip.
+
+    A run killed after apply leaves its manifest/lockfile writes behind; treating
     them as the operator's work would skip the repo on every later sweep and
-    freeze its dependencies. Anything else dirty, or a git that cannot answer,
-    keeps today's skip.
+    freeze its dependencies. A path counts only when the in-flight record lists
+    it and its bytes still match what the run left; anything else dirty, or a git
+    that cannot answer, keeps today's skip.
     """
     from repo_ops_upgrade.post_apply_commit import _parse_porcelain
 
@@ -212,11 +220,18 @@ def _adopted_dirty_paths(ws: Workspace) -> frozenset[str] | None:
     dirty = frozenset(p.replace("\\", "/") for p in _parse_porcelain(proc.stdout))
     if not all(_is_managed_dirty_path(ws, repo, p) for p in dirty):
         return None
-    return dirty
+    recorded = inflight.load(repo)
+    hashes = {p: _hash(repo, p) for p in dirty}
+    if any(recorded.get(p) != h for p, h in hashes.items()):
+        return None
+    return hashes
 
 
 def _restore_paths_to_head(repo: Path, paths: frozenset[str]) -> bool:
-    """Put *paths* back to HEAD, deleting the ones HEAD never had."""
+    """Put *paths* back to HEAD, deleting the ones HEAD never had.
+
+    The caller passes only paths recorded as repo-ops' own writes.
+    """
     tracked = run_git(
         repo, "ls-tree", "-r", "-z", "--name-only", "HEAD", "--", *sorted(paths), timeout=60
     )
@@ -294,6 +309,7 @@ def _process_workspace_body(
 
     before_snap: dict[Path, bytes] | None = None
     before_tree = None
+    adopted_hashes: dict[str, str] = {}
     if do_apply:
         # Snapshotted once per bundle by the caller when repo_started_dirty is
         # given, rather than re-checked live here — an earlier sibling workspace
@@ -314,7 +330,8 @@ def _process_workspace_body(
                 )
                 cache_record_dirty_skip(ws.git_repo, date.today())
                 return result
-            result.adopted_dirty = adopted
+            result.adopted_dirty = frozenset(adopted)
+            adopted_hashes = adopted
 
         # Repo processed cleanly — clear any stale dirty-skip entry.
         cache_clear_dirty_skip(ws.git_repo)
@@ -377,6 +394,10 @@ def _process_workspace_body(
     )
     if wrote_nothing:
         result.verify_skipped = True
+        # Nothing was verified, so leftovers an earlier run wrote are not committed.
+        result.adopted_dirty = frozenset()
+    elif result.owned_edits:
+        inflight.record(ws.git_repo, {rel: _hash(ws.git_repo, rel) for rel in result.owned_edits})
     if do_apply and do_verify and result.status != "fail" and not wrote_nothing:
         try:
             verr = verify_mod.verify_workspace(ws, owned_edits=result.owned_edits)
@@ -422,7 +443,12 @@ def _process_workspace_body(
                 if result.adopted_dirty and reverted_ok and on_verify_fail == "revert":
                     # The leftovers were a killed run's own writes, never committed
                     # work: a failed verify leaves the repo at HEAD, not dirty again.
-                    if _restore_paths_to_head(ws.git_repo, result.adopted_dirty):
+                    mine = frozenset(
+                        rel
+                        for rel, digest in adopted_hashes.items()
+                        if _hash(ws.git_repo, rel) == digest
+                    )
+                    if _restore_paths_to_head(ws.git_repo, mine):
                         note = (
                             "adopted dirty manifests/lockfiles left by an earlier run "
                             "were reverted to HEAD"
@@ -432,6 +458,8 @@ def _process_workspace_body(
                         result.reverted_ok = False
                         note = "could not revert adopted dirty files to HEAD"
                         result.error = f"{result.error}; {note}" if result.error else note
+                if result.reverted_ok:
+                    inflight.forget(ws.git_repo, {*result.owned_edits, *adopted_hashes})
                 result.verify_fail_disposition = classify_verify_fail_disposition(
                     ws, before_snap, reverted_ok=result.reverted_ok
                 )

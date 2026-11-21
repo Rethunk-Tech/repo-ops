@@ -26,6 +26,7 @@ from repo_ops_lockfiles.constants import (
     manifest_names_for_manager as _manifest_names_for_manager,
 )
 from repo_ops_models import RepoBundle
+from repo_ops_upgrade import inflight
 from repo_ops_upgrade.submodules import SubmoduleLink
 
 _FORBIDDEN_BASENAMES = frozenset(
@@ -192,6 +193,9 @@ def upgrade_scoped_paths(
     for wr in bundle.workspaces:
         owned_paths.update(p.replace("\\", "/") for p in wr.owned_edits)
         if not (wr.changes or wr.remediations or wr.owned_edits):
+            continue
+        if wr.verify_skipped and not wr.owned_edits:
+            # Apply wrote nothing and nothing was verified: no commit of its own.
             continue
         try:
             rel = wr.workspace.path.resolve().relative_to(bundle.git_repo.resolve())
@@ -579,6 +583,25 @@ def build_conventional_message(bundle: RepoBundle, files: list[str]) -> str:
     return f"{subject}\n\n{body}"
 
 
+def _changed_since_apply(bundle: RepoBundle, scoped: list[str]) -> list[str]:
+    """Scoped paths whose bytes are no longer what apply wrote (someone edited them since)."""
+    applied = {
+        rel.replace("\\", "/"): edit.applied
+        for wr in bundle.workspaces
+        for rel, edit in wr.owned_edits.items()
+    }
+    out: list[str] = []
+    for path in scoped:
+        norm = path.replace("\\", "/")
+        if norm not in applied:
+            continue
+        target = bundle.git_repo / norm
+        current = target.read_bytes() if target.is_file() else None
+        if current != applied[norm]:
+            out.append(path)
+    return out
+
+
 def plan_repo_commit(
     bundle: RepoBundle,
     *,
@@ -617,6 +640,14 @@ def plan_repo_commit(
             bundle.label,
             "",
             skipped_reason=f"left uncommitted: your edits in {', '.join(yours)}",
+        )
+    changed = _changed_since_apply(bundle, scoped)
+    if changed:
+        return CommitPlan(
+            repo,
+            bundle.label,
+            "",
+            skipped_reason=f"left uncommitted: changed since apply: {', '.join(changed)}",
         )
     files = scoped
     safe, blocked = filter_safe_paths(files)
@@ -705,6 +736,7 @@ def _execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
             hashes=plan.hashes,
         )
     _resync_index_to_head(plan.git_repo)
+    inflight.forget(plan.git_repo, plan.files)
     return CommitOutcome(
         plan.git_repo,
         plan.label,
