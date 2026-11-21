@@ -9,7 +9,7 @@ uv sync --locked --group dev
 uv run ruff check .
 uv run ruff format --check .
 uv run pyrefly check . --project-excludes 'tests/**' 'scripts/**'
-uv run pytest -q --cov --cov-report=term-missing --cov-fail-under=84
+uv run pytest -q --cov --cov-report=term-missing
 uv build
 ```
 
@@ -24,7 +24,7 @@ Config: root `pyproject.toml` `[tool.pytest.ini_options]`. CI runs the same chec
 
 ## Coverage floor
 
-Current ratchet: **84 %**; a raise sets the floor to `floor(actual) − 5`. Update `[tool.coverage.report] fail_under` in `pyproject.toml` and `--cov-fail-under` in `.github/workflows/verify.yml` together; CI's floor sits one point below `fail_under` as margin across the Python matrix.
+Current ratchet: **84 %**; a raise sets the floor to `floor(actual) − 5`. Update `[tool.coverage.report] fail_under` in `pyproject.toml`; the gate and CI both read it.
 
 Coverage source (`[tool.coverage.run] source` in root `pyproject.toml`) is `src`, which covers every module in the package.
 

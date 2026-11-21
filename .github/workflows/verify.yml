@@ -43,7 +43,7 @@ jobs:
             sudo apparmor_parser -R /etc/apparmor.d/bwrap-userns-restrict
           fi
       - name: Run tests
-        run: uv run pytest -q -m "not integration" --cov --cov-report=term-missing --cov-fail-under=83
+        run: uv run pytest -q -m "not integration" --cov --cov-report=term-missing
       - name: Build installable wheel and sdist
         run: uv build
       - name: List artifacts

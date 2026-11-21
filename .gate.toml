@@ -13,7 +13,12 @@ run = "uv run deptry src"
 [gates.format]
 run = "uv run ruff format --check ."
 
-# Coverage (and its floor) runs in CI's verify.yml only: instrumenting every line
-# roughly quadruples the wall of the local gate.
+# Coverage floor is `fail_under` in pyproject.toml; CI runs the same command.
 [gates.test]
-run = 'uv run pytest -q -m "not integration"'
+timeout = "5m"
+run = 'uv run pytest -q -m "not integration" --cov'
+
+# Mirrors CI's `uv build`; output goes to a throwaway dir.
+[gates.build]
+timeout = "3m"
+run = 'uv build -o "$(mktemp -d)"'
