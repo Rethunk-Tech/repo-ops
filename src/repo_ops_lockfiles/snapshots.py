@@ -17,6 +17,7 @@ from repo_ops_lockfiles.constants import (
     NODE_LOCKFILES,
     PY_LOCKFILES,
     RUST_LOCKFILES,
+    manifest_names_for_manager,
 )
 from repo_ops_models import Change
 
@@ -174,10 +175,7 @@ def snapshot_workspace_files(mdir: Path, manager: str) -> dict[Path, bytes]:
         names = DENO_LOCKFILES
     else:
         names = ()
-    if manager == "pnpm":
-        names = (*names, "pnpm-workspace.yaml")
-    if manager == "pip-tools":
-        names = (*names, "requirements.in")
+    names = (*names, *sorted(manifest_names_for_manager(manager) - set(names)))
     out: dict[Path, bytes] = {}
     root = _snapshot_root(mdir)
     for name in names:

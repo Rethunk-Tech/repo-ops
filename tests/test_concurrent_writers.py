@@ -336,3 +336,48 @@ def test_concurrent_edit_during_apply_is_foreign_not_owned(tmp_path: Path, init_
     assert out.foreign == ["README.md"]
     assert out.to_json()["foreign"] == ["README.md"]
     assert (root / "README.md").read_text() == "agent edit\n"
+
+
+@pytest.mark.parametrize(
+    ("manager", "ecosystem", "manifest", "lockfile"),
+    [
+        ("poetry", "python", "pyproject.toml", "poetry.lock"),
+        ("pdm", "python", "pyproject.toml", "pdm.lock"),
+        ("pipenv", "python", "Pipfile", "Pipfile.lock"),
+        ("deno", "deno", "deno.json", "deno.lock"),
+        ("go", "go", "go.work", "go.sum"),
+    ],
+)
+def test_a_manifest_written_by_the_package_manager_is_owned(
+    tmp_path: Path, init_git_repo, manager: str, ecosystem: str, manifest: str, lockfile: str
+) -> None:
+    init_git_repo(tmp_path)
+    for name in (manifest, lockfile):
+        (tmp_path / name).write_text("v1\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    ws = Workspace(
+        path=tmp_path, ecosystem=ecosystem, manager=manager, git_repo=tmp_path, label="."
+    )
+
+    def _apply(_ws: Workspace) -> None:
+        # A subprocess (poetry add, deno outdated, ...) writes without guarded_write.
+        (tmp_path / manifest).write_text("v2\n")
+        (tmp_path / lockfile).write_text("v2\n")
+
+    register_all()
+    with (
+        patch("repo_ops_upgrade.orchestration.ecosystems.apply_workspace", side_effect=_apply),
+        patch("repo_ops_upgrade.orchestration.dispatch_remediations"),
+        patch("repo_ops_upgrade.orchestration.verify_mod.verify_workspace", return_value=None),
+    ):
+        out = orchestration.process_workspace(
+            WorkspaceResult(workspace=ws),
+            do_apply=True,
+            do_verify=True,
+            allow_dirty=False,
+            on_verify_fail="revert",
+        )
+
+    assert sorted(out.owned_edits) == sorted([manifest, lockfile])
+    assert out.foreign == []
