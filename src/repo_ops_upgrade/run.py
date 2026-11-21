@@ -738,6 +738,7 @@ def _run_upgrade_body(
     # call and merge-in after under lock to avoid dict mutation races.
     run_tag_cache: dict[str, dict | None] = {}
     if args.eco_filter in (None, "actions"):
+        actions.reset_failed_lookups()
         actions.load_tag_cache_into(run_tag_cache)
         actions._reset_canary_sweep()
         _tag_cache_lock = threading.Lock()
@@ -849,7 +850,8 @@ def _run_upgrade_body(
     exit_code = _resolve_exit_code(
         bundles, apply=apply, has_actionable_work=_has_actionable_work(bundles)
     )
-    if archive_refused or lock_refused or config_failed:
+    lookups_failed = actions.failed_lookup_count()
+    if archive_refused or lock_refused or config_failed or lookups_failed:
         exit_code = 1
 
     report.print_human_report(bundles, dry_run=not apply)
@@ -887,10 +889,12 @@ def _run_upgrade_body(
 
     if excluded_count:
         print(f"excluded {excluded_count} repo(s) by exclude patterns", file=sys.stderr)
+    summary = report.build_run_summary(
+        bundles, diagnostics=diagnostics, excluded_count=excluded_count
+    )
+    summary["actions_lookups_failed"] = lookups_failed
     report.print_run_footer(
-        summary=report.build_run_summary(
-            bundles, diagnostics=diagnostics, excluded_count=excluded_count
-        ),
+        summary=summary,
         failures=report.collect_run_failures(bundles),
         exit_code=exit_code,
         submodule_pointer_hints=pointer_hints,

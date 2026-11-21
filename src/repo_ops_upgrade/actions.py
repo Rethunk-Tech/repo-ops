@@ -37,6 +37,9 @@ from repo_ops_upgrade.workflow_uses import (
 logger = logging.getLogger(__name__)
 
 _TAG_CACHE: dict[str, dict | None] = {}
+# Repos whose lookup errored (rate limit, auth, network) rather than answered
+# "no tags"; never persisted, and surfaced in the run summary.
+_FAILED_LOOKUPS: set[str] = set()
 # Action tags move on release cadence, not on sweep cadence, so a few hours of
 # reuse costs at most one sweep's delay on a bump and saves a `gh api` round
 # trip per action on every run.
@@ -76,6 +79,14 @@ def _tag_to_disk(info: dict | None) -> dict:
     }
 
 
+def reset_failed_lookups() -> None:
+    _FAILED_LOOKUPS.clear()
+
+
+def failed_lookup_count() -> int:
+    return len(_FAILED_LOOKUPS)
+
+
 def load_tag_cache_into(store: dict[str, dict | None]) -> None:
     """Seed *store* from disk, dropping entries older than the max age."""
     path = _tag_cache_path()
@@ -109,7 +120,8 @@ def save_tag_cache_from(store: dict[str, dict | None]) -> None:
             if isinstance(v, dict) and now - v.get("ts", 0) <= _TAG_CACHE_MAX_AGE_S
         }
     for repo, info in store.items():
-        merged[repo] = _tag_to_disk(info)
+        if repo not in _FAILED_LOOKUPS:
+            merged[repo] = _tag_to_disk(info)
     with contextlib.suppress(OSError):
         path.parent.mkdir(parents=True, exist_ok=True)
         write_json_atomic(path, merged)
@@ -824,6 +836,10 @@ def action_tag_info(action: str, *, cache: dict[str, dict | None] | None = None)
             Path.cwd(),
             timeout=30,
         )
+        if proc.returncode != 0 and "not found" not in proc.stderr.lower():
+            _FAILED_LOOKUPS.add(repo)
+            store[repo] = None
+            return None
         if proc.returncode != 0 or not proc.stdout.strip():
             store[repo] = None
             return None
@@ -860,6 +876,7 @@ def action_tag_info(action: str, *, cache: dict[str, dict | None] | None = None)
         return result
     except subprocess.TimeoutExpired:
         print(f"WARN: gh api timed out for {action}", file=sys.stderr)
+        _FAILED_LOOKUPS.add(repo)
     store[repo] = None
     return None
 

@@ -149,3 +149,32 @@ def test_tag_cache_keeps_fresh_hits_and_drops_stale_or_malformed_disk_state(
     assert saved["new/repo"]["miss"] is True
     assert "stale/repo" not in saved
     assert "junk" not in saved
+
+
+def test_a_failed_gh_lookup_is_counted_and_never_cached(tmp_path: Path, monkeypatch) -> None:
+    """A rate limit or outage must not persist as "no tags" for hours."""
+    from repo_ops_upgrade import actions as actions_mod
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    actions_mod.reset_failed_lookups()
+    store: dict = {}
+    outage = MagicMock(returncode=1, stdout="", stderr="gh: API rate limit exceeded (HTTP 403)")
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=outage),
+    ):
+        assert action_tag_info("actions/checkout", cache=store) is None
+    assert actions_mod.failed_lookup_count() == 1
+
+    gone = MagicMock(returncode=1, stdout="", stderr="gh: Not Found (HTTP 404)")
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=gone),
+    ):
+        assert action_tag_info("gone/repo", cache=store) is None
+    assert actions_mod.failed_lookup_count() == 1
+
+    save_tag_cache_from(store)
+    on_disk = json.loads((tmp_path / "repo-ops" / "action-tags.json").read_text())
+    assert list(on_disk) == ["gone/repo"]
+    actions_mod.reset_failed_lookups()
