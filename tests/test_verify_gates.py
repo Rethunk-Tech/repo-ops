@@ -912,14 +912,20 @@ class TestGateVerdictCompleteness:
 
         return fake_run
 
-    def test_gate_notes_fail_verify(
+    def test_informational_gate_notes_pass_verify(
         self, tmp_path: Path, make_workspace, gate_on_path: None
     ) -> None:
-        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
-        listing = {"gates": [{"name": "test"}], "notes": ["no lint config found"]}
-        with patch("repo_ops_upgrade.verify.run", side_effect=self._run(listing)):
+        ws = make_workspace(tmp_path, manager="bun", ecosystem="js", label="demo")
+        listing = {
+            "gates": [{"name": "test"}],
+            "notes": ["turbo.json found but turbo is not installed; using the package scripts"],
+        }
+        with patch(
+            "repo_ops_upgrade.verify.run",
+            side_effect=self._run(listing, {"partial": False, "exit": 0}),
+        ):
             result = verify_workspace(ws)
-        assert result is not None and "no lint config found" in result
+        assert result is None
 
     def test_partial_record_fails_verify(
         self, tmp_path: Path, make_workspace, gate_on_path: None

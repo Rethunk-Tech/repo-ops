@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Verify no longer fails on gate's informational listing notes (a turbo fallback, a split gate); only a partial gate record fails it.
+
 ## [0.27.0] - 2026-11-21
 
 ### Fixed

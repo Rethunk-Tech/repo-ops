@@ -155,13 +155,11 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
     listing = _timed_run(["gate", "--json"], ws.path, timeout=timeout, source=source)
     if listing.returncode != 0 and "timed out after" in listing.stderr:
         return listing.stderr.strip()
-    notes: list[object] = []
     try:
         doc = json.loads(listing.stdout)
         # Opt-in e2e gates are listed but skipped by a default gate run; running
         # them by name here is what made verify outlast its timeout.
         names = [g["name"] for g in doc.get("gates") or [] if not g.get("skipped")]
-        notes = doc.get("notes") or []
     except (ValueError, AttributeError, TypeError, KeyError):
         names = []
     if listing.returncode != 0 or not names:
@@ -171,9 +169,6 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
             else ""
         )
         return f"gate detects no gate for {ws.path}{detail}"
-    if notes:
-        # A note is gate saying it could not detect or configure part of the project.
-        return f"gate notes for {ws.path}: " + "; ".join(str(n) for n in notes)
     # gate's own per-gate timeout would race this process's; 0 disables it and
     # leaves the caller's verify timeout the single authority. A bare run, not
     # ``run NAME...``, so the record gate writes is a full one.
@@ -189,6 +184,8 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
         partial = bool(json.loads(record.stdout).get("partial"))
     except (ValueError, AttributeError, TypeError):
         partial = False
+    # gate's listing notes are mostly informational (a fallback it chose, a gate it split);
+    # a role it really skipped is what marks the record partial.
     if partial:
         return f"gate recorded a partial run for {ws.path}: not every gate ran"
     return None
