@@ -218,3 +218,37 @@ def test_detached_head_is_a_dirty_skip_in_a_sweep_and_a_refusal_when_named(repo:
     named = run(allow_dirty=True)
     assert named.status == "fail" and named.error and "detached HEAD" in named.error
     assert (repo / "package.json").read_text() == '{"dependencies":{"turbo":"1.0.0"}}\n'
+
+
+def _process_named(repo: Path) -> WorkspaceResult:
+    ws = Workspace(path=repo, ecosystem="node", manager="bun", git_repo=repo, label="r")
+    with (
+        patch.object(orchestration, "should_exclude", return_value=False),
+        patch.object(orchestration.ecosystems, "apply_workspace", side_effect=_bump),
+    ):
+        return orchestration.process_workspace(
+            WorkspaceResult(workspace=ws),
+            do_apply=True,
+            do_verify=False,
+            allow_dirty=True,
+            on_verify_fail="keep",
+            emit_progress=False,
+        )
+
+
+def test_named_root_refuses_foreign_tracked_dirt_before_writing(repo: Path) -> None:
+    (repo / "src" / "index.js").write_text("export const x = 2;\n")
+
+    out = _process_named(repo)
+
+    assert out.status == "fail"
+    assert out.error == "dirty: src/index.js; commit or stash first"
+    assert (repo / "package.json").read_text() == '{"dependencies":{"turbo":"1.0.0"}}\n'
+
+
+def test_named_root_with_manifest_only_dirt_still_applies(repo: Path) -> None:
+    (repo / "package.json").write_text('{"dependencies":{"turbo":"1.5.0"}}\n')
+
+    out = _process_named(repo)
+
+    assert out.status == "ok", out.error

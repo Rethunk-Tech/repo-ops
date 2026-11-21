@@ -227,6 +227,28 @@ def _adopted_dirty_paths(ws: Workspace) -> dict[str, str] | None:
     return hashes
 
 
+def _foreign_dirty_paths(ws: Workspace) -> list[str]:
+    """Tracked dirty paths that are not this workspace's manifests or lockfiles.
+
+    A git that cannot answer reads as no foreign dirt, so only a clear answer refuses.
+    """
+    from repo_ops_upgrade.post_apply_commit import _parse_porcelain
+
+    proc = run_git(
+        ws.git_repo,
+        "status",
+        "--porcelain",
+        "-z",
+        "--untracked-files=no",
+        "--ignore-submodules=dirty",
+        timeout=60,
+    )
+    if proc.returncode != 0:
+        return []
+    dirty = (p.replace("\\", "/") for p in _parse_porcelain(proc.stdout))
+    return sorted(p for p in dirty if not _is_managed_dirty_path(ws, ws.git_repo, p))
+
+
 def _restore_paths_to_head(repo: Path, paths: frozenset[str]) -> bool:
     """Put *paths* back to HEAD, deleting the ones HEAD never had.
 
@@ -346,6 +368,14 @@ def _process_workspace_body(
                 return result
             result.adopted_dirty = frozenset(adopted)
             adopted_hashes = adopted
+        elif result.started_dirty:
+            # A named root runs even when dirty, but the verify would gate
+            # someone's in-progress edit and a failure would strand the bump.
+            foreign = _foreign_dirty_paths(ws)
+            if foreign:
+                result.status = "fail"
+                result.error = f"dirty: {', '.join(foreign)}; commit or stash first"
+                return result
 
         # Repo processed cleanly — clear any stale dirty-skip entry.
         cache_clear_dirty_skip(ws.git_repo)

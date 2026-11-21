@@ -61,7 +61,8 @@ roots:
   omitted  sweep the default roots: dirty repos skipped, failed verify reverted
   named    that checkout, even if dirty (only files apply touched are
            committed, and nothing if one of them held your uncommitted
-           edits); failed verify keeps the changes
+           edits), refused when other tracked files are dirty;
+           failed verify keeps the changes
 
 exit codes: 0 no workspace failed, 1 any workspace failed.
 Writes $XDG_STATE_HOME/repo-ops/runs/<utc>-apply/{log,report.json}; both paths

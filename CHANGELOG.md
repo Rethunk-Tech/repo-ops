@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `apply` on a named root refuses, before writing anything, when a tracked file other than a manifest or lockfile is dirty ("dirty: <files>; commit or stash first"). It used to bump, gate someone's in-progress edit and leave the bump behind on a failure.
 - Verify no longer fails on gate's informational listing notes (a turbo fallback, a split gate); only a partial gate record fails it.
 
 ## [0.27.0] - 2026-11-21
