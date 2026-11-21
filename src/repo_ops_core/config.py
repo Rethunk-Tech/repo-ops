@@ -28,6 +28,35 @@ class ConfigError(ValueError):
         self.detail = detail
 
 
+_KEYS = {
+    "": {"owned_orgs", "adopted", "exclude", "hold", "verify", "soup"},
+    "verify": {"script", "skip", "timeout"},
+    "soup": {"path"},
+    "hold": {"package", "max_version", "until", "ecosystem", "workspace", "reason"},
+}
+_LIST_KEYS = ("owned_orgs", "adopted", "exclude")
+
+
+def _validate(path: Path, data: dict[str, Any]) -> None:
+    """Reject a key repo-ops does not read, or a list key of the wrong type."""
+    unknown = sorted(set(data) - _KEYS[""])
+    if unknown:
+        raise ConfigError(path, f"unknown key(s): {', '.join(unknown)}")
+    for key in _LIST_KEYS:
+        if key in data and not isinstance(data[key], list):
+            raise ConfigError(path, f"{key} must be a list, got {data[key]!r}")
+    for table in ("verify", "soup"):
+        value = data.get(table)
+        extra = sorted(set(value) - _KEYS[table]) if isinstance(value, dict) else []
+        if extra:
+            raise ConfigError(path, f"unknown key(s) in [{table}]: {', '.join(extra)}")
+    holds = data.get("hold")
+    for entry in holds if isinstance(holds, list) else []:
+        extra = sorted(set(entry) - _KEYS["hold"]) if isinstance(entry, dict) else []
+        if extra:
+            raise ConfigError(path, f"unknown key(s) in [[hold]]: {', '.join(extra)}")
+
+
 def _read_strict(path: Path) -> dict[str, Any]:
     """Parse *path*; ``{}`` when absent, :class:`ConfigError` when unparseable.
 
@@ -35,11 +64,13 @@ def _read_strict(path: Path) -> dict[str, Any]:
     while apply carried on.
     """
     try:
-        return tomllib.loads(path.read_text(encoding="utf-8"))
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
     except (OSError, ValueError) as exc:
         raise ConfigError(path, str(exc)) from exc
+    _validate(path, data)
+    return data
 
 
 def load_global_config() -> dict[str, Any]:

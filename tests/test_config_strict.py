@@ -98,3 +98,32 @@ def test_malformed_hold_and_verify_values_raise_config_error(tmp_path: Path, tom
     checked = load_repo_holds if "hold" in toml else lambda p: _load_verify_profile(ws)
     with pytest.raises(ConfigError):
         checked(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'excludes = ["a"]\n',
+        "[verify]\nskipp = true\n",
+        '[soup]\npth = "x"\n',
+        '[[hold]]\npackage = "a"\nmax_version = "1"\nmax = "2"\n',
+        'owned_orgs = "Rethunk-Tech"\n',
+        'adopted = "a/b"\n',
+        "exclude = 3\n",
+    ],
+)
+def test_unknown_key_or_wrong_list_type_raises(tmp_path: Path, text: str) -> None:
+    from repo_ops_core.config import load_repo_config
+
+    (tmp_path / ".repo-ops.toml").write_text(text)
+    with pytest.raises(ConfigError):
+        load_repo_config(tmp_path)
+
+
+def test_operator_config_still_loads() -> None:
+    from repo_ops_core.config import _validate
+
+    _validate(
+        Path("c"),
+        {"adopted": ["a/b"], "exclude": ["x"], "verify": {"timeout": 1}, "soup": {"path": "p"}},
+    )
