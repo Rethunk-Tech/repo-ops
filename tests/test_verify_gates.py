@@ -25,6 +25,7 @@ from repo_ops_upgrade.verify import verify_node, verify_workspace
 # ---------------------------------------------------------------------------
 
 _GATE_RUN_TEST = ["gate", "--timeout", "0", "--force"]
+_GATE_RECORD = ["gate", "--json", "record"]
 
 
 def _ok(stdout: str = "", stderr: str = "") -> CompletedProcess[str]:
@@ -89,7 +90,12 @@ class TestGoVerifyGates:
             result = verify_workspace(ws)
 
         assert result is None
-        assert fake_run.calls == [["go", "mod", "verify"], ["gate", "--json"], _GATE_RUN_TEST]
+        assert fake_run.calls == [
+            ["go", "mod", "verify"],
+            ["gate", "--json"],
+            _GATE_RUN_TEST,
+            _GATE_RECORD,
+        ]
 
     def test_go_mod_verify_failure_short_circuits(
         self, tmp_path: Path, make_workspace, gate_on_path: None
@@ -177,7 +183,7 @@ class TestRustVerifyGates:
             result = verify_workspace(ws)
 
         assert result is None
-        assert fake_run.calls == [["gate", "--json"], _GATE_RUN_TEST]
+        assert fake_run.calls == [["gate", "--json"], _GATE_RUN_TEST, _GATE_RECORD]
 
     def test_missing_gate_is_an_error_not_a_cargo_run(
         self, tmp_path: Path, make_workspace, fake_run: Any
@@ -219,7 +225,12 @@ class TestUvLockThenGate:
             result = verify_workspace(ws)
 
         assert result is None
-        assert fake_run.calls == [["uv", "sync", "--locked"], ["gate", "--json"], _GATE_RUN_TEST]
+        assert fake_run.calls == [
+            ["uv", "sync", "--locked"],
+            ["gate", "--json"],
+            _GATE_RUN_TEST,
+            _GATE_RECORD,
+        ]
 
     def test_ruff_in_dev_deps_is_not_run_without_gate(
         self, tmp_path: Path, make_workspace, fake_run: Any
@@ -311,7 +322,7 @@ class TestPythonManagerGates:
             result = verify_workspace(ws)
 
         assert result is None
-        assert fake_run.calls == [lock_cmd, ["gate", "--json"], _GATE_RUN_TEST]
+        assert fake_run.calls == [lock_cmd, ["gate", "--json"], _GATE_RUN_TEST, _GATE_RECORD]
 
     @pytest.mark.parametrize(("manager", "lock_cmd"), _PYTHON_LOCK_CASES)
     def test_lock_gate_failure_blocks_gate(
@@ -583,7 +594,7 @@ class TestGateDelegation:
             result = verify_node(ws)
 
         assert result is None
-        assert calls[-1] == [
+        assert calls[-2] == [
             "gate",
             "--timeout",
             "0",
@@ -731,7 +742,7 @@ class TestGateDelegation:
             result = verify_node(ws)
 
         assert result is None
-        assert calls[-1] == ["gate", "--timeout", "0", "--force"]
+        assert calls[-2] == ["gate", "--timeout", "0", "--force"]
 
 
 _PYTHON_GATE_LIST = _gate_json("typecheck", "lint", "workflows", "test", "vuln")
@@ -766,7 +777,7 @@ class TestPythonGateDelegation:
         assert result is None
         # The lockfile gate is not something gate checks, so it still leads.
         assert calls[0] == ["uv", "sync", "--locked"]
-        assert calls[-1] == [
+        assert calls[-2] == [
             "gate",
             "--timeout",
             "0",
@@ -827,7 +838,7 @@ class TestDenoVerify:
 
         assert result is None
         assert fake_run.calls[0] == ["deno", "install", "--frozen"]
-        assert fake_run.calls[-1] == _GATE_RUN_TEST
+        assert fake_run.calls[-2] == _GATE_RUN_TEST
 
     def test_check_then_gate_without_lock(
         self, tmp_path: Path, make_workspace, fake_run: Any, gate_on_path: None
@@ -838,7 +849,7 @@ class TestDenoVerify:
 
         assert result is None
         assert fake_run.calls[0] == ["deno", "check", "."]
-        assert fake_run.calls[-1] == _GATE_RUN_TEST
+        assert fake_run.calls[-2] == _GATE_RUN_TEST
 
     def test_frozen_install_without_gate_is_an_error(self, tmp_path: Path, make_workspace) -> None:
         (tmp_path / "deno.lock").write_text("{}\n", encoding="utf-8")
@@ -884,3 +895,39 @@ class TestVerifyDesktopIsolation:
             assert "WAYLAND_DISPLAY" not in env
             assert "DBUS_SESSION_BUS_ADDRESS" not in env
             assert env["XDG_RUNTIME_DIR"] != "/run/user/1000"
+
+
+class TestGateVerdictCompleteness:
+    @staticmethod
+    def _run(listing: dict[str, Any], record: dict[str, Any] | None = None):
+        def fake_run(
+            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+        ) -> CompletedProcess[str]:
+            if cmd[:2] == ["gate", "--json"] and len(cmd) == 2:
+                return _ok(stdout=json.dumps(listing))
+            if cmd == _GATE_RECORD:
+                return _ok(stdout=json.dumps(record or {}))
+            return _ok()
+
+        return fake_run
+
+    def test_gate_notes_fail_verify(
+        self, tmp_path: Path, make_workspace, gate_on_path: None
+    ) -> None:
+        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
+        listing = {"gates": [{"name": "test"}], "notes": ["no lint config found"]}
+        with patch("repo_ops_upgrade.verify.run", side_effect=self._run(listing)):
+            result = verify_workspace(ws)
+        assert result is not None and "no lint config found" in result
+
+    def test_partial_record_fails_verify(
+        self, tmp_path: Path, make_workspace, gate_on_path: None
+    ) -> None:
+        ws = make_workspace(tmp_path, manager="go", ecosystem="go", label="demo")
+        listing = {"gates": [{"name": "test"}], "notes": []}
+        with patch(
+            "repo_ops_upgrade.verify.run",
+            side_effect=self._run(listing, {"partial": True, "exit": 0}),
+        ):
+            result = verify_workspace(ws)
+        assert result is not None and "partial" in result
