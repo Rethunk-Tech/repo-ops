@@ -8,11 +8,6 @@
 [gates.deps]
 run = "uv run deptry src"
 
-# Detection infers `ruff check` but not the formatter; this mirrors the CI step
-# that rejects unformatted files.
-[gates.format]
-run = "uv run ruff format --check ."
-
 # Coverage floor is `fail_under` in pyproject.toml; CI runs the same command.
 [gates.test]
 timeout = "5m"
