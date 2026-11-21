@@ -82,7 +82,8 @@ def test_concurrent_edits_survive_a_failed_verify_rollback(tmp_path: Path, init_
     assert out.reverted_ok is False
     assert out.verify_fail_disposition == FAILED_WITH_CHANGES
     assert "README.md" in (out.error or "")
-    assert "new_file.txt" in (out.error or "")
+    # A new untracked file is indistinguishable from a build's output: not a writer.
+    assert "new_file.txt" not in (out.error or "")
 
 
 def test_an_owned_file_changed_by_someone_else_is_left_alone(tmp_path: Path, init_git_repo) -> None:
@@ -307,6 +308,21 @@ def test_a_verify_failure_with_a_foreign_writer_is_not_blamed_on_the_bump(
     out = _apply_and_fail_verify(ws, lambda root: (root / "README.md").write_text("agent\n"))
 
     assert (out.error or "").startswith("verify ran while another writer changed: README.md")
+
+
+def test_build_output_created_by_a_failing_verify_is_not_a_foreign_writer(
+    tmp_path: Path, init_git_repo
+) -> None:
+    ws = _repo(tmp_path, init_git_repo)
+
+    def _build(root: Path) -> None:
+        (root / "dist").mkdir()
+        (root / "dist" / "out.js").write_text("built\n")
+
+    out = _apply_and_fail_verify(ws, _build)
+
+    assert "another writer" not in (out.error or "")
+    assert out.foreign == []
 
 
 def test_concurrent_edit_during_apply_is_foreign_not_owned(tmp_path: Path, init_git_repo) -> None:

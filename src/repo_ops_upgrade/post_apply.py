@@ -300,16 +300,29 @@ def _same_content(left: bytes | FileDigest | None, right: bytes | FileDigest | N
     return _digest_of(left) == _digest_of(right)
 
 
-def tree_diff(repo: Path, expected: WorktreeState) -> list[str] | None:
-    """Repo-relative paths whose state differs from *expected*, None if git failed."""
+def tree_diff(
+    repo: Path, expected: WorktreeState, *, ignore_new_untracked: bool = False
+) -> list[str] | None:
+    """Repo-relative paths whose state differs from *expected*, None if git failed.
+
+    With *ignore_new_untracked*, a file that did not exist in *expected* and is
+    untracked now does not count: a verify's own build output is not a writer.
+    """
     now = capture_worktree_state(repo)
     if now is None:
         return None
+    new_untracked: set[str] = set()
+    if ignore_new_untracked:
+        dirty = _dirty_paths(repo) or {}
+        new_untracked = {rel for rel, code in dirty.items() if code == "??" and rel not in expected}
     return sorted(
         rel
         for rel in set(now) | set(expected)
-        if _tree_state(now, rel)[0] != _tree_state(expected, rel)[0]
-        or not _same_content(_tree_state(now, rel)[1], _tree_state(expected, rel)[1])
+        if rel not in new_untracked
+        and (
+            _tree_state(now, rel)[0] != _tree_state(expected, rel)[0]
+            or not _same_content(_tree_state(now, rel)[1], _tree_state(expected, rel)[1])
+        )
     )
 
 
@@ -478,6 +491,6 @@ def revert_workspace_after_verify_fail(
         logger.warning("no pre-apply worktree state for %s; git revert skipped", ws.git_repo)
         return RevertOutcome(False, [])
     git_ok = rollback_owned_edits(ws.git_repo, edits)
-    foreign = tree_diff(ws.git_repo, before_tree)
+    foreign = tree_diff(ws.git_repo, before_tree, ignore_new_untracked=True)
     reinstalled = reinstall_from_lockfile(ws)
     return RevertOutcome(git_ok and reinstalled and foreign == [], foreign or [])

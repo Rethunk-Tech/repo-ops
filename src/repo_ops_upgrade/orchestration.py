@@ -422,7 +422,11 @@ def _process_workspace_body(
         if verr:
             result.verify_error = verr
             result.status = "fail"
-            foreign_now = tree_diff(ws.git_repo, applied_tree) if applied_tree else None
+            foreign_now = (
+                tree_diff(ws.git_repo, applied_tree, ignore_new_untracked=True)
+                if applied_tree
+                else None
+            )
             if foreign_now:
                 result.error = f"verify ran while another writer changed: {', '.join(foreign_now)}"
                 result.foreign = sorted({*result.foreign, *foreign_now})
