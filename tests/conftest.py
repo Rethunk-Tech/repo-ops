@@ -214,6 +214,21 @@ def run_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture(autouse=True)
+def _never_real_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test that scans without naming its roots must fail, not walk the operator's fleet.
+
+    Root discovery shells out to the real ``bosun roots`` (or the built-in list
+    under ``/usr/local/src``); a test that wants default roots patches
+    ``repo_ops_core.cli.default_roots`` itself.
+    """
+
+    def _refuse() -> list[str]:
+        raise AssertionError("test reached real root discovery; pass explicit roots")
+
+    monkeypatch.setattr("repo_ops_core.cli.default_roots", _refuse)
+
+
+@pytest.fixture(autouse=True)
 def _disable_ambient_color() -> Iterator[None]:
     """Neutralise colour-forcing env so help-text assertions are deterministic.
 
