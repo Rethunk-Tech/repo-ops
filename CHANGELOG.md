@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-11-21
+
 ### Fixed
 
+- `apply` no longer treats a hand-edited manifest as a killed run's leftovers. It records the hash of every file it writes in `<git-dir>/repo-ops-inflight.json` and adopts only dirty files that still match, so an operator's edit is skipped as dirty, never reverted, and an untracked `go.sum` is never deleted. A run that wrote nothing no longer commits, and a path edited after apply is left uncommitted.
+- Verify fails when `gate` reports notes or leaves a partial record, instead of passing on a gate set it did not fully run.
+- Verify removes its private runtime dir when each command ends; they piled up by the thousand under `~/.cache/repo-ops/runtime`.
+- Retrying a failed commit takes the repo's apply lock and re-checks the file bytes first.
+- A detached HEAD is skipped as dirty in a sweep and refused for a named root; a submodule checkout only warns.
+- A config file with an unknown key, or a non-list `owned_orgs`, `adopted` or `exclude`, raises a config error instead of being ignored.
+- A dirty or vetoed repo is no longer picked as the gh-actions canary.
+- New untracked files that appear while verify runs (build output) no longer read as another writer.
+- The release workflow checks that the tag matches the pyproject version and is an ancestor of `origin/main`.
 - The gh-actions canary no longer counts a commit as green when only CodeQL or Scorecard passed. A commit is green when a normal workflow succeeded on it and no run on it failed or was cancelled.
 
 ## [0.26.1] - 2026-11-21
