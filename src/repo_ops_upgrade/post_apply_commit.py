@@ -21,6 +21,8 @@ from repo_ops_lockfiles.constants import (
     NODE_LOCKFILES,
     PY_LOCKFILES,
     RUST_LOCKFILES,
+)
+from repo_ops_lockfiles.constants import (
     manifest_names_for_manager as _manifest_names_for_manager,
 )
 from repo_ops_models import RepoBundle
