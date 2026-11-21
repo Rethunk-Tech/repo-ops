@@ -153,6 +153,23 @@ def _drop_archived(
     return refused
 
 
+def _try_lock(repo: Path) -> IO[str] | None:
+    """Take *repo*'s apply lock; the open handle holds it. None when git names no git dir.
+
+    Raises BlockingIOError when another apply holds it.
+    """
+    git_dir = run_git(repo, "rev-parse", "--absolute-git-dir").stdout.strip()
+    if not git_dir:
+        return None
+    handle = (Path(git_dir) / "repo-ops.lock").open("a")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        raise
+    return handle
+
+
 def _drop_locked(
     bundles: dict[Path, RepoBundle], *, named_roots: set[Path], fleet: bool
 ) -> tuple[list[IO[str]], bool]:
@@ -168,20 +185,16 @@ def _drop_locked(
         repo = bundles[path].git_repo
         if repo in held:
             continue
-        git_dir = run_git(repo, "rev-parse", "--absolute-git-dir").stdout.strip()
-        if not git_dir:
-            continue
-        handle = (Path(git_dir) / "repo-ops.lock").open("a")
         try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            handle = _try_lock(repo)
         except BlockingIOError:
-            handle.close()
             for key in [k for k, b in bundles.items() if b.git_repo == repo]:
                 del bundles[key]
             print(f"[skip] {repo}: another repo-ops apply is working in it", file=sys.stderr)
             refused = refused or (not fleet and repo.resolve() in named_roots)
             continue
-        held[repo] = handle
+        if handle is not None:
+            held[repo] = handle
     return list(held.values()), refused
 
 
@@ -410,18 +423,23 @@ def _commit_only_plans(
         if not repo.is_dir():
             print(f"[commit skip] {plan.label}: {repo} no longer exists", file=sys.stderr)
             continue
-        if _dirty_paths(repo) != set(plan.files):
-            continue
-        changed = [
-            f
-            for f in plan.files
-            if plan.hashes.get(f) != post_apply_commit.content_hash(plan.git_repo, f)
-        ]
-        if changed:
-            print(f"[commit skip] {plan.label}: changed since apply: {', '.join(changed)}")
-            continue
-        plans.append(plan)
+        if _commit_plan_current(plan):
+            plans.append(plan)
     return plans
+
+
+def _commit_plan_current(plan: post_apply_commit.CommitPlan) -> bool:
+    """True when the checkout holds exactly the edits *plan* hashed, byte for byte."""
+    if _dirty_paths(plan.git_repo) != set(plan.files):
+        return False
+    changed = [
+        f
+        for f in plan.files
+        if plan.hashes.get(f) != post_apply_commit.content_hash(plan.git_repo, f)
+    ]
+    if changed:
+        print(f"[commit skip] {plan.label}: changed since apply: {', '.join(changed)}")
+    return not changed
 
 
 def _print_report_digest(report_path: Path) -> None:
@@ -864,7 +882,22 @@ def _run_upgrade_body(
     if commit:
         retried = []
         for plan in commit_only:
-            outcome = post_apply_commit.execute_commit_plan(plan)
+            # These repos left the sweep, so they hold no apply lock yet; take it
+            # and re-check the bytes, since the plan was read before the sweep ran.
+            try:
+                lock = _try_lock(plan.git_repo)
+            except BlockingIOError:
+                print(f"[commit skip] {plan.label}: another repo-ops apply is working in it")
+                exit_code = 1
+                continue
+            try:
+                if not _commit_plan_current(plan):
+                    exit_code = 1
+                    continue
+                outcome = post_apply_commit.execute_commit_plan(plan)
+            finally:
+                if lock is not None:
+                    lock.close()
             post_apply_commit._print_outcome(outcome)
             retried.append(outcome)
             if outcome.status == "failed":

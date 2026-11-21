@@ -1265,3 +1265,29 @@ def test_commit_retry_refuses_a_file_edited_since_apply(tmp_path: Path, init_git
     assert len(run._commit_only_plans(run._retry_commit_plans(payload))) == 1
     lock.write_text('{"v":2,"someone":"else"}', encoding="utf-8")
     assert run._commit_only_plans(run._retry_commit_plans(payload)) == []
+
+
+def test_commit_retry_waits_on_the_apply_lock_and_rechecks_bytes(
+    tmp_path: Path, init_git_repo
+) -> None:
+    from repo_ops_upgrade import run
+
+    init_git_repo(tmp_path, commit=True, filename="lock.txt", content="a\n")
+    (tmp_path / "lock.txt").write_text("b\n")
+    plan = post_apply_commit.CommitPlan(
+        tmp_path,
+        "repo",
+        "chore: bump",
+        files=["lock.txt"],
+        hashes={"lock.txt": post_apply_commit.content_hash(tmp_path, "lock.txt")},
+    )
+
+    held = run._try_lock(tmp_path)
+    assert held is not None
+    with pytest.raises(BlockingIOError):
+        run._try_lock(tmp_path)
+    held.close()
+
+    assert run._commit_plan_current(plan)
+    (tmp_path / "lock.txt").write_text("c\n")
+    assert not run._commit_plan_current(plan)
