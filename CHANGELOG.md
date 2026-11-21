@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A global `adopted = ["org/repo"]` config key opts a fork back into sweeps, and the run summary has a `foreign skipped` row naming the forks and non-owned checkouts that were left alone.
+- `plan` and `apply` skip forks (a checkout with an `upstream` remote) and checkouts whose origin org is not in `owned_orgs`, and `dependabot` and `gates` do the same. `--version` shows the commit.
+- With no root named, commands scan the lines of `bosun roots` when bosun is installed, and look them up only when a scan needs them, so `--help` and named-root runs never wait on it.
+- `plan` and `apply` run in their own memory-capped user scope.
+- Repo verify and builds run in a bubblewrap sandbox with isolated tool config, a private runtime dir and no desktop session.
+- Every commit repo-ops makes is signed, and the commit fails rather than land unsigned.
+- Node pins in workflows move to the newest LTS major, and workflow version inputs are bumped.
+- After a Biome bump `apply` runs the safe fix, and holds Biome when verify still fails.
+- `apply --retry-failed` retries only failed and skipped paths and re-commits a commit-failed repo from its own recorded edits. Dirty-skipped repos print as a table with the rerun command.
+- `report` prints the first-error digest from `report.json`, including commit failures and gate's error tail.
+- Dependabot PRs stay open while the lockfile still holds a copy in the superseded range.
+
+### Changed
+
+- A clean run prints only its non-zero summary rows, and the archive line only when a repo is archived or an org could not be checked.
+- `gates` runs a bare `gate --timeout 0 --force` (with `--e2e` when asked) instead of `gate run NAME...`, so the record it leaves is a full one and `--skip-fresh` skips repos it already passed.
+- `plan` says "would upgrade", and only landed changes count as packages upgraded.
+- Coverage runs in CI only, which keeps the local gate under its budget.
+
+### Fixed
+
+- A failed `gh` lookup of action tags (rate limit, auth, network) is no longer cached as "no tags" for six hours. Failed lookups are counted in the summary and the run exits 1 instead of printing "0 bumps".
+- A lockfile never commits without its manifest: `pyproject.toml`, `Pipfile`, `deno.json` and `go.work` written by a package manager now count as apply's own edits.
+- Apply commits only the paths it wrote and lists concurrent edits by someone else as foreign. A named checkout never commits a file the operator edited, and a retry refuses a file that changed since apply.
+- A repo another apply holds is skipped, a repo mid-rebase, merge or bisect counts as dirty, and a failed `git status` counts as dirty.
+- Repos left dirty only by their own manifests and lockfiles are upgraded, and an actions-only dirty repo is left alone on a fleet sweep.
+- An unparseable config file, or a malformed hold or verify value, fails the repo or run instead of dropping every setting.
+- Every manifest writer, tree rewriter and compose build path is confined to the repo root. Symlinked manifests are not written through, and Cargo members and `file:` copies that resolve outside the workspace are skipped.
+- A failed verify restores only what apply wrote, and records owned edits when apply dies with any exception.
+- A gate that hits the run ceiling is reported, a broken gate listing is an error, and verify details carry the error lines from gate's full log.
+- Actions: pins are rewritten as bytes so CRLF and non-UTF-8 workflows survive, a SHA pin never moves to a prerelease, an org allowlist pattern with a ref matches, and a new `gh-actions` tag has to prove itself on one repo first.
+- Dependabot: a PR is closed only when every package in an "X and Y" title is superseded, never from a checkout ahead of or dirtier than the remote branch, and each repo's own `.repo-ops.toml` exclude applies.
+- Version handling: prereleases sort below releases, `~=` and tilde ranges are honoured, `v1.0` and `v1.0.0` are the same release, and a latest below the installed version is never reported as behind.
+- Containers: ports in registry names, trailing comments, `AS` aliases, multi-part tag suffixes and v-prefixed tags parse correctly, and a rolling `tag@sha` pin refreshes its digest.
+- Rust, Go, uv, pip-tools and Yarn: Cargo members are scanned and bumped, majors land when two are locked, a `go` directive is capped at the installed toolchain, an unsolvable pip-tools pin holds, and a uv lock that lowers a version fails the apply.
+- Git paths are read as literals and with `-z`, so non-ASCII paths restore, and an `ssh://` GitHub remote with a port parses. GitHub fine-grained tokens are redacted from logs, and redirects drop credentials and re-check the allowlist.
+
 ## [0.25.6] - 2026-11-08
 
 ### Added
