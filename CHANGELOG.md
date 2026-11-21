@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-21
+
 ### Added
 
 - A global `adopted = ["org/repo"]` config key opts a fork back into sweeps, and the run summary has a `foreign skipped` row naming the forks and non-owned checkouts that were left alone.
