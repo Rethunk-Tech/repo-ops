@@ -823,7 +823,13 @@ def _run_upgrade_body(
                     _all_uses.extend(_names)
                     if any(actions._is_gh_actions(n) for n in _names):
                         _repo_uses_gh = True
-            if _repo_uses_gh:
+            # A repo the scan below leaves alone cannot stand in for the canary.
+            _scan_skipped = apply and (
+                _bundle.any_dirty_skip()
+                or _bundle.git_repo in dirty_actions_only
+                or (rollback_on_veto and _bundle.any_fail())
+            )
+            if _repo_uses_gh and not _scan_skipped:
                 actions._note_gh_actions_user(_bundle.git_repo)
                 _gh_actions_repos.append(_bundle.git_repo)
         if _all_uses:

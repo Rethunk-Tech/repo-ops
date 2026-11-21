@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -150,3 +151,30 @@ def test_ci_green_needs_a_non_security_success_and_no_failure(
         patch("repo_ops_upgrade.actions._commit_pins_gh_actions_tag", return_value=True),
     ):
         assert actions_mod._ci_green_on_gh_actions_tag(tmp_path, _TAG) is green
+
+
+def test_a_dirty_skipped_repo_is_not_the_canary(
+    tmp_path: Path, init_git_repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from repo_ops_upgrade.run import main_apply
+
+    pinned = f"jobs:\n  ci:\n    steps:\n      - uses: {_GH}@{_OLD}  # v1.30\n"
+    wfs = {}
+    for name in ("alpha", "beta"):
+        repo = tmp_path / "fleet" / name
+        init_git_repo(repo)
+        wfs[name] = _wf(repo, pinned)
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "wf"], check=True)
+    (tmp_path / "fleet" / "alpha" / "notes.txt").write_text("operator work\n")
+    monkeypatch.setattr("repo_ops_core.cli.default_roots", lambda: [str(tmp_path / "fleet")])
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", side_effect=_which),
+        patch("repo_ops_upgrade.actions.run", side_effect=_run_for_tags),
+        patch("repo_ops_upgrade.actions._github_token_available", return_value=False),
+    ):
+        main_apply(["--no-commit"])
+
+    assert _OLD in wfs["alpha"].read_text(encoding="utf-8")
+    assert _NEW in wfs["beta"].read_text(encoding="utf-8")
