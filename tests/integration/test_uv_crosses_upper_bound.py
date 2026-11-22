@@ -53,8 +53,9 @@ def test_plan_lists_and_apply_crosses_the_upper_bound(tmp_path: Path) -> None:
     before = manifest.read_text()
 
     with patch("repo_ops_py.direct_requirements._pypi_latest", return_value="2.0"):
-        _, blocked = check_uv_lock(ws)
-        assert blocked == [Change("fxpkg", "1.0", "2.0")]
+        changes, blocked = check_uv_lock(ws)
+        assert changes == [Change("fxpkg", "1.0", "2.0")]
+        assert blocked == []
         assert manifest.read_text() == before
         assert apply_uv_lock(ws) == []
 
