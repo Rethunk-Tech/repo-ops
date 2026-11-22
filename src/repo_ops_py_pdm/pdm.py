@@ -24,6 +24,7 @@ from repo_ops_py.direct_requirements import (
     latest_version,
     requirement_satisfied,
 )
+from repo_ops_py.holds import ceiling_target
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
 from repo_ops_py.version_ceiling import enforce_version_ceilings
 
@@ -53,6 +54,7 @@ def _pdm_latest_direct_changes(ws: Workspace) -> list[Change]:
             latest = latest_version(name)
         except RuntimeError:
             continue
+        latest = ceiling_target(ws, name, latest)
         if semver_tuple(latest) > semver_tuple(resolved) and not requirement_satisfied(
             latest, requirement
         ):
@@ -80,7 +82,7 @@ def _apply_pdm_targeted_bumps(
         manifest_snapshot = snapshot_file(manifest, ws.git_repo)
         lock_snapshot = snapshot_file(lockfile, ws.git_repo)
         try:
-            bumped = bumped_requirement(requirement, candidate.to)
+            bumped = bumped_requirement(requirement, candidate.to, rule)
             proc = run(
                 [
                     "pdm",

@@ -17,6 +17,7 @@ from repo_ops_py.direct_requirements import (
     latest_version,
     requirement_satisfied,
 )
+from repo_ops_py.holds import ceiling_target
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
 from repo_ops_py.version_ceiling import enforce_version_ceilings
 
@@ -65,6 +66,7 @@ def _uv_latest_direct_changes(ws: Workspace) -> list[Change]:
             latest = latest_version(name)
         except RuntimeError:
             continue
+        latest = ceiling_target(ws, name, latest)
         if semver_tuple(latest) > semver_tuple(resolved) and not requirement_satisfied(
             latest, requirement
         ):
@@ -80,9 +82,8 @@ def _apply_uv_targeted_bumps(ws: Workspace, candidates: list[Change]) -> list[Ch
     remaining: list[Change] = []
     for candidate in candidates:
         requirement = dependencies.get(candidate.name)
-        if requirement is None or not target_within_hold(
-            candidate.to, resolve_package_hold(ws, candidate.name)
-        ):
+        rule = resolve_package_hold(ws, candidate.name)
+        if requirement is None or not target_within_hold(candidate.to, rule):
             remaining.append(candidate)
             continue
         manifest_snapshot = snapshot_file(manifest, ws.git_repo)
@@ -92,7 +93,7 @@ def _apply_uv_targeted_bumps(ws: Workspace, candidates: list[Change]) -> list[Ch
                 [
                     "uv",
                     "add",
-                    f"{candidate.name}{bumped_requirement(requirement, candidate.to)}",
+                    f"{candidate.name}{bumped_requirement(requirement, candidate.to, rule)}",
                 ],
                 ws.path,
                 timeout=TIMEOUT_APPLY,
