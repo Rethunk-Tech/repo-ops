@@ -941,6 +941,7 @@ def _run_upgrade_body(
     summary = report.build_run_summary(
         bundles, diagnostics=diagnostics, excluded_count=excluded_count
     )
+    summary["failure_count"] += sum(1 for o in commit_outcomes or () if o.status == "failed")
     summary["actions_lookups_failed"] = lookups_failed
     summary["foreign_skipped"] = foreign_skipped
     report.print_run_footer(

@@ -690,6 +690,18 @@ def execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
         return CommitOutcome(plan.git_repo, plan.label, "failed", detail=str(exc))
 
 
+def _staged_paths(repo: Path) -> set[str]:
+    proc = run_git(repo, "diff", "--cached", "--name-only", "-z", timeout=60)
+    return set(proc.stdout.split("\0")) - {""} if proc.returncode == 0 else set()
+
+
+def _unstage_added(plan: CommitPlan, staged_before: set[str]) -> None:
+    """Undo this plan's ``git add`` after a failed commit; what was already staged stays."""
+    added = [p for p in plan.files if p not in staged_before]
+    if added:
+        run_git(plan.git_repo, "reset", "-q", "--", *added, timeout=60)
+
+
 def _execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
     if plan.skipped_reason:
         return CommitOutcome(
@@ -698,9 +710,11 @@ def _execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
             "skipped",
             detail=plan.skipped_reason,
         )
+    staged_before = _staged_paths(plan.git_repo)
     for path in plan.files:
         add = run_git(plan.git_repo, "add", "--", path, timeout=120)
         if add.returncode != 0:
+            _unstage_added(plan, staged_before)
             err = (add.stderr or add.stdout or "git add failed").strip()
             return CommitOutcome(
                 plan.git_repo,
@@ -725,6 +739,7 @@ def _execute_commit_plan(plan: CommitPlan) -> CommitOutcome:
         timeout=120,
     )
     if commit.returncode != 0:
+        _unstage_added(plan, staged_before)
         err = (commit.stderr or commit.stdout or "git commit failed").strip()
         return CommitOutcome(
             plan.git_repo,

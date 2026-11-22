@@ -1291,3 +1291,19 @@ def test_commit_retry_waits_on_the_apply_lock_and_rechecks_bytes(
     assert run._commit_plan_current(plan)
     (tmp_path / "lock.txt").write_text("c\n")
     assert not run._commit_plan_current(plan)
+
+
+def test_failed_commit_leaves_nothing_staged(tmp_path: Path, init_git_repo) -> None:
+    bundle = _bundle(tmp_path, init_git_repo=init_git_repo)
+    (tmp_path / "package-lock.json").write_text('{"v":2}', encoding="utf-8")
+    hook = tmp_path / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    bundle.workspaces[0].changes = [Change("pkg", "1", "2")]
+    plan = post_apply_commit.plan_repo_commit(bundle)
+    outcome = post_apply_commit.execute_commit_plan(plan)
+    assert outcome.status == "failed"
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"], cwd=tmp_path, capture_output=True, text=True
+    ).stdout
+    assert staged == ""
