@@ -62,7 +62,7 @@ def detect_ruff(ws: Workspace, ctx: dict[str, Any]) -> bool:
     # Only trigger when something actually changed (apply) or when in plan mode
     # with at least one change candidate.
     changes = ctx.get("changes", [])
-    return bool(changes) or not ctx.get("apply", True)
+    return bool(changes)
 
 
 def report_ruff(ws: Workspace, ctx: dict[str, Any]) -> list[str]:

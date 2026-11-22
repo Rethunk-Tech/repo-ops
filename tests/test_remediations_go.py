@@ -31,8 +31,8 @@ def _result(tmp_path: Path, make_workspace, ecosystem: str = "go") -> WorkspaceR
         ("go", True, True, True, True),
         # No changes AND apply=True → don't trigger (nothing changed to reformat).
         ("go", True, False, True, False),
-        # Plan mode (apply=False) with empty changes still triggers for report.
-        ("go", True, False, False, True),
+        # Plan mode with no changes: nothing to reformat, so nothing to report.
+        ("go", True, False, False, False),
     ],
     ids=[
         "wrong-ecosystem-node",

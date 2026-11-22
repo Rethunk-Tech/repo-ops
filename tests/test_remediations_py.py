@@ -78,13 +78,13 @@ def test_detect_ruff_false_when_no_changes(tmp_path: Path, make_workspace) -> No
         assert py_rem.detect_ruff(ws, ctx) is False
 
 
-def test_detect_ruff_true_plan_mode_no_changes(tmp_path: Path, make_workspace) -> None:
-    """Plan mode (apply=False) with empty changes still triggers for report."""
+def test_detect_ruff_false_plan_mode_no_changes(tmp_path: Path, make_workspace) -> None:
+    """Plan mode with empty changes has nothing to reformat, so it reports nothing."""
     (tmp_path / "ruff.toml").write_text("line-length = 88\n")
     ws = make_workspace(tmp_path, ecosystem="py", manager="uv", label="test")
     ctx: dict[str, Any] = {"changes": [], "apply": False}
     with patch.object(py_rem.shutil, "which", return_value="/usr/bin/ruff"):
-        assert py_rem.detect_ruff(ws, ctx) is True
+        assert py_rem.detect_ruff(ws, ctx) is False
 
 
 def test_detect_ruff_false_when_ruff_absent(tmp_path: Path, make_workspace, make_change) -> None:

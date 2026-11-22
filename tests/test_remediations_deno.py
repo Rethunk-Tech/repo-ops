@@ -32,8 +32,8 @@ def _result(tmp_path: Path, make_workspace, ecosystem: str = "deno") -> Workspac
         ("deno", "deno.jsonc", True, True, True, True),
         # No changes AND apply=True → don't trigger (nothing changed to reformat).
         ("deno", "deno.json", False, True, True, False),
-        # Plan mode (apply=False) with empty changes still triggers for report.
-        ("deno", "deno.json", False, False, True, True),
+        # Plan mode with no changes: nothing to reformat, so nothing to report.
+        ("deno", "deno.json", False, False, True, False),
         # Gracefully skip (not fail) detection when the deno binary is absent.
         ("deno", "deno.json", True, True, False, False),
     ],

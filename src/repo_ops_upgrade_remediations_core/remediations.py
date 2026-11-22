@@ -136,7 +136,7 @@ def make_fmt_hook(
         if which_fn(tool) is None:
             return False  # tool not available — skip, do not fail
         changes = ctx.get("changes", [])
-        return bool(changes) or not ctx.get("apply", True)
+        return bool(changes)
 
     def report(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
         if not detailed_report:
