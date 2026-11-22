@@ -13,14 +13,17 @@ held packages up front).
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable, Iterable
 from typing import Protocol
 
 from repo_ops_core import holds as core_holds
+from repo_ops_core.constants import TIMEOUT_CHECK
 from repo_ops_core.filesystem import read_json_file
 from repo_ops_core.holds import HoldRule, workspace_rel
-from repo_ops_core.version_utils import version_satisfies_ceiling
+from repo_ops_core.process import run
+from repo_ops_core.version_utils import semver_precedence, version_satisfies_ceiling
 from repo_ops_js.expo import expo_hold
 from repo_ops_lockfiles.snapshots import resolved_version_from_node_modules
 from repo_ops_models import Change, Workspace
@@ -99,6 +102,74 @@ def hold_version_spec(rule: HoldRule) -> str:
     return rule.spec or f"<={rule.max_version}"
 
 
+def ceiling_version(ws: Workspace, name: str, rule: HoldRule) -> str | None:
+    """The highest published release *rule* allows, or None when the registry cannot say.
+
+    A prerelease is never the answer: ``<=5`` would otherwise match ``5.0.0-rc.1``
+    above nothing newer.
+    """
+    proc = run(
+        ["npm", "view", f"{name}@{hold_version_spec(rule)}", "version", "--json"],
+        ws.path,
+        timeout=TIMEOUT_CHECK,
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None
+    found = [data] if isinstance(data, str) else data if isinstance(data, list) else []
+    releases = [v for v in found if isinstance(v, str) and "-" not in v]
+    return max(releases, key=semver_precedence, default=None)
+
+
+def hold_install_spec(ws: Workspace, name: str, rule: HoldRule) -> str:
+    """What to install to land on the ceiling: the concrete release, so the manager saves ``^X``.
+
+    A rule's own install spec wins; a registry that cannot answer falls back to
+    the ``<=X`` range.
+    """
+    return rule.spec or ceiling_version(ws, name, rule) or hold_version_spec(rule)
+
+
+def plan_held_changes(
+    ws: Workspace, changes: list[Change], behind: list[Change]
+) -> tuple[list[Change], list[Change]]:
+    """Show in a plan the version the hold ceiling allows, as apply will land it.
+
+    A change whose target is over the ceiling becomes a move to the ceiling's
+    release (or disappears when the package already sits there); a held
+    behind-latest row stays in *behind* and also gains that move.
+    """
+    out: list[Change] = []
+    for change in changes:
+        rule = resolve_package_hold(ws, change.name)
+        if rule is None or version_satisfies_ceiling(change.to.lstrip("v"), rule.max_version):
+            out.append(change)
+            continue
+        out.extend(_clamped(ws, change, rule))
+    for change in behind:
+        rule = resolve_package_hold(ws, change.name)
+        if rule is None or version_satisfies_ceiling(change.to.lstrip("v"), rule.max_version):
+            continue
+        if not any(c.name == change.name for c in out):
+            out.extend(_clamped(ws, change, rule))
+    return out, behind
+
+
+def _clamped(ws: Workspace, change: Change, rule: HoldRule) -> list[Change]:
+    target = ceiling_version(ws, change.name, rule)
+    if target is None:
+        return []
+    try:
+        if semver_precedence(target) <= semver_precedence(change.from_ver.lstrip("^~=v")):
+            return []
+    except (TypeError, ValueError):
+        return []
+    return [Change(change.name, change.from_ver, target)]
+
+
 def direct_dependency_names(pkg_data: dict[str, object]) -> set[str]:
     """All direct dependency names from a parsed ``package.json``.
 
@@ -174,7 +245,7 @@ def enforce_holds(
         if resolved is None or version_satisfies_ceiling(resolved, rule.max_version):
             continue
         over_ceiling = resolved
-        proc = run_install(name, hold_version_spec(rule))
+        proc = run_install(name, hold_install_spec(ws, name, rule))
         if proc.returncode != 0:
             raise RuntimeError(
                 f"hold: failed to clamp {name} back to <={rule.max_version} "

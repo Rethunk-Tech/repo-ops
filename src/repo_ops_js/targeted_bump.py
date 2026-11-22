@@ -19,7 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from repo_ops_core.version_utils import semver_precedence
-from repo_ops_js.holds import hold_version_spec, resolve_package_hold
+from repo_ops_js.holds import hold_install_spec, resolve_package_hold
 from repo_ops_lockfiles.snapshots import (
     restore_workspace_snapshot,
     snapshot_workspace_files,
@@ -52,7 +52,11 @@ def run_targeted_bump(
     """
     snap = snapshot_workspace_files(mdir, manager)
     held_rule = None if ws is None else resolve_package_hold(ws, change.name)
-    target_ver = "latest" if held_rule is None else hold_version_spec(held_rule)
+    target_ver = (
+        "latest"
+        if held_rule is None or ws is None
+        else hold_install_spec(ws, change.name, held_rule)
+    )
     if held_rule is None:
         release_pin(mdir, change.name)
     ok = run_bump(change.name, target_ver)

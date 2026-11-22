@@ -20,6 +20,7 @@ from repo_ops_js.holds import (
     direct_dependency_names,
     enforce_holds,
     fold_held_into_behind,
+    plan_held_changes,
     resolve_package_hold,
 )
 from repo_ops_js.overrides import release_unheld_pin
@@ -194,7 +195,7 @@ def _npm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
 
 def check_npm(ws: Workspace) -> tuple[list[Change], list[Change]]:
     """Check the root and every workspace member (see :func:`_check_npm_dir`)."""
-    return check_with_members(ws, _check_npm_dir)
+    return check_with_members(ws, lambda w: plan_held_changes(w, *_check_npm_dir(w)))
 
 
 def _check_npm_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:

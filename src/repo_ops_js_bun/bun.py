@@ -21,6 +21,7 @@ from repo_ops_js.holds import (
     enforce_holds,
     fold_held_into_behind,
     hold_version_spec,
+    plan_held_changes,
     resolve_package_hold,
 )
 from repo_ops_js.overrides import release_unheld_pin
@@ -120,7 +121,9 @@ def check_bun(ws: Workspace, *, members: bool = True) -> tuple[list[Change], lis
     root also checks each member directory; ``members=False`` is the
     one-directory form ``apply_bun`` runs per directory.
     """
-    return check_with_members(ws, _check_bun_dir) if members else _check_bun_dir(ws)
+    if not members:
+        return _check_bun_dir(ws)
+    return check_with_members(ws, lambda w: plan_held_changes(w, *_check_bun_dir(w)))
 
 
 def _check_bun_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:

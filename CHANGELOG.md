@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- npm, pnpm and bun plans show the version a hold ceiling allows, not "held" with no move, and npm's in-range bucket is held too. A hold clamp installs the concrete release the ceiling resolves to, saved as `^X`, instead of writing `<=X` into the manifest; for bun this also makes a held package actually advance.
 - Yarn Classic (1.x) repos are skipped with a warning instead of failing every `plan` and `apply` on `yarn up`, which only Berry has.
 - Actions under a hold advance to the newest release the ceiling allows when the newest major is over it: an exact tag is SHA-pinned (it used to loosen to a floating `vN`) and a SHA pin keeps advancing.
 - Holds on submodules, pre-commit revs and Actions pins no longer clamp to a prerelease (`v4.1.0-rc1` beat `v4.1.0`); a prerelease is a target only for a pin already on one.

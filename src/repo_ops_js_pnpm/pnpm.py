@@ -26,7 +26,8 @@ from repo_ops_js.holds import (
     direct_dependency_names,
     enforce_holds,
     fold_held_into_behind,
-    hold_version_spec,
+    hold_install_spec,
+    plan_held_changes,
     resolve_package_hold,
 )
 from repo_ops_js.overrides import release_unheld_pin
@@ -372,7 +373,7 @@ def check_pnpm(ws: Workspace) -> tuple[list[Change], list[Change]]:
     member is checked from its own directory so holds scope to it and a
     targeted bump lands in the manifest that declares the dep.
     """
-    return check_with_members(ws, _check_pnpm_dir)
+    return check_with_members(ws, lambda w: plan_held_changes(w, *_check_pnpm_dir(w)))
 
 
 def _check_pnpm_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:
@@ -461,7 +462,11 @@ def targeted_bump_behind(
         if change.name in catalog_names:
             snap = snapshot_workspace_files(ws.path, "pnpm")
             held_rule = resolve_package_hold(ws, change.name)
-            target = hold_version_spec(held_rule) if held_rule is not None else change.to
+            target = (
+                hold_install_spec(ws, change.name, held_rule)
+                if held_rule is not None
+                else change.to
+            )
             if not target or not _rewrite_catalog_package(ws, change.name, target):
                 still_behind.append(change)
                 continue

@@ -14,6 +14,7 @@ import pytest
 
 from repo_ops_core.holds import HoldRule
 from repo_ops_core.holds import workspace_rel as _workspace_rel
+from repo_ops_js.holds import ceiling_version as _REAL_CEILING_VERSION
 from repo_ops_js.holds import enforce_holds
 from repo_ops_models import Workspace
 
@@ -58,3 +59,46 @@ def test_enforce_holds_raises_when_corrective_install_command_fails(
         pytest.raises(RuntimeError, match=r"hold.*typescript.*network error"),
     ):
         enforce_holds(ws, ["typescript"], manager="npm", run_install=_failing_install)
+
+
+def _npm_view(versions: list[str]):
+    import json
+
+    def fake_run(cmd, cwd, timeout=None, env=None):
+        assert cmd[:2] == ["npm", "view"]
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(versions), stderr="")
+
+    return fake_run
+
+
+def test_ceiling_version_is_the_highest_release_the_registry_lists() -> None:
+    from repo_ops_js import holds as js_holds
+
+    ws = Workspace(path=Path("."), ecosystem="node", manager="npm", git_repo=Path("."), label="d")
+    rule = HoldRule(package="typescript", max_version="5")
+    listed = ["5.0.4", "5.9.3", "5.10.0-rc.1", "5.2.2"]
+    with (
+        patch.object(js_holds, "ceiling_version", _REAL_CEILING_VERSION),
+        patch.object(js_holds, "run", _npm_view(listed)),
+    ):
+        assert js_holds.ceiling_version(ws, "typescript", rule) == "5.9.3"
+        assert js_holds.hold_install_spec(ws, "typescript", rule) == "5.9.3"
+
+
+def test_plan_shows_the_version_the_ceiling_allows_for_a_held_package(tmp_path: Path) -> None:
+    from repo_ops_js import holds as js_holds
+    from repo_ops_models import Change
+
+    ws = Workspace(path=tmp_path, ecosystem="node", manager="npm", git_repo=tmp_path, label="d")
+    rule = HoldRule(package="typescript", max_version="5.4")
+    with (
+        patch(_GLOBAL_HOLDS_CACHE, return_value=(rule,)),
+        patch.object(js_holds, "ceiling_version", return_value="5.4.5"),
+    ):
+        in_range = js_holds.plan_held_changes(ws, [Change("typescript", "5.0.4", "5.9.3")], [])
+        held = js_holds.plan_held_changes(ws, [], [Change("typescript", "4.9.5", "7.0.2")])
+    assert in_range[0] == [Change("typescript", "5.0.4", "5.4.5")]
+    assert held == (
+        [Change("typescript", "4.9.5", "5.4.5")],
+        [Change("typescript", "4.9.5", "7.0.2")],
+    )

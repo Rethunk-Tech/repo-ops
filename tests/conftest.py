@@ -330,3 +330,10 @@ def _offline_toolchains(monkeypatch: pytest.MonkeyPatch) -> None:
 def _fresh_isolated_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Start each test without the seeded tool config an earlier test in this worker isolated."""
     monkeypatch.setattr("repo_ops_core.process._ISOLATED_ENV", {})
+
+
+@pytest.fixture(autouse=True)
+def _no_registry_ceiling_lookup() -> Iterator[None]:
+    """Hold ceilings resolve through the npm registry; tests name the answer when they need one."""
+    with patch("repo_ops_js.holds.ceiling_version", return_value=None):
+        yield
