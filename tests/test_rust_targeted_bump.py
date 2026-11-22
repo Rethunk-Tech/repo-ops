@@ -489,3 +489,23 @@ def test_apply_rust_fails_on_a_registry_error_before_cargo_update(
         else:
             raise AssertionError("expected RuntimeError")
     run.assert_not_called()
+
+
+def test_held_crate_advances_to_the_highest_release_within_the_ceiling(
+    tmp_path: Path, make_workspace
+) -> None:
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\n\n[dependencies]\nitoa = "0.3"\n',
+        encoding="utf-8",
+    )
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
+    rule = HoldRule(package="itoa", max_version="0.4")
+    with (
+        patch("repo_ops_rust.rust._resolve_crate_hold", return_value=rule),
+        patch(
+            "repo_ops_rust.rust._cargo_registry_versions",
+            return_value=("0.3.4", "0.4.8", "0.5.0-rc.1", "1.0.11"),
+        ),
+    ):
+        changes = _cargo_latest_direct_changes(ws)
+    assert [(c.name, c.to) for c in changes] == [("itoa", "0.4.8")]

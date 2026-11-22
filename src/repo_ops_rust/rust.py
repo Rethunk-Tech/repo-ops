@@ -347,14 +347,45 @@ def _cargo_latest_direct_changes(ws: Workspace) -> list[Change]:
     for manifest in manifests:
         digest.update(str(manifest).encode() + b"\0" + manifest.read_bytes() + b"\0")
     stats = [manifest.stat() for manifest in manifests]
-    return list(
-        _cargo_latest_direct_changes_cached(
-            str(ws.path.resolve()),
-            max(stat.st_mtime_ns for stat in stats),
-            sum(stat.st_size for stat in stats),
-            digest.hexdigest(),
-        )
+    latest = _cargo_latest_direct_changes_cached(
+        str(ws.path.resolve()),
+        max(stat.st_mtime_ns for stat in stats),
+        sum(stat.st_size for stat in stats),
+        digest.hexdigest(),
     )
+    return [_clamp_to_hold(ws, manifests, change) for change in latest]
+
+
+def _clamp_to_hold(ws: Workspace, manifests: list[Path], change: Change) -> Change:
+    """Retarget a change whose latest is over its hold ceiling to the highest release within it.
+
+    Stays on the latest (a report-only held row) when nothing within the
+    ceiling is newer than what the manifests already allow.
+    """
+    rule = _resolve_crate_hold(ws, change.name)
+    if target_within_hold(change.to, rule) or rule is None:
+        return change
+    requirements = [
+        req
+        for manifest in manifests
+        for _, req in _cargo_manifest_dependencies(manifest).get(change.name, [])
+    ]
+    within = max(
+        (
+            v
+            for v in _cargo_registry_versions(change.name)
+            if "-" not in v and version_satisfies_ceiling(v, rule.max_version)
+        ),
+        key=semver_tuple,
+        default=None,
+    )
+    if (
+        within is None
+        or all(_cargo_requirement_satisfied(within, req) for req in requirements)
+        or any(version_parts(within) < version_parts(req) for req in requirements)
+    ):
+        return change
+    return Change(change.name, change.from_ver, within)
 
 
 def _cargo_dependency_section(header: str) -> bool:

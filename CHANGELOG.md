@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Rust: a held crate whose latest is over the ceiling now moves to the newest release within it (`itoa = "0.3"` under a `0.4` hold reaches 0.4.x) instead of staying put.
 - actionlint's "the runner of ... action is too old" no longer skips the pin bumps for that workflow; the bump is the fix.
 - pdm's cross-range bump writes `>=X` for a ranged requirement (`click>=7.0,<8`), not an exact `==X` pin that stops `pdm update` taking patch releases.
 - Go toolchain pins keep the precision of the pin the repo had: `apply` plans them before `go get` raises the directive, so a `go 1.22` pin moves to `go 1.27` as the plan said, not `go 1.27.4`.
