@@ -963,6 +963,26 @@ def _highest_exact_digest_in_major(info: dict, major: int) -> tuple[str, str] | 
     return None
 
 
+def _pin_target_major(repo: Path, action: str, info: dict, current_major: int) -> int:
+    """The newest major with a real release the action's hold allows, else *current_major*.
+
+    A newer major whose newest release is over the hold ceiling must not stop the
+    pin from advancing within the highest major the hold does allow.
+    """
+    latest = info.get("max_major")
+    if (
+        latest is None
+        or latest <= current_major
+        or _highest_exact_digest_in_major(info, latest) is None
+    ):
+        return current_major
+    for major in range(latest, current_major, -1):
+        digest = _highest_exact_digest_in_major(info, major)
+        if digest is not None and _target_within_hold(repo, action, digest[1]):
+            return major
+    return current_major
+
+
 def _pin_version(pin: str, comment: str | None, info: dict) -> tuple[int, ...] | None:
     """The release a SHA pin already carries: its dotted ``# vN.M`` comment, else the exact tags on its commit."""
     if comment and _EXACT_TAG_RE.fullmatch(comment):
@@ -1370,11 +1390,7 @@ def scan_actions(
                 # no exact tag.
                 target_major = major
                 if info is not None and major is not None:
-                    max_major = info.get("max_major")
-                    if max_major is not None and max_major > major:
-                        candidate = _highest_exact_digest_in_major(info, max_major)
-                        if candidate is not None:
-                            target_major = max_major
+                    target_major = _pin_target_major(repo, action, info, major)
                 digest = (
                     _highest_exact_digest_in_major(info, target_major)
                     if info is not None and target_major is not None
@@ -1480,14 +1496,7 @@ def scan_actions(
             # Pin a floating tag to a commit SHA, crossing to the newest major
             # when it has a real vN.M.P release. Runs before the tag-normalize
             # logic below; once SHA-pinned, the refresh path above owns it.
-            target_major = M
-            latest_major = info.get("max_major")
-            if (
-                latest_major is not None
-                and latest_major > M
-                and _highest_exact_digest_in_major(info, latest_major) is not None
-            ):
-                target_major = latest_major
+            target_major = _pin_target_major(repo, action, info, M)
             digest = _highest_exact_digest_in_major(info, target_major)
             if digest is not None:
                 new_sha, tag_label = digest

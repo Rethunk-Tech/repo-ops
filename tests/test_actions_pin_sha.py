@@ -130,3 +130,33 @@ def test_pin_sha_no_exact_release_in_major_falls_back_to_tag_normalize(
     assert "pin floating" not in (checkout[0].detail or "")
     text = wf.read_text(encoding="utf-8")
     assert _V7_0_1 not in text
+
+
+def test_pin_sha_under_a_hold_advances_to_the_highest_allowed_major(tmp_path: Path) -> None:
+    """A newest major over the ceiling must not leave an exact tag loosened or a pin stale."""
+    from repo_ops_core.holds import HoldRule
+
+    wf = _wf(
+        tmp_path,
+        "jobs:\n  ci:\n    steps:\n      - uses: actions/cache@v4.0.0\n"
+        f"      - uses: actions/upload-artifact@{_V7_0_0} # v4.4.0\n",
+    )
+    tags_proc = _make_tags_proc(
+        f"v8.0.0 {_V8_0_0}",
+        f"v8 {_V8_0_0}",
+        f"v4.6.2 {_V7_0_1}",
+        f"v4.4.0 {_V7_0_0}",
+        f"v4.0.0 {'e' * 40}",
+    )
+    rule = HoldRule(package="x", max_version="4")
+
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
+        patch("repo_ops_upgrade.actions.run", return_value=tags_proc),
+        patch("repo_ops_upgrade.actions._resolve_actions_hold", return_value=rule),
+    ):
+        scan_actions(tmp_path, apply=True)
+
+    text = wf.read_text(encoding="utf-8")
+    assert f"actions/cache@{_V7_0_1}" in text and "actions/cache@v4" not in text
+    assert f"actions/upload-artifact@{_V7_0_1} # v4.6.2" in text
