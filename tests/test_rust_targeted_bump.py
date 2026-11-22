@@ -455,3 +455,37 @@ def test_applied_cargo_bumps_are_reported_per_crate(tmp_path: Path) -> None:
     changes = diff_workspace_snapshots(before, after, "rust")
 
     assert [(c.name, c.from_ver, c.to) for c in changes] == [("serde", "1.0.0", "2.0.0")]
+
+
+def test_private_registry_dependency_is_never_looked_up_on_crates_io(
+    tmp_path: Path, make_workspace
+) -> None:
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\n\n[dependencies]\n'
+        'corp-crate = { version = "1", registry = "corp" }\n',
+        encoding="utf-8",
+    )
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
+    with patch("repo_ops_rust.rust._cargo_registry_versions", side_effect=AssertionError):
+        assert _cargo_latest_direct_changes(ws) == []
+
+
+def test_apply_rust_fails_on_a_registry_error_before_cargo_update(
+    tmp_path: Path, make_workspace
+) -> None:
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\n\n[dependencies]\nserde = "1.0"\n',
+        encoding="utf-8",
+    )
+    ws = make_workspace(tmp_path, ecosystem="rust", manager="rust", label="crate")
+    with (
+        patch("repo_ops_rust.rust.run") as run,
+        patch("repo_ops_rust.rust._cargo_registry_versions", side_effect=RuntimeError("HTTP 500")),
+    ):
+        try:
+            apply_rust(ws)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("expected RuntimeError")
+    run.assert_not_called()

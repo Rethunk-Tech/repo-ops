@@ -295,6 +295,9 @@ def _cargo_manifest_dependencies(
                     value.get("workspace") is True
                     or "path" in value
                     or "git" in value
+                    # A private registry's crate is not crates.io's namesake.
+                    or "registry" in value
+                    or "registry-index" in value
                     or value.get("package") not in (None, name)
                 ):
                     continue
@@ -566,6 +569,9 @@ def apply_rust(ws: Workspace) -> list[Change] | None:
         *cargo_manifests(ws.path),
     ):
         return None
+    # A registry lookup that fails must do so before cargo update rewrites the
+    # lockfile; the result is cached for the targeted bumps below.
+    _cargo_latest_direct_changes(ws)
     proc = run(["cargo", "update"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "cargo update failed")
