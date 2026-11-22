@@ -52,7 +52,7 @@ def test_plan_lists_and_apply_crosses_the_upper_bound(tmp_path: Path) -> None:
     ws = Workspace(path=proj, ecosystem="py", manager="uv", git_repo=proj, label=".")
     before = manifest.read_text()
 
-    with patch("repo_ops_py_pdm.pdm._pypi_latest", return_value="2.0"):
+    with patch("repo_ops_py.direct_requirements._pypi_latest", return_value="2.0"):
         _, blocked = check_uv_lock(ws)
         assert blocked == [Change("fxpkg", "1.0", "2.0")]
         assert manifest.read_text() == before

@@ -11,14 +11,14 @@ from repo_ops_core.process import run
 from repo_ops_core.version_utils import pep440_precedence, semver_tuple
 from repo_ops_lockfiles.parsers import toml_lock_versions
 from repo_ops_models import Change, Workspace
+from repo_ops_py.direct_requirements import (
+    bumped_requirement,
+    direct_dependencies,
+    latest_version,
+    requirement_satisfied,
+)
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
 from repo_ops_py.version_ceiling import enforce_version_ceilings
-from repo_ops_py_pdm.pdm import (
-    _pdm_bumped_requirement,
-    _pdm_direct_dependencies,
-    _pdm_latest_version,
-    _pdm_requirement_satisfied,
-)
 
 # ---------------------------------------------------------------------------
 # Package version-ceiling ("hold") rules
@@ -57,33 +57,26 @@ def _uv_latest_direct_changes(ws: Workspace) -> list[Change]:
     """Direct dependencies whose manifest range excludes the newest release."""
     locked = {name.lower(): version for name, version in _uv_lock_versions(ws).items()}
     changes: list[Change] = []
-    for name, requirement in sorted(_pdm_direct_dependencies(ws).items()):
+    for name, requirement in sorted(direct_dependencies(ws).items()):
         resolved = locked.get(name.lower())
         if resolved is None:
             continue
         try:
-            latest = _pdm_latest_version(name)
+            latest = latest_version(name)
         except RuntimeError:
             continue
-        if semver_tuple(latest) > semver_tuple(resolved) and not _pdm_requirement_satisfied(
+        if semver_tuple(latest) > semver_tuple(resolved) and not requirement_satisfied(
             latest, requirement
         ):
             changes.append(Change(name, resolved, latest))
     return changes
 
 
-def _uv_bumped_requirement(requirement: str, latest: str) -> str:
-    # PEP 440 has no ``~X``; a compatible-release pin keeps its operator.
-    if requirement.strip().startswith("~="):
-        return f"~={latest}"
-    return _pdm_bumped_requirement(requirement, latest)
-
-
 def _apply_uv_targeted_bumps(ws: Workspace, candidates: list[Change]) -> list[Change]:
     """Rewrite each blocking range with ``uv add``; restore on failure or no advance."""
     manifest = ws.path / "pyproject.toml"
     lockfile = ws.path / "uv.lock"
-    dependencies = _pdm_direct_dependencies(ws)
+    dependencies = direct_dependencies(ws)
     remaining: list[Change] = []
     for candidate in candidates:
         requirement = dependencies.get(candidate.name)
@@ -99,7 +92,7 @@ def _apply_uv_targeted_bumps(ws: Workspace, candidates: list[Change]) -> list[Ch
                 [
                     "uv",
                     "add",
-                    f"{candidate.name}{_uv_bumped_requirement(requirement, candidate.to)}",
+                    f"{candidate.name}{bumped_requirement(requirement, candidate.to)}",
                 ],
                 ws.path,
                 timeout=TIMEOUT_APPLY,

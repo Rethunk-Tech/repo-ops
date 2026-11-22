@@ -74,8 +74,9 @@ def test_check_pdm_diffs_a_scratch_lock_and_leaves_the_checkout_alone(
 
 
 def test_pdm_bump_of_a_range_stays_a_floor_not_an_exact_pin() -> None:
-    from repo_ops_py_pdm.pdm import _pdm_bumped_requirement as bump
+    from repo_ops_py.direct_requirements import bumped_requirement as bump
 
     assert bump(">=7.0,<8", "8.5.1") == ">=8.5.1"
     assert bump("==2.28.0", "2.31.0") == "==2.31.0"
     assert bump("^1.2", "2.0.0") == "^2.0.0"
+    assert bump("~=1.2", "2.0.0") == "~=2.0.0"

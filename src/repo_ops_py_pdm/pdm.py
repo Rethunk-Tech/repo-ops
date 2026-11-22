@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import shutil
 import sys
 import tempfile
@@ -11,18 +10,21 @@ from pathlib import Path
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import (
     guard_tool_writes,
-    read_toml_file,
     restore_file,
     snapshot_file,
 )
 from repo_ops_core.holds import resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
-from repo_ops_core.requirement import requirement_satisfied
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_lockfiles.parsers import toml_lock_versions
 from repo_ops_models import Change, Workspace
+from repo_ops_py.direct_requirements import (
+    bumped_requirement,
+    direct_dependencies,
+    latest_version,
+    requirement_satisfied,
+)
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
-from repo_ops_py.pypi import pypi_latest as _pypi_latest
 from repo_ops_py.version_ceiling import enforce_version_ceilings
 
 # ---------------------------------------------------------------------------
@@ -38,45 +40,8 @@ def _pdm_lock_versions(ws: Workspace) -> dict[str, str]:
     return toml_lock_versions(ws.path / "pdm.lock")
 
 
-def _pdm_direct_dependencies(ws: Workspace) -> dict[str, str]:
-    document = read_toml_file(ws.path / "pyproject.toml") or {}
-    dependencies: dict[str, str] = {}
-    project = document.get("project")
-    if isinstance(project, dict):
-        raw_dependencies = project.get("dependencies")
-        if isinstance(raw_dependencies, list):
-            for raw_requirement in raw_dependencies:
-                if not isinstance(raw_requirement, str):
-                    continue
-                match = re.match(
-                    r"^\s*([A-Za-z0-9][A-Za-z0-9_.-]*)\s*(.*)$",
-                    raw_requirement,
-                )
-                if match:
-                    dependencies[match.group(1)] = match.group(2).strip()
-    tool = document.get("tool")
-    pdm = tool.get("pdm") if isinstance(tool, dict) else None
-    pdm_dependencies = pdm.get("dependencies") if isinstance(pdm, dict) else None
-    if isinstance(pdm_dependencies, dict):
-        for name, requirement in pdm_dependencies.items():
-            if isinstance(name, str) and isinstance(requirement, str):
-                dependencies[name] = requirement.strip()
-    return dependencies
-
-
-def _pdm_latest_version(package: str) -> str:
-    latest = _pypi_latest(package)
-    if latest is None:
-        raise RuntimeError(f"registry lookup failed for {package}")
-    return latest
-
-
-def _pdm_requirement_satisfied(version: str, requirement: str) -> bool:
-    return requirement_satisfied(version, requirement, default_operator="^")
-
-
 def _pdm_latest_direct_changes(ws: Workspace) -> list[Change]:
-    dependencies = _pdm_direct_dependencies(ws)
+    dependencies = direct_dependencies(ws)
     locked = _pdm_lock_versions(ws)
     locked_normalized = {name.lower(): version for name, version in locked.items()}
     changes: list[Change] = []
@@ -85,26 +50,14 @@ def _pdm_latest_direct_changes(ws: Workspace) -> list[Change]:
         if resolved is None:
             continue
         try:
-            latest = _pdm_latest_version(name)
+            latest = latest_version(name)
         except RuntimeError:
             continue
-        if semver_tuple(latest) > semver_tuple(resolved) and not _pdm_requirement_satisfied(
+        if semver_tuple(latest) > semver_tuple(resolved) and not requirement_satisfied(
             latest, requirement
         ):
             changes.append(Change(name, resolved, latest))
     return changes
-
-
-def _pdm_bumped_requirement(requirement: str, latest: str) -> str:
-    stripped = requirement.strip()
-    if stripped.startswith("^"):
-        return f"^{latest}"
-    if stripped.startswith("~"):
-        return f"~{latest}"
-    if stripped.startswith("=="):
-        return f"=={latest}"
-    # A range that excluded latest keeps room for patch releases instead of freezing at one.
-    return f">={latest}"
 
 
 def _apply_pdm_targeted_bumps(
@@ -113,7 +66,7 @@ def _apply_pdm_targeted_bumps(
 ) -> list[Change]:
     manifest = ws.path / "pyproject.toml"
     lockfile = ws.path / "pdm.lock"
-    dependencies = _pdm_direct_dependencies(ws)
+    dependencies = direct_dependencies(ws)
     remaining: list[Change] = []
     for candidate in candidates:
         requirement = dependencies.get(candidate.name)
@@ -127,13 +80,13 @@ def _apply_pdm_targeted_bumps(
         manifest_snapshot = snapshot_file(manifest, ws.git_repo)
         lock_snapshot = snapshot_file(lockfile, ws.git_repo)
         try:
-            bumped = _pdm_bumped_requirement(requirement, candidate.to)
+            bumped = bumped_requirement(requirement, candidate.to)
             proc = run(
                 [
                     "pdm",
                     "add",
                     f"{candidate.name}@{bumped}"
-                    if bumped.startswith(("^", "~"))
+                    if bumped.startswith(("^", "~")) and not bumped.startswith("~=")
                     else f"{candidate.name}{bumped}",
                 ],
                 ws.path,

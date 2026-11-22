@@ -23,7 +23,8 @@ from unittest.mock import patch
 import pytest
 
 from repo_ops_models import Change
-from repo_ops_py_pdm.pdm import _pdm_requirement_satisfied, apply_pdm, check_pdm
+from repo_ops_py.direct_requirements import requirement_satisfied as _pdm_requirement_satisfied
+from repo_ops_py_pdm.pdm import apply_pdm, check_pdm
 from repo_ops_py_pip_tools.pip_tools import (
     _pip_tools_requirement_satisfied,
 )
@@ -111,6 +112,8 @@ class _Spec:
 
     @property
     def pypi_target(self) -> str:
+        if self.manager == "pdm":
+            return "repo_ops_py.direct_requirements._pypi_latest"
         return f"{self.module_path}._pypi_latest"
 
     @property
