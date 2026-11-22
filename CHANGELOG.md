@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Yarn Classic (1.x) repos are skipped with a warning instead of failing every `plan` and `apply` on `yarn up`, which only Berry has.
 - Actions under a hold advance to the newest release the ceiling allows when the newest major is over it: an exact tag is SHA-pinned (it used to loosen to a floating `vN`) and a SHA pin keeps advancing.
 - Holds on submodules, pre-commit revs and Actions pins no longer clamp to a prerelease (`v4.1.0-rc1` beat `v4.1.0`); a prerelease is a target only for a pin already on one.
 - Rust: a dependency from a private registry (`registry = ...`) is no longer looked up on crates.io, which crashed `check` and `apply` (or bumped it to a public namesake's version). `apply` also queries crates.io before `cargo update`, so a lookup failure no longer leaves a changed `Cargo.lock`.

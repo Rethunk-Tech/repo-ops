@@ -465,6 +465,26 @@ def targeted_bump_behind(
     return applied, still_behind
 
 
+def _is_yarn_classic(ws: Workspace) -> bool:
+    """True for a Yarn 1 (Classic) project, which has no ``yarn up``."""
+    manifest = read_json_file(ws.path / "package.json") or {}
+    package_manager = manifest.get("packageManager") if isinstance(manifest, dict) else None
+    if isinstance(package_manager, str) and package_manager.startswith("yarn@"):
+        return package_manager.startswith("yarn@1.")
+    lock = ws.path / "yarn.lock"
+    try:
+        return lock.is_file() and "__metadata:" not in lock.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def _skip_yarn_classic(ws: Workspace) -> bool:
+    if not _is_yarn_classic(ws):
+        return False
+    print(f"WARN {ws.path}: Yarn Classic (1.x) is not supported; skipping", file=sys.stderr)
+    return True
+
+
 def check_yarn_snapshot(
     ws: Workspace,
 ) -> tuple[list[Change], list[dict[str, str]], list[Change]]:
@@ -475,6 +495,8 @@ def check_yarn_snapshot(
     ``apply_yarn`` call in the same process can reuse it without spinning up a
     second isolated copy.
     """
+    if _skip_yarn_classic(ws):
+        return [], [], []
     changes: list[Change] = []
     snapshot_overrides: list[dict[str, str]] = []
     with (
@@ -603,6 +625,8 @@ def apply_yarn(ws: Workspace) -> list[Change]:
     directory, so the guard cannot read installed versions.  A diagnostic
     note is written to stderr in that case.
     """
+    if _skip_yarn_classic(ws):
+        return []
     # --- ghost-bump guard: plan what *should* move without resolutions --------
     manifest = ws.path / "package.json"
     if not guard_tool_writes(ws.git_repo, "yarn", manifest, ws.path / "yarn.lock"):

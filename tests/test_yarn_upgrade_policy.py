@@ -304,3 +304,17 @@ def test_probe_cache_clear_works(tmp_path: Path, make_workspace) -> None:
         apply_yarn(ws)
 
     assert len(probe_calls) == 1, "after clear(), apply must fall back to the probe"
+
+
+def test_yarn_classic_is_skipped_not_run_through_yarn_up(tmp_path, make_workspace, capsys) -> None:
+    from unittest.mock import patch
+
+    from repo_ops_js_yarn.yarn import apply_yarn, check_yarn_snapshot
+
+    (tmp_path / "package.json").write_text('{"packageManager": "yarn@1.22.22"}\n')
+    ws = make_workspace(tmp_path, ecosystem="node", manager="yarn", label="classic")
+    with patch("repo_ops_js_yarn.yarn.run") as run:
+        assert check_yarn_snapshot(ws) == ([], [], [])
+        assert apply_yarn(ws) == []
+    run.assert_not_called()
+    assert "Yarn Classic" in capsys.readouterr().err
