@@ -433,9 +433,21 @@ def plan_toolchains(ws: Workspace) -> tuple[list[Change], list[Change]]:
     )
 
 
-def apply_toolchains(ws: Workspace) -> tuple[list[Change], list[Change]]:
+def plan_toolchain_pins(ws: Workspace) -> tuple[list[tuple[_Pin, str, str]], list[Change]]:
+    """The pin rewrites for :func:`apply_toolchains`, taken before the dependency apply.
+
+    ``go get`` raises the go directive itself, so planning afterwards would size
+    the written version from that raised pin instead of the one the repo had.
+    """
+    return _plan(ws)
+
+
+def apply_toolchains(
+    ws: Workspace,
+    planned: tuple[list[tuple[_Pin, str, str]], list[Change]] | None = None,
+) -> tuple[list[Change], list[Change]]:
     """Rewrite the pins :func:`plan_toolchains` reports; same return shape."""
-    moves, behind = _plan(ws)
+    moves, behind = planned or _plan(ws)
     input_moves, input_behind = _workflow_moves(ws)
     # go.work may sit above the workspace (a repo-root work file for a module
     # below it) but never above the repo, which is what confines every write

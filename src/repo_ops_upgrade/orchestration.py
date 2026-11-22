@@ -47,7 +47,7 @@ from repo_ops_upgrade.post_apply import (
     tree_diff,
 )
 from repo_ops_upgrade.soup import sync_soup_versions
-from repo_ops_upgrade.toolchains import apply_toolchains, merge_toolchains
+from repo_ops_upgrade.toolchains import apply_toolchains, merge_toolchains, plan_toolchain_pins
 from repo_ops_upgrade_remediations_core.remediations import dispatch as dispatch_remediations
 from repo_ops_upgrade_remediations_core.remediations import load_ecosystem_hooks
 
@@ -383,6 +383,7 @@ def _process_workspace_body(
         before_snap = snapshot_workspace_files(ws.path, ws.manager)
         begin_write_log()
         try:
+            planned_pins = plan_toolchain_pins(ws)
             behind_after = ecosystems.apply_workspace(ws)
             if behind_after:
                 # Direct deps the apply left behind (yarn).
@@ -392,7 +393,7 @@ def _process_workspace_body(
             if not result.changes:
                 result.changes = collect_changes_after_apply(ws)
             result.changes, result.behind_latest = merge_toolchains(
-                result.changes, result.behind_latest, *apply_toolchains(ws)
+                result.changes, result.behind_latest, *apply_toolchains(ws, planned_pins)
             )
             sync_soup_versions(ws.git_repo, result.changes, [ws.path, ws.git_repo])
             if ws.ecosystem == "node":

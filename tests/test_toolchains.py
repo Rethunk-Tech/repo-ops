@@ -258,3 +258,13 @@ def test_go_work_outside_repo_refuses_writes(tmp_path: Path) -> None:
     assert changes == []
     assert (repo / "go.mod").read_text() == "go 1.27.2\n"
     assert (outside / "go.work").read_text() == "go 1.27.2\n"
+
+
+def test_go_pin_precision_comes_from_the_pre_apply_pin(tmp_path: Path) -> None:
+    """``go get`` raises the directive to a full patch before the pins are written."""
+    (tmp_path / "go.mod").write_text("module x\n\ngo 1.22\n")
+    ws = _ws(tmp_path, "go")
+    planned = toolchains.plan_toolchain_pins(ws)
+    (tmp_path / "go.mod").write_text("module x\n\ngo 1.26.0\n")
+    toolchains.apply_toolchains(ws, planned)
+    assert (tmp_path / "go.mod").read_text().startswith("module x\n\ngo 1.27\n")
