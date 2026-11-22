@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -252,3 +253,79 @@ def test_named_root_with_manifest_only_dirt_still_applies(repo: Path) -> None:
     out = _process_named(repo)
 
     assert out.status == "ok", out.error
+
+
+def test_go_work_rewritten_by_two_members_still_commits(
+    tmp_path: Path, init_git_repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A go.work member a rewrote and member b then rewrote is still a commit."""
+    state_mod._CACHE = None
+    state_mod._DIRTY = False
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    work = tmp_path / "repo"
+    init_git_repo(work)
+    for name in ("a", "b"):
+        (work / name).mkdir()
+        (work / name / "go.mod").write_text(f"module example.com/{name}\n\ngo 1.23\n")
+    (work / "go.work").write_text("go 1.22\n\nuse (\n\t./a\n\t./b\n)\n")
+    _git(work, "add", ".")
+    _git(work, "commit", "-q", "-m", "init")
+
+    from repo_ops_core.filesystem import guarded_write, note_write
+
+    wss = [
+        Workspace(path=work / n, ecosystem="go", manager="go", git_repo=work, label=n)
+        for n in ("a", "b")
+    ]
+
+    def _apply(ws: Workspace) -> list:
+        if ws.label == "a":
+            text = (work / "go.work").read_text()
+            guarded_write(work / "go.work", text.replace("1.22", "1.23").encode(), work)
+        else:
+            # b's own go.work rewrite comes from a subprocess (`go work use`).
+            (work / "go.work").write_text((work / "go.work").read_text() + "// b\n")
+            note_write(work / "go.work")
+        return []
+
+    outs = []
+    for ws in wss:
+        with (
+            patch.object(orchestration, "should_exclude", return_value=False),
+            patch.object(orchestration.ecosystems, "apply_workspace", side_effect=_apply),
+            patch.object(orchestration, "merge_toolchains", side_effect=lambda c, b, *a: (c, b)),
+            patch.object(orchestration, "sync_soup_versions"),
+            patch.object(orchestration, "dispatch_remediations"),
+            patch.object(orchestration.verify_mod, "verify_workspace", return_value=""),
+        ):
+            outs.append(
+                orchestration.process_workspace(
+                    WorkspaceResult(workspace=ws),
+                    do_apply=True,
+                    do_verify=True,
+                    allow_dirty=True,
+                    repo_started_dirty=False,
+                    on_verify_fail="revert",
+                    emit_progress=False,
+                )
+            )
+    bundle = RepoBundle(git_repo=work, label="r", workspaces=outs)
+    plan = plan_repo_commit(bundle)
+    assert plan.skipped_reason is None, plan.skipped_reason
+    assert "go.work" in plan.files
+
+
+@pytest.mark.skipif(shutil.which("go") is None, reason="go not on PATH")
+def test_go_work_use_declares_its_go_work_write(tmp_path: Path) -> None:
+    from repo_ops_core.filesystem import begin_write_log, end_write_log
+    from repo_ops_go import go as go_mod
+
+    (tmp_path / "a").mkdir()
+    (tmp_path / "a" / "go.mod").write_text("module example.com/a\n\ngo 1.23\n")
+    (tmp_path / "go.work").write_text("go 1.22\n\nuse ./a\n")
+    ws = Workspace(path=tmp_path / "a", ecosystem="go", manager="go", git_repo=tmp_path, label="a")
+    go_mod.register_go_work_dir(ws.path, tmp_path)
+    begin_write_log()
+    go_mod._apply_go_work_directive(ws)
+    assert (tmp_path / "go.work").resolve() in end_write_log()

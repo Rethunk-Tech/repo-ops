@@ -15,7 +15,7 @@ from repo_ops_core.constants import (
     TIMEOUT_CHECK,
     TIMEOUT_LIST_UPDATES,
 )
-from repo_ops_core.filesystem import guard_tool_writes
+from repo_ops_core.filesystem import guard_tool_writes, note_write
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import (
@@ -583,6 +583,7 @@ def _apply_go_work_directive(ws: Workspace) -> None:
     proc = run(["go", "work", "use"], go_work_dir, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
         _raise_classified(proc.stderr, "go work use failed", ws.path)
+    note_write(go_work_dir / "go.work")
 
 
 def tidy_go_module(ws: Workspace) -> None:

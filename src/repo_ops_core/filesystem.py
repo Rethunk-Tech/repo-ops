@@ -65,6 +65,13 @@ def end_write_log() -> set[Path]:
     return paths
 
 
+def note_write(path: Path) -> None:
+    """Record a write a subprocess made, so the run owns it like a guarded write."""
+    log = getattr(_write_log, "paths", None)
+    if log is not None:
+        log.add(path.resolve())
+
+
 class OutsideRepoError(RuntimeError):
     """A write would resolve outside the repo root it is confined to."""
 
@@ -88,9 +95,7 @@ def guarded_write(
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
-    log = getattr(_write_log, "paths", None)
-    if log is not None:
-        log.add(path.resolve())
+    note_write(path)
 
 
 def warn_skip(appender: str, reason: str) -> None:
