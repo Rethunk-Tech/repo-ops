@@ -45,3 +45,29 @@ def test_apply_pdm_raises_when_pdm_absent(tmp_path: Path, make_workspace) -> Non
             assert "pdm not on PATH" in str(exc)
         else:
             raise AssertionError("expected RuntimeError")
+
+
+_LOCK = '[[package]]\nname = "packaging"\nversion = "{v}"\n'
+
+
+def test_check_pdm_diffs_a_scratch_lock_and_leaves_the_checkout_alone(
+    tmp_path: Path, make_workspace
+) -> None:
+    (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+    (tmp_path / "pdm.lock").write_text(_LOCK.format(v="21.3"))
+
+    def fake_run(cmd, cwd, timeout=None):
+        assert Path(cwd) != tmp_path
+        (Path(cwd) / "pdm.lock").write_text(_LOCK.format(v="26.3"))
+        (Path(cwd) / ".pdm-python").write_text("x")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    with (
+        patch("repo_ops_py_pdm.pdm.shutil.which", return_value="/usr/bin/pdm"),
+        patch("repo_ops_py_pdm.pdm.run", side_effect=fake_run),
+        patch("repo_ops_py_pdm.pdm._pdm_latest_direct_changes", return_value=[]),
+    ):
+        changes, _ = check_pdm(make_workspace(tmp_path, ecosystem="py", manager="pdm", label="d"))
+
+    assert [(c.name, c.from_ver, c.to) for c in changes] == [("packaging", "21.3", "26.3")]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["pdm.lock", "pyproject.toml"]

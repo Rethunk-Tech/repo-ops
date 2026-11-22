@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 import shutil
 import sys
+import tempfile
+from pathlib import Path
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import (
@@ -171,9 +173,8 @@ def check_pdm(
 ) -> list[Change] | tuple[list[Change], list[Change]]:
     """Return pending upgrades for a PDM-managed workspace.
 
-    Runs ``pdm update --dry-run`` and parses lines of the form::
-
-        - name 1.2.3 -> 1.3.0
+    Re-locks a scratch copy with ``pdm update --no-sync`` and reports the
+    packages whose locked version moved.
 
     Falls back to an empty list with a WARN when ``pdm`` is absent so the
     workspace degrades gracefully (report-only, no error).
@@ -181,21 +182,29 @@ def check_pdm(
     if not shutil.which("pdm"):
         print(f"WARN {ws.path}: pdm not on PATH", file=sys.stderr)
         return ([], [])
-    proc = run(
-        ["pdm", "update", "--dry-run"],
-        ws.path,
-        timeout=TIMEOUT_CHECK,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "pdm update --dry-run failed")
-    changes: list[Change] = []
-    for line in proc.stdout.splitlines():
-        # PDM dry-run lines look like:
-        #   - requests 2.28.0 -> 2.31.0
-        #   ~ requests 2.28.0 -> 2.31.0
-        m = re.search(r"[-~]\s+(\S+)\s+([\d][^\s]*)\s+->\s+([\d][^\s]*)", line)
-        if m:
-            changes.append(Change(m.group(1), m.group(2), m.group(3)))
+    # `pdm update --dry-run` prints no "old -> new" without an installed venv and
+    # creates .venv/.pdm-python in the checkout, so the plan re-locks a scratch
+    # copy and diffs the lockfile.
+    before = _pdm_lock_versions(ws)
+    with tempfile.TemporaryDirectory(prefix="repo-ops-pdm-") as td:
+        scratch = Path(td)
+        shutil.copytree(
+            ws.path,
+            scratch,
+            symlinks=True,
+            dirs_exist_ok=True,
+            ignore=shutil.ignore_patterns(".git", ".venv", "__pycache__", "node_modules"),
+            ignore_dangling_symlinks=True,
+        )
+        proc = run(["pdm", "update", "--no-sync"], scratch, timeout=TIMEOUT_CHECK)
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.strip() or "pdm update --no-sync failed")
+        after = toml_lock_versions(scratch / "pdm.lock")
+    changes = [
+        Change(name, old, after[name])
+        for name, old in sorted(before.items())
+        if name in after and after[name] != old
+    ]
     in_range = _filter_held_changes(ws, changes)
     return in_range, _pdm_latest_direct_changes(ws)
 

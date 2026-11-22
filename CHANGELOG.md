@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- pdm: `plan` re-locks a scratch copy and diffs the lockfile. It used to run `pdm update --dry-run` in the checkout, which created `.venv/` and `.pdm-python`, printed no versions without a venv, and under `FORCE_COLOR` put ANSI codes in package names so holds never matched.
 - pnpm: a hold on a package that members take from the workspace catalog now clamps the catalog entry. It used to run `pnpm add`, which moved every member off `catalog:` onto a plain range.
 - A go.work repo whose members each rewrite go.work is committed again: the `go work use` write is now recorded as the run's own, so the last member's write no longer reads as "changed since apply" and leaves the whole repo uncommitted.
 - `plan` and `check` now see uv's lockfile upgrades: uv prints versions as `v21.3 -> v26.3`, which the parser never matched, so every uv and hatch repo reported nothing to upgrade.
