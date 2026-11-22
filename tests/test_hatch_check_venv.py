@@ -342,7 +342,7 @@ def test_check_hatch_with_uv_lock_delegates_to_check_uv_lock(tmp_path: Path, mak
         patch("repo_ops_py_hatch.hatch.shutil.which", return_value="/usr/bin/uv"),
         patch("repo_ops_py.uv_lock.run", fake_run),
     ):
-        changes = check_hatch(ws)
+        changes, _ = check_hatch(ws)
 
     assert run_calls == [["uv", "lock", "--upgrade", "--dry-run"]]
     assert len(changes) == 1
