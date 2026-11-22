@@ -476,3 +476,17 @@ def test_retry_failed_survives_a_deleted_commit_repo_and_keeps_subdir_workspaces
     monkeypatch.setattr(orchestration, "process_workspace", _process)
     assert main_apply(["--retry-failed"]) == 0
     assert seen == [mono / "svc"]
+
+
+def test_report_names_the_run_and_says_when_nothing_is_wrong(
+    tmp_path: Path, monkeypatch: Any, capsys: Any
+) -> None:
+    state = tmp_path / "state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state))
+    run_id = "20260101T000000.000000Z-apply"
+    _write_run_report(state, run_id, _payload(_ws_json(str(tmp_path / "ok"), status="ok")))
+
+    assert main_report([]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].startswith(run_id)
+    assert lines[-1] == f"{run_id}: nothing failed, skipped or held"

@@ -1093,8 +1093,13 @@ def main_report(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 1
     payload = json.loads(report_path.read_text())
-    for line in _digest_lines_from_payload(payload):
+    run_id = report_path.parent.name
+    print(f"{run_id} ({payload.get('mode', 'unknown')})")
+    lines = _digest_lines_from_payload(payload)
+    for line in lines:
         print(line)
+    if not lines:
+        print(f"{run_id}: nothing failed, skipped or held")
     return 0
 
 
