@@ -58,9 +58,10 @@ def check_uv_lock(ws: Workspace) -> list[Change]:
     changes: list[Change] = []
     for line in (proc.stdout + proc.stderr).splitlines():
         if "would upgrade" in line.lower() or "->" in line:
-            # Allow pre-release / local identifiers (e.g. 1.2.3a1, 1.0.0+local).
+            # Allow pre-release / local identifiers (e.g. 1.2.3a1, 1.0.0+local)
+            # and uv's "v" version prefix.
             m = re.search(
-                r"(\S+)\s+([0-9][^\s]*)\s*->\s*([0-9][^\s]*)",
+                r"(\S+)\s+v?([0-9][^\s]*)\s*->\s*v?([0-9][^\s]*)",
                 line,
             )
             if m:

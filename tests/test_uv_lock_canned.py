@@ -102,3 +102,15 @@ def test_apply_uv_lock_raises_on_sync_failure(tmp_path: Path, make_workspace) ->
         pytest.raises(RuntimeError, match="sync failed"),
     ):
         uv_lock.apply_uv_lock(make_workspace(tmp_path, ecosystem="py", manager="uv", label="demo"))
+
+
+def test_check_uv_lock_parses_real_uv_output(tmp_path: Path, make_workspace) -> None:
+    """uv 0.13 prints ``Update name vOLD -> vNEW`` and ``Remove name vX``."""
+    stderr = (
+        "Resolved 2 packages in 17ms\nUpdate packaging v21.3 -> v26.3\nRemove pyparsing v3.3.3\n"
+    )
+    with patch.object(uv_lock, "run", _fake_run(stderr=stderr)):
+        changes = uv_lock.check_uv_lock(
+            make_workspace(tmp_path, ecosystem="py", manager="uv", label="demo")
+        )
+    assert [(c.name, c.from_ver, c.to) for c in changes] == [("packaging", "21.3", "26.3")]
