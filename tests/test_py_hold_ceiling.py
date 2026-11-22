@@ -36,3 +36,17 @@ def test_held_package_is_retargeted_to_the_highest_release_within_the_ceiling(
 def test_bumped_requirement_under_a_hold_keeps_the_ceiling() -> None:
     assert bumped_requirement("<0.26", "0.27.2", _RULE) == ">=0.27.2,<=0.27.999999"
     assert bumped_requirement("<0.26", "0.28.1") == ">=0.28.1"
+
+
+def test_bumped_requirement_keeps_the_marker_and_extras() -> None:
+    assert (
+        bumped_requirement('<24 ; python_version >= "3.12"', "26.3")
+        == '>=26.3 ; python_version >= "3.12"'
+    )
+    assert bumped_requirement("[http2]<0.26", "0.28.1") == "[http2]>=0.28.1"
+
+
+def test_bumped_requirement_keeps_the_compatible_release_width() -> None:
+    assert bumped_requirement("~=1.4", "2.0.3") == "~=2.0"
+    assert bumped_requirement("~=1.4.2", "2.0.3") == "~=2.0.3"
+    assert bumped_requirement("~=1.4", "2") == "~=2.0"

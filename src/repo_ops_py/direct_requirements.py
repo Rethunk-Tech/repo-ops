@@ -49,19 +49,38 @@ def requirement_satisfied(version: str, requirement: str) -> bool:
     return _requirement_satisfied(version, requirement, default_operator="^")
 
 
-def bumped_requirement(requirement: str, latest: str, hold: HoldRule | None = None) -> str:
-    """The requirement that admits *latest*; under a hold it also keeps the hold's ceiling."""
-    stripped = requirement.strip()
+def _bumped_specifier(stripped: str, latest: str, hold: HoldRule | None) -> str:
     if hold is not None:
         return f">={latest},{hold_ceiling_spec(hold.max_version)}"
     if stripped.startswith("^"):
         return f"^{latest}"
-    # PEP 440 has no ``~X``; a compatible-release pin keeps its operator.
+    # PEP 440 has no ``~X``; a compatible-release pin keeps its operator and its
+    # component count, so ``~=1.4`` stays a minor-level range.
     if stripped.startswith("~="):
-        return f"~={latest}"
+        width = max(len(stripped.removeprefix("~=").strip().split(".")), 2)
+        parts = latest.split(".")[:width]
+        parts += ["0"] * (width - len(parts))
+        return "~=" + ".".join(parts)
     if stripped.startswith("~"):
         return f"~{latest}"
     if stripped.startswith("=="):
         return f"=={latest}"
     # A range that excluded latest keeps room for patch releases instead of freezing at one.
     return f">={latest}"
+
+
+def bumped_requirement(requirement: str, latest: str, hold: HoldRule | None = None) -> str:
+    """The requirement that admits *latest*; under a hold it also keeps the hold's ceiling.
+
+    Extras (``[http2]``) and an environment marker (``; python_version >= "3.12"``)
+    stay as written around the rewritten specifier.
+    """
+    spec, sep, marker = requirement.partition(";")
+    spec = spec.strip()
+    extras = ""
+    if spec.startswith("["):
+        end = spec.find("]")
+        if end != -1:
+            extras, spec = spec[: end + 1], spec[end + 1 :].strip()
+    bumped = extras + _bumped_specifier(spec, latest, hold)
+    return f"{bumped} ;{marker}" if sep else bumped

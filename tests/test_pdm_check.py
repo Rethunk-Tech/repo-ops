@@ -79,4 +79,4 @@ def test_pdm_bump_of_a_range_stays_a_floor_not_an_exact_pin() -> None:
     assert bump(">=7.0,<8", "8.5.1") == ">=8.5.1"
     assert bump("==2.28.0", "2.31.0") == "==2.31.0"
     assert bump("^1.2", "2.0.0") == "^2.0.0"
-    assert bump("~=1.2", "2.0.0") == "~=2.0.0"
+    assert bump("~=1.2", "2.0.0") == "~=2.0"
