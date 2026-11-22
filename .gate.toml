@@ -17,3 +17,7 @@ run = 'uv run pytest -q -m "not integration" --cov'
 [gates.build]
 timeout = "3m"
 run = 'uv build -o "$(mktemp -d)"'
+
+# Matches verify.yml's pyrefly invocation (explicit path, tests and scripts excluded).
+[gates.typecheck]
+run = "uv run pyrefly check . --project-excludes 'tests/**' 'scripts/**'"
