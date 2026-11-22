@@ -15,7 +15,7 @@ from repo_ops_js_yarn.yarn import (
     check_yarn_snapshot,
     clear_probe_cache,
 )
-from repo_ops_models import Change, Workspace
+from repo_ops_models import Change, Workspace, WorkspaceSkip
 
 # Canonical patch target for the ghost-bump guard resolver (same as other managers).
 _RESOLVER_PATH = "repo_ops_js.guards.resolved_version_from_node_modules"
@@ -306,15 +306,17 @@ def test_probe_cache_clear_works(tmp_path: Path, make_workspace) -> None:
     assert len(probe_calls) == 1, "after clear(), apply must fall back to the probe"
 
 
-def test_yarn_classic_is_skipped_not_run_through_yarn_up(tmp_path, make_workspace, capsys) -> None:
+def test_yarn_classic_is_skipped_not_run_through_yarn_up(tmp_path, make_workspace) -> None:
     from unittest.mock import patch
 
-    from repo_ops_js_yarn.yarn import apply_yarn, check_yarn_snapshot
+    from repo_ops_js_yarn.yarn import apply_yarn
+    from repo_ops_upgrade.registry import check_workspace
 
     (tmp_path / "package.json").write_text('{"packageManager": "yarn@1.22.22"}\n')
     ws = make_workspace(tmp_path, ecosystem="node", manager="yarn", label="classic")
     with patch("repo_ops_js_yarn.yarn.run") as run:
-        assert check_yarn_snapshot(ws) == ([], [], [])
-        assert apply_yarn(ws) == []
+        result = check_workspace(ws)
+        with pytest.raises(WorkspaceSkip, match="Yarn Classic"):
+            apply_yarn(ws)
     run.assert_not_called()
-    assert "Yarn Classic" in capsys.readouterr().err
+    assert (result.status, result.error) == ("skip", "Yarn Classic (1.x) not supported")

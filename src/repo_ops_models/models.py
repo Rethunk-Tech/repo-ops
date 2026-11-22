@@ -52,6 +52,10 @@ class OwnedEdit:
     applied: bytes | None
 
 
+class WorkspaceSkip(Exception):
+    """A checker or applier declines the workspace: it is reported as skipped, not failed."""
+
+
 @dataclass
 class WorkspaceResult:
     workspace: Workspace

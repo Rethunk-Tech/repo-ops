@@ -33,7 +33,7 @@ from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
     snapshot_workspace_files,
 )
-from repo_ops_models import DIRTY_SKIP_MARKER, Change, Workspace, WorkspaceResult
+from repo_ops_models import DIRTY_SKIP_MARKER, Change, Workspace, WorkspaceResult, WorkspaceSkip
 from repo_ops_upgrade import inflight
 from repo_ops_upgrade import registry as ecosystems
 from repo_ops_upgrade import verify as verify_mod
@@ -408,7 +408,7 @@ def _process_workspace_body(
             if ws.ecosystem == "node":
                 result.overrides_audit = overrides_audit(ws.path, ws.manager)
         except Exception as exc:  # any parse crash must still reach the rollback record
-            result.status = "fail"
+            result.status = "skip" if isinstance(exc, WorkspaceSkip) else "fail"
             result.error = str(exc)
             result.owned_edits = record_owned_edits(
                 ws,

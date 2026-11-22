@@ -8,6 +8,7 @@ from repo_ops_models.models import (
     RepoBundle,
     Workspace,
     WorkspaceResult,
+    WorkspaceSkip,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "RepoBundle",
     "Workspace",
     "WorkspaceResult",
+    "WorkspaceSkip",
 ]

@@ -47,7 +47,7 @@ from repo_ops_lockfiles.snapshots import (
     diff_workspace_snapshots,
     snapshot_workspace_files,
 )
-from repo_ops_models import Change, Workspace
+from repo_ops_models import Change, Workspace, WorkspaceSkip
 from repo_ops_upgrade.constants import YARN_ISOLATED_COPY_SKIP, YARN_ISOLATED_YARN_SKIP
 
 
@@ -478,11 +478,9 @@ def _is_yarn_classic(ws: Workspace) -> bool:
         return False
 
 
-def _skip_yarn_classic(ws: Workspace) -> bool:
-    if not _is_yarn_classic(ws):
-        return False
-    print(f"WARN {ws.path}: Yarn Classic (1.x) is not supported; skipping", file=sys.stderr)
-    return True
+def _refuse_yarn_classic(ws: Workspace) -> None:
+    if _is_yarn_classic(ws):
+        raise WorkspaceSkip("Yarn Classic (1.x) not supported")
 
 
 def check_yarn_snapshot(
@@ -495,8 +493,7 @@ def check_yarn_snapshot(
     ``apply_yarn`` call in the same process can reuse it without spinning up a
     second isolated copy.
     """
-    if _skip_yarn_classic(ws):
-        return [], [], []
+    _refuse_yarn_classic(ws)
     changes: list[Change] = []
     snapshot_overrides: list[dict[str, str]] = []
     with (
@@ -625,8 +622,7 @@ def apply_yarn(ws: Workspace) -> list[Change]:
     directory, so the guard cannot read installed versions.  A diagnostic
     note is written to stderr in that case.
     """
-    if _skip_yarn_classic(ws):
-        return []
+    _refuse_yarn_classic(ws)
     # --- ghost-bump guard: plan what *should* move without resolutions --------
     manifest = ws.path / "package.json"
     if not guard_tool_writes(ws.git_repo, "yarn", manifest, ws.path / "yarn.lock"):

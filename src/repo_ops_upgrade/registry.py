@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 from repo_ops_js.overrides import overrides_audit
 from repo_ops_js.workspaces import corepack_prepare
-from repo_ops_models import Change, Workspace, WorkspaceResult
+from repo_ops_models import Change, Workspace, WorkspaceResult, WorkspaceSkip
 from repo_ops_upgrade.toolchains import merge_toolchains, plan_toolchains
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,9 @@ def check_workspace(ws: Workspace) -> WorkspaceResult:
         result.changes, result.behind_latest = merge_toolchains(
             result.changes, result.behind_latest, *plan_toolchains(ws)
         )
+    except WorkspaceSkip as exc:
+        result.status = "skip"
+        result.error = str(exc)
     except (OSError, RuntimeError, ValueError) as exc:
         logger.warning(
             "checker failed for %s at %s: %s",
