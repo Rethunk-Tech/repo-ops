@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
+import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from ruamel.yaml import YAML
@@ -31,8 +34,64 @@ _COARSE_DIFF_LOCKFILES = frozenset(
         *RUST_LOCKFILES,
         *DENO_LOCKFILES,
     }
-    - {"package.json", "yarn.lock"}
+    - {"package.json", "yarn.lock", "go.mod", "go.sum"}
 )
+
+_GO_REQUIRE_RE = re.compile(r"^\s*(?:require\s+)?([^\s()/]+\.[^\s()]+)\s+(v\S+)", re.MULTILINE)
+
+
+def _go_mod_versions(data: bytes) -> dict[str, set[str]]:
+    text = data.decode("utf-8", errors="replace")
+    out: dict[str, set[str]] = {}
+    for module, version in _GO_REQUIRE_RE.findall(text):
+        out.setdefault(module, set()).add(version)
+    return out
+
+
+def _versions_via_parser(parser: Callable[[Path], set[str]], name: str, data: bytes):
+    """``name@version`` entries of a lockfile held as bytes, parsed by its path-based reader."""
+    with tempfile.TemporaryDirectory(prefix="repo-ops-lock-") as td:
+        path = Path(td) / name
+        path.write_bytes(data)
+        out: dict[str, set[str]] = {}
+        for entry in parser(path):
+            pkg, _, version = entry.rpartition("@")
+            if pkg:
+                out.setdefault(pkg, set()).add(version)
+        return out
+
+
+def _version_moves(b_map: dict[str, set[str]], a_map: dict[str, set[str]]) -> list[Change]:
+    return [
+        Change(name, ", ".join(sorted(b_map.get(name, ()))) or "?", ", ".join(sorted(a_map[name])))
+        for name in sorted(a_map)
+        if a_map[name] != b_map.get(name)
+    ]
+
+
+def _lockfile_moves(name: str, before: bytes, after: bytes) -> list[Change] | None:
+    """Per-package moves for a lockfile with a structured reader; None when it has none or fails to parse."""
+    from repo_ops_lockfiles import parsers
+
+    readers: dict[str, Callable[[Path], set[str]]] = {
+        "package-lock.json": parsers.versions_npm_lock,
+        "uv.lock": parsers.versions_uv_lock,
+        "pdm.lock": parsers.versions_pdm_lock,
+        "poetry.lock": parsers.versions_poetry_lock,
+        "deno.lock": parsers.versions_deno_lock,
+    }
+    try:
+        if name == "go.mod":
+            b_map, a_map = _go_mod_versions(before), _go_mod_versions(after)
+        elif (reader := readers.get(name)) is not None:
+            b_map = _versions_via_parser(reader, name, before)
+            a_map = _versions_via_parser(reader, name, after)
+        else:
+            return None
+        # A file neither side of which parses keeps its coarse row.
+        return _version_moves(b_map, a_map) if b_map or a_map else None
+    except (ValueError, OSError):
+        return None
 
 
 def resolved_version_from_node_modules(mdir: Path, name: str) -> str | None:
@@ -296,7 +355,9 @@ def diff_workspace_snapshots(
             # the post-apply fallback, which reports the workspace's lockfiles.
             seen.add(path.name)
             changes.append(Change(path.name, "changed", "changed"))
-        elif path.name == "Cargo.lock" and (moves := _cargo_lock_changes(b, a)) is not None:
+        elif (path.name == "Cargo.lock" and (moves := _cargo_lock_changes(b, a)) is not None) or (
+            moves := _lockfile_moves(path.name, b, a)
+        ) is not None:
             for c in moves:
                 if c.name not in seen:
                     seen.add(c.name)

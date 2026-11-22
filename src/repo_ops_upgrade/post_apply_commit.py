@@ -576,7 +576,15 @@ def build_conventional_message(bundle: RepoBundle, files: list[str]) -> str:
             body_lines.append("Workspaces:")
             for wr in changed_ws[:8]:
                 ws = wr.workspace
-                body_lines.append(f"- {ws.label} ({ws.ecosystem}/{ws.manager})")
+                moved = [
+                    f"{c.name} {c.from_ver} → {c.to}"
+                    for c in wr.changes
+                    if not (c.from_ver == "changed" and c.to == "changed")
+                ]
+                line = f"- {ws.label} ({ws.ecosystem}/{ws.manager})"
+                if moved:
+                    line += ": " + ", ".join(moved[:6]) + (", …" if len(moved) > 6 else "")
+                body_lines.append(line)
             if len(changed_ws) > 8:
                 body_lines.append(f"- … and {len(changed_ws) - 8} more")
     body = "\n".join(body_lines)

@@ -152,3 +152,28 @@ def test_snapshot_skips_a_link_leaving_the_repo(tmp_path: Path) -> None:
     (ws / "requirements.txt").symlink_to(outside)
 
     assert snapshot_workspace_files(ws, "pip-tools") == {}
+
+
+def test_structured_lockfiles_name_the_packages_that_moved(tmp_path: Path) -> None:
+    from repo_ops_lockfiles.snapshots import diff_workspace_snapshots
+
+    uv_before = b'[[package]]\nname = "httpx"\nversion = "0.25.2"\n'
+    uv_after = b'[[package]]\nname = "httpx"\nversion = "0.28.1"\n'
+    go_before = b"module x\n\ngo 1.22\n\nrequire (\n\tgithub.com/spf13/cobra v1.5.0\n)\n"
+    go_after = b"module x\n\ngo 1.22\n\nrequire (\n\tgithub.com/spf13/cobra v1.7.0\n)\n"
+    npm_before = b'{"packages": {"": {}, "node_modules/semver": {"version": "6.0.0"}}}'
+    npm_after = b'{"packages": {"": {}, "node_modules/semver": {"version": "7.8.6"}}}'
+
+    def moves(name: str, before: bytes, after: bytes, manager: str) -> list[tuple[str, str, str]]:
+        path = tmp_path / name
+        changes = diff_workspace_snapshots({path: before}, {path: after}, manager)
+        return [(c.name, c.from_ver, c.to) for c in changes]
+
+    assert moves("uv.lock", uv_before, uv_after, "uv") == [("httpx", "0.25.2", "0.28.1")]
+    assert moves("go.mod", go_before, go_after, "go") == [
+        ("github.com/spf13/cobra", "v1.5.0", "v1.7.0")
+    ]
+    assert moves("go.sum", b"a\n", b"b\n", "go") == []
+    assert moves("package-lock.json", npm_before, npm_after, "npm") == [
+        ("semver", "6.0.0", "7.8.6")
+    ]

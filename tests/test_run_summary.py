@@ -242,3 +242,13 @@ def test_packages_upgraded_counts_only_workspaces_that_kept_their_changes(tmp_pa
     ]
     summary = build_run_summary({tmp_path: _bundle(tmp_path, workspaces=results)})
     assert summary["packages_upgraded"] == 1
+
+
+def test_coarse_lockfile_rows_are_not_counted_as_packages(tmp_path: Path) -> None:
+    ws = Workspace(path=tmp_path, ecosystem="py", manager="uv", git_repo=tmp_path, label="d")
+    wr = WorkspaceResult(
+        workspace=ws,
+        changes=[Change("uv.lock", "changed", "changed"), Change("httpx", "0.25.2", "0.28.1")],
+    )
+    summary = build_run_summary({tmp_path: _bundle(tmp_path, workspaces=[wr])})
+    assert summary["packages_upgraded"] == 1

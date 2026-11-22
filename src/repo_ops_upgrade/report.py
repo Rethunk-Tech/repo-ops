@@ -124,6 +124,11 @@ def _format_behind_latest_annotation(rule: HoldRule | None) -> str:
     return annotation + ")"
 
 
+def _is_coarse_row(change: Change) -> bool:
+    """A lockfile-level ``changed → changed`` row names a file, not a package."""
+    return change.from_ver == "changed" and change.to == "changed"
+
+
 def build_run_summary(
     bundles: dict[Path, RepoBundle],
     *,
@@ -153,7 +158,7 @@ def build_run_summary(
         for wr in bundle.workspaces:
             if wr.status == "ok":
                 # A failed or rolled-back workspace's changes did not land.
-                packages_upgraded += len(wr.changes)
+                packages_upgraded += sum(1 for c in wr.changes if not _is_coarse_row(c))
                 workspaces_ok += 1
             elif wr.status == "fail":
                 workspaces_fail += 1
