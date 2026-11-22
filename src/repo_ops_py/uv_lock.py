@@ -96,7 +96,11 @@ def _apply_uv_targeted_bumps(ws: Workspace, candidates: list[Change]) -> list[Ch
         lock_snapshot = snapshot_file(lockfile, ws.git_repo)
         try:
             proc = run(
-                ["uv", "add", f"{candidate.name}{_uv_bumped_requirement(requirement, candidate.to)}"],
+                [
+                    "uv",
+                    "add",
+                    f"{candidate.name}{_uv_bumped_requirement(requirement, candidate.to)}",
+                ],
                 ws.path,
                 timeout=TIMEOUT_APPLY,
             )
