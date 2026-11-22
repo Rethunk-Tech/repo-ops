@@ -112,3 +112,11 @@ def test_resolve_hold_sha_target_returns_none_when_candidate_is_not_lower() -> N
         )
         is None
     )
+
+
+def test_hold_clamp_prefers_the_release_over_its_prerelease() -> None:
+    tags = ["v4.0.0", "v4.1.0", "v4.1.0-rc1", "v4.2.0-beta.1", "v5.0.0"]
+    assert resolve_hold_tag_target("v5.0.0", tags, _rule("4"), context="submodule") == "v4.1.0"
+    refs = [(f"{i:040x}", t) for i, t in enumerate(tags)]
+    target = resolve_hold_sha_target(f"{4:040x}", refs, _rule("4"), context="submodule")
+    assert target is not None and target[0] == "v4.1.0"

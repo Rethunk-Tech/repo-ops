@@ -13,7 +13,7 @@ import logging
 
 from repo_ops_core.holds import HoldRule
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
-from repo_ops_upgrade.tags import has_v_prefix as _has_v_prefix
+from repo_ops_upgrade.tags import _candidate, _rank
 from repo_ops_upgrade.tags import is_semver_tag as _is_semver_tag
 
 logger = logging.getLogger(__name__)
@@ -45,10 +45,9 @@ def resolve_hold_tag_target(
     if version_satisfies_ceiling(current_rev.lstrip("v"), rule.max_version):
         return None
 
-    want_v = _has_v_prefix(current_rev)
     candidates: list[tuple[tuple[int, ...], str]] = []
     for tag in tags:
-        if not _is_semver_tag(tag) or _has_v_prefix(tag) != want_v:
+        if not _candidate(tag, current_rev):
             continue
         tag_version = _semver_or_none(tag, context)
         if tag_version is None:
@@ -58,7 +57,7 @@ def resolve_hold_tag_target(
 
     if not candidates:
         return None
-    target_version, target_tag = max(candidates, key=lambda item: (item[0], item[1]))
+    target_version, target_tag = max(candidates, key=lambda item: _rank(item[1]))
     if target_version >= current_version:
         return None
     return target_tag
@@ -93,14 +92,13 @@ def resolve_hold_sha_target(
     matching_tags = matching_sha_tags(current_sha, refs, context=context)
     if not matching_tags:
         return None
-    current_version, current_tag, _ = max(matching_tags, key=lambda item: (item[0], item[1]))
+    current_version, current_tag, _ = max(matching_tags, key=lambda item: _rank(item[1]))
     if version_satisfies_ceiling(current_tag.lstrip("v"), rule.max_version):
         return None
 
-    want_v = _has_v_prefix(current_tag)
     candidates: list[tuple[tuple[int, ...], str, str]] = []
     for tag_sha, tag in refs:
-        if not _is_semver_tag(tag) or _has_v_prefix(tag) != want_v:
+        if not _candidate(tag, current_tag):
             continue
         tag_version = _semver_or_none(tag, context)
         if tag_version is None:
@@ -110,7 +108,7 @@ def resolve_hold_sha_target(
 
     if not candidates:
         return None
-    target_version, target_tag, target_sha = max(candidates, key=lambda item: (item[0], item[1]))
+    target_version, target_tag, target_sha = max(candidates, key=lambda item: _rank(item[1]))
     if target_version >= current_version:
         return None
     return target_tag, target_sha

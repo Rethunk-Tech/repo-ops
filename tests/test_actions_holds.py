@@ -66,3 +66,11 @@ def test_hold_clamps_sha_pin_to_highest_release_at_or_below_ceiling() -> None:
     )
     assert _matching_action_sha_tags(_V3_SHA[:12], info) == [((3, 9, 1), "v3.9.1", _V3_SHA)]
     assert _matching_action_sha_tags("bbbbbbbb", info) == []
+
+
+def test_action_hold_clamp_skips_prereleases() -> None:
+    rule = HoldRule(package="actions/cache", max_version="4")
+    tags = {"v4", "v4.1.0", "v4.2.0-beta", "v5"}
+    assert _resolve_hold_action_tag_target("v5", tags, rule) == "v4.1.0"
+    info = {"sha_to_tags": {_V3_SHA: ["v4.1.0"], _V4_SHA: ["v4.2.0-rc.1"], _OTHER_SHA: ["v5.0.0"]}}
+    assert _resolve_hold_action_sha_target(_OTHER_SHA, info, rule) == (_V3_SHA, "v5.0.0", "v4.1.0")

@@ -1040,7 +1040,8 @@ def _resolve_hold_action_tag_target(current_ref: str, tags: set[str], rule: Hold
     candidates: list[tuple[tuple[int, ...], str]] = []
     for tag in tags:
         tag_version = _action_tag_version(tag)
-        if tag_version is None:
+        # A prerelease is a target only for a pin already on one.
+        if tag_version is None or ("-" in tag and "-" not in current_ref):
             continue
         if version_satisfies_ceiling(tag.lstrip("v"), rule.max_version):
             candidates.append((tag_version, tag))
@@ -1090,7 +1091,7 @@ def _resolve_hold_action_sha_target(
     candidates: list[tuple[tuple[int, ...], str, str]] = []
     for sha, tags in info.get("sha_to_tags", {}).items():
         for tag in tags:
-            if _exact_tag_major(tag) is None:
+            if _exact_tag_major(tag) is None or ("-" in tag and "-" not in current_tag):
                 continue
             if version_satisfies_ceiling(tag.lstrip("v"), rule.max_version):
                 candidates.append((_tag_version(tag), tag, sha))

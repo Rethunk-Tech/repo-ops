@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Holds on submodules, pre-commit revs and Actions pins no longer clamp to a prerelease (`v4.1.0-rc1` beat `v4.1.0`); a prerelease is a target only for a pin already on one.
 - Rust: a dependency from a private registry (`registry = ...`) is no longer looked up on crates.io, which crashed `check` and `apply` (or bumped it to a public namesake's version). `apply` also queries crates.io before `cargo update`, so a lookup failure no longer leaves a changed `Cargo.lock`.
 - pdm: `plan` re-locks a scratch copy and diffs the lockfile. It used to run `pdm update --dry-run` in the checkout, which created `.venv/` and `.pdm-python`, printed no versions without a venv, and under `FORCE_COLOR` put ANSI codes in package names so holds never matched.
 - pnpm: a hold on a package that members take from the workspace catalog now clamps the catalog entry. It used to run `pnpm add`, which moved every member off `catalog:` onto a plain range.
