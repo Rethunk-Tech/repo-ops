@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import threading
+from collections.abc import Sequence
 from itertools import groupby
 from pathlib import Path
 from typing import IO
@@ -594,6 +595,7 @@ def _run_upgrade_body(
         *,
         repo_started_dirty: bool | None = None,
         emit_progress: bool = True,
+        repo_workspaces: Sequence[Workspace] = (),
     ) -> WorkspaceResult:
         # Guard the worker body: a raising worker must surface as a FAILED
         # workspace, not get silently dropped from results and reported clean
@@ -608,6 +610,7 @@ def _run_upgrade_body(
                 on_verify_fail=on_verify_fail,
                 repo_started_dirty=repo_started_dirty,
                 emit_progress=emit_progress,
+                repo_workspaces=repo_workspaces,
             )
         except Exception as exc:
             wr.status = "fail"
@@ -636,7 +639,12 @@ def _run_upgrade_body(
                     dirty = is_git_dirty(bundle.git_repo)
                 else:
                     dirty = capture_worktree_state(bundle.git_repo) != expected
-            updated = _process_one(wr, repo_started_dirty=dirty, emit_progress=False)
+            updated = _process_one(
+                wr,
+                repo_started_dirty=dirty,
+                emit_progress=False,
+                repo_workspaces=[w.workspace for w in bundle.workspaces],
+            )
             results.append(updated)
             if apply and not allow_dirty:
                 expected = capture_worktree_state(bundle.git_repo)

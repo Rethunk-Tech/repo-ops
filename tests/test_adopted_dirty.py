@@ -329,3 +329,44 @@ def test_go_work_use_declares_its_go_work_write(tmp_path: Path) -> None:
     begin_write_log()
     go_mod._apply_go_work_directive(ws)
     assert (tmp_path / "go.work").resolve() in end_write_log()
+
+
+def test_named_root_sibling_manifest_is_not_foreign_dirt(
+    tmp_path: Path, init_git_repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Workspace b is not refused because sibling a's package.json is dirty."""
+    state_mod._CACHE = None
+    state_mod._DIRTY = False
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    work = tmp_path / "multi"
+    work.mkdir()
+    init_git_repo(work)
+    wss = []
+    for name in ("a", "b"):
+        (work / name).mkdir()
+        (work / name / "package.json").write_text('{"dependencies":{"turbo":"1.0.0"}}\n')
+        (work / name / "package-lock.json").write_text("{}\n")
+        wss.append(
+            Workspace(path=work / name, ecosystem="node", manager="npm", git_repo=work, label=name)
+        )
+    _git(work, "add", ".")
+    _git(work, "commit", "-q", "-m", "init")
+    (work / "a" / "package.json").write_text('{"dependencies":{"turbo":"2.0.0"}}\n')
+
+    with (
+        patch.object(orchestration, "should_exclude", return_value=False),
+        patch.object(orchestration.ecosystems, "apply_workspace", return_value=[]),
+    ):
+        out = orchestration.process_workspace(
+            WorkspaceResult(workspace=wss[1]),
+            do_apply=True,
+            do_verify=False,
+            allow_dirty=True,
+            on_verify_fail="keep",
+            emit_progress=False,
+            repo_started_dirty=True,
+            repo_workspaces=wss,
+        )
+
+    assert out.status == "ok", out.error

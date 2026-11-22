@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import date
 from itertools import groupby
@@ -115,6 +116,7 @@ def process_workspace(
     on_verify_fail: OnVerifyFail = "keep",
     repo_started_dirty: bool | None = None,
     emit_progress: bool = True,
+    repo_workspaces: Sequence[Workspace] = (),
 ) -> WorkspaceResult:
     _t0 = time.monotonic()
     out = _process_workspace_body(
@@ -124,6 +126,7 @@ def process_workspace(
         allow_dirty=allow_dirty,
         on_verify_fail=on_verify_fail,
         repo_started_dirty=repo_started_dirty,
+        repo_workspaces=repo_workspaces,
     )
     elapsed = time.monotonic() - _t0
     out.elapsed_s = elapsed
@@ -227,8 +230,8 @@ def _adopted_dirty_paths(ws: Workspace) -> dict[str, str] | None:
     return hashes
 
 
-def _foreign_dirty_paths(ws: Workspace) -> list[str]:
-    """Tracked dirty paths that are not this workspace's manifests or lockfiles.
+def _foreign_dirty_paths(ws: Workspace, siblings: Sequence[Workspace] = ()) -> list[str]:
+    """Tracked dirty paths that are not a manifest or lockfile of *ws* or a sibling workspace.
 
     A git that cannot answer reads as no foreign dirt, so only a clear answer refuses.
     """
@@ -246,7 +249,10 @@ def _foreign_dirty_paths(ws: Workspace) -> list[str]:
     if proc.returncode != 0:
         return []
     dirty = (p.replace("\\", "/") for p in _parse_porcelain(proc.stdout))
-    return sorted(p for p in dirty if not _is_managed_dirty_path(ws, ws.git_repo, p))
+    owners = [ws, *siblings]
+    return sorted(
+        p for p in dirty if not any(_is_managed_dirty_path(o, ws.git_repo, p) for o in owners)
+    )
 
 
 def _restore_paths_to_head(repo: Path, paths: frozenset[str]) -> bool:
@@ -283,6 +289,7 @@ def _retry_with_biome_held(
     do_verify: bool,
     allow_dirty: bool,
     on_verify_fail: OnVerifyFail,
+    repo_workspaces: Sequence[Workspace] = (),
 ) -> WorkspaceResult:
     """Re-apply a reverted workspace with Biome capped at its current version.
 
@@ -303,6 +310,7 @@ def _retry_with_biome_held(
             allow_dirty=allow_dirty,
             on_verify_fail=on_verify_fail,
             repo_started_dirty=failed.started_dirty,
+            repo_workspaces=repo_workspaces,
             biome_held=True,
         )
     finally:
@@ -322,6 +330,7 @@ def _process_workspace_body(
     on_verify_fail: OnVerifyFail,
     repo_started_dirty: bool | None = None,
     biome_held: bool = False,
+    repo_workspaces: Sequence[Workspace] = (),
 ) -> WorkspaceResult:
     ws = result.workspace
     if should_exclude(str(ws.path)):
@@ -371,7 +380,7 @@ def _process_workspace_body(
         elif result.started_dirty:
             # A named root runs even when dirty, but the verify would gate
             # someone's in-progress edit and a failure would strand the bump.
-            foreign = _foreign_dirty_paths(ws)
+            foreign = _foreign_dirty_paths(ws, repo_workspaces)
             if foreign:
                 result.status = "fail"
                 result.error = f"dirty: {', '.join(foreign)}; commit or stash first"
@@ -526,6 +535,7 @@ def _process_workspace_body(
                         do_verify=do_verify,
                         allow_dirty=allow_dirty,
                         on_verify_fail=on_verify_fail,
+                        repo_workspaces=repo_workspaces,
                     )
 
     return result
