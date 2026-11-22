@@ -22,7 +22,7 @@ def _fake_run(stdout: str = "", stderr: str = "", returncode: int = 0):
 def test_check_uv_lock_parses_would_upgrade_line(tmp_path: Path, make_workspace) -> None:
     stdout = "Resolved 10 packages\nwould upgrade foo 1.0 -> 2.0\n"
     with patch.object(uv_lock, "run", _fake_run(stdout=stdout)):
-        changes = uv_lock.check_uv_lock(
+        changes, _ = uv_lock.check_uv_lock(
             make_workspace(tmp_path, ecosystem="py", manager="uv", label="demo")
         )
     assert len(changes) == 1
@@ -36,7 +36,7 @@ def test_check_uv_lock_falls_back_to_lockfile_only_change(tmp_path: Path, make_w
     synthetic (lockfile) Change."""
     stdout = "Resolved 10 packages\nuv.lock would change\n"
     with patch.object(uv_lock, "run", _fake_run(stdout=stdout)):
-        changes = uv_lock.check_uv_lock(
+        changes, _ = uv_lock.check_uv_lock(
             make_workspace(tmp_path, ecosystem="py", manager="uv", label="demo")
         )
     assert len(changes) == 1
@@ -57,7 +57,7 @@ def test_check_uv_lock_parses_prerelease_versions(tmp_path: Path, make_workspace
     """Pre-release / local version identifiers must parse."""
     stdout = "would upgrade foo 1.0.0a1 -> 1.0.0b2\nwould upgrade bar 1.0.0+local -> 1.0.1\n"
     with patch.object(uv_lock, "run", _fake_run(stdout=stdout)):
-        changes = uv_lock.check_uv_lock(
+        changes, _ = uv_lock.check_uv_lock(
             make_workspace(tmp_path, ecosystem="py", manager="uv", label="demo")
         )
     assert len(changes) == 2
@@ -110,7 +110,7 @@ def test_check_uv_lock_parses_real_uv_output(tmp_path: Path, make_workspace) -> 
         "Resolved 2 packages in 17ms\nUpdate packaging v21.3 -> v26.3\nRemove pyparsing v3.3.3\n"
     )
     with patch.object(uv_lock, "run", _fake_run(stderr=stderr)):
-        changes = uv_lock.check_uv_lock(
+        changes, _ = uv_lock.check_uv_lock(
             make_workspace(tmp_path, ecosystem="py", manager="uv", label="demo")
         )
     assert [(c.name, c.from_ver, c.to) for c in changes] == [("packaging", "21.3", "26.3")]
