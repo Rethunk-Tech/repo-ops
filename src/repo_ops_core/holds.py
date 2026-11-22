@@ -24,6 +24,7 @@ Config source: the ``hold`` array-of-tables key already returned by
 from __future__ import annotations
 
 import fnmatch
+import re
 import sys
 from dataclasses import dataclass
 from datetime import date
@@ -32,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_ops_core.config import ConfigError, load_global_config, load_repo_config
-from repo_ops_core.version_utils import version_satisfies_ceiling
+from repo_ops_core.version_utils import is_go_pseudo_version, version_satisfies_ceiling
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,9 @@ class HoldRule:
     source: str = "global"  # "global" | "repo" | "expo" | "vscode" — precedence + debugging only
     # Install spec to write instead of ``<=max_version`` when the source dictates one (Expo's bundled spec).
     spec: str | None = None
+
+
+_CEILING_RE = re.compile(r"v?\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.+-]+)?")
 
 
 def _parse_hold_table(raw: Any, *, source: str, where: Path) -> list[HoldRule]:
@@ -64,7 +68,18 @@ def _parse_hold_table(raw: Any, *, source: str, where: Path) -> list[HoldRule]:
         max_version = str(entry.get("max_version") or "").strip() if isinstance(entry, dict) else ""
         if not package or not max_version:
             raise ConfigError(where, f"hold entry needs package and max_version: {entry!r}")
+        if not (_CEILING_RE.fullmatch(max_version) or is_go_pseudo_version(max_version)):
+            raise ConfigError(
+                where, f"hold {package!r}: max_version {max_version!r} is not a version ceiling"
+            )
         until = entry.get("until")
+        if until:
+            try:
+                date.fromisoformat(str(until).strip())
+            except ValueError:
+                raise ConfigError(
+                    where, f"hold {package!r}: until {until!r} is not an ISO date"
+                ) from None
         ecosystem = entry.get("ecosystem")
         workspace = entry.get("workspace")
         reason = entry.get("reason")

@@ -86,6 +86,10 @@ def test_bad_repo_config_is_a_failed_entry_in_report_json(
         '[[hold]]\npackage = "react"\nmax-version = "18"\n',
         '[verify]\ntimeout = "120"\n',
         "verify = 3\n",
+        '[[hold]]\npackage = "semver"\nmax_version = "<7"\n',
+        '[[hold]]\npackage = "semver"\nmax_version = "6.x"\n',
+        '[[hold]]\npackage = "semver"\nmax_version = "latest"\n',
+        '[[hold]]\npackage = "semver"\nmax_version = "6"\nuntil = "2026-13-01"\n',
     ],
 )
 def test_malformed_hold_and_verify_values_raise_config_error(tmp_path: Path, toml: str) -> None:
