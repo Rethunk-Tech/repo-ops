@@ -31,7 +31,7 @@ def _install_target(ws_path: Path) -> str:
     return "."
 
 
-def check_hatch(ws: Workspace) -> list[Change]:
+def check_hatch(ws: Workspace) -> list[Change] | tuple[list[Change], list[Change]]:
     if (ws.path / "uv.lock").exists():
         if not shutil.which("uv"):
             print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
@@ -75,14 +75,14 @@ def check_hatch(ws: Workspace) -> list[Change]:
     return []
 
 
-def apply_hatch(ws: Workspace) -> None:
+def apply_hatch(ws: Workspace) -> list[Change] | None:
     if not shutil.which("uv"):
         print(f"WARN {ws.path}: hatch project without uv on PATH", file=sys.stderr)
-        return
+        return None
     if not guard_tool_writes(ws.git_repo, "hatch", ws.path / "uv.lock", ws.path / "pyproject.toml"):
-        return
+        return None
     if not (ws.path / "uv.lock").exists():
         proc = run(["uv", "lock"], ws.path, timeout=TIMEOUT_APPLY)
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "uv lock failed")
-    apply_uv_lock(ws)
+    return apply_uv_lock(ws)

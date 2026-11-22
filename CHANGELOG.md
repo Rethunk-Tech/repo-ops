@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- uv and hatch: a direct dependency whose manifest range (`<8`) excludes the newest release is raised with `uv add` and re-locked, like pdm; `plan` lists the move and writes nothing, and a hold still caps it.
 - Containers: a held image whose newest tag is over the ceiling moves to the highest tag within it (a digest pin moves with that tag's digest), and a pin already at the ceiling gets a report-only held row instead of nothing.
 - Go: a held module whose latest is over the ceiling moves to the newest release within it (no prerelease) in both `plan` and `apply`, instead of producing no row and no move.
 - Rust: a held crate whose latest is over the ceiling now moves to the newest release within it (`itoa = "0.3"` under a `0.4` hold reaches 0.4.x) instead of staying put.

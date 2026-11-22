@@ -5,13 +5,20 @@ from __future__ import annotations
 import re
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
-from repo_ops_core.filesystem import guard_tool_writes
+from repo_ops_core.filesystem import guard_tool_writes, restore_file, snapshot_file
+from repo_ops_core.holds import resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
-from repo_ops_core.version_utils import pep440_precedence
+from repo_ops_core.version_utils import pep440_precedence, semver_tuple
 from repo_ops_lockfiles.parsers import toml_lock_versions
 from repo_ops_models import Change, Workspace
 from repo_ops_py.holds import filter_held_changes as _filter_held_changes
 from repo_ops_py.version_ceiling import enforce_version_ceilings
+from repo_ops_py_pdm.pdm import (
+    _pdm_bumped_requirement,
+    _pdm_direct_dependencies,
+    _pdm_latest_version,
+    _pdm_requirement_satisfied,
+)
 
 # ---------------------------------------------------------------------------
 # Package version-ceiling ("hold") rules
@@ -46,8 +53,70 @@ def _enforce_version_ceilings(ws: Workspace) -> None:
     )
 
 
-def check_uv_lock(ws: Workspace) -> list[Change]:
-    """Run ``uv lock --upgrade --dry-run`` and return the detected changes."""
+def _uv_latest_direct_changes(ws: Workspace) -> list[Change]:
+    """Direct dependencies whose manifest range excludes the newest release."""
+    locked = {name.lower(): version for name, version in _uv_lock_versions(ws).items()}
+    changes: list[Change] = []
+    for name, requirement in sorted(_pdm_direct_dependencies(ws).items()):
+        resolved = locked.get(name.lower())
+        if resolved is None:
+            continue
+        try:
+            latest = _pdm_latest_version(name)
+        except RuntimeError:
+            continue
+        if semver_tuple(latest) > semver_tuple(resolved) and not _pdm_requirement_satisfied(
+            latest, requirement
+        ):
+            changes.append(Change(name, resolved, latest))
+    return changes
+
+
+def _uv_bumped_requirement(requirement: str, latest: str) -> str:
+    # PEP 440 has no ``~X``; a compatible-release pin keeps its operator.
+    if requirement.strip().startswith("~="):
+        return f"~={latest}"
+    return _pdm_bumped_requirement(requirement, latest)
+
+
+def _apply_uv_targeted_bumps(ws: Workspace, candidates: list[Change]) -> list[Change]:
+    """Rewrite each blocking range with ``uv add``; restore on failure or no advance."""
+    manifest = ws.path / "pyproject.toml"
+    lockfile = ws.path / "uv.lock"
+    dependencies = _pdm_direct_dependencies(ws)
+    remaining: list[Change] = []
+    for candidate in candidates:
+        requirement = dependencies.get(candidate.name)
+        if requirement is None or not target_within_hold(
+            candidate.to, resolve_package_hold(ws, candidate.name)
+        ):
+            remaining.append(candidate)
+            continue
+        manifest_snapshot = snapshot_file(manifest, ws.git_repo)
+        lock_snapshot = snapshot_file(lockfile, ws.git_repo)
+        try:
+            proc = run(
+                ["uv", "add", f"{candidate.name}{_uv_bumped_requirement(requirement, candidate.to)}"],
+                ws.path,
+                timeout=TIMEOUT_APPLY,
+            )
+        except Exception:
+            restore_file(manifest, manifest_snapshot, ws.git_repo)
+            restore_file(lockfile, lock_snapshot, ws.git_repo)
+            raise
+        landed = {n.lower(): v for n, v in _uv_lock_versions(ws).items()}.get(
+            candidate.name.lower()
+        )
+        if proc.returncode == 0 and landed == candidate.to:
+            continue
+        restore_file(manifest, manifest_snapshot, ws.git_repo)
+        restore_file(lockfile, lock_snapshot, ws.git_repo)
+        remaining.append(candidate)
+    return remaining
+
+
+def check_uv_lock(ws: Workspace) -> tuple[list[Change], list[Change]]:
+    """Run ``uv lock --upgrade --dry-run``; return in-range changes and range-blocked latest ones."""
     proc = run(
         ["uv", "lock", "--upgrade", "--dry-run"],
         ws.path,
@@ -68,7 +137,7 @@ def check_uv_lock(ws: Workspace) -> list[Change]:
                 changes.append(Change(m.group(1), m.group(2), m.group(3)))
     if not changes and "would change" in (proc.stdout + proc.stderr).lower():
         changes.append(Change("(lockfile)", "current", "upgraded"))
-    return _filter_held_changes(ws, changes)
+    return _filter_held_changes(ws, changes), _uv_latest_direct_changes(ws)
 
 
 def _raise_on_downgrade(before: dict[str, str], after: dict[str, str]) -> None:
@@ -85,14 +154,14 @@ def _raise_on_downgrade(before: dict[str, str], after: dict[str, str]) -> None:
         raise RuntimeError("uv lock --upgrade downgraded " + ", ".join(lowered))
 
 
-def apply_uv_lock(ws: Workspace) -> None:
-    """Run ``uv lock --upgrade`` then ``uv sync``."""
+def apply_uv_lock(ws: Workspace) -> list[Change] | None:
+    """Run ``uv lock --upgrade`` and ``uv sync``, then raise ranges that block the newest release."""
     lockfile = ws.path / "uv.lock"
     manifest = ws.path / "pyproject.toml"
     # uv writes through a symlinked manifest/lockfile, and rollback cannot
     # restore an outside file.
     if not guard_tool_writes(ws.git_repo, "uv", lockfile, manifest):
-        return
+        return None
     before = _uv_lock_versions(ws)
     proc = run(["uv", "lock", "--upgrade"], ws.path, timeout=TIMEOUT_APPLY)
     if proc.returncode != 0:
@@ -102,3 +171,4 @@ def apply_uv_lock(ws: Workspace) -> None:
     if proc2.returncode != 0:
         raise RuntimeError(proc2.stderr.strip() or "uv sync failed")
     _enforce_version_ceilings(ws)
+    return _apply_uv_targeted_bumps(ws, _uv_latest_direct_changes(ws))

@@ -50,7 +50,7 @@ def test_check_uv_lock_filters_held_package_past_ceiling(tmp_path: Path, make_pr
         patch.object(uv_lock, "run", return_value=make_proc(stdout=stdout)),
     ):
         changes = uv_lock.check_uv_lock(_uv_ws(tmp_path))
-    assert changes == []
+    assert changes == ([], [])
 
 
 def test_apply_uv_lock_clamps_package_above_ceiling(tmp_path: Path, make_proc) -> None:
