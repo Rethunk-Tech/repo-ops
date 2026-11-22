@@ -56,7 +56,7 @@ def test_go_ceiling_query_uses_shared_hold_padding(max_version: str, expected: s
     assert _go_ceiling_query(max_version) == expected
 
 
-def test_changes_from_go_list_json_then_filter_held_past_ceiling(
+def test_changes_from_go_list_json_advance_a_held_module_to_its_ceiling(
     tmp_path, make_workspace, make_proc
 ) -> None:
     ws = make_workspace(tmp_path, ecosystem="go", manager="go", label="mod")
@@ -71,11 +71,15 @@ def test_changes_from_go_list_json_then_filter_held_past_ceiling(
     with (
         patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
         patch("repo_ops_go.go.run", side_effect=fake_run),
+        patch(
+            "repo_ops_go.go._released_go_versions",
+            return_value=["v1.2.0", "v1.4.0", "v1.5.1-rc.1", "v1.6.0", "v2.0.0"],
+        ),
     ):
         changes = _changes_from_go_list_json(ws)
         filtered = _filter_held_go_changes(ws, changes)
-    assert len(changes) == 1
-    assert filtered == []
+    assert [(c.name, c.from_ver, c.to) for c in changes] == [(_MODULE, "v1.2.0", "v1.4.0")]
+    assert filtered == changes
 
 
 def test_filter_held_go_changes_keeps_within_ceiling(tmp_path, make_workspace, make_proc) -> None:

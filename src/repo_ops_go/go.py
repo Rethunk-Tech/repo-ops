@@ -432,6 +432,22 @@ def _released_go_versions(ws: Workspace, module_path: str) -> list[str]:
     return [v for v in versions or [] if isinstance(v, str)]
 
 
+def _held_target(ws: Workspace, path: str, current: str, proposed: str) -> str | None:
+    """*proposed*, or under a hold the newest release within its ceiling that beats *current*."""
+    rule = _resolve_module_hold(ws, path)
+    if rule is None or target_within_hold(proposed, rule):
+        return proposed
+    within = [
+        v
+        for v in _released_go_versions(ws, path)
+        if "-" not in v and version_satisfies_ceiling(v, rule.max_version)
+    ]
+    best = max(within, key=semver_precedence, default=None)
+    if best is None or semver_precedence(best) <= semver_precedence(current):
+        return None
+    return best
+
+
 def _screened_target(ws: Workspace, path: str, current: str, proposed: str) -> str | None:
     """*proposed*, or the newest release below it that the Go vulnerability database clears."""
     target = safe_go_target(path, current, proposed, lambda: _released_go_versions(ws, path))
@@ -517,7 +533,8 @@ def _changes_from_go_list_json(ws: Workspace) -> list[Change]:
             have_recorded = True
         if recorded is not None and path not in recorded:
             continue
-        screened = _screened_target(ws, path, cur, new)
+        held = _held_target(ws, path, cur, new)
+        screened = _screened_target(ws, path, cur, held) if held is not None else None
         if screened is None:
             continue
         changes.append(Change(path, cur, screened))
@@ -540,10 +557,11 @@ def _explicit_go_get_targets(ws: Workspace) -> list[str]:
                 have_recorded = True
             if recorded is not None and path not in recorded:
                 continue
-            held_rule = _resolve_module_hold(ws, path)
-            if not target_within_hold(version, held_rule):
+            current = mod.get("Version") or ""
+            held = _held_target(ws, path, current, version)
+            if held is None:
                 continue
-            screened = _screened_target(ws, path, mod.get("Version") or "", version)
+            screened = _screened_target(ws, path, current, held)
             if screened is None:
                 continue
             spec = f"{path}@{screened}"
