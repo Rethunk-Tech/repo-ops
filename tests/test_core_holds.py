@@ -324,3 +324,19 @@ def test_resolve_hold_repo_overrides_global_at_equal_specificity() -> None:
     assert hit is not None
     assert hit.max_version == "7"
     assert hit.source == "repo"
+
+
+def test_promote_unheld_moves_applicable_candidates_into_changes(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    from repo_ops_core.holds import HoldRule, promote_unheld
+    from repo_ops_models import Change, Workspace
+
+    ws = Workspace(path=tmp_path, ecosystem="py", manager="uv", git_repo=tmp_path, label="x")
+    free = Change("httpx", "0.25.2", "0.28.1")
+    capped = Change("itoa", "0.3.0", "2.0.0")
+    rule = HoldRule(package="itoa", max_version="0.4", ecosystem="py")
+    with patch("repo_ops_core.holds._global_holds_cached", return_value=(rule,)):
+        changes, behind = promote_unheld(ws, [], [free, capped])
+    assert changes == [free]
+    assert behind == [capped]

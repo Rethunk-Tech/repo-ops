@@ -6,7 +6,7 @@ import re
 
 from repo_ops_core.constants import TIMEOUT_APPLY, TIMEOUT_CHECK
 from repo_ops_core.filesystem import guard_tool_writes, restore_file, snapshot_file
-from repo_ops_core.holds import resolve_package_hold, target_within_hold
+from repo_ops_core.holds import promote_unheld, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import pep440_precedence, semver_tuple
 from repo_ops_lockfiles.parsers import toml_lock_versions
@@ -134,7 +134,7 @@ def check_uv_lock(ws: Workspace) -> tuple[list[Change], list[Change]]:
                 changes.append(Change(m.group(1), m.group(2), m.group(3)))
     if not changes and "would change" in (proc.stdout + proc.stderr).lower():
         changes.append(Change("(lockfile)", "current", "upgraded"))
-    return _filter_held_changes(ws, changes), _uv_latest_direct_changes(ws)
+    return promote_unheld(ws, _filter_held_changes(ws, changes), _uv_latest_direct_changes(ws))
 
 
 def _raise_on_downgrade(before: dict[str, str], after: dict[str, str]) -> None:

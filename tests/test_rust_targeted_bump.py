@@ -36,8 +36,8 @@ def test_check_rust_reports_direct_dependency_behind_latest(
 
     assert isinstance(result, tuple)
     changes, behind = result
-    assert changes == []
-    assert [(change.name, change.from_ver, change.to) for change in behind] == [
+    assert behind == []
+    assert [(change.name, change.from_ver, change.to) for change in changes] == [
         ("serde", "^1.0", "2.0.0")
     ]
 
@@ -97,7 +97,7 @@ def test_workspace_dependency_targeted_bump_checks_and_rewrites(
         result = check_rust(ws)
 
     assert isinstance(result, tuple)
-    assert [(change.name, change.to) for change in result[1]] == [("serde", "2.0.0")]
+    assert [(change.name, change.to) for change in result[0]] == [("serde", "2.0.0")]
 
     def fake_run(cmd, cwd, timeout=0):
         if cmd == ["cargo", "update", "-p", "serde", "--precise", "2.0.0"]:
@@ -424,8 +424,9 @@ def test_workspace_members_are_scanned_and_bumped(
         patch("repo_ops_rust.rust.run", side_effect=fake_run),
         patch("repo_ops_rust.rust._cargo_registry_versions", return_value=("2.0.0",)),
     ):
-        _, behind = check_rust(ws)
-        assert sorted(change.name for change in behind) == ["regex", "serde"]
+        changes, behind = check_rust(ws)
+        assert behind == []
+        assert sorted(change.name for change in changes) == ["regex", "serde"]
         assert apply_rust(ws) == []
 
     assert 'serde = "2.0.0"' in (tmp_path / "crates/a/Cargo.toml").read_text(encoding="utf-8")

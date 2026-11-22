@@ -24,7 +24,7 @@ from repo_ops_core.filesystem import (
     restore_file,
     snapshot_file,
 )
-from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
+from repo_ops_core.holds import HoldRule, promote_unheld, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.requirement import requirement_satisfied
 from repo_ops_core.version_utils import semver_tuple, version_parts, version_satisfies_ceiling
@@ -586,8 +586,7 @@ def check_rust(
         if m:
             changes.append(Change(m.group(1), m.group(2), m.group(3)))
     in_range = _filter_held_rust_changes(ws, changes)
-    behind = _cargo_latest_direct_changes(ws)
-    return in_range, behind
+    return promote_unheld(ws, in_range, _cargo_latest_direct_changes(ws))
 
 
 def apply_rust(ws: Workspace) -> list[Change] | None:

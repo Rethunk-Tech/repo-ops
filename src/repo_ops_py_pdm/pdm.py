@@ -13,7 +13,7 @@ from repo_ops_core.filesystem import (
     restore_file,
     snapshot_file,
 )
-from repo_ops_core.holds import resolve_package_hold, target_within_hold
+from repo_ops_core.holds import promote_unheld, resolve_package_hold, target_within_hold
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_lockfiles.parsers import toml_lock_versions
@@ -162,7 +162,7 @@ def check_pdm(
         if name in after and after[name] != old
     ]
     in_range = _filter_held_changes(ws, changes)
-    return in_range, _pdm_latest_direct_changes(ws)
+    return promote_unheld(ws, in_range, _pdm_latest_direct_changes(ws))
 
 
 def apply_pdm(ws: Workspace) -> list[Change] | None:

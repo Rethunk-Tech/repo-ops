@@ -303,3 +303,19 @@ def clear_hold_caches() -> None:
 def target_within_hold(target: str, rule: HoldRule | None) -> bool:
     """Return whether *target* is allowed by *rule* (``None`` = no active hold)."""
     return rule is None or version_satisfies_ceiling(target.lstrip("v"), rule.max_version)
+
+
+def promote_unheld(ws: Any, changes: list[Any], behind: list[Any]) -> tuple[list[Any], list[Any]]:
+    """Move range-blocked candidates the targeted bump can apply from *behind* into *changes*.
+
+    Apply raises those ranges itself, so the plan counts them as upgrades; one
+    whose target a hold forbids stays behind.
+    """
+    names = {c.name for c in changes}
+    promoted = [
+        c
+        for c in behind
+        if c.name not in names and target_within_hold(c.to, resolve_package_hold(ws, c.name))
+    ]
+    kept = [c for c in behind if not any(c is p for p in promoted)]
+    return [*changes, *promoted], kept

@@ -253,7 +253,8 @@ def test_check_reports_latest_direct_dependency(
             make_workspace(tmp_path, ecosystem="py", manager=spec.manager, label="demo")
         )
 
-    assert result == ([], [Change("requests", "2.31.0", "3.0.0")])
+    bump = [Change("requests", "2.31.0", "3.0.0")]
+    assert result == ((bump, []) if spec.manager == "pdm" else ([], bump))
 
 
 # ---------------------------------------------------------------------------
