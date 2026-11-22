@@ -338,3 +338,22 @@ def test_apply_pnpm_targets_catalog_drift(tmp_path: Path, monkeypatch, make_work
     assert behind == []
     assert calls == [["pnpm", "install"]]
     assert "^19.0.0" in (tmp_path / "pnpm-workspace.yaml").read_text(encoding="utf-8")
+
+
+def test_hold_clamp_of_a_catalog_package_edits_the_catalog_not_the_member(
+    tmp_path: Path, make_workspace
+) -> None:
+    _seed(tmp_path)
+    commands: list[list[str]] = []
+
+    def fake_run(cmd, cwd, timeout=600, env=None):
+        commands.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    ws = make_workspace(tmp_path, ecosystem="node", manager="pnpm", label="demo")
+    with patch("repo_ops_js_pnpm.pnpm.run", side_effect=fake_run):
+        pnpm._clamp_pnpm(ws, "react", "<=18")
+        pnpm._clamp_pnpm(ws, "other", "<=1")
+
+    assert commands == [["pnpm", "install"], ["pnpm", "add", "other@<=1"]]
+    assert (tmp_path / "pnpm-workspace.yaml").read_text(encoding="utf-8").count("<=18") == 2

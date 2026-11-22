@@ -509,6 +509,18 @@ def targeted_bump_behind(
     return applied, still_behind
 
 
+def _clamp_pnpm(ws: Workspace, name: str, spec: str) -> Any:
+    """Pull *name* back under its ceiling without moving a member off ``catalog:``.
+
+    ``pnpm add`` rewrites the member's ``catalog:`` spec to a plain range, so a
+    catalog entry is clamped in the catalog and the lockfile re-resolved.
+    """
+    if name in _catalog_specs(ws):
+        _rewrite_catalog_package(ws, name, spec)
+        return run(["pnpm", "install"], ws.path, timeout=TIMEOUT_APPLY)
+    return run(["pnpm", "add", f"{name}@{spec}"], ws.path, timeout=TIMEOUT_APPLY)
+
+
 def apply_pnpm(ws: Workspace) -> list[Change]:
     """Apply at the root and in every workspace member (see :func:`_apply_pnpm_dir`)."""
     return apply_with_members(ws, _apply_pnpm_dir)
@@ -547,8 +559,6 @@ def _apply_pnpm_dir(ws: Workspace, root: Path) -> list[Change]:
         ws,
         candidate_names,
         manager="pnpm",
-        run_install=lambda name, spec: run(
-            ["pnpm", "add", f"{name}@{spec}"], ws.path, timeout=TIMEOUT_APPLY
-        ),
+        run_install=lambda name, spec: _clamp_pnpm(ws, name, spec),
     )
     return fold_held_into_behind(held, behind)

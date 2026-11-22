@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- pnpm: a hold on a package that members take from the workspace catalog now clamps the catalog entry. It used to run `pnpm add`, which moved every member off `catalog:` onto a plain range.
 - A go.work repo whose members each rewrite go.work is committed again: the `go work use` write is now recorded as the run's own, so the last member's write no longer reads as "changed since apply" and leaves the whole repo uncommitted.
 - `plan` and `check` now see uv's lockfile upgrades: uv prints versions as `v21.3 -> v26.3`, which the parser never matched, so every uv and hatch repo reported nothing to upgrade.
 - `apply` on a named root refuses, before writing anything, when a tracked file other than a manifest or lockfile is dirty ("dirty: <files>; commit or stash first"). It used to bump, gate someone's in-progress edit and leave the bump behind on a failure.
