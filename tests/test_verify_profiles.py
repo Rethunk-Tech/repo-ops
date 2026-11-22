@@ -333,6 +333,8 @@ def test_failed_verify_script_names_its_command_and_exit_code(
     ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
 
     def failing(cmd, cwd, timeout=None, env=None):
+        if cmd[-1] != "fail":
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         return subprocess.CompletedProcess(cmd, 1, stdout="> demo@1.0.0 fail\n", stderr="boom\n")
 
     with patch("repo_ops_upgrade.verify.run", side_effect=failing):
