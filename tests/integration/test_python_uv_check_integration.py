@@ -60,5 +60,6 @@ def test_check_uv_lock_runs_dry_run(tmp_path) -> None:
         git_repo=tmp_path,
         label="uv-integ",
     )
-    changes = check_uv_lock(ws)
-    assert isinstance(changes, list)
+    in_range, blocked = check_uv_lock(ws)
+    assert isinstance(in_range, list)
+    assert isinstance(blocked, list)
