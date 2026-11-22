@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -38,9 +39,12 @@ def test_a_repo_whose_gate_fails_exits_non_zero_and_names_it(
 
 @pytest.mark.skipif(shutil.which("gate") is None, reason="gate is not on PATH")
 def test_a_repo_with_no_gate_declared_is_not_a_failure(
-    tmp_path: Path, capsys, init_git_repo
+    tmp_path: Path, capsys, init_git_repo, monkeypatch
 ) -> None:
     init_git_repo(tmp_path, commit=True)
+    # gate adds a canon gate to any repo when canon is on PATH, so this repo would declare one.
+    dirs = os.environ.get("PATH", "").split(os.pathsep)
+    monkeypatch.setenv("PATH", os.pathsep.join(d for d in dirs if not (Path(d) / "canon").exists()))
 
     code = main_gates([str(tmp_path)])
 
