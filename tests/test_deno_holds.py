@@ -11,9 +11,9 @@ from repo_ops_js.deno import (
     _deno_import_map_paths,
     _deno_package_matches,
     _enforce_deno_version_ceilings,
-    _filter_held_deno_changes,
     _release_unheld_deno_pin,
     _snapshot_deno_workspace,
+    _split_held_deno_changes,
 )
 from repo_ops_models import Change
 
@@ -47,11 +47,11 @@ def _no_repo_holds():
         yield
 
 
-def test_filter_held_deno_changes_keeps_target_within_ceiling(tmp_path, make_workspace) -> None:
+def test_split_held_deno_changes_keeps_target_within_ceiling(tmp_path, make_workspace) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     change = Change(_PACKAGE, "1.0.0", "1.5.0")
     with patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)):
-        assert _filter_held_deno_changes(ws, [change]) == [change]
+        assert _split_held_deno_changes(ws, [change]) == ([change], [])
 
 
 def test_snapshot_deno_workspace_includes_maps_and_configs(tmp_path, make_workspace) -> None:
@@ -120,27 +120,34 @@ def test_release_unheld_deno_pin_handles_jsonc(tmp_path, filename, make_workspac
     assert payload["imports"]["npm:is-odd"] == "npm:is-odd"
 
 
-def test_enforce_deno_version_ceilings_clamps_resolved_above_ceiling(
-    tmp_path, make_workspace, make_proc
-) -> None:
-    ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
+def _enforce(ws, make_proc, *, package=_PACKAGE, registry=None, outdated=None, landed=None):
     with (
-        patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
-        patch(
-            "repo_ops_js.deno._landed_deno_version",
-            side_effect=["2.0.0", "1.5.0"],
-        ),
-        patch("repo_ops_js.deno._deno_lock_package_names", return_value={_PACKAGE}),
+        patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(package=package),)),
+        patch("repo_ops_js.deno._landed_deno_version", side_effect=landed or ["2.0.0", "1.5.3"]),
+        patch("repo_ops_js.deno._deno_lock_package_names", return_value={package}),
+        patch("repo_ops_js.deno._deno_lock_versions", return_value=[]),
+        patch("repo_ops_js.deno._registry_versions", return_value=registry or []),
+        patch("repo_ops_js.deno._deno_outdated_versions", return_value=outdated or []),
         patch("repo_ops_js.deno._snapshot_deno_workspace", return_value=object()),
         patch("repo_ops_js.deno._restore_deno_workspace") as restore_mock,
         patch("repo_ops_js.deno.run", return_value=make_proc()) as run_mock,
     ):
         _enforce_deno_version_ceilings(ws)
+    return run_mock, restore_mock
 
-    assert run_mock.call_args.args[0] == [
-        "deno",
-        "update",
-        f"{_PACKAGE}@<=1.5",
+
+@pytest.mark.parametrize(("package", "bare"), [(_PACKAGE, "held"), ("jsr:@std/held", "@std/held")])
+def test_enforce_deno_version_ceilings_clamps_to_the_registry_release(
+    tmp_path, package, bare, make_workspace, make_proc
+) -> None:
+    """deno rejects a ``jsr:``/``npm:`` prefix and a ``<=`` range: the clamp names the bare package at a release."""
+    ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
+    run_mock, restore_mock = _enforce(
+        ws, make_proc, package=package, registry=["1.2.0", "1.5.3", "2.0.0"]
+    )
+
+    assert [call.args[0] for call in run_mock.call_args_list] == [
+        ["deno", "update", f"{bare}@1.5.3"]
     ]
     restore_mock.assert_not_called()
 
@@ -151,69 +158,61 @@ def test_enforce_deno_version_ceilings_passes_default_import_map(
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
     import_map = tmp_path / "import_map.json"
     import_map.write_text("{}", encoding="utf-8")
-    with (
-        patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(),)),
-        patch(
-            "repo_ops_js.deno._landed_deno_version",
-            side_effect=["2.0.0", "1.5.0"],
-        ),
-        patch("repo_ops_js.deno._deno_lock_package_names", return_value={_PACKAGE}),
-        patch("repo_ops_js.deno._snapshot_deno_workspace", return_value=object()),
-        patch("repo_ops_js.deno._restore_deno_workspace") as restore_mock,
-        patch("repo_ops_js.deno.run", return_value=make_proc()) as run_mock,
-    ):
-        _enforce_deno_version_ceilings(ws)
+    run_mock, _ = _enforce(ws, make_proc, registry=["1.5.3"])
 
     assert run_mock.call_args.args[0] == [
         "deno",
         "update",
         "--import-map",
         str(import_map),
-        f"{_PACKAGE}@<=1.5",
+        "held@1.5.3",
     ]
-    restore_mock.assert_not_called()
 
 
-@pytest.mark.parametrize("package", [_PACKAGE, "jsr:@std/held"])
-def test_enforce_deno_version_ceilings_falls_back_to_published_patch(
-    tmp_path, package, make_workspace, make_proc
+def test_enforce_deno_version_ceilings_raises_when_no_release_fits(
+    tmp_path, make_workspace, make_proc
 ) -> None:
     ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
-    outdated = json.dumps(
-        {
-            "packages": [
-                {
-                    "name": package,
-                    "current": "2.0.0",
-                    "latest": "1.5.7",
-                }
-            ]
-        }
-    )
-    with (
-        patch(_GLOBAL_HOLDS_CACHE, return_value=(_held_rule(package=package),)),
-        patch(
-            "repo_ops_js.deno._landed_deno_version",
-            side_effect=["2.0.0", "1.5.7"],
-        ),
-        patch("repo_ops_js.deno._deno_lock_package_names", return_value={package}),
-        patch("repo_ops_js.deno._deno_lock_versions", return_value=[]),
-        patch("repo_ops_js.deno._snapshot_deno_workspace", return_value=object()),
-        patch("repo_ops_js.deno._restore_deno_workspace") as restore_mock,
-        patch(
-            "repo_ops_js.deno.run",
-            side_effect=[
-                make_proc(returncode=1, stderr="unsupported range"),
-                make_proc(stdout=outdated),
-                make_proc(),
-            ],
-        ) as run_mock,
-    ):
-        _enforce_deno_version_ceilings(ws)
+    with pytest.raises(RuntimeError, match="failed to clamp"):
+        _enforce(ws, make_proc, registry=["2.0.0"], landed=["2.0.0"])
 
-    assert [call.args[0] for call in run_mock.call_args_list] == [
-        ["deno", "update", f"{package}@<=1.5"],
-        ["deno", "outdated", "--json"],
-        ["deno", "update", f"{package}@1.5.7"],
-    ]
-    restore_mock.assert_called_once()
+
+def test_unprefixed_and_prefixed_holds_match_a_prefixed_package(tmp_path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
+    change = Change("jsr:@std/path", "0.220.1", "1.1.6")
+    for configured in ("@std/path", "jsr:@std/path"):
+        with patch(
+            _GLOBAL_HOLDS_CACHE,
+            return_value=(_held_rule(package=configured, max_version="1.0"),),
+        ):
+            assert _split_held_deno_changes(ws, [change]) == ([], [change])
+
+
+def test_held_package_stays_in_behind_and_out_of_the_latest_pass(
+    tmp_path, make_workspace, make_proc
+) -> None:
+    from repo_ops_js.deno import apply_deno, check_deno
+
+    ws = make_workspace(tmp_path, ecosystem="deno", manager="deno", label="deno")
+    table = "│ jsr:@std/path │ 0.220.1 │ 0.220.1 │ 1.1.6 │\n"
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, *_a, **_k):
+        calls.append(cmd)
+        return make_proc(stdout=table if cmd[:2] == ["deno", "outdated"] else "")
+
+    with (
+        patch(
+            _GLOBAL_HOLDS_CACHE, return_value=(_held_rule(package="@std/path", max_version="1.0"),)
+        ),
+        patch("repo_ops_js.deno.shutil.which", return_value="/usr/bin/deno"),
+        patch("repo_ops_js.deno.run", side_effect=fake_run),
+        patch("repo_ops_js.deno._deno_lock_package_names", return_value=set()),
+        patch("repo_ops_js.deno._landed_deno_version", return_value="0.220.1"),
+    ):
+        changes, behind = check_deno(ws)
+        apply_deno(ws)
+
+    assert changes == []
+    assert [c.name for c in behind] == ["jsr:@std/path"]
+    assert ["deno", "outdated", "--update", "--latest", "!@std/path"] in calls

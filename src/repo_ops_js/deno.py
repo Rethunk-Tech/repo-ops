@@ -15,6 +15,7 @@ from repo_ops_core.filesystem import (
     is_under_root,
 )
 from repo_ops_core.holds import HoldRule, resolve_package_hold, target_within_hold
+from repo_ops_core.http import open_url
 from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple, version_satisfies_ceiling
 from repo_ops_js.guards import assert_targets_resolved, unresolved_targets
@@ -255,26 +256,64 @@ def _restore_deno_workspace(ws: Workspace, before: dict[Path, bytes]) -> None:
             path.unlink()
 
 
+def _bare_deno_name(name: str) -> str:
+    """The package name without its ``jsr:``/``npm:`` prefix, which ``deno update`` rejects."""
+    for prefix in ("jsr:", "npm:"):
+        if name.startswith(prefix):
+            return name.removeprefix(prefix)
+    return name
+
+
 def _deno_version_target(name: str, version: str) -> str:
-    return f"{name}@{_deno_precise_version(version)}"
+    return f"{_bare_deno_name(name)}@{_deno_precise_version(version)}"
 
 
-def _deno_ceiling_target(name: str, version: str) -> str:
-    return f"{name}@<={_deno_precise_version(version)}"
+def _registry_versions(name: str) -> list[str]:
+    """Published, unyanked releases of *name*; both registries when it carries no prefix."""
+    bare = _bare_deno_name(name)
+    urls = []
+    if not name.startswith("npm:"):
+        urls.append(("jsr", f"https://jsr.io/{bare}/meta.json"))
+    if not name.startswith("jsr:"):
+        urls.append(("npm", f"https://registry.npmjs.org/{bare.replace('/', '%2F')}"))
+    versions: list[str] = []
+    for _registry, url in urls:
+        try:
+            with open_url(url, timeout=TIMEOUT_CHECK) as resp:
+                doc = json.loads(resp.read().decode("utf-8"))
+        except (OSError, ValueError):
+            continue
+        listed = doc.get("versions") if isinstance(doc, dict) else None
+        if isinstance(listed, dict):
+            versions.extend(
+                v
+                for v, meta in listed.items()
+                if not (isinstance(meta, dict) and meta.get("yanked"))
+            )
+    return versions
 
 
 def _resolve_deno_hold(ws: Workspace, package: str) -> HoldRule | None:
-    return resolve_package_hold(ws, package)
+    bare = _bare_deno_name(package)
+    for candidate in (package, bare, f"jsr:{bare}", f"npm:{bare}"):
+        if (rule := resolve_package_hold(ws, candidate)) is not None:
+            return rule
+    return None
 
 
-def _filter_held_deno_changes(ws: Workspace, changes: list[Change]) -> list[Change]:
-    """Drop changes whose target exceeds an active package hold."""
-    return [
-        change
-        for change in changes
-        if (rule := _resolve_deno_hold(ws, change.name)) is None
-        or version_satisfies_ceiling(change.to, rule.max_version)
-    ]
+def _split_held_deno_changes(
+    ws: Workspace, changes: list[Change]
+) -> tuple[list[Change], list[Change]]:
+    """Split changes into ``(allowed, held)``: held targets exceed an active package hold."""
+    allowed: list[Change] = []
+    held: list[Change] = []
+    for change in changes:
+        rule = _resolve_deno_hold(ws, change.name)
+        if rule is None or version_satisfies_ceiling(change.to, rule.max_version):
+            allowed.append(change)
+        else:
+            held.append(change)
+    return allowed, held
 
 
 def check_deno(ws: Workspace) -> tuple[list[Change], list[Change]]:
@@ -304,10 +343,9 @@ def check_deno(ws: Workspace) -> tuple[list[Change], list[Change]]:
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or "deno outdated failed")
     changes, behind_latest = _parse_deno_outdated(proc.stdout, ws)
-    return (
-        _filter_held_deno_changes(ws, changes),
-        _filter_held_deno_changes(ws, behind_latest),
-    )
+    allowed, held = _split_held_deno_changes(ws, changes)
+    known = {c.name for c in behind_latest}
+    return allowed, behind_latest + [c for c in held if c.name not in known]
 
 
 def _parse_deno_outdated(
@@ -532,24 +570,15 @@ def _enforce_deno_version_ceilings(ws: Workspace, candidate_names: list[str] | N
         if resolved is None or version_satisfies_ceiling(resolved, rule.max_version):
             continue
         snapshot = _snapshot_deno_workspace(ws)
-        proc = run(
+        target = _highest_deno_version(
             [
-                *_deno_update_command(ws),
-                _deno_ceiling_target(name, rule.max_version),
+                *_registry_versions(name),
+                *_deno_outdated_versions(ws, name),
+                *_deno_lock_versions(ws, name),
             ],
-            ws.path,
-            timeout=TIMEOUT_APPLY,
+            rule.max_version,
         )
-        landed = _landed_deno_version(ws, name) if proc.returncode == 0 else None
-        if landed is not None and version_satisfies_ceiling(landed, rule.max_version):
-            continue
-
-        _restore_deno_workspace(ws, snapshot)
-        candidates = [
-            *_deno_outdated_versions(ws, name),
-            *_deno_lock_versions(ws, name),
-        ]
-        target = _highest_deno_version(candidates, rule.max_version)
+        landed = None
         if target is not None:
             proc = run(
                 [*_deno_update_command(ws), _deno_version_target(name, target)],
@@ -557,11 +586,7 @@ def _enforce_deno_version_ceilings(ws: Workspace, candidate_names: list[str] | N
                 timeout=TIMEOUT_APPLY,
             )
             landed = _landed_deno_version(ws, name) if proc.returncode == 0 else None
-        if (
-            target is None
-            or landed is None
-            or not version_satisfies_ceiling(landed, rule.max_version)
-        ):
+        if landed is None or not version_satisfies_ceiling(landed, rule.max_version):
             _restore_deno_workspace(ws, snapshot)
             raise RuntimeError(
                 f"hold: failed to clamp {name} to <= {rule.max_version} (deno); "
@@ -585,8 +610,15 @@ def apply_deno(ws: Workspace) -> list[Change]:
     if not _deno_writes_confined(ws):
         return []
     planned, behind = check_deno(ws)
+    held = sorted(
+        {
+            _bare_deno_name(name)
+            for name in {*_deno_lock_package_names(ws), *(c.name for c in [*planned, *behind])}
+            if _resolve_deno_hold(ws, name) is not None
+        }
+    )
     proc = run(
-        ["deno", "outdated", "--update", "--latest"],
+        ["deno", "outdated", "--update", "--latest", *(f"!{name}" for name in held)],
         ws.path,
         timeout=TIMEOUT_APPLY,
     )
