@@ -19,6 +19,7 @@ from repo_ops_js.guards import (
 from repo_ops_js.holds import (
     direct_dependency_names,
     enforce_holds,
+    exact_install_flag,
     fold_held_into_behind,
     plan_held_changes,
     resolve_package_hold,
@@ -114,7 +115,13 @@ def targeted_bump_behind(
 
     def run_bump(name: str, version: str) -> bool:
         install = run(
-            ["npm", "install", *_save_flag_for(name, pkg_data), f"{name}@{version}"],
+            [
+                "npm",
+                "install",
+                *_save_flag_for(name, pkg_data),
+                *exact_install_flag(version, "--save-exact"),
+                f"{name}@{version}",
+            ],
             ws.path,
             timeout=TIMEOUT_APPLY,
         )
@@ -276,7 +283,9 @@ def _apply_npm_dir(ws: Workspace, root: Path) -> list[Change]:
         candidate_names,
         manager="npm",
         run_install=lambda name, spec: run(
-            ["npm", "install", f"{name}@{spec}"], ws.path, timeout=TIMEOUT_APPLY
+            ["npm", "install", *exact_install_flag(spec, "--save-exact"), f"{name}@{spec}"],
+            ws.path,
+            timeout=TIMEOUT_APPLY,
         ),
     )
     return fold_held_into_behind(held, behind)

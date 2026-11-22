@@ -19,6 +19,7 @@ from repo_ops_js.guards import (
 from repo_ops_js.holds import (
     direct_dependency_names,
     enforce_holds,
+    exact_install_flag,
     fold_held_into_behind,
     hold_version_spec,
     plan_held_changes,
@@ -170,7 +171,11 @@ def targeted_bump_behind(
 
     def run_bump(name: str, version: str) -> bool:
         # A ``~``/``^`` target is a hold's install spec (Expo's), saved as written.
-        exact = [] if version[:1] in ("~", "^") else _exact_flag(name, pkg_data)
+        exact = (
+            []
+            if version[:1] in ("~", "^")
+            else _exact_flag(name, pkg_data) or exact_install_flag(version, "--exact")
+        )
         install = run(
             with_ignore_scripts(["bun", "add", *exact, f"{name}@{version}"]),
             ws.path,
@@ -242,7 +247,9 @@ def _finalize_bun_apply(
         candidate_names,
         manager="bun",
         run_install=lambda name, spec: run(
-            with_ignore_scripts(["bun", "add", f"{name}@{spec}"]),
+            with_ignore_scripts(
+                ["bun", "add", *exact_install_flag(spec, "--exact"), f"{name}@{spec}"]
+            ),
             ws.path,
             timeout=TIMEOUT_APPLY,
         ),

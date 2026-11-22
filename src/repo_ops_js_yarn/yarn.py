@@ -26,6 +26,7 @@ from repo_ops_js.guards import (
 )
 from repo_ops_js.holds import (
     enforce_holds,
+    exact_install_flag,
     fold_held_into_behind,
     resolve_package_hold,
 )
@@ -436,7 +437,11 @@ def targeted_bump_behind(
         return [], behind
 
     def run_bump(name: str, version: str) -> bool:
-        up = run(["yarn", "up", f"{name}@{version}"], mdir, timeout=TIMEOUT_APPLY)
+        up = run(
+            ["yarn", "up", *exact_install_flag(version, "--exact"), f"{name}@{version}"],
+            mdir,
+            timeout=TIMEOUT_APPLY,
+        )
         if up.returncode != 0:
             return False
         install = run(["yarn", "install"], mdir, timeout=TIMEOUT_APPLY)
@@ -687,7 +692,11 @@ def _yarn_hold_install(mdir: Path, name: str, spec: str) -> subprocess.Completed
     Only the ``yarn up`` result is returned when it fails (no point installing
     after a failed resolution change).
     """
-    up = run(["yarn", "up", f"{name}@{spec}"], mdir, timeout=TIMEOUT_APPLY)
+    up = run(
+        ["yarn", "up", *exact_install_flag(spec, "--exact"), f"{name}@{spec}"],
+        mdir,
+        timeout=TIMEOUT_APPLY,
+    )
     if up.returncode != 0:
         return up
     return run(["yarn", "install"], mdir, timeout=TIMEOUT_APPLY)

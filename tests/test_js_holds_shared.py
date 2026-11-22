@@ -82,7 +82,7 @@ def test_ceiling_version_is_the_highest_release_the_registry_lists() -> None:
         patch.object(js_holds, "run", _npm_view(listed)),
     ):
         assert js_holds.ceiling_version(ws, "typescript", rule) == "5.9.3"
-        assert js_holds.hold_install_spec(ws, "typescript", rule) == "5.9.3"
+        assert js_holds.hold_install_spec(ws, "typescript", rule) == "^5.9.3"
 
 
 def test_plan_shows_the_version_the_ceiling_allows_for_a_held_package(tmp_path: Path) -> None:
@@ -102,3 +102,19 @@ def test_plan_shows_the_version_the_ceiling_allows_for_a_held_package(tmp_path: 
         [Change("typescript", "4.9.5", "5.4.5")],
         [Change("typescript", "4.9.5", "7.0.2")],
     )
+
+
+@pytest.mark.parametrize(
+    ("ceiling", "spec", "exact"),
+    [("5", "^5.4.5", False), ("5.4", "~5.4.5", False), ("5.4.5", "5.4.5", True)],
+)
+def test_hold_install_spec_saves_a_range_matching_the_ceiling(
+    ceiling: str, spec: str, exact: bool
+) -> None:
+    from repo_ops_js import holds as js_holds
+
+    ws = Workspace(path=Path("."), ecosystem="node", manager="npm", git_repo=Path("."), label="d")
+    rule = HoldRule(package="typescript", max_version=ceiling)
+    with patch.object(js_holds, "ceiling_version", return_value="5.4.5"):
+        assert js_holds.hold_install_spec(ws, "typescript", rule) == spec
+    assert js_holds.exact_install_flag(spec, "--save-exact") == (["--save-exact"] if exact else [])

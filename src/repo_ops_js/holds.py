@@ -125,12 +125,27 @@ def ceiling_version(ws: Workspace, name: str, rule: HoldRule) -> str | None:
 
 
 def hold_install_spec(ws: Workspace, name: str, rule: HoldRule) -> str:
-    """What to install to land on the ceiling: the concrete release, so the manager saves ``^X``.
+    """What to install to land on the ceiling, in the range the saved manifest should carry.
 
+    The concrete release is always what lands. A major-level ceiling (``5``)
+    installs ``^X.Y.Z``, a minor-level one (``5.4``) ``~X.Y.Z``, so the saved range
+    cannot reach past the hold; a patch-level ceiling installs the bare release,
+    which :func:`exact_install_flag` has the manager save exactly.
     A rule's own install spec wins; a registry that cannot answer falls back to
     the ``<=X`` range.
     """
-    return rule.spec or ceiling_version(ws, name, rule) or hold_version_spec(rule)
+    if rule.spec:
+        return rule.spec
+    release = ceiling_version(ws, name, rule)
+    if release is None:
+        return hold_version_spec(rule)
+    width = len(rule.max_version.split("."))
+    return f"^{release}" if width == 1 else f"~{release}" if width == 2 else release
+
+
+def exact_install_flag(spec: str, flag: str) -> list[str]:
+    """*flag* when *spec* is one bare release, so the manager saves it without ``^``."""
+    return [flag] if re.fullmatch(r"\d+\.\d+\.\d+", spec) else []
 
 
 def plan_held_changes(

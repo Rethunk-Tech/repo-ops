@@ -25,6 +25,7 @@ from repo_ops_js.guards import (
 from repo_ops_js.holds import (
     direct_dependency_names,
     enforce_holds,
+    exact_install_flag,
     fold_held_into_behind,
     hold_install_spec,
     plan_held_changes,
@@ -444,7 +445,7 @@ def targeted_bump_behind(
         cmd = (
             ["pnpm", "update", "--latest", name]
             if version == "latest"
-            else ["pnpm", "add", f"{name}@{version}"]
+            else ["pnpm", "add", *exact_install_flag(version, "--save-exact"), f"{name}@{version}"]
         )
         update = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
         return update.returncode == 0
@@ -523,7 +524,11 @@ def _clamp_pnpm(ws: Workspace, name: str, spec: str) -> Any:
     if name in _catalog_specs(ws):
         _rewrite_catalog_package(ws, name, spec)
         return run(["pnpm", "install"], ws.path, timeout=TIMEOUT_APPLY)
-    return run(["pnpm", "add", f"{name}@{spec}"], ws.path, timeout=TIMEOUT_APPLY)
+    return run(
+        ["pnpm", "add", *exact_install_flag(spec, "--save-exact"), f"{name}@{spec}"],
+        ws.path,
+        timeout=TIMEOUT_APPLY,
+    )
 
 
 def apply_pnpm(ws: Workspace) -> list[Change]:
