@@ -8,7 +8,7 @@ With no `root`, every command scans the default roots (the lines of `bosun roots
 
 | | Fleet sweep | Named root |
 | --- | --- | --- |
-| Uncommitted changes, or a rebase, merge, cherry-pick, revert or bisect in progress | skipped, unless the only dirty files are the repo's own dependency manifests/lockfiles (left by a killed run): those are upgraded over and committed with the new bumps, and a failed verify puts them back at HEAD | processed |
+| Uncommitted changes, or a rebase, merge, cherry-pick, revert or bisect in progress | skipped, unless the only dirty files are manifest or lockfile writes a killed apply recorded, whose bytes are unchanged: those are upgraded over and committed with the new bumps, and a failed verify puts them back at HEAD | processed when only manifests and lockfiles are dirty; refused (`dirty: <files>; commit or stash first`) when any other tracked file is dirty |
 | Files committed | — | only files apply touched; if apply touched a file you had edited, nothing is committed and the report says `left uncommitted: your edits in <files>` |
 | Verify fails | reverted and retried once on its own after the sweep | changes kept for inspection |
 
@@ -88,7 +88,7 @@ Repo commands (lockfile checks, `gate`, remediations) run with user-global tool 
 | --- | --- |
 | Failed verify on a fleet sweep | Restores only the files that workspace's apply wrote, and only while they still hold what apply wrote. Anything else that changed in the checkout since (another agent's edits, new files) is left alone and named. The failure is `FAILED_WITH_CHANGES`. The repo's commit is vetoed. |
 | Dirtiness | Re-checked before each workspace and before the retry. A dirty checkout is skipped. A failed repo whose checkout became dirty is not retried. |
-| Dirty only in own dependency manifests/lockfiles | Counts as clean, so a killed run's leftovers cannot freeze a repo's upgrades. Those files are committed with the new bumps. A failed verify reverts them to HEAD and says so. |
+| Dirty only in manifest or lockfile writes a killed apply recorded (`repo-ops-inflight.json`), bytes unchanged | Counts as clean, so a killed run's leftovers cannot freeze a repo's upgrades. Those files are committed with the new bumps. A failed verify reverts them to HEAD and says so. A hand-edited manifest is dirty, and the repo is skipped. |
 | Opt-in e2e gates that `gate` lists as skipped | Not run by verify or by `gates`. `gates --e2e` runs them. |
 | `--no-verify` | Skips verification and therefore commits nothing. |
 
