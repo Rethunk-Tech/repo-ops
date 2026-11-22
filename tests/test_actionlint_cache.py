@@ -306,3 +306,17 @@ def test_actionlint_native_findings_are_fatal_shellcheck_warnings_are_not() -> N
     assert _classify_actionlint_severity(unparseable) == "error"
     assert _classify_actionlint_severity("") == "error"
     assert _classify_actionlint_severity("actionlint timed out") == "error"
+
+
+def test_action_too_old_does_not_block_the_bump_that_fixes_it() -> None:
+    too_old = (
+        '.github/workflows/ci.yml:8:15: the runner of "actions/setup-node@v3" action is too old '
+        "to run on GitHub Actions. update the action's version to fix this issue [action]\n"
+    )
+    assert _classify_actionlint_severity(too_old) == "warning"
+    assert (
+        _classify_actionlint_severity(
+            too_old + '.github/workflows/ci.yml:1:1: unexpected key "foo"\n'
+        )
+        == "error"
+    )

@@ -395,12 +395,15 @@ _SC_SEVERITY_RE = re.compile(r"\bSC\d+:(error|warning|info|style):")
 _FINDING_HEADER_RE = re.compile(r"^.+?:\d+:\d+: ")
 
 
+_ACTION_TOO_OLD_RE = re.compile(r'the runner of "[^"]+" action is too old')
+
+
 def _classify_actionlint_severity(output: str) -> str:
     """Classify a non-zero actionlint result as 'error' or 'warning'.
 
     Returns 'warning' (non-fatal) ONLY when every recognizable diagnostic is a
     shellcheck finding of warning/info/style severity.  Native actionlint
-    findings, shellcheck :error: findings, and unrecognized output stay 'error'
+    findings (bar "action too old", which a pin bump resolves), shellcheck :error: findings, and unrecognized output stay 'error'
     (fatal).
     """
     text = (output or "").strip()
@@ -410,6 +413,8 @@ def _classify_actionlint_severity(output: str) -> str:
     if not finding_lines:
         return "error"  # unrecognized (e.g. "actionlint timed out") → fatal
     for ln in finding_lines:
+        if _ACTION_TOO_OLD_RE.search(ln):
+            continue  # the pin bump this run makes is the fix for it
         if "shellcheck reported issue" not in ln:
             return "error"  # native actionlint finding → fatal
         m = _SC_SEVERITY_RE.search(ln)

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- actionlint's "the runner of ... action is too old" no longer skips the pin bumps for that workflow; the bump is the fix.
 - pdm's cross-range bump writes `>=X` for a ranged requirement (`click>=7.0,<8`), not an exact `==X` pin that stops `pdm update` taking patch releases.
 - Go toolchain pins keep the precision of the pin the repo had: `apply` plans them before `go get` raises the directive, so a `go 1.22` pin moves to `go 1.27` as the plan said, not `go 1.27.4`.
 - npm, pnpm and bun plans show the version a hold ceiling allows, not "held" with no move, and npm's in-range bucket is held too. A hold clamp installs the concrete release the ceiling resolves to, saved as `^X`, instead of writing `<=X` into the manifest; for bun this also makes a held package actually advance.
