@@ -321,3 +321,23 @@ def test_verify_timeout_names_gate_toml_source(tmp_path: Path) -> None:
     assert proc.stderr.strip() == (
         "timed out after 1s (.gate.toml; increase timeout in .gate.toml)"
     )
+
+
+def test_failed_verify_script_names_its_command_and_exit_code(
+    tmp_path: Path, make_workspace
+) -> None:
+    import subprocess
+
+    _write_pkg(tmp_path, {"fail": "exit 1"})
+    (tmp_path / ".repo-ops.toml").write_text('[verify]\nscript = "fail"\n', encoding="utf-8")
+    ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
+
+    def failing(cmd, cwd, timeout=None, env=None):
+        return subprocess.CompletedProcess(cmd, 1, stdout="> demo@1.0.0 fail\n", stderr="boom\n")
+
+    with patch("repo_ops_upgrade.verify.run", side_effect=failing):
+        result = verify_node(ws)
+
+    assert result is not None
+    assert result.splitlines()[0].endswith("fail exited 1")
+    assert "boom" in result

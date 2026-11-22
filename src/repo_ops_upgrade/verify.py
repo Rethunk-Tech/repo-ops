@@ -74,6 +74,9 @@ def _log_error_lines(detail: str) -> str:
     return "\n".join(list(hits)[:_ERROR_LINES_MAX])
 
 
+_SCRIPT_TAIL_LINES = 20
+
+
 def _gate_failure_detail(proc: Any, names: list[str]) -> str:
     """Failure text starting at the first ``gate: FAIL`` line.
 
@@ -271,9 +274,13 @@ def verify_node(ws: Workspace) -> str | None:
     if not script_name:
         return None
 
-    proc = _timed_run([*pm_run_prefix(mgr), script_name], ws.path, timeout=timeout, source=source)
+    cmd = [*pm_run_prefix(mgr), script_name]
+    proc = _timed_run(cmd, ws.path, timeout=timeout, source=source)
     if proc.returncode != 0:
-        return (proc.stderr or proc.stdout).strip() or f"{script_name} failed"
+        tail = "\n".join(
+            (proc.stdout + "\n" + proc.stderr).strip().splitlines()[-_SCRIPT_TAIL_LINES:]
+        )
+        return f"{' '.join(cmd)} exited {proc.returncode}\n{tail}".strip()
     return None
 
 
