@@ -322,7 +322,7 @@ def test_actions_summary_policy_violations_counted() -> None:
     assert summary["bumps"] == 1
 
 
-@pytest.mark.parametrize("status", ["policy", "policy-blocked", "warn"])
+@pytest.mark.parametrize("status", ["policy", "policy-blocked"])
 def test_actions_summary_policy_statuses_are_not_bumps(status: str) -> None:
     """Policy-status rows count as violations, never actionable bumps."""
     from repo_ops_models import ActionBump, RepoBundle
@@ -343,3 +343,13 @@ def test_actions_summary_policy_statuses_are_not_bumps(status: str) -> None:
     assert summary["policy_violations"] == 1
     assert summary["bumps"] == 0
     assert summary["failures"] == 0
+
+
+def test_actionlint_warn_rows_are_not_policy_violations() -> None:
+    from repo_ops_models import ActionBump, RepoBundle
+
+    bundle = RepoBundle(git_repo=Path("/fake"), label="fake")
+    bundle.actions = [ActionBump("ci.yml", "(actionlint)", "", "", status="warn", detail="too old")]
+
+    summary = bundle.actions_summary()
+    assert (summary["policy_violations"], summary["lint_warnings"], summary["bumps"]) == (0, 1, 0)

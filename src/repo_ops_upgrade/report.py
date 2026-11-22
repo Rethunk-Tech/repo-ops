@@ -153,6 +153,7 @@ def build_run_summary(
     held_by_manager_counts: dict[str, int] = {}
 
     actions_policy_violations = 0
+    actions_lint_warnings = 0
 
     for bundle in bundles.values():
         for wr in bundle.workspaces:
@@ -199,6 +200,7 @@ def build_run_summary(
         actions_failures += action_totals["failures"]
         actions_behind_latest += action_totals.get("behind_latest", 0)
         actions_policy_violations += action_totals.get("policy_violations", 0)
+        actions_lint_warnings += action_totals.get("lint_warnings", 0)
 
     discovery_skipped = len(diagnostics.skipped) if diagnostics else 0
     summary: dict[str, Any] = {
@@ -211,6 +213,7 @@ def build_run_summary(
         "actions_bumps": actions_bumps,
         "actions_failures": actions_failures,
         "actions_policy_violations": actions_policy_violations,
+        "actions_lint_warnings": actions_lint_warnings,
         "discovery_skipped": discovery_skipped,
         "packages_upgraded": packages_upgraded,
         "packages_behind_latest": packages_behind_latest,
@@ -510,6 +513,8 @@ def print_human_report(
         policy_count = summary.get("policy_violations", 0)
         if policy_count:
             print(f"  Actions policy violations: {policy_count}")
+        if lint_count := summary.get("lint_warnings", 0):
+            print(f"  Actionlint warnings: {lint_count}")
         print()
 
 
@@ -578,6 +583,7 @@ def print_run_footer(
         ("actions bumps", summary["actions_bumps"]),
         ("actions failures", summary["actions_failures"]),
         ("actions policy violations", summary.get("actions_policy_violations", 0)),
+        ("actionlint warnings", summary.get("actions_lint_warnings", 0)),
         ("discovery skipped", summary["discovery_skipped"]),
     ]
     rows.append(("excluded", summary.get("excluded", 0)))
