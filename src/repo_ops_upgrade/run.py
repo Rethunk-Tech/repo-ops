@@ -834,7 +834,7 @@ def _run_upgrade_body(
                 _gh_actions_repos.append(_bundle.git_repo)
         if _all_uses:
             actions.prefetch_tag_info(_all_uses, run_tag_cache)
-        actions._prove_latest_gh_actions_tag(_gh_actions_repos, run_tag_cache)
+        actions._prove_latest_gh_actions_tag(_gh_actions_repos)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as _actions_pool:
             list(_actions_pool.map(_scan_one_bundle_actions, list(bundles.values())))

@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Iterable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -143,7 +144,7 @@ def _proven_tags_path() -> Path:
 
 
 def _new_canary_sweep() -> dict[str, Any]:
-    return {"canary_slug": None, "ci_checked": False, "proven": None}
+    return {"canary_slug": None, "ci_checks": 0, "proven": None}
 
 
 _CANARY_SWEEP: dict[str, Any] = _new_canary_sweep()
@@ -201,7 +202,19 @@ def _save_proven_tags(proven: set[str]) -> None:
         write_json_atomic(path, {"proven": sorted(proven)})
 
 
-def _commit_pins_gh_actions_tag(repo: Path, sha: str, tag: str) -> bool:
+_GH_PIN_TAG_RE = re.compile(r"(?:@|#\s*)(v\d+\.\d+(?:\.\d+)?)\b")
+
+
+def _gh_pinned_tags(lines: Iterable[str]) -> set[str]:
+    return {
+        m.group(1)
+        for line in lines
+        if _GH_ACTIONS_REPO in line
+        for m in _GH_PIN_TAG_RE.finditer(line)
+    }
+
+
+def _commit_gh_actions_tags(repo: Path, sha: str) -> set[str]:
     try:
         proc = run(
             ["git", "grep", "-F", _GH_ACTIONS_REPO, sha, "--", ".github"],
@@ -209,23 +222,22 @@ def _commit_pins_gh_actions_tag(repo: Path, sha: str, tag: str) -> bool:
             timeout=15,
         )
     except (OSError, subprocess.TimeoutExpired):
-        return False
+        return set()
     if proc.returncode != 0:
-        return False
-    pin_re = re.compile(rf"(?:@|#\s*){re.escape(tag)}\b")
-    return any(pin_re.search(line) for line in proc.stdout.splitlines())
+        return set()
+    return _gh_pinned_tags(proc.stdout.splitlines())
 
 
 _SECURITY_WORKFLOWS = frozenset({"codeql", "scorecard", "scorecard supply-chain security"})
 
 
-def _ci_green_on_gh_actions_tag(repo: Path, tag: str) -> bool:
-    """True when default-branch CI has a success run whose HEAD pins *tag*."""
+def _ci_green_gh_actions_tags(repo: Path) -> set[str]:
+    """Every gh-actions tag pinned by a default-branch commit whose CI went green."""
     if not shutil.which("gh"):
-        return False
+        return set()
     slug = _repo_slug(repo)
     if "/" not in slug:
-        return False
+        return set()
     try:
         proc = run(
             [
@@ -245,15 +257,15 @@ def _ci_green_on_gh_actions_tag(repo: Path, tag: str) -> bool:
             timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired):
-        return False
+        return set()
     if proc.returncode != 0 or not proc.stdout.strip():
-        return False
+        return set()
     try:
         runs = json.loads(proc.stdout)
     except ValueError:
-        return False
+        return set()
     if not isinstance(runs, list):
-        return False
+        return set()
     # A SHA is green only when a non-security workflow succeeded on it and no
     # run on it failed or was cancelled: CodeQL and Scorecard pass on red CI.
     ok: set[str] = set()
@@ -269,7 +281,7 @@ def _ci_green_on_gh_actions_tag(repo: Path, tag: str) -> bool:
             _SECURITY_WORKFLOWS
         ):
             ok.add(sha)
-    return any(sha not in bad and _commit_pins_gh_actions_tag(repo, sha, tag) for sha in ok)
+    return set().union(*(_commit_gh_actions_tags(repo, sha) for sha in ok - bad))
 
 
 def _note_gh_actions_user(repo: Path) -> None:
@@ -278,84 +290,97 @@ def _note_gh_actions_user(repo: Path) -> None:
             _CANARY_SWEEP["canary_slug"] = _repo_slug(repo)
 
 
+_CI_CHECKS_PER_SWEEP = 3
+
+
 def _maybe_prove_gh_actions_tag(repo: Path, tag: str) -> None:
+    """Record every tag the repo's green default-branch commits pin, not only *tag*."""
     if not _EXACT_TAG_RE.fullmatch(tag):
         return
     with _CANARY_LOCK:
         proven = _proven_tags()
-        if tag in proven or _CANARY_SWEEP.get("ci_checked"):
+        if tag in proven or _CANARY_SWEEP["ci_checks"] >= _CI_CHECKS_PER_SWEEP:
             return
-        # One gh run list per sweep: a miss still consumes the slot so a red
+        # Bounded gh run lists per sweep: a miss still consumes a slot so a red
         # canary cannot fan out into per-repo polling.
-        _CANARY_SWEEP["ci_checked"] = True
-    if _ci_green_on_gh_actions_tag(repo, tag):
+        _CANARY_SWEEP["ci_checks"] += 1
+    green = _ci_green_gh_actions_tags(repo)
+    if green:
         with _CANARY_LOCK:
-            proven = _proven_tags()
-            proven.add(tag)
-            _save_proven_tags(proven)
+            _save_proven_tags(_proven_tags() | green)
 
 
-def _tree_pins_gh_actions_tag(repo: Path, tag: str) -> bool:
-    pin_re = re.compile(rf"(?:@|#\s*){re.escape(tag)}\b")
+def _tree_gh_actions_tags(repo: Path) -> set[str]:
+    tags: set[str] = set()
     for wf in discover_workflow_files(repo) + discover_action_files(repo):
         try:
             text = wf.read_text(encoding="utf-8")
         except OSError:
             continue
-        if any(_GH_ACTIONS_REPO in line and pin_re.search(line) for line in text.splitlines()):
-            return True
-    return False
+        tags |= _gh_pinned_tags(text.splitlines())
+    return tags
 
 
-def _prove_latest_gh_actions_tag(repos: list[Path], tag_cache: dict[str, dict | None]) -> None:
-    """Prove the newest gh-actions tag from one repo that already pins it."""
-    info = tag_cache.get(_GH_ACTIONS_REPO)
-    if not info:
-        return
-    max_major = info.get("max_major")
-    if max_major is None:
-        return
-    digest = _highest_exact_digest_in_major(info, max_major)
-    if digest is None:
-        return
-    tag = digest[1]
-    if tag in _proven_tags():
-        return
+def _prove_latest_gh_actions_tag(repos: list[Path]) -> None:
+    """Prove tags from the repos pinning the highest unproven gh-actions tags."""
+    proven = _proven_tags()
+    floor = max((_tag_version(t) for t in proven), default=())
+    pinned: dict[Path, str] = {}
     for repo in repos:
-        if _tree_pins_gh_actions_tag(repo, tag):
-            _maybe_prove_gh_actions_tag(repo, tag)
-            return
+        fresh = [
+            t for t in _tree_gh_actions_tags(repo) if t not in proven and _tag_version(t) > floor
+        ]
+        if fresh:
+            pinned[repo] = max(fresh, key=_tag_version)
+    for repo in sorted(pinned, key=lambda r: _tag_version(pinned[r]), reverse=True):
+        _maybe_prove_gh_actions_tag(repo, pinned[repo])
 
 
 def _ref_names_tag(pin: str, comment: str | None, tag: str) -> bool:
     return pin == tag or comment == tag
 
 
-def _allow_gh_actions_bump(
+def _prefer_proven_gh_actions(
+    repo: Path, action: str, info: dict, digest: tuple[str, str] | None
+) -> tuple[str, str] | None:
+    """A non-canary repo moves to the highest proven tag of the major while the newest is unproven."""
+    if digest is None or not _is_gh_actions(action) or digest[1] in _proven_tags():
+        return digest
+    _note_gh_actions_user(repo)
+    if _repo_slug(repo) == _CANARY_SWEEP["canary_slug"]:
+        return digest
+    major = _exact_tag_major(digest[1])
+    best: tuple[tuple[int, ...], str, str] | None = None
+    for sha, tags in info.get("sha_to_tags", {}).items():
+        for t in tags:
+            if t in _proven_tags() and _exact_tag_major(t) == major and "-" not in t:
+                cand = (_tag_version(t), sha, t)
+                if best is None or cand[0] > best[0]:
+                    best = cand
+    return (best[1], best[2]) if best else digest
+
+
+def _gh_actions_hold(
     repo: Path,
     action: str,
     tag: str,
     *,
     pin: str,
     comment: str | None = None,
-) -> bool:
-    """Whether this repo may move *action* to *tag* this sweep."""
+) -> str | None:
+    """Why *action* may not move to *tag* this sweep, or None when it may."""
     if not _is_gh_actions(action) or not _EXACT_TAG_RE.fullmatch(tag):
-        return True
+        return None
     if _ref_names_tag(pin, comment, tag):
         _maybe_prove_gh_actions_tag(repo, tag)
-        return True
+        return None
     if tag in _proven_tags():
-        return True
+        return None
     _note_gh_actions_user(repo)
     canary = _CANARY_SWEEP.get("canary_slug") or _repo_slug(repo)
     if _repo_slug(repo) == canary:
-        return True
-    print(
-        f"actions: Rethunk-Tech/gh-actions {tag} held for canary ({canary})",
-        file=sys.stderr,
-    )
-    return False
+        return None
+    return f"{tag} held for canary ({canary}); report only"
 
 
 # ---------------------------------------------------------------------------
@@ -1401,6 +1426,8 @@ def scan_actions(
                     if info is not None and target_major is not None
                     else None
                 )
+                if info is not None:
+                    digest = _prefer_proven_gh_actions(repo, action, info, digest)
                 if digest is not None:
                     new_sha, tag = digest
                     pin_norm = pin.lower()
@@ -1415,11 +1442,18 @@ def scan_actions(
                         already_current = True
                     if already_current:
                         _maybe_prove_gh_actions_tag(repo, tag)
-                    if (
-                        not already_current
-                        and _target_within_hold(repo, action, tag)
-                        and _allow_gh_actions_bump(repo, action, tag, pin=pin, comment=uses.comment)
-                    ):
+                    hold = (
+                        None
+                        if already_current or not _target_within_hold(repo, action, tag)
+                        else _gh_actions_hold(repo, action, tag, pin=pin, comment=uses.comment)
+                    )
+                    if hold:
+                        bumps.append(
+                            ActionBump(
+                                workflow=rel, action=action, pin=pin, latest=tag, detail=hold
+                            )
+                        )
+                    elif not already_current and _target_within_hold(repo, action, tag):
                         cross_major = (
                             target_major is not None and major is not None and target_major != major
                         )
@@ -1502,13 +1536,24 @@ def scan_actions(
             # when it has a real vN.M.P release. Runs before the tag-normalize
             # logic below; once SHA-pinned, the refresh path above owns it.
             target_major = _pin_target_major(repo, action, info, M)
-            digest = _highest_exact_digest_in_major(info, target_major)
+            digest = _prefer_proven_gh_actions(
+                repo, action, info, _highest_exact_digest_in_major(info, target_major)
+            )
             if digest is not None:
                 new_sha, tag_label = digest
                 if _target_within_hold(repo, action, tag_label):
-                    if not _allow_gh_actions_bump(
+                    if hold := _gh_actions_hold(
                         repo, action, tag_label, pin=pin, comment=uses.comment
                     ):
+                        bumps.append(
+                            ActionBump(
+                                workflow=rel,
+                                action=action,
+                                pin=pin,
+                                latest=tag_label,
+                                detail=hold,
+                            )
+                        )
                         continue
                     bumps.append(
                         ActionBump(
@@ -1571,9 +1616,18 @@ def scan_actions(
                 latest_target = None
 
             if latest_target and latest_target != pin:
-                if not _allow_gh_actions_bump(
+                if hold := _gh_actions_hold(
                     repo, action, latest_target, pin=pin, comment=uses.comment
                 ):
+                    bumps.append(
+                        ActionBump(
+                            workflow=rel,
+                            action=action,
+                            pin=pin,
+                            latest=latest_target,
+                            detail=hold,
+                        )
+                    )
                     continue
                 bumps.append(
                     ActionBump(

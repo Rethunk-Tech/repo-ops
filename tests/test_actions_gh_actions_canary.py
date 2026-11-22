@@ -53,9 +53,7 @@ def _isolate_canary(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     actions_mod._reset_canary_sweep()
 
 
-def test_unproven_gh_actions_tag_canaries_first_repo_and_holds_rest(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_unproven_gh_actions_tag_canaries_first_repo_and_holds_rest(tmp_path: Path) -> None:
     alpha = tmp_path / "alpha"
     beta = tmp_path / "beta"
     alpha_wf = _wf(
@@ -75,15 +73,15 @@ def test_unproven_gh_actions_tag_canaries_first_repo_and_holds_rest(
         patch("repo_ops_upgrade.actions._github_token_available", return_value=False),
     ):
         scan_actions(alpha, apply=True)
-        scan_actions(beta, apply=True)
+        beta_bumps, _ = scan_actions(beta, apply=True)
 
     assert _NEW in alpha_wf.read_text(encoding="utf-8")
     beta_text = beta_wf.read_text(encoding="utf-8")
     assert _OLD in beta_text
     assert _NEW not in beta_text
     assert _CHECKOUT_NEW in beta_text
-    err = capsys.readouterr().err
-    assert f"actions: Rethunk-Tech/gh-actions {_TAG} held for canary (alpha)" in err
+    held = [b for b in beta_bumps if b.detail and "held for canary (alpha)" in b.detail]
+    assert [b.latest for b in held] == [_TAG]
 
 
 def test_proven_gh_actions_tag_bumps_every_repo(tmp_path: Path) -> None:
@@ -148,9 +146,9 @@ def test_ci_green_needs_a_non_security_success_and_no_failure(
         patch("repo_ops_upgrade.actions.run", return_value=_gh_run_list(runs)),
         patch("repo_ops_upgrade.actions._repo_slug", return_value="Rethunk-Tech/x"),
         patch("repo_ops_upgrade.actions._default_branch", return_value="main"),
-        patch("repo_ops_upgrade.actions._commit_pins_gh_actions_tag", return_value=True),
+        patch("repo_ops_upgrade.actions._commit_gh_actions_tags", return_value={_TAG}),
     ):
-        assert actions_mod._ci_green_on_gh_actions_tag(tmp_path, _TAG) is green
+        assert (_TAG in actions_mod._ci_green_gh_actions_tags(tmp_path)) is green
 
 
 def test_a_dirty_skipped_repo_is_not_the_canary(
@@ -178,3 +176,62 @@ def test_a_dirty_skipped_repo_is_not_the_canary(
 
     assert _OLD in wfs["alpha"].read_text(encoding="utf-8")
     assert _NEW in wfs["beta"].read_text(encoding="utf-8")
+
+
+def test_green_ci_records_every_tag_pinned_and_unproven_newest_falls_back_to_proven(
+    tmp_path: Path,
+) -> None:
+    state = tmp_path / "xdg-state" / "repo-ops"
+    state.mkdir(parents=True)
+    (state / "gh-actions-proven.json").write_text(
+        json.dumps({"proven": ["v1.30"]}), encoding="utf-8"
+    )
+    green_repo = tmp_path / "green"
+    _wf(green_repo, f"jobs:\n  ci:\n    steps:\n      - uses: {_GH}@{_OLD}  # v1.31\n")
+    runs = [{"conclusion": "success", "headSha": _NEW, "workflowName": "CI"}]
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", side_effect=_which),
+        patch("repo_ops_upgrade.actions.run", return_value=_gh_run_list(runs)),
+        patch("repo_ops_upgrade.actions._repo_slug", return_value="Rethunk-Tech/x"),
+        patch("repo_ops_upgrade.actions._default_branch", return_value="main"),
+        patch(
+            "repo_ops_upgrade.actions._commit_gh_actions_tags",
+            return_value={"v1.31", "v1.32"},
+        ),
+    ):
+        actions_mod._prove_latest_gh_actions_tag([green_repo])
+    assert actions_mod._proven_tags() >= {"v1.30", "v1.31", "v1.32"}
+
+
+def test_non_canary_repo_advances_to_highest_proven_tag_below_unproven_newest(
+    tmp_path: Path,
+) -> None:
+    state = tmp_path / "xdg-state" / "repo-ops"
+    state.mkdir(parents=True)
+    (state / "gh-actions-proven.json").write_text(
+        json.dumps({"proven": ["v1.30", "v1.31"]}), encoding="utf-8"
+    )
+    mid = "cccccccccccccccccccccccccccccccccccccccc"
+    new = "dddddddddddddddddddddddddddddddddddddddd"
+
+    def run_tags(cmd: list[str], *_a: object, **_k: object) -> MagicMock:
+        if f"repos/{_GH}/tags" in " ".join(cmd):
+            return _make_tags_proc(f"v1.32 {new}", f"v1.31 {mid}", f"v1.30 {_OLD}")
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    wfs = {
+        n: _wf(
+            tmp_path / n,
+            f"jobs:\n  ci:\n    steps:\n      - uses: {_GH}@{_OLD}  # v1.30\n",
+        )
+        for n in ("alpha", "beta")
+    }
+    with (
+        patch("repo_ops_upgrade.actions.shutil.which", side_effect=_which),
+        patch("repo_ops_upgrade.actions.run", side_effect=run_tags),
+        patch("repo_ops_upgrade.actions._github_token_available", return_value=False),
+    ):
+        scan_actions(tmp_path / "alpha", apply=True)
+        scan_actions(tmp_path / "beta", apply=True)
+    assert new in wfs["alpha"].read_text(encoding="utf-8")
+    assert mid in wfs["beta"].read_text(encoding="utf-8")
