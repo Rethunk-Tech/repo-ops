@@ -181,7 +181,9 @@ def _npm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
         for entry in meta if isinstance(meta, list) else [meta]:
             if not isinstance(entry, dict):
                 continue
-            cur = str(entry.get("current", "?"))
+            cur = str(entry.get("current") or _locked_version(ws, name) or "")
+            if not cur:
+                continue
             wanted = str(entry.get("wanted", "?"))
             latest = str(entry.get("latest", "?"))
             if cur != wanted and wanted not in ("?", ""):
@@ -196,6 +198,15 @@ def _npm_outdated(ws: Workspace) -> tuple[list[Change], list[Change]]:
 def check_npm(ws: Workspace) -> tuple[list[Change], list[Change]]:
     """Check the root and every workspace member (see :func:`_check_npm_dir`)."""
     return check_with_members(ws, lambda w: plan_held_changes(w, *_check_npm_dir(w)))
+
+
+def _locked_version(ws: Workspace, name: str) -> str | None:
+    """Version package-lock.json records for *name*: ``npm outdated`` omits ``current`` without node_modules."""
+    lock = read_json_file(ws.path / "package-lock.json")
+    packages = lock.get("packages") if isinstance(lock, dict) else None
+    entry = packages.get(f"node_modules/{name}") if isinstance(packages, dict) else None
+    version = entry.get("version") if isinstance(entry, dict) else None
+    return version if isinstance(version, str) else None
 
 
 def _check_npm_dir(ws: Workspace) -> tuple[list[Change], list[Change]]:

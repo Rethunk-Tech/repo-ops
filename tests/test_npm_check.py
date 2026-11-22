@@ -116,3 +116,17 @@ def test_check_npm_leaves_held_behind_unpromoted(tmp_path: Path, make_workspace)
         )
     assert changes == []
     assert behind == [Change("lodash", "4.0.0", "4.17.21")]
+
+
+def test_missing_current_reads_the_locked_version(tmp_path: Path, make_workspace) -> None:
+    """A fresh clone has no node_modules, so ``npm outdated`` omits ``current``."""
+    (tmp_path / "package-lock.json").write_text(
+        '{"packages": {"node_modules/semver": {"version": "6.0.0"}}}', encoding="utf-8"
+    )
+    out = '{"semver": {"wanted": "6.0.0", "latest": "7.8.6"}, "ghost": {"wanted": "1.0.0"}}'
+    proc = type("Proc", (), {"returncode": 1, "stdout": out, "stderr": ""})()
+    with patch("repo_ops_js_npm.npm.run", return_value=proc):
+        changes, behind = check_npm(
+            make_workspace(tmp_path, ecosystem="node", manager="npm", label="d")
+        )
+    assert [(c.name, c.from_ver) for c in [*changes, *behind]] == [("semver", "6.0.0")]
