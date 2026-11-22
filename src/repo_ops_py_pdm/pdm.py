@@ -101,7 +101,10 @@ def _pdm_bumped_requirement(requirement: str, latest: str) -> str:
         return f"^{latest}"
     if stripped.startswith("~"):
         return f"~{latest}"
-    return f"=={latest}"
+    if stripped.startswith("=="):
+        return f"=={latest}"
+    # A range that excluded latest keeps room for patch releases instead of freezing at one.
+    return f">={latest}"
 
 
 def _apply_pdm_targeted_bumps(
