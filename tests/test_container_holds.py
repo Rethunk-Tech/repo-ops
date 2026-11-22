@@ -158,3 +158,29 @@ def test_apply_container_ignores_expired_hold_without_rewriting_config(
 
     assert dockerfile.read_text(encoding="utf-8") == ("FROM docker.io/library/node:1.5.0\n")
     assert hold_config.read_bytes() == original_hold_config
+
+
+def test_check_container_advances_a_held_tag_to_its_ceiling(tmp_path, make_workspace) -> None:
+    _dockerfile(tmp_path, ref="1.0.0")
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
+    _write_global_hold(tmp_path)
+
+    with patch.object(
+        container, "_fetch_tags", return_value=["1.0.0", "1.4.2", "1.5.0-rc1", "2.0.0"]
+    ):
+        changes = container.check_container(ws)
+
+    assert [(c.from_ver, c.to) for c in changes] == [("1.0.0", "1.4.2")]
+
+
+def test_check_container_reports_a_held_row_when_already_at_the_ceiling(
+    tmp_path, make_workspace
+) -> None:
+    _dockerfile(tmp_path, ref="1.4.2")
+    ws = make_workspace(tmp_path, ecosystem="container", manager="container", label="repo")
+    _write_global_hold(tmp_path)
+
+    with patch.object(container, "_fetch_tags", return_value=["1.4.2", "2.0.0"]):
+        changes = container.check_container(ws)
+
+    assert len(changes) == 1 and "held at <=1.4" in changes[0].to

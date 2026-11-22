@@ -1052,7 +1052,7 @@ def _target_within_hold(ws: Workspace, package: str, target_tag: str) -> bool:
 
 
 def _resolve_hold_tag_target(current_tag: str, tags: list[str], rule: HoldRule) -> str | None:
-    """Return the highest tag at or below *rule* when *current_tag* violates it."""
+    """Return the highest tag at or below *rule* (lower when *current_tag* is over it, higher when under), else None."""
     current_version = _tag_version_for_hold(current_tag)
     if current_version is None:
         return None
@@ -1060,9 +1060,6 @@ def _resolve_hold_tag_target(current_tag: str, tags: list[str], rule: HoldRule) 
         current_tup = semver_tuple(current_version)
     except Exception:
         return None
-    if version_satisfies_ceiling(current_version, rule.max_version):
-        return None
-
     suffix = _extract_suffix(current_tag)
     if suffix is None:
         return None
@@ -1084,7 +1081,9 @@ def _resolve_hold_tag_target(current_tag: str, tags: list[str], rule: HoldRule) 
     if not candidates:
         return None
     target_tup, target_tag = max(candidates, key=lambda item: (item[0], item[1]))
-    if target_tup >= current_tup:
+    above = not version_satisfies_ceiling(current_version, rule.max_version)
+    # Over the ceiling the target must be lower; within it, higher.
+    if (target_tup >= current_tup) if above else (target_tup <= current_tup):
         return None
     return target_tag
 
@@ -1111,14 +1110,21 @@ def _resolve_tag_target(ws: Workspace, image: str, tag: str) -> tuple[str | None
         return None, "registry query failed"
 
     rule = _resolve_container_hold(ws, image)
-    if rule is not None:
-        clamp_target = _resolve_hold_tag_target(tag, available, rule)
-        if clamp_target is not None:
-            return clamp_target, None
-
     latest = _resolve_latest_tag(
         tag, available, _node_lts_major() if _is_node_image(image) else None
     )
+    if rule is not None:
+        current_version = _tag_version_for_hold(tag)
+        above = current_version is not None and not version_satisfies_ceiling(
+            current_version, rule.max_version
+        )
+        latest_held = latest is not None and not _target_within_hold(ws, image, latest)
+        if above or latest_held:
+            clamp_target = _resolve_hold_tag_target(tag, available, rule)
+            if clamp_target is not None:
+                return clamp_target, None
+            if latest_held:
+                return None, f"held at <={rule.max_version}; newest {latest} is above it"
     if latest is None or not _target_within_hold(ws, image, latest):
         return None, None
     return latest, None
