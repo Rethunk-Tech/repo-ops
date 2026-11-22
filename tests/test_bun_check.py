@@ -171,3 +171,18 @@ def test_check_bun_proposes_private_member_peer_lockstep(
         ("next", "16.3.1", "16.3.6", "packages/auth"),
         ("react", "^19.2.8", "^19.3.0", "packages/ui"),
     }
+
+
+def test_check_bun_plans_a_held_package_at_its_ceiling(tmp_path: Path, make_workspace) -> None:
+    from repo_ops_core.holds import HoldRule
+
+    table = "│ typescript │ 4.9.5 │ 4.9.5 │ 7.0.2 │\n"
+    with (
+        patch(
+            "repo_ops_core.holds._global_holds_cached", return_value=(HoldRule("typescript", "5"),)
+        ),
+        patch("repo_ops_js.holds.ceiling_version", return_value="5.9.3"),
+    ):
+        changes, behind = _patched_check(table, tmp_path, make_workspace)
+    assert [(c.name, c.to) for c in changes] == [("typescript", "5.9.3")]
+    assert [(c.name, c.to) for c in behind] == [("typescript", "7.0.2")]
