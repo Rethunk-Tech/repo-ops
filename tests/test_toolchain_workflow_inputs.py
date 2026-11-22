@@ -183,3 +183,41 @@ def test_own_ci_matrix_covers_the_python_the_pin_names() -> None:
     pin = (repo / ".python-version").read_text().strip()
     workflow = (repo / ".github" / "workflows" / "ci.yml").read_text()
     assert f'"{pin}"' in workflow, f"ci.yml matrix is missing the {pin} pin from .python-version"
+
+
+_GATE_SHA = "a" * 40
+_OLD_SHA = "4fa5cac1effa39318db55c2d0678756c91599957"
+_PROXY = "https://proxy.golang.org/github.com/!rethunk-!tech/rethunk-gate-cli"
+_GATE = "github.com/Rethunk-Tech/rethunk-gate-cli"
+
+
+@pytest.fixture
+def _gate_feeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    feeds = {
+        f"{_PROXY}/@latest": json.dumps({"Version": "v0.10.3"}),
+        f"{_PROXY}/@v/v0.10.3.info": json.dumps({"Origin": {"Hash": _GATE_SHA}}),
+        "https://api.github.com/repos/Rethunk-Tech/rethunk-gate-cli/releases/latest": json.dumps(
+            {"tag_name": "v0.10.3"}
+        ),
+    }
+    monkeypatch.setattr(toolchains, "_fetch", feeds.get)
+
+
+@pytest.mark.usefixtures("_gate_feeds")
+def test_gate_installs_in_a_workflow_move_to_the_latest_release(tmp_path: Path) -> None:
+    wf = _workflow(
+        tmp_path,
+        "steps:\n"
+        f"  - run: GOTOOLCHAIN=auto go install {_GATE}/cmd/gate@v0.10.1\n"
+        f"  - run: go install {_GATE}/cmd/gate@{_OLD_SHA} # v0.10.1\n"
+        f"  - run: curl -fsSL -o gate https://github.com/Rethunk-Tech/{_GATE.rsplit('/', 1)[1]}"
+        "/releases/download/v0.10.1/gate-linux-amd64\n",
+    )
+
+    changes, _behind = toolchains.apply_toolchains(_ws(tmp_path, "rust", "cargo"))
+
+    assert [(c.name, c.from_ver, c.to) for c in changes] == [("gate", "0.10.1", "0.10.3")] * 3
+    text = wf.read_text()
+    assert f"go install {_GATE}/cmd/gate@v0.10.3\n" in text
+    assert f"{_GATE}/cmd/gate@{_GATE_SHA} # v0.10.3\n" in text
+    assert "releases/download/v0.10.3/gate-linux-amd64" in wf.read_text()

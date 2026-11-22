@@ -10,6 +10,8 @@ leaves the pin alone.
 Version inputs in a workflow (``go-version:``, ``python-version:``,
 ``node-version:``, ``uv-version:``, and ``version:`` on a setup-uv step) are
 toolchain pins a repo states in YAML instead of a manifest, so they move too.
+So does the gate a workflow installs: ``go install .../cmd/gate@vX`` (also as a
+commit SHA with a ``# vX`` comment) and the ``releases/download/vX/`` curl form.
 """
 
 from __future__ import annotations
@@ -194,6 +196,8 @@ class _Input:
     path: Path
     line_no: int
     version: str
+    # "go" or "url" for a gate install; empty for a version input.
+    kind: str = ""
 
 
 def _is_setup_uv(ref: str) -> bool:
@@ -241,17 +245,73 @@ def _inputs_in(path: Path, lines: list[str], tools: tuple[str, ...]) -> list[_In
     return found
 
 
+_GATE_MODULE = "github.com/Rethunk-Tech/rethunk-gate-cli"
+_GATE_GO_RE = re.compile(
+    rf"{re.escape(_GATE_MODULE)}/cmd/gate@(?P<ref>v\d+\.\d+\.\d+|[0-9a-f]{{40}})"
+    r"(?:[ \t]+#[ \t]*(?P<ctag>v\d+\.\d+\.\d+))?"
+)
+_GATE_URL_RE = re.compile(
+    rf"{re.escape(_GATE_MODULE)}/releases/download/(?P<ref>v\d+\.\d+\.\d+)(?=/)"
+)
+_GATE_PROXY = "https://proxy.golang.org/github.com/!rethunk-!tech/rethunk-gate-cli"
+_GATE_RELEASES = "https://api.github.com/repos/Rethunk-Tech/rethunk-gate-cli/releases/latest"
+
+
+def _gate_inputs_in(path: Path, lines: list[str]) -> list[_Input]:
+    found: list[_Input] = []
+    for index, line in enumerate(lines, 1):
+        if line.lstrip().startswith("#"):
+            continue
+        if m := _GATE_GO_RE.search(line):
+            tag = m.group("ctag") or (m.group("ref") if m.group("ref").startswith("v") else None)
+            if tag:
+                found.append(_Input("gate", "gate", path, index, tag[1:], "go"))
+        elif m := _GATE_URL_RE.search(line):
+            found.append(_Input("gate", "gate", path, index, m.group("ref")[1:], "url"))
+    return found
+
+
+def _json_object(url: str) -> dict:
+    text = _fetch(url)
+    try:
+        doc = json.loads(text) if text else None
+    except ValueError:
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def _gate_sha(version: str) -> str | None:
+    origin = _json_object(f"{_GATE_PROXY}/@v/v{version}.info").get("Origin")
+    sha = origin.get("Hash") if isinstance(origin, dict) else None
+    return sha if isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha) else None
+
+
+def _latest_gate(pin: _Input, line: str) -> str | None:
+    """Newest gate release for the install form on *line*; a SHA pin needs a resolvable commit."""
+    if pin.kind == "url":
+        tag = _json_object(_GATE_RELEASES).get("tag_name")
+    else:
+        tag = _json_object(f"{_GATE_PROXY}/@latest").get("Version")
+    if not isinstance(tag, str) or not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+        return None
+    version = tag[1:]
+    m = _GATE_GO_RE.search(line)
+    if m and m.group("ctag") and _gate_sha(version) is None:
+        return None
+    return version
+
+
 def _workflow_inputs(ws: Workspace) -> list[_Input]:
     tools = _INPUT_TOOLS_BY_ECOSYSTEM.get(ws.ecosystem, ())
-    if not tools:
-        return []
     found: list[_Input] = []
     for wf in discover_workflow_files(ws.git_repo):
         try:
             lines = wf.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             continue
-        found.extend(_inputs_in(wf, lines, tools))
+        if tools:
+            found.extend(_inputs_in(wf, lines, tools))
+        found.extend(_gate_inputs_in(wf, lines))
     return found
 
 
@@ -271,7 +331,12 @@ def _workflow_moves(ws: Workspace) -> tuple[list[tuple[_Input, str, str]], list[
     moves: list[tuple[_Input, str, str]] = []
     behind: list[Change] = []
     for pin in _workflow_inputs(ws):
-        target = _input_target(pin.tool, pin.version)
+        if pin.tool == "gate":
+            lines = (_read(pin.path) or "").splitlines()
+            line = lines[pin.line_no - 1] if 0 < pin.line_no <= len(lines) else ""
+            target = _latest_gate(pin, line)
+        else:
+            target = _input_target(pin.tool, pin.version)
         if target is None:
             continue
         if _LITERAL_INPUT_RE.fullmatch(pin.version):
@@ -287,12 +352,37 @@ def _workflow_moves(ws: Workspace) -> tuple[list[tuple[_Input, str, str]], list[
     return moves, behind
 
 
+def _apply_gate_pin(line: str, pin: _Input, new: str) -> str | None:
+    m = (_GATE_URL_RE if pin.kind == "url" else _GATE_GO_RE).search(line)
+    if m is None:
+        return None
+    ref = m.group("ref")
+    ctag = m.groupdict().get("ctag")
+    if (ctag or ref).removeprefix("v") != pin.version:
+        return None
+    if ctag:
+        sha = _gate_sha(new)
+        if sha is None:
+            return None
+        line = line[: m.start("ctag")] + f"v{new}" + line[m.end("ctag") :]
+        return line[: m.start("ref")] + sha + line[m.end("ref") :]
+    return line[: m.start("ref")] + f"v{new}" + line[m.end("ref") :]
+
+
 def _apply_workflow_input(pin: _Input, new: str, root: Path) -> bool:
     text = _read(pin.path)
     lines = text.splitlines(keepends=True) if text is not None else []
     index = pin.line_no - 1
     if not 0 <= index < len(lines):
         return False
+    if pin.tool == "gate":
+        body = lines[index].rstrip("\r\n")
+        rewritten = _apply_gate_pin(body, pin, new)
+        if rewritten is None:
+            return False
+        lines[index] = rewritten + lines[index][len(body) :]
+        guarded_write(pin.path, "".join(lines).encode("utf-8"), root, appender="toolchains")
+        return True
     m = _WS_KEY_RE.match(lines[index].rstrip("\r\n"))
     if m is None or m.group("value") != pin.version:
         return False
