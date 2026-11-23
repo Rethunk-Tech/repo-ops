@@ -181,8 +181,22 @@ def _isolate_git_config(_signing_gitconfig: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 
+OWNED_ORGS = [
+    "Rethunk-Tech",
+    "Rethunk-AI",
+    "Albino-Geek-Services",
+    "Citadel-Inc",
+    "PeleOs-LLC",
+    "AlbinoGeek",
+    "LethalModding",
+    "Totative",
+]
+
+
 @pytest.fixture(autouse=True)
-def _isolate_state_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolate_state_store(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Point the XDG cache (and thus the repo-ops state store) at a tmp dir.
 
     Tests that care about the store's location still override
@@ -199,7 +213,13 @@ def _isolate_state_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
     # Same reasoning for the config dir: the operator's real
     # ~/.config/repo-ops/config.toml must never reach a test's settings.
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
+    # Outside tmp_path: a test's repo is tmp_path and the file would dirty it.
+    xdg_config = tmp_path_factory.mktemp("xdg-config")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_config))
+    # owned_orgs has no built-in list; tests that exercise a missing key rewrite this file.
+    cfg = xdg_config / "repo-ops" / "config.toml"
+    cfg.parent.mkdir()
+    cfg.write_text(f"owned_orgs = {OWNED_ORGS!r}\n".replace("'", '"'))
     # Every plan/apply writes a run dir under XDG_STATE_HOME.
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg-state"))
 

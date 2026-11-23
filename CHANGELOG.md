@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `owned_orgs` in the global config is the only source: the built-in org list is gone, and `plan`, `apply`, `gates` and `dependabot` stop with a config error when the key is missing.
+
 ### Fixed
 
 - Concurrent runs no longer delete each other's reports: run-dir pruning keeps every run younger than a 30-minute grace period regardless of the kept count, and a directory a sibling already removed is skipped.

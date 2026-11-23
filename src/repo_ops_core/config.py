@@ -73,11 +73,16 @@ def _read_strict(path: Path) -> dict[str, Any]:
     return data
 
 
-def load_global_config() -> dict[str, Any]:
-    """Load ``$XDG_CONFIG_HOME/repo-ops/config.toml`` (``{}`` when absent)."""
+def global_config_path() -> Path:
+    """``$XDG_CONFIG_HOME/repo-ops/config.toml``."""
     xdg = os.environ.get("XDG_CONFIG_HOME", "").strip()
     base = Path(xdg) if xdg else Path.home() / ".config"
-    return _read_strict(base / "repo-ops" / "config.toml")
+    return base / "repo-ops" / "config.toml"
+
+
+def load_global_config() -> dict[str, Any]:
+    """Load the global config (``{}`` when absent)."""
+    return _read_strict(global_config_path())
 
 
 def load_repo_config(repo_root: Path) -> dict[str, Any]:

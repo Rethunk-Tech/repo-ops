@@ -1013,6 +1013,7 @@ def run_upgrade(*, apply: bool, argv: list[str] | None = None) -> int:
     wire_verbose(args)
     try:
         load_global_config()
+        owned.owned_orgs()
     except ConfigError as exc:
         print(f"repo-ops: {exc}", file=sys.stderr)
         return 2

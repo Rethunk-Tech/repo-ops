@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -90,7 +91,7 @@ def test_adopted_fork_is_swept_and_other_foreign_repos_reach_the_summary(
 ) -> None:
     (tmp_path / "cfg" / "repo-ops").mkdir(parents=True)
     (tmp_path / "cfg" / "repo-ops" / "config.toml").write_text(
-        'adopted = ["Rethunk-AI/toml-patch"]\n'
+        'owned_orgs = ["Rethunk-AI"]\nadopted = ["Rethunk-AI/toml-patch"]\n'
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     adopted = _repo(tmp_path / "tp", "git@github.com:Rethunk-AI/toml-patch.git")
@@ -114,3 +115,22 @@ def test_adopted_fork_is_swept_and_other_foreign_repos_reach_the_summary(
     out = capsys.readouterr().out
     assert re.search(r"foreign skipped\s+1\n", out)
     assert str(other) in out
+
+
+def test_missing_owned_orgs_is_a_config_error_and_nothing_is_owned(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    import pytest
+
+    from repo_ops_core.config import ConfigError
+    from repo_ops_core.owned import owned_orgs
+    from repo_ops_gates import gates
+
+    (Path(os.environ["XDG_CONFIG_HOME"]) / "repo-ops" / "config.toml").write_text(
+        'exclude = ["x"]\n'
+    )
+    with pytest.raises(ConfigError, match="owned_orgs is not set"):
+        owned_orgs()
+    monkeypatch.chdir(tmp_path)
+    assert gates.main_gates([str(tmp_path)]) == 2
+    assert "owned_orgs is not set" in capsys.readouterr().err

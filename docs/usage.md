@@ -121,7 +121,7 @@ Two TOML files, read only:
 Six keys:
 
 ```toml
-owned_orgs = ["Rethunk-Tech"]   # global file only; default is the operator org list (repo_ops_core.owned); a checkout whose origin org is not listed is skipped
+owned_orgs = ["Rethunk-Tech"]   # global file only; required (no built-in list; commands stop with a config error without it); a checkout whose origin org is not listed is skipped
 adopted = ["Rethunk-AI/toml-patch"]   # global file only; forks swept like our own repos (see below)
 exclude = ["Rethunk-Tech/gh-actions"]   # repos to skip; unioned across files and --exclude
 # In a repo's own .repo-ops.toml, an entry also skips the workspace at that

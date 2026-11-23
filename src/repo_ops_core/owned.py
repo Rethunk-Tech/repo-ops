@@ -6,28 +6,18 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from repo_ops_core.config import load_global_config
+from repo_ops_core.config import ConfigError, global_config_path, load_global_config
 from repo_ops_core.git import run_git
-
-DEFAULT_OWNED_ORGS = (
-    "Rethunk-Tech",
-    "Rethunk-AI",
-    "Albino-Geek-Services",
-    "Citadel-Inc",
-    "PeleOs-LLC",
-    "AlbinoGeek",
-    "LethalModding",
-    "Totative",
-)
 
 _SCP_RE = re.compile(r"^(?:[^@/\s]+@)?([^:/\s]+):(?!//)(.+)$")
 
 
 def owned_orgs() -> set[str]:
-    """Lowercase allow-list: global config ``owned_orgs`` or :data:`DEFAULT_OWNED_ORGS`."""
+    """Lowercase allow-list from global config ``owned_orgs``; no key, no owned org."""
     configured = load_global_config().get("owned_orgs")
-    orgs = configured if isinstance(configured, list) else DEFAULT_OWNED_ORGS
-    return {str(o).lower() for o in orgs}
+    if configured is None:
+        raise ConfigError(global_config_path(), "owned_orgs is not set")
+    return {str(o).lower() for o in configured}
 
 
 def adopted_repos() -> set[str]:

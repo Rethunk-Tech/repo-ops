@@ -66,7 +66,7 @@ from pathlib import Path
 from repo_ops_container.container import _parse_image_refs, find_container_files
 from repo_ops_core import owned
 from repo_ops_core.cli import add_scan_arguments, resolve_scan_roots, wire_verbose
-from repo_ops_core.config import load_global_config, load_repo_config
+from repo_ops_core.config import ConfigError, load_global_config, load_repo_config
 from repo_ops_core.constants import SKIP_DIRS
 from repo_ops_core.discovery import discover_repos
 from repo_ops_core.exclude import filter_repo_paths, merge_exclude_patterns
@@ -1068,6 +1068,9 @@ def main(argv: list[str] | None = None) -> int:
             do_close=do_close,
             repo_paths=repo_paths,
         )
+    except ConfigError as exc:
+        print(f"repo-ops dependabot: {exc}", file=sys.stderr)
+        return 2
     except Exception as exc:
         print(f"repo-ops dependabot: unexpected error: {exc}", file=sys.stderr)
         return 1

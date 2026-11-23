@@ -359,6 +359,7 @@ def main_gates(argv: list[str] | None = None) -> int:
         args.jobs = max(4, min(8, (os.cpu_count() or 4) // 4))
     try:
         global_config = load_global_config()
+        owned.owned_orgs()
     except ConfigError as exc:
         print(f"repo-ops gates: {exc}", file=sys.stderr)
         return 2

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -48,8 +49,7 @@ def test_bad_repo_config_fails_that_repo_and_sweep_continues(
 def test_bad_global_config_exits_2_before_any_work(
     tmp_path: Path, monkeypatch: Any, capsys: Any
 ) -> None:
-    cfg = tmp_path / "xdg-config" / "repo-ops"
-    cfg.mkdir(parents=True)
+    cfg = Path(os.environ["XDG_CONFIG_HOME"]) / "repo-ops"
     (cfg / "config.toml").write_text(BAD_TOML)
     assert main_apply([str(tmp_path)]) == 2
     err = capsys.readouterr().err
