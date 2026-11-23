@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Concurrent runs no longer delete each other's reports: run-dir pruning keeps every run younger than a 30-minute grace period regardless of the kept count, and a directory a sibling already removed is skipped.
+- A gate install pinned by `releases/download/vX/` URL moves its `sha256sum -c` digest with the version, read from the new release asset (`gh release view --json assets`); without a digest the pin is left alone and the run reports a failure instead of writing a checksum that fails CI.
 - pdm: a `~=X` requirement is bumped to `~=latest` (was the invalid `~latest`).
 - uv and hatch: a direct dependency whose manifest range (`<8`) excludes the newest release is raised with `uv add` and re-locked, like pdm; `plan` lists the move and writes nothing, and a hold still caps it.
 - Containers: a held image whose newest tag is over the ceiling moves to the highest tag within it (a digest pin moves with that tag's digest), and a pin already at the ceiling gets a report-only held row instead of nothing.

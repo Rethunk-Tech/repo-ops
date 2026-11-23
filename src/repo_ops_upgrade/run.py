@@ -45,6 +45,7 @@ from repo_ops_upgrade import (
     post_apply_commit,
     report,
     submodules,
+    toolchains,
 )
 from repo_ops_upgrade import discovery as workspace_discovery
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
@@ -498,6 +499,7 @@ def _run_upgrade_body(
     # verify keeps the changes for inspection.
     allow_dirty = not fleet
     on_verify_fail = "revert" if fleet else "keep"
+    toolchains.reset_failed_pins()
     diagnostics = DiscoveryDiagnostics()
     found: list[Workspace] = workspace_discovery.discover_all(roots, diagnostics=diagnostics)
     retry_paths = getattr(args, "retry_paths", None)
@@ -885,7 +887,8 @@ def _run_upgrade_body(
         bundles, apply=apply, has_actionable_work=_has_actionable_work(bundles)
     )
     lookups_failed = actions.failed_lookup_count()
-    if archive_refused or lock_refused or config_failed or lookups_failed:
+    pins_failed = toolchains.failed_pin_count()
+    if archive_refused or lock_refused or config_failed or lookups_failed or pins_failed:
         exit_code = 1
 
     report.print_human_report(bundles, dry_run=not apply)

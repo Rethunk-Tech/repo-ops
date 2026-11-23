@@ -41,6 +41,7 @@ def _feeds(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(toolchains, "_fetch", feeds.get)
     monkeypatch.setattr(toolchains, "_local_go_version", lambda: None)
     monkeypatch.setattr(toolchains, "pypi_latest", lambda _pkg: UV_VERSION)
+    toolchains.reset_failed_pins()
     clear_hold_caches()
 
 
@@ -221,3 +222,61 @@ def test_gate_installs_in_a_workflow_move_to_the_latest_release(tmp_path: Path) 
     assert f"go install {_GATE}/cmd/gate@v0.10.3\n" in text
     assert f"{_GATE}/cmd/gate@{_GATE_SHA} # v0.10.3\n" in text
     assert "releases/download/v0.10.3/gate-linux-amd64" in wf.read_text()
+
+
+_OLD_DIGEST = "0123456789abcdef" * 4
+_NEW_DIGEST = "fedcba9876543210" * 4
+
+
+def _download_step(version: str = "v0.10.1", digest: str = _OLD_DIGEST) -> str:
+    url = (
+        "https://github.com/Rethunk-Tech/rethunk-gate-cli/releases/download/"
+        f"{version}/gate-linux-amd64"
+    )
+    return (
+        "jobs:\n"
+        "  build:\n"
+        "    steps:\n"
+        "      - name: Install gate\n"
+        "        run: |\n"
+        f'          curl -fsSL -o "$RUNNER_TEMP/gate" {url}\n'
+        f'          echo "{digest}  $RUNNER_TEMP/gate" | sha256sum -c -\n'
+    )
+
+
+@pytest.mark.usefixtures("_gate_feeds")
+def test_url_gate_pin_bump_carries_the_new_assets_sha256(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sha256 verifying the download moves with the URL, or CI fails the checksum."""
+    wf = _workflow(tmp_path, _download_step())
+    monkeypatch.setattr(
+        toolchains,
+        "_gate_asset_digest",
+        lambda tag, asset: _NEW_DIGEST if tag == "v0.10.3" else None,
+    )
+
+    changes, _behind = toolchains.apply_toolchains(_ws(tmp_path, "rust", "cargo"))
+
+    assert [(c.name, c.from_ver, c.to) for c in changes] == [("gate", "0.10.1", "0.10.3")]
+    text = wf.read_text()
+    assert "releases/download/v0.10.3/gate-linux-amd64" in text
+    assert f'echo "{_NEW_DIGEST}  $RUNNER_TEMP/gate" | sha256sum -c -' in text
+
+
+@pytest.mark.usefixtures("_gate_feeds")
+def test_url_gate_pin_bump_refused_without_a_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No digest means no bump: half a pin fails the checksum, so report a failure."""
+    body = _download_step()
+    wf = _workflow(tmp_path, body)
+    monkeypatch.setattr(toolchains, "_gate_asset_digest", lambda tag, asset: None)
+
+    changes, behind = toolchains.apply_toolchains(_ws(tmp_path, "rust", "cargo"))
+
+    assert changes == []
+    assert behind == []
+    assert wf.read_text() == body
+    assert toolchains.failed_pin_count() == 1
+    assert "FAIL toolchains" in capsys.readouterr().err

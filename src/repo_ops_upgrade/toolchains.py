@@ -20,7 +20,9 @@ import functools
 import json
 import logging
 import re
+import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +31,7 @@ from repo_ops_core.constants import TIMEOUT_CHECK
 from repo_ops_core.filesystem import guard_tool_writes, guarded_write
 from repo_ops_core.holds import resolve_package_hold, target_within_hold
 from repo_ops_core.http import open_url
+from repo_ops_core.process import run
 from repo_ops_core.version_utils import semver_tuple
 from repo_ops_go.go import go_work_dir_for, tidy_go_module
 from repo_ops_models import Change, Workspace
@@ -198,6 +201,8 @@ class _Input:
     version: str
     # "go" or "url" for a gate install; empty for a version input.
     kind: str = ""
+    # 1-based line of the ``sha256sum -c`` line in the same step, for a URL pin.
+    sha_line: int | None = None
 
 
 def _is_setup_uv(ref: str) -> bool:
@@ -251,10 +256,32 @@ _GATE_GO_RE = re.compile(
     r"(?:[ \t]+#[ \t]*(?P<ctag>v\d+\.\d+\.\d+))?"
 )
 _GATE_URL_RE = re.compile(
-    rf"{re.escape(_GATE_MODULE)}/releases/download/(?P<ref>v\d+\.\d+\.\d+)(?=/)"
+    rf"{re.escape(_GATE_MODULE)}/releases/download/(?P<ref>v\d+\.\d+\.\d+)/(?P<asset>[^\s\"']+)"
 )
 _GATE_PROXY = "https://proxy.golang.org/github.com/!rethunk-!tech/rethunk-gate-cli"
 _GATE_RELEASES = "https://api.github.com/repos/Rethunk-Tech/rethunk-gate-cli/releases/latest"
+_GATE_REPO = "Rethunk-Tech/rethunk-gate-cli"
+
+# A step's list marker, and the sha256 digest a `sha256sum -c` line checks.
+_STEP_MARKER_RE = re.compile(r"^(?P<indent>[ \t]*)-[ \t]")
+_SHA256_RE = re.compile(r"\b[0-9a-f]{64}\b")
+
+
+def _step_sha256_line(lines: list[str], index: int) -> int | None:
+    """0-based index of the ``sha256sum -c`` line verifying the step holding *index*."""
+    start = index
+    while start >= 0 and _STEP_MARKER_RE.match(lines[start]) is None:
+        start -= 1
+    if start < 0:
+        return None
+    indent = len(_STEP_MARKER_RE.match(lines[start]).group("indent"))
+    for j in range(index + 1, len(lines)):
+        m = _STEP_MARKER_RE.match(lines[j])
+        if m is not None and len(m.group("indent")) <= indent:
+            break
+        if "sha256sum -c" in lines[j] and _SHA256_RE.search(lines[j]):
+            return j
+    return None
 
 
 def _gate_inputs_in(path: Path, lines: list[str]) -> list[_Input]:
@@ -267,7 +294,18 @@ def _gate_inputs_in(path: Path, lines: list[str]) -> list[_Input]:
             if tag:
                 found.append(_Input("gate", "gate", path, index, tag[1:], "go"))
         elif m := _GATE_URL_RE.search(line):
-            found.append(_Input("gate", "gate", path, index, m.group("ref")[1:], "url"))
+            sha_line = _step_sha256_line(lines, index - 1)
+            found.append(
+                _Input(
+                    "gate",
+                    "gate",
+                    path,
+                    index,
+                    m.group("ref")[1:],
+                    "url",
+                    sha_line=sha_line + 1 if sha_line is not None else None,
+                )
+            )
     return found
 
 
@@ -278,6 +316,54 @@ def _json_object(url: str) -> dict:
     except ValueError:
         return {}
     return doc if isinstance(doc, dict) else {}
+
+
+# Gate pins this run refused to bump because the release asset's sha256 could not
+# be read; a URL pin's next line verifies that download, so bumping without it
+# leaves CI failing a checksum.
+_FAILED_PINS: set[str] = set()
+
+
+def reset_failed_pins() -> None:
+    _FAILED_PINS.clear()
+
+
+def failed_pin_count() -> int:
+    return len(_FAILED_PINS)
+
+
+def _fail_pin(reason: str) -> None:
+    _FAILED_PINS.add(reason)
+    print(f"FAIL toolchains: {reason}", file=sys.stderr)
+
+
+@functools.cache
+def _gate_asset_digest(tag: str, asset: str) -> str | None:
+    """The sha256 of *asset* on release *tag*, from ``gh release view --json assets``."""
+    if not shutil.which("gh"):
+        return None
+    try:
+        proc = run(
+            ["gh", "release", "view", tag, "-R", _GATE_REPO, "--json", "assets"],
+            Path.cwd(),
+            timeout=TIMEOUT_CHECK,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        doc = json.loads(proc.stdout or "{}")
+    except ValueError:
+        return None
+    assets = doc.get("assets") if isinstance(doc, dict) else doc
+    for entry in assets if isinstance(assets, list) else []:
+        if not isinstance(entry, dict) or entry.get("name") != asset:
+            continue
+        digest = entry.get("digest")
+        if isinstance(digest, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+            return digest.removeprefix("sha256:")
+    return None
 
 
 def _gate_sha(version: str) -> str | None:
@@ -331,6 +417,7 @@ def _workflow_moves(ws: Workspace) -> tuple[list[tuple[_Input, str, str]], list[
     moves: list[tuple[_Input, str, str]] = []
     behind: list[Change] = []
     for pin in _workflow_inputs(ws):
+        lines: list[str] = []
         if pin.tool == "gate":
             lines = (_read(pin.path) or "").splitlines()
             line = lines[pin.line_no - 1] if 0 < pin.line_no <= len(lines) else ""
@@ -348,6 +435,19 @@ def _workflow_moves(ws: Workspace) -> tuple[list[tuple[_Input, str, str]], list[
         if not target_within_hold(new, resolve_package_hold(ws, pin.tool)):
             behind.append(Change(pin.label, pin.version, new))
             continue
+        if pin.kind == "url" and pin.sha_line is not None:
+            # The next line in the step verifies this download, so a bump without
+            # its digest leaves CI failing the checksum: refuse rather than
+            # write a pin we cannot complete.
+            asset = _GATE_URL_RE.search(lines[pin.line_no - 1])
+            digest = _gate_asset_digest(f"v{new}", asset.group("asset")) if asset else None
+            if digest is None:
+                _fail_pin(
+                    f"{pin.path.name}:{pin.line_no}: no sha256 for {_GATE_REPO} v{new}"
+                    " release asset; gate pin left at "
+                    f"{pin.version}"
+                )
+                continue
         moves.append((pin, pin.version, new))
     return moves, behind
 
@@ -380,6 +480,20 @@ def _apply_workflow_input(pin: _Input, new: str, root: Path) -> bool:
         rewritten = _apply_gate_pin(body, pin, new)
         if rewritten is None:
             return False
+        if pin.kind == "url" and pin.sha_line is not None:
+            # The URL and the digest that verifies it move together, or CI fails.
+            sha_index = pin.sha_line - 1
+            if not 0 <= sha_index < len(lines):
+                return False
+            asset = _GATE_URL_RE.search(rewritten)
+            digest = _gate_asset_digest(f"v{new}", asset.group("asset")) if asset else None
+            if digest is None:
+                _fail_pin(
+                    f"{pin.path.name}:{pin.line_no}: no sha256 for {_GATE_REPO} v{new}"
+                    f" release asset; gate pin left at {pin.version}"
+                )
+                return False
+            lines[sha_index] = _SHA256_RE.sub(digest, lines[sha_index], count=1)
         lines[index] = rewritten + lines[index][len(body) :]
         guarded_write(pin.path, "".join(lines).encode("utf-8"), root, appender="toolchains")
         return True
