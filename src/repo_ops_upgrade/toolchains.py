@@ -270,11 +270,15 @@ _SHA256_RE = re.compile(r"\b[0-9a-f]{64}\b")
 def _step_sha256_line(lines: list[str], index: int) -> int | None:
     """0-based index of the ``sha256sum -c`` line verifying the step holding *index*."""
     start = index
-    while start >= 0 and _STEP_MARKER_RE.match(lines[start]) is None:
+    marker = None
+    while start >= 0:
+        marker = _STEP_MARKER_RE.match(lines[start])
+        if marker is not None:
+            break
         start -= 1
-    if start < 0:
+    if marker is None:
         return None
-    indent = len(_STEP_MARKER_RE.match(lines[start]).group("indent"))
+    indent = len(marker.group("indent"))
     for j in range(index + 1, len(lines)):
         m = _STEP_MARKER_RE.match(lines[j])
         if m is not None and len(m.group("indent")) <= indent:
