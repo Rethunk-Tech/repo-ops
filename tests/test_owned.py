@@ -124,7 +124,7 @@ def test_missing_owned_orgs_is_a_config_error_and_nothing_is_owned(
 
     from repo_ops_core.config import ConfigError
     from repo_ops_core.owned import owned_orgs
-    from repo_ops_gates import gates
+    from repo_ops_upgrade.run import main_plan
 
     (Path(os.environ["XDG_CONFIG_HOME"]) / "repo-ops" / "config.toml").write_text(
         'exclude = ["x"]\n'
@@ -132,5 +132,5 @@ def test_missing_owned_orgs_is_a_config_error_and_nothing_is_owned(
     with pytest.raises(ConfigError, match="owned_orgs is not set"):
         owned_orgs()
     monkeypatch.chdir(tmp_path)
-    assert gates.main_gates([str(tmp_path)]) == 2
+    assert main_plan([str(tmp_path)]) == 2
     assert "owned_orgs is not set" in capsys.readouterr().err
