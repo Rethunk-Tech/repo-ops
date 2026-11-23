@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -59,9 +61,16 @@ def test_apply_report_keeps_colocated_npm_and_container(
     assert by_manager["container"]["error"] == "processed:container"
 
 
-def test_run_dirs_keep_only_the_newest(tmp_path: Path, monkeypatch) -> None:
+def test_run_dirs_keep_fresh_runs_and_prune_old_ones(tmp_path: Path, monkeypatch) -> None:
+    """Concurrent runs must survive each other's prune; an aged one still goes."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     monkeypatch.setattr("repo_ops_core.filesystem._RUNS_KEPT", 2)
+    runs = tmp_path / "repo-ops" / "runs"
+    stale = runs / "20200101T000000.000000Z-plan"
+    stale.mkdir(parents=True)
+    old = time.time() - 2 * 60 * 60
+    os.utime(stale, (old, old))
+
     made = [new_run_dir("plan") for _ in range(3)]
-    kept = sorted((tmp_path / "repo-ops" / "runs").iterdir())
-    assert kept == made[1:]
+
+    assert sorted(runs.iterdir()) == sorted(made)

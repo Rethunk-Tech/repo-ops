@@ -10,6 +10,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
@@ -177,23 +178,45 @@ def write_json_atomic(path: Path, payload: Any) -> Path:
     return dest.resolve()
 
 
-# ponytail: keep-last-N pruning; age-based expiry if runs ever need keeping longer.
 _RUNS_KEPT = 50
+# Concurrent runs share the directory (``plan --jobs 2`` under a fleet sweep), so
+# a count alone would delete a run a sibling is still reading. A run this young
+# is never pruned, however many there are.
+_RUNS_GRACE_S = 30 * 60
+
+
+def _prune_runs(runs: Path) -> None:
+    """Delete the oldest run dirs beyond ``_RUNS_KEPT``, never one inside the grace period."""
+    try:
+        dirs = sorted(p for p in runs.iterdir() if p.is_dir())
+    except OSError:
+        return
+    now = time.time()
+    excess = dirs[: max(0, len(dirs) - _RUNS_KEPT)]
+    for old in excess:
+        try:
+            if now - old.stat().st_mtime < _RUNS_GRACE_S:
+                continue
+        except OSError:
+            # A sibling pruned it already; nothing to do.
+            continue
+        shutil.rmtree(old, ignore_errors=True)
 
 
 def new_run_dir(command: str) -> Path:
     """Create ``$XDG_STATE_HOME/repo-ops/runs/<utc>-<command>/`` and prune old runs.
 
     Every plan/apply writes its transcript and JSON report here, so no run needs
-    a flag to be inspectable afterwards. Only the newest ``_RUNS_KEPT`` survive.
+    a flag to be inspectable afterwards. Only the newest ``_RUNS_KEPT`` survive,
+    and never a run younger than ``_RUNS_GRACE_S``: a concurrent run's report is
+    still waiting to be read.
     """
     state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
     runs = state / "repo-ops" / "runs"
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
     run_dir = runs / f"{stamp}-{command}"
     run_dir.mkdir(parents=True)
-    for old in sorted(p for p in runs.iterdir() if p.is_dir())[:-_RUNS_KEPT]:
-        shutil.rmtree(old, ignore_errors=True)
+    _prune_runs(runs)
     return run_dir
 
 
