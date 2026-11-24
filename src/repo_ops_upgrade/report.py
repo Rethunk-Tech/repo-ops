@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from repo_ops_core.holds import HoldRule
 from repo_ops_core.state import cache_get_dirty_skip, cache_get_staleness
 from repo_ops_core.table import column_width, format_cell
+from repo_ops_core.text import first_error_line
 from repo_ops_js.holds import resolve_package_hold
 from repo_ops_models import DIRTY_SKIP_MARKER, Change, RepoBundle, WorkspaceResult
 from repo_ops_upgrade.discovery import DiscoveryDiagnostics
@@ -260,7 +261,7 @@ def collect_run_failures(
         for wr in bundle.workspaces:
             if wr.status != "fail":
                 continue
-            reason = wr.verify_error or wr.error or "failed"
+            reason = first_error_line(wr.verify_error or wr.error) or "failed"
             items.append((bundle.label, reason))
         for ab in bundle.actions:
             if ab.status != "fail":

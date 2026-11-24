@@ -215,7 +215,7 @@ def test_actions_summary_dedupes_bumps_by_action_pin(tmp_path: Path) -> None:
 
 
 def test_first_error_line_skips_gate_header() -> None:
-    from repo_ops_upgrade.run import _first_error_line
+    from repo_ops_core.text import first_error_line as _first_error_line
 
     text = (
         "gate: FAIL exit 1  bun run lint  279ms\n"
@@ -252,3 +252,18 @@ def test_coarse_lockfile_rows_are_not_counted_as_packages(tmp_path: Path) -> Non
     )
     summary = build_run_summary({tmp_path: _bundle(tmp_path, workspaces=[wr])})
     assert summary["packages_upgraded"] == 1
+
+
+def test_first_error_line_prefers_bun_error_over_env_noise() -> None:
+    from repo_ops_core.text import first_error_line
+
+    text = (
+        '[0.02ms] ".env.production.local"\n'
+        "Resolving dependencies\n"
+        "Resolved, downloaded and extracted [1612]\n"
+        'error: No version matching "^0.1.1" found for specifier "@react-pdf/hyphenate" '
+        "(but package exists)\n"
+        "error: @react-pdf/hyphenate@^0.1.1 failed to resolve\n"
+    )
+    want = 'error: No version matching "^0.1.1" found for specifier "@react-pdf/hyphenate" (but package exists)'
+    assert first_error_line(text) == want

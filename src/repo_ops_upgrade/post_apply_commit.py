@@ -14,6 +14,7 @@ from typing import Literal
 from repo_ops_core.config import load_repo_config
 from repo_ops_core.filesystem import is_workspace_member
 from repo_ops_core.git import run_git
+from repo_ops_core.text import first_error_line
 from repo_ops_js.workspaces import yarn_workspace_members
 from repo_ops_lockfiles.constants import (
     DENO_LOCKFILES,
@@ -384,8 +385,8 @@ def _bundle_apply_ok(bundle: RepoBundle) -> tuple[bool, str | None]:
         # the commit skips as "no upgrade-scoped changes".
         if wr.status == "fail":
             if wr.verify_error:
-                return False, f"verify failed: {wr.verify_error}"
-            return False, wr.error or "apply failed"
+                return False, f"verify failed: {first_error_line(wr.verify_error)}"
+            return False, first_error_line(wr.error) or "apply failed"
     if any(ab.status == "fail" for ab in bundle.actions):
         return False, "action failures"
     if bundle.any_fail():

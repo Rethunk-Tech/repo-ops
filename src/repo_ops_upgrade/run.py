@@ -8,7 +8,6 @@ import contextlib
 import fcntl
 import json
 import os
-import re
 import subprocess
 import sys
 import threading
@@ -38,6 +37,7 @@ from repo_ops_core.git import is_git_dirty, run_git
 from repo_ops_core.parallel import run_bounded_pool
 from repo_ops_core.process import isolate_user_config
 from repo_ops_core.tee import tee_stdout_stderr
+from repo_ops_core.text import first_error_line
 from repo_ops_models import ActionBump, RepoBundle, Workspace, WorkspaceResult
 from repo_ops_upgrade import (
     actions,
@@ -247,22 +247,6 @@ def _cli_flag(args: object, name: str) -> bool:
     return getattr(args, name, False) is True
 
 
-_ERROR_LINE = re.compile(r"\S+:\d+(?::\d+)?\b|\b(?:error|FAIL|panic|failed)\b|[\u00d7\u2717]", re.I)
-
-
-def _first_error_line(text: str | None) -> str:
-    if not text:
-        return ""
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    if not lines:
-        return ""
-    # gate's header names the step; the cause is the first file:line or error line below it.
-    for line in lines[1:]:
-        if _ERROR_LINE.search(line):
-            return line
-    return lines[0]
-
-
 def _runs_root() -> Path:
     # Same layout as new_run_dir: $XDG_STATE_HOME/repo-ops/runs/<utc>-<cmd>/.
     state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
@@ -339,7 +323,7 @@ def _package_digest_rows(payload: object) -> list[tuple[str, str, str]]:
         path = str(ws.get("path") or "")
         status = str(ws.get("status") or "")
         if status in _DIGEST_STATUSES and path:
-            err = _first_error_line(ws.get("error") or ws.get("verify_error"))
+            err = first_error_line(ws.get("error") or ws.get("verify_error"))
             rows.append((status, path, err))
         if not path:
             continue
@@ -365,7 +349,7 @@ def _failed_commits(payload: object) -> list[dict]:
 def _digest_lines_from_payload(payload: object) -> list[str]:
     lines = []
     for c in _failed_commits(payload):
-        err = _first_error_line(c.get("detail"))
+        err = first_error_line(c.get("detail"))
         lines.append(f"commit-fail {c.get('repo')}  {err}".rstrip())
     for status, path, err in _package_digest_rows(payload):
         lines.append(f"{status} {path}  {err}".rstrip())

@@ -27,6 +27,7 @@ from repo_ops_core.state import (
     cache_record_behind_latest,
     cache_record_dirty_skip,
 )
+from repo_ops_core.text import first_error_line
 from repo_ops_js.holds import hold_for_run, release_run_hold, resolve_package_hold
 from repo_ops_js.overrides import overrides_audit
 from repo_ops_lockfiles.snapshots import (
@@ -79,7 +80,7 @@ def _progress_line(result: WorkspaceResult, *, elapsed_s: float) -> str:
     duration = _format_elapsed(elapsed_s)
     line = f"[done] {label} ({ws.manager}) — {n} change(s) in {duration}"
     if result.status == "fail":
-        first_err = (result.verify_error or result.error or "failed").splitlines()[0]
+        first_err = first_error_line(result.verify_error or result.error) or "failed"
         line = f"{line}, FAIL: {first_err}"
     return line
 
