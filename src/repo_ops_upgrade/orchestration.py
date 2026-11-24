@@ -39,6 +39,7 @@ from repo_ops_upgrade import inflight
 from repo_ops_upgrade import registry as ecosystems
 from repo_ops_upgrade import verify as verify_mod
 from repo_ops_upgrade.constants import BIOME_PKG
+from repo_ops_upgrade.generate import run_generate
 from repo_ops_upgrade.post_apply import (
     capture_worktree_state,
     classify_verify_fail_disposition,
@@ -48,7 +49,6 @@ from repo_ops_upgrade.post_apply import (
     revert_workspace_after_verify_fail,
     tree_diff,
 )
-from repo_ops_upgrade.generate import run_generate
 from repo_ops_upgrade.soup import sync_soup_versions
 from repo_ops_upgrade.toolchains import apply_toolchains, merge_toolchains, plan_toolchain_pins
 from repo_ops_upgrade_remediations_core.remediations import dispatch as dispatch_remediations
