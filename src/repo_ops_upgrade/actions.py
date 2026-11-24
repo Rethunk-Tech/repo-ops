@@ -121,8 +121,15 @@ def save_tag_cache_from(store: dict[str, dict | None]) -> None:
             if isinstance(v, dict) and now - v.get("ts", 0) <= _TAG_CACHE_MAX_AGE_S
         }
     for repo, info in store.items():
-        if repo not in _FAILED_LOOKUPS:
-            merged[repo] = _tag_to_disk(info)
+        if repo in _FAILED_LOOKUPS:
+            continue
+        fresh = _tag_to_disk(info)
+        # An entry read back unchanged keeps its fetch time; restamping it on
+        # every save would let a stale tag list outlive the max age forever.
+        old = merged.get(repo)
+        if old is not None and {**old, "ts": 0} == {**fresh, "ts": 0}:
+            continue
+        merged[repo] = fresh
     with contextlib.suppress(OSError):
         path.parent.mkdir(parents=True, exist_ok=True)
         write_json_atomic(path, merged)

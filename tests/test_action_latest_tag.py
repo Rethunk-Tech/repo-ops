@@ -178,3 +178,34 @@ def test_a_failed_gh_lookup_is_counted_and_never_cached(tmp_path: Path, monkeypa
     on_disk = json.loads((tmp_path / "repo-ops" / "action-tags.json").read_text())
     assert list(on_disk) == ["gone/repo"]
     actions_mod.reset_failed_lookups()
+
+
+def test_saving_an_unchanged_tag_entry_keeps_its_fetch_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runs inside the max age must not keep re-stamping a stale tag list as fresh."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    path = tmp_path / "repo-ops" / "action-tags.json"
+    info = {
+        "bare_majors": {1},
+        "max_major": 1,
+        "all_tags": {"v1.31"},
+        "sha_to_tags": {"aaa": ["v1.31"]},
+        "truncated": False,
+    }
+    save_tag_cache_from({"owner/repo": info})
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    saved["owner/repo"]["ts"] -= 3600
+    path.write_text(json.dumps(saved), encoding="utf-8")
+    old_ts = saved["owner/repo"]["ts"]
+
+    store: dict[str, dict | None] = {}
+    load_tag_cache_into(store)
+    store["other/repo"] = None
+    save_tag_cache_from(store)
+    after = json.loads(path.read_text(encoding="utf-8"))
+    assert after["owner/repo"]["ts"] == old_ts
+
+    store["owner/repo"] = {**info, "all_tags": {"v1.31", "v1.36"}}
+    save_tag_cache_from(store)
+    assert json.loads(path.read_text(encoding="utf-8"))["owner/repo"]["ts"] > old_ts
