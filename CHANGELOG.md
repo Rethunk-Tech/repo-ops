@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A per-repo `[generate] run` command runs after each bump and before verify so regenerated files (credits, notices) are checked and committed with the sweep; a non-zero exit is a verify failure.
+
 ### Changed
 
 - `owned_orgs` in the global config is the only source: the built-in org list is gone, and `plan`, `apply`, `gates` and `dependabot` stop with a config error when the key is missing.

@@ -48,6 +48,7 @@ from repo_ops_upgrade.post_apply import (
     revert_workspace_after_verify_fail,
     tree_diff,
 )
+from repo_ops_upgrade.generate import run_generate
 from repo_ops_upgrade.soup import sync_soup_versions
 from repo_ops_upgrade.toolchains import apply_toolchains, merge_toolchains, plan_toolchain_pins
 from repo_ops_upgrade_remediations_core.remediations import dispatch as dispatch_remediations
@@ -342,6 +343,8 @@ def _process_workspace_body(
     before_snap: dict[Path, bytes] | None = None
     before_tree = None
     adopted_hashes: dict[str, str] = {}
+    generate_error: str | None = None
+    generate_rels: set[str] = set()
     if do_apply:
         # Snapshotted once per bundle by the caller when repo_started_dirty is
         # given, rather than re-checked live here — an earlier sibling workspace
@@ -406,6 +409,7 @@ def _process_workspace_body(
                 result.changes, result.behind_latest, *apply_toolchains(ws, planned_pins)
             )
             sync_soup_versions(ws.git_repo, result.changes, [ws.path, ws.git_repo])
+            generate_error, generate_rels = run_generate(ws.git_repo)
             if ws.ecosystem == "node":
                 result.overrides_audit = overrides_audit(ws.path, ws.manager)
         except Exception as exc:  # any parse crash must still reach the rollback record
@@ -416,7 +420,7 @@ def _process_workspace_body(
                 before_snap,
                 before_tree,
                 capture_worktree_state(ws.git_repo),
-                _written_rel(ws, result, end_write_log()),
+                _written_rel(ws, result, end_write_log()) | generate_rels,
                 result.foreign,
             )
             return result
@@ -438,7 +442,7 @@ def _process_workspace_body(
             before_snap,
             before_tree,
             applied_tree,
-            _written_rel(ws, result, end_write_log()),
+            _written_rel(ws, result, end_write_log()) | generate_rels,
             result.foreign,
         )
     wrote_nothing = (
@@ -446,6 +450,7 @@ def _process_workspace_body(
         and before_tree is not None
         and applied_tree == before_tree
         and not result.owned_edits
+        and not generate_error
     )
     if wrote_nothing:
         result.verify_skipped = True
@@ -455,7 +460,7 @@ def _process_workspace_body(
         inflight.record(ws.git_repo, {rel: _hash(ws.git_repo, rel) for rel in result.owned_edits})
     if do_apply and do_verify and result.status != "fail" and not wrote_nothing:
         try:
-            verr = verify_mod.verify_workspace(ws, owned_edits=result.owned_edits)
+            verr = generate_error or verify_mod.verify_workspace(ws, owned_edits=result.owned_edits)
         except Exception as exc:
             # A verify that cannot finish (e.g. a gate timeout) is a failed
             # verify, and must reach the revert below like any other.

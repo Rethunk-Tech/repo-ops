@@ -164,6 +164,9 @@ def upgrade_scoped_paths(
       write a root-level file.
     - The configured ``[soup].path`` table this apply rewrote, matched by exact
       repo-relative path the same way as remediation files.
+    - Files ``[generate].run`` rewrote. Those writes are recorded as
+      ``owned_edits`` (they are not a manager lockfile), so they stage with
+      the deps commit the same way as the SOUP table.
     """
     # root_wanted: basenames valid at the repo root (no subdirectory prefix).
     root_wanted: set[str] = set()

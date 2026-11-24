@@ -118,7 +118,7 @@ Two TOML files, read only:
 - Global: `$XDG_CONFIG_HOME/repo-ops/config.toml` (default `~/.config/repo-ops/config.toml`).
 - Per repo: `.repo-ops.toml` at the repo root. `[verify]` merges global, then this file, then a workspace `.repo-ops.toml` below the root (that nested file is read for `[verify]` only).
 
-Six keys:
+Seven keys:
 
 ```toml
 owned_orgs = ["Rethunk-Tech"]   # global file only; required (no built-in list; commands stop with a config error without it); a checkout whose origin org is not listed is skipped
@@ -134,6 +134,9 @@ timeout = 120           # seconds per verify command (default 1800)
 
 [soup]
 path = "docs/SOUP.md"   # repo-relative table whose `name` | `version` rows follow each bump
+
+[generate]
+run = "bun scripts/gen-credits.ts"  # after a bump, before verify; non-zero is a verify failure; changed files commit with the sweep
 
 [[hold]]
 package = "typescript"  # name or glob, e.g. "@types/*"

@@ -1,4 +1,4 @@
-"""repo-ops config: two TOML files, six keys (read-only — never written).
+"""repo-ops config: two TOML files, seven keys (read-only — never written).
 
   Global:   $XDG_CONFIG_HOME/repo-ops/config.toml (default ~/.config/repo-ops/config.toml)
   Per-repo: <repo_root>/.repo-ops.toml
@@ -7,9 +7,10 @@ Keys:
   owned_orgs  global only: orgs whose checkouts may be applied to (repo_ops_core.owned)
   adopted     global only: "org/repo" forks (an upstream remote) swept like our own repos
   exclude     list of repo patterns; unioned across both files and --exclude
-  [[hold]]    package version ceilings (see repo_ops_core.holds)
+    [[hold]]    package version ceilings (see repo_ops_core.holds)
   [verify]    per-repo verify profile (see repo_ops_upgrade.verify)
   [soup]      repo-relative SOUP table whose name/version rows follow each bump
+  [generate]  command run after a bump so regenerated files are in the tree before verify
 """
 
 from __future__ import annotations
@@ -29,9 +30,10 @@ class ConfigError(ValueError):
 
 
 _KEYS = {
-    "": {"owned_orgs", "adopted", "exclude", "hold", "verify", "soup"},
+    "": {"owned_orgs", "adopted", "exclude", "hold", "verify", "soup", "generate"},
     "verify": {"script", "skip", "timeout"},
     "soup": {"path"},
+    "generate": {"run"},
     "hold": {"package", "max_version", "until", "ecosystem", "workspace", "reason"},
 }
 _LIST_KEYS = ("owned_orgs", "adopted", "exclude")
@@ -45,7 +47,7 @@ def _validate(path: Path, data: dict[str, Any]) -> None:
     for key in _LIST_KEYS:
         if key in data and not isinstance(data[key], list):
             raise ConfigError(path, f"{key} must be a list, got {data[key]!r}")
-    for table in ("verify", "soup"):
+    for table in ("verify", "soup", "generate"):
         value = data.get(table)
         extra = sorted(set(value) - _KEYS[table]) if isinstance(value, dict) else []
         if extra:
