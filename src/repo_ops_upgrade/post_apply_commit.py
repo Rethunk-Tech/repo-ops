@@ -205,6 +205,14 @@ def upgrade_scoped_paths(
             rel = wr.workspace.path.resolve().relative_to(bundle.git_repo.resolve())
         except ValueError:
             rel = Path(".")
+        # A root bun/yarn/npm/pnpm apply can rewrite a member package.json as a
+        # side effect of the lockfile bump without recording that path in
+        # owned_edits. Register declared members before the owned_edits skip so
+        # those nested manifests still commit with the lockfile.
+        if rel == Path(".") and wr.workspace.manager in ("yarn", "npm", "pnpm", "bun"):
+            members = yarn_workspace_members(wr.workspace.path)
+            if members:
+                node_workspace_roots.append((wr.workspace.path.resolve(), members))
         if wr.owned_edits:
             # Exact owned paths already recorded; do not also match every
             # lockfile basename or every file under a nested prefix.
@@ -215,10 +223,6 @@ def upgrade_scoped_paths(
             # (partial commit).
             root_wanted.update(_lockfile_names_for_manager(wr.workspace.manager))
             root_wanted.update(_manifest_names_for_manager(wr.workspace.manager))
-            if wr.workspace.manager in ("yarn", "npm", "pnpm", "bun"):
-                members = yarn_workspace_members(wr.workspace.path)
-                if members:
-                    node_workspace_roots.append((wr.workspace.path.resolve(), members))
         if wr.workspace.manager == "container":
             from repo_ops_container.container import find_container_files
 
