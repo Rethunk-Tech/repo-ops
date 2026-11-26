@@ -12,31 +12,11 @@ import pytest
 
 from repo_ops_gates.gates import (
     GateResult,
-    _failed_gate_names,
     _matching_record,
     _print_report,
     _report_document,
     _run_one,
 )
-
-
-def test_failed_gate_names_reads_gates_own_summary_lines():
-    out = "\n".join(
-        [
-            "gate: ok  cargo build --locked  145ms  /var/tmp/gate/a.log",
-            "gate: FAIL exit 1  uv run ruff check .  24ms",
-            "gate: ok  actionlint  9ms  /var/tmp/gate/b.log",
-            "gate: FAIL exit 101  sh -c cargo test --locked  3.1s",
-            "gate: TIMEOUT after 30s  bun run test  (killed, not failed)",
-            "gate: TIMEOUT after 1m0s  make test  (killed, not failed; allowed)",
-        ]
-    )
-    assert _failed_gate_names(out) == [
-        "uv run ruff check .",
-        "sh -c cargo test --locked",
-        "bun run test",
-        "make test",
-    ]
 
 
 def test_a_repo_with_no_gate_is_not_counted_as_broken(tmp_path: Path, monkeypatch):
@@ -46,7 +26,7 @@ def test_a_repo_with_no_gate_is_not_counted_as_broken(tmp_path: Path, monkeypatc
     assert result.failed == []
 
 
-def test_a_failing_gate_is_named(tmp_path: Path, monkeypatch, make_proc):
+def test_a_failure_without_a_record_names_no_gate(tmp_path: Path, monkeypatch, make_proc):
     monkeypatch.setattr(
         "repo_ops_gates.gates._gate_listing", lambda repo, *, e2e: (["lint", "test"], "", 0)
     )
@@ -56,7 +36,8 @@ def test_a_failing_gate_is_named(tmp_path: Path, monkeypatch, make_proc):
     )
     result = _run_one(tmp_path, [str(tmp_path)])
     assert result.status == "fail"
-    assert result.failed == ["bun run lint"]
+    assert result.failed == []
+    assert "bun run lint" in result.detail
     assert result.logs == []
 
 
@@ -162,6 +143,8 @@ def test_a_matching_record_names_timeout_and_interrupted_with_logs(
             {"name": "vuln", "status": "error", "log": "/var/tmp/gate/vuln.log"},
             {"name": "e2e", "display": "playwright", "status": "skipped"},
             {"name": "missing", "display": "gone", "status": "not-found"},
+            {"name": "soft", "display": "make soft", "status": "fail", "allowed": True},
+            {"name": "late", "display": "make late", "status": "cancelled"},
         ],
     )
     seen: dict[str, object] = {}
@@ -195,7 +178,7 @@ def test_a_matching_record_names_timeout_and_interrupted_with_logs(
     assert "cargo test  /var/tmp/gate/cargo.log" in report
 
 
-def test_a_record_from_another_run_falls_back_to_the_summary(
+def test_a_record_from_another_run_names_no_gate(
     tmp_path: Path, monkeypatch, make_proc, init_git_repo
 ):
     head = init_git_repo(tmp_path, commit=True)
@@ -218,7 +201,7 @@ def test_a_record_from_another_run_falls_back_to_the_summary(
         stale=True,
     )
     wrong_head = _run_one(tmp_path, [str(tmp_path)])
-    assert wrong_head.failed == ["bun run lint"]
+    assert wrong_head.failed == []
     assert wrong_head.logs == []
 
     state["view"] = _record_view(
@@ -227,7 +210,7 @@ def test_a_record_from_another_run_falls_back_to_the_summary(
         [{"display": "sleep 30", "status": "timeout", "log": "/var/tmp/gate/sleep.log"}],
     )
     stale = _run_one(tmp_path, [str(tmp_path)])
-    assert stale.failed == ["bun run lint"]
+    assert stale.failed == []
     assert stale.logs == []
     assert stale.status == "fail"
 
@@ -310,7 +293,7 @@ def test_an_unreadable_gate_record_is_stale(tmp_path: Path, monkeypatch, make_pr
     assert _matching_record(root) == (None, "stale")
 
 
-def test_a_record_for_another_tree_falls_back_to_timeout_text(
+def test_a_record_for_another_tree_names_no_gate(
     tmp_path: Path, monkeypatch, make_proc, init_git_repo
 ) -> None:
     head = init_git_repo(tmp_path, commit=True)
@@ -337,7 +320,7 @@ def test_a_record_for_another_tree_falls_back_to_timeout_text(
         ),
     )
     result = _run_one(tmp_path, [str(tmp_path)])
-    assert result.failed == ["bun run test"]
+    assert result.failed == []
     assert result.logs == []
 
     state["view"] = _record_view(
@@ -348,7 +331,7 @@ def test_a_record_for_another_tree_falls_back_to_timeout_text(
         stale=True,
     )
     old = _run_one(tmp_path, [str(tmp_path)])
-    assert old.failed == ["bun run test"]
+    assert old.failed == []
     assert old.logs == []
 
 

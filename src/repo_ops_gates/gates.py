@@ -11,7 +11,6 @@ import argparse
 import concurrent.futures
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -34,12 +33,8 @@ from repo_ops_core.tee import tee_stdout_stderr
 
 TIMEOUT_LIST = 60
 
-# ``gate`` separates its summary columns by two or more spaces.
-_FIELD_SPLIT = re.compile(r"\s{2,}")
-
-# Status words from gate's result record that mean the gate did not pass.
-# ``INTERRUPTED`` is not a ``gate: FAIL`` line. ``TIMEOUT`` is scraped from
-# the text when the record is not this run.
+# Status words from gate's result record that mean the gate did not pass. A
+# fail-fast ``cancelled`` gate is not the failure, and an ``allowed`` gate may fail.
 _RECORD_FAILURES = frozenset({"fail", "timeout", "interrupted", "not-found", "error"})
 
 
@@ -165,8 +160,8 @@ def _failures_from_record(root: str, started: datetime) -> tuple[list[str], list
     """Failed gate names and their logs, when the record is this invocation.
 
     The record is this run only when it is the current tree and ``finished``
-    is after *started*. Anything else is a previous run, and the caller
-    scrapes failure and timeout names from the text.
+    is after *started*. Anything else is a previous run: None, and the caller
+    reports the gate's own output.
     """
     record = _current_record(root)
     if record is None:
@@ -186,7 +181,11 @@ def _failures_from_record(root: str, started: datetime) -> tuple[list[str], list
     failed: list[str] = []
     logs: list[str] = []
     for gate in gates:
-        if not isinstance(gate, dict) or gate.get("status") not in _RECORD_FAILURES:
+        if (
+            not isinstance(gate, dict)
+            or gate.get("status") not in _RECORD_FAILURES
+            or gate.get("allowed") is True
+        ):
             continue
         label = _gate_label(gate)
         if not label:
@@ -195,33 +194,6 @@ def _failures_from_record(root: str, started: datetime) -> tuple[list[str], list
         failed.append(label)
         logs.append(log if isinstance(log, str) else "")
     return failed, logs
-
-
-def _failed_gate_names(stdout: str) -> list[str]:
-    """Gate names ``gate`` reported as failing, from its own summary lines.
-
-    ``gate`` writes ``gate: FAIL exit <n>  <command>  <duration>`` and
-    ``gate: TIMEOUT after <d>  <command>  (killed, not failed)``. Fields are
-    separated by two or more spaces, so a command containing single spaces
-    survives the split intact.
-    """
-    failed: list[str] = []
-    for line in stdout.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("gate: FAIL"):
-            rest = stripped.removeprefix("gate: FAIL").strip()
-            fields = _FIELD_SPLIT.split(rest)
-            # fields: ["exit <n>", "<command>", "<duration>", ...]
-            failed.append(fields[1] if len(fields) > 1 else rest)
-        elif stripped.startswith("gate: TIMEOUT"):
-            rest = stripped.removeprefix("gate: TIMEOUT").strip()
-            fields = _FIELD_SPLIT.split(rest)
-            # fields: ["after <d>", "<command>", "(killed, not failed)", ...]
-            if len(fields) > 1:
-                failed.append(fields[1])
-            elif rest:
-                failed.append(rest)
-    return failed
 
 
 def _run_one(
@@ -261,11 +233,8 @@ def _run_one(
         )
         if proc.returncode != 0:
             result.status = "fail"
-            out = proc.stdout + proc.stderr
             recorded = _failures_from_record(root, started_at)
-            if recorded is None:
-                result.failed = _failed_gate_names(out)
-            else:
+            if recorded is not None:
                 result.failed, result.logs = recorded
             result.detail = (proc.stderr or proc.stdout or "").strip()[-2000:]
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
