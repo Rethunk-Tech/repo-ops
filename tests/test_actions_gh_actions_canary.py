@@ -70,7 +70,7 @@ def test_unproven_gh_actions_tag_canaries_first_repo_and_holds_rest(tmp_path: Pa
     with (
         patch("repo_ops_upgrade.actions.shutil.which", side_effect=_which),
         patch("repo_ops_upgrade.actions.run", side_effect=_run_for_tags),
-        patch("repo_ops_upgrade.actions._github_token_available", return_value=False),
+        patch("repo_ops_upgrade.actions._gate_policy_findings", return_value={}),
     ):
         scan_actions(alpha, apply=True)
         beta_bumps, _ = scan_actions(beta, apply=True)
@@ -100,7 +100,7 @@ def test_proven_gh_actions_tag_bumps_every_repo(tmp_path: Path) -> None:
     with (
         patch("repo_ops_upgrade.actions.shutil.which", side_effect=_which),
         patch("repo_ops_upgrade.actions.run", side_effect=_run_for_tags),
-        patch("repo_ops_upgrade.actions._github_token_available", return_value=False),
+        patch("repo_ops_upgrade.actions._gate_policy_findings", return_value={}),
     ):
         scan_actions(tmp_path / "alpha", apply=True)
         scan_actions(tmp_path / "beta", apply=True)
@@ -170,7 +170,7 @@ def test_a_dirty_skipped_repo_is_not_the_canary(
     with (
         patch("repo_ops_upgrade.actions.shutil.which", side_effect=_which),
         patch("repo_ops_upgrade.actions.run", side_effect=_run_for_tags),
-        patch("repo_ops_upgrade.actions._github_token_available", return_value=False),
+        patch("repo_ops_upgrade.actions._gate_policy_findings", return_value={}),
     ):
         main_apply(["--no-commit"])
 
@@ -229,7 +229,7 @@ def test_non_canary_repo_advances_to_highest_proven_tag_below_unproven_newest(
     with (
         patch("repo_ops_upgrade.actions.shutil.which", side_effect=_which),
         patch("repo_ops_upgrade.actions.run", side_effect=run_tags),
-        patch("repo_ops_upgrade.actions._github_token_available", return_value=False),
+        patch("repo_ops_upgrade.actions._gate_policy_findings", return_value={}),
     ):
         scan_actions(tmp_path / "alpha", apply=True)
         scan_actions(tmp_path / "beta", apply=True)

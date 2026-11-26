@@ -613,12 +613,14 @@ class TestGateDelegation:
             "gate: ok  build  1s  /var/tmp/gate/build.log\n"
             "gate: FAIL exit 1  bun run soup  2s\n"
             "--- last 1 line(s) ---\nstale SOUP row\n"
-            "gate: full log  /var/tmp/gate/soup.log\n"
         )
+        record = json.dumps({"gates": [{"status": "fail", "log": "/var/tmp/gate/soup.log"}]})
 
         def fake_run(
             cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
+            if cmd == ["gate", "--json", "record"]:
+                return _ok(stdout=record)
             if cmd[:2] == ["gate", "--json"]:
                 return _ok(stdout=_GATE_LIST)
             if cmd[0] == "gate":
@@ -649,15 +651,14 @@ class TestGateDelegation:
             "web:gen: \x1b[31mError: config is invalid: Cannot destructure\x1b[0m\n"
             + "".join(f"mail:test: ok {i}\n" for i in range(60))
         )
-        out = (
-            "gate: FAIL exit 1  turbo run test  2s\n"
-            "--- last 40 line(s) ---\nmail:test: ok 59\n"
-            f"gate: full log  {log}\n"
-        )
+        out = "gate: FAIL exit 1  turbo run test  2s\n--- last 40 line(s) ---\nmail:test: ok 59\n"
+        record = json.dumps({"gates": [{"status": "fail", "log": str(log)}]})
 
         def fake_run(
             cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
         ) -> CompletedProcess[str]:
+            if cmd == ["gate", "--json", "record"]:
+                return _ok(stdout=record)
             if cmd[:2] == ["gate", "--json"]:
                 return _ok(stdout=_GATE_LIST)
             if cmd[0] == "gate":

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import fnmatch
 import functools
 import hashlib
 import json
@@ -395,22 +394,6 @@ def _gh_actions_hold(
     return f"{tag} held for canary ({canary}); report only"
 
 
-# ---------------------------------------------------------------------------
-# Org allowed-actions policy cache
-# ---------------------------------------------------------------------------
-
-# In-process cache: owner → policy dict (or None when not applicable/accessible).
-# Shape when populated:
-#   {
-#     "enabled": bool,
-#     "allowed_actions": "all" | "local_only" | "selected",
-#     # Only present when allowed_actions == "selected":
-#     "github_owned_allowed": bool,
-#     "verified_allowed": bool,
-#     "patterns_allowed": list[str],
-#   }
-_ORG_POLICY_CACHE: dict[str, dict | None] = {}
-
 _MAJOR_TAG_RE = re.compile(r"^v(\d+)(?:\.|$)")
 # A release tag names at least major.minor (Rethunk-Tech/gh-actions ships v1.10, not v1.10.0).
 # A bare vN floats between releases, so it never counts as one.
@@ -469,155 +452,6 @@ _LINT_CACHE_MAX_AGE_S: int = 90 * 24 * 3600  # 90 days
 
 # Maximum number of entries kept in the cache file (simple LRU-by-touch).
 _LINT_CACHE_MAX_ENTRIES: int = 4096
-
-
-def _derive_owner(repo: Path) -> str | None:
-    """Return the GitHub org/user owning *repo*'s github.com remote, or None."""
-    url = github_remote(repo)
-    owner_repo = github_owner_repo(url) if url else None
-    return owner_repo.split("/")[0] if owner_repo else None
-
-
-def _action_policy_violation(
-    action: str, policy: dict, org_owner: str | None = None, *, ref: str | None = None
-) -> str | None:
-    """Return a human-readable reason string when *action* is blocked by *policy*.
-
-    Returns ``None`` when the action is allowed.
-
-    Rules:
-    - ``enabled=False`` → every action is blocked.
-    - ``allowed_actions=all`` → nothing blocked.
-    - ``allowed_actions=selected`` → allowed when:
-        - ``github_owned_allowed`` and the action owner is ``actions`` or
-          ``github``, OR
-        - the action matches any glob in ``patterns_allowed`` (fnmatch semantics
-          per GitHub docs: ``owner/*`` matches ``owner/any-repo``), checked
-          case-insensitively against both ``owner/repo`` and ``owner/repo@ref``
-          since GitHub's own patterns carry a ref (``owner/repo@*``).
-    - ``allowed_actions=local_only`` → allowed when the action's owner matches
-      *org_owner* (case-insensitive); same-owner refs pass, cross-org refs are
-      blocked. Needs *org_owner* to tell those apart, so callers evaluating a
-      ``local_only`` policy must pass it — without it, ``local_only`` is
-      treated as an unrecognized mode (permissive).
-    """
-    allowed_actions = policy.get("allowed_actions", "all")
-
-    if not policy.get("enabled", True):
-        return f"org policy (disabled): {action} not allowed — Actions are disabled for this org"
-
-    if allowed_actions == "all":
-        return None
-
-    # Path-local actions (``./``) are always allowed regardless of policy mode.
-    if action.startswith("./"):
-        return None
-
-    if allowed_actions == "selected":
-        action_owner = action.split("/")[0] if "/" in action else ""
-        github_owned = action_owner in ("actions", "github")
-        if github_owned and policy.get("github_owned_allowed", False):
-            return None
-        patterns: list[str] = policy.get("patterns_allowed", [])
-        names = [action.lower()] + ([f"{action}@{ref}".lower()] if ref else [])
-        for pat in patterns:
-            if any(fnmatch.fnmatchcase(name, pat.lower()) for name in names):
-                return None
-        return (
-            f"org policy (selected): {action} not in allowlist"
-            " — workflows using it will fail at startup"
-        )
-
-    if allowed_actions == "local_only" and org_owner is not None:
-        action_owner = action.split("/")[0] if "/" in action else ""
-        if action_owner.lower() == org_owner.lower():
-            return None  # same-org action — allowed
-        return (
-            f"org policy (local_only): {action} not allowed"
-            " — workflows using it will fail at startup"
-        )
-
-    # Unknown mode (or local_only without an org_owner) — be permissive.
-    return None
-
-
-def _fetch_org_policy_cached(owner: str, store: dict[str, dict | None]) -> dict | None:
-    """Return cached org policy for *owner* from *store*, fetching via ``gh api`` on miss."""
-    if owner in store:
-        return store[owner]
-
-    if not _GITHUB_OWNER_RE.fullmatch(owner):
-        store[owner] = None
-        return None
-
-    if not shutil.which("gh"):
-        store[owner] = None
-        return None
-
-    try:
-        proc = subprocess.run(
-            ["gh", "api", f"orgs/{owner}/actions/permissions"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-    except (OSError, subprocess.SubprocessError, ValueError) as exc:
-        logger.debug("org policy fetch failed for %s: %s", owner, exc)
-        store[owner] = None
-        return None
-
-    # 404 → user account; 403 → no access; either → skip silently.
-    if proc.returncode != 0:
-        store[owner] = None
-        return None
-
-    try:
-        data: object = json.loads(proc.stdout)
-    except ValueError as exc:
-        logger.debug("org policy JSON invalid for %s: %s", owner, exc)
-        store[owner] = None
-        return None
-
-    if not isinstance(data, dict):
-        store[owner] = None
-        return None
-
-    enabled: bool = bool(data.get("enabled", True))
-    allowed_actions: str = str(data.get("allowed_actions", "all"))
-
-    policy: dict = {
-        "enabled": enabled,
-        "allowed_actions": allowed_actions,
-        "github_owned_allowed": False,
-        "verified_allowed": False,
-        "patterns_allowed": [],
-    }
-
-    if enabled and allowed_actions == "selected":
-        try:
-            sel_proc = subprocess.run(
-                ["gh", "api", f"orgs/{owner}/actions/permissions/selected-actions"],
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            if sel_proc.returncode == 0:
-                sel: object = json.loads(sel_proc.stdout)
-                if isinstance(sel, dict):
-                    policy["github_owned_allowed"] = bool(sel.get("github_owned_allowed", False))
-                    policy["verified_allowed"] = bool(sel.get("verified_allowed", False))
-                    patterns = sel.get("patterns_allowed")
-                    if isinstance(patterns, list):
-                        policy["patterns_allowed"] = [
-                            str(p) for p in patterns if isinstance(p, str)
-                        ]
-        except (OSError, subprocess.SubprocessError, ValueError) as exc:
-            # Non-fatal: an unreadable selected-actions policy leaves the
-            # defaults above in place.
-            logger.debug("selected-actions fetch failed for %s: %s", owner, exc)
-
-    store[owner] = policy
-    return policy
 
 
 def _actionlint_cache_path() -> Path:
@@ -680,30 +514,26 @@ def _get_actionlint_version() -> str:
         return "unknown"
 
 
-@functools.cache
-def _github_token_available() -> bool:
-    """Whether org-policy lookups can authenticate, probed once per process.
+def _gate_policy_findings(repo: Path) -> dict[str, list[dict[str, Any]]]:
+    """``gate actions-allowed --json`` findings for *repo*, grouped by workflow file.
 
-    The policy fetch shells out to ``gh api``, so the question is whether ``gh``
-    itself is authenticated rather than whether any particular variable is set;
-    ``gh auth token`` answers exactly that and honors the same precedence gh
-    uses for the real call. Stdout is discarded so the token never lands in
-    the CompletedProcess. Any failure means no policy fetch, which is a
-    skipped annotation rather than a failed run.
+    gate judges every ``uses:`` against the repository's own allowed-actions
+    settings. An absent gate, an unreadable answer or no GitHub origin yields
+    no rows: policy is report-only.
     """
-    if not shutil.which("gh"):
-        return False
+    if not shutil.which("gate"):
+        return {}
     try:
-        proc = subprocess.run(
-            ["gh", "auth", "token"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=10,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return proc.returncode == 0
+        proc = run(["gate", "actions-allowed", "--json"], repo, timeout=60)
+        rows = json.loads(proc.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {}
+    by_file: dict[str, list[dict[str, Any]]] = {}
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict) and isinstance(row.get("file"), str):
+                by_file.setdefault(row["file"], []).append(row)
+    return by_file
 
 
 def discover_workflow_files(repo: Path) -> list[Path]:
@@ -1310,7 +1140,6 @@ def scan_actions(
     apply: bool,
     *,
     tag_cache: dict[str, dict | None] | None = None,
-    org_policy_cache: dict[str, dict | None] | None = None,
     exclude_patterns: list[str] | None = None,
 ) -> tuple[list[ActionBump], int]:
     """Scan GitHub Actions workflow and composite-action files for bump recommendations.
@@ -1326,11 +1155,6 @@ def scan_actions(
         failure).  When provided, entries are reused across calls so each
         (action, ref) is resolved at most once per run.  When omitted, a fresh
         per-call dict is used (preserves test isolation).
-    org_policy_cache:
-        Optional shared policy cache dict (maps owner → policy dict or None).
-        When ``None``, the module-level ``_ORG_POLICY_CACHE`` is used.  Callers
-        may pass a fresh ``{}`` for test isolation.  Policy checks run only when
-        ``gh`` is authenticated; otherwise they are skipped (zero ``gh`` calls).
     exclude_patterns:
         Repo-relative glob patterns (the repo's own ``.repo-ops.toml``
         ``exclude``) whose matching workflow/action files are neither scanned
@@ -1348,22 +1172,8 @@ def scan_actions(
     bumps: list[ActionBump] = []
     _cache: dict[str, dict | None] = tag_cache if tag_cache is not None else {}
 
-    # Org allowed-actions policy: report-only rows whenever gh can authenticate.
-    _policy_enabled = _github_token_available()
-    _policy_store: dict[str, dict | None] = (
-        org_policy_cache if org_policy_cache is not None else _ORG_POLICY_CACHE
-    )
-    _org_owner: str | None = None
-    _org_policy: dict | None = None
-    if _policy_enabled:
-        _org_owner = _derive_owner(repo)
-        if _org_owner is not None:
-            _org_policy = _fetch_org_policy_cached(_org_owner, _policy_store)
-
-    def _policy_violation_for(action: str, ref: str) -> str | None:
-        if _org_policy is None or _org_owner is None or action.startswith("./"):
-            return None
-        return _action_policy_violation(action, _org_policy, _org_owner, ref=ref)
+    # Allowed-actions policy rows: report-only, judged by gate.
+    _policy = _gate_policy_findings(repo)
 
     # Load the actionlint result cache once per run (skipped in "off" mode).
     _lint_cache_path = _actionlint_cache_path()
@@ -1734,23 +1544,20 @@ def scan_actions(
                     )
                 )
 
-        # Org allowed-actions policy check.
-        if _org_policy is not None and _org_owner is not None:
-            for uses in pins:
-                action = uses.action
-                violation = _policy_violation_for(action, uses.pin)
-                if violation:
-                    status = "policy"
-                    bumps.append(
-                        ActionBump(
-                            workflow=rel,
-                            action=action,
-                            pin=uses.pin,
-                            latest=uses.pin,
-                            status=status,
-                            detail=violation,
-                        )
-                    )
+        # Allowed-actions policy rows from gate.
+        for row in _policy.get(rel, []):
+            ref = str(row.get("ref", ""))
+            action, _, pin = ref.rpartition("@")
+            bumps.append(
+                ActionBump(
+                    workflow=rel,
+                    action=action or ref,
+                    pin=pin,
+                    latest=pin,
+                    status="policy" if row.get("level") == "fail" else "warn",
+                    detail=str(row.get("reason", "")),
+                )
+            )
 
     # Persist the actionlint cache (atomic write; best-effort).
     _save_lint_cache(_lint_cache_path, _lint_cache)

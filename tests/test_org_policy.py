@@ -1,11 +1,4 @@
-"""Tests for the org allowed-actions policy audit.
-
-Fleet incident: two GitHub orgs had allowed_actions=local_only, silently
-startup-failing ALL workflows that use actions/checkout (0-second failures).
-This feature detects that class of misconfiguration during the Actions scan.
-
-Runs whenever gh is authenticated; reports only.
-"""
+"""Allowed-actions policy rows come from ``gate actions-allowed --json``."""
 
 from __future__ import annotations
 
@@ -16,269 +9,69 @@ from unittest.mock import patch
 
 import pytest
 
-from repo_ops_upgrade.actions import (
-    _action_policy_violation,
-    _derive_owner,
-    _fetch_org_policy_cached,
-    _github_token_available,
-)
+from repo_ops_upgrade.actions import _gate_policy_findings, scan_actions
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _gh_proc(payload: object, returncode: int = 0) -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(
-        [],
-        returncode,
-        stdout=json.dumps(payload) if returncode == 0 else "",
-        stderr="",
-    )
-
-
-# ---------------------------------------------------------------------------
-# _derive_owner: parse owner from remote URL
-# ---------------------------------------------------------------------------
+_ROWS = [
+    {
+        "ref": "foo/bar@v1",
+        "file": ".github/workflows/ci.yml",
+        "line": 4,
+        "level": "fail",
+        "reason": "excluded",
+    },
+    {
+        "ref": "baz/qux@v2",
+        "file": ".github/workflows/ci.yml",
+        "line": 5,
+        "level": "warn",
+        "reason": "unverifiable",
+    },
+]
 
 
-@pytest.mark.parametrize(
-    ("remote_url", "expected_owner"),
-    [
-        ("https://github.com/myorg/myrepo.git", "myorg"),  # HTTPS
-        ("git@github.com:myorg/myrepo.git", "myorg"),  # SSH
-        ("ssh://git@github.com/myorg/myrepo.git", "myorg"),  # ssh:// URL
-        ("https://gitlab.com/myorg/myrepo.git", None),  # non-github → skip silently
-    ],
-)
-def test_derive_owner_from_remote(
-    tmp_path: Path, init_git_repo, remote_url: str, expected_owner: str | None
-) -> None:
-    init_git_repo(tmp_path)
-    subprocess.run(["git", "remote", "add", "upstream", remote_url], cwd=tmp_path, check=True)
-    assert _derive_owner(tmp_path) == expected_owner
+def _gate(rows: object, returncode: int = 1) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess([], returncode, stdout=json.dumps(rows), stderr="")
 
 
-def test_derive_owner_without_remote_returns_none(tmp_path: Path, init_git_repo) -> None:
-    init_git_repo(tmp_path)
-    assert _derive_owner(tmp_path) is None
-
-
-# ---------------------------------------------------------------------------
-# _fetch_org_policy_cached: caching behaviour
-# ---------------------------------------------------------------------------
-
-
-def test_fetch_policy_cached_caches_result(tmp_path: Path) -> None:
-    """Policy is fetched once per owner; cache stores and returns on hit."""
-    store: dict = {}
-    permissions_payload = {"enabled": True, "allowed_actions": "all"}
-    call_count = [0]
-
-    def fake_run(cmd: list, **kw: object) -> subprocess.CompletedProcess[str]:
-        call_count[0] += 1
-        if "selected-actions" in cmd[-1]:
-            return subprocess.CompletedProcess([], 404, stdout="", stderr="")
-        return _gh_proc(permissions_payload)
-
+def test_gate_policy_findings_groups_rows_by_file(tmp_path: Path) -> None:
     with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
-        patch("repo_ops_upgrade.actions.subprocess.run", side_effect=fake_run),
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gate"),
+        patch("repo_ops_upgrade.actions.run", return_value=_gate(_ROWS)) as mock_run,
     ):
-        result1 = _fetch_org_policy_cached("myorg", store)
-        result2 = _fetch_org_policy_cached("myorg", store)  # cache hit
-
-    assert result1 is not None
-    assert result1["allowed_actions"] == "all"
-    assert result2 is result1  # same object from cache
-    assert call_count[0] == 1  # gh called only once
+        found = _gate_policy_findings(tmp_path)
+    assert found == {".github/workflows/ci.yml": _ROWS}
+    assert mock_run.call_args.args[0] == ["gate", "actions-allowed", "--json"]
 
 
-def test_fetch_policy_404_returns_none_and_caches() -> None:
-    """404 (user account) → None, cached so no second call."""
-    store: dict = {}
-    call_count = [0]
-
-    def fake_run(cmd: list, **kw: object) -> subprocess.CompletedProcess[str]:
-        call_count[0] += 1
-        return subprocess.CompletedProcess([], 1, stdout="", stderr="Not Found")
-
+def test_gate_policy_findings_without_gate_or_json(tmp_path: Path) -> None:
+    with patch("repo_ops_upgrade.actions.shutil.which", return_value=None):
+        assert _gate_policy_findings(tmp_path) == {}
+    bad = subprocess.CompletedProcess([], 129, stdout="not json", stderr="")
     with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
-        patch("repo_ops_upgrade.actions.subprocess.run", side_effect=fake_run),
+        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gate"),
+        patch("repo_ops_upgrade.actions.run", return_value=bad),
     ):
-        r1 = _fetch_org_policy_cached("personal-user", store)
-        r2 = _fetch_org_policy_cached("personal-user", store)
-
-    assert r1 is None
-    assert r2 is None
-    assert call_count[0] == 1  # not retried
+        assert _gate_policy_findings(tmp_path) == {}
 
 
-def test_fetch_policy_rejects_non_github_owner() -> None:
-    store: dict = {}
+def test_scan_actions_turns_gate_rows_into_policy_and_warn_bumps(tmp_path: Path) -> None:
+    wf = tmp_path / ".github" / "workflows" / "ci.yml"
+    wf.parent.mkdir(parents=True)
+    wf.write_text("jobs:\n  a:\n    steps:\n      - uses: foo/bar@v1\n      - uses: baz/qux@v2\n")
     with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
-        patch("repo_ops_upgrade.actions.subprocess.run") as mock_run,
-    ):
-        assert _fetch_org_policy_cached("../evil", store) is None
-        assert _fetch_org_policy_cached("orgs/foo", store) is None
-    mock_run.assert_not_called()
-
-
-def test_github_token_probe_does_not_capture_stdout() -> None:
-    _github_token_available.cache_clear()
-    seen: dict[str, object] = {}
-
-    def fake_run(*_args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        seen.update(kwargs)
-        return subprocess.CompletedProcess(
-            ["gh", "auth", "token"], 0, stdout="ghs_SECRET", stderr=""
-        )
-
-    with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
-        patch("repo_ops_upgrade.actions.subprocess.run", side_effect=fake_run),
-    ):
-        assert _github_token_available() is True
-    _github_token_available.cache_clear()
-    assert seen.get("stdout") is subprocess.DEVNULL
-    assert seen.get("stderr") is subprocess.DEVNULL
-    assert seen.get("capture_output") is not True
-
-
-def test_fetch_policy_gh_absent_returns_none() -> None:
-    """gh not on PATH → None without any subprocess call."""
-    store: dict = {}
-    with (
+        patch(
+            "repo_ops_upgrade.actions._gate_policy_findings",
+            return_value={".github/workflows/ci.yml": _ROWS},
+        ),
         patch("repo_ops_upgrade.actions.shutil.which", return_value=None),
-        patch("repo_ops_upgrade.actions.subprocess.run") as mock_run,
+        patch(
+            "repo_ops_upgrade.actions.run", return_value=subprocess.CompletedProcess([], 1, "", "")
+        ),
     ):
-        result = _fetch_org_policy_cached("myorg", store)
-
-    assert result is None
-    mock_run.assert_not_called()
-
-
-def test_fetch_policy_selected_fetches_detail() -> None:
-    """allowed_actions=selected triggers a second gh api call for selected-actions."""
-    store: dict = {}
-    permissions_payload = {"enabled": True, "allowed_actions": "selected"}
-    selected_payload = {
-        "github_owned_allowed": True,
-        "verified_allowed": False,
-        "patterns_allowed": ["myorg/*"],
-    }
-
-    def fake_run(cmd: list, **kw: object) -> subprocess.CompletedProcess[str]:
-        if "selected-actions" in cmd[-1]:
-            return _gh_proc(selected_payload)
-        return _gh_proc(permissions_payload)
-
-    with (
-        patch("repo_ops_upgrade.actions.shutil.which", return_value="/usr/bin/gh"),
-        patch("repo_ops_upgrade.actions.subprocess.run", side_effect=fake_run),
-    ):
-        policy = _fetch_org_policy_cached("myorg", store)
-
-    assert policy is not None
-    assert policy["allowed_actions"] == "selected"
-    assert policy["github_owned_allowed"] is True
-    assert policy["patterns_allowed"] == ["myorg/*"]
-
-
-# ---------------------------------------------------------------------------
-# _action_policy_violation: evaluation logic
-# ---------------------------------------------------------------------------
-
-
-def _policy(
-    *,
-    enabled: bool = True,
-    allowed_actions: str = "all",
-    github_owned_allowed: bool = False,
-    patterns_allowed: list[str] | None = None,
-) -> dict:
-    return {
-        "enabled": enabled,
-        "allowed_actions": allowed_actions,
-        "github_owned_allowed": github_owned_allowed,
-        "verified_allowed": False,
-        "patterns_allowed": patterns_allowed or [],
-    }
-
-
-def test_policy_all_allows_everything() -> None:
-    p = _policy(allowed_actions="all")
-    assert _action_policy_violation("actions/checkout", p) is None
-    assert _action_policy_violation("softprops/action-gh-release", p) is None
-
-
-def test_policy_disabled_blocks_everything() -> None:
-    p = _policy(enabled=False, allowed_actions="all")
-    v = _action_policy_violation("actions/checkout", p)
-    assert v is not None
-    assert "disabled" in v
-
-
-def test_policy_selected_github_owned_allowed() -> None:
-    p = _policy(allowed_actions="selected", github_owned_allowed=True)
-    assert _action_policy_violation("actions/checkout", p) is None
-    assert _action_policy_violation("github/super-linter", p) is None
-
-
-def test_policy_selected_github_owned_blocked() -> None:
-    p = _policy(allowed_actions="selected", github_owned_allowed=False)
-    v = _action_policy_violation("actions/checkout", p)
-    assert v is not None
-    assert "not in allowlist" in v
-
-
-def test_policy_selected_pattern_match() -> None:
-    p = _policy(
-        allowed_actions="selected",
-        github_owned_allowed=False,
-        patterns_allowed=["myorg/*", "actions/checkout"],
-    )
-    assert _action_policy_violation("myorg/internal-action", p) is None
-    assert _action_policy_violation("actions/checkout", p) is None
-
-
-def test_policy_selected_matches_githubs_owner_repo_at_ref_patterns() -> None:
-    p = _policy(
-        allowed_actions="selected",
-        patterns_allowed=["Docker/build-push-action@*", "softprops/action-gh-release@v2"],
-    )
-    assert _action_policy_violation("docker/build-push-action", p, ref="v6") is None
-    assert _action_policy_violation("softprops/action-gh-release", p, ref="v2") is None
-    assert _action_policy_violation("softprops/action-gh-release", p, ref="v1") is not None
-
-
-def test_policy_selected_pattern_no_match() -> None:
-    p = _policy(
-        allowed_actions="selected",
-        patterns_allowed=["myorg/*"],
-    )
-    v = _action_policy_violation("softprops/action-gh-release", p)
-    assert v is not None
-    assert "not in allowlist" in v
-
-
-def test_policy_path_local_always_allowed() -> None:
-    p = _policy(allowed_actions="local_only")
-    assert _action_policy_violation("./my-local-action", p) is None
-
-
-def test_policy_local_only_same_org_allowed() -> None:
-    p = _policy(allowed_actions="local_only")
-    assert _action_policy_violation("myorg/some-action", p, "myorg") is None
-
-
-def test_policy_local_only_cross_org_blocked() -> None:
-    p = _policy(allowed_actions="local_only")
-    v = _action_policy_violation("actions/checkout", p, "myorg")
-    assert v is not None
-    assert "local_only" in v
+        bumps, _ = scan_actions(tmp_path, apply=False)
+    rows = {(b.action, b.pin, b.status, b.detail) for b in bumps if b.status in ("policy", "warn")}
+    assert ("foo/bar", "v1", "policy", "excluded") in rows
+    assert ("baz/qux", "v2", "warn", "unverifiable") in rows
 
 
 # ---------------------------------------------------------------------------

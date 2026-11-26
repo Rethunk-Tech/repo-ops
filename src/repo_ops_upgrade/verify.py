@@ -51,45 +51,57 @@ logger = logging.getLogger(__name__)
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _ERROR_LINE = re.compile(r"\b(error|failed|fail|cannot|unexpected)\b", re.IGNORECASE)
-_FULL_LOG = re.compile(r"^gate: full log\s+(\S+)", re.MULTILINE)
 _ERROR_LINES_MAX = 20
 
 
-def _log_error_lines(detail: str) -> str:
-    """Lines of the failed step's full log that name the failure.
+def _failed_gate_logs(record_json: str) -> list[str]:
+    """Log paths of the gates gate's result record shows as not passed."""
+    try:
+        gates = json.loads(record_json).get("gates") or []
+        return [
+            g["log"] for g in gates if g.get("log") and g.get("status") not in ("ok", "skipped")
+        ]
+    except (ValueError, AttributeError, TypeError):
+        return []
+
+
+def _log_error_lines(logs: list[str]) -> str:
+    """Lines of the failed steps' full logs that name the failure.
 
     gate's tail is the last N lines, and parallel tasks (turbo) interleave their
     output, so the real error can sit above it. Empty when no log is readable.
     """
-    m = _FULL_LOG.search(detail)
-    if not m:
-        return ""
-    try:
-        text = Path(m.group(1)).read_text(errors="replace")
-    except OSError:
-        return ""
-    hits = dict.fromkeys(
-        ln.strip() for ln in _ANSI.sub("", text).splitlines() if _ERROR_LINE.search(ln)
-    )
+    hits: dict[str, None] = {}
+    for log in logs:
+        try:
+            text = Path(log).read_text(errors="replace")
+        except OSError:
+            continue
+        hits.update(
+            dict.fromkeys(
+                ln.strip() for ln in _ANSI.sub("", text).splitlines() if _ERROR_LINE.search(ln)
+            )
+        )
     return "\n".join(list(hits)[:_ERROR_LINES_MAX])
 
 
 _SCRIPT_TAIL_LINES = 20
 
 
-def _gate_failure_detail(proc: Any, names: list[str]) -> str:
+def _gate_failure_detail(proc: Any, names: list[str], logs: list[str]) -> str:
     """Failure text starting at the first ``gate: FAIL`` line.
 
     gate writes progress lines (``gate: install: ...``) to stderr before any
     step runs; leading with stderr names a step that passed. The FAIL line and
-    the ``full log`` path that follows it name the step that did not.
+    the failed gates' ``logs`` (from gate's result record) name where it went.
     """
     lines = (proc.stdout + "\n" + proc.stderr).splitlines()
     start = next((i for i, ln in enumerate(lines) if ln.startswith("gate: FAIL")), None)
     if start is not None:
         tail = [ln for ln in lines[start:] if not ln.startswith("gate: install:")]
         detail = "\n".join(tail).strip()
-        errors = _log_error_lines(detail)
+        detail += "".join(f"\ngate: full log  {log}" for log in logs)
+        errors = _log_error_lines(logs)
         if errors:
             detail = f"{detail}\n--- error lines from the full log ---\n{errors}"
         return detail
@@ -186,7 +198,8 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
     if proc.returncode != 0:
         if "timed out after" in proc.stderr:
             return proc.stderr.strip()
-        return _gate_failure_detail(proc, names)
+        failed = _timed_run(["gate", "--json", "record"], ws.path, timeout=timeout, source=source)
+        return _gate_failure_detail(proc, names, _failed_gate_logs(failed.stdout))
     record = _timed_run(["gate", "--json", "record"], ws.path, timeout=timeout, source=source)
     try:
         partial = bool(json.loads(record.stdout).get("partial"))
