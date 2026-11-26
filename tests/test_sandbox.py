@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 import os
 import shutil
 import sys
@@ -119,4 +120,18 @@ def test_runtime_dir_sweeps_dead_pid_dirs(monkeypatch, request) -> None:
     mount = _runtime_dir_mount()
     assert not stale.exists()
     assert live.exists()
+    shutil.rmtree(mount[1])
+
+
+def test_runtime_dir_keeps_the_user_systemd_socket(monkeypatch, request) -> None:
+    runtime = Path(tempfile.mkdtemp(dir="/var/tmp"))
+    request.addfinalizer(lambda: shutil.rmtree(runtime, ignore_errors=True))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    (runtime / "systemd").mkdir()
+    sock = socket.socket(socket.AF_UNIX)
+    request.addfinalizer(sock.close)
+    sock.bind(str(runtime / "systemd" / "private"))
+    mount = _runtime_dir_mount()
+    bus = str(runtime / "systemd" / "private")
+    assert mount[3:] == ["--bind", bus, bus]
     shutil.rmtree(mount[1])

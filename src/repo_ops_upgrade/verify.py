@@ -116,7 +116,12 @@ def _verify_env(env: dict[str, str] | None, runtime_dir: str) -> dict[str, str]:
         merged.update(env)
     for key in ("DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS"):
         merged.pop(key, None)
+    real_bus = Path(os.environ.get("XDG_RUNTIME_DIR", "")) / "systemd" / "private"
     merged["XDG_RUNTIME_DIR"] = runtime_dir
+    # Only the bus gate scopes its memory cap through is shared; the session bus and display stay out.
+    if real_bus.is_socket():
+        (Path(runtime_dir) / "systemd").mkdir(exist_ok=True)
+        (Path(runtime_dir) / "systemd" / "private").symlink_to(real_bus)
     return merged
 
 

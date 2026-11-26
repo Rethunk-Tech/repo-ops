@@ -34,3 +34,9 @@ def test_light_commands_run_in_place() -> None:
     assert _argv(["report"]) is None
     assert _argv(["--version"]) is None
     assert _argv([]) is None
+
+
+def test_gates_reruns_in_a_capped_scope() -> None:
+    argv = _argv(["gates"])
+    assert argv is not None
+    assert argv[-3:] == ["-m", "repo_ops.cli", "gates"]

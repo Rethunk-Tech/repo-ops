@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from pathlib import Path
 from subprocess import CompletedProcess
 from typing import Any
@@ -938,3 +940,25 @@ class TestGateVerdictCompleteness:
         ):
             result = verify_workspace(ws)
         assert result is not None and "partial" in result
+
+
+def test_verify_env_links_only_the_systemd_socket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import socket
+
+    from repo_ops_upgrade.verify import _verify_env
+
+    real = Path(tempfile.mkdtemp(dir="/var/tmp"))
+    sock = socket.socket(socket.AF_UNIX)
+    try:
+        (real / "systemd").mkdir()
+        sock.bind(str(real / "systemd" / "private"))
+        monkeypatch.setenv("XDG_RUNTIME_DIR", str(real))
+        env = _verify_env(None, str(tmp_path))
+        assert env["XDG_RUNTIME_DIR"] == str(tmp_path)
+        assert (tmp_path / "systemd" / "private").resolve() == real / "systemd" / "private"
+        assert not (tmp_path / "bus").exists()
+    finally:
+        sock.close()
+        shutil.rmtree(real, ignore_errors=True)

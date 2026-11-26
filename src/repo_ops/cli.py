@@ -118,7 +118,7 @@ def _wants_subcommand_help(remainder: list[str]) -> bool:
 
 # Sweeps that run every checkout's package managers, linters and tests: their memory, page cache and
 # socket buffers otherwise land in the caller's cgroup (an agent session's cap), so they get their own.
-_SCOPED_COMMANDS = frozenset({"plan", "apply"})
+_SCOPED_COMMANDS = frozenset({"plan", "apply", "gates"})
 _SCOPE_MEMORY = "24G"
 
 

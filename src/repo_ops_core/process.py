@@ -205,7 +205,12 @@ def _runtime_dir_mount() -> list[str]:
         except OSError:
             return []
         atexit.register(shutil.rmtree, sub, ignore_errors=True)
-    return ["--bind", str(sub), raw]
+    flags = ["--bind", str(sub), raw]
+    # gate opens its own per-run memory scope through this socket; without it every capped run goes uncapped.
+    bus = Path(raw) / "systemd" / "private"
+    if bus.is_socket():
+        flags += ["--bind", str(bus), str(bus)]
+    return flags
 
 
 def _host_tmp_reads(cwd: str, path_env: str) -> list[str]:
