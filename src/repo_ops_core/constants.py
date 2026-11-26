@@ -46,10 +46,10 @@ EXCLUDE_PATH_FRAGMENTS = (
 )
 
 _FALLBACK_ROOTS = [
-    "/usr/local/src",
+    "/usr/local/src/com.github",
+    "/usr/local/src/dev.azure.com",
     str(Path.home() / "Projects"),
     str(Path.home() / "Documents"),
-    str(Path.home() / "Apps"),
 ]
 
 

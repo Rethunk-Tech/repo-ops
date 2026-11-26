@@ -163,6 +163,10 @@ A workspace that depends on `expo` gets holds from the installed `expo/bundledNa
 
 `repo-ops report [RUN]` prints one line per failed, skipped or held package from that run's `report.json`, with only the first error line. RUN is a run directory, a `report.json` path, or a run id; the newest run is used when omitted. Read-only: it does not plan or apply.
 
+## owned
+
+`repo-ops owned PATH... [--json]` applies the rule `plan`, `apply`, `gates` and `dependabot` use to skip checkouts, and prints the verdict per path: `owned`, or skipped as `excluded`, `not our org` or `fork` (an `upstream` remote, or a GitHub origin GitHub says is a fork; `adopted` opts it back in). Read-only. bosun keeps its own copy of the rule for its tick and tests it against this command.
+
 ## dependabot
 
 Lists open Dependabot PRs in repos with a GitHub remote (via `gh`) and marks each one superseded when the local lockfile or manifest already has that version. `--close` closes superseded PRs with a comment. Only lockfile-parser matches count; text-search matches, unparseable titles, and grouped PRs with any unconfirmed row are reported and never closed. A PR stays open while any locked copy of the package is still between its from and to versions, and `--close` closes nothing in a checkout that has uncommitted changes or commits not on its remote default branch.

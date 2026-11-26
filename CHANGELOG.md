@@ -9,11 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `repo-ops owned PATH... [--json]` says which checkouts a sweep touches or skips (excluded, not our org, fork) so other tools can share the rule.
 - A per-repo `[generate] run` command runs after each bump and before verify so regenerated files (credits, notices) are checked and committed with the sweep; a non-zero exit is a verify failure.
 
 ### Changed
 
 - `owned_orgs` in the global config is the only source: the built-in org list is gone, and `plan`, `apply`, `gates` and `dependabot` stop with a config error when the key is missing.
+
+- A GitHub origin that GitHub reports as a fork is skipped like one with an `upstream` remote (answers cached in `$XDG_CACHE_HOME/repo-ops/forks.json`); `adopted` still opts it back in.
+- The built-in default roots are bosun's four: `/usr/local/src/com.github`, `/usr/local/src/dev.azure.com`, `~/Projects`, `~/Documents`.
 
 ### Fixed
 

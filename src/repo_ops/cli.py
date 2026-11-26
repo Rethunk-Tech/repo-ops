@@ -15,6 +15,7 @@ from pathlib import Path
 
 from repo_ops._register import register_all
 from repo_ops_core.cli import build_upgrade_parser
+from repo_ops_core.owned import build_owned_parser, main_owned
 from repo_ops_dependabot.dependabot import build_dependabot_parser
 from repo_ops_dependabot.dependabot import main as dependabot_main
 from repo_ops_gates.gates import build_gates_parser, main_gates
@@ -51,6 +52,11 @@ _SUBCOMMANDS: dict[str, _Subcommand] = {
         dependabot_main,
         build_dependabot_parser,
         "List superseded Dependabot PRs; --close closes them",
+    ),
+    "owned": _Subcommand(
+        main_owned,
+        build_owned_parser,
+        "Say which checkouts a sweep touches or skips (excluded, not our org, fork)",
     ),
     "report": _Subcommand(
         main_report,

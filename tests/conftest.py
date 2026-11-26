@@ -357,3 +357,9 @@ def _no_registry_ceiling_lookup() -> Iterator[None]:
     """Hold ceilings resolve through the npm registry; tests name the answer when they need one."""
     with patch("repo_ops_js.holds.ceiling_version", return_value=None):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _no_live_fork_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test never asks GitHub whether a fixture origin is a fork."""
+    monkeypatch.setattr("repo_ops_core.owned.gh_fork_lookup", lambda slugs: {})

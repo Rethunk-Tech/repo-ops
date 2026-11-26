@@ -1,9 +1,10 @@
+import json
 import os
 import re
 import subprocess
 from pathlib import Path
 
-from repo_ops_core.owned import filter_owned, foreign_repos
+from repo_ops_core.owned import filter_owned, foreign_repos, main_owned
 from repo_ops_models import RepoBundle
 from repo_ops_upgrade.run import _drop_foreign
 
@@ -134,3 +135,39 @@ def test_missing_owned_orgs_is_a_config_error_and_nothing_is_owned(
     monkeypatch.chdir(tmp_path)
     assert main_plan([str(tmp_path)]) == 2
     assert "owned_orgs is not set" in capsys.readouterr().err
+
+
+def test_github_fork_without_upstream_is_foreign(tmp_path: Path) -> None:
+    fork = _repo(tmp_path / "wails", "git@github.com:Rethunk-Tech/wails.git")
+    ours = _repo(tmp_path / "ours", "git@github.com:Rethunk-Tech/ours.git")
+    azure = _repo(tmp_path / "az", "git@ssh.dev.azure.com:v3/Rethunk-Tech/proj/repo")
+    asked: list[set[str]] = []
+
+    def lookup(slugs: set[str]) -> dict[str, bool]:
+        asked.append(slugs)
+        return {"rethunk-tech/wails": True, "rethunk-tech/ours": False}
+
+    got = foreign_repos([fork, ours, azure], lookup)
+
+    assert list(got) == [fork]
+    assert got[fork].startswith("fork")
+    assert asked == [{"rethunk-tech/wails", "rethunk-tech/ours"}]
+
+
+def test_owned_cli_json_reports_every_path(tmp_path: Path, monkeypatch, capsys) -> None:
+    (tmp_path / "repo-ops").mkdir()
+    (tmp_path / "repo-ops" / "config.toml").write_text(
+        'owned_orgs = ["Rethunk-Tech"]\nexclude = ["skipme"]\n'
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    ours = _repo(tmp_path / "ours", "git@github.com:Rethunk-Tech/ours.git")
+    skipme = _repo(tmp_path / "skipme", "git@github.com:Rethunk-Tech/s.git")
+    other = _repo(tmp_path / "other", "git@github.com:Other/o.git")
+
+    assert main_owned([str(ours), str(skipme), str(other), "--json"]) == 0
+
+    assert json.loads(capsys.readouterr().out) == {
+        str(ours): {"owned": True, "reason": None},
+        str(skipme): {"owned": False, "reason": "excluded"},
+        str(other): {"owned": False, "reason": "not our org"},
+    }
