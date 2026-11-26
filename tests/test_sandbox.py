@@ -97,6 +97,7 @@ def test_run_runtime_dir_is_writable_and_private(tmp_path: Path, monkeypatch, re
 
 def test_tool_cache_dirs_cover_gate_isolate_caches(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", str(tmp_path))  # no gate: the env-var fallback is what runs
     for var in ("GOLANGCI_LINT_CACHE", "PNPM_CONFIG_STORE_DIR", "RUSTUP_HOME", "DOTNET_CLI_HOME"):
         monkeypatch.setenv(var, str(tmp_path / var))
     dirs = _tool_cache_dirs()
@@ -111,6 +112,7 @@ def test_tool_cache_dirs_cover_gate_isolate_caches(tmp_path: Path, monkeypatch) 
 
 def test_tool_cache_dirs_cover_sumdb_playwright_ccache(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", str(tmp_path))
     monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
     monkeypatch.delenv("CCACHE_DIR", raising=False)
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)

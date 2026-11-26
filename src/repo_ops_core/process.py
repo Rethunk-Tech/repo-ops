@@ -106,22 +106,52 @@ def isolate_user_config(scratch: Path) -> None:
     _ISOLATED_ENV.update(env)
 
 
+_ENV_CACHE_VARS = (
+    "BUN_INSTALL_CACHE_DIR",
+    "CARGO_HOME",
+    "DOTNET_CLI_HOME",
+    "GOCACHE",
+    "GOLANGCI_LINT_CACHE",
+    "GOMODCACHE",
+    "GOPATH",
+    "PLAYWRIGHT_BROWSERS_PATH",
+    "PNPM_CONFIG_STORE_DIR",
+    "RUSTUP_HOME",
+    "UV_CACHE_DIR",
+    "npm_config_cache",
+)
+
+
 def _gate_isolate_env() -> dict[str, str]:
-    """The toolchain caches gate's --isolate keeps visible (`gate isolate-env`): the one list, owned by gate."""
-    if not shutil.which("gate"):
-        return {}
-    try:
-        proc = subprocess.run(
-            ["gate", "isolate-env"], capture_output=True, text=True, timeout=30, check=False
-        )
-        data = json.loads(proc.stdout) if proc.returncode == 0 else {}
-    except (OSError, subprocess.SubprocessError, ValueError):
-        return {}
-    return (
+    """The toolchain caches gate's --isolate keeps visible (`gate isolate-env`); without gate, the cache env vars already set."""
+    data: object = {}
+    if shutil.which("gate"):
+        try:
+            proc = subprocess.run(
+                ["gate", "isolate-env"], capture_output=True, text=True, timeout=30, check=False
+            )
+            data = json.loads(proc.stdout) if proc.returncode == 0 else {}
+        except (OSError, subprocess.SubprocessError, ValueError):
+            data = {}
+    caches = (
         {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
         if isinstance(data, dict)
         else {}
     )
+    if caches:
+        return caches
+    print(
+        "repo-ops: `gate isolate-env` gave no caches (gate missing or too old); using cache env vars",
+        file=sys.stderr,
+    )
+    home = Path(os.environ.get("HOME") or Path.home())
+    fallback = {v: os.environ[v] for v in _ENV_CACHE_VARS if os.environ.get(v)}
+    fallback.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(home / ".cache" / "ms-playwright"))
+    xdg_cache = os.environ.get("XDG_CACHE_HOME")
+    fallback.setdefault(
+        "UV_CACHE_DIR", str((Path(xdg_cache) if xdg_cache else home / ".cache") / "uv")
+    )
+    return fallback
 
 
 def _tool_cache_dirs() -> list[str]:
