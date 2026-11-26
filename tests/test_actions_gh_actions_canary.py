@@ -235,3 +235,14 @@ def test_non_canary_repo_advances_to_highest_proven_tag_below_unproven_newest(
         scan_actions(tmp_path / "beta", apply=True)
     assert new in wfs["alpha"].read_text(encoding="utf-8")
     assert mid in wfs["beta"].read_text(encoding="utf-8")
+
+
+def test_state_dir_follows_gate_rule(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_STATE_HOME", "relative")
+    monkeypatch.delenv("GATE_STATE_DIR", raising=False)
+    assert actions_mod._state_dir() == tmp_path / "home" / ".local" / "state" / "repo-ops"
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
+    assert actions_mod._state_dir() == tmp_path / "xdg" / "repo-ops"
+    monkeypatch.setenv("GATE_STATE_DIR", str(tmp_path / "gate"))
+    assert actions_mod._state_dir() == tmp_path / "gate" / "repo-ops"

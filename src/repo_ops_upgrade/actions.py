@@ -142,8 +142,13 @@ _GH_ACTIONS_REPO = "Rethunk-Tech/gh-actions"
 
 
 def _state_dir() -> Path:
-    base = os.environ.get("XDG_STATE_HOME")
-    return (Path(base) if base else Path.home() / ".local" / "state") / "repo-ops"
+    # gate's rule (internal/result StateDir): GATE_STATE_DIR, then
+    # XDG_STATE_HOME, each only when absolute, else ~/.local/state.
+    for key in ("GATE_STATE_DIR", "XDG_STATE_HOME"):
+        base = os.environ.get(key, "")
+        if os.path.isabs(base):
+            return Path(base) / "repo-ops"
+    return Path.home() / ".local" / "state" / "repo-ops"
 
 
 def _proven_tags_path() -> Path:
