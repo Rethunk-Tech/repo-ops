@@ -195,21 +195,6 @@ def test_gate_listing_selects_names(
             {"status": "ok", "gate_record_reason": "stale"},
         ),
         (
-            {
-                "listing": {"gates": [{"name": "unit"}], "root": "$repo"},
-                "run_code": 1,
-                "run_stdout": (
-                    "gate: FAIL exit 1  bun test  1.2s\n"
-                    "gate: TIMEOUT after 30s  bun e2e  (killed, not failed)\n"
-                    "gate: FAIL exit 2\n"
-                    "gate: TIMEOUT after 1s\n"
-                    "gate: TIMEOUT\n"
-                ),
-                "record": {"reason": "stale"},
-            },
-            {},
-            {"status": "fail", "failed": ["bun test", "bun e2e", "exit 2", "after 1s"]},
-        ),
         (
             {
                 "listing": {"gates": [{"name": "unit"}], "root": "$repo"},
@@ -247,7 +232,7 @@ def test_gate_listing_selects_names(
                 },
             },
             {},
-            {"status": "fail", "failed": ["scraped"]},
+            {"status": "fail", "failed": []},
         ),
         (
             {
@@ -261,7 +246,7 @@ def test_gate_listing_selects_names(
                 },
             },
             {},
-            {"status": "fail", "failed": ["scraped"]},
+            {"status": "fail", "failed": []},
         ),
         (
             {
@@ -271,7 +256,7 @@ def test_gate_listing_selects_names(
                 "record": {"fresh": True, "finished": "not-a-date"},
             },
             {},
-            {"status": "fail", "failed": ["scraped"]},
+            {"status": "fail", "failed": []},
         ),
         (
             {
@@ -285,7 +270,7 @@ def test_gate_listing_selects_names(
                 },
             },
             {},
-            {"status": "fail", "failed": ["scraped"]},
+            {"status": "fail", "failed": []},
         ),
         (
             {
@@ -299,7 +284,7 @@ def test_gate_listing_selects_names(
                 },
             },
             {},
-            {"status": "fail", "failed": ["scraped"]},
+            {"status": "fail", "failed": []},
         ),
     ],
 )

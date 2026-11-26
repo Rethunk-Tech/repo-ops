@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import socket
 import os
 import shutil
+import socket
 import sys
 import tempfile
 from pathlib import Path

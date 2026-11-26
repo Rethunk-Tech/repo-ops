@@ -309,11 +309,13 @@ def test_probe_cache_clear_works(tmp_path: Path, make_workspace) -> None:
 def test_yarn_classic_is_skipped_not_run_through_yarn_up(tmp_path, make_workspace) -> None:
     from unittest.mock import patch
 
+    from repo_ops._register import register_all
     from repo_ops_js_yarn.yarn import apply_yarn
     from repo_ops_upgrade.registry import check_workspace
 
     (tmp_path / "package.json").write_text('{"packageManager": "yarn@1.22.22"}\n')
     ws = make_workspace(tmp_path, ecosystem="node", manager="yarn", label="classic")
+    register_all()
     with patch("repo_ops_js_yarn.yarn.run") as run:
         result = check_workspace(ws)
         with pytest.raises(WorkspaceSkip, match="Yarn Classic"):
