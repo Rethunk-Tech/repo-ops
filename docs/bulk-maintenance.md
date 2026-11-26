@@ -20,6 +20,6 @@ The report ends with a summary (workspaces ok, failed and skipped; dirty skips; 
 
 Umbrella repos (many Go or Node submodules) are applied children first. Each parent then gets one `chore(submodules)` commit staging exactly the gitlinks of children committed this run. A pointer still dirty afterwards (a child whose verify failed) is listed in the footer and in `submodule_pointer_hints`.
 
-Push children first and the parent last, the same order as the `git-push-order` skill.
+Push children first and the parent last, per `stack-traps` push-order.md; `rgit land --repos` applies it, landing umbrellas after their children.
 
 Every sweep bumps every child with a newer release, so an umbrella gets a pointer commit per sweep. That is deliberate: a single pass converges (measured on bastion-core), and a per-repo throttle or a release-age cooldown were both declined in favour of always-latest.
