@@ -95,10 +95,25 @@ def test_run_runtime_dir_is_writable_and_private(tmp_path: Path, monkeypatch, re
     assert not (runtime / "bus-x").exists()
 
 
+def test_tool_cache_dirs_cover_gate_isolate_caches(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for var in ("GOLANGCI_LINT_CACHE", "PNPM_CONFIG_STORE_DIR", "RUSTUP_HOME", "DOTNET_CLI_HOME"):
+        monkeypatch.setenv(var, str(tmp_path / var))
+    dirs = _tool_cache_dirs()
+    for want in (
+        tmp_path / "GOLANGCI_LINT_CACHE",
+        tmp_path / "PNPM_CONFIG_STORE_DIR",
+        tmp_path / "RUSTUP_HOME",
+        tmp_path / "DOTNET_CLI_HOME" / ".dotnet",
+    ):
+        assert str(want.resolve()) in dirs
+
+
 def test_tool_cache_dirs_cover_sumdb_playwright_ccache(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("PLAYWRIGHT_BROWSERS_PATH", raising=False)
     monkeypatch.delenv("CCACHE_DIR", raising=False)
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
     gopath = tmp_path / "gopath"
     monkeypatch.setenv("GOPATH", str(gopath))
     dirs = _tool_cache_dirs()

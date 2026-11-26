@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import json
 import logging
 import os
 import shutil
@@ -105,8 +106,26 @@ def isolate_user_config(scratch: Path) -> None:
     _ISOLATED_ENV.update(env)
 
 
+def _gate_isolate_env() -> dict[str, str]:
+    """The toolchain caches gate's --isolate keeps visible (`gate isolate-env`): the one list, owned by gate."""
+    if not shutil.which("gate"):
+        return {}
+    try:
+        proc = subprocess.run(
+            ["gate", "isolate-env"], capture_output=True, text=True, timeout=30, check=False
+        )
+        data = json.loads(proc.stdout) if proc.returncode == 0 else {}
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {}
+    return (
+        {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, str)}
+        if isinstance(data, dict)
+        else {}
+    )
+
+
 def _tool_cache_dirs() -> list[str]:
-    """Host paths that builds need to write: Go, bun, npm, uv and cargo caches, and gate's own dirs."""
+    """Host paths that builds need to write: gate's isolate caches (sumdb, cargo and dotnet narrowed), uv tools, ccache and gate's own dirs."""
     found: list[str] = []
     seen: set[str] = set()
 
@@ -134,24 +153,20 @@ def _tool_cache_dirs() -> list[str]:
             return ""
         return proc.stdout
 
-    if shutil.which("go"):
-        lines = tool_out(["go", "env", "GOCACHE", "GOMODCACHE", "GOPATH"]).splitlines()
-        for line in lines[:2]:
-            add(line)
-        if len(lines) > 2 and lines[2].strip():
-            # The checksum DB cache that `go get` and `go mod tidy` write.
-            add(str(Path(lines[2].split(os.pathsep)[0].strip()) / "pkg" / "sumdb"))
-    if shutil.which("npm"):
-        add(tool_out(["npm", "config", "get", "cache"]))
-    bun_cache = os.environ.get("BUN_INSTALL_CACHE_DIR")
-    if bun_cache:
-        add(bun_cache)
-    elif shutil.which("bun"):
-        bun_out = tool_out(["bun", "pm", "cache"]).strip()
-        if bun_out:
-            add(bun_out)
+    gate_caches = _gate_isolate_env()
+    for var, value in gate_caches.items():
+        if var == "GOPATH":
+            # The checksum DB cache that `go get` and `go mod tidy` write; the rest of GOPATH stays read-only.
+            add(str(Path(value.split(os.pathsep)[0]) / "pkg" / "sumdb"))
+        elif var == "CARGO_HOME":
+            # Registry, git checkouts and cargo-deny's advisory DBs only: ~/.cargo/bin stays read-only.
+            for sub in ("registry", "git", "advisory-dbs"):
+                add(str(Path(value) / sub))
+        elif var == "DOTNET_CLI_HOME":
+            # gate's value is a HOME; the CLI keeps its global tools in .dotnet beneath it.
+            add(str(Path(value) / ".dotnet"))
         else:
-            add(str(Path(os.environ.get("HOME") or Path.home()) / ".bun" / "install" / "cache"))
+            add(value)
     if shutil.which("gate"):
         # gate's child TMPDIR and logs default to /var/tmp; results and locks live in its XDG dirs.
         home = Path(os.environ.get("HOME") or Path.home())
@@ -162,24 +177,11 @@ def _tool_cache_dirs() -> list[str]:
         add(str((Path(state) if Path(state).is_absolute() else home / ".local" / "state") / "gate"))
         cache = os.environ.get("XDG_CACHE_HOME", "")
         add(str((Path(cache) if Path(cache).is_absolute() else home / ".cache") / "gate"))
-    uv_cache = os.environ.get("UV_CACHE_DIR")
-    if uv_cache:
-        add(uv_cache)
-    elif shutil.which("uv"):
-        add(tool_out(["uv", "cache", "dir"]))
     if shutil.which("uv"):
         # uvx stages its temp files in the tool dir.
         add(os.environ.get("UV_TOOL_DIR") or tool_out(["uv", "tool", "dir"]))
-    if shutil.which("cargo"):
-        # Registry, git checkouts and cargo-deny's advisory DBs only: ~/.cargo/bin stays read-only.
-        cargo_home = Path(
-            os.environ.get("CARGO_HOME") or Path(os.environ.get("HOME") or Path.home()) / ".cargo"
-        )
-        for sub in ("registry", "git", "advisory-dbs"):
-            add(str(cargo_home / sub))
     home = Path(os.environ.get("HOME") or Path.home())
-    # Browser downloads (playwright_browsers remediation) and cgo compiler cache.
-    add(os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or str(home / ".cache" / "ms-playwright"))
+    # The cgo compiler cache is not one of gate's isolate caches.
     add(os.environ.get("CCACHE_DIR") or str(home / ".cache" / "ccache"))
     return found
 
