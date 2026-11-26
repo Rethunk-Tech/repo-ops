@@ -195,7 +195,6 @@ def test_gate_listing_selects_names(
             {"status": "ok", "gate_record_reason": "stale"},
         ),
         (
-        (
             {
                 "listing": {"gates": [{"name": "unit"}], "root": "$repo"},
                 "run_code": 1,
