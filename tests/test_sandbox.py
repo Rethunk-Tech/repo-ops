@@ -11,7 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from repo_ops_core.process import _runtime_dir_mount, _tool_cache_dirs, run
+from repo_ops_core import process
+from repo_ops_core.process import _memory_scope, _runtime_dir_mount, _tool_cache_dirs, run
 
 
 def test_run_home_writes_are_throwaway(tmp_path: Path, monkeypatch) -> None:
@@ -140,7 +141,7 @@ def test_runtime_dir_sweeps_dead_pid_dirs(monkeypatch, request) -> None:
     shutil.rmtree(mount[1])
 
 
-def test_runtime_dir_keeps_the_user_systemd_socket(monkeypatch, request) -> None:
+def test_runtime_dir_leaves_the_user_systemd_socket_out(monkeypatch, request) -> None:
     runtime = Path(tempfile.mkdtemp(dir="/var/tmp"))
     request.addfinalizer(lambda: shutil.rmtree(runtime, ignore_errors=True))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
@@ -149,9 +150,29 @@ def test_runtime_dir_keeps_the_user_systemd_socket(monkeypatch, request) -> None
     request.addfinalizer(sock.close)
     sock.bind(str(runtime / "systemd" / "private"))
     mount = _runtime_dir_mount()
-    bus = str(runtime / "systemd" / "private")
-    assert mount[3:] == ["--bind", bus, bus]
+    assert mount[0] == "--bind"
+    assert len(mount) == 3
     shutil.rmtree(mount[1])
+
+
+def test_memory_scope_wraps_from_outside_and_falls_back_uncapped(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    runtime = Path(tempfile.mkdtemp(dir="/var/tmp"))
+    (runtime / "systemd").mkdir()
+    sock = socket.socket(socket.AF_UNIX)
+    sock.bind(str(runtime / "systemd" / "private"))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    (tmp_path / ".gate.toml").write_text('[limits]\nmemory = "3G"\n')
+    with_bus = _memory_scope(tmp_path)
+    sock.close()
+    shutil.rmtree(runtime)
+    assert with_bus[:4] == ["systemd-run", "--user", "--scope", "--quiet"]
+    assert "MemoryMax=3G" in with_bus
+    monkeypatch.setattr(process, "_scope_warned", False)
+    assert _memory_scope(tmp_path) == []
+    assert _memory_scope(tmp_path) == []
+    assert capsys.readouterr().err.count("without a memory cap") == 1
 
 
 def test_tool_cache_dirs_bind_the_pnpm_store_parent(tmp_path: Path, monkeypatch) -> None:

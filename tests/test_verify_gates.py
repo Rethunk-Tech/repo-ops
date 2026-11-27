@@ -943,7 +943,7 @@ class TestGateVerdictCompleteness:
         assert result is not None and "partial" in result
 
 
-def test_verify_env_links_only_the_systemd_socket(
+def test_verify_env_links_no_systemd_socket(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import socket
@@ -958,7 +958,7 @@ def test_verify_env_links_only_the_systemd_socket(
         monkeypatch.setenv("XDG_RUNTIME_DIR", str(real))
         env = _verify_env(None, str(tmp_path))
         assert env["XDG_RUNTIME_DIR"] == str(tmp_path)
-        assert (tmp_path / "systemd" / "private").resolve() == real / "systemd" / "private"
+        assert not (tmp_path / "systemd").exists()
         assert not (tmp_path / "bus").exists()
     finally:
         sock.close()

@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 VERBOSE = False
@@ -245,12 +246,8 @@ def _runtime_dir_mount() -> list[str]:
         except OSError:
             return []
         atexit.register(shutil.rmtree, sub, ignore_errors=True)
-    flags = ["--bind", str(sub), raw]
-    # gate opens its own per-run memory scope through this socket; without it every capped run goes uncapped.
-    bus = Path(raw) / "systemd" / "private"
-    if bus.is_socket():
-        flags += ["--bind", str(bus), str(bus)]
-    return flags
+    # The user manager's socket stays out: through it, code inside could `systemd-run --user` out of the sandbox.
+    return ["--bind", str(sub), raw]
 
 
 def _host_tmp_reads(cwd: str, path_env: str) -> list[str]:
@@ -371,6 +368,52 @@ def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
     return argv
 
 
+_GATE_MEMORY_DEFAULT = "24G"
+_scope_warned = False
+
+
+def _memory_cap(root: Path) -> str:
+    """The run's memory cap: ``[limits] memory`` of the checkout's ``.gate.toml``, else gate's default."""
+    try:
+        limits = tomllib.loads((root / ".gate.toml").read_text(encoding="utf-8")).get("limits")
+    except (OSError, ValueError):
+        return _GATE_MEMORY_DEFAULT
+    value = limits.get("memory") if isinstance(limits, dict) else None
+    return value if isinstance(value, str) and value else _GATE_MEMORY_DEFAULT
+
+
+def _memory_scope(root: Path) -> list[str]:
+    """``systemd-run`` prefix that starts the sandbox in its own capped scope, from outside it.
+
+    Empty (uncapped, one warning) when the user manager is unreachable, as inside a nested sandbox;
+    never a reason to bind the manager's socket in.
+    """
+    global _scope_warned
+    cap = _memory_cap(root)
+    if cap == "0":
+        return []
+    raw = os.environ.get("XDG_RUNTIME_DIR")
+    if shutil.which("systemd-run") and raw and (Path(raw) / "systemd" / "private").is_socket():
+        return [
+            "systemd-run",
+            "--user",
+            "--scope",
+            "--quiet",
+            "-p",
+            f"MemoryMax={cap}",
+            "-p",
+            "MemorySwapMax=0",
+            "--",
+        ]
+    if not _scope_warned:
+        _scope_warned = True
+        print(
+            "repo-ops: systemd-run --user unavailable; running sandboxed commands without a memory cap",
+            file=sys.stderr,
+        )
+    return []
+
+
 def _tmp_parent_dirs(paths: list[str]) -> list[str]:
     flags: list[str] = []
     seen: set[str] = set()
@@ -418,7 +461,10 @@ def run(
             # UV_CONFIG_FILE switches off discovery of the repo's own uv.toml
             # (index, torch-backend); uv never writes config, so nothing to isolate.
             merged.pop("UV_CONFIG_FILE", None)
-        argv = _sandboxed_argv(cmd, cwd_path, merged.get("PATH", ""))
+        argv = [
+            *_memory_scope(_checkout_root(cwd_path.resolve())),
+            *_sandboxed_argv(cmd, cwd_path, merged.get("PATH", "")),
+        ]
     proc = subprocess.run(
         argv,
         cwd=str(cwd_path),
