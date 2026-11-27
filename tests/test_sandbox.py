@@ -252,3 +252,14 @@ def test_scrubbed_gitconfig_drops_commit_signing_but_keeps_identity() -> None:
     assert "signingkey" not in out
     assert "gpgsign" not in out
     assert "name = A" in out
+
+
+@pytest.mark.parametrize(("network", "want"), [(False, "true"), (True, "")])
+def test_offline_run_trusts_the_lockfile_an_online_install_wrote(
+    tmp_path: Path, network: bool, want: str
+) -> None:
+    proc = run(
+        ["sh", "-c", 'printf %s "$PNPM_CONFIG_TRUST_LOCKFILE"'], cwd=tmp_path, network=network
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout == want

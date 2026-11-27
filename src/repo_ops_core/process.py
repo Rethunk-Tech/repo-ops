@@ -609,6 +609,10 @@ def run(
             # pnpm appends its version dir (v11) to the configured store dir.
             root = store.parent if re.fullmatch(r"v\d+", store.name) else store
             merged["PNPM_CONFIG_STORE_DIR"] = str(root)
+        if not network:
+            # pnpm 12 re-checks a lockfile it has not verified against supply-chain policies by
+            # fetching registry metadata; the online install that wrote the lockfile already did.
+            merged.setdefault("PNPM_CONFIG_TRUST_LOCKFILE", "true")
         sandboxed = _sandboxed_argv(
             cmd, cwd_path, merged.get("PATH", ""), network=network, scrub_auth=scrub_auth
         )
