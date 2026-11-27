@@ -7,6 +7,7 @@ import functools
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -545,10 +546,10 @@ def run(
             # (index, torch-backend); uv never writes config, so nothing to isolate.
             merged.pop("UV_CONFIG_FILE", None)
         store = _pnpm_store(_checkout_root(cwd_path.resolve()))
-        if store is not None and not (
-            merged.get("PNPM_CONFIG_STORE_DIR") or merged.get("npm_config_store_dir")
-        ):
-            merged["npm_config_store_dir"] = str(store)
+        if store is not None and not merged.get("PNPM_CONFIG_STORE_DIR"):
+            # pnpm appends its version dir (v11) to the configured store dir.
+            root = store.parent if re.fullmatch(r"v\d+", store.name) else store
+            merged["PNPM_CONFIG_STORE_DIR"] = str(root)
         sandboxed = _sandboxed_argv(cmd, cwd_path, merged.get("PATH", ""), network=network)
         scope = _memory_scope(_checkout_root(cwd_path.resolve()))
         real_runtime = os.environ.get("XDG_RUNTIME_DIR")

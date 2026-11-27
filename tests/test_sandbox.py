@@ -236,7 +236,6 @@ def test_run_hands_pnpm_the_host_store(tmp_path: Path, monkeypatch) -> None:
     (repo / "pnpm-lock.yaml").write_text("")
     monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
     monkeypatch.delenv("PNPM_CONFIG_STORE_DIR", raising=False)
-    monkeypatch.delenv("npm_config_store_dir", raising=False)
-    proc = run(["sh", "-c", 'printf %s "$npm_config_store_dir"'], cwd=repo)
+    proc = run(["sh", "-c", 'printf %s "$PNPM_CONFIG_STORE_DIR"'], cwd=repo)
     assert proc.returncode == 0, proc.stderr
-    assert proc.stdout == str(store)
+    assert proc.stdout == str(store.parent)
