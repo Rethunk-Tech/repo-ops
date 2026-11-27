@@ -132,6 +132,7 @@ script = "build:prod"   # Node: this package.json script instead of gate; "" is 
 skip = true             # skip verify for this repo or workspace
 timeout = 120           # seconds per verify command (default 1800)
 network = true          # let the declared gates reach the network (default false: they run offline, after a go mod download / cargo fetch)
+online_gates = ["publish:jsr"]   # gates that run in the online pass beside vuln, with every gate needing one (default: vuln only)
 
 [soup]
 path = "docs/SOUP.md"   # repo-relative table whose `name` | `version` rows follow each bump

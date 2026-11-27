@@ -3,7 +3,7 @@
 Per-repo verify profiles
 ------------------------
 The ``[verify]`` table in ``.repo-ops.toml`` (or the global config) supports
-four knobs:
+five knobs:
 
 ``verify.script`` (str)
     Overrides gate delegation with a specific package.json script name.  Empty
@@ -23,6 +23,12 @@ four knobs:
     no network, after a fetch step (``go mod download``, ``cargo fetch``) that
     has it, so freshly updated dependency code cannot reach out. Set it for
     a repo whose tests genuinely need the network.
+
+``verify.online_gates`` (list of str)
+    Gate names that run in the online pass, beside ``vuln``, with every gate
+    that needs one of them. For a repo whose gate (``jsr publish --dry-run``)
+    asks a registry. A name gate does not list is ignored with a warning.
+    Moot under ``network = true``, which runs everything online.
 
 Precedence: workspace config > repo config > global config > default.
 """
@@ -172,9 +178,9 @@ def _timed_run(
 _SCAN_GATE = "vuln"
 
 
-def _needing(names: list[str], needs: dict[str, list[str]], target: str) -> list[str]:
-    """*target* and every gate that needs it, directly or through another gate."""
-    found = {target}
+def _needing(names: list[str], needs: dict[str, list[str]], targets: set[str]) -> list[str]:
+    """*targets* and every gate that needs one, directly or through another gate."""
+    found = set(targets)
     grew = True
     while grew:
         grew = False
@@ -237,15 +243,20 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
         return f"gate detects no gate for {ws.path}{detail}"
     # gate's own per-gate timeout would race this process's; 0 disables it and
     # leaves the caller's verify timeout the single authority.
-    bare = net or _SCAN_GATE not in names
+    extra = _load_verify_profile(ws).get("online_gates") or []
+    unknown = [n for n in extra if n not in names]
+    if unknown and not net:
+        logger.warning("verify.online_gates names no gate in %s: %s", ws.path, ", ".join(unknown))
+    online_set = {_SCAN_GATE, *extra}.intersection(names)
+    bare = net or not online_set
     if bare:
         # A bare run, not ``run NAME...``, so the record gate writes is a full one.
         passes: list[tuple[list[str], bool]] = [([], net)]
     else:
-        # Two passes: everything offline, then the vulnerability scan, which needs its advisory
-        # database. Only gate's ``vuln`` gate counts as a scan: the listing carries no kind or role.
-        # A gate that needs the scan makes gate run it too, so it belongs to the online pass.
-        scan = _needing(names, needs, _SCAN_GATE)
+        # Two passes: everything offline, then the gates that need a registry: the vulnerability
+        # scan (its advisory database; gate's ``vuln``, as the listing carries no kind or role)
+        # and ``online_gates``. A gate that needs one makes gate run it too, so it joins the online pass.
+        scan = _needing(names, needs, online_set)
         offline = [n for n in names if n not in scan]
         passes = [(n, online) for n, online in ((offline, False), (scan, True)) if n]
     for pass_names, online in passes:
@@ -297,7 +308,8 @@ def _load_verify_profile(ws: Workspace) -> dict[str, Any]:
     workspace directory's own config when it sits below the repo root. The last
     layer lets one workspace opt out (a self-test fixture that is broken on
     purpose) without skipping verify for its siblings.
-    Keys: ``script`` (str), ``skip`` (bool), ``timeout`` (int seconds), ``network`` (bool).
+    Keys: ``script`` (str), ``skip`` (bool), ``timeout`` (int seconds), ``network`` (bool),
+    ``online_gates`` (list of str).
     """
     layers = [
         (Path("global config"), load_global_config()),
@@ -316,6 +328,11 @@ def _load_verify_profile(ws: Workspace) -> dict[str, Any]:
                 not isinstance(value, kind) or (kind is int and isinstance(value, bool))
             ):
                 raise ConfigError(where, f"verify.{key} must be {kind.__name__}, got {value!r}")
+        gates = table.get("online_gates")
+        if gates is not None and not (
+            isinstance(gates, list) and all(isinstance(g, str) for g in gates)
+        ):
+            raise ConfigError(where, f"verify.online_gates must be a list of str, got {gates!r}")
         profile.update(table)
     return profile
 

@@ -1092,3 +1092,34 @@ def test_a_gate_that_needs_the_vuln_scan_runs_in_its_online_pass(
         assert verify_workspace(ws) is None
 
     assert runs == [(["lint"], False), (["vuln", "mid", "site"], True)]
+
+
+def test_online_gates_join_the_vuln_scan_in_the_online_pass(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, manager="hatch", ecosystem="py", label="demo")
+    (tmp_path / ".repo-ops.toml").write_text('[verify]\nonline_gates = ["publish:jsr", "ghost"]\n')
+    runs: list[tuple[list[str], bool]] = []
+    listing = json.dumps(
+        {
+            "gates": [
+                {"name": "lint"},
+                {"name": "publish:jsr"},
+                {"name": "vuln"},
+                {"name": "docs", "needs": ["publish:jsr"]},
+            ]
+        }
+    )
+
+    def fake_run(cmd: list[str], cwd: Path, **kw: Any) -> CompletedProcess[str]:
+        if "run" in cmd:
+            runs.append((cmd[cmd.index("run") + 1 :], kw["network"]))
+        return _ok(stdout=listing)
+
+    with (
+        patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/gate"),
+        patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
+        patch("repo_ops_upgrade.verify.logger") as log,
+    ):
+        assert verify_workspace(ws) is None
+
+    assert runs == [(["lint"], False), (["publish:jsr", "vuln", "docs"], True)]
+    log.warning.assert_called_once()
