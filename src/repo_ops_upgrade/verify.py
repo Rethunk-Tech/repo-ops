@@ -170,6 +170,21 @@ def _timed_run(
 
 
 _SCAN_GATE = "vuln"
+
+
+def _needing(names: list[str], needs: dict[str, list[str]], target: str) -> list[str]:
+    """*target* and every gate that needs it, directly or through another gate."""
+    found = {target}
+    grew = True
+    while grew:
+        grew = False
+        for n in names:
+            if n not in found and found.intersection(needs.get(n, ())):
+                found.add(n)
+                grew = True
+    return [n for n in names if n in found]
+
+
 _PREFETCH = {"go": ["go", "mod", "download"], "rust": ["cargo", "fetch", "--locked"]}
 
 
@@ -208,9 +223,11 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
         doc = json.loads(listing.stdout)
         # Opt-in e2e gates are listed but skipped by a default gate run; running
         # them by name here is what made verify outlast its timeout.
-        names = [g["name"] for g in doc.get("gates") or [] if not g.get("skipped")]
+        gates = [g for g in doc.get("gates") or [] if not g.get("skipped")]
+        names = [g["name"] for g in gates]
+        needs = {g["name"]: list(g.get("needs") or []) for g in gates}
     except (ValueError, AttributeError, TypeError, KeyError):
-        names = []
+        names, needs = [], {}
     if listing.returncode != 0 or not names:
         detail = (
             f": {listing.stderr.strip()}"
@@ -227,8 +244,9 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
     else:
         # Two passes: everything offline, then the vulnerability scan, which needs its advisory
         # database. Only gate's ``vuln`` gate counts as a scan: the listing carries no kind or role.
-        scan = [n for n in names if n == _SCAN_GATE]
-        offline = [n for n in names if n != _SCAN_GATE]
+        # A gate that needs the scan makes gate run it too, so it belongs to the online pass.
+        scan = _needing(names, needs, _SCAN_GATE)
+        offline = [n for n in names if n not in scan]
         passes = [(n, online) for n, online in ((offline, False), (scan, True)) if n]
     for pass_names, online in passes:
         proc = _timed_run(

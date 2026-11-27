@@ -1061,3 +1061,34 @@ def test_vuln_scan_is_the_only_gate_pass_with_network(tmp_path: Path, make_works
         assert verify_workspace(ws) is None
 
     assert runs == [(["lint", "test"], False), (["vuln"], True)]
+
+
+def test_a_gate_that_needs_the_vuln_scan_runs_in_its_online_pass(
+    tmp_path: Path, make_workspace
+) -> None:
+    """gate runs a gate's ``needs`` too, so a gate needing ``vuln`` would run the scan offline."""
+    ws = make_workspace(tmp_path, manager="hatch", ecosystem="py", label="demo")
+    runs: list[tuple[list[str], bool]] = []
+    listing = json.dumps(
+        {
+            "gates": [
+                {"name": "lint"},
+                {"name": "vuln"},
+                {"name": "mid", "needs": ["vuln"]},
+                {"name": "site", "needs": ["lint", "mid"]},
+            ]
+        }
+    )
+
+    def fake_run(cmd: list[str], cwd: Path, **kw: Any) -> CompletedProcess[str]:
+        if "run" in cmd:
+            runs.append((cmd[cmd.index("run") + 1 :], kw["network"]))
+        return _ok(stdout=listing)
+
+    with (
+        patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/gate"),
+        patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
+    ):
+        assert verify_workspace(ws) is None
+
+    assert runs == [(["lint"], False), (["vuln", "mid", "site"], True)]
