@@ -118,3 +118,29 @@ def test_hold_install_spec_saves_a_range_matching_the_ceiling(
     with patch.object(js_holds, "ceiling_version", return_value="5.4.5"):
         assert js_holds.hold_install_spec(ws, "typescript", rule) == spec
     assert js_holds.exact_install_flag(spec, "--save-exact") == (["--save-exact"] if exact else [])
+
+
+def test_enforce_holds_clamps_a_manifest_over_the_ceiling_though_node_modules_is_under_it(
+    tmp_path: Path,
+) -> None:
+    """A restored snapshot rewinds the manifest to the bulk bump but leaves the older
+    installed copy, so only the declared spec shows the hold was crossed."""
+    nm_dir = tmp_path / "node_modules" / "js-yaml"
+    nm_dir.mkdir(parents=True)
+    (nm_dir / "package.json").write_text('{"version": "4.3.2"}', encoding="utf-8")
+    (tmp_path / "package.json").write_text(
+        '{"devDependencies": {"js-yaml": "5.5.0"}}', encoding="utf-8"
+    )
+    ws = Workspace(path=tmp_path, ecosystem="node", manager="pnpm", git_repo=tmp_path, label="demo")
+    rule = HoldRule(package="js-yaml", max_version="4", spec="^4.3.2")
+    installed: list[tuple[str, str]] = []
+
+    def _install(name: str, spec: str) -> subprocess.CompletedProcess[str]:
+        installed.append((name, spec))
+        return subprocess.CompletedProcess([], 0, stdout="", stderr="")
+
+    with patch(_GLOBAL_HOLDS_CACHE, return_value=(rule,)):
+        held = enforce_holds(ws, ["js-yaml"], manager="pnpm", run_install=_install)
+
+    assert installed == [("js-yaml", "^4.3.2")]
+    assert [(c.name, c.to) for c in held] == [("js-yaml", "5.5.0")]
