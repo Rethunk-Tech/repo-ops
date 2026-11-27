@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import functools
 import json
 import logging
 import os
@@ -155,6 +156,30 @@ def _gate_isolate_env() -> dict[str, str]:
     return fallback
 
 
+@functools.lru_cache(maxsize=32)
+def _pnpm_store(cwd: Path | None) -> Path | None:
+    """The store `pnpm store path` names on the host for a pnpm repo at *cwd*, else None.
+
+    pnpm keeps the store at the root of the project's filesystem when that is not $HOME's. Inside
+    the sandbox the checkout is its own mount, so pnpm would pick `node_modules/.pnpm-store` instead.
+    """
+    if cwd is None or not (cwd / "pnpm-lock.yaml").exists() or not shutil.which("pnpm"):
+        return None
+    try:
+        proc = subprocess.run(
+            ["pnpm", "store", "path"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+            cwd=cwd,
+        )
+    except OSError:
+        return None
+    store = Path(proc.stdout.strip() or "/") if proc.returncode == 0 else None
+    return store if store is not None and store.is_absolute() and store.parent != store else None
+
+
 def _tool_cache_dirs(cwd: Path | None = None) -> list[str]:
     """Host paths that builds need to write: gate's isolate caches (sumdb, cargo and dotnet narrowed), uv tools, ccache, gate's own dirs and, for a pnpm repo at *cwd*, its store."""
     found: list[str] = []
@@ -213,12 +238,10 @@ def _tool_cache_dirs(cwd: Path | None = None) -> list[str]:
     if shutil.which("uv"):
         # uvx stages its temp files in the tool dir.
         add(os.environ.get("UV_TOOL_DIR") or tool_out(["uv", "tool", "dir"]))
-    if cwd is not None and (cwd / "pnpm-lock.yaml").exists() and shutil.which("pnpm"):
-        # pnpm keeps the store at the root of the project's filesystem when that is not $HOME's,
-        # and node_modules records it; bind the `.pnpm-store` parent so version subdirs work.
-        store = Path(tool_out(["pnpm", "store", "path"], cwd).strip() or "/")
-        if store.is_absolute() and store.parent != store:
-            add(str(store.parent if store.parent.name == ".pnpm-store" else store))
+    store = _pnpm_store(cwd)
+    if store is not None:
+        # node_modules records the store; bind the `.pnpm-store` parent so version subdirs work.
+        add(str(store.parent if store.parent.name == ".pnpm-store" else store))
     home = Path(os.environ.get("HOME") or Path.home())
     # The cgo compiler cache is not one of gate's isolate caches.
     add(os.environ.get("CCACHE_DIR") or str(home / ".cache" / "ccache"))
@@ -521,6 +544,11 @@ def run(
             # UV_CONFIG_FILE switches off discovery of the repo's own uv.toml
             # (index, torch-backend); uv never writes config, so nothing to isolate.
             merged.pop("UV_CONFIG_FILE", None)
+        store = _pnpm_store(_checkout_root(cwd_path.resolve()))
+        if store is not None and not (
+            merged.get("PNPM_CONFIG_STORE_DIR") or merged.get("npm_config_store_dir")
+        ):
+            merged["npm_config_store_dir"] = str(store)
         sandboxed = _sandboxed_argv(cmd, cwd_path, merged.get("PATH", ""), network=network)
         scope = _memory_scope(_checkout_root(cwd_path.resolve()))
         real_runtime = os.environ.get("XDG_RUNTIME_DIR")

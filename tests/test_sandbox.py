@@ -219,4 +219,24 @@ def test_tool_cache_dirs_bind_the_pnpm_store_parent(tmp_path: Path, monkeypatch)
     monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
     assert str(store.parent) not in _tool_cache_dirs(repo)
     (repo / "pnpm-lock.yaml").write_text("")
+    process._pnpm_store.cache_clear()
     assert str(store.parent.resolve()) in _tool_cache_dirs(repo)
+
+
+def test_run_hands_pnpm_the_host_store(tmp_path: Path, monkeypatch) -> None:
+    store = tmp_path / "fs" / ".pnpm-store" / "v11"
+    store.mkdir(parents=True)
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    pnpm = bindir / "pnpm"
+    pnpm.write_text(f"#!/bin/sh\necho {store}\n")
+    pnpm.chmod(0o755)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "pnpm-lock.yaml").write_text("")
+    monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
+    monkeypatch.delenv("PNPM_CONFIG_STORE_DIR", raising=False)
+    monkeypatch.delenv("npm_config_store_dir", raising=False)
+    proc = run(["sh", "-c", 'printf %s "$npm_config_store_dir"'], cwd=repo)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout == str(store)
