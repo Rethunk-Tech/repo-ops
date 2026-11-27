@@ -169,6 +169,7 @@ def _timed_run(
             )
 
 
+_SCAN_GATE = "vuln"
 _PREFETCH = {"go": ["go", "mod", "download"], "rust": ["cargo", "fetch", "--locked"]}
 
 
@@ -218,28 +219,40 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
         )
         return f"gate detects no gate for {ws.path}{detail}"
     # gate's own per-gate timeout would race this process's; 0 disables it and
-    # leaves the caller's verify timeout the single authority. A bare run, not
-    # ``run NAME...``, so the record gate writes is a full one.
-    proc = _timed_run(
-        ["gate", "--timeout", "0", "--force"],
-        ws.path,
-        timeout=timeout,
-        source=source,
-        network=net,
-        scrub_auth=True,
-    )
-    if proc.returncode != 0:
-        if "timed out after" in proc.stderr:
-            return proc.stderr.strip()
-        failed = _timed_run(
-            ["gate", "--json", "record"],
+    # leaves the caller's verify timeout the single authority.
+    bare = net or _SCAN_GATE not in names
+    if bare:
+        # A bare run, not ``run NAME...``, so the record gate writes is a full one.
+        passes: list[tuple[list[str], bool]] = [([], net)]
+    else:
+        # Two passes: everything offline, then the vulnerability scan, which needs its advisory
+        # database. Only gate's ``vuln`` gate counts as a scan: the listing carries no kind or role.
+        scan = [n for n in names if n == _SCAN_GATE]
+        offline = [n for n in names if n != _SCAN_GATE]
+        passes = [(n, online) for n, online in ((offline, False), (scan, True)) if n]
+    for pass_names, online in passes:
+        proc = _timed_run(
+            ["gate", "--timeout", "0", "--force", *(["run", *pass_names] if pass_names else [])],
             ws.path,
             timeout=timeout,
             source=source,
-            network=net,
+            network=online,
             scrub_auth=True,
         )
-        return _gate_failure_detail(proc, names, _failed_gate_logs(failed.stdout))
+        if proc.returncode != 0:
+            if "timed out after" in proc.stderr:
+                return proc.stderr.strip()
+            failed = _timed_run(
+                ["gate", "--json", "record"],
+                ws.path,
+                timeout=timeout,
+                source=source,
+                network=online,
+                scrub_auth=True,
+            )
+            return _gate_failure_detail(proc, names, _failed_gate_logs(failed.stdout))
+    if not bare:
+        return None
     record = _timed_run(
         ["gate", "--json", "record"],
         ws.path,

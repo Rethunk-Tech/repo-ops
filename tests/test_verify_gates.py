@@ -826,11 +826,10 @@ class TestPythonGateDelegation:
         assert result is None
         # The lockfile gate is not something gate checks, so it still leads.
         assert calls[0] == ["uv", "sync", "--locked"]
-        assert calls[-2] == [
-            "gate",
-            "--timeout",
-            "0",
-            "--force",
+        gate_runs = [c for c in calls if c[:1] == ["gate"] and "run" in c]
+        assert gate_runs == [
+            [*_GATE_RUN_TEST, "run", "typecheck", "lint", "workflows", "test"],
+            [*_GATE_RUN_TEST, "run", "vuln"],
         ]
         assert ["uv", "run", "check"] not in calls
 
@@ -1044,3 +1043,21 @@ def test_gate_runs_offline_unless_the_profile_opts_in(tmp_path: Path, make_works
             verify_workspace(ws)
         assert seen
         assert set(seen) == {want}
+
+
+def test_vuln_scan_is_the_only_gate_pass_with_network(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, manager="hatch", ecosystem="py", label="demo")
+    runs: list[tuple[list[str], bool]] = []
+
+    def fake_run(cmd: list[str], cwd: Path, **kw: Any) -> CompletedProcess[str]:
+        if "run" in cmd:
+            runs.append((cmd[cmd.index("run") + 1 :], kw["network"]))
+        return _ok(stdout=_gate_json("lint", "test", "vuln"))
+
+    with (
+        patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/gate"),
+        patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
+    ):
+        assert verify_workspace(ws) is None
+
+    assert runs == [(["lint", "test"], False), (["vuln"], True)]
