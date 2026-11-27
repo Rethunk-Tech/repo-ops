@@ -308,10 +308,13 @@ def _throwaway_mount(path: str) -> list[str]:
     return ["--overlay-src", path, "--tmp-overlay", path]
 
 
-def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
+def _sandboxed_argv(
+    cmd: list[str], cwd: Path, path_env: str = "", *, network: bool = True
+) -> list[str]:
     """Wrap *cmd* in bubblewrap: repo writable, ``/`` read-only, ``$HOME`` a throwaway overlay.
 
-    Tool caches are writable binds. ``/tmp`` is a tmpfs. Network stays shared.
+    Tool caches are writable binds. ``/tmp`` is a tmpfs. Network is shared unless *network* is false,
+    which leaves only a loopback in a fresh namespace.
     """
     bwrap = shutil.which("bwrap")
     if bwrap is None:
@@ -348,6 +351,8 @@ def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
         "/etc/ssh/ssh_config.d",
         "--die-with-parent",
     ]
+    if not network:
+        argv.append("--unshare-net")
     # tmpfs hides host /tmp; recreate dest parents so later binds succeed.
     tmp_reads = _host_tmp_reads(cwd_s, path_env)
     argv.extend(_tmp_parent_dirs([home, cwd_s, *tmp_reads, *caches, *isolated]))
@@ -495,6 +500,7 @@ def run(
     timeout: float = 300,
     env: dict[str, str] | None = None,
     stdin: str | None = None,
+    network: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     cwd_path = Path(cwd)
     if not cwd_path.is_dir():
@@ -515,10 +521,14 @@ def run(
             # UV_CONFIG_FILE switches off discovery of the repo's own uv.toml
             # (index, torch-backend); uv never writes config, so nothing to isolate.
             merged.pop("UV_CONFIG_FILE", None)
-        argv = [
-            *_memory_scope(_checkout_root(cwd_path.resolve())),
-            *_sandboxed_argv(cmd, cwd_path, merged.get("PATH", "")),
-        ]
+        sandboxed = _sandboxed_argv(cmd, cwd_path, merged.get("PATH", ""), network=network)
+        scope = _memory_scope(_checkout_root(cwd_path.resolve()))
+        real_runtime = os.environ.get("XDG_RUNTIME_DIR")
+        if scope and real_runtime and merged.get("XDG_RUNTIME_DIR") != real_runtime:
+            # systemd-run needs the real runtime dir to find the user manager; the command gets its own.
+            sandboxed[1:1] = ["--setenv", "XDG_RUNTIME_DIR", merged.get("XDG_RUNTIME_DIR", "")]
+            merged["XDG_RUNTIME_DIR"] = real_runtime
+        argv = [*scope, *sandboxed]
     proc = subprocess.run(
         argv,
         cwd=str(cwd_path),

@@ -131,6 +131,7 @@ exclude = ["Rethunk-Tech/gh-actions"]   # repos to skip; unioned across files an
 script = "build:prod"   # Node: this package.json script instead of gate; "" is lockfile check only
 skip = true             # skip verify for this repo or workspace
 timeout = 120           # seconds per verify command (default 1800)
+network = true          # let the declared gates reach the network (default false: they run offline, after a go mod download / cargo fetch)
 
 [soup]
 path = "docs/SOUP.md"   # repo-relative table whose `name` | `version` rows follow each bump

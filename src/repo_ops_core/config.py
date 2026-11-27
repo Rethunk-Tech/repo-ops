@@ -31,7 +31,7 @@ class ConfigError(ValueError):
 
 _KEYS = {
     "": {"owned_orgs", "adopted", "exclude", "hold", "verify", "soup", "generate"},
-    "verify": {"script", "skip", "timeout"},
+    "verify": {"script", "skip", "timeout", "network"},
     "soup": {"path"},
     "generate": {"run"},
     "hold": {"package", "max_version", "until", "ecosystem", "workspace", "reason"},

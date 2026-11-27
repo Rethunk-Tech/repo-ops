@@ -130,7 +130,11 @@ class TestVerifyScriptFromConfig:
         (tmp_path / ".repo-ops.toml").write_text('[verify]\nscript = "gate"\n', encoding="utf-8")
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+            cmd: list[str],
+            cwd: Path,
+            timeout: int | None = None,
+            env: dict[str, str] | None = None,
+            network: bool = True,
         ) -> CompletedProcess[str]:
             if "gate" in cmd:
                 return _fail(stderr="gate failed")
@@ -156,7 +160,11 @@ class TestVerifySkip:
         called: list[bool] = []
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+            cmd: list[str],
+            cwd: Path,
+            timeout: int | None = None,
+            env: dict[str, str] | None = None,
+            network: bool = True,
         ) -> CompletedProcess[str]:
             called.append(True)
             return _ok()
@@ -265,7 +273,11 @@ class TestVerifyTimeout:
         captured: list[dict] = []
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+            cmd: list[str],
+            cwd: Path,
+            timeout: int | None = None,
+            env: dict[str, str] | None = None,
+            network: bool = True,
         ) -> CompletedProcess[str]:
             captured.append({"cmd": cmd, "timeout": timeout})
             return _ok()
@@ -288,14 +300,15 @@ def test_verify_timeout_names_repo_ops_toml_source(
     bin_dir.mkdir()
     fake = bin_dir / "gate"
     fake.write_text(
-        '#!/bin/sh\nif [ "$1" = "--json" ]; then echo \'{"gates":[{"name":"hang"}]}\'; exit 0; fi\n'
+        '#!/bin/sh\nif [ "$1" = "isolate-env" ]; then echo "{}"; exit 0; fi\n'
+        'if [ "$1" = "--json" ]; then echo \'{"gates":[{"name":"hang"}]}\'; exit 0; fi\n'
         "exec sleep 30\n",
         encoding="utf-8",
     )
     fake.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     (tmp_path / ".repo-ops.toml").write_text("[verify]\ntimeout = 1\n", encoding="utf-8")
-    ws = make_workspace(tmp_path, manager="rust", ecosystem="rust", label="demo")
+    ws = make_workspace(tmp_path, manager="hatch", ecosystem="py", label="demo")
     err = verify_workspace(ws)
     assert err is not None
     assert "timed out after 1s" in err
@@ -332,7 +345,7 @@ def test_failed_verify_script_names_its_command_and_exit_code(
     (tmp_path / ".repo-ops.toml").write_text('[verify]\nscript = "fail"\n', encoding="utf-8")
     ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
 
-    def failing(cmd, cwd, timeout=None, env=None):
+    def failing(cmd, cwd, timeout=None, env=None, network=True):
         if cmd[-1] != "fail":
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         return subprocess.CompletedProcess(cmd, 1, stdout="> demo@1.0.0 fail\n", stderr="boom\n")

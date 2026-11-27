@@ -3,7 +3,7 @@
 Per-repo verify profiles
 ------------------------
 The ``[verify]`` table in ``.repo-ops.toml`` (or the global config) supports
-three knobs:
+four knobs:
 
 ``verify.script`` (str)
     Overrides gate delegation with a specific package.json script name.  Empty
@@ -17,6 +17,12 @@ three knobs:
 
 ``verify.timeout`` (int, seconds)
     Per-repo override for the verify timeout.
+
+``verify.network`` (bool)
+    Give the declared gates network access. Default false: the gates run with
+    no network, after a fetch step (``go mod download``, ``cargo fetch``) that
+    has it, so freshly updated dependency code cannot reach out. Set it for
+    a repo whose tests genuinely need the network.
 
 Precedence: workspace config > repo config > global config > default.
 """
@@ -139,6 +145,7 @@ def _timed_run(
     timeout: int,
     source: str,
     env: dict[str, str] | None = None,
+    network: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     # Not under /tmp: gate may give each step a private /tmp, where a host path would not exist.
     cache = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
@@ -146,12 +153,17 @@ def _timed_run(
     base.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=base) as runtime_dir:
         try:
-            return run(cmd, cwd, timeout=timeout, env=_verify_env(env, runtime_dir))
+            return run(
+                cmd, cwd, timeout=timeout, env=_verify_env(env, runtime_dir), network=network
+            )
         except subprocess.TimeoutExpired as exc:
             n = int(exc.timeout) if exc.timeout is not None else timeout
             return subprocess.CompletedProcess(
                 cmd, 1, stdout="", stderr=_timeout_failure(n, source)
             )
+
+
+_PREFETCH = {"go": ["go", "mod", "download"], "rust": ["cargo", "fetch", "--locked"]}
 
 
 def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str | None:
@@ -167,7 +179,20 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
         return f"gate not on PATH; verify of {ws.path} needs the gate CLI"
     # JSON, not the --list text: a multi-line inline gate script prints lines
     # indented like gate names, and scraping them ran ``gate run git``.
-    listing = _timed_run(["gate", "--json"], ws.path, timeout=timeout, source=source)
+    net = _load_verify_profile(ws).get("network") is True
+    fetch = _PREFETCH.get(ws.manager)
+    if fetch and not net:
+        # The gates below run offline: what they build and test with must already be local.
+        proc = _timed_run(
+            fetch,
+            ws.path,
+            timeout=timeout,
+            source=source,
+            env=GO_MODULE_MODE_ENV if ws.manager == "go" else None,
+        )
+        if proc.returncode != 0:
+            return (proc.stderr or proc.stdout).strip() or f"{' '.join(fetch)} failed"
+    listing = _timed_run(["gate", "--json"], ws.path, timeout=timeout, source=source, network=net)
     if listing.returncode != 0 and "timed out after" in listing.stderr:
         return listing.stderr.strip()
     try:
@@ -188,14 +213,22 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
     # leaves the caller's verify timeout the single authority. A bare run, not
     # ``run NAME...``, so the record gate writes is a full one.
     proc = _timed_run(
-        ["gate", "--timeout", "0", "--force"], ws.path, timeout=timeout, source=source
+        ["gate", "--timeout", "0", "--force"],
+        ws.path,
+        timeout=timeout,
+        source=source,
+        network=net,
     )
     if proc.returncode != 0:
         if "timed out after" in proc.stderr:
             return proc.stderr.strip()
-        failed = _timed_run(["gate", "--json", "record"], ws.path, timeout=timeout, source=source)
+        failed = _timed_run(
+            ["gate", "--json", "record"], ws.path, timeout=timeout, source=source, network=net
+        )
         return _gate_failure_detail(proc, names, _failed_gate_logs(failed.stdout))
-    record = _timed_run(["gate", "--json", "record"], ws.path, timeout=timeout, source=source)
+    record = _timed_run(
+        ["gate", "--json", "record"], ws.path, timeout=timeout, source=source, network=net
+    )
     try:
         partial = bool(json.loads(record.stdout).get("partial"))
     except (ValueError, AttributeError, TypeError):
@@ -214,7 +247,7 @@ def _load_verify_profile(ws: Workspace) -> dict[str, Any]:
     workspace directory's own config when it sits below the repo root. The last
     layer lets one workspace opt out (a self-test fixture that is broken on
     purpose) without skipping verify for its siblings.
-    Keys: ``script`` (str), ``skip`` (bool), ``timeout`` (int seconds).
+    Keys: ``script`` (str), ``skip`` (bool), ``timeout`` (int seconds), ``network`` (bool).
     """
     layers = [
         (Path("global config"), load_global_config()),
@@ -227,7 +260,7 @@ def _load_verify_profile(ws: Workspace) -> dict[str, Any]:
         table = cfg.get("verify", {})
         if not isinstance(table, dict):
             raise ConfigError(where, "verify must be a table ([verify])")
-        for key, kind in (("script", str), ("skip", bool), ("timeout", int)):
+        for key, kind in (("script", str), ("skip", bool), ("timeout", int), ("network", bool)):
             value = table.get(key)
             if value is not None and (
                 not isinstance(value, kind) or (kind is int and isinstance(value, bool))

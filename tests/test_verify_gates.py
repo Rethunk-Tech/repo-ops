@@ -55,7 +55,11 @@ def _gate_aware_run(calls: list[list[str]], listing: str = _GATE_LIST):
     """A ``run`` double that answers ``gate --json`` with *listing*."""
 
     def fake_run(
-        cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+        cmd: list[str],
+        cwd: Path,
+        timeout: int | None = None,
+        env: dict[str, str] | None = None,
+        network: bool = True,
     ) -> CompletedProcess[str]:
         calls.append(cmd)
         return _ok(stdout=listing if cmd[:2] == ["gate", "--json"] else "")
@@ -67,7 +71,11 @@ def _gate_failing_run(stderr: str, listing: str = _GATE_LIST):
     """A ``run`` double whose ``gate run`` fails with *stderr*."""
 
     def fake_run(
-        cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+        cmd: list[str],
+        cwd: Path,
+        timeout: int | None = None,
+        env: dict[str, str] | None = None,
+        network: bool = True,
     ) -> CompletedProcess[str]:
         if cmd[:2] == ["gate", "--json"]:
             return _ok(stdout=listing)
@@ -94,6 +102,7 @@ class TestGoVerifyGates:
         assert result is None
         assert fake_run.calls == [
             ["go", "mod", "verify"],
+            ["go", "mod", "download"],
             ["gate", "--json"],
             _GATE_RUN_TEST,
             _GATE_RECORD,
@@ -106,7 +115,11 @@ class TestGoVerifyGates:
         calls: list[list[str]] = []
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+            cmd: list[str],
+            cwd: Path,
+            timeout: int | None = None,
+            env: dict[str, str] | None = None,
+            network: bool = True,
         ) -> CompletedProcess[str]:
             calls.append(cmd)
             if cmd[0:3] == ["go", "mod", "verify"]:
@@ -185,7 +198,12 @@ class TestRustVerifyGates:
             result = verify_workspace(ws)
 
         assert result is None
-        assert fake_run.calls == [["gate", "--json"], _GATE_RUN_TEST, _GATE_RECORD]
+        assert fake_run.calls == [
+            ["cargo", "fetch", "--locked"],
+            ["gate", "--json"],
+            _GATE_RUN_TEST,
+            _GATE_RECORD,
+        ]
 
     def test_missing_gate_is_an_error_not_a_cargo_run(
         self, tmp_path: Path, make_workspace, fake_run: Any
@@ -284,7 +302,11 @@ class TestUvLockThenGate:
         calls: list[list[str]] = []
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+            cmd: list[str],
+            cwd: Path,
+            timeout: int | None = None,
+            env: dict[str, str] | None = None,
+            network: bool = True,
         ) -> CompletedProcess[str]:
             calls.append(cmd)
             return (
@@ -339,7 +361,11 @@ class TestPythonManagerGates:
         calls: list[list[str]] = []
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+            cmd: list[str],
+            cwd: Path,
+            timeout: int | None = None,
+            env: dict[str, str] | None = None,
+            network: bool = True,
         ) -> CompletedProcess[str]:
             calls.append(cmd)
             return _fail(stderr="lock gate failed") if cmd == lock_cmd else _ok()
@@ -617,7 +643,11 @@ class TestGateDelegation:
         record = json.dumps({"gates": [{"status": "fail", "log": "/var/tmp/gate/soup.log"}]})
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+            cmd: list[str],
+            cwd: Path,
+            timeout: int | None = None,
+            env: dict[str, str] | None = None,
+            network: bool = True,
         ) -> CompletedProcess[str]:
             if cmd == ["gate", "--json", "record"]:
                 return _ok(stdout=record)
@@ -655,7 +685,11 @@ class TestGateDelegation:
         record = json.dumps({"gates": [{"status": "fail", "log": str(log)}]})
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+            cmd: list[str],
+            cwd: Path,
+            timeout: int | None = None,
+            env: dict[str, str] | None = None,
+            network: bool = True,
         ) -> CompletedProcess[str]:
             if cmd == ["gate", "--json", "record"]:
                 return _ok(stdout=record)
@@ -681,7 +715,11 @@ class TestGateDelegation:
         self._write_pkg(tmp_path)
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+            cmd: list[str],
+            cwd: Path,
+            timeout: int | None = None,
+            env: dict[str, str] | None = None,
+            network: bool = True,
         ) -> CompletedProcess[str]:
             if cmd[:2] == ["gate", "--json"]:
                 return _ok(stdout=_GATE_LIST)
@@ -793,7 +831,11 @@ class TestPythonGateDelegation:
         self._write_pyproject(tmp_path)
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+            cmd: list[str],
+            cwd: Path,
+            timeout: int | None = None,
+            env: dict[str, str] | None = None,
+            network: bool = True,
         ) -> CompletedProcess[str]:
             if cmd[:2] == ["gate", "--json"]:
                 return _ok(stdout=_PYTHON_GATE_LIST)
@@ -881,7 +923,11 @@ class TestVerifyDesktopIsolation:
         captured: list[dict[str, str] | None] = []
 
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+            cmd: list[str],
+            cwd: Path,
+            timeout: int | None = None,
+            env: dict[str, str] | None = None,
+            network: bool = True,
         ) -> CompletedProcess[str]:
             captured.append(env)
             return _ok(stdout=_GATE_LIST if cmd[:2] == ["gate", "--json"] else "")
@@ -905,7 +951,11 @@ class TestGateVerdictCompleteness:
     @staticmethod
     def _run(listing: dict[str, Any], record: dict[str, Any] | None = None):
         def fake_run(
-            cmd: list[str], cwd: Path, timeout: int | None = None, env: dict[str, str] | None = None
+            cmd: list[str],
+            cwd: Path,
+            timeout: int | None = None,
+            env: dict[str, str] | None = None,
+            network: bool = True,
         ) -> CompletedProcess[str]:
             if cmd[:2] == ["gate", "--json"] and len(cmd) == 2:
                 return _ok(stdout=json.dumps(listing))
@@ -963,3 +1013,23 @@ def test_verify_env_links_no_systemd_socket(
     finally:
         sock.close()
         shutil.rmtree(real, ignore_errors=True)
+
+
+def test_gate_runs_offline_unless_the_profile_opts_in(tmp_path: Path, make_workspace) -> None:
+    ws = make_workspace(tmp_path, manager="hatch", ecosystem="py", label="demo")
+    seen: list[bool] = []
+
+    def fake_run(cmd: list[str], cwd: Path, **kw: Any) -> CompletedProcess[str]:
+        seen.append(kw["network"])
+        return _ok(stdout=_GATE_LIST)
+
+    for toml, want in (("", False), ("[verify]\nnetwork = true\n", True)):
+        (tmp_path / ".repo-ops.toml").write_text(toml)
+        seen.clear()
+        with (
+            patch("repo_ops_upgrade.verify.shutil.which", return_value="/usr/bin/gate"),
+            patch("repo_ops_upgrade.verify.run", side_effect=fake_run),
+        ):
+            verify_workspace(ws)
+        assert seen
+        assert set(seen) == {want}

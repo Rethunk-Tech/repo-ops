@@ -53,6 +53,15 @@ def test_run_hides_credential_stores_but_keeps_gitconfig(tmp_path: Path, monkeyp
     assert proc.stdout.endswith("0\n[user]\n\tname = x\n")
 
 
+def test_run_without_network_has_only_loopback(tmp_path: Path) -> None:
+    ifaces = "awk -F: 'NR>2{gsub(/ /,\"\",$1);print $1}' /proc/net/dev"
+    online = run(["sh", "-c", ifaces], cwd=tmp_path)
+    offline = run(["sh", "-c", ifaces], cwd=tmp_path, network=False)
+    assert offline.returncode == 0, offline.stderr
+    assert offline.stdout.split() == ["lo"]
+    assert online.stdout.split() != ["lo"] or not Path("/sys/class/net/eth0").exists()
+
+
 def test_run_exposes_tun_for_nested_pasta(tmp_path: Path) -> None:
     if not Path("/dev/net/tun").exists():
         pytest.skip("host has no /dev/net/tun")
