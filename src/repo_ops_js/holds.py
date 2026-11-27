@@ -220,6 +220,22 @@ def _resolved(ws: Workspace, name: str) -> str | None:
     )
 
 
+def _declared(ws: Workspace, name: str) -> str | None:
+    """The release *name*'s ``package.json`` spec names (``^5.1.0`` gives ``5.1.0``), else None.
+
+    A restored snapshot rewinds the manifest and lockfile but not ``node_modules``, so
+    the installed copy can sit under a ceiling the manifest already crosses.
+    """
+    data = read_json_file(ws.path / "package.json") or {}
+    for section in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
+        deps = data.get(section)
+        spec = deps.get(name) if isinstance(deps, dict) else None
+        match = re.search(r"\d+\.\d+\.\d+", spec) if isinstance(spec, str) else None
+        if match:
+            return match[0]
+    return None
+
+
 def enforce_holds(
     ws: Workspace,
     candidate_names: Iterable[str],
@@ -256,10 +272,17 @@ def enforce_holds(
         rule = resolve_package_hold(ws, name)
         if rule is None:
             continue
-        resolved = _resolved(ws, name)
-        if resolved is None or version_satisfies_ceiling(resolved, rule.max_version):
+        declared = _declared(ws, name)
+        over_ceiling = next(
+            (
+                v
+                for v in (_resolved(ws, name), declared)
+                if v is not None and not version_satisfies_ceiling(v, rule.max_version)
+            ),
+            None,
+        )
+        if over_ceiling is None:
             continue
-        over_ceiling = resolved
         proc = run_install(name, hold_install_spec(ws, name, rule))
         if proc.returncode != 0:
             raise RuntimeError(
