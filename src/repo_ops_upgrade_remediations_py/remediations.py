@@ -87,8 +87,10 @@ def apply_ruff(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     """Run ``ruff check --fix`` then ``ruff format`` in the workspace root."""
     if not guard_tree_writes(ws.git_repo, "ruff", ws.path):
         return True, "ruff (skipped: a link resolves outside the repo)"
-    fix_proc = run(["ruff", "check", "--fix", "."], ws.path, timeout=120)
-    fmt_proc = run(["ruff", "format", "."], ws.path, timeout=120)
+    fix_proc = run(
+        ["ruff", "check", "--fix", "."], ws.path, timeout=120, network=False, scrub_auth=True
+    )
+    fmt_proc = run(["ruff", "format", "."], ws.path, timeout=120, network=False, scrub_auth=True)
     if fix_proc.returncode == 0 and fmt_proc.returncode == 0:
         return True, "ruff check --fix && ruff format (ok)"
     err_parts: list[str] = []

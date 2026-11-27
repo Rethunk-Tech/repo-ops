@@ -46,7 +46,9 @@ def test_run_hides_credential_stores_but_keeps_gitconfig(tmp_path: Path, monkeyp
         'cat "$HOME/.ssh/id_ed25519" "$HOME/.npmrc" "$HOME/.config/repo-ops/api-secret.txt"'
         ' 2>&1; ls "$HOME/.ssh" | wc -l; cat "$HOME/.gitconfig"'
     )
-    proc = run(["sh", "-c", script], cwd=repo)
+    default = run(["sh", "-c", script], cwd=repo)
+    assert default.stdout.startswith("key")
+    proc = run(["sh", "-c", script], cwd=repo, scrub_auth=True)
     assert proc.returncode == 0, proc.stderr
     assert "key" not in proc.stdout
     assert "_authToken" not in proc.stdout

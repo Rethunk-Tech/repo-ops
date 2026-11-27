@@ -44,7 +44,7 @@ def _cargo_fix_which(tool: str) -> str | None:
 def _cargo_fix_run(cmd: list[str], cwd: Path, timeout: float) -> Any:
     # Thin wrapper so that patching this module's `run` name still reaches
     # the subprocess call made from inside the shared factory.
-    return run(cmd, cwd, timeout=timeout)
+    return run(cmd, cwd, timeout=timeout, scrub_auth=True)
 
 
 def _cargo_fix_argv(files: list[str] | None) -> list[str]:

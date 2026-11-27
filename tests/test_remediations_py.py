@@ -210,7 +210,7 @@ def test_ruff_files_lists_py_rewritten_after_apply(
     result = _result(tmp_path, make_workspace=make_workspace)
     result.changes = [make_change("httpx")]
 
-    def _ruff_run(cmd, cwd, timeout=120):
+    def _ruff_run(cmd, cwd, timeout=120, **_):
         (tmp_path / "app.py").write_text("x = 1\n")
         return make_proc(0)
 

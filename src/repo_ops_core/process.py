@@ -443,8 +443,8 @@ def _sandboxed_argv(
     for _, flags in sorted(mounts, key=lambda m: len(Path(m[0]).parts)):
         argv.extend(flags)
     # Last, so a mask wins over the home overlay and anything bound beneath it.
-    argv.extend(_secret_masks(home, [p for p, _ in mounts]))
     if scrub_auth:
+        argv.extend(_secret_masks(home, [p for p, _ in mounts]))
         for path in _AUTH_COPIES:
             if Path(path).is_file() and Path("/tmp") not in Path(path).parents:  # noqa: S108
                 argv.extend(["--ro-bind", "/dev/null", path])

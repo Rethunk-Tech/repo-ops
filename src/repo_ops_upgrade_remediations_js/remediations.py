@@ -128,14 +128,24 @@ def apply_biome(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     for cfg in _find_biome_configs(ws.path):
         cfg_dir = cfg.parent
         scope = [] if cfg_dir == ws.path else [f"--config-path={cfg_dir}"]
-        proc = run([*prefix, "biome", "migrate", "--write", *scope], ws.path, timeout=TIMEOUT_APPLY)
+        proc = run(
+            [*prefix, "biome", "migrate", "--write", *scope],
+            ws.path,
+            timeout=TIMEOUT_APPLY,
+            scrub_auth=True,
+        )
         if proc.returncode != 0:
             ok = False
             last_err = stderr_tail(proc.stderr or proc.stdout or "")
             continue
         # Safe fixes only, never --unsafe. Exit 1 means diagnostics remain, which
         # verify judges; the edits are owned like any other this run wrote.
-        check = run([*prefix, "biome", "check", "--write", *scope], ws.path, timeout=TIMEOUT_APPLY)
+        check = run(
+            [*prefix, "biome", "check", "--write", *scope],
+            ws.path,
+            timeout=TIMEOUT_APPLY,
+            scrub_auth=True,
+        )
         leftover = leftover or check.returncode != 0
     if ok:
         suffix = "; diagnostics remain after safe fixes" if leftover else ""
@@ -174,6 +184,7 @@ def _playwright_missing_browsers(ws: Workspace, version: str) -> bool:
         [*prefix, "playwright", "install", "--dry-run"],
         ws.path,
         timeout=120,
+        scrub_auth=True,
     )
     # A dry-run prints an "Install location:" per browser whether or not it is
     # there, and a "Download url:" beside it either way, so the paths are the
@@ -219,7 +230,7 @@ def report_playwright(ws: Workspace, ctx: dict[str, Any]) -> list[str]:
 
 def apply_playwright(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     prefix = pm_exec_prefix(ws.manager)
-    proc = run([*prefix, "playwright", "install"], ws.path, timeout=TIMEOUT_APPLY)
+    proc = run([*prefix, "playwright", "install"], ws.path, timeout=TIMEOUT_APPLY, scrub_auth=True)
     cmd = f"{ws.manager} exec playwright install"
     if proc.returncode == 0:
         return True, f"{cmd} (ok)"
@@ -257,7 +268,7 @@ def apply_codegen(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     pkg = read_json_file(ws.path / "package.json") or {}
     for script in ("generate:proto", "generate:openapi"):
         if script in (pkg.get("scripts") or {}):
-            proc = run([*prefix, script], ws.path, timeout=TIMEOUT_APPLY)
+            proc = run([*prefix, script], ws.path, timeout=TIMEOUT_APPLY, scrub_auth=True)
             if proc.returncode != 0:
                 ok = False
                 last_err = stderr_tail(proc.stderr or proc.stdout or "")
@@ -592,7 +603,7 @@ def apply_manifest_format(ws: Workspace, ctx: dict[str, Any]) -> ApplyResult:
     files = _rewritten_manifests(ws, ctx)
     # A manifest the repo's own biome config ignores is left as written, not a failure.
     cmd = [str(_biome_bin(ws)), "format", "--write", "--no-errors-on-unmatched", *files]
-    proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY)
+    proc = run(cmd, ws.path, timeout=TIMEOUT_APPLY, network=False, scrub_auth=True)
     detail = f"biome format --write {' '.join(files)}"
     if proc.returncode == 0:
         return True, f"{detail} (ok)"
