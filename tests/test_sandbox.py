@@ -241,3 +241,14 @@ def test_run_hands_pnpm_the_host_store(tmp_path: Path, monkeypatch) -> None:
     proc = run(["sh", "-c", 'printf %s "$PNPM_CONFIG_STORE_DIR"'], cwd=repo)
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout == str(store.parent)
+
+
+def test_scrubbed_gitconfig_drops_commit_signing_but_keeps_identity() -> None:
+    text = (
+        "[user]\n\tname = A\n\tsigningkey = /home/a/.ssh/k.pub\n"
+        "[commit]\n\tgpgsign = true\n[tag]\n\tgpgsign = true\n[gpg]\n\tformat = ssh\n"
+    )
+    out = process._scrub_credentials("gitconfig", text)
+    assert "signingkey" not in out
+    assert "gpgsign" not in out
+    assert "name = A" in out

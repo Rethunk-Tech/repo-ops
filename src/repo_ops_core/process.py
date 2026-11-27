@@ -64,6 +64,8 @@ _AUTH_COPIES: list[str] = []
 _NPMRC_AUTH = re.compile(r"(^|:)(_authToken|_auth|_password|username|certfile|keyfile)$", re.I)
 _URL_CREDENTIAL = re.compile(r"://(?!git@)[^/\s@]+@")
 _GOAUTH = re.compile(r"^\s*GOAUTH\s*=")
+# Signing keys live under the masked ~/.ssh, so a commit the run makes would fail to sign.
+_GIT_SIGNING = re.compile(r"^\s*(signingkey|gpgsign)\s*=", re.I)
 
 
 def _scrub_credentials(name: str, text: str) -> str:
@@ -74,6 +76,8 @@ def _scrub_credentials(name: str, text: str) -> str:
         if name == "gitconfig" and line.lstrip().startswith("["):
             in_credential = line.lstrip().lower().startswith("[credential")
         if in_credential:
+            continue
+        if name == "gitconfig" and _GIT_SIGNING.match(line):
             continue
         if name == "npmrc":
             bad = _NPMRC_AUTH.search(line.split("=", 1)[0].strip()) is not None and "=" in line
