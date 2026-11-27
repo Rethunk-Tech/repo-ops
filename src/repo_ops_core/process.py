@@ -154,8 +154,8 @@ def _gate_isolate_env() -> dict[str, str]:
     return fallback
 
 
-def _tool_cache_dirs() -> list[str]:
-    """Host paths that builds need to write: gate's isolate caches (sumdb, cargo and dotnet narrowed), uv tools, ccache and gate's own dirs."""
+def _tool_cache_dirs(cwd: Path | None = None) -> list[str]:
+    """Host paths that builds need to write: gate's isolate caches (sumdb, cargo and dotnet narrowed), uv tools, ccache, gate's own dirs and, for a pnpm repo at *cwd*, its store."""
     found: list[str] = []
     seen: set[str] = set()
 
@@ -174,9 +174,11 @@ def _tool_cache_dirs() -> list[str]:
         seen.add(resolved)
         found.append(resolved)
 
-    def tool_out(cmd: list[str]) -> str:
+    def tool_out(cmd: list[str], cwd: Path | None = None) -> str:
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=30, check=False, cwd=cwd
+            )
         except OSError:
             return ""
         if proc.returncode != 0:
@@ -210,6 +212,12 @@ def _tool_cache_dirs() -> list[str]:
     if shutil.which("uv"):
         # uvx stages its temp files in the tool dir.
         add(os.environ.get("UV_TOOL_DIR") or tool_out(["uv", "tool", "dir"]))
+    if cwd is not None and (cwd / "pnpm-lock.yaml").exists() and shutil.which("pnpm"):
+        # pnpm keeps the store at the root of the project's filesystem when that is not $HOME's,
+        # and node_modules records it; bind the `.pnpm-store` parent so version subdirs work.
+        store = Path(tool_out(["pnpm", "store", "path"], cwd).strip() or "/")
+        if store.is_absolute() and store.parent != store:
+            add(str(store.parent if store.parent.name == ".pnpm-store" else store))
     home = Path(os.environ.get("HOME") or Path.home())
     # The cgo compiler cache is not one of gate's isolate caches.
     add(os.environ.get("CCACHE_DIR") or str(home / ".cache" / "ccache"))
@@ -317,7 +325,7 @@ def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
         raise FileNotFoundError(msg)
     home = os.environ.get("HOME") or str(Path.home())
     cwd_s = str(_checkout_root(cwd.resolve()))
-    caches = _tool_cache_dirs()
+    caches = _tool_cache_dirs(Path(cwd_s))
     isolated = list(
         dict.fromkeys(str(Path(p).parent) for p in _ISOLATED_ENV.values() if Path(p).exists())
     )

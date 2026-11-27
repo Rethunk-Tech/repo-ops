@@ -152,3 +152,19 @@ def test_runtime_dir_keeps_the_user_systemd_socket(monkeypatch, request) -> None
     bus = str(runtime / "systemd" / "private")
     assert mount[3:] == ["--bind", bus, bus]
     shutil.rmtree(mount[1])
+
+
+def test_tool_cache_dirs_bind_the_pnpm_store_parent(tmp_path: Path, monkeypatch) -> None:
+    store = tmp_path / "fs" / ".pnpm-store" / "v11"
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    pnpm = bindir / "pnpm"
+    pnpm.write_text(f"#!/bin/sh\necho {store}\n")
+    pnpm.chmod(0o755)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
+    assert str(store.parent) not in _tool_cache_dirs(repo)
+    (repo / "pnpm-lock.yaml").write_text("")
+    assert str(store.parent.resolve()) in _tool_cache_dirs(repo)
