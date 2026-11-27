@@ -31,6 +31,28 @@ def test_run_home_writes_are_throwaway(tmp_path: Path, monkeypatch) -> None:
     assert not (home / "d").exists()
 
 
+def test_run_hides_credential_stores_but_keeps_gitconfig(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    (home / ".ssh").mkdir(parents=True)
+    (home / ".ssh" / "id_ed25519").write_text("key")
+    (home / ".config" / "repo-ops").mkdir(parents=True)
+    (home / ".config" / "repo-ops" / "api-secret.txt").write_text("s")
+    (home / ".npmrc").write_text("//registry/:_authToken=t")
+    (home / ".gitconfig").write_text("[user]\n\tname = x\n")
+    monkeypatch.setenv("HOME", str(home))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    script = (
+        'cat "$HOME/.ssh/id_ed25519" "$HOME/.npmrc" "$HOME/.config/repo-ops/api-secret.txt"'
+        ' 2>&1; ls "$HOME/.ssh" | wc -l; cat "$HOME/.gitconfig"'
+    )
+    proc = run(["sh", "-c", script], cwd=repo)
+    assert proc.returncode == 0, proc.stderr
+    assert "key" not in proc.stdout
+    assert "_authToken" not in proc.stdout
+    assert proc.stdout.endswith("0\n[user]\n\tname = x\n")
+
+
 def test_run_exposes_tun_for_nested_pasta(tmp_path: Path) -> None:
     if not Path("/dev/net/tun").exists():
         pytest.skip("host has no /dev/net/tun")

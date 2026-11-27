@@ -363,6 +363,8 @@ def _sandboxed_argv(cmd: list[str], cwd: Path, path_env: str = "") -> list[str]:
     # Parents first, so the more specific mount wins wherever one path holds another.
     for _, flags in sorted(mounts, key=lambda m: len(Path(m[0]).parts)):
         argv.extend(flags)
+    # Last, so a mask wins over the home overlay and anything bound beneath it.
+    argv.extend(_secret_masks(home, [p for p, _ in mounts]))
     argv.append("--")
     argv.extend(cmd)
     return argv
@@ -412,6 +414,58 @@ def _memory_scope(root: Path) -> list[str]:
             file=sys.stderr,
         )
     return []
+
+
+# Credential stores under $HOME, relative to it: directories are emptied, files read as /dev/null.
+_SECRET_DIRS = (
+    ".ssh",
+    ".gnupg",
+    ".config/gh",
+    ".aws",
+    ".azure",
+    ".config/gcloud",
+    ".kube",
+    ".docker",
+    ".local/share/keyrings",
+    ".password-store",
+    ".mozilla",
+    ".config/google-chrome",
+    ".config/chromium",
+    ".config/BraveSoftware",
+    ".var/app",
+    ".config/bosun",
+    ".config/claude",
+    ".claude",
+    ".cursor",
+)
+_SECRET_FILES = (
+    ".netrc",
+    ".git-credentials",
+    ".npmrc",
+    ".pypirc",
+    ".cargo/credentials.toml",
+    ".config/repo-ops/*secret*",
+)
+
+
+def _secret_masks(home: str, bound: list[str]) -> list[str]:
+    """Flags hiding the host's credential stores that exist, to mount after the home overlay.
+
+    A store that holds or sits under a path the run binds (the checkout, a cache) is left alone.
+    """
+    base = Path(home)
+    flags: list[str] = []
+    for rel in _SECRET_DIRS:
+        path = base / rel
+        if path.is_dir():
+            target = str(path.resolve())
+            if not any(b == target or b.startswith(target + os.sep) for b in bound):
+                flags += ["--tmpfs", target]
+    for pattern in _SECRET_FILES:
+        for path in sorted(base.glob(pattern)):
+            if path.is_file():
+                flags += ["--ro-bind", "/dev/null", str(path.resolve())]
+    return flags
 
 
 def _tmp_parent_dirs(paths: list[str]) -> list[str]:
