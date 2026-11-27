@@ -160,3 +160,24 @@ def test_scrub_auth_run_cannot_read_seeded_npm_token(operator_home: Path, tmp_pa
     assert "SECRET" in install.stdout
     assert verify.returncode == 0, verify.stderr
     assert verify.stdout == "registry=https://r.example/\n"
+
+
+def test_scrub_auth_run_reads_the_scrubbed_config_at_the_home_path(
+    operator_home: Path, tmp_path: Path
+) -> None:
+    (operator_home / ".gitconfig").write_text(
+        "[user]\n\tname = A\n\tsigningkey = /k.pub\n[commit]\n\tgpgsign = true\n"
+    )
+    isolate_user_config(tmp_path / "scratch")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    # A task runner that drops GIT_CONFIG_GLOBAL leaves git reading ~/.gitconfig.
+    script = f'cat "{operator_home / ".gitconfig"}"'
+
+    install = run(["sh", "-c", script], repo)
+    verify = run(["sh", "-c", script], repo, scrub_auth=True)
+
+    assert "gpgsign" in install.stdout
+    assert verify.returncode == 0, verify.stderr
+    assert "gpgsign" not in verify.stdout
+    assert "name = A" in verify.stdout

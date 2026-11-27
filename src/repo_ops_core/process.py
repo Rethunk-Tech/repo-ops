@@ -60,6 +60,9 @@ _ISOLATED_ENV: dict[str, str] = {}
 _SCRUBBED_ENV: dict[str, str] = {}
 # The full copies, hidden from those runs: the scratch dir sits under $HOME, so the overlay shows it.
 _AUTH_COPIES: list[str] = []
+# (operator file, scrubbed copy): bound over the operator's own path too, since a task runner
+# such as turbo drops GIT_CONFIG_GLOBAL and friends and tools then read the home default.
+_SCRUBBED_OVER: list[tuple[str, str]] = []
 
 _NPMRC_AUTH = re.compile(r"(^|:)(_authToken|_auth|_password|username|certfile|keyfile)$", re.I)
 _URL_CREDENTIAL = re.compile(r"://(?!git@)[^/\s@]+@")
@@ -151,6 +154,7 @@ def isolate_user_config(scratch: Path) -> None:
     _SCRUBBED_ENV.clear()
     _SCRUBBED_ENV.update(scrubbed)
     _AUTH_COPIES[:] = [env[var] for var in sources]
+    _SCRUBBED_OVER[:] = [(str(src), scrubbed[var]) for var, (src, _) in sources.items()]
 
 
 _ENV_CACHE_VARS = (
@@ -452,6 +456,9 @@ def _sandboxed_argv(
         for path in _AUTH_COPIES:
             if Path(path).is_file() and Path("/tmp") not in Path(path).parents:  # noqa: S108
                 argv.extend(["--ro-bind", "/dev/null", path])
+        for real, copy in _SCRUBBED_OVER:
+            if Path(real).is_file() and Path(copy).is_file():
+                argv.extend(["--ro-bind", copy, real])
     argv.append("--")
     argv.extend(cmd)
     return argv
