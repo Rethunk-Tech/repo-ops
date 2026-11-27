@@ -218,7 +218,7 @@ def test_verify_runs_only_gates_a_default_gate_run_runs(tmp_path: Path, make_wor
     )
     calls: list[list[str]] = []
 
-    def fake_run(cmd, cwd, timeout=None, env=None, network=True):
+    def fake_run(cmd, cwd, timeout=None, env=None, network=True, scrub_auth=False):
         calls.append(cmd)
         return subprocess.CompletedProcess(
             cmd, 0, stdout=listing if "--json" in cmd else "", stderr=""

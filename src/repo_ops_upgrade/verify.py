@@ -146,6 +146,7 @@ def _timed_run(
     source: str,
     env: dict[str, str] | None = None,
     network: bool = True,
+    scrub_auth: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     # Not under /tmp: gate may give each step a private /tmp, where a host path would not exist.
     cache = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
@@ -154,7 +155,12 @@ def _timed_run(
     with tempfile.TemporaryDirectory(dir=base) as runtime_dir:
         try:
             return run(
-                cmd, cwd, timeout=timeout, env=_verify_env(env, runtime_dir), network=network
+                cmd,
+                cwd,
+                timeout=timeout,
+                env=_verify_env(env, runtime_dir),
+                network=network,
+                scrub_auth=scrub_auth,
             )
         except subprocess.TimeoutExpired as exc:
             n = int(exc.timeout) if exc.timeout is not None else timeout
@@ -192,7 +198,9 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
         )
         if proc.returncode != 0:
             return (proc.stderr or proc.stdout).strip() or f"{' '.join(fetch)} failed"
-    listing = _timed_run(["gate", "--json"], ws.path, timeout=timeout, source=source, network=net)
+    listing = _timed_run(
+        ["gate", "--json"], ws.path, timeout=timeout, source=source, network=net, scrub_auth=True
+    )
     if listing.returncode != 0 and "timed out after" in listing.stderr:
         return listing.stderr.strip()
     try:
@@ -218,16 +226,27 @@ def _gate_verify(ws: Workspace, *, timeout: int, source: str = "default") -> str
         timeout=timeout,
         source=source,
         network=net,
+        scrub_auth=True,
     )
     if proc.returncode != 0:
         if "timed out after" in proc.stderr:
             return proc.stderr.strip()
         failed = _timed_run(
-            ["gate", "--json", "record"], ws.path, timeout=timeout, source=source, network=net
+            ["gate", "--json", "record"],
+            ws.path,
+            timeout=timeout,
+            source=source,
+            network=net,
+            scrub_auth=True,
         )
         return _gate_failure_detail(proc, names, _failed_gate_logs(failed.stdout))
     record = _timed_run(
-        ["gate", "--json", "record"], ws.path, timeout=timeout, source=source, network=net
+        ["gate", "--json", "record"],
+        ws.path,
+        timeout=timeout,
+        source=source,
+        network=net,
+        scrub_auth=True,
     )
     try:
         partial = bool(json.loads(record.stdout).get("partial"))

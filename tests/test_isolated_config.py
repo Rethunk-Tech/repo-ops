@@ -142,3 +142,21 @@ def test_uv_reads_the_repo_uv_toml(operator_home: Path, tmp_path: Path) -> None:
     assert "Resolved" in proc.stderr or proc.stdout is not None
     proc = run(["uv", "pip", "compile", "requirements.in", "-o", "/dev/stdout", "-v"], repo)
     assert "python-version" in proc.stderr.lower() or "3.11" in proc.stderr
+
+
+def test_scrub_auth_run_cannot_read_seeded_npm_token(operator_home: Path, tmp_path: Path) -> None:
+    (operator_home / ".npmrc").write_text(
+        "registry=https://r.example/\n//r.example/:_authToken=SECRET\n"
+        "//r.example/:username=u\n//r.example/:certfile=/c\n"
+    )
+    isolate_user_config(tmp_path / "scratch")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    script = 'cat "$NPM_CONFIG_USERCONFIG"'
+
+    install = run(["sh", "-c", script], repo)
+    verify = run(["sh", "-c", script], repo, scrub_auth=True)
+
+    assert "SECRET" in install.stdout
+    assert verify.returncode == 0, verify.stderr
+    assert verify.stdout == "registry=https://r.example/\n"

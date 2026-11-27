@@ -60,6 +60,7 @@ def _gate_aware_run(calls: list[list[str]], listing: str = _GATE_LIST):
         timeout: int | None = None,
         env: dict[str, str] | None = None,
         network: bool = True,
+        scrub_auth: bool = False,
     ) -> CompletedProcess[str]:
         calls.append(cmd)
         return _ok(stdout=listing if cmd[:2] == ["gate", "--json"] else "")
@@ -76,6 +77,7 @@ def _gate_failing_run(stderr: str, listing: str = _GATE_LIST):
         timeout: int | None = None,
         env: dict[str, str] | None = None,
         network: bool = True,
+        scrub_auth: bool = False,
     ) -> CompletedProcess[str]:
         if cmd[:2] == ["gate", "--json"]:
             return _ok(stdout=listing)
@@ -120,6 +122,7 @@ class TestGoVerifyGates:
             timeout: int | None = None,
             env: dict[str, str] | None = None,
             network: bool = True,
+            scrub_auth: bool = False,
         ) -> CompletedProcess[str]:
             calls.append(cmd)
             if cmd[0:3] == ["go", "mod", "verify"]:
@@ -307,6 +310,7 @@ class TestUvLockThenGate:
             timeout: int | None = None,
             env: dict[str, str] | None = None,
             network: bool = True,
+            scrub_auth: bool = False,
         ) -> CompletedProcess[str]:
             calls.append(cmd)
             return (
@@ -366,6 +370,7 @@ class TestPythonManagerGates:
             timeout: int | None = None,
             env: dict[str, str] | None = None,
             network: bool = True,
+            scrub_auth: bool = False,
         ) -> CompletedProcess[str]:
             calls.append(cmd)
             return _fail(stderr="lock gate failed") if cmd == lock_cmd else _ok()
@@ -648,6 +653,7 @@ class TestGateDelegation:
             timeout: int | None = None,
             env: dict[str, str] | None = None,
             network: bool = True,
+            scrub_auth: bool = False,
         ) -> CompletedProcess[str]:
             if cmd == ["gate", "--json", "record"]:
                 return _ok(stdout=record)
@@ -690,6 +696,7 @@ class TestGateDelegation:
             timeout: int | None = None,
             env: dict[str, str] | None = None,
             network: bool = True,
+            scrub_auth: bool = False,
         ) -> CompletedProcess[str]:
             if cmd == ["gate", "--json", "record"]:
                 return _ok(stdout=record)
@@ -720,6 +727,7 @@ class TestGateDelegation:
             timeout: int | None = None,
             env: dict[str, str] | None = None,
             network: bool = True,
+            scrub_auth: bool = False,
         ) -> CompletedProcess[str]:
             if cmd[:2] == ["gate", "--json"]:
                 return _ok(stdout=_GATE_LIST)
@@ -836,6 +844,7 @@ class TestPythonGateDelegation:
             timeout: int | None = None,
             env: dict[str, str] | None = None,
             network: bool = True,
+            scrub_auth: bool = False,
         ) -> CompletedProcess[str]:
             if cmd[:2] == ["gate", "--json"]:
                 return _ok(stdout=_PYTHON_GATE_LIST)
@@ -928,6 +937,7 @@ class TestVerifyDesktopIsolation:
             timeout: int | None = None,
             env: dict[str, str] | None = None,
             network: bool = True,
+            scrub_auth: bool = False,
         ) -> CompletedProcess[str]:
             captured.append(env)
             return _ok(stdout=_GATE_LIST if cmd[:2] == ["gate", "--json"] else "")
@@ -956,6 +966,7 @@ class TestGateVerdictCompleteness:
             timeout: int | None = None,
             env: dict[str, str] | None = None,
             network: bool = True,
+            scrub_auth: bool = False,
         ) -> CompletedProcess[str]:
             if cmd[:2] == ["gate", "--json"] and len(cmd) == 2:
                 return _ok(stdout=json.dumps(listing))

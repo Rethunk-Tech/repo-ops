@@ -135,6 +135,7 @@ class TestVerifyScriptFromConfig:
             timeout: int | None = None,
             env: dict[str, str] | None = None,
             network: bool = True,
+            scrub_auth: bool = False,
         ) -> CompletedProcess[str]:
             if "gate" in cmd:
                 return _fail(stderr="gate failed")
@@ -165,6 +166,7 @@ class TestVerifySkip:
             timeout: int | None = None,
             env: dict[str, str] | None = None,
             network: bool = True,
+            scrub_auth: bool = False,
         ) -> CompletedProcess[str]:
             called.append(True)
             return _ok()
@@ -278,6 +280,7 @@ class TestVerifyTimeout:
             timeout: int | None = None,
             env: dict[str, str] | None = None,
             network: bool = True,
+            scrub_auth: bool = False,
         ) -> CompletedProcess[str]:
             captured.append({"cmd": cmd, "timeout": timeout})
             return _ok()
@@ -345,7 +348,7 @@ def test_failed_verify_script_names_its_command_and_exit_code(
     (tmp_path / ".repo-ops.toml").write_text('[verify]\nscript = "fail"\n', encoding="utf-8")
     ws = make_workspace(tmp_path, manager="npm", ecosystem="node", label="demo")
 
-    def failing(cmd, cwd, timeout=None, env=None, network=True):
+    def failing(cmd, cwd, timeout=None, env=None, network=True, scrub_auth=False):
         if cmd[-1] != "fail":
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         return subprocess.CompletedProcess(cmd, 1, stdout="> demo@1.0.0 fail\n", stderr="boom\n")

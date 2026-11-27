@@ -56,6 +56,34 @@ def configure_logging(level: str | None) -> None:
 
 # Config-write targets redirected for repo commands; package caches stay shared.
 _ISOLATED_ENV: dict[str, str] = {}
+# The same env with credential-free copies, for runs that execute freshly updated dependency code.
+_SCRUBBED_ENV: dict[str, str] = {}
+# The full copies, hidden from those runs: the scratch dir sits under $HOME, so the overlay shows it.
+_AUTH_COPIES: list[str] = []
+
+_NPMRC_AUTH = re.compile(r"(^|:)(_authToken|_auth|_password|username|certfile|keyfile)$", re.I)
+_URL_CREDENTIAL = re.compile(r"://(?!git@)[^/\s@]+@")
+_GOAUTH = re.compile(r"^\s*GOAUTH\s*=")
+
+
+def _scrub_credentials(name: str, text: str) -> str:
+    """*text* of the seeded config *name* without the lines that carry credentials."""
+    out: list[str] = []
+    in_credential = False
+    for line in text.splitlines(keepends=True):
+        if name == "gitconfig" and line.lstrip().startswith("["):
+            in_credential = line.lstrip().lower().startswith("[credential")
+        if in_credential:
+            continue
+        if name == "npmrc":
+            bad = _NPMRC_AUTH.search(line.split("=", 1)[0].strip()) is not None and "=" in line
+        elif name == "go.env":
+            bad = _GOAUTH.match(line) is not None
+        else:
+            bad = _URL_CREDENTIAL.search(line) is not None
+        if not bad:
+            out.append(line)
+    return "".join(out)
 
 
 def isolate_user_config(scratch: Path) -> None:
@@ -105,8 +133,20 @@ def isolate_user_config(scratch: Path) -> None:
         if src.is_file():
             shutil.copyfile(src, dest)
         env[var] = str(dest)
+    scrubbed = dict(env)
+    verify_dir = scratch / "verify"
+    verify_dir.mkdir(mode=0o700, exist_ok=True)
+    for var, (_, name) in sources.items():
+        dest = verify_dir / name
+        dest.unlink(missing_ok=True)
+        dest.touch(mode=0o600)
+        dest.write_text(_scrub_credentials(name, Path(env[var]).read_text()))
+        scrubbed[var] = str(dest)
     _ISOLATED_ENV.clear()
     _ISOLATED_ENV.update(env)
+    _SCRUBBED_ENV.clear()
+    _SCRUBBED_ENV.update(scrubbed)
+    _AUTH_COPIES[:] = [env[var] for var in sources]
 
 
 _ENV_CACHE_VARS = (
@@ -333,12 +373,18 @@ def _throwaway_mount(path: str) -> list[str]:
 
 
 def _sandboxed_argv(
-    cmd: list[str], cwd: Path, path_env: str = "", *, network: bool = True
+    cmd: list[str],
+    cwd: Path,
+    path_env: str = "",
+    *,
+    network: bool = True,
+    scrub_auth: bool = False,
 ) -> list[str]:
     """Wrap *cmd* in bubblewrap: repo writable, ``/`` read-only, ``$HOME`` a throwaway overlay.
 
     Tool caches are writable binds. ``/tmp`` is a tmpfs. Network is shared unless *network* is false,
-    which leaves only a loopback in a fresh namespace.
+    which leaves only a loopback in a fresh namespace. *scrub_auth* hides the seeded
+    credentials: the command sees only the credential-free config copies.
     """
     bwrap = shutil.which("bwrap")
     if bwrap is None:
@@ -351,7 +397,11 @@ def _sandboxed_argv(
     cwd_s = str(_checkout_root(cwd.resolve()))
     caches = _tool_cache_dirs(Path(cwd_s))
     isolated = list(
-        dict.fromkeys(str(Path(p).parent) for p in _ISOLATED_ENV.values() if Path(p).exists())
+        dict.fromkeys(
+            str(Path(p).parent)
+            for p in (_SCRUBBED_ENV if scrub_auth else _ISOLATED_ENV).values()
+            if Path(p).exists()
+        )
     )
     argv = [
         bwrap,
@@ -394,6 +444,10 @@ def _sandboxed_argv(
         argv.extend(flags)
     # Last, so a mask wins over the home overlay and anything bound beneath it.
     argv.extend(_secret_masks(home, [p for p, _ in mounts]))
+    if scrub_auth:
+        for path in _AUTH_COPIES:
+            if Path(path).is_file() and Path("/tmp") not in Path(path).parents:  # noqa: S108
+                argv.extend(["--ro-bind", "/dev/null", path])
     argv.append("--")
     argv.extend(cmd)
     return argv
@@ -525,6 +579,7 @@ def run(
     env: dict[str, str] | None = None,
     stdin: str | None = None,
     network: bool = True,
+    scrub_auth: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     cwd_path = Path(cwd)
     if not cwd_path.is_dir():
@@ -540,7 +595,7 @@ def run(
         argv = cmd
     else:
         # Isolation wins over a verify/apply env that names the operator's files.
-        merged.update(_ISOLATED_ENV)
+        merged.update(_SCRUBBED_ENV if scrub_auth else _ISOLATED_ENV)
         if cmd[:1] == ["uv"]:
             # UV_CONFIG_FILE switches off discovery of the repo's own uv.toml
             # (index, torch-backend); uv never writes config, so nothing to isolate.
@@ -550,7 +605,9 @@ def run(
             # pnpm appends its version dir (v11) to the configured store dir.
             root = store.parent if re.fullmatch(r"v\d+", store.name) else store
             merged["PNPM_CONFIG_STORE_DIR"] = str(root)
-        sandboxed = _sandboxed_argv(cmd, cwd_path, merged.get("PATH", ""), network=network)
+        sandboxed = _sandboxed_argv(
+            cmd, cwd_path, merged.get("PATH", ""), network=network, scrub_auth=scrub_auth
+        )
         scope = _memory_scope(_checkout_root(cwd_path.resolve()))
         real_runtime = os.environ.get("XDG_RUNTIME_DIR")
         if scope and real_runtime and merged.get("XDG_RUNTIME_DIR") != real_runtime:
